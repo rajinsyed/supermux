@@ -2,7 +2,8 @@ public import SwiftUI
 import AppKit
 
 /// A sheet for editing a registered project's settings: name, accent color,
-/// icon, default base branch, worktrees folder, and run commands.
+/// icon, default base branch, worktrees folder, run commands, and custom
+/// actions.
 ///
 /// The project is copied into local state on init; nothing is persisted until
 /// the user confirms with Save, which routes the edited record through
@@ -54,6 +55,11 @@ public struct SupermuxProjectEditorSheet: View {
                     runCommandsRow
                 }
                 Section {
+                    actionsRow
+                } header: {
+                    Text(String(localized: "supermux.projectEditor.actions", defaultValue: "Actions"))
+                }
+                Section {
                     locationRow
                 }
             }
@@ -61,7 +67,7 @@ public struct SupermuxProjectEditorSheet: View {
             Divider()
             buttonBar
         }
-        .frame(width: 420, height: 540)
+        .frame(width: 420, height: 620)
     }
 
     // MARK: - Rows
@@ -139,6 +145,32 @@ public struct SupermuxProjectEditorSheet: View {
             Text(String(
                 localized: "supermux.projectEditor.runCommands.help",
                 defaultValue: "Started and stopped with the Run action"
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var actionsRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(edited.actions.indices, id: \.self) { i in
+                SupermuxProjectActionEditorRow(
+                    action: $edited.actions[i],
+                    onDelete: { edited.actions.remove(at: i) }
+                )
+            }
+            Button {
+                edited.actions.append(SupermuxProjectAction(name: "", command: ""))
+            } label: {
+                Label(
+                    String(localized: "supermux.projectEditor.addAction", defaultValue: "Add Action"),
+                    systemImage: "plus"
+                )
+            }
+            Text(String(
+                localized: "supermux.projectEditor.actions.help",
+                defaultValue: "Launch a command in a new workspace terminal"
             ))
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -238,7 +270,72 @@ public struct SupermuxProjectEditorSheet: View {
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        project.actions = edited.actions.map { a in
+            var t = a
+            t.name = a.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            t.command = a.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t
+        }.filter { $0.isLaunchable }
         model.updateProject(project)
         dismiss()
+    }
+}
+
+/// A single editable row for a project's custom action / terminal preset.
+///
+/// Binds a ``SupermuxProjectAction`` value in place and exposes a delete
+/// callback so the parent editor can remove it from the project's list.
+private struct SupermuxProjectActionEditorRow: View {
+    @Binding var action: SupermuxProjectAction
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: action.resolvedIconSymbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            TextField(
+                String(localized: "supermux.projectEditor.action.namePrompt", defaultValue: "Name"),
+                text: $action.name,
+                prompt: Text(String(
+                    localized: "supermux.projectEditor.action.namePrompt",
+                    defaultValue: "Name"
+                ))
+            )
+            .frame(width: 96)
+            TextField(
+                String(localized: "supermux.projectEditor.action.commandPrompt", defaultValue: "Command"),
+                text: $action.command,
+                prompt: Text(String(
+                    localized: "supermux.projectEditor.action.commandPrompt",
+                    defaultValue: "Command"
+                ))
+            )
+            .font(.system(size: 12, design: .monospaced))
+            .autocorrectionDisabled()
+            TextField(
+                String(localized: "supermux.projectEditor.action.iconPrompt", defaultValue: "Icon"),
+                text: iconBinding,
+                prompt: Text(String(
+                    localized: "supermux.projectEditor.action.iconPrompt",
+                    defaultValue: "Icon"
+                ))
+            )
+            .frame(width: 64)
+            .autocorrectionDisabled()
+            Button(action: onDelete) {
+                Image(systemName: "minus.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(String(localized: "supermux.projectEditor.action.delete", defaultValue: "Remove Action"))
+        }
+    }
+
+    private var iconBinding: Binding<String> {
+        Binding(
+            get: { action.iconSymbol ?? "" },
+            set: { action.iconSymbol = $0.isEmpty ? nil : $0 }
+        )
     }
 }

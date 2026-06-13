@@ -9,16 +9,24 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     public var directory: String
     /// Accent color (`#RRGGBB`) applied to the workspace tab, if any.
     public var colorHex: String?
+    /// A command to run in the workspace's first terminal, or `nil` for none.
+    ///
+    /// When set, the host always opens a fresh workspace (never reuses an
+    /// existing one) so the command runs in a clean terminal — this is how
+    /// custom project actions launch.
+    public var initialCommand: String?
 
     /// Creates a request.
     /// - Parameters:
     ///   - title: Workspace title.
     ///   - directory: Absolute working directory.
     ///   - colorHex: Optional accent color.
-    public init(title: String, directory: String, colorHex: String? = nil) {
+    ///   - initialCommand: Optional command to run in the first terminal.
+    public init(title: String, directory: String, colorHex: String? = nil, initialCommand: String? = nil) {
         self.title = title
         self.directory = directory
         self.colorHex = colorHex
+        self.initialCommand = initialCommand
     }
 }
 

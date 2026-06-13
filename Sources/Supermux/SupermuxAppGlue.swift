@@ -40,15 +40,20 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     func openWorkspace(_ request: SupermuxOpenWorkspaceRequest) {
         guard let tabManager else { return }
         let directory = (request.directory as NSString).expandingTildeInPath
-        if let existing = tabManager.tabs.first(where: { workspace in
-            (workspace.currentDirectory as NSString).expandingTildeInPath == directory
-        }) {
+        // A command-carrying request always opens a fresh workspace so the
+        // command runs in a clean terminal; plain "open" requests reuse a
+        // matching workspace when one already exists.
+        if request.initialCommand == nil,
+           let existing = tabManager.tabs.first(where: { workspace in
+               (workspace.currentDirectory as NSString).expandingTildeInPath == directory
+           }) {
             tabManager.selectWorkspace(existing)
             return
         }
         let workspace = tabManager.addWorkspace(
             title: request.title,
             workingDirectory: directory,
+            initialTerminalCommand: request.initialCommand,
             inheritWorkingDirectory: false,
             select: true
         )

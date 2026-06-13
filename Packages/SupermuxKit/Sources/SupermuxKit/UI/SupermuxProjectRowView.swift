@@ -18,6 +18,8 @@ public struct SupermuxProjectRowActions {
     public var remove: () -> Void
     /// Reveals the project root in Finder.
     public var revealInFinder: () -> Void
+    /// Launches a project action in a fresh workspace.
+    public var launchAction: (SupermuxProjectAction) -> Void
 
     /// Memberwise initializer (all callbacks required).
     public init(
@@ -28,7 +30,8 @@ public struct SupermuxProjectRowActions {
         toggleExpanded: @escaping () -> Void,
         edit: @escaping () -> Void,
         remove: @escaping () -> Void,
-        revealInFinder: @escaping () -> Void
+        revealInFinder: @escaping () -> Void,
+        launchAction: @escaping (SupermuxProjectAction) -> Void
     ) {
         self.openLocal = openLocal
         self.newWorktree = newWorktree
@@ -38,6 +41,7 @@ public struct SupermuxProjectRowActions {
         self.edit = edit
         self.remove = remove
         self.revealInFinder = revealInFinder
+        self.launchAction = launchAction
     }
 }
 
@@ -142,6 +146,17 @@ public struct SupermuxProjectRowView: View {
             Menu(String(localized: "supermux.project.worktreesMenu", defaultValue: "Worktrees")) {
                 ForEach(worktrees) { worktree in
                     Button(worktree.displayName) { actions.openWorktree(worktree) }
+                }
+            }
+        }
+        if !project.actions.isEmpty {
+            Menu(String(localized: "supermux.project.actionsMenu", defaultValue: "Actions")) {
+                ForEach(project.actions) { action in
+                    if action.isLaunchable {
+                        Button { actions.launchAction(action) } label: {
+                            Label(action.name, systemImage: action.resolvedIconSymbol)
+                        }
+                    }
                 }
             }
         }

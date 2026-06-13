@@ -25,6 +25,8 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     public var worktreesDirName: String
     /// Shell commands for the project's run action (started/stopped with ⌘G).
     public var runCommands: [String]
+    /// Named custom actions / terminal presets launchable from the project.
+    public var actions: [SupermuxProjectAction]
     /// When the project was registered.
     public var createdAt: Date
     /// When a workspace was last opened from this project, for recency sorting.
@@ -40,6 +42,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     ///   - defaultBranch: Base branch for new worktrees; `nil` uses `HEAD`.
     ///   - worktreesDirName: Worktree container directory; defaults to `.worktrees`.
     ///   - runCommands: Run-action commands; defaults to none.
+    ///   - actions: Named custom actions / terminal presets; defaults to none.
     ///   - createdAt: Registration date; defaults to now.
     ///   - lastOpenedAt: Last-opened date; defaults to `nil`.
     public init(
@@ -51,6 +54,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         defaultBranch: String? = nil,
         worktreesDirName: String = ".worktrees",
         runCommands: [String] = [],
+        actions: [SupermuxProjectAction] = [],
         createdAt: Date = Date(),
         lastOpenedAt: Date? = nil
     ) {
@@ -62,6 +66,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         self.defaultBranch = defaultBranch
         self.worktreesDirName = worktreesDirName
         self.runCommands = runCommands
+        self.actions = actions
         self.createdAt = createdAt
         self.lastOpenedAt = lastOpenedAt
     }
@@ -73,7 +78,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, rootPath, colorHex, iconSymbol, defaultBranch
-        case worktreesDirName, runCommands, createdAt, lastOpenedAt
+        case worktreesDirName, runCommands, actions, createdAt, lastOpenedAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -86,6 +91,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         defaultBranch = try container.decodeIfPresent(String.self, forKey: .defaultBranch)
         worktreesDirName = try container.decodeIfPresent(String.self, forKey: .worktreesDirName) ?? ".worktrees"
         runCommands = try container.decodeIfPresent([String].self, forKey: .runCommands) ?? []
+        actions = try container.decodeIfPresent([SupermuxProjectAction].self, forKey: .actions) ?? []
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         lastOpenedAt = try container.decodeIfPresent(Date.self, forKey: .lastOpenedAt)
     }

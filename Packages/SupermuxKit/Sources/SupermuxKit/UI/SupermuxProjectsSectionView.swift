@@ -122,8 +122,20 @@ public struct SupermuxProjectsSectionView: View {
             remove: { model.removeProject(id: project.id) },
             revealInFinder: {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.rootPath)])
-            }
+            },
+            launchAction: { action in launchAction(action, project: project) }
         )
+    }
+
+    private func launchAction(_ action: SupermuxProjectAction, project: SupermuxProject) {
+        guard action.isLaunchable else { return }
+        model.noteOpened(id: project.id)
+        opener.openWorkspace(SupermuxOpenWorkspaceRequest(
+            title: "\(project.name) · \(action.name)",
+            directory: project.rootPath,
+            colorHex: project.colorHex,
+            initialCommand: action.command
+        ))
     }
 
     private func openLocal(_ project: SupermuxProject) {
