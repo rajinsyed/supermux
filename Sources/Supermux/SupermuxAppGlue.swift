@@ -69,3 +69,28 @@ struct SupermuxProjectsMount: View {
         )
     }
 }
+
+/// The git Changes panel mounted as the right sidebar's `changes` mode (see
+/// the `right-sidebar-changes-mode-*` touchpoints). Each mount owns its model
+/// so separate windows track their own active workspace independently.
+struct SupermuxChangesMount: View {
+    let workspaceDirectory: String?
+
+    @EnvironmentObject private var tabManager: TabManager
+    @State private var model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: CommandRunner()))
+
+    var body: some View {
+        SupermuxChangesPanelView(
+            model: model,
+            onOpenDiff: { [weak tabManager] in
+                guard let tabManager,
+                      let appDelegate = NSApp.delegate as? AppDelegate else { return }
+                _ = appDelegate.openDiffViewerForFocusedWorkspace(for: tabManager)
+            }
+        )
+        .onAppear { model.setDirectory(workspaceDirectory) }
+        .onChange(of: workspaceDirectory) { _, newDirectory in
+            model.setDirectory(newDirectory)
+        }
+    }
+}

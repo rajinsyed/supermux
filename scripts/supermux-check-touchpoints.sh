@@ -36,6 +36,20 @@ while IFS='|' read -r _ _ file fence _; do
     fail=1
     continue
   fi
+  # A trailing '*' registers a family of fences sharing the prefix; the file
+  # must contain at least one begin/end pair with that prefix.
+  if [[ "$fence" == *'*' ]]; then
+    prefix="${fence%\*}"
+    if ! grep -q "SUPERMUX:begin $prefix" "$file"; then
+      echo "FAIL: $file has no fence matching 'SUPERMUX:begin $prefix*' (clobbered by a merge?)" >&2
+      fail=1
+    fi
+    if ! grep -q "SUPERMUX:end $prefix" "$file"; then
+      echo "FAIL: $file has no fence matching 'SUPERMUX:end $prefix*'" >&2
+      fail=1
+    fi
+    continue
+  fi
   if ! grep -q "SUPERMUX:begin $fence" "$file"; then
     echo "FAIL: $file is missing fence 'SUPERMUX:begin $fence' (clobbered by a merge?)" >&2
     fail=1
@@ -53,7 +67,20 @@ while IFS=: read -r file _; do
     SUPERMUX*.md|Packages/SupermuxKit/*|Sources/Supermux/*|scripts/supermux-*) continue ;;
   esac
   while read -r fence; do
-    if ! grep -q "\`$fence\`" "$MANIFEST"; then
+    registered=0
+    if grep -q "\`$fence\`" "$MANIFEST"; then
+      registered=1
+    else
+      # Accept membership in a registered wildcard family (`prefix-*`).
+      while read -r wildcard; do
+        prefix="${wildcard%\*}"
+        if [[ "$fence" == "$prefix"* ]]; then
+          registered=1
+          break
+        fi
+      done < <(grep -o '`[a-zA-Z0-9_-]*\*`' "$MANIFEST" | tr -d '\`')
+    fi
+    if [[ $registered -eq 0 ]]; then
       echo "FAIL: $file has unregistered fence '$fence' — add it to SUPERMUX-TOUCHPOINTS.md" >&2
       fail=1
     fi

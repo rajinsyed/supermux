@@ -15,6 +15,9 @@ nonisolated enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
     case sessions
     case feed
     case dock
+    // SUPERMUX:begin right-sidebar-changes-mode-case
+    case changes
+    // SUPERMUX:end right-sidebar-changes-mode-case
 
     var label: String {
         switch self {
@@ -23,6 +26,9 @@ nonisolated enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
         case .sessions: return String(localized: "rightSidebar.mode.sessions", defaultValue: "Vault")
         case .feed: return String(localized: "rightSidebar.mode.feed", defaultValue: "Feed")
         case .dock: return String(localized: "rightSidebar.mode.dock", defaultValue: "Dock")
+        // SUPERMUX:begin right-sidebar-changes-mode-label
+        case .changes: return String(localized: "supermux.rightSidebar.mode.changes", defaultValue: "Changes")
+        // SUPERMUX:end right-sidebar-changes-mode-label
         }
     }
 
@@ -33,6 +39,9 @@ nonisolated enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
         case .sessions: return "books.vertical"
         case .feed: return "dot.radiowaves.left.and.right"
         case .dock: return "dock.rectangle"
+        // SUPERMUX:begin right-sidebar-changes-mode-symbol
+        case .changes: return "plusminus.circle"
+        // SUPERMUX:end right-sidebar-changes-mode-symbol
         }
     }
 
@@ -43,6 +52,9 @@ nonisolated enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
         case .sessions: return .switchRightSidebarToSessions
         case .feed: return .switchRightSidebarToFeed
         case .dock: return .switchRightSidebarToDock
+        // SUPERMUX:begin right-sidebar-changes-mode-shortcut
+        case .changes: return nil
+        // SUPERMUX:end right-sidebar-changes-mode-shortcut
         }
     }
 }
@@ -67,7 +79,9 @@ nonisolated enum FileExplorerRootSyncPolicy {
         switch mode {
         case .files, .find:
             return true
-        case .sessions, .feed, .dock:
+        // SUPERMUX:begin right-sidebar-changes-mode-rootsync
+        case .sessions, .feed, .dock, .changes:
+        // SUPERMUX:end right-sidebar-changes-mode-rootsync
             return false
         }
     }
@@ -452,6 +466,10 @@ struct RightSidebarPanelView: View {
                 FeedPanelView()
             case .dock:
                 DockPanelView(rootDirectory: dockRootDirectory, workspaceId: workspaceId, store: dockStore)
+            // SUPERMUX:begin right-sidebar-changes-mode-content
+            case .changes:
+                SupermuxChangesMount(workspaceDirectory: tabManager.selectedWorkspace?.currentDirectory)
+            // SUPERMUX:end right-sidebar-changes-mode-content
             }
         } else {
             Color.clear

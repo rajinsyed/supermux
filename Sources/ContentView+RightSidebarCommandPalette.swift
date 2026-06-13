@@ -135,6 +135,10 @@ extension ContentView {
             return "palette.showRightSidebarFeed"
         case .dock:
             return "palette.showRightSidebarDock"
+        // SUPERMUX:begin right-sidebar-changes-mode-palette-id
+        case .changes:
+            return "palette.showRightSidebarChanges"
+        // SUPERMUX:end right-sidebar-changes-mode-palette-id
         }
     }
 
@@ -156,7 +160,9 @@ extension ContentView {
             return "palette.openFindPane"
         case .sessions:
             return "palette.openVaultPane"
-        case .feed, .dock:
+        // SUPERMUX:begin right-sidebar-changes-mode-palette-pane-id
+        case .feed, .dock, .changes:
+        // SUPERMUX:end right-sidebar-changes-mode-palette-pane-id
             return nil
         }
     }
@@ -169,7 +175,9 @@ extension ContentView {
             return String(localized: "command.openFindPane.title", defaultValue: "Open Find as Pane")
         case .sessions:
             return String(localized: "command.openVaultPane.title", defaultValue: "Open Vault as Pane")
-        case .feed, .dock:
+        // SUPERMUX:begin right-sidebar-changes-mode-palette-pane-title
+        case .feed, .dock, .changes:
+        // SUPERMUX:end right-sidebar-changes-mode-palette-pane-title
             return nil
         }
     }

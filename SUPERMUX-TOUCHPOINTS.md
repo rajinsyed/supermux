@@ -18,6 +18,11 @@ Rules for adding a touchpoint:
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section` | Mounts `SupermuxProjectsMount()` at the top of the sidebar workspace list |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | `Sources/ContentView.swift` budget raised by the touchpoint's +3 lines (19265 → 19268) |
+| 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it |
+| 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
+| 7 | `Sources/RightSidebarToolPanel.swift` | `right-sidebar-changes-mode-*` | `.changes` joins the `.feed, .dock` no-op groups (sync/focus/intent/anchor, ×4) |
+| 8 | `Sources/MainWindowFocusController.swift` | `right-sidebar-changes-mode-*` | Focus routing for the changes mode (host, no special endpoint) |
+| 9 | `Sources/ContentView+RightSidebarCommandPalette.swift` | `right-sidebar-changes-mode-*` | Palette command id for "Show Changes"; not openable as a pane |
 
 ## How to re-apply
 
@@ -68,6 +73,19 @@ python3 scripts/swift_file_length_budget.py --budget .github/swift-file-length-b
 
 and if it reports growth equal to supermux's fenced lines, bump the affected row(s) by that
 amount (never bump to absorb unrelated growth).
+
+### 5–9. The `changes` right-sidebar mode (one feature, five files)
+
+The pattern is mechanical: `RightSidebarMode` gained a `case changes`. Every exhaustive
+`switch` over the enum needs the new case. If a merge clobbers one of these fences, the
+compiler lists every unhandled switch — re-add `.changes` at each:
+- behave like `.files` for **availability** (always available),
+- behave like `.feed`/`.dock` (no-op / nil / break) for **tool-panel sync, focus intent, and
+  pane-mode** switches,
+- label "Changes" (`supermux.rightSidebar.mode.changes`), symbol `plusminus.circle`,
+  `shortcutAction: nil`, CLI argument `"changes"`, palette id `palette.showRightSidebarChanges`,
+- content view: `SupermuxChangesMount(workspaceDirectory: tabManager.selectedWorkspace?.currentDirectory)`.
+Find every site with: `grep -rn "case .dock" Sources/ | grep -v changes`.
 
 ### 1. `CLAUDE.md` — `claude-md-pointer`
 

@@ -114,7 +114,9 @@ final class MainWindowFocusController {
             fileExplorerHost = host
         case .find:
             fileSearchHost = host
-        case .sessions, .feed, .dock:
+        // SUPERMUX:begin right-sidebar-changes-mode-explorerhost
+        case .sessions, .feed, .dock, .changes:
+        // SUPERMUX:end right-sidebar-changes-mode-explorerhost
             break
         }
         focusRegisteredRightSidebarEndpointIfNeeded(mode: mode)
@@ -652,6 +654,10 @@ final class MainWindowFocusController {
             return focusFirstItem ? .firstItem : .host
         case .dock:
             return focusFirstItem ? .firstItem : .host
+        // SUPERMUX:begin right-sidebar-changes-mode-focustarget
+        case .changes:
+            return .host
+        // SUPERMUX:end right-sidebar-changes-mode-focustarget
         }
     }
 
@@ -676,6 +682,10 @@ final class MainWindowFocusController {
                 dockHost?.focusFirstItemFromCoordinator()
             }
             return dockHost?.focusHostFromCoordinator() == true
+        // SUPERMUX:begin right-sidebar-changes-mode-focusendpoint
+        case .changes:
+            return false
+        // SUPERMUX:end right-sidebar-changes-mode-focusendpoint
         }
     }
 

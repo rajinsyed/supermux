@@ -13,6 +13,10 @@ extension RightSidebarMode {
             return .feed
         case "dock":
             return .dock
+        // SUPERMUX:begin right-sidebar-changes-mode-cli
+        case "changes":
+            return .changes
+        // SUPERMUX:end right-sidebar-changes-mode-cli
         default:
             return nil
         }
@@ -38,7 +42,9 @@ extension RightSidebarMode {
 
     func isAvailable(feedEnabled: Bool, dockEnabled: Bool) -> Bool {
         switch self {
-        case .files, .find, .sessions:
+        // SUPERMUX:begin right-sidebar-changes-mode-available
+        case .files, .find, .sessions, .changes:
+        // SUPERMUX:end right-sidebar-changes-mode-available
             return true
         case .feed:
             return feedEnabled
