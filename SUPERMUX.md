@@ -26,6 +26,35 @@ Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands`
 diff viewer, per-workspace git branch/dirty tracking), supermux **extends** it rather than
 building a parallel system.
 
+### Implementation status
+
+| Goal | Status | Where |
+|------|--------|-------|
+| Sticky Projects (sidebar section, icons, colors, persisted) | ✅ | `SupermuxProjectsModel`, `SupermuxProjectStore`, `SupermuxProjectsSectionView`; mounted via the `sidebar-projects-section` touchpoint |
+| Open local / create worktree from a project | ✅ | `SupermuxGitWorktreeService` (piggycode semantics: `--no-track -b`, `push.autoSetupRemote`, `branch.<n>.base`, dedup, exclude) |
+| List / open / delete worktrees (dirty-checked) | ✅ | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, project row disclosure |
+| Changes (git) panel | ✅ | right-sidebar `changes` mode (`right-sidebar-changes-mode-*` touchpoints) → `SupermuxChangesPanelView` / `SupermuxChangesModel` / `SupermuxGitChangesService` |
+| Run actions (⌘G start/stop) | ✅ | `supermuxToggleRun` shortcut (shares ⌘G with Find Next) → `SupermuxRunCoordinator` |
+| Custom app actions + terminal presets (per project) | ✅ | `SupermuxProjectAction`, editor Actions section, project-row Actions submenu |
+| Localization (en + ja) | ✅ | all `supermux.*` keys in `Resources/Localizable.xcstrings`; regenerate with the scripts under "Localization" below |
+
+Both phases are verified against a live tagged build (worktree creation, the Changes panel on
+real git status, and the full ⌘G run→stop→restart cycle confirmed by an actually-listening dev
+server port).
+
+### Localization
+
+All supermux user-facing strings use `String(localized: "supermux.<area>.<name>", defaultValue:
+"English")`. Because cmux packages resolve `String(localized:)` against the **app** bundle
+(`Bundle.main`), every supermux key — package or app-target — lives in the app catalog at
+`Resources/Localizable.xcstrings` with `en` + `ja` entries (matching cmux's two required
+locales). Interpolated strings (`\(path)`, counts) are stored as `%@` / `%lld` format strings.
+
+To refresh after adding/changing supermux strings, re-run the audit tooling kept under
+`scripts/` (`supermux-extract-loc-keys.py` → format → translate → `supermux-merge-loc.py`); the
+merge is idempotent and only ever touches `supermux.*` keys, so the existing catalog stays
+byte-stable.
+
 ## Fork management — THE RULES
 
 The single most important constraint: **upstream merges must stay cheap.** The user regularly
