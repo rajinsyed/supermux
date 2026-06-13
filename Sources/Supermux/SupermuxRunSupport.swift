@@ -107,11 +107,14 @@ final class SupermuxRunCoordinator {
             ?? workspace.bonsplitController.allPaneIds.first else {
             return false
         }
+        // Launch through the interactive shell (see SupermuxCommandLaunch), the
+        // same path the restart branch above uses via sendText + Return: shell
+        // aliases/functions resolve and the surface survives the command exit.
         guard let panel = workspace.newTerminalSurface(
             inPane: paneId,
             focus: false,
             workingDirectory: workspace.currentDirectory,
-            initialCommand: command
+            initialInput: SupermuxCommandLaunch.shellInput(for: command)
         ) else {
             return false
         }

@@ -53,5 +53,24 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
 @MainActor
 public protocol SupermuxWorkspaceOpening: AnyObject {
     /// Opens (or focuses) a workspace for the request.
+    ///
+    /// Used when *opening* a project or worktree — the result is a workspace.
     func openWorkspace(_ request: SupermuxOpenWorkspaceRequest)
+
+    /// Runs the request's command as a new terminal tab in the currently
+    /// focused workspace, rather than opening a separate workspace.
+    ///
+    /// Used by project *actions* (e.g. a build or agent command): the user
+    /// expects them to run where they are looking, like the global presets bar,
+    /// not to spawn a new workspace. Hosts should fall back to
+    /// ``openWorkspace(_:)`` when there is no focused workspace to host the tab.
+    func runAction(_ request: SupermuxOpenWorkspaceRequest)
+}
+
+public extension SupermuxWorkspaceOpening {
+    /// Default behaviour: open a workspace, matching the legacy action path.
+    /// Hosts that can target the focused workspace override this.
+    func runAction(_ request: SupermuxOpenWorkspaceRequest) {
+        openWorkspace(request)
+    }
 }

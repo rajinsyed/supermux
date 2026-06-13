@@ -97,10 +97,15 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             associate(workspaceId: existing.id, directory: directory, with: request)
             return
         }
+        // Run the action's command through the new workspace's interactive
+        // shell (see SupermuxCommandLaunch): resolves shell aliases/functions
+        // (e.g. `cc` → `claude …`) and keeps the workspace open after the
+        // command exits instead of collapsing it. Plain "open" requests carry
+        // no command and just get a clean terminal.
         let workspace = tabManager.addWorkspace(
             title: request.title,
             workingDirectory: directory,
-            initialTerminalCommand: request.initialCommand,
+            initialTerminalInput: request.initialCommand.map(SupermuxCommandLaunch.shellInput),
             inheritWorkingDirectory: false,
             select: true
         )
@@ -109,6 +114,33 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             workspace.customColor = colorHex
         }
         associate(workspaceId: workspace.id, directory: directory, with: request)
+    }
+
+    /// Runs a project action's command as a new terminal tab in the focused
+    /// workspace (the ⌘-presets-bar behavior), not as a separate workspace.
+    ///
+    /// The command runs through the workspace's interactive shell (see
+    /// ``SupermuxCommandLaunch``) so shell aliases/functions resolve and the tab
+    /// survives the command exit. The action's project directory is used as the
+    /// tab's working directory so a build/run command still runs in the right
+    /// place. With no focused workspace to host the tab, falls back to opening a
+    /// fresh workspace.
+    func runAction(_ request: SupermuxOpenWorkspaceRequest) {
+        guard let tabManager,
+              let command = request.initialCommand,
+              let workspace = tabManager.selectedWorkspace,
+              let paneId = workspace.bonsplitController.focusedPaneId
+                ?? workspace.bonsplitController.allPaneIds.first else {
+            openWorkspace(request)
+            return
+        }
+        let directory = (request.directory as NSString).expandingTildeInPath
+        _ = workspace.newTerminalSurface(
+            inPane: paneId,
+            focus: true,
+            workingDirectory: directory,
+            initialInput: SupermuxCommandLaunch.shellInput(for: command)
+        )
     }
 
     /// Records the workspace→project association for project-originated opens,
@@ -152,18 +184,14 @@ struct SupermuxProjectsMount: View {
         let projects = SupermuxComposition.projectsModel.projects
         let associations = SupermuxComposition.workspaceAssociations
         let openWorkspaces = tabManager.tabs.map { workspace in
-            SupermuxOpenWorkspace(
-                id: workspace.id,
-                title: workspace.customTitle ?? workspace.title,
-                directory: workspace.currentDirectory,
+            SupermuxWorkspaceRow.snapshot(
+                for: workspace,
                 isSelected: workspace.id == tabManager.selectedTabId,
-                branch: workspace.gitBranch?.branch,
                 projectId: associations.projectId(
                     forWorkspace: workspace.id,
                     directory: workspace.currentDirectory,
                     in: projects
                 ),
-                activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
                 isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id)
             )
         }
@@ -269,11 +297,14 @@ struct SupermuxPresetsBarMount: View {
                 guard let workspace, preset.isLaunchable else { return }
                 guard let paneId = workspace.bonsplitController.focusedPaneId
                     ?? workspace.bonsplitController.allPaneIds.first else { return }
+                // Run the preset through the interactive shell (see
+                // SupermuxCommandLaunch): resolves shell aliases/functions and
+                // keeps the tab open after the command exits.
                 _ = workspace.newTerminalSurface(
                     inPane: paneId,
                     focus: true,
                     workingDirectory: workspace.currentDirectory,
-                    initialCommand: preset.command
+                    initialInput: SupermuxCommandLaunch.shellInput(for: preset.command)
                 )
             },
             onToggleRun: { [weak workspace] in
@@ -281,5 +312,50 @@ struct SupermuxPresetsBarMount: View {
                 _ = SupermuxComposition.runCoordinator.toggleRun(workspace: workspace)
             }
         )
+    }
+}
+
+/// Builds the immutable ``SupermuxOpenWorkspace`` snapshot that a project-nested
+/// sidebar row renders from a live ``Workspace``.
+///
+/// Extracted from ``SupermuxProjectsMount`` so the row's field mapping — most
+/// importantly which source feeds the branch subtitle — is unit-testable
+/// without a SwiftUI host. `projectId`/`isRunning` are passed in because they
+/// depend on app-wide composition the caller already holds.
+@MainActor
+enum SupermuxWorkspaceRow {
+    static func snapshot(
+        for workspace: Workspace,
+        isSelected: Bool,
+        projectId: UUID?,
+        isRunning: Bool
+    ) -> SupermuxOpenWorkspace {
+        SupermuxOpenWorkspace(
+            id: workspace.id,
+            title: workspace.customTitle ?? workspace.title,
+            directory: workspace.currentDirectory,
+            isSelected: isSelected,
+            branch: workspace.supermuxSidebarBranch,
+            projectId: projectId,
+            activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
+            isRunning: isRunning
+        )
+    }
+}
+
+extension Workspace {
+    /// The git branch shown on a supermux project-nested workspace row.
+    ///
+    /// Resolves from the per-panel, display-ordered branches
+    /// (``sidebarGitBranchesInDisplayOrder()``) — the same source cmux's own
+    /// sidebar rows use — rather than the workspace-level `gitBranch` mirror.
+    /// `gitBranch` only ever reflects the *focused* panel's branch, so focusing
+    /// a branchless surface (e.g. opening a browser tab) clears it and the row's
+    /// branch subtitle would vanish even though a terminal in the workspace is
+    /// still on a branch. The per-panel branches persist across focus changes,
+    /// so this stays stable; it falls back to `gitBranch` only when no panel
+    /// reports a branch.
+    var supermuxSidebarBranch: String? {
+        sidebarGitBranchesInDisplayOrder().first?.branch
     }
 }

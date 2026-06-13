@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list; renders the agent-activity indicator on flat-list workspace rows |
-| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target |
+| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, and `cmuxTests/SupermuxSidebarBranchTests.swift` into the cmuxTests target |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it |
@@ -80,7 +80,7 @@ beside the title.
 
 ### 3. `cmux.xcodeproj/project.pbxproj` — unfenced (comments are not safe there)
 
-Nine ID-based additions, all using the reserved supermux ID prefix `50BE0001…`. To re-apply by
+Twelve ID-based additions, all using the reserved supermux ID prefix `50BE0001…`. To re-apply by
 hand, mirror how `CmuxSocketControl` is wired and how `CmuxSidebarActionDispatch.swift` is
 listed, with these exact IDs:
 
@@ -96,9 +96,11 @@ listed, with these exact IDs:
 | `50BE000100000000000000B5` | PBXBuildFile | `SupermuxRunSupport.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
 | `50BE000100000000000000B6` | PBXFileReference | `SupermuxWorkspaceActivityResolver.swift` (also listed in the `Supermux` group's `children`) |
 | `50BE000100000000000000B7` | PBXBuildFile | `SupermuxWorkspaceActivityResolver.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
+| `50BE000100000000000000C2` | PBXFileReference | `SupermuxSidebarBranchTests.swift` (also listed in the cmuxTests group's `children`) |
+| `50BE000100000000000000C1` | PBXBuildFile | `SupermuxSidebarBranchTests.swift in Sources` (also listed in the `cmuxTests` target's Sources phase `files`) |
 
 After re-applying run `python3 scripts/normalize-pbxproj.py && ./scripts/check-pbxproj.sh`.
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `21`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `25`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 

@@ -15254,8 +15254,10 @@ struct SidebarWorkspaceSnapshotBuilder {
         // SUPERMUX:begin sidebar-flatrow-activity
         /// Supermux agent-activity state, rendered as a status indicator next to
         /// the title. Part of the synthesized `Equatable` so the row re-renders
-        /// when activity changes.
-        let supermuxActivity: SupermuxWorkspaceActivity
+        /// when activity changes. A defaulted `var` (not a `let`) so it stays in
+        /// the synthesized memberwise initializer while letting non-production
+        /// construction sites (e.g. snapshot unit tests) omit this field.
+        var supermuxActivity: SupermuxWorkspaceActivity = .idle
         // SUPERMUX:end sidebar-flatrow-activity
     }
 }
