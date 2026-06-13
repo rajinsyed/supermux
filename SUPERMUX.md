@@ -1,0 +1,144 @@
+# Supermux
+
+Supermux is a fork of [cmux](https://github.com/manaflow-ai/cmux) that adds the best parts of
+superset/piggycode on top of cmux's experience: **sticky Projects**, first-class **worktree
+creation**, a **Changes (git) panel**, **run actions**, and **terminal presets**.
+
+**If you are an AI agent working in this repo: read this file completely before changing
+anything.** It is the contract that keeps the fork mergeable with upstream cmux.
+
+## What supermux adds (product goals)
+
+1. **Projects (core feature).** A project is a *sticky* registered repo/folder — it stays in the
+   sidebar forever, even when no workspace for it is open (like piggycode workspaces). From a
+   project row you can:
+   - open the project **locally** (a workspace at the repo root), or
+   - **create a git worktree** (quick: name a branch, get an isolated checkout + workspace).
+   Projects have icons and colors. Worktrees created from a project are listed under it and can
+   be cleaned up from the UI.
+2. **Changes panel.** A right-sidebar git panel for the active workspace: changed files, diffs,
+   stage/unstage/discard, commit, push/pull — quick git actions without leaving the keyboard.
+3. **Run actions (⌘G).** Per-project start/stop dev-server commands with running-state display.
+4. **Terminal presets.** Named terminal setups (command + cwd) launchable per project.
+5. **Custom app actions** per project (open editor, open URL, arbitrary commands).
+
+Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
+diff viewer, per-workspace git branch/dirty tracking), supermux **extends** it rather than
+building a parallel system.
+
+## Fork management — THE RULES
+
+The single most important constraint: **upstream merges must stay cheap.** The user regularly
+pulls cmux upstream and hates conflicts. Every line of supermux code is written to minimize the
+conflict surface:
+
+1. **New code lives in new files.** Supermux features are implemented in:
+   - `Packages/SupermuxKit/` — domain models, services, persistence (Swift Package).
+   - `Sources/Supermux/` — app-target UI + glue that needs app types (new files only).
+   New files never conflict on merge.
+2. **Upstream files are touched only at registered touchpoints.** When wiring into an upstream
+   file is unavoidable (composition root, sidebar mount, menu/shortcut registration), the edit
+   must be:
+   - **as small as possible** (ideally 1–3 lines calling out to supermux code),
+   - **fenced** with `// SUPERMUX:begin <id>` … `// SUPERMUX:end <id>` comments,
+   - **registered** in [`SUPERMUX-TOUCHPOINTS.md`](SUPERMUX-TOUCHPOINTS.md) with the file, the
+     fence id, what it does, and how to re-apply it by hand.
+   If a merge conflict destroys a touchpoint, it can be re-applied mechanically from that file.
+3. **Prefer extensions over edits.** Swift extensions in *new* files (`Foo+Supermux.swift`) can
+   add behavior to upstream types without touching their files. Use this wherever possible.
+4. **Never refactor upstream code** for style, naming, or cleanliness. Even good refactors
+   create merge debt. If upstream code blocks a feature, write the smallest fenced hook and put
+   the logic in supermux files.
+5. **`git rerere` is enabled** in this repo (`rerere.enabled=true`, `rerere.autoupdate=true`) so
+   resolved conflicts are remembered and auto-replayed on future merges.
+
+## Upstream merge playbook
+
+When the user says "pull from upstream" / "merge cmux updates", do this:
+
+```bash
+# 0. Clean tree required
+git status --porcelain          # must be empty; stash/commit first otherwise
+
+# 1. Fetch and inspect what's coming
+git fetch upstream
+git log --oneline HEAD..upstream/main | head -50   # eyeball the incoming changes
+git diff --stat HEAD...upstream/main -- $(awk '/^\| `/{gsub(/`/,"",$2); print $2}' SUPERMUX-TOUCHPOINTS.md) 
+#    ^ shows whether upstream touched any of our touchpoint files — those need attention
+
+# 2. Merge (NOT rebase — merge keeps our history stable and rerere effective)
+git merge upstream/main
+
+# 3. If conflicts:
+#    - For files NOT in SUPERMUX-TOUCHPOINTS.md: take upstream's side unless the conflict is in
+#      a Sources/Supermux/ or Packages/SupermuxKit/ file (ours).
+#    - For touchpoint files: take upstream's version of the surrounding code, then re-apply the
+#      fenced SUPERMUX block per SUPERMUX-TOUCHPOINTS.md instructions.
+#    - grep -rn "SUPERMUX:begin" Sources/ Packages/ cmux.xcodeproj/ — verify every registered
+#      fence still exists after resolution.
+
+# 4. Verify integrity
+./scripts/supermux-check-touchpoints.sh    # all fences present + manifest in sync
+
+# 5. Submodules may have moved
+git submodule update --init --recursive
+./scripts/ensure-ghosttykit.sh
+
+# 6. Build + test
+./scripts/reload.sh --tag upstream-merge
+# run the supermux unit tests too (see Building below)
+
+# 7. Commit the merge, summarize for the user what came in and what needed manual resolution.
+```
+
+Conflict heuristics:
+- `project.pbxproj` conflicts: keep upstream's changes AND our package/file references. Our
+  pbxproj additions are registered as touchpoints. Re-run `scripts/normalize-pbxproj.py` and
+  `scripts/check-pbxproj.sh` after resolving.
+- `Resources/Localizable.xcstrings` conflicts: it's JSON; union both sides' keys (ours all start
+  with `supermux.`).
+- If upstream added a feature that overlaps a supermux feature (e.g. they build their own
+  projects concept), STOP and present options to the user instead of auto-resolving.
+
+## Repo layout (supermux-owned)
+
+| Path | Purpose |
+|------|---------|
+| `SUPERMUX.md` | This file — fork context, rules, merge playbook |
+| `SUPERMUX-TOUCHPOINTS.md` | Registry of every modified upstream file |
+| `Packages/SupermuxKit/` | Supermux domain package (models, services, persistence) |
+| `Sources/Supermux/` | App-target UI and glue code (new files only) |
+| `scripts/supermux-check-touchpoints.sh` | CI/manual check that fences and manifest agree |
+| `cmuxTests/Supermux*` | Unit tests for supermux code |
+
+## Building
+
+Same as cmux (see `AGENTS.md`): `./scripts/setup.sh` once, then
+
+> **Toolchain note:** the app build's "Ghostty CLI helper" script phase requires **zig 0.15.2
+> exactly** (Homebrew's newer zig will not be used). On this machine zig 0.15.2 is installed at
+> `/usr/local/bin/zig` (checksum-verified from ziglang.org), which the helper script probes
+> after `/opt/homebrew/bin/zig`. If a build fails with "zig 0.15.2 is required", re-install it
+> there or run `ZIG_REQUIRED=0.15.2 ./scripts/install-zig-ci.sh`. Also note: prebuilt
+> GhosttyKit is fetched by `./scripts/ensure-ghosttykit.sh` (no zig needed for that).
+
+```bash
+./scripts/reload.sh --tag <your-tag>            # build Debug app
+./scripts/reload.sh --tag <your-tag> --launch   # build + launch
+```
+
+Constraints inherited from upstream that supermux code MUST follow:
+- Swift files < 500 lines (`scripts/swift_file_length_budget.py`, CI-enforced).
+- All user-facing strings localized via `String(localized:)` with keys in
+  `Resources/Localizable.xcstrings` (supermux keys are prefixed `supermux.`).
+- New code follows `skills/cmux-architecture/SKILL.md`: Swift 6 concurrency (`actor`,
+  `@Observable`, `async/await`), no singletons, constructor injection, one major type per file,
+  packages form a DAG.
+- Never run bare `xcodebuild` to launch; always tagged `reload.sh` builds.
+
+## Branch/remote model
+
+- `upstream` remote → `manaflow-ai/cmux`, branch `main`.
+- Local `main` → supermux trunk (cmux main + supermux commits).
+- No `origin` is configured yet; if the user wants a GitHub repo, add it as `origin` and keep
+  `upstream` pointing at cmux.

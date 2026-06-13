@@ -1,0 +1,169 @@
+import Foundation
+import Testing
+@testable import SupermuxKit
+
+/// Disk-level tests for `SupermuxProjectStore`: missing files, round-trips,
+/// shared-file updates, corrupt-file quarantine, and directory creation.
+///
+/// Every test works in its own unique temporary directory and removes it
+/// when done, so tests are order-independent and leave no residue.
+struct SupermuxProjectStoreTests {
+    // MARK: - Helpers
+
+    /// A fresh, unique temp-directory URL. The directory is NOT created;
+    /// tests that need it on disk create it explicitly.
+    private func freshTempDirectory() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    }
+
+    /// Whether two dates agree within `tolerance` seconds.
+    ///
+    /// The store encodes dates as ISO8601, which truncates subseconds, so
+    /// exact equality cannot be expected after a round-trip.
+    private func isClose(_ lhs: Date, _ rhs: Date, tolerance: TimeInterval = 1) -> Bool {
+        abs(lhs.timeIntervalSince1970 - rhs.timeIntervalSince1970) <= tolerance
+    }
+
+    /// A project with every field populated, for full round-trip checks.
+    private func fullyPopulatedProject() -> SupermuxProject {
+        SupermuxProject(
+            id: UUID(),
+            name: "Alpha",
+            rootPath: "/tmp/alpha",
+            colorHex: "#3b82f6",
+            iconSymbol: "folder",
+            defaultBranch: "main",
+            worktreesDirName: ".trees",
+            runCommands: ["npm run dev", "npm run worker"],
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000.75),
+            lastOpenedAt: Date(timeIntervalSince1970: 1_700_100_000.25)
+        )
+    }
+
+    // MARK: - Tests
+
+    @Test func loadReturnsEmptyWhenFileIsMissing() async throws {
+        let tempDir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let fileURL = tempDir.appendingPathComponent("projects.json")
+
+        let store = SupermuxProjectStore(fileURL: fileURL)
+        let loaded = await store.load()
+
+        #expect(loaded == .empty)
+        #expect(loaded.projects.isEmpty)
+        #expect(loaded.version == SupermuxProjectsFile.currentVersion)
+        #expect(loaded.isSectionCollapsed == false)
+    }
+
+    @Test func saveThenLoadRoundTripsAllProjectFields() async throws {
+        let tempDir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let fileURL = tempDir.appendingPathComponent("projects.json")
+
+        let projectA = fullyPopulatedProject()
+        let projectB = SupermuxProject(name: "Beta", rootPath: "/tmp/beta")
+        let file = SupermuxProjectsFile(
+            version: SupermuxProjectsFile.currentVersion,
+            projects: [projectA, projectB],
+            isSectionCollapsed: true
+        )
+
+        let writer = SupermuxProjectStore(fileURL: fileURL)
+        try await writer.save(file)
+
+        // A fresh store instance forces a real read from disk (no cache).
+        let reader = SupermuxProjectStore(fileURL: fileURL)
+        let loaded = await reader.load()
+
+        #expect(loaded.version == SupermuxProjectsFile.currentVersion)
+        #expect(loaded.isSectionCollapsed == true)
+        try #require(loaded.projects.count == 2)
+
+        let loadedA = loaded.projects[0]
+        #expect(loadedA.id == projectA.id)
+        #expect(loadedA.name == projectA.name)
+        #expect(loadedA.rootPath == projectA.rootPath)
+        #expect(loadedA.colorHex == projectA.colorHex)
+        #expect(loadedA.iconSymbol == projectA.iconSymbol)
+        #expect(loadedA.defaultBranch == projectA.defaultBranch)
+        #expect(loadedA.worktreesDirName == projectA.worktreesDirName)
+        #expect(loadedA.runCommands == projectA.runCommands)
+        #expect(isClose(loadedA.createdAt, projectA.createdAt))
+        let loadedALastOpened = try #require(loadedA.lastOpenedAt)
+        let expectedALastOpened = try #require(projectA.lastOpenedAt)
+        #expect(isClose(loadedALastOpened, expectedALastOpened))
+
+        let loadedB = loaded.projects[1]
+        #expect(loadedB.id == projectB.id)
+        #expect(loadedB.name == projectB.name)
+        #expect(loadedB.rootPath == projectB.rootPath)
+        #expect(loadedB.colorHex == nil)
+        #expect(loadedB.iconSymbol == nil)
+        #expect(loadedB.defaultBranch == nil)
+        #expect(loadedB.worktreesDirName == ".worktrees")
+        #expect(loadedB.runCommands.isEmpty)
+        #expect(isClose(loadedB.createdAt, projectB.createdAt))
+        #expect(loadedB.lastOpenedAt == nil)
+    }
+
+    @Test func updateMutationIsVisibleToASecondStoreInstance() async throws {
+        let tempDir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let fileURL = tempDir.appendingPathComponent("projects.json")
+
+        let project = fullyPopulatedProject()
+        let first = SupermuxProjectStore(fileURL: fileURL)
+        try await first.update { file in
+            file.projects.append(project)
+            file.isSectionCollapsed = true
+        }
+
+        let second = SupermuxProjectStore(fileURL: fileURL)
+        let loaded = await second.load()
+
+        #expect(loaded.version == SupermuxProjectsFile.currentVersion)
+        #expect(loaded.isSectionCollapsed == true)
+        try #require(loaded.projects.count == 1)
+        #expect(loaded.projects[0].id == project.id)
+        #expect(loaded.projects[0].name == project.name)
+        #expect(loaded.projects[0].rootPath == project.rootPath)
+    }
+
+    @Test func corruptFileLoadsEmptyAndIsPreservedAsCorruptSibling() async throws {
+        let tempDir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let fileURL = tempDir.appendingPathComponent("projects.json")
+
+        let corruptBytes = Data("{ this is not valid json !!".utf8)
+        try corruptBytes.write(to: fileURL)
+
+        let store = SupermuxProjectStore(fileURL: fileURL)
+        let loaded = await store.load()
+
+        #expect(loaded == .empty)
+        let backupURL = fileURL.appendingPathExtension("corrupt")
+        #expect(FileManager.default.fileExists(atPath: backupURL.path))
+        let preserved = try Data(contentsOf: backupURL)
+        #expect(preserved == corruptBytes)
+    }
+
+    @Test func saveCreatesIntermediateDirectories() async throws {
+        let tempDir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let fileURL = tempDir
+            .appendingPathComponent("nested")
+            .appendingPathComponent("deeper")
+            .appendingPathComponent("projects.json")
+        #expect(!FileManager.default.fileExists(atPath: tempDir.path))
+
+        let store = SupermuxProjectStore(fileURL: fileURL)
+        try await store.save(.empty)
+
+        #expect(FileManager.default.fileExists(atPath: fileURL.path))
+        let reader = SupermuxProjectStore(fileURL: fileURL)
+        let loaded = await reader.load()
+        #expect(loaded == .empty)
+    }
+}

@@ -629,6 +629,8 @@
 		F6355600A1B2C3D4E5F60718 /* SSHStartupSignalLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6355601A1B2C3D4E5F60718 /* SSHStartupSignalLifecycleTests.swift */; };
 		F20F85FC5900550685FA33AD /* StackAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A8BD195031FC4B82B4354297 /* StackAuth */; };
 		D35B71010000000000000001 /* StartupBreadcrumbLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D35B71010000000000000002 /* StartupBreadcrumbLog.swift */; };
+		50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B1 /* SupermuxAppGlue.swift */; };
+		50BE000100000000000000A3 /* SupermuxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 50BE000100000000000000A2 /* SupermuxKit */; };
 		A5001303 /* SurfaceSearchOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001301 /* SurfaceSearchOverlay.swift */; };
 		C9A5720BC9A5720BC9A5720B /* TabItemView+WorkspaceGroups.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A5720CC9A5720CC9A5720C /* TabItemView+WorkspaceGroups.swift */; };
 		C3677003000000000000001 /* TabManager+CompatibilityTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3677003000000000000002 /* TabManager+CompatibilityTypes.swift */; };
@@ -1431,6 +1433,7 @@
 		E3309A0E /* SplitEqualizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitEqualizer.swift; sourceTree = "<group>"; };
 		F6355601A1B2C3D4E5F60718 /* SSHStartupSignalLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHStartupSignalLifecycleTests.swift; sourceTree = "<group>"; };
 		D35B71010000000000000002 /* StartupBreadcrumbLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/StartupBreadcrumbLog.swift; sourceTree = "<group>"; };
+		50BE000100000000000000B1 /* SupermuxAppGlue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxAppGlue.swift; sourceTree = "<group>"; };
 		A5001301 /* SurfaceSearchOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Find/SurfaceSearchOverlay.swift; sourceTree = "<group>"; };
 		C9A5720CC9A5720CC9A5720C /* TabItemView+WorkspaceGroups.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TabItemView+WorkspaceGroups.swift"; sourceTree = "<group>"; };
 		C3677003000000000000002 /* TabManager+CompatibilityTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TabManager+CompatibilityTypes.swift"; sourceTree = "<group>"; };
@@ -1630,6 +1633,7 @@
 				A5001250 /* Sentry in Frameworks */,
 				A5001230 /* Sparkle in Frameworks */,
 				F20F85FC5900550685FA33AD /* StackAuth in Frameworks */,
+				50BE000100000000000000A3 /* SupermuxKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1697,6 +1701,15 @@
 				A5001622 /* cmux.sdef */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		50BE000100000000000000B3 /* Supermux */ = {
+			isa = PBXGroup;
+			children = (
+				50BE000100000000000000B1 /* SupermuxAppGlue.swift */,
+			);
+			name = Supermux;
+			path = Supermux;
 			sourceTree = "<group>";
 		};
 		105D8421DF4E2E09D255D785 /* Auth */ = {
@@ -1810,6 +1823,7 @@
 		A5001041 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				50BE000100000000000000B3 /* Supermux */,
 				3023B1003023B1003023B100 /* ConfigSource.swift */,
 				3023B1013023B1013023B101 /* ConfigSettingsView.swift */,
 				A11EAB000000000000000001 /* AppearanceSettings.swift */,
@@ -2545,6 +2559,7 @@
 				F53000A2A1B2C3D4E5F60718 /* CMUXAgentVault */,
 				A5B00002A1B2C3D4E5F60718 /* CMUXAgentLaunch */,
 				A5354305A5354305A5354305 /* CmuxSocketControl */,
+				50BE000100000000000000A2 /* SupermuxKit */,
 				C52830000000000000000004 /* CmuxTerminalCopyMode */,
 				C5A1FED000000000000000C3 /* CmuxSwiftRender */,
 				C5A1FED100000000000000D3 /* CmuxSwiftRenderUI */,
@@ -2709,6 +2724,7 @@
 				A5B00001A1B2C3D4E5F60718 /* XCLocalSwiftPackageReference "CMUXAgentLaunch" */,
 				A500D012A1B2C3D4E5F60718 /* XCLocalSwiftPackageReference "CMUXDebugLog" */,
 				A5354304A5354304A5354304 /* XCLocalSwiftPackageReference "CmuxSocketControl" */,
+				50BE000100000000000000A1 /* XCLocalSwiftPackageReference "SupermuxKit" */,
 				C52830000000000000000003 /* XCLocalSwiftPackageReference "CmuxTerminalCopyMode" */,
 				C5A1FED000000000000000C4 /* XCLocalSwiftPackageReference "CmuxSwiftRender" */,
 				C5A1FED100000000000000D4 /* XCLocalSwiftPackageReference "CmuxSwiftRenderUI" */,
@@ -3230,6 +3246,7 @@
 				A5001226 /* SocketControlMode+Display.swift in Sources */,
 				E3309A0D /* SplitEqualizer.swift in Sources */,
 				D35B71010000000000000001 /* StartupBreadcrumbLog.swift in Sources */,
+				50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */,
 				A5001303 /* SurfaceSearchOverlay.swift in Sources */,
 				C9A5720BC9A5720BC9A5720B /* TabItemView+WorkspaceGroups.swift in Sources */,
 				C3677003000000000000001 /* TabManager+CompatibilityTypes.swift in Sources */,
@@ -4065,6 +4082,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/CmuxSocketControl;
 		};
+		50BE000100000000000000A1 /* XCLocalSwiftPackageReference "SupermuxKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SupermuxKit;
+		};
 		A5B00001A1B2C3D4E5F60718 /* XCLocalSwiftPackageReference "CMUXAgentLaunch" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/CMUXAgentLaunch;
@@ -4251,6 +4272,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A5354304A5354304A5354304 /* XCLocalSwiftPackageReference "CmuxSocketControl" */;
 			productName = CmuxSocketControl;
+		};
+		50BE000100000000000000A2 /* SupermuxKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 50BE000100000000000000A1 /* XCLocalSwiftPackageReference "SupermuxKit" */;
+			productName = SupermuxKit;
 		};
 		C52830000000000000000004 /* CmuxTerminalCopyMode */ = {
 			isa = XCSwiftPackageProductDependency;

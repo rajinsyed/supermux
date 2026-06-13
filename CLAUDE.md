@@ -248,3 +248,12 @@ Core skill map:
 - `cmux-shared-behavior`: shared action paths for multi-entrypoint behavior and optimistic updates.
 - `cmux-ghostty`: Ghostty submodule and GhosttyKit workflow.
 - `cmux-release`: release, version bump, changelog, pretag guard, and release asset workflow.
+
+<!-- SUPERMUX:begin claude-md-pointer -->
+## Supermux fork
+
+This checkout is **supermux**, a fork of cmux. Before making any change, read `SUPERMUX.md`
+(fork rules, feature scope, upstream-merge playbook) and `SUPERMUX-TOUCHPOINTS.md` (registry of
+modified upstream files). Supermux code lives in `Packages/SupermuxKit/` and `Sources/Supermux/`;
+keep edits to upstream files inside `SUPERMUX:begin/end` fences and registered in the manifest.
+<!-- SUPERMUX:end claude-md-pointer -->

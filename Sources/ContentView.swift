@@ -12502,6 +12502,9 @@ struct VerticalTabsSidebar: View {
         emptyAreaHeight: CGFloat
     ) -> some View {
         VStack(spacing: 0) {
+            // SUPERMUX:begin sidebar-projects-section
+            SupermuxProjectsMount()
+            // SUPERMUX:end sidebar-projects-section
             workspaceRows(renderContext: renderContext)
 
             SidebarEmptyArea(
