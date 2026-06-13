@@ -6,7 +6,12 @@ import SupermuxKit
 /// Integration tests for `SupermuxGitWorktreeService` against real temporary
 /// git repositories. Every test builds its own fixture repository so the
 /// suite stays parallel-safe, and removes it on exit.
-@Suite struct SupermuxGitWorktreeServiceTests {
+// Serialized: these tests shell out to real `git`. Run alongside the other
+// git-integration suites they spawned enough concurrent subprocesses to flake
+// (a fixture's `git init` intermittently read back as "not a git repository").
+// Serializing keeps peak git-subprocess concurrency low without slowing CI
+// meaningfully.
+@Suite(.serialized) struct SupermuxGitWorktreeServiceTests {
     private let service = SupermuxGitWorktreeService()
 
     // MARK: - Fixture helpers
@@ -130,6 +135,30 @@ import SupermuxKit
             in: fixture.root
         )
         #expect(autoSetupRemote.trimmingCharacters(in: .whitespacesAndNewlines) == "true")
+    }
+
+    @Test func createWorktreeGeneratesFriendlyNameWhenBranchBlank() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { cleanUp(fixture.root) }
+
+        // A blank branch field must not error — it generates a friendly,
+        // git-safe two-word branch and a real worktree on disk.
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "   "
+        )
+
+        let branch = try #require(worktree.branch)
+        let parts = branch.split(separator: "-", omittingEmptySubsequences: false)
+        #expect(parts.count == 2)
+        #expect(parts.allSatisfy { !$0.isEmpty })
+        #expect(SupermuxBranchName().sanitize(branch) == branch)
+
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: worktree.path, isDirectory: &isDirectory)
+        #expect(exists)
+        #expect(isDirectory.boolValue)
+        #expect(worktree.isSupermuxManaged)
     }
 
     @Test func createWorktreeDeduplicatesBranchNames() async throws {

@@ -19,6 +19,17 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     public let isSelected: Bool
     /// The workspace's git branch, when known, for a subtitle.
     public let branch: String?
+    /// The project this workspace nests under, or `nil` to keep it standalone
+    /// in the flat list. Resolved by the host from explicit project-association
+    /// (opened from a project) or worktree directory — never from a bare
+    /// directory-containment guess, so a workspace that merely inherited a
+    /// project's directory stays standalone.
+    public let projectId: UUID?
+    /// The workspace's agent activity, for the status indicator.
+    public let activity: SupermuxWorkspaceActivity
+    /// Whether this workspace's project run command is currently running,
+    /// for the piggycode-style run indicator on the row.
+    public let isRunning: Bool
 
     /// Creates a snapshot.
     /// - Parameters:
@@ -27,11 +38,26 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     ///   - directory: Absolute working directory.
     ///   - isSelected: Whether it is the active workspace.
     ///   - branch: Current git branch, if known.
-    public init(id: UUID, title: String, directory: String, isSelected: Bool, branch: String? = nil) {
+    ///   - projectId: Owning project for nesting, or `nil` if standalone.
+    ///   - activity: Agent activity state for the indicator.
+    ///   - isRunning: Whether the project run command is active for this workspace.
+    public init(
+        id: UUID,
+        title: String,
+        directory: String,
+        isSelected: Bool,
+        branch: String? = nil,
+        projectId: UUID? = nil,
+        activity: SupermuxWorkspaceActivity = .idle,
+        isRunning: Bool = false
+    ) {
         self.id = id
         self.title = title
         self.directory = directory
         self.isSelected = isSelected
         self.branch = branch
+        self.projectId = projectId
+        self.activity = activity
+        self.isRunning = isRunning
     }
 }

@@ -93,4 +93,39 @@ struct SupermuxBranchNameTests {
         #expect(naming.directoryComponent(for: "feature/foo") == "feature-foo")
         #expect(naming.directoryComponent(for: "plain") == "plain")
     }
+
+    // MARK: - randomName
+
+    @Test func randomNameProducesSanitizedTwoWordName() {
+        for _ in 0..<300 {
+            let name = naming.randomName()
+            // Exactly two non-empty words joined by a single dash.
+            let parts = name.split(separator: "-", omittingEmptySubsequences: false)
+            #expect(parts.count == 2)
+            #expect(parts.allSatisfy { !$0.isEmpty })
+            // The generated name is already git-safe: sanitizing is a no-op.
+            #expect(naming.sanitize(name) == name)
+        }
+    }
+
+    @Test func randomNameIsDeterministicForSeededGenerator() {
+        var a = SeededGenerator(seed: 0x5EED_CAFE)
+        var b = SeededGenerator(seed: 0x5EED_CAFE)
+        #expect(naming.randomName(using: &a) == naming.randomName(using: &b))
+    }
+}
+
+/// A tiny deterministic `RandomNumberGenerator` (xorshift64) so the seeded
+/// `randomName(using:)` overload can be exercised reproducibly in tests.
+private struct SeededGenerator: RandomNumberGenerator {
+    private var state: UInt64
+
+    init(seed: UInt64) { state = seed == 0 ? 0x9E37_79B9_7F4A_7C15 : seed }
+
+    mutating func next() -> UInt64 {
+        state ^= state << 13
+        state ^= state >> 7
+        state ^= state << 17
+        return state
+    }
 }

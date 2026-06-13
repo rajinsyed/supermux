@@ -15,6 +15,9 @@ import CmuxUpdater
 import CmuxUpdaterUI
 import ImageIO
 import Observation
+// SUPERMUX:begin sidebar-flatrow-activity
+import SupermuxKit
+// SUPERMUX:end sidebar-flatrow-activity
 import SwiftUI
 import ObjectiveC
 import UniformTypeIdentifiers
@@ -15248,7 +15251,12 @@ struct SidebarWorkspaceSnapshotBuilder {
         let branchLinesContainBranch: Bool
         let pullRequestRows: [PullRequestDisplay]
         let listeningPorts: [Int]
-
+        // SUPERMUX:begin sidebar-flatrow-activity
+        /// Supermux agent-activity state, rendered as a status indicator next to
+        /// the title. Part of the synthesized `Equatable` so the row re-renders
+        /// when activity changes.
+        let supermuxActivity: SupermuxWorkspaceActivity
+        // SUPERMUX:end sidebar-flatrow-activity
     }
 }
 
@@ -15702,6 +15710,16 @@ struct TabItemView: View, Equatable {
                         .foregroundColor(activeSecondaryColor(0.8))
                         .safeHelp(protectedWorkspaceTooltip)
                 }
+
+                // SUPERMUX:begin sidebar-flatrow-activity
+                if workspaceSnapshot.supermuxActivity.isVisible {
+                    SupermuxAgentActivityIndicator(
+                        activity: workspaceSnapshot.supermuxActivity,
+                        size: scaledFontSize(7)
+                    )
+                    .frame(width: scaledFontSize(13), height: scaledFontSize(13))
+                }
+                // SUPERMUX:end sidebar-flatrow-activity
 
                 Text(workspaceSnapshot.title)
                     .font(.system(size: scaledFontSize(12.5), weight: titleFontWeight))
@@ -16750,7 +16768,10 @@ struct TabItemView: View, Equatable {
             branchDirectoryLines: branchDirectoryLines,
             branchLinesContainBranch: branchLinesContainBranch,
             pullRequestRows: pullRequestRows,
-            listeningPorts: detailVisibility.showsPorts ? tab.listeningPorts : []
+            listeningPorts: detailVisibility.showsPorts ? tab.listeningPorts : [],
+            // SUPERMUX:begin sidebar-flatrow-activity
+            supermuxActivity: SupermuxWorkspaceActivityResolver.activity(for: tab)
+            // SUPERMUX:end sidebar-flatrow-activity
         )
     }
 

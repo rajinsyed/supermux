@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the locally-built, Developer ID-signed Supermux app
+  (scripts/supermux-release.sh).
+
+  ONLY hardened-runtime exceptions that a Developer ID signature can carry
+  WITHOUT an embedded provisioning profile. The real cmux release authorizes
+  keychain-access-groups / device.* via a provisioning profile; a profile-less
+  Developer ID build that declares those gets SIGKILLed by AMFI at launch
+  ("Launchd job spawn failed", error 163). Camera/mic still work via normal TCC
+  prompts (the app is not sandboxed), and the keychain works with the app's
+  default access group. allow-jit / unsigned-executable-memory /
+  disable-library-validation are what the embedded WebKit browser needs.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>

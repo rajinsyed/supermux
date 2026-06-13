@@ -6,7 +6,11 @@ import SupermuxKit
 /// Integration tests for `SupermuxGitChangesService` against real temporary
 /// git repositories. Every test builds its own fixture repository so the
 /// suite stays parallel-safe, and removes it on exit.
-@Suite struct SupermuxGitChangesServiceTests {
+///
+/// Serialized: shells out to real `git`. Run fully parallel alongside the other
+/// git-integration suites, peak subprocess concurrency was high enough to flake
+/// (commits and `rev-parse` intermittently failed); serializing keeps it low.
+@Suite(.serialized) struct SupermuxGitChangesServiceTests {
     private let service = SupermuxGitChangesService()
 
     // MARK: - Fixture helpers

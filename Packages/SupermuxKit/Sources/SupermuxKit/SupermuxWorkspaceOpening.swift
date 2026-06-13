@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// What supermux asks the host app to open when the user activates a project
 /// or worktree.
@@ -15,6 +15,12 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     /// existing one) so the command runs in a clean terminal — this is how
     /// custom project actions launch.
     public var initialCommand: String?
+    /// The project this open originates from, when launched from a project row.
+    ///
+    /// The host records it so the resulting workspace nests under that project
+    /// regardless of its directory. `nil` for opens not tied to a project, so
+    /// those stay standalone in the flat list.
+    public var projectId: UUID?
 
     /// Creates a request.
     /// - Parameters:
@@ -22,11 +28,19 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     ///   - directory: Absolute working directory.
     ///   - colorHex: Optional accent color.
     ///   - initialCommand: Optional command to run in the first terminal.
-    public init(title: String, directory: String, colorHex: String? = nil, initialCommand: String? = nil) {
+    ///   - projectId: Owning project to associate the opened workspace with.
+    public init(
+        title: String,
+        directory: String,
+        colorHex: String? = nil,
+        initialCommand: String? = nil,
+        projectId: UUID? = nil
+    ) {
         self.title = title
         self.directory = directory
         self.colorHex = colorHex
         self.initialCommand = initialCommand
+        self.projectId = projectId
     }
 }
 

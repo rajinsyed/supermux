@@ -145,9 +145,10 @@ public actor SupermuxGitWorktreeService {
         guard await isGitRepository(at: project.rootPath) else {
             throw SupermuxGitError.notAGitRepository(path: project.rootPath)
         }
-        guard let sanitized = naming.sanitize(requestedBranch) else {
-            throw SupermuxGitError.invalidBranchName(input: requestedBranch)
-        }
+        // A blank (or all-invalid) branch field generates a friendly random
+        // name instead of erroring, so worktree creation is never blocked on
+        // naming — matching piggycode's "leave it empty" affordance.
+        let sanitized = naming.sanitize(requestedBranch) ?? naming.randomName()
         let branch = naming.deduplicate(sanitized, existing: await localBranches(repoRoot: project.rootPath))
 
         let rootPath = Self.normalizedPath(project.rootPath)

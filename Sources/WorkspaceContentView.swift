@@ -356,8 +356,20 @@ struct WorkspaceContentView: View {
             )
         }
 
-        bonsplitView
-            .ignoresSafeArea(.container, edges: (isMinimalMode && !isFullScreen) ? .top : [])
+        // SUPERMUX:begin presets-bar
+        // Render the piggycode-style terminal presets bar above the splits in
+        // normal mode. Minimal mode stays chrome-free and keeps the original
+        // top-safe-area-ignoring layout untouched.
+        if isMinimalMode {
+            bonsplitView
+                .ignoresSafeArea(.container, edges: isFullScreen ? [] : .top)
+        } else {
+            VStack(spacing: 0) {
+                SupermuxPresetsBarMount(workspace: workspace)
+                bonsplitView
+            }
+        }
+        // SUPERMUX:end presets-bar
     }
 
     private func syncBonsplitNotificationBadges() {

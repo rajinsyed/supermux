@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CmuxProcess
 import SupermuxKit
 import SwiftUI
@@ -22,32 +23,49 @@ enum SupermuxComposition {
 
     /// App-wide run-action coordinator behind the ⌘G shortcut.
     static let runCoordinator = SupermuxRunCoordinator(projectsModel: projectsModel)
+
+    /// Tracks which workspaces were explicitly opened from a project, so only
+    /// those (plus worktrees, matched by directory) nest under a project —
+    /// workspaces created via cmux's normal flow stay standalone even when
+    /// their directory happens to sit inside a registered project. Backed by the
+    /// projects model so the link survives a restart by directory (a project's
+    /// main workspace sits at the root and has no worktree-dir signal).
+    static let workspaceAssociations = SupermuxWorkspaceAssociationStore(persistence: projectsModel)
 }
 
 /// Filters which workspaces cmux's flat sidebar list should render.
 ///
 /// Workspaces that belong to a registered project are shown nested under that
 /// project in the Projects section (piggycode-style), so they are hidden from
-/// the flat list to avoid duplication. This is purely a display filter —
-/// `TabManager.tabs` is untouched, so selection, ⌘-number navigation, and
-/// workspace lifecycle still operate on the full set. Workspaces that already
-/// belong to a cmux workspace group, or any workspace when no projects are
-/// registered, are never filtered.
+/// the flat list to avoid duplication. A workspace belongs to a project only
+/// when it was explicitly opened from it (``SupermuxWorkspaceAssociationStore``)
+/// or physically lives in the project's worktrees dir — never merely because
+/// its directory sits inside a project root. This is what lets the user create
+/// standalone workspaces (cmux's ⌘T/+) without them being swallowed by a
+/// project whose directory they happened to inherit.
+///
+/// This is purely a display filter — `TabManager.tabs` is untouched, so
+/// selection, ⌘-number navigation, and workspace lifecycle still operate on the
+/// full set. Workspaces that already belong to a cmux workspace group, or any
+/// workspace when no projects are registered, are never filtered.
 @MainActor
 enum SupermuxMainListFilter {
-    private static let matcher = SupermuxProjectMatcher()
-
     /// Returns the workspaces to render in cmux's flat list, with
     /// project-owned (ungrouped) workspaces removed.
     /// - Parameter tabs: All workspaces from `TabManager.tabs`.
     static func tabsForMainList(_ tabs: [Workspace]) -> [Workspace] {
         let projects = SupermuxComposition.projectsModel.projects
         guard !projects.isEmpty else { return tabs }
+        let associations = SupermuxComposition.workspaceAssociations
         return tabs.filter { workspace in
             // Leave cmux-grouped workspaces alone; only hide loose workspaces
-            // that a project owns.
+            // that a project owns (explicit association or a worktree dir).
             if workspace.groupId != nil { return true }
-            return matcher.project(for: workspace.currentDirectory, in: projects) == nil
+            return associations.projectId(
+                forWorkspace: workspace.id,
+                directory: workspace.currentDirectory,
+                in: projects
+            ) == nil
         }
     }
 }
@@ -76,6 +94,7 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
                (workspace.currentDirectory as NSString).expandingTildeInPath == directory
            }) {
             tabManager.selectWorkspace(existing)
+            associate(workspaceId: existing.id, directory: directory, with: request)
             return
         }
         let workspace = tabManager.addWorkspace(
@@ -89,6 +108,19 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         if let colorHex = request.colorHex {
             workspace.customColor = colorHex
         }
+        associate(workspaceId: workspace.id, directory: directory, with: request)
+    }
+
+    /// Records the workspace→project association for project-originated opens,
+    /// so the resulting workspace nests under that project in the sidebar — and
+    /// re-nests after a restart, since the link is persisted by `directory`.
+    private func associate(workspaceId: UUID, directory: String, with request: SupermuxOpenWorkspaceRequest) {
+        guard let projectId = request.projectId else { return }
+        SupermuxComposition.workspaceAssociations.associate(
+            workspaceId: workspaceId,
+            projectId: projectId,
+            directory: directory
+        )
     }
 }
 
@@ -98,17 +130,41 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
 struct SupermuxProjectsMount: View {
     @EnvironmentObject private var tabManager: TabManager
 
+    /// Bumped whenever an observed per-workspace sidebar field (git branch,
+    /// working directory, …) changes. `TabManager`'s `@Published` `tabs`/
+    /// `selectedTabId` invalidate this view on add/remove/select, but the nested
+    /// workspace snapshots below also read per-`Workspace` `@Published` state
+    /// (most visibly `gitBranch`, which is detected asynchronously a moment
+    /// after a workspace opens). Without observing each workspace, that late
+    /// branch update wouldn't invalidate the body until an unrelated selection
+    /// change forced a re-read — the "branch only appears after focusing another
+    /// workspace" bug. Mirrors cmux's own `extensionSidebarDebouncedObservationPublisher`.
+    @State private var workspaceObservationToken = 0
+
     var body: some View {
+        // Make the body's dependency on the observation token explicit (cmux
+        // does the same with `extensionSidebarUpdateToken`): a token bump forces
+        // the per-workspace snapshots below to be rebuilt from current state.
+        let _ = workspaceObservationToken
         // Reading tabs/selectedTabId here subscribes this small, eager section
         // to workspace add/remove/select changes (not per-keystroke output), so
         // a project's live workspaces stay nested and in sync underneath it.
+        let projects = SupermuxComposition.projectsModel.projects
+        let associations = SupermuxComposition.workspaceAssociations
         let openWorkspaces = tabManager.tabs.map { workspace in
             SupermuxOpenWorkspace(
                 id: workspace.id,
                 title: workspace.customTitle ?? workspace.title,
                 directory: workspace.currentDirectory,
                 isSelected: workspace.id == tabManager.selectedTabId,
-                branch: workspace.gitBranch?.branch
+                branch: workspace.gitBranch?.branch,
+                projectId: associations.projectId(
+                    forWorkspace: workspace.id,
+                    directory: workspace.currentDirectory,
+                    in: projects
+                ),
+                activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
+                isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id)
             )
         }
         SupermuxProjectsSectionView(
@@ -120,10 +176,49 @@ struct SupermuxProjectsMount: View {
                 tabManager?.selectWorkspace(workspace)
             },
             onCloseWorkspace: { [weak tabManager] id in
+                // Drop only the session link; the durable directory link is a
+                // project-level fact that survives until the project is removed,
+                // so a cancelled close or a sibling at the same directory still
+                // nests.
+                SupermuxComposition.workspaceAssociations.forget(workspaceId: id)
                 guard let workspace = tabManager?.tabs.first(where: { $0.id == id }) else { return }
                 _ = tabManager?.closeWorkspaceWithConfirmation(workspace)
+            },
+            onReorderWorkspace: { [weak tabManager] draggedId, targetId in
+                // Reorder the dragged workspace adjacent to the target in cmux's
+                // own tab order (the source of the nested list). Direction is
+                // taken from their current positions so dropping lands the row
+                // just below the target when dragging down, above when up.
+                guard let tabManager,
+                      let from = tabManager.tabs.firstIndex(where: { $0.id == draggedId }),
+                      let to = tabManager.tabs.firstIndex(where: { $0.id == targetId }),
+                      from != to else { return }
+                if from < to {
+                    _ = tabManager.reorderWorkspace(tabId: draggedId, after: targetId, isDragOperation: true)
+                } else {
+                    _ = tabManager.reorderWorkspace(tabId: draggedId, before: targetId, isDragOperation: true)
+                }
             }
         )
+        .onReceive(workspaceObservationPublisher(tabManager.tabs)) { _ in
+            workspaceObservationToken &+= 1
+        }
+    }
+
+    /// Merges every open workspace's cmux sidebar-observation publisher (which
+    /// already coalesces and de-duplicates `gitBranch`, `currentDirectory`, and
+    /// related fields) into one stream. Each `sidebarObservationPublisher` is a
+    /// per-`Workspace` cached `lazy var`, so the merged set only changes when the
+    /// tab set does. `.receive(on:)` defers delivery past `@Published`'s `willSet`
+    /// so the next body re-read sees the committed value.
+    private func workspaceObservationPublisher(_ tabs: [Workspace]) -> AnyPublisher<Void, Never> {
+        let publishers = tabs.map(\.sidebarObservationPublisher)
+        guard !publishers.isEmpty else {
+            return Empty<Void, Never>().eraseToAnyPublisher()
+        }
+        return Publishers.MergeMany(publishers)
+            .receive(on: RunLoop.main)
+            .eraseToAnyPublisher()
     }
 }
 
@@ -149,5 +244,42 @@ struct SupermuxChangesMount: View {
         .onChange(of: workspaceDirectory) { _, newDirectory in
             model.setDirectory(newDirectory)
         }
+    }
+}
+
+/// The terminal presets bar mounted above each workspace's terminal area (see
+/// the `presets-bar` touchpoint in `WorkspaceContentView.swift`). Bridges the
+/// workspace to the package-owned ``SupermuxPresetsBarView``: clicking a preset
+/// opens its command in a fresh terminal tab in the focused pane, and the Run
+/// button toggles this workspace's project run command (the ⌘G action).
+struct SupermuxPresetsBarMount: View {
+    @ObservedObject var workspace: Workspace
+    @ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
+
+    var body: some View {
+        // Subscribes the bar to live run-state changes (Run ↔ Stop) and shortcut
+        // rebinds; preset edits invalidate inside the bar view, not here.
+        let _ = shortcutObserver.revision
+        let runCoordinator = SupermuxComposition.runCoordinator
+        SupermuxPresetsBarView(
+            model: SupermuxComposition.projectsModel,
+            isRunning: runCoordinator.isRunning(workspaceId: workspace.id),
+            runShortcutHint: KeyboardShortcutSettings.shortcut(for: .supermuxToggleRun).displayString,
+            onLaunch: { [weak workspace] preset in
+                guard let workspace, preset.isLaunchable else { return }
+                guard let paneId = workspace.bonsplitController.focusedPaneId
+                    ?? workspace.bonsplitController.allPaneIds.first else { return }
+                _ = workspace.newTerminalSurface(
+                    inPane: paneId,
+                    focus: true,
+                    workingDirectory: workspace.currentDirectory,
+                    initialCommand: preset.command
+                )
+            },
+            onToggleRun: { [weak workspace] in
+                guard let workspace else { return }
+                _ = SupermuxComposition.runCoordinator.toggleRun(workspace: workspace)
+            }
+        )
     }
 }

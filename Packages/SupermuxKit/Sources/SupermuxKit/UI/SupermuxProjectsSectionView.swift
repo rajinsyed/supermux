@@ -1,5 +1,6 @@
 public import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// The sticky "Projects" section rendered at the top of the cmux sidebar.
 ///
@@ -13,14 +14,21 @@ public struct SupermuxProjectsSectionView: View {
     private let openWorkspaces: [SupermuxOpenWorkspace]
     private let onSelectWorkspace: (UUID) -> Void
     private let onCloseWorkspace: (UUID) -> Void
+    private let onReorderWorkspace: (UUID, UUID) -> Void
 
     @State private var newWorktreeProject: SupermuxProject?
     @State private var editorProject: SupermuxProject?
+    /// In-flight drag-reorder marker (project or nested workspace). A reference
+    /// `@Observable`, not value `@State`: writing the dragged id at drag start
+    /// must invalidate only the dragged row's dim, never this section's body /
+    /// `ForEach` — which would recreate the row mid-gesture and cancel the drag.
+    @State private var dragState = SupermuxSidebarDragState()
+    /// Clears `dragState` on mouse-up / Escape so an aborted drag (released off
+    /// any row) doesn't leave a row stuck dimmed. Mirrors cmux's failsafe.
+    @State private var dragFailsafe = SupermuxSidebarDragFailsafe()
     /// Resolves and caches each project's auto-detected logo. Owned here, above
     /// the project list, so rows receive only an immutable `NSImage?` snapshot.
     @State private var iconStore = SupermuxProjectIconStore()
-
-    private let matcher = SupermuxProjectMatcher()
 
     /// Creates the section.
     /// - Parameters:
@@ -30,18 +38,22 @@ public struct SupermuxProjectsSectionView: View {
     ///     nested under the project each belongs to. Defaults to empty.
     ///   - onSelectWorkspace: Focuses a nested workspace by id.
     ///   - onCloseWorkspace: Closes a nested workspace by id.
+    ///   - onReorderWorkspace: Reorders a nested workspace `(draggedId,
+    ///     targetId)` within its project (wired to the host's tab order).
     public init(
         model: SupermuxProjectsModel,
         opener: any SupermuxWorkspaceOpening,
         openWorkspaces: [SupermuxOpenWorkspace] = [],
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
-        onCloseWorkspace: @escaping (UUID) -> Void = { _ in }
+        onCloseWorkspace: @escaping (UUID) -> Void = { _ in },
+        onReorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in }
     ) {
         self.model = model
         self.opener = opener
         self.openWorkspaces = openWorkspaces
         self.onSelectWorkspace = onSelectWorkspace
         self.onCloseWorkspace = onCloseWorkspace
+        self.onReorderWorkspace = onReorderWorkspace
     }
 
     public var body: some View {
@@ -49,14 +61,31 @@ public struct SupermuxProjectsSectionView: View {
         VStack(alignment: .leading, spacing: 2) {
             header
             if !model.isSectionCollapsed {
-                ForEach(model.projects) { project in
+                ForEach(Array(model.projects.enumerated()), id: \.element.id) { index, project in
                     SupermuxProjectRowView(
                         project: project,
                         detectedIcon: iconStore.image(for: project.id),
                         worktrees: model.worktreesByProjectId[project.id] ?? [],
                         openWorkspaces: grouped[project.id] ?? [],
                         isExpanded: model.expandedProjectIds.contains(project.id),
-                        actions: rowActions(for: project)
+                        actions: rowActions(for: project),
+                        canMoveUp: index > 0,
+                        canMoveDown: index < model.projects.count - 1,
+                        beginDrag: {
+                            dragState.draggingProjectId = project.id
+                            return NSItemProvider(object: project.id.uuidString as NSString)
+                        },
+                        dropDelegate: SupermuxProjectDropDelegate(
+                            targetProjectId: project.id,
+                            draggingProjectId: $dragState.draggingProjectId,
+                            move: { dragged, target in
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    model.moveProject(dragged, over: target)
+                                }
+                            }
+                        ),
+                        draggingProjectId: $dragState.draggingProjectId,
+                        draggingWorkspaceId: $dragState.draggingWorkspaceId
                     )
                 }
                 if model.projects.isEmpty {
@@ -66,6 +95,12 @@ public struct SupermuxProjectsSectionView: View {
         }
         .padding(.horizontal, 6)
         .padding(.top, 6)
+        // A drag released off any row (an abort) never reaches a `performDrop`,
+        // so without this the source row would stay dimmed. The failsafe clears
+        // the marker on the next mouse-up / Escape; the deferred clear lets a
+        // real drop's `performDrop` run (and reorder) first.
+        .onAppear { dragFailsafe.start(clearing: dragState) }
+        .onDisappear { dragFailsafe.stop() }
         .task { await model.loadIfNeeded() }
         // Re-resolve logos whenever the set of projects (or their roots) changes.
         // The store skips projects whose root is unchanged, so this is cheap.
@@ -73,8 +108,8 @@ public struct SupermuxProjectsSectionView: View {
             await iconStore.refresh(projects: model.projects)
         }
         .sheet(item: $newWorktreeProject) { project in
-            SupermuxNewWorktreeSheet(model: model, project: project) { worktree in
-                openWorktree(worktree, project: project)
+            SupermuxNewWorktreeSheet(model: model, project: project) { worktree, workspaceName in
+                openWorktree(worktree, project: project, title: workspaceName)
             }
         }
         .sheet(item: $editorProject) { project in
@@ -160,17 +195,37 @@ public struct SupermuxProjectsSectionView: View {
             },
             launchAction: { action in launchAction(action, project: project) },
             selectWorkspace: onSelectWorkspace,
-            closeWorkspace: onCloseWorkspace
+            closeWorkspace: onCloseWorkspace,
+            moveUp: { moveProject(project, by: -1) },
+            moveDown: { moveProject(project, by: 1) },
+            reorderWorkspace: onReorderWorkspace
         )
     }
 
-    /// Assigns each open workspace to the project that owns its directory
-    /// (root, subdirectory, or worktree), keyed by project id.
+    /// Moves a project one slot up (`delta == -1`) or down (`delta == 1`) by
+    /// reordering it over its immediate neighbor. Shared with drag-reorder via
+    /// ``SupermuxProjectsModel/moveProject(_:over:)``.
+    private func moveProject(_ project: SupermuxProject, by delta: Int) {
+        guard let index = model.projects.firstIndex(where: { $0.id == project.id }) else { return }
+        let neighborIndex = index + delta
+        guard model.projects.indices.contains(neighborIndex) else { return }
+        let neighborId = model.projects[neighborIndex].id
+        withAnimation(.easeInOut(duration: 0.18)) {
+            model.moveProject(project.id, over: neighborId)
+        }
+    }
+
+    /// Groups open workspaces by their owning project, keyed by project id.
+    ///
+    /// Ownership is resolved by the host (explicit project-association or a
+    /// worktree directory) and carried on ``SupermuxOpenWorkspace/projectId``;
+    /// workspaces with no owner stay in cmux's flat list, so a workspace that
+    /// merely inherited a project's directory is never swallowed here.
     private func workspacesByProject() -> [UUID: [SupermuxOpenWorkspace]] {
         var result: [UUID: [SupermuxOpenWorkspace]] = [:]
         for workspace in openWorkspaces {
-            guard let project = matcher.project(for: workspace.directory, in: model.projects) else { continue }
-            result[project.id, default: []].append(workspace)
+            guard let projectId = workspace.projectId else { continue }
+            result[projectId, default: []].append(workspace)
         }
         return result
     }
@@ -182,7 +237,8 @@ public struct SupermuxProjectsSectionView: View {
             title: "\(project.name) · \(action.name)",
             directory: project.rootPath,
             colorHex: project.colorHex,
-            initialCommand: action.command
+            initialCommand: action.command,
+            projectId: project.id
         ))
     }
 
@@ -191,16 +247,19 @@ public struct SupermuxProjectsSectionView: View {
         opener.openWorkspace(SupermuxOpenWorkspaceRequest(
             title: project.name,
             directory: project.rootPath,
-            colorHex: project.colorHex
+            colorHex: project.colorHex,
+            projectId: project.id
         ))
     }
 
-    private func openWorktree(_ worktree: SupermuxProjectWorktree, project: SupermuxProject) {
+    private func openWorktree(_ worktree: SupermuxProjectWorktree, project: SupermuxProject, title: String? = nil) {
         model.noteOpened(id: project.id)
+        let resolvedTitle = title.map { $0.isEmpty ? worktree.displayName : $0 } ?? worktree.displayName
         opener.openWorkspace(SupermuxOpenWorkspaceRequest(
-            title: worktree.displayName,
+            title: resolvedTitle,
             directory: worktree.path,
-            colorHex: project.colorHex
+            colorHex: project.colorHex,
+            projectId: project.id
         ))
     }
 

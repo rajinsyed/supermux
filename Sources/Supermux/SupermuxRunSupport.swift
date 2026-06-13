@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SupermuxKit
 
 /// Drives the supermux run action (⌘G): starts and stops a per-workspace
@@ -9,7 +10,12 @@ import SupermuxKit
 /// launches the project's run commands in a dedicated terminal surface of the
 /// active workspace; the next ⌘G sends Ctrl+C to stop it; ⌘G again re-runs
 /// the command in the same surface.
+///
+/// `@Observable` so the presets bar's Run / Stop button reflects live run state:
+/// reading ``isRunning(workspaceId:)`` in a view body subscribes it to the
+/// `handlesByWorkspaceId` mutations that `toggleRun` performs.
 @MainActor
+@Observable
 final class SupermuxRunCoordinator {
     private struct RunHandle {
         let workspaceId: UUID
@@ -19,13 +25,20 @@ final class SupermuxRunCoordinator {
     }
 
     private var handlesByWorkspaceId: [UUID: RunHandle] = [:]
-    private let matcher = SupermuxProjectMatcher()
-    private let projectsModel: SupermuxProjectsModel
+    @ObservationIgnored private let matcher = SupermuxProjectMatcher()
+    @ObservationIgnored private let projectsModel: SupermuxProjectsModel
 
     /// Creates the coordinator.
     /// - Parameter projectsModel: Source of registered projects and their run commands.
     init(projectsModel: SupermuxProjectsModel) {
         self.projectsModel = projectsModel
+    }
+
+    /// Whether the workspace's run command is currently running.
+    /// - Parameter workspaceId: Workspace to inspect.
+    /// - Returns: `true` while a launched run surface is considered active.
+    func isRunning(workspaceId: UUID) -> Bool {
+        handlesByWorkspaceId[workspaceId]?.isRunning ?? false
     }
 
     /// Toggles the run command for the selected workspace.
@@ -34,6 +47,14 @@ final class SupermuxRunCoordinator {
     @discardableResult
     func toggleRun(tabManager: TabManager?) -> Bool {
         guard let workspace = tabManager?.selectedWorkspace else { return false }
+        return toggleRun(workspace: workspace)
+    }
+
+    /// Toggles the run command for a specific workspace (the presets bar path).
+    /// - Parameter workspace: The workspace whose run command to start/stop.
+    /// - Returns: `true` when the event was consumed (even to show an alert).
+    @discardableResult
+    func toggleRun(workspace: Workspace) -> Bool {
         guard let project = matcher.project(for: workspace.currentDirectory, in: projectsModel.projects) else {
             return false
         }

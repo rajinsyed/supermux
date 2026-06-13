@@ -15,7 +15,7 @@ Rules for adding a touchpoint:
 | # | File | Fence id | What it does |
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
-| 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list (they render nested under their project) |
+| 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list; renders the agent-activity indicator on flat-list workspace rows |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
@@ -30,6 +30,7 @@ Rules for adding a touchpoint:
 | 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit` to the SPM package-test allowlist so its tests gate CI |
 | 14 | `web/data/cmux.schema.json` | `unfenced` | Adds `supermuxToggleRun` to the shortcut-action enum so cmux.json validation accepts rebinding it |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
+| 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only); minimal mode keeps the original top-safe-area layout |
 
 ## How to re-apply
 
@@ -63,6 +64,20 @@ at the top of the scrollable workspace list, and feed the flat-list row builder
 `SupermuxMainListFilter.tabsForMainList(tabs)` instead of the raw `tabs` (a no-op when no
 projects are registered; `tabManager.tabs` itself is never filtered).
 
+**`sidebar-flatrow-activity`:** four small edits give flat-list workspace rows the same agent
+activity indicator as the nested rows (amber braille spinner / red pulsing dot / green dot):
+1. `import SupermuxKit` near the top imports.
+2. A `let supermuxActivity: SupermuxWorkspaceActivity` field on
+   `SidebarWorkspaceSnapshotBuilder.Snapshot` (it is `Equatable`-synthesized, so the row
+   re-renders when activity changes).
+3. In `makeWorkspaceSnapshot()`, set `supermuxActivity: SupermuxWorkspaceActivityResolver.activity(for: tab)`.
+4. In the row's title `HStack`, before `Text(workspaceSnapshot.title)`, render
+   `SupermuxAgentActivityIndicator(activity:size:)` when `supermuxActivity.isVisible`.
+The indicator is reactive via the existing workspace observation (it changes with
+`statusEntries`/`progress`, which the snapshot already observes). If upstream restructures the
+snapshot/row, the requirement is just: derive activity per workspace and render the indicator
+beside the title.
+
 ### 3. `cmux.xcodeproj/project.pbxproj` — unfenced (comments are not safe there)
 
 Nine ID-based additions, all using the reserved supermux ID prefix `50BE0001…`. To re-apply by
@@ -79,9 +94,11 @@ listed, with these exact IDs:
 | `50BE000100000000000000B3` | PBXGroup | group `Supermux` (path = `Supermux`, children = `…B1`, `…B4`), listed in the `A5001041 /* Sources */` group's `children` |
 | `50BE000100000000000000B4` | PBXFileReference | `SupermuxRunSupport.swift` |
 | `50BE000100000000000000B5` | PBXBuildFile | `SupermuxRunSupport.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
+| `50BE000100000000000000B6` | PBXFileReference | `SupermuxWorkspaceActivityResolver.swift` (also listed in the `Supermux` group's `children`) |
+| `50BE000100000000000000B7` | PBXBuildFile | `SupermuxWorkspaceActivityResolver.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
 
 After re-applying run `python3 scripts/normalize-pbxproj.py && ./scripts/check-pbxproj.sh`.
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `17`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `21`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 
@@ -91,6 +108,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | Row | Δ | Reason |
 |-----|---|--------|
 | `Sources/ContentView.swift` | +9 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6) |
+| `Sources/WorkspaceContentView.swift` | +12 | `presets-bar` mount above the splits (if/else branch on minimal mode) |
 | `Sources/RightSidebarPanelView.swift` | +18 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
 | `Sources/MainWindowFocusController.swift` | +10 | changes-mode focus routing |
@@ -125,6 +143,33 @@ compiler lists every unhandled switch — re-add `.changes` at each:
   `shortcutAction: nil`, CLI argument `"changes"`, palette id `palette.showRightSidebarChanges`,
 - content view: `SupermuxChangesMount(workspaceDirectory: tabManager.selectedWorkspace?.currentDirectory)`.
 Find every site with: `grep -rn "case .dock" Sources/ | grep -v changes`.
+
+### 16. `Sources/WorkspaceContentView.swift` — `presets-bar`
+
+`WorkspaceContentView.body` returns the workspace's `bonsplitView`. The fence
+wraps that return so the presets bar renders once per workspace, above the
+splits, in normal mode only:
+
+```swift
+// SUPERMUX:begin presets-bar
+if isMinimalMode {
+    bonsplitView
+        .ignoresSafeArea(.container, edges: isFullScreen ? [] : .top)
+} else {
+    VStack(spacing: 0) {
+        SupermuxPresetsBarMount(workspace: workspace)
+        bonsplitView
+    }
+}
+// SUPERMUX:end presets-bar
+```
+
+The minimal-mode branch reproduces upstream's original
+`bonsplitView.ignoresSafeArea(.container, edges: (isMinimalMode && !isFullScreen) ? .top : [])`
+exactly (it's only reached when `isMinimalMode` is true). If upstream
+restructures this view, the requirement is: render `SupermuxPresetsBarMount`
+once above the split container for normal-mode workspaces, and leave minimal
+mode's top-safe-area-ignoring layout untouched.
 
 ### 1. `CLAUDE.md` — `claude-md-pointer`
 

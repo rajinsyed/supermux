@@ -39,7 +39,10 @@ extension SidebarWorkspaceSnapshotBuilder.Snapshot {
             branchDirectoryLines: branchDirectoryLines,
             branchLinesContainBranch: branchLinesContainBranch,
             pullRequestRows: pullRequestRows,
-            listeningPorts: listeningPorts
+            listeningPorts: listeningPorts,
+            // Activity is telemetry-heavy, so keep it frozen from self alongside
+            // the other non-immediate fields while the context menu is open.
+            supermuxActivity: supermuxActivity
         )
     }
 }

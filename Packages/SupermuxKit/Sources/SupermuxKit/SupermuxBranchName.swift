@@ -37,6 +37,27 @@ public struct SupermuxBranchName: Sendable {
         return name.isEmpty ? nil : name
     }
 
+    /// Generates a friendly, readable two-word branch name like
+    /// `cheerful-umbrella`, for when the user leaves the branch field blank.
+    ///
+    /// The name is not guaranteed unique on its own — callers should pass the
+    /// result through ``deduplicate(_:existing:)`` against the repository's
+    /// branches (as ``SupermuxGitWorktreeService`` does).
+    /// - Parameter generator: Randomness source; injectable for deterministic tests.
+    /// - Returns: A sanitized, git-safe `predicate-object` name.
+    public func randomName<G: RandomNumberGenerator>(using generator: inout G) -> String {
+        let predicate = SupermuxFriendlyWords.predicates.randomElement(using: &generator) ?? "calm"
+        let object = SupermuxFriendlyWords.objects.randomElement(using: &generator) ?? "river"
+        return "\(predicate)-\(object)"
+    }
+
+    /// Generates a friendly two-word branch name using the system RNG.
+    /// - Returns: A sanitized, git-safe `predicate-object` name.
+    public func randomName() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return randomName(using: &generator)
+    }
+
     /// Returns `candidate` or a `-N` suffixed variant that does not collide
     /// with `existing` (compared case-insensitively).
     /// - Parameters:
