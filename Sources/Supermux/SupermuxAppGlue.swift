@@ -19,6 +19,9 @@ enum SupermuxComposition {
         let service = SupermuxGitWorktreeService(runner: CommandRunner())
         return SupermuxProjectsModel(store: store, worktreeService: service)
     }()
+
+    /// App-wide run-action coordinator behind the ⌘G shortcut.
+    static let runCoordinator = SupermuxRunCoordinator(projectsModel: projectsModel)
 }
 
 /// Opens supermux workspace requests through a window's `TabManager`:

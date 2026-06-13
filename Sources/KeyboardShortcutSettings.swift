@@ -146,6 +146,9 @@ enum KeyboardShortcutSettings {
         case markdownZoomReset
         case find
         case findInDirectory
+        // SUPERMUX:begin run-toggle-shortcut-case
+        case supermuxToggleRun
+        // SUPERMUX:end run-toggle-shortcut-case
         case findNext
         case findPrevious
         case hideFind
@@ -242,6 +245,9 @@ enum KeyboardShortcutSettings {
             case .markdownZoomReset: return String(localized: "shortcut.markdownZoomReset.label", defaultValue: "Markdown Viewer: Actual Size")
             case .find: return String(localized: "menu.find.find", defaultValue: "Find…")
             case .findInDirectory: return String(localized: "menu.find.findInDirectory", defaultValue: "Find in Directory…")
+            // SUPERMUX:begin run-toggle-shortcut-label
+            case .supermuxToggleRun: return String(localized: "supermux.shortcut.toggleRun.label", defaultValue: "Run / Stop Project Command")
+            // SUPERMUX:end run-toggle-shortcut-label
             case .findNext: return String(localized: "menu.find.findNext", defaultValue: "Find Next")
             case .findPrevious: return String(localized: "menu.find.findPrevious", defaultValue: "Find Previous")
             case .hideFind: return String(localized: "menu.find.hideFindBar", defaultValue: "Hide Find Bar")
@@ -449,6 +455,13 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "f", command: true, shift: false, option: false, control: false)
             case .findInDirectory:
                 return StoredShortcut(key: "f", command: true, shift: true, option: false, control: false)
+            // SUPERMUX:begin run-toggle-shortcut-default
+            // Shares ⌘G with Find Next on purpose (piggycode muscle memory):
+            // the AppDelegate dispatch gives Find Next priority while the find
+            // overlay is visible and routes to the run toggle otherwise.
+            case .supermuxToggleRun:
+                return StoredShortcut(key: "g", command: true, shift: false, option: false, control: false)
+            // SUPERMUX:end run-toggle-shortcut-default
             case .findNext:
                 return StoredShortcut(key: "g", command: true, shift: false, option: false, control: false)
             case .findPrevious:

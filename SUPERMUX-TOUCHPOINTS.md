@@ -24,6 +24,8 @@ Rules for adding a touchpoint:
 | 8 | `Sources/MainWindowFocusController.swift` | `right-sidebar-changes-mode-*` | Focus routing for the changes mode (host, no special endpoint) |
 | 9 | `Sources/ContentView+RightSidebarCommandPalette.swift` | `right-sidebar-changes-mode-*` | Palette command id for "Show Changes"; not openable as a pane |
 | 10 | `CLI/cmux.swift` | `right-sidebar-changes-mode-*` | CLI accepts `cmux right-sidebar set changes` (and the `changes` alias) |
+| 11 | `Sources/KeyboardShortcutSettings.swift` | `run-toggle-shortcut-*` | `supermuxToggleRun` action (case/label/default ⌘G, shared with Find Next) |
+| 12 | `Sources/AppDelegate.swift` | `run-toggle-shortcut-*` | ⌘G dispatch: Find Next while find overlay is open, run toggle otherwise |
 
 ## How to re-apply
 
@@ -58,10 +60,12 @@ listed, with these exact IDs:
 | `50BE000100000000000000A3` | PBXBuildFile | `SupermuxKit in Frameworks` (also listed in the `cmux` target's Frameworks phase `files`) |
 | `50BE000100000000000000B1` | PBXFileReference | `SupermuxAppGlue.swift` |
 | `50BE000100000000000000B2` | PBXBuildFile | `SupermuxAppGlue.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
-| `50BE000100000000000000B3` | PBXGroup | group `Supermux` (path = `Supermux`, child = `…B1`), listed in the `A5001041 /* Sources */` group's `children` |
+| `50BE000100000000000000B3` | PBXGroup | group `Supermux` (path = `Supermux`, children = `…B1`, `…B4`), listed in the `A5001041 /* Sources */` group's `children` |
+| `50BE000100000000000000B4` | PBXFileReference | `SupermuxRunSupport.swift` |
+| `50BE000100000000000000B5` | PBXBuildFile | `SupermuxRunSupport.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
 
 After re-applying run `python3 scripts/normalize-pbxproj.py && ./scripts/check-pbxproj.sh`.
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `13`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `17`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 

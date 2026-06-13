@@ -1,10 +1,10 @@
 # cmux-owned Swift file length budget.
 # Format: max_lines<TAB>relative path
 # Reduce counts as files shrink. CI fails if tracked files exceed this budget.
-33285	CLI/cmux.swift
+33289	CLI/cmux.swift
 19990	Sources/Workspace.swift
 19268	Sources/ContentView.swift
-18118	Sources/AppDelegate.swift
+18128	Sources/AppDelegate.swift
 16674	Sources/GhosttyTerminalView.swift
 14622	Sources/TerminalController.swift
 13606	Sources/Panels/BrowserPanel.swift
@@ -38,7 +38,7 @@
 2565	Sources/Panels/CmuxWebView.swift
 2545	cmuxTests/WorkspaceManualUnreadTests.swift
 2544	cmuxTests/CommandPaletteSearchEngineTests.swift
-2516	Sources/KeyboardShortcutSettings.swift
+2529	Sources/KeyboardShortcutSettings.swift
 2327	cmuxTests/CJKIMEInputTests.swift
 2322	Sources/Mobile/MobileHostService.swift
 2314	Sources/FileExplorerView.swift
@@ -106,7 +106,7 @@
 810	Packages/CmuxSwiftRender/Tests/CmuxSwiftRenderTests/SwiftViewInterpreterTests.swift
 787	Sources/ClosedItemHistory.swift
 774	cmuxUITests/BrowserFixtureInteractionUITests.swift
-768	Sources/MainWindowFocusController.swift
+778	Sources/MainWindowFocusController.swift
 762	Packages/CmuxMobileTransport/Sources/CmuxMobileTransport/CmxNetworkByteTransport.swift
 760	Packages/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/AgentLaunchSanitizerTests.swift
 757	Packages/CmuxAuthRuntime/Sources/CmuxAuthRuntime/Coordinator/AuthCoordinator.swift
@@ -121,7 +121,7 @@
 705	CLI/CMUXCLI+Config.swift
 705	cmuxUITests/BrowserOmnibarSuggestionsUITests.swift
 701	CLI/CMUXCLI+AgentHookDefinitions.swift
-698	Sources/RightSidebarPanelView.swift
+716	Sources/RightSidebarPanelView.swift
 698	cmuxTests/RestorableAgentHookProviderResumeTests.swift
 697	cmuxTests/TerminalNotificationClearAllTests.swift
 696	cmuxTests/UpdatePillReleaseVisibilityTests.swift

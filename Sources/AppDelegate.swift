@@ -13758,6 +13758,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return focusFileSearchInActiveMainWindow(preferredWindow: resolvedShortcutEventWindow(event))
         }
 
+        // SUPERMUX:begin run-toggle-shortcut-dispatch
+        // ⌘G is shared: Find Next wins while the find overlay is open,
+        // otherwise the chord toggles the project run command.
+        if matchConfiguredShortcut(event: event, action: .supermuxToggleRun),
+           tabManager?.isFindVisible != true,
+           !shouldLetFocusedBrowserOwnFindShortcut(event),
+           SupermuxComposition.runCoordinator.toggleRun(tabManager: tabManager) {
+            return true
+        }
+        // SUPERMUX:end run-toggle-shortcut-dispatch
         if matchConfiguredShortcut(event: event, action: .findNext) {
             guard !shouldLetFocusedBrowserOwnFindShortcut(event) else {
                 return false
