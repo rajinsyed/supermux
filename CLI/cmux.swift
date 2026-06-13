@@ -15753,7 +15753,9 @@ struct CMUXCLI {
             }
             return args
 
-        case "files", "find", "vault", "sessions", "feed", "dock":
+        // SUPERMUX:begin right-sidebar-changes-mode-cli-alias
+        case "files", "find", "vault", "sessions", "feed", "dock", "changes":
+        // SUPERMUX:end right-sidebar-changes-mode-cli-alias
             guard parsed.positional.count == 1 else {
                 throw CLIError(message: String(localized: "cli.rightSidebar.error.unexpectedArguments", defaultValue: "right-sidebar \(action) received unexpected arguments"))
             }
@@ -15769,7 +15771,9 @@ struct CMUXCLI {
 
     private func isRightSidebarCLIMode(_ value: String) -> Bool {
         switch value {
-        case "files", "find", "vault", "sessions", "feed", "dock":
+        // SUPERMUX:begin right-sidebar-changes-mode-cli-set
+        case "files", "find", "vault", "sessions", "feed", "dock", "changes":
+        // SUPERMUX:end right-sidebar-changes-mode-cli-set
             return true
         default:
             return false
