@@ -18,46 +18,44 @@ fail=0
 
 # 1. Every registry row's fence id must exist in its file (begin AND end).
 #    Registry rows look like: | 1 | `path` | `fence-id` | description |
-while IFS='|' read -r _ _ file fence _; do
+while IFS='|' read -r _ _ file fences _; do
   file="$(echo "$file" | tr -d ' \`')"
-  fence="$(echo "$fence" | tr -d ' \`')"
-  [[ -z "$file" || -z "$fence" || "$file" == "File" || "$file" == *"---"* ]] && continue
-  # Rows marked `unfenced` (e.g. project.pbxproj, where comments are unsafe)
-  # only check file existence; re-apply instructions live in the manifest.
-  if [[ "$fence" == "unfenced" ]]; then
-    if [[ ! -e "$file" ]]; then
-      echo "FAIL: registered file missing: $file (unfenced)" >&2
-      fail=1
-    fi
-    continue
-  fi
+  [[ -z "$file" || "$file" == "File" || "$file" == *"---"* ]] && continue
   if [[ ! -e "$file" ]]; then
-    echo "FAIL: registered file missing: $file (fence: $fence)" >&2
+    echo "FAIL: registered file missing: $file" >&2
     fail=1
     continue
   fi
-  # A trailing '*' registers a family of fences sharing the prefix; the file
-  # must contain at least one begin/end pair with that prefix.
-  if [[ "$fence" == *'*' ]]; then
-    prefix="${fence%\*}"
-    if ! grep -q "SUPERMUX:begin $prefix" "$file"; then
-      echo "FAIL: $file has no fence matching 'SUPERMUX:begin $prefix*' (clobbered by a merge?)" >&2
+  # A cell may register several fence ids, comma-separated.
+  fences="$(echo "$fences" | tr ',' ' ' | tr -d '\`')"
+  for fence in $fences; do
+    [[ -z "$fence" ]] && continue
+    # Rows marked 'unfenced' (e.g. project.pbxproj, where comments are unsafe)
+    # only get the file-existence check above; instructions live in the manifest.
+    [[ "$fence" == "unfenced" ]] && continue
+    # A trailing '*' registers a family of fences sharing the prefix; the file
+    # must contain at least one begin/end pair with that prefix.
+    if [[ "$fence" == *'*' ]]; then
+      prefix="${fence%\*}"
+      if ! grep -q "SUPERMUX:begin $prefix" "$file"; then
+        echo "FAIL: $file has no fence matching 'SUPERMUX:begin $prefix*' (clobbered by a merge?)" >&2
+        fail=1
+      fi
+      if ! grep -q "SUPERMUX:end $prefix" "$file"; then
+        echo "FAIL: $file has no fence matching 'SUPERMUX:end $prefix*'" >&2
+        fail=1
+      fi
+      continue
+    fi
+    if ! grep -q "SUPERMUX:begin $fence" "$file"; then
+      echo "FAIL: $file is missing fence 'SUPERMUX:begin $fence' (clobbered by a merge?)" >&2
       fail=1
     fi
-    if ! grep -q "SUPERMUX:end $prefix" "$file"; then
-      echo "FAIL: $file has no fence matching 'SUPERMUX:end $prefix*'" >&2
+    if ! grep -q "SUPERMUX:end $fence" "$file"; then
+      echo "FAIL: $file is missing fence 'SUPERMUX:end $fence'" >&2
       fail=1
     fi
-    continue
-  fi
-  if ! grep -q "SUPERMUX:begin $fence" "$file"; then
-    echo "FAIL: $file is missing fence 'SUPERMUX:begin $fence' (clobbered by a merge?)" >&2
-    fail=1
-  fi
-  if ! grep -q "SUPERMUX:end $fence" "$file"; then
-    echo "FAIL: $file is missing fence 'SUPERMUX:end $fence'" >&2
-    fail=1
-  fi
+  done
 done < <(sed -n '/^| [0-9]/p' "$MANIFEST")
 
 # 2. Every SUPERMUX fence in the tree must be registered in the manifest.

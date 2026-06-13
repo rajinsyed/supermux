@@ -11065,8 +11065,14 @@ struct VerticalTabsSidebar: View {
         let workspaceGroupMenuSnapshot = WorkspaceGroupMenuSnapshot(
             items: workspaceGroups.map { WorkspaceGroupMenuSnapshot.Item(id: $0.id, name: $0.name) }
         )
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // Project-owned workspaces render nested under their project in the
+        // supermux Projects section, so hide them from the flat list (tabs
+        // itself is unchanged, so selection/nav/lifecycle are unaffected).
+        let mainListTabs = SupermuxMainListFilter.tabsForMainList(tabs)
+        // SUPERMUX:end sidebar-hide-project-workspaces
         let workspaceRenderItems = SidebarWorkspaceRenderItem.renderItems(
-            tabs: tabs,
+            tabs: mainListTabs,
             groupsById: workspaceGroupById
         )
         let visibleWorkspaceRowIds = workspaceRenderItems.map(\.rowWorkspaceId)

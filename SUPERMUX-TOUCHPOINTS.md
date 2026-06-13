@@ -15,7 +15,7 @@ Rules for adding a touchpoint:
 | # | File | Fence id | What it does |
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
-| 2 | `Sources/ContentView.swift` | `sidebar-projects-section` | Mounts `SupermuxProjectsMount()` at the top of the sidebar workspace list |
+| 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list (they render nested under their project) |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
@@ -33,9 +33,10 @@ Rules for adding a touchpoint:
 
 ## How to re-apply
 
-### 2. `Sources/ContentView.swift` — `sidebar-projects-section`
+### 2. `Sources/ContentView.swift` — `sidebar-projects-section` + `sidebar-hide-project-workspaces`
 
-In `VerticalTabsSidebar.workspaceScrollContent(renderContext:minHeight:emptyAreaHeight:)`, the
+**`sidebar-projects-section`:** in
+`VerticalTabsSidebar.workspaceScrollContent(renderContext:minHeight:emptyAreaHeight:)`, the
 content `VStack(spacing: 0)` starts with the projects mount, before `workspaceRows`:
 
 ```swift
@@ -47,9 +48,20 @@ VStack(spacing: 0) {
     ...
 ```
 
-If upstream restructures the sidebar, the requirement is: render `SupermuxProjectsMount()` once
-at the top of the sidebar's scrollable workspace list (it reads `TabManager` from
-`@EnvironmentObject`).
+**`sidebar-hide-project-workspaces`:** in `VerticalTabsSidebar.body`, the `tabs` passed to
+`SidebarWorkspaceRenderItem.renderItems(tabs:groupsById:)` is filtered so project-owned
+workspaces don't duplicate in the flat list (they render nested under their project):
+
+```swift
+let mainListTabs = SupermuxMainListFilter.tabsForMainList(tabs)
+let workspaceRenderItems = SidebarWorkspaceRenderItem.renderItems(
+    tabs: mainListTabs, groupsById: workspaceGroupById)
+```
+
+If upstream restructures the sidebar, the requirements are: render `SupermuxProjectsMount()` once
+at the top of the scrollable workspace list, and feed the flat-list row builder
+`SupermuxMainListFilter.tabsForMainList(tabs)` instead of the raw `tabs` (a no-op when no
+projects are registered; `tabManager.tabs` itself is never filtered).
 
 ### 3. `cmux.xcodeproj/project.pbxproj` — unfenced (comments are not safe there)
 
@@ -78,7 +90,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 
 | Row | Δ | Reason |
 |-----|---|--------|
-| `Sources/ContentView.swift` | +3 | `sidebar-projects-section` mount |
+| `Sources/ContentView.swift` | +9 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6) |
 | `Sources/RightSidebarPanelView.swift` | +18 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
 | `Sources/MainWindowFocusController.swift` | +10 | changes-mode focus routing |

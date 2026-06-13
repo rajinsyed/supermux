@@ -10,27 +10,51 @@ import AppKit
 public struct SupermuxProjectsSectionView: View {
     @Bindable private var model: SupermuxProjectsModel
     private let opener: any SupermuxWorkspaceOpening
+    private let openWorkspaces: [SupermuxOpenWorkspace]
+    private let onSelectWorkspace: (UUID) -> Void
+    private let onCloseWorkspace: (UUID) -> Void
 
     @State private var newWorktreeProject: SupermuxProject?
     @State private var editorProject: SupermuxProject?
+    /// Resolves and caches each project's auto-detected logo. Owned here, above
+    /// the project list, so rows receive only an immutable `NSImage?` snapshot.
+    @State private var iconStore = SupermuxProjectIconStore()
+
+    private let matcher = SupermuxProjectMatcher()
 
     /// Creates the section.
     /// - Parameters:
     ///   - model: Shared projects model.
     ///   - opener: Host-app workspace opener.
-    public init(model: SupermuxProjectsModel, opener: any SupermuxWorkspaceOpening) {
+    ///   - openWorkspaces: Snapshot of the host's live workspaces, rendered
+    ///     nested under the project each belongs to. Defaults to empty.
+    ///   - onSelectWorkspace: Focuses a nested workspace by id.
+    ///   - onCloseWorkspace: Closes a nested workspace by id.
+    public init(
+        model: SupermuxProjectsModel,
+        opener: any SupermuxWorkspaceOpening,
+        openWorkspaces: [SupermuxOpenWorkspace] = [],
+        onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
+        onCloseWorkspace: @escaping (UUID) -> Void = { _ in }
+    ) {
         self.model = model
         self.opener = opener
+        self.openWorkspaces = openWorkspaces
+        self.onSelectWorkspace = onSelectWorkspace
+        self.onCloseWorkspace = onCloseWorkspace
     }
 
     public var body: some View {
+        let grouped = workspacesByProject()
         VStack(alignment: .leading, spacing: 2) {
             header
             if !model.isSectionCollapsed {
                 ForEach(model.projects) { project in
                     SupermuxProjectRowView(
                         project: project,
+                        detectedIcon: iconStore.image(for: project.id),
                         worktrees: model.worktreesByProjectId[project.id] ?? [],
+                        openWorkspaces: grouped[project.id] ?? [],
                         isExpanded: model.expandedProjectIds.contains(project.id),
                         actions: rowActions(for: project)
                     )
@@ -43,6 +67,11 @@ public struct SupermuxProjectsSectionView: View {
         .padding(.horizontal, 6)
         .padding(.top, 6)
         .task { await model.loadIfNeeded() }
+        // Re-resolve logos whenever the set of projects (or their roots) changes.
+        // The store skips projects whose root is unchanged, so this is cheap.
+        .task(id: iconResolutionToken) {
+            await iconStore.refresh(projects: model.projects)
+        }
         .sheet(item: $newWorktreeProject) { project in
             SupermuxNewWorktreeSheet(model: model, project: project) { worktree in
                 openWorktree(worktree, project: project)
@@ -100,6 +129,12 @@ public struct SupermuxProjectsSectionView: View {
         .padding(.vertical, 4)
     }
 
+    /// A value that changes whenever a project is added, removed, or moved, so
+    /// the icon-resolution task re-runs only when logo locations could differ.
+    private var iconResolutionToken: String {
+        model.projects.map { "\($0.id.uuidString):\($0.rootPath)" }.joined(separator: "|")
+    }
+
     // MARK: - Actions
 
     private func rowActions(for project: SupermuxProject) -> SupermuxProjectRowActions {
@@ -123,8 +158,21 @@ public struct SupermuxProjectsSectionView: View {
             revealInFinder: {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.rootPath)])
             },
-            launchAction: { action in launchAction(action, project: project) }
+            launchAction: { action in launchAction(action, project: project) },
+            selectWorkspace: onSelectWorkspace,
+            closeWorkspace: onCloseWorkspace
         )
+    }
+
+    /// Assigns each open workspace to the project that owns its directory
+    /// (root, subdirectory, or worktree), keyed by project id.
+    private func workspacesByProject() -> [UUID: [SupermuxOpenWorkspace]] {
+        var result: [UUID: [SupermuxOpenWorkspace]] = [:]
+        for workspace in openWorkspaces {
+            guard let project = matcher.project(for: workspace.directory, in: model.projects) else { continue }
+            result[project.id, default: []].append(workspace)
+        }
+        return result
     }
 
     private func launchAction(_ action: SupermuxProjectAction, project: SupermuxProject) {

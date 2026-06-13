@@ -17,6 +17,10 @@ public struct SupermuxProjectEditorSheet: View {
     @State private var defaultBranchInput: String
     @State private var worktreesDirInput: String
     @State private var runCommandsInput: String
+    /// Logo auto-detected from the project files, previewed in the icon row.
+    @State private var detectedIcon: NSImage?
+    /// Project-relative path of the detected logo, shown next to its preview.
+    @State private var detectedIconRelativePath: String?
 
     /// Creates the editor.
     /// - Parameters:
@@ -68,6 +72,7 @@ public struct SupermuxProjectEditorSheet: View {
             buttonBar
         }
         .frame(width: 420, height: 620)
+        .task { await detectIcon() }
     }
 
     // MARK: - Rows
@@ -89,19 +94,46 @@ public struct SupermuxProjectEditorSheet: View {
     }
 
     private var iconRow: some View {
-        HStack(spacing: 8) {
-            TextField(
-                String(localized: "supermux.projectEditor.icon", defaultValue: "Icon"),
-                text: $iconInput,
-                prompt: Text(String(
-                    localized: "supermux.projectEditor.iconPrompt",
-                    defaultValue: "SF Symbol name"
-                ))
-            )
-            .autocorrectionDisabled()
-            if isIconPreviewable {
-                Image(systemName: trimmedIcon)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                TextField(
+                    String(localized: "supermux.projectEditor.icon", defaultValue: "Icon"),
+                    text: $iconInput,
+                    prompt: Text(String(
+                        localized: "supermux.projectEditor.iconPrompt",
+                        defaultValue: "SF Symbol name"
+                    ))
+                )
+                .autocorrectionDisabled()
+                if isIconPreviewable {
+                    Image(systemName: trimmedIcon)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let detectedIcon, let relativePath = detectedIconRelativePath {
+                HStack(spacing: 6) {
+                    Image(nsImage: detectedIcon)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    Text(String(
+                        localized: "supermux.projectEditor.icon.detected",
+                        defaultValue: "Using detected logo \(relativePath)"
+                    ))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                }
+            } else {
+                Text(String(
+                    localized: "supermux.projectEditor.icon.help",
+                    defaultValue: "Shown when no logo file is found in the project"
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
     }
@@ -255,6 +287,24 @@ public struct SupermuxProjectEditorSheet: View {
     }
 
     // MARK: - Actions
+
+    /// Probes the project files for a logo and updates the preview. Detection
+    /// runs off the main actor; the `NSImage` is built on it.
+    private func detectIcon() async {
+        let rootPath = edited.rootPath
+        let resolver = SupermuxProjectIconResolver()
+        let url = await Task.detached { resolver.resolve(rootPath: rootPath) }.value
+        guard let url else {
+            detectedIcon = nil
+            detectedIconRelativePath = nil
+            return
+        }
+        detectedIcon = NSImage(contentsOf: url)
+        let root = (rootPath as NSString).expandingTildeInPath
+        detectedIconRelativePath = url.path.hasPrefix(root + "/")
+            ? String(url.path.dropFirst(root.count + 1))
+            : url.lastPathComponent
+    }
 
     private func save() {
         var project = edited

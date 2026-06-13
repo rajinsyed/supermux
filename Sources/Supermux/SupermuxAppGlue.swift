@@ -24,6 +24,34 @@ enum SupermuxComposition {
     static let runCoordinator = SupermuxRunCoordinator(projectsModel: projectsModel)
 }
 
+/// Filters which workspaces cmux's flat sidebar list should render.
+///
+/// Workspaces that belong to a registered project are shown nested under that
+/// project in the Projects section (piggycode-style), so they are hidden from
+/// the flat list to avoid duplication. This is purely a display filter —
+/// `TabManager.tabs` is untouched, so selection, ⌘-number navigation, and
+/// workspace lifecycle still operate on the full set. Workspaces that already
+/// belong to a cmux workspace group, or any workspace when no projects are
+/// registered, are never filtered.
+@MainActor
+enum SupermuxMainListFilter {
+    private static let matcher = SupermuxProjectMatcher()
+
+    /// Returns the workspaces to render in cmux's flat list, with
+    /// project-owned (ungrouped) workspaces removed.
+    /// - Parameter tabs: All workspaces from `TabManager.tabs`.
+    static func tabsForMainList(_ tabs: [Workspace]) -> [Workspace] {
+        let projects = SupermuxComposition.projectsModel.projects
+        guard !projects.isEmpty else { return tabs }
+        return tabs.filter { workspace in
+            // Leave cmux-grouped workspaces alone; only hide loose workspaces
+            // that a project owns.
+            if workspace.groupId != nil { return true }
+            return matcher.project(for: workspace.currentDirectory, in: projects) == nil
+        }
+    }
+}
+
 /// Opens supermux workspace requests through a window's `TabManager`:
 /// focuses an existing workspace whose directory already matches, otherwise
 /// creates a new one at the requested directory.
@@ -71,9 +99,30 @@ struct SupermuxProjectsMount: View {
     @EnvironmentObject private var tabManager: TabManager
 
     var body: some View {
+        // Reading tabs/selectedTabId here subscribes this small, eager section
+        // to workspace add/remove/select changes (not per-keystroke output), so
+        // a project's live workspaces stay nested and in sync underneath it.
+        let openWorkspaces = tabManager.tabs.map { workspace in
+            SupermuxOpenWorkspace(
+                id: workspace.id,
+                title: workspace.customTitle ?? workspace.title,
+                directory: workspace.currentDirectory,
+                isSelected: workspace.id == tabManager.selectedTabId,
+                branch: workspace.gitBranch?.branch
+            )
+        }
         SupermuxProjectsSectionView(
             model: SupermuxComposition.projectsModel,
-            opener: SupermuxTabManagerOpener(tabManager: tabManager)
+            opener: SupermuxTabManagerOpener(tabManager: tabManager),
+            openWorkspaces: openWorkspaces,
+            onSelectWorkspace: { [weak tabManager] id in
+                guard let workspace = tabManager?.tabs.first(where: { $0.id == id }) else { return }
+                tabManager?.selectWorkspace(workspace)
+            },
+            onCloseWorkspace: { [weak tabManager] id in
+                guard let workspace = tabManager?.tabs.first(where: { $0.id == id }) else { return }
+                _ = tabManager?.closeWorkspaceWithConfirmation(workspace)
+            }
         )
     }
 }
