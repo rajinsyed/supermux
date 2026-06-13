@@ -449,6 +449,9 @@ jobs:
             CmuxSocketControl
             CmuxUpdater
             CMUXAgentLaunch
+            # SUPERMUX:begin ci-package-tests
+            SupermuxKit
+            # SUPERMUX:end ci-package-tests
           )
           for pkg in "${PACKAGES[@]}"; do
             echo "::group::swift test Packages/$pkg"
