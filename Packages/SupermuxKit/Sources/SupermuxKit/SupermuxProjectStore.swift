@@ -62,12 +62,18 @@ public actor SupermuxProjectStore {
         cached = file
     }
 
-    /// Applies a mutation to the loaded document and saves the result.
+    /// Applies a mutation to the latest on-disk document and saves the result.
+    ///
+    /// The current file is re-read from disk first (bypassing the in-memory
+    /// cache) so a concurrent process — the projects file is intentionally
+    /// shared across stable/nightly/DEV builds — does not get its newly added
+    /// projects silently clobbered by a stale-cache write.
     /// - Parameter mutate: In-place transformation of the document.
     /// - Returns: The document after the mutation.
     /// - Throws: Any error from ``save(_:)``.
     @discardableResult
     public func update(_ mutate: @Sendable (inout SupermuxProjectsFile) -> Void) throws -> SupermuxProjectsFile {
+        cached = nil
         var file = load()
         mutate(&file)
         file.version = SupermuxProjectsFile.currentVersion

@@ -125,6 +125,40 @@ struct SupermuxGitStatusParserTests {
         #expect(snapshot.untracked.isEmpty)
     }
 
+    /// Regression: a porcelain-v2 unmerged line whose path contains spaces was
+    /// truncated to its last whitespace token (e.g. "file.txt" instead of
+    /// "my conflicted file.txt"). The path must be preserved exactly, with all
+    /// interior spaces intact.
+    @Test func unmergedEntryWithSpacesInPathPreservesFullPath() {
+        let snapshot = parser.parse(
+            "u UU N... 100644 100644 100644 100644 1111111 2222222 3333333 my conflicted file.txt"
+        )
+        #expect(snapshot.unstaged == [
+            SupermuxGitFileChange(
+                path: "my conflicted file.txt", oldPath: nil, kind: .conflicted
+            )
+        ])
+        #expect(snapshot.unstaged.count == 1)
+        #expect(snapshot.unstaged.first?.kind == .conflicted)
+        #expect(snapshot.unstaged.first?.path == "my conflicted file.txt")
+        #expect(snapshot.staged.isEmpty)
+        #expect(snapshot.untracked.isEmpty)
+    }
+
+    /// A space-free unmerged path must still parse into a single conflicted
+    /// unstaged change (guards against an over-eager fix that breaks the simple
+    /// case).
+    @Test func unmergedEntryWithoutSpacesStillParses() {
+        let snapshot = parser.parse(
+            "u UU N... 100644 100644 100644 100644 1111111 2222222 3333333 conflicted.txt"
+        )
+        #expect(snapshot.unstaged.count == 1)
+        #expect(snapshot.unstaged.first?.kind == .conflicted)
+        #expect(snapshot.unstaged.first?.path == "conflicted.txt")
+        #expect(snapshot.staged.isEmpty)
+        #expect(snapshot.untracked.isEmpty)
+    }
+
     // MARK: - Paths with spaces
 
     @Test func pathContainingSpacesIsPreservedExactly() {

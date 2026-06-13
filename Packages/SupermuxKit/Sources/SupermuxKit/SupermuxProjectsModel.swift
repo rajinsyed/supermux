@@ -30,6 +30,8 @@ public final class SupermuxProjectsModel {
     private let store: SupermuxProjectStore
     private let worktreeService: SupermuxGitWorktreeService
     private var hasLoaded = false
+    /// Serializes persistence so rapid mutations are written in call order.
+    @ObservationIgnored private var persistTask: Task<Void, Never>?
 
     /// Creates the model.
     /// - Parameters:
@@ -178,13 +180,17 @@ public final class SupermuxProjectsModel {
 
     private func persist(_ mutate: @escaping @Sendable (inout SupermuxProjectsFile) -> Void) {
         let store = self.store
-        Task { [weak self] in
+        // Chain persists so two rapid mutations apply in call order (each passes
+        // a whole snapshot, so out-of-order writes would resurrect stale state).
+        // This is a @MainActor method, so the Task body and the catch run on the
+        // main actor — no extra MainActor.run hop is needed.
+        let previous = persistTask
+        persistTask = Task { [weak self] in
+            await previous?.value
             do {
                 try await store.update(mutate)
             } catch {
-                await MainActor.run { [weak self] in
-                    self?.lastError = error.localizedDescription
-                }
+                self?.lastError = error.localizedDescription
             }
         }
     }

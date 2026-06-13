@@ -130,6 +130,48 @@ struct SupermuxProjectStoreTests {
         #expect(loaded.projects[0].rootPath == project.rootPath)
     }
 
+    @Test func updateRereadsDiskSoConcurrentWritesAreNotClobberedByStaleCache() async throws {
+        // The projects file is intentionally shared across stable/nightly/DEV
+        // builds, so two `SupermuxProjectStore` instances can point at the same
+        // file (simulating two processes). `update` must re-read from disk
+        // before mutating; otherwise a store with a stale (empty) cache would
+        // overwrite projects written by the other store.
+        let tempDir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let fileURL = tempDir.appendingPathComponent("projects.json")
+
+        let storeA = SupermuxProjectStore(fileURL: fileURL)
+        let storeB = SupermuxProjectStore(fileURL: fileURL)
+
+        // (1) A populates its in-memory cache (empty file on disk -> .empty).
+        let initial = await storeA.load()
+        #expect(initial.projects.isEmpty)
+
+        // (2) B writes projectX to disk. A's cache is now stale.
+        let projectX = SupermuxProject(name: "Gamma", rootPath: "/tmp/gamma")
+        try await storeB.update { file in
+            file.projects = [projectX]
+        }
+
+        // (3) A mutates an orthogonal field. Before the fix this would write
+        //     from A's stale (empty) cache and drop projectX.
+        try await storeA.update { file in
+            file.isSectionCollapsed = true
+        }
+
+        // (4) A fresh store reading from disk must see BOTH projectX and the
+        //     collapsed flag.
+        let storeC = SupermuxProjectStore(fileURL: fileURL)
+        let loaded = await storeC.load()
+
+        #expect(loaded.version == SupermuxProjectsFile.currentVersion)
+        #expect(loaded.isSectionCollapsed == true)
+        try #require(loaded.projects.count == 1)
+        #expect(loaded.projects[0].id == projectX.id)
+        #expect(loaded.projects[0].name == projectX.name)
+        #expect(loaded.projects[0].rootPath == projectX.rootPath)
+    }
+
     @Test func corruptFileLoadsEmptyAndIsPreservedAsCorruptSibling() async throws {
         let tempDir = freshTempDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }

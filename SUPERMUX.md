@@ -165,6 +165,20 @@ Constraints inherited from upstream that supermux code MUST follow:
   packages form a DAG.
 - Never run bare `xcodebuild` to launch; always tagged `reload.sh` builds.
 
+## Known limitations / deliberate deviations
+
+- **`$schema` resolves to upstream.** `web/data/cmux.schema.json` includes `supermuxToggleRun`, but
+  a user's `cmux.json` `$schema` points at `raw.githubusercontent.com/manaflow-ai/cmux/main/...`
+  (upstream), so editor schema validation only recognizes the new action once supermux publishes
+  its own schema and repoints the URL. The app honors the binding at runtime regardless.
+- **Socket `right_sidebar set` usage string** still lists `<files|find|vault|sessions|feed|dock>`
+  without `changes`. The mode itself works (`RightSidebarMode.from(cliArgument:)` accepts it); only
+  the help text omits it, because the displayed string comes from an upstream
+  `Localizable.xcstrings` key and editing a non-`supermux.*` catalog key would add upstream merge
+  surface for a cosmetic gain. Tracked as a known low-priority gap.
+- **Changes panel is single-window-active-workspace.** Each window's mount owns its own
+  `SupermuxChangesModel` tracking that window's selected workspace directory.
+
 ## Branch/remote model
 
 - `upstream` remote → `manaflow-ai/cmux`, branch `main`.

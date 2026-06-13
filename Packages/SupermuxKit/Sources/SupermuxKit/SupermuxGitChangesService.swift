@@ -78,31 +78,41 @@ public actor SupermuxGitChangesService {
 
     /// Discards the working-tree change for a single file.
     ///
-    /// Untracked files are deleted from disk. Renamed files restore every
-    /// involved path that exists in `HEAD` (typically the old path) via
-    /// `git checkout -- <paths>`. All other kinds run
+    /// Untracked files are deleted from disk. Renamed files restore the
+    /// original path from `HEAD` and remove the renamed-to file when it is not
+    /// itself tracked in `HEAD` — otherwise the rename would be only half
+    /// undone, leaving the moved file behind as untracked. All other kinds run
     /// `git checkout -- <path>`.
     /// - Parameters:
     ///   - repoPath: Repository directory.
     ///   - change: The change to discard.
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git
-    ///   errors, or the underlying `FileManager` error when deleting an
-    ///   untracked file fails.
+    ///   errors, or the underlying `FileManager` error when deleting a file fails.
     public func discard(repoPath: String, change: SupermuxGitFileChange) async throws {
         switch change.kind {
         case .untracked:
             let fullPath = (repoPath as NSString).appendingPathComponent(change.path)
             try FileManager.default.removeItem(atPath: fullPath)
         case .renamed:
-            var paths: [String] = []
+            var restorePaths: [String] = []
             if let oldPath = change.oldPath, await existsInHEAD(repoPath: repoPath, path: oldPath) {
-                paths.append(oldPath)
+                restorePaths.append(oldPath)
             }
-            if await existsInHEAD(repoPath: repoPath, path: change.path) {
-                paths.append(change.path)
+            let newPathInHEAD = await existsInHEAD(repoPath: repoPath, path: change.path)
+            if newPathInHEAD {
+                restorePaths.append(change.path)
             }
-            if paths.isEmpty { paths = [change.path] }
-            try await runGit(in: repoPath, ["checkout", "--"] + paths, commandLabel: "checkout")
+            if restorePaths.isEmpty { restorePaths = [change.path] }
+            try await runGit(in: repoPath, ["checkout", "--"] + restorePaths, commandLabel: "checkout")
+            // The renamed-to file is the moved copy; when it is not a tracked
+            // HEAD path, restoring the original leaves it on disk. Remove it so
+            // the rename is fully discarded.
+            if !newPathInHEAD {
+                let movedPath = (repoPath as NSString).appendingPathComponent(change.path)
+                if FileManager.default.fileExists(atPath: movedPath) {
+                    try? FileManager.default.removeItem(atPath: movedPath)
+                }
+            }
         default:
             try await runGit(in: repoPath, ["checkout", "--", change.path], commandLabel: "checkout")
         }

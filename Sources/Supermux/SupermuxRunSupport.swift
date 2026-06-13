@@ -45,12 +45,16 @@ final class SupermuxRunCoordinator {
         if var handle = handlesByWorkspaceId[workspace.id],
            let panel = workspace.panels[handle.panelId] as? TerminalPanel {
             if handle.isRunning {
-                // Stop: send a real Ctrl+C key event (SIGINT). sendText() would
-                // route through ghostty_surface_text and get wrapped in
-                // bracketed paste, turning the interrupt into literal input.
-                _ = panel.surface.sendNamedKey("ctrl+c")
+                // Stop: send a real Ctrl+C key event (SIGINT) through the panel
+                // wrapper so a hibernated run surface is resumed first.
+                // sendText() would route through ghostty_surface_text and get
+                // wrapped in bracketed paste, turning the interrupt into literal
+                // input. Either way the run is no longer considered running; if
+                // the surface was already gone there is nothing left to stop.
+                _ = panel.sendNamedKey("ctrl+c")
                 handle.isRunning = false
                 handlesByWorkspaceId[workspace.id] = handle
+                return true
             } else {
                 guard !command.isEmpty else {
                     presentMissingRunCommand(project: project)
@@ -59,15 +63,17 @@ final class SupermuxRunCoordinator {
                 // Restart in the same surface (the shell survives because run
                 // surfaces are created with wait-after-command behavior). Paste
                 // the command body, then press Return as a real key so the
-                // shell executes it (a pasted newline would not, under
-                // bracketed paste).
-                _ = panel.surface.sendText(command)
-                _ = panel.surface.sendNamedKey("enter")
-                handle.isRunning = true
-                handlesByWorkspaceId[workspace.id] = handle
-                panel.triggerFlash(reason: .navigation)
+                // shell executes it (a pasted newline would not, under bracketed
+                // paste). Only mark running if the input was actually accepted;
+                // otherwise drop the handle and spawn a fresh surface below.
+                if panel.sendText(command) && panel.sendNamedKey("enter") {
+                    handle.isRunning = true
+                    handlesByWorkspaceId[workspace.id] = handle
+                    panel.triggerFlash(reason: .navigation)
+                    return true
+                }
+                handlesByWorkspaceId[workspace.id] = nil
             }
-            return true
         }
 
         // No live run surface for this workspace yet.

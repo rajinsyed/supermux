@@ -41,11 +41,8 @@ public struct SupermuxChangesPanelView: View {
                 missingRepositoryHint
             }
         }
-        .task {
-            await model.refresh()
-            model.startPolling()
-        }
-        .onDisappear { model.stopPolling() }
+        .task { model.startObserving() }
+        .onDisappear { model.stopObserving() }
         .confirmationDialog(
             String(localized: "supermux.changes.discard.title", defaultValue: "Discard Changes"),
             isPresented: isDiscardDialogPresented,

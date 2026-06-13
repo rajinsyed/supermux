@@ -33,6 +33,8 @@ public struct SupermuxProjectsFile: Codable, Sendable, Equatable {
         case version, projects, isSectionCollapsed
     }
 
+    /// Decodes the document, defaulting `version`, `projects`, and
+    /// `isSectionCollapsed` so a partial or older file still loads.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? Self.currentVersion

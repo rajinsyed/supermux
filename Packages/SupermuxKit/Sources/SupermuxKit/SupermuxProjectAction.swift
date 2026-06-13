@@ -34,6 +34,8 @@ public struct SupermuxProjectAction: Codable, Identifiable, Hashable, Sendable {
         case id, name, command, iconSymbol
     }
 
+    /// Decodes an action, synthesizing a fresh ``id`` when an older record
+    /// omits it and defaulting `iconSymbol` to `nil`.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()

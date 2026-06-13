@@ -213,6 +213,42 @@ import SupermuxKit
         #expect(after.untracked.isEmpty)
     }
 
+    /// Regression: discarding an unstaged rename must restore the original path
+    /// *and* remove the renamed-to file from disk. The bug restored `old.txt`
+    /// from HEAD but left the moved `new.txt` sitting in the working tree.
+    ///
+    /// Fixture: commit `old.txt`, `git mv` it to `new.txt`, then `git reset -N`
+    /// so the rename appears as an unstaged worktree change (`.R` status pair,
+    /// reported by the parser as a `.renamed` entry in `unstaged`). The original
+    /// `old.txt` index entry survives `reset -N`, so the service's
+    /// `git checkout -- old.txt` succeeds; because `new.txt` is not a tracked
+    /// HEAD path, the fix deletes it.
+    @Test func discardUnstagedRenameRestoresOldPathAndRemovesNewFile() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        try write("v1\n", to: "old.txt", in: root)
+        try runGit(["add", "old.txt"], in: root)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add old"], in: root)
+        try runGit(["mv", "old.txt", "new.txt"], in: root)
+        // `reset -N` unstages the rename while keeping `new.txt` intent-to-add,
+        // so git reports a worktree-side rename instead of a staged one.
+        try runGit(["reset", "-N", "-q", "HEAD", "--"], in: root)
+
+        let snapshot = await service.status(repoPath: root)
+        let change = try #require(snapshot.unstaged.first { $0.path == "new.txt" })
+        #expect(change.kind == .renamed)
+        #expect(change.path == "new.txt")
+        #expect(change.oldPath == "old.txt")
+
+        try await service.discard(repoPath: root, change: change)
+
+        let oldPath = (root as NSString).appendingPathComponent("old.txt")
+        let newPath = (root as NSString).appendingPathComponent("new.txt")
+        #expect(FileManager.default.fileExists(atPath: oldPath))
+        #expect(try read("old.txt", in: root) == "v1\n")
+        #expect(FileManager.default.fileExists(atPath: newPath) == false)
+    }
+
     // MARK: - Commit failures
 
     @Test func commitWithNothingStagedThrows() async throws {

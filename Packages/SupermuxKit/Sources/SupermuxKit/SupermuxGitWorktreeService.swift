@@ -83,8 +83,13 @@ public actor SupermuxGitWorktreeService {
                 message: Self.failureMessage(result)
             )
         }
-        let managedPrefix = Self.normalizedPath(project.worktreesDirPath) + "/"
         let rootPath = Self.normalizedPath(project.rootPath)
+        let worktreesDir = Self.normalizedPath(project.worktreesDirPath)
+        // Only treat worktrees under a worktrees dir that is genuinely inside
+        // the project as "managed". If a corrupt config escaped the root, fall
+        // back to a sentinel that matches nothing so no sibling worktree is
+        // ever reported deletable.
+        let managedPrefix = worktreesDir.hasPrefix(rootPath + "/") ? worktreesDir + "/" : "\u{0}"
         var worktrees: [SupermuxProjectWorktree] = []
         var path: String?
         var branch: String?
@@ -145,7 +150,15 @@ public actor SupermuxGitWorktreeService {
         }
         let branch = naming.deduplicate(sanitized, existing: await localBranches(repoRoot: project.rootPath))
 
+        let rootPath = Self.normalizedPath(project.rootPath)
         let worktreesDir = Self.normalizedPath(project.worktreesDirPath)
+        // The worktrees container must stay strictly inside the project root —
+        // a corrupt/hand-edited `worktreesDirName` like ".." would otherwise
+        // resolve to the parent directory and let worktrees (and deletions)
+        // escape into sibling repositories.
+        guard worktreesDir.hasPrefix(rootPath + "/") else {
+            throw SupermuxGitError.unsafeWorktreePath(path: worktreesDir)
+        }
         let directoryName = naming.directoryComponent(for: branch)
         let worktreePath = Self.normalizedPath((worktreesDir as NSString).appendingPathComponent(directoryName))
         guard worktreePath.hasPrefix(worktreesDir + "/") else {
@@ -166,13 +179,13 @@ public actor SupermuxGitWorktreeService {
             commandLabel: "worktree add"
         )
         // Make the first `git push` in the worktree create origin/<branch>.
-        try? await runGit(
+        _ = try? await runGit(
             in: worktreePath,
             ["config", "--local", "push.autoSetupRemote", "true"],
             commandLabel: "config push.autoSetupRemote"
         )
         if let baseName = base.recordedName {
-            try? await runGit(
+            _ = try? await runGit(
                 in: project.rootPath,
                 ["config", "branch.\(branch).base", baseName],
                 commandLabel: "config branch base"
@@ -214,7 +227,7 @@ public actor SupermuxGitWorktreeService {
         arguments.append(worktree.path)
         try await runGit(in: project.rootPath, arguments, commandLabel: "worktree remove")
         if deleteBranch, let branch = worktree.branch {
-            try? await runGit(in: project.rootPath, ["branch", "-D", branch], commandLabel: "branch -D")
+            _ = try? await runGit(in: project.rootPath, ["branch", "-D", branch], commandLabel: "branch -D")
         }
     }
 

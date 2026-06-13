@@ -230,4 +230,136 @@ import SupermuxKit
             try await service.removeWorktree(manual, project: fixture.project)
         }
     }
+
+    // MARK: - Path-escape regressions
+
+    /// A project whose `worktreesDirName` is `".."` resolves its worktrees
+    /// container to the *parent* of the repository. `createWorktree` must refuse
+    /// with ``SupermuxGitError/unsafeWorktreePath(path:)`` and must not create any
+    /// directory in that parent.
+    @Test func createWorktreeRejectsEscapingWorktreesDir() async throws {
+        // Nest the repo inside a controlled parent we own so we can assert on the
+        // parent's contents without racing the shared system temp directory.
+        let parent = try makeTempDirectory()
+        defer { cleanUp(parent) }
+        let root = (parent as NSString).appendingPathComponent("repo")
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+        try runGit(["init", "-b", "main"], in: root)
+        try runGit(["config", "--local", "user.email", "tests@supermux.invalid"], in: root)
+        try runGit(["config", "--local", "user.name", "Supermux Tests"], in: root)
+        let readmePath = (root as NSString).appendingPathComponent("README.md")
+        try "fixture\n".write(toFile: readmePath, atomically: true, encoding: .utf8)
+        try runGit(["add", "."], in: root)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Initial commit"], in: root)
+
+        let escaped = SupermuxProject(
+            name: "Escaped",
+            rootPath: root,
+            worktreesDirName: ".."
+        )
+
+        await #expect(throws: SupermuxGitError.self) {
+            try await service.createWorktree(project: escaped, requestedBranch: "escape")
+        }
+
+        // And specifically the unsafe-path case (not, say, a generic git failure).
+        do {
+            _ = try await service.createWorktree(project: escaped, requestedBranch: "escape")
+            Issue.record("Expected createWorktree to throw for an escaping worktrees dir")
+        } catch let error as SupermuxGitError {
+            guard case .unsafeWorktreePath = error else {
+                Issue.record("Expected .unsafeWorktreePath, got \(error)")
+                return
+            }
+        }
+
+        // Nothing escaped into the parent: only the repo itself remains, and no
+        // "escape" worktree directory was created next to it.
+        let parentEntries = Set((try? FileManager.default.contentsOfDirectory(atPath: parent)) ?? [])
+        #expect(parentEntries == ["repo"])
+        #expect(parentEntries.contains("escape") == false)
+        #expect(FileManager.default.fileExists(atPath: (parent as NSString).appendingPathComponent("escape")) == false)
+    }
+
+    /// A worktree living *outside* the project root must never be flagged as
+    /// supermux-managed for a project whose `worktreesDirName` escaped the root.
+    /// With the corrupt `".."` config the managed prefix resolves to the parent
+    /// directory, so a worktree placed directly under that parent (a sibling of
+    /// the repo) would be mis-flagged managed and offered up for deletion. The
+    /// service must fall back to a match-nothing sentinel instead.
+    @Test func listWorktreesNeverFlagsSiblingsManagedForEscapingConfig() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { cleanUp(fixture.root) }
+
+        // A second, independent git repo living as a sibling of the fixture,
+        // with its own real worktree (also a sibling of the fixture). It must
+        // never be reported as supermux-managed.
+        let parent = (fixture.root as NSString).deletingLastPathComponent
+        let siblingRoot = (parent as NSString)
+            .appendingPathComponent("supermux-sibling-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(atPath: siblingRoot, withIntermediateDirectories: true)
+        defer { cleanUp(siblingRoot) }
+        try runGit(["init", "-b", "main"], in: siblingRoot)
+        try runGit(["config", "--local", "user.email", "tests@supermux.invalid"], in: siblingRoot)
+        try runGit(["config", "--local", "user.name", "Supermux Tests"], in: siblingRoot)
+        let siblingReadme = (siblingRoot as NSString).appendingPathComponent("README.md")
+        try "sibling\n".write(toFile: siblingReadme, atomically: true, encoding: .utf8)
+        try runGit(["add", "."], in: siblingRoot)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Sibling commit"], in: siblingRoot)
+        let siblingWorktree = (parent as NSString)
+            .appendingPathComponent("supermux-sibling-wt-\(UUID().uuidString)")
+        defer { cleanUp(siblingWorktree) }
+        try runGit(["worktree", "add", "-b", "sibling-branch", siblingWorktree], in: siblingRoot)
+
+        // `git worktree list` in the fixture repo only enumerates the fixture's
+        // own worktrees, so to exercise the managed-flagging path we give the
+        // fixture a worktree that lives directly under the parent — i.e. inside
+        // the directory the escaped `".."` config resolves the managed prefix
+        // to. Under the bug this fixture-owned sibling would be flagged managed.
+        let escapingWorktree = (parent as NSString)
+            .appendingPathComponent("supermux-escaped-wt-\(UUID().uuidString)")
+        defer { cleanUp(escapingWorktree) }
+        try runGit(["worktree", "add", "-b", "escaped-branch", escapingWorktree], in: fixture.root)
+
+        // The fixture project, but mis-configured to escape into the parent.
+        let escaped = SupermuxProject(
+            name: "Escaped",
+            rootPath: fixture.root,
+            worktreesDirName: ".."
+        )
+
+        // With the escaped config NO listed worktree may be flagged managed: a
+        // corrupt prefix must fall back to a sentinel that matches nothing so no
+        // sibling worktree is ever reported deletable.
+        let listed = try await service.listWorktrees(for: escaped)
+        #expect(listed.isEmpty == false)
+        for worktree in listed {
+            #expect(worktree.isSupermuxManaged == false)
+        }
+        // The fixture-owned worktree under the parent specifically must be unmanaged.
+        let normalizedEscaping = (escapingWorktree as NSString).standardizingPath
+        let escapedEntry = try #require(listed.first { $0.path == normalizedEscaping })
+        #expect(escapedEntry.isSupermuxManaged == false)
+        // And if the sibling repo's worktree ever surfaced here, it must not be managed.
+        let normalizedSibling = (siblingWorktree as NSString).standardizingPath
+        if let sibling = listed.first(where: { $0.path == normalizedSibling }) {
+            #expect(sibling.isSupermuxManaged == false)
+        }
+    }
+
+    /// Documents *why* the service guard is needed: `worktreesDirName == ".."`
+    /// makes the worktrees container resolve to the project's parent directory.
+    /// No git involved — a plain value assertion about path resolution.
+    @Test func worktreesDirPathWithDotDotResolvesToParent() {
+        let root = "/Users/example/projects/repo"
+        let project = SupermuxProject(name: "Repo", rootPath: root, worktreesDirName: "..")
+
+        // The raw path appends ".." literally; standardizing collapses it to the parent.
+        let resolved = (project.worktreesDirPath as NSString).standardizingPath
+        let parent = (root as NSString).deletingLastPathComponent
+        #expect(resolved == parent)
+        // The resolved container is NOT inside the root — exactly the unsafe case
+        // the service rejects with `.unsafeWorktreePath`.
+        #expect(resolved.hasPrefix(root + "/") == false)
+    }
 }

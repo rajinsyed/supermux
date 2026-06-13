@@ -228,10 +228,14 @@ public struct SupermuxGitStatusParser: Sendable {
     /// Parses `u <XY> ...`, pragmatically taking the last whitespace field as
     /// the path.
     private func parseUnmergedEntry(_ line: String, into state: inout ParseState) {
-        let fields = line.split(separator: " ", omittingEmptySubsequences: true)
-        guard fields.count > 2, let path = fields.last, !path.isEmpty else { return }
+        // Porcelain v2 unmerged: `u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>`
+        // — 10 space-separated fields then the path, which may itself contain
+        // spaces. Split with maxSplits so the path keeps its spaces (taking the
+        // last token would truncate "my file.txt" to "file.txt").
+        let fields = line.split(separator: " ", maxSplits: 10, omittingEmptySubsequences: false)
+        guard fields.count == 11, !fields[10].isEmpty else { return }
         state.unstaged.append(SupermuxGitFileChange(
-            path: String(path),
+            path: String(fields[10]),
             oldPath: nil,
             kind: .conflicted
         ))

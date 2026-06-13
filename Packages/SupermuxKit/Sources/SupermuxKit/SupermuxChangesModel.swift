@@ -8,10 +8,13 @@ public import Observation
 /// operations for the UI. Views observe this model; all git I/O happens on
 /// the underlying service actor.
 ///
-/// Polling is opt-in: callers pair ``startPolling()`` with ``stopPolling()``
-/// (typically from `onAppear`/`onDisappear`). The poll task holds the model
-/// weakly, so an abandoned model deinitializes and its loop exits on the next
-/// iteration rather than leaking.
+/// Observation is opt-in and change-driven, not timed: callers pair
+/// ``startObserving()`` with ``stopObserving()`` (typically from
+/// `onAppear`/`onDisappear`). A ``SupermuxRepositoryWatcher`` yields an
+/// `AsyncStream` of file-system changes under the working directory and the
+/// model refreshes on each — no busy-loop polling. The observe task holds the
+/// model weakly, so an abandoned model deinitializes and its stream iteration
+/// ends rather than leaking.
 @MainActor
 @Observable
 public final class SupermuxChangesModel {
@@ -29,8 +32,15 @@ public final class SupermuxChangesModel {
     public var commitMessage: String = ""
 
     private let service: SupermuxGitChangesService
-    @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var observeTask: Task<Void, Never>?
+    /// Identifies the directory a given refresh was issued for. Bumped on every
+    /// directory change so an in-flight status read for the previous directory
+    /// is discarded instead of overwriting the new directory's snapshot.
+    @ObservationIgnored private var directoryGeneration = 0
+    /// True while a status read is awaiting; a request that arrives during one
+    /// sets ``refreshPending`` rather than racing or being silently dropped.
     @ObservationIgnored private var isRefreshing = false
+    @ObservationIgnored private var refreshPending = false
 
     /// Creates the model.
     /// - Parameter service: Git status and mutation operations.
@@ -42,8 +52,9 @@ public final class SupermuxChangesModel {
     ///
     /// The path is tilde-expanded and standardized before comparison. When
     /// the directory actually changes, ``lastError`` and ``commitMessage``
-    /// are cleared and a refresh is kicked off; the previous snapshot stays
-    /// visible until the new status arrives to avoid flicker.
+    /// are cleared, the observation watcher is repointed (if observing), and a
+    /// refresh is kicked off; the previous snapshot stays visible until the new
+    /// status arrives to avoid flicker.
     /// - Parameter directory: New directory, or `nil` to clear.
     public func setDirectory(_ directory: String?) {
         let normalized = directory.map {
@@ -51,45 +62,68 @@ public final class SupermuxChangesModel {
         }
         guard normalized != self.directory else { return }
         self.directory = normalized
+        directoryGeneration += 1
         lastError = nil
         commitMessage = ""
-        Task { [weak self] in
-            await self?.refresh()
+        if observeTask != nil {
+            startObserving()
+        } else {
+            Task { [weak self] in
+                await self?.refresh()
+            }
         }
     }
 
     /// Re-reads the git status for the current directory.
     ///
-    /// Overlapping calls (e.g. poll tick during a manual refresh) are
-    /// coalesced: a refresh already in flight makes this a no-op.
+    /// Only the status that still matches the current directory is written:
+    /// the directory generation is captured before the await and re-checked
+    /// after, so a slow read for a directory the user has since switched away
+    /// from is discarded. If a refresh is requested while one is in flight, a
+    /// single follow-up runs against the latest directory rather than being
+    /// dropped.
     public func refresh() async {
-        guard !isRefreshing else { return }
-        isRefreshing = true
-        defer { isRefreshing = false }
-        guard let directory else {
-            snapshot = .notARepository
+        if isRefreshing {
+            refreshPending = true
             return
         }
-        snapshot = await service.status(repoPath: directory)
+        isRefreshing = true
+        defer { isRefreshing = false }
+        repeat {
+            refreshPending = false
+            let generation = directoryGeneration
+            guard let directory else {
+                snapshot = .notARepository
+                continue
+            }
+            let result = await service.status(repoPath: directory)
+            // Discard a read whose directory was switched away mid-flight.
+            guard generation == directoryGeneration else { continue }
+            snapshot = result
+        } while refreshPending
     }
 
-    /// Starts refreshing the status every 3 seconds, cancelling any
-    /// previous poll. Pair with ``stopPolling()`` from `onDisappear`.
-    public func startPolling() {
-        pollTask?.cancel()
-        pollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                await self.refresh()
-                try? await Task.sleep(for: .seconds(3))
+    /// Starts observing the current directory for file-system changes and
+    /// refreshes on each, cancelling any previous observation. Pair with
+    /// ``stopObserving()`` from `onDisappear`.
+    public func startObserving() {
+        observeTask?.cancel()
+        let directory = self.directory
+        observeTask = Task { [weak self] in
+            await self?.refresh()
+            guard let directory else { return }
+            let watcher = SupermuxRepositoryWatcher(path: directory)
+            for await _ in watcher.changes() {
+                if Task.isCancelled { return }
+                await self?.refresh()
             }
         }
     }
 
-    /// Stops the periodic refresh started by ``startPolling()``.
-    public func stopPolling() {
-        pollTask?.cancel()
-        pollTask = nil
+    /// Stops the observation started by ``startObserving()``.
+    public func stopObserving() {
+        observeTask?.cancel()
+        observeTask = nil
     }
 
     /// Stages one change.

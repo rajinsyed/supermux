@@ -1203,7 +1203,8 @@
               "diffViewerScrollUp",
               "diffViewerScrollToBottom",
               "diffViewerScrollToTop",
-              "diffViewerOpenFileSearch"
+              "diffViewerOpenFileSearch",
+              "supermuxToggleRun"
             ]
           },
           "properties": {

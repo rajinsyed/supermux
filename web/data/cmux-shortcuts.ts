@@ -280,6 +280,9 @@ export const shortcutCategories: ShortcutCategory[] = [
       { id: "find", combos: [["⌘", "F"]], description: { en: "Find", ja: "検索" } },
       { id: "findInDirectory", combos: [["⌘", "⇧", "F"]], description: { en: "Find in directory", ja: "ディレクトリ内を検索" } },
       { id: "findNext", combos: [["⌘", "G"]], description: { en: "Find next", ja: "次を検索" } },
+      // SUPERMUX:begin run-toggle-shortcut-doc
+      { id: "supermuxToggleRun", combos: [["⌘", "G"]], description: { en: "Run / stop project command (when find is closed)", ja: "プロジェクトコマンドを実行 / 停止（検索が閉じているとき）" } },
+      // SUPERMUX:end run-toggle-shortcut-doc
       { id: "findPrevious", combos: [["⌥", "⌘", "G"]], description: { en: "Find previous", ja: "前を検索" } },
       { id: "hideFind", combos: [["⌥", "⌘", "⇧", "F"]], description: { en: "Hide find bar", ja: "検索バーを隠す" } },
       { id: "useSelectionForFind", combos: [["⌘", "E"]], description: { en: "Use selection for find", ja: "選択範囲で検索" } },

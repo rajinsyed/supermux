@@ -262,10 +262,14 @@ public struct SupermuxProjectEditorSheet: View {
         project.iconSymbol = trimmedIcon.isEmpty ? nil : trimmedIcon
         let branch = defaultBranchInput.trimmingCharacters(in: .whitespacesAndNewlines)
         project.defaultBranch = branch.isEmpty ? nil : branch
+        // Keep the worktrees folder a single safe path component: strip path
+        // separators and reject "."/".." so it can never resolve outside the
+        // project root (the service also enforces this defensively).
         let folder = worktreesDirInput
             .replacingOccurrences(of: "/", with: "")
+            .replacingOccurrences(of: "\\", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        project.worktreesDirName = folder.isEmpty ? ".worktrees" : folder
+        project.worktreesDirName = (folder.isEmpty || folder == "." || folder == "..") ? ".worktrees" : folder
         project.runCommands = runCommandsInput
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }

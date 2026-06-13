@@ -81,6 +81,9 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         case worktreesDirName, runCommands, actions, createdAt, lastOpenedAt
     }
 
+    /// Decodes a project, tolerating older records: `worktreesDirName`,
+    /// `runCommands`, `actions`, and `createdAt` fall back to sensible defaults
+    /// when absent so forward/backward migrations stay lossless.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)

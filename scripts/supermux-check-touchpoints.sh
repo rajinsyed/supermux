@@ -87,6 +87,20 @@ while IFS=: read -r file _; do
   done < <(grep -o 'SUPERMUX:begin [a-zA-Z0-9_-]*' "$file" | awk '{print $2}' | sort -u)
 done < <(git grep -l 'SUPERMUX:begin' -- ':!SUPERMUX*.md' ':!Packages/SupermuxKit' ':!Sources/Supermux' ':!scripts/supermux-*' 2>/dev/null | sed 's/$/:/')
 
+# 3. The pbxproj is unfenced (comments are unsafe there), so verify the count of
+#    supermux-reserved IDs matches the manifest's stated expectation — this is
+#    the only automatable drift check for that file. The manifest carries the
+#    expected count on a line: `grep -c 50BE0001 ... should print `N``.
+pbxproj="cmux.xcodeproj/project.pbxproj"
+if [[ -f "$pbxproj" ]]; then
+  expected="$(grep -oE 'grep -c 50BE0001[^`]*` should print `[0-9]+`' "$MANIFEST" | grep -oE 'print `[0-9]+`' | grep -oE '[0-9]+' | head -1)"
+  actual="$(grep -c 50BE0001 "$pbxproj" || true)"
+  if [[ -n "$expected" && "$actual" != "$expected" ]]; then
+    echo "FAIL: $pbxproj has $actual supermux IDs (50BE0001…); manifest expects $expected — a pbxproj entry was clobbered or added without updating SUPERMUX-TOUCHPOINTS.md" >&2
+    fail=1
+  fi
+fi
+
 if [[ $fail -ne 0 ]]; then
   echo "" >&2
   echo "Touchpoint check FAILED. See SUPERMUX-TOUCHPOINTS.md 'How to re-apply' section." >&2

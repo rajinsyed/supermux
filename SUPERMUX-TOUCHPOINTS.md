@@ -17,7 +17,8 @@ Rules for adding a touchpoint:
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section` | Mounts `SupermuxProjectsMount()` at the top of the sidebar workspace list |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target |
-| 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | `Sources/ContentView.swift` budget raised by the touchpoint's +3 lines (19265 → 19268) |
+| 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
+| 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it |
 | 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
 | 7 | `Sources/RightSidebarToolPanel.swift` | `right-sidebar-changes-mode-*` | `.changes` joins the `.feed, .dock` no-op groups (sync/focus/intent/anchor, ×4) |
@@ -27,6 +28,8 @@ Rules for adding a touchpoint:
 | 11 | `Sources/KeyboardShortcutSettings.swift` | `run-toggle-shortcut-*` | `supermuxToggleRun` action (case/label/default ⌘G, shared with Find Next) |
 | 12 | `Sources/AppDelegate.swift` | `run-toggle-shortcut-*` | ⌘G dispatch: Find Next while find overlay is open, run toggle otherwise |
 | 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit` to the SPM package-test allowlist so its tests gate CI |
+| 14 | `web/data/cmux.schema.json` | `unfenced` | Adds `supermuxToggleRun` to the shortcut-action enum so cmux.json validation accepts rebinding it |
+| 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 
 ## How to re-apply
 
@@ -70,15 +73,33 @@ Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `17
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 
-The `Sources/ContentView.swift` row carries +3 lines over upstream for the
-`sidebar-projects-section` touchpoint. After a merge, re-run:
+Several rows carry supermux's fenced growth over upstream. Each was raised by exactly the
+number of fenced lines added to that file — never to absorb unrelated debt:
+
+| Row | Δ | Reason |
+|-----|---|--------|
+| `Sources/ContentView.swift` | +3 | `sidebar-projects-section` mount |
+| `Sources/RightSidebarPanelView.swift` | +18 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content) |
+| `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
+| `Sources/MainWindowFocusController.swift` | +10 | changes-mode focus routing |
+| `Sources/KeyboardShortcutSettings.swift` | +13 | `supermuxToggleRun` action |
+| `Sources/AppDelegate.swift` | +10 | `run-toggle-shortcut-dispatch` |
+| `CLI/cmux.swift` | +4 | `changes` CLI mode |
+
+After a merge, re-run and re-bump only by the measured fenced delta:
 
 ```bash
 python3 scripts/swift_file_length_budget.py --budget .github/swift-file-length-budget.tsv
 ```
 
-and if it reports growth equal to supermux's fenced lines, bump the affected row(s) by that
-amount (never bump to absorb unrelated growth).
+### 4b. `Resources/Localizable.xcstrings` — additive supermux keys
+
+All `supermux.*` keys (en + ja) live here because cmux packages resolve `String(localized:)`
+against the app bundle. The merge is **additive only** — `scripts/supermux-merge-loc.py`
+rewrites only `supermux.*` entries and leaves every other key byte-identical. On an upstream
+merge conflict here, union both sides (supermux keys never collide with cmux keys) or simply
+re-run the regen pipeline (see "Localization" in SUPERMUX.md). Verify no non-supermux key
+changed: `git diff <base> -- Resources/Localizable.xcstrings | grep '^[-+]' | grep -v supermux`.
 
 ### 5–9. The `changes` right-sidebar mode (one feature, five files)
 
