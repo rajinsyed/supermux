@@ -62,10 +62,6 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
     public var isRepository: Bool
     /// Current branch name, or `nil` when detached or not a repository.
     public var branch: String?
-    /// Current `HEAD` commit id (porcelain `branch.oid`); `"(initial)"` on an
-    /// unborn branch, or `nil` when not a repository. Lets the panel skip a
-    /// redundant history reload when `HEAD` has not moved.
-    public var headOID: String?
     /// Upstream branch (e.g. `origin/main`), or `nil` when none is set.
     public var upstreamBranch: String?
     /// Commits ahead of the upstream.
@@ -89,7 +85,6 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
     ///   - staged: Changes staged in the index.
     ///   - unstaged: Unstaged tracked-file changes.
     ///   - untracked: Untracked files.
-    ///   - headOID: Current `HEAD` commit id, or `nil` when unavailable.
     public init(
         isRepository: Bool,
         branch: String?,
@@ -98,8 +93,7 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
         behind: Int,
         staged: [SupermuxGitFileChange],
         unstaged: [SupermuxGitFileChange],
-        untracked: [SupermuxGitFileChange],
-        headOID: String? = nil
+        untracked: [SupermuxGitFileChange]
     ) {
         self.isRepository = isRepository
         self.branch = branch
@@ -109,7 +103,6 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
         self.staged = staged
         self.unstaged = unstaged
         self.untracked = untracked
-        self.headOID = headOID
     }
 
     /// The snapshot used for directories that are not git repositories.
@@ -173,8 +166,7 @@ public struct SupermuxGitStatusParser: Sendable {
             behind: state.behind,
             staged: state.staged,
             unstaged: state.unstaged,
-            untracked: state.untracked,
-            headOID: state.headOID
+            untracked: state.untracked
         )
     }
 
@@ -182,7 +174,6 @@ public struct SupermuxGitStatusParser: Sendable {
 
     private struct ParseState {
         var branch: String?
-        var headOID: String?
         var upstreamBranch: String?
         var ahead = 0
         var behind = 0
@@ -195,8 +186,6 @@ public struct SupermuxGitStatusParser: Sendable {
         if line.hasPrefix("# branch.head ") {
             let name = String(line.dropFirst("# branch.head ".count))
             state.branch = name == "(detached)" ? nil : name
-        } else if line.hasPrefix("# branch.oid ") {
-            state.headOID = String(line.dropFirst("# branch.oid ".count))
         } else if line.hasPrefix("# branch.upstream ") {
             state.upstreamBranch = String(line.dropFirst("# branch.upstream ".count))
         } else if line.hasPrefix("# branch.ab ") {

@@ -155,7 +155,26 @@ public actor SupermuxGitChangesService {
         repoPath: String, hasUpstream: Bool, limit: Int
     ) async -> [SupermuxGitCommit] {
         guard limit > 0 else { return [] }
-        let revision = hasUpstream ? ["@{upstream}..HEAD"] : ["HEAD", "--not", "--remotes"]
+        if hasUpstream,
+           let upstreamCommits = await commitLog(
+               repoPath: repoPath, revision: ["@{upstream}..HEAD"], limit: limit
+           ) {
+            return upstreamCommits
+        }
+        // No upstream, or the `@{upstream}` range failed (e.g. the
+        // remote-tracking ref is missing locally): fall back to "not on any
+        // remote" rather than misleadingly claiming nothing is unpushed.
+        return await commitLog(
+            repoPath: repoPath, revision: ["HEAD", "--not", "--remotes"], limit: limit
+        ) ?? []
+    }
+
+    /// Runs `git log` over `revision` and parses the result; `nil` on git
+    /// failure (so callers can fall back) versus `[]` for a successful empty
+    /// range.
+    private func commitLog(
+        repoPath: String, revision: [String], limit: Int
+    ) async -> [SupermuxGitCommit]? {
         let result = await runner.run(
             directory: repoPath,
             executable: "git",
@@ -165,7 +184,7 @@ public actor SupermuxGitChangesService {
             ] + revision,
             timeout: Self.gitTimeout
         )
-        guard result.exitStatus == 0, let stdout = result.stdout else { return [] }
+        guard result.exitStatus == 0, let stdout = result.stdout else { return nil }
         return SupermuxGitCommit.parse(log: stdout)
     }
 

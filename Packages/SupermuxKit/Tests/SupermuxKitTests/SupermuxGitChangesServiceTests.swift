@@ -114,7 +114,6 @@ import SupermuxKit
 
         #expect(snapshot.isRepository)
         #expect(snapshot.branch == "main")
-        #expect(snapshot.headOID?.isEmpty == false)
         #expect(snapshot.staged.isEmpty)
         #expect(snapshot.unstaged.isEmpty)
         #expect(snapshot.untracked.isEmpty)

@@ -4,11 +4,12 @@ import Testing
 import CmuxProcess
 import SupermuxKit
 
-/// Behavior tests for ``SupermuxChangesModel``'s commit-history loading.
+/// Behavior tests for ``SupermuxChangesModel``'s unpushed-commits loading.
 ///
 /// Uses a recording fake ``CommandRunning`` that answers `git status` and
 /// `git log` deterministically (no real process), so the tests assert the
-/// load-on-expand, paging, and collapse contracts without timing flakiness.
+/// load-on-expand, refetch, paging, push-clears, and collapse contracts without
+/// timing flakiness.
 @MainActor
 @Suite struct SupermuxChangesHistoryModelTests {
 
@@ -23,7 +24,7 @@ import SupermuxKit
         #expect(model.commits.isEmpty)
     }
 
-    @Test func expandingLoadsCommitsExactlyOnce() async {
+    @Test func expandingLoadsCommits() async {
         let runner = RecordingRunner(totalCommits: 5)
         let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
 
@@ -37,6 +38,21 @@ import SupermuxKit
         #expect(model.commits.first?.subject == "Subject 0")
         #expect(model.hasMoreCommits == false)
         #expect(model.isLoadingCommits == false)
+    }
+
+    /// While expanded, each refresh re-reads the (small) unpushed set so it
+    /// reflects every change — there is no cached skip on the no-upstream path.
+    @Test func expandedRefreshRefetchesUnpushedList() async {
+        let runner = RecordingRunner(totalCommits: 5)
+        let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
+
+        model.setDirectory("/repo")
+        await model.refresh()
+        await model.setHistoryExpanded(true)
+        #expect(await runner.logCallCount() == 1)
+
+        await model.refresh()
+        #expect(await runner.logCallCount() == 2)
     }
 
     @Test func paginationReportsMoreAndGrowsTheLimit() async {
@@ -59,40 +75,37 @@ import SupermuxKit
         #expect(logCalls.last?.contains("--max-count=201") == true)
     }
 
-    @Test func unchangedHeadSkipsReloadButHeadChangeReloads() async {
-        let runner = RecordingRunner(totalCommits: 3)
+    /// With an upstream and nothing ahead, the range is provably empty, so the
+    /// model skips the `git log` entirely.
+    @Test func upstreamWithNothingAheadSkipsLogRead() async {
+        let runner = RecordingRunner(totalCommits: 5, hasUpstream: true, ahead: 0)
         let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
 
         model.setDirectory("/repo")
         await model.refresh()
         await model.setHistoryExpanded(true)
-        #expect(await runner.logCallCount() == 1)
-        #expect(model.commits.count == 3)
 
-        // A refresh with no HEAD movement must not re-read the log.
-        await model.refresh()
-        #expect(await runner.logCallCount() == 1)
-
-        // After HEAD moves, the next refresh reloads the log.
-        await runner.setHead("head-1")
-        await model.refresh()
-        #expect(await runner.logCallCount() == 2)
+        #expect(await runner.logCallCount() == 0)
+        #expect(model.commits.isEmpty)
+        #expect(model.isLoadingCommits == false)
     }
 
-    @Test func pushAheadChangeReloadsUnpushedList() async {
-        // Starts ahead by 2; a push drops ahead to 0 without moving HEAD, which
-        // the composite signature must treat as a reason to re-read the log.
-        let runner = RecordingRunner(totalCommits: 5, ahead: 2)
+    /// A push drops ahead to 0 without moving HEAD; the next refresh must clear
+    /// the unpushed list (and can do so via the skip, with no new log read).
+    @Test func pushClearsUnpushedList() async {
+        let runner = RecordingRunner(totalCommits: 5, hasUpstream: true, ahead: 2)
         let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
 
         model.setDirectory("/repo")
         await model.refresh()
         await model.setHistoryExpanded(true)
+        #expect(model.commits.count == 5)
         #expect(await runner.logCallCount() == 1)
 
         await runner.setAhead(0)
         await model.refresh()
-        #expect(await runner.logCallCount() == 2)
+        #expect(model.commits.isEmpty)
+        #expect(await runner.logCallCount() == 1)
     }
 
     @Test func collapsingClearsCommitsAndStopsReading() async {
@@ -116,26 +129,23 @@ import SupermuxKit
 
     // MARK: - Fake runner
 
-    /// A `CommandRunning` fake that answers `status` with a clean `main`
-    /// repository and `log` with `totalCommits` synthetic commits, honoring the
-    /// request's `--max-count`. Records every invocation's arguments.
+    /// A `CommandRunning` fake that answers `status` with a `main` repository
+    /// (optionally tracking an upstream `ahead` commits) and `log` with
+    /// `totalCommits` synthetic commits, honoring the request's `--max-count`.
+    /// Records every invocation's arguments.
     private actor RecordingRunner: CommandRunning {
         private var calls: [[String]] = []
         private let totalCommits: Int
-        private var head: String
+        private let hasUpstream: Bool
         private var ahead: Int
 
-        init(totalCommits: Int, head: String = "head-0", ahead: Int = 0) {
+        init(totalCommits: Int, hasUpstream: Bool = false, ahead: Int = 0) {
             self.totalCommits = totalCommits
-            self.head = head
+            self.hasUpstream = hasUpstream
             self.ahead = ahead
         }
 
-        /// Moves `HEAD`, so the next status read reports a new `branch.oid`.
-        func setHead(_ head: String) { self.head = head }
-
-        /// Changes the ahead count (and thus the upstream signature), as a push
-        /// or fetch would, without moving `HEAD`.
+        /// Changes the ahead count, as a push or fetch would, without moving HEAD.
         func setAhead(_ ahead: Int) { self.ahead = ahead }
 
         func logCalls() -> [[String]] { calls.filter { $0.first == "log" } }
@@ -154,8 +164,8 @@ import SupermuxKit
             calls.append(arguments)
             switch arguments.first {
             case "status":
-                var stdout = "# branch.oid \(head)\n# branch.head main\n"
-                if ahead > 0 {
+                var stdout = "# branch.head main\n"
+                if hasUpstream {
                     stdout += "# branch.upstream origin/main\n# branch.ab +\(ahead) -0\n"
                 }
                 return result(stdout: stdout)

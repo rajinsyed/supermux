@@ -61,13 +61,6 @@ public final class SupermuxChangesModel {
     @ObservationIgnored private var commitsRequested = false
     /// Current commit-log page size; grown by ``loadMoreCommits()``.
     @ObservationIgnored private var commitLimit = SupermuxChangesModel.commitPageSize
-    /// Status signature at the last unpushed-commits load — `HEAD` oid plus
-    /// ahead/behind/upstream. The log is only re-read when this differs from
-    /// the latest status (or when reset to `nil` to force a reload on expand /
-    /// page growth / directory change), so a busy refresh stream does not re-run
-    /// `git log` while the unpushed set is unchanged. Ahead/upstream are part of
-    /// the signature because a `git push` empties the list without moving HEAD.
-    @ObservationIgnored private var lastUnpushedSignature: String?
     private static let commitPageSize = 100
 
     /// Creates the model.
@@ -105,7 +98,6 @@ public final class SupermuxChangesModel {
         commits = []
         hasMoreCommits = false
         commitLimit = Self.commitPageSize
-        lastUnpushedSignature = nil
         if observeTask != nil {
             startObserving()
         } else {
@@ -139,35 +131,39 @@ public final class SupermuxChangesModel {
                 if generation == directoryGeneration {
                     snapshot = result
                 }
-                // Reload only when the unpushed set could have changed since the
-                // last load (or a forced reload reset the signature). The
-                // signature spans HEAD, ahead/behind, and the upstream, so a
-                // push (ahead → 0, HEAD unchanged) or a fetch/pull also reloads.
-                let signature = Self.unpushedSignature(for: result)
-                if commitsRequested, result.isRepository, signature != lastUnpushedSignature {
-                    isLoadingCommits = true
-                    // Read one extra commit to detect whether more pages exist.
-                    let loaded = await service.unpushedCommits(
-                        repoPath: directory,
-                        hasUpstream: result.upstreamBranch != nil,
-                        limit: commitLimit + 1
-                    )
-                    // Discard the result if the directory changed or the section
-                    // was collapsed while the log read was in flight.
-                    if generation == directoryGeneration, commitsRequested {
-                        hasMoreCommits = loaded.count > commitLimit
-                        commits = Array(loaded.prefix(commitLimit))
-                        lastUnpushedSignature = signature
+                // The unpushed set is small, so reload it on each refresh while
+                // expanded — that catches every change (commit, push, fetch,
+                // amend, force-push) without a fragile cache key. The one cheap
+                // shortcut: with an upstream and nothing ahead, the range is
+                // provably empty, so skip the `git log` entirely.
+                if commitsRequested, result.isRepository {
+                    let hasUpstream = result.upstreamBranch != nil
+                    if hasUpstream, result.ahead == 0 {
+                        if generation == directoryGeneration, commitsRequested {
+                            commits = []
+                            hasMoreCommits = false
+                        }
+                        isLoadingCommits = false
+                    } else {
+                        isLoadingCommits = true
+                        // Read one extra commit to detect whether more pages exist.
+                        let loaded = await service.unpushedCommits(
+                            repoPath: directory,
+                            hasUpstream: hasUpstream,
+                            limit: commitLimit + 1
+                        )
+                        // Discard the result if the directory changed or the
+                        // section was collapsed while the read was in flight.
+                        if generation == directoryGeneration, commitsRequested {
+                            hasMoreCommits = loaded.count > commitLimit
+                            commits = Array(loaded.prefix(commitLimit))
+                        }
+                        isLoadingCommits = false
                     }
-                    isLoadingCommits = false
-                } else if commitsRequested, result.isRepository {
-                    // Unpushed set unchanged since the last load: already current.
-                    isLoadingCommits = false
                 } else if commitsRequested {
                     // Expanded but not a repository: nothing to show.
                     commits = []
                     hasMoreCommits = false
-                    lastUnpushedSignature = nil
                     isLoadingCommits = false
                 }
             } else {
@@ -270,7 +266,6 @@ public final class SupermuxChangesModel {
             guard !commitsRequested else { return }
             commitsRequested = true
             commitLimit = Self.commitPageSize
-            lastUnpushedSignature = nil
             // Show the loading state immediately; if a refresh is already in
             // flight this expand only sets `refreshPending`, so the flag would
             // otherwise lag a frame behind.
@@ -289,17 +284,8 @@ public final class SupermuxChangesModel {
     public func loadMoreCommits() async {
         guard commitsRequested, hasMoreCommits else { return }
         commitLimit += Self.commitPageSize
-        // Force a reload even though the unpushed set is unchanged: the page grew.
-        lastUnpushedSignature = nil
         isLoadingCommits = true
         await refresh()
-    }
-
-    /// A signature of the status fields that determine the unpushed set: any
-    /// change to `HEAD`, ahead/behind counts, or the upstream means the list
-    /// must be re-read.
-    private static func unpushedSignature(for snapshot: SupermuxGitStatusSnapshot) -> String {
-        "\(snapshot.headOID ?? "")|\(snapshot.ahead)|\(snapshot.behind)|\(snapshot.upstreamBranch ?? "")"
     }
 
     /// Commits the staged changes using ``commitMessage``; clears the
