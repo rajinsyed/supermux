@@ -243,6 +243,52 @@ import SupermuxKit
         #expect(listing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
+    @Test func removeWorktreeRunsTeardownScriptWithEnvironment() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { cleanUp(fixture.root) }
+        var project = fixture.project
+        // Teardown writes the exported worktree path into the main checkout, so
+        // we can assert it ran, with the environment set, before removal.
+        project.teardownCommands = [
+            #"printf '%s' "$SUPERMUX_WORKTREE_PATH" > "$SUPERSET_ROOT_PATH/teardown-marker""#
+        ]
+        let worktree = try await service.createWorktree(project: project, requestedBranch: "feature")
+
+        try await service.removeWorktree(worktree, project: project)
+
+        #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
+        let markerPath = (fixture.root as NSString).appendingPathComponent("teardown-marker")
+        let marker = try String(contentsOfFile: markerPath, encoding: .utf8)
+        #expect(marker == worktree.path)
+    }
+
+    @Test func teardownThatDirtiesTheWorktreeStillRemoves() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { cleanUp(fixture.root) }
+        var project = fixture.project
+        // Teardown drops an untracked file into the worktree, dirtying a checkout
+        // we already verified clean. The (non-force) removal must still succeed —
+        // teardown's own side effects must not block the deletion it precedes.
+        project.teardownCommands = [#"touch "$SUPERMUX_WORKTREE_PATH/teardown-scratch.txt""#]
+        let worktree = try await service.createWorktree(project: project, requestedBranch: "feature")
+
+        try await service.removeWorktree(worktree, project: project)
+        #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
+    }
+
+    @Test func failingTeardownDoesNotBlockRemoval() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { cleanUp(fixture.root) }
+        var project = fixture.project
+        project.teardownCommands = ["exit 7"]
+        let worktree = try await service.createWorktree(project: project, requestedBranch: "feature")
+
+        // A non-zero teardown exit is best-effort: it must neither throw nor
+        // leave the worktree behind.
+        try await service.removeWorktree(worktree, project: project)
+        #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
+    }
+
     @Test func removeWorktreeRefusesUnmanagedWorktrees() async throws {
         let fixture = try makeFixtureRepo()
         defer { cleanUp(fixture.root) }

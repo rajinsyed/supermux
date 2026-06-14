@@ -80,7 +80,7 @@ beside the title.
 
 ### 3. `cmux.xcodeproj/project.pbxproj` — unfenced (comments are not safe there)
 
-Twelve ID-based additions, all using the reserved supermux ID prefix `50BE0001…`. To re-apply by
+Fourteen ID-based additions, all using the reserved supermux ID prefix `50BE0001…`. To re-apply by
 hand, mirror how `CmuxSocketControl` is wired and how `CmuxSidebarActionDispatch.swift` is
 listed, with these exact IDs:
 
@@ -96,11 +96,13 @@ listed, with these exact IDs:
 | `50BE000100000000000000B5` | PBXBuildFile | `SupermuxRunSupport.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
 | `50BE000100000000000000B6` | PBXFileReference | `SupermuxWorkspaceActivityResolver.swift` (also listed in the `Supermux` group's `children`) |
 | `50BE000100000000000000B7` | PBXBuildFile | `SupermuxWorkspaceActivityResolver.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
+| `50BE000100000000000000B8` | PBXFileReference | `SupermuxSidebarFontScaleStore.swift` (also listed in the `Supermux` group's `children`) |
+| `50BE000100000000000000B9` | PBXBuildFile | `SupermuxSidebarFontScaleStore.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
 | `50BE000100000000000000C2` | PBXFileReference | `SupermuxSidebarBranchTests.swift` (also listed in the cmuxTests group's `children`) |
 | `50BE000100000000000000C1` | PBXBuildFile | `SupermuxSidebarBranchTests.swift in Sources` (also listed in the `cmuxTests` target's Sources phase `files`) |
 
 After re-applying run `python3 scripts/normalize-pbxproj.py && ./scripts/check-pbxproj.sh`.
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `25`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `29`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 

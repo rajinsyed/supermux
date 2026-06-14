@@ -1,5 +1,6 @@
 public import CmuxProcess
 import Foundation
+import os
 
 /// Creates, lists, and removes git worktrees for supermux projects.
 ///
@@ -16,6 +17,10 @@ public actor SupermuxGitWorktreeService {
     private let runner: any CommandRunning
     private let naming: SupermuxBranchName
     private static let gitTimeout: TimeInterval = 30
+    /// Upper bound for a worktree teardown script; cleanup that runs longer is
+    /// terminated so a hung script can never wedge worktree deletion.
+    private static let teardownTimeout: TimeInterval = 120
+    private static let logger = Logger(subsystem: "com.cmuxterm.app", category: "supermux.worktree")
 
     /// Creates a service.
     /// - Parameters:
@@ -223,8 +228,15 @@ public actor SupermuxGitWorktreeService {
                 throw SupermuxGitError.dirtyWorktree(path: worktree.path)
             }
         }
+        // Run the project's teardown script while the checkout still exists, but
+        // only now that removal is actually going ahead (past the dirty guard).
+        let ranTeardown = await runTeardownIfNeeded(worktree: worktree, project: project)
         var arguments = ["worktree", "remove"]
-        if force { arguments.append("--force") }
+        // Force the removal when the user asked, or when teardown ran: a teardown
+        // script may have written/removed files in a worktree we already verified
+        // clean (or were force-removing anyway), and `git worktree remove` would
+        // otherwise refuse the now-modified checkout.
+        if force || ranTeardown { arguments.append("--force") }
         arguments.append(worktree.path)
         try await runGit(in: project.rootPath, arguments, commandLabel: "worktree remove")
         if deleteBranch, let branch = worktree.branch {
@@ -233,6 +245,44 @@ public actor SupermuxGitWorktreeService {
     }
 
     // MARK: - Internals
+
+    /// Runs the project's teardown commands in `worktree` if any are configured.
+    ///
+    /// Executed headless as `env KEY=VALUE … <login-shell> -lc <script>`: the
+    /// variables go through `/usr/bin/env` (no shell quoting needed), and `-l`
+    /// makes the shell source the user's profile so `PATH`/tooling resolve — a
+    /// GUI app otherwise inherits a minimal environment. The script is
+    /// non-interactive, so interactive-only `.zshrc` aliases will not exist;
+    /// teardown is expected to call binaries/scripts, not shell aliases.
+    ///
+    /// Best-effort: a missing checkout, a non-zero exit, or a timeout is logged
+    /// and never blocks removal.
+    /// - Returns: `true` when a teardown script was actually launched (so the
+    ///   caller forces removal, since the script may have dirtied the checkout);
+    ///   `false` when there was nothing to run.
+    private func runTeardownIfNeeded(worktree: SupermuxProjectWorktree, project: SupermuxProject) async -> Bool {
+        guard let body = SupermuxWorktreeScript.joined(project.teardownCommands) else { return false }
+        guard FileManager.default.fileExists(atPath: worktree.path) else { return false }
+        let environment = SupermuxWorktreeEnvironment.variables(
+            projectRoot: project.rootPath,
+            worktreePath: worktree.path
+        )
+        let shellEnv = ProcessInfo.processInfo.environment["SHELL"] ?? ""
+        let shell = shellEnv.isEmpty ? "/bin/zsh" : shellEnv
+        let arguments = SupermuxWorktreeScript.envAssignments(environment) + [shell, "-lc", body]
+        let result = await runner.run(
+            directory: worktree.path,
+            executable: "/usr/bin/env",
+            arguments: arguments,
+            timeout: Self.teardownTimeout
+        )
+        if result.timedOut || result.executionError != nil || result.exitStatus != 0 {
+            Self.logger.warning(
+                "teardown failed for \(worktree.path, privacy: .public): \(Self.failureMessage(result), privacy: .public)"
+            )
+        }
+        return true
+    }
 
     private struct ResolvedBase {
         /// What `git worktree add` checks out from (e.g. `main`, `origin/main`, `HEAD`).

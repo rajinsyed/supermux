@@ -32,6 +32,8 @@ public struct SupermuxProjectRowActions {
     public var moveDown: () -> Void
     /// Reorders a nested workspace `(draggedId, targetId)` within this project.
     public var reorderWorkspace: (UUID, UUID) -> Void
+    /// Opens a pull request's URL (from a worktree or workspace PR badge).
+    public var openPullRequest: (URL) -> Void
 
     /// Memberwise initializer (all callbacks required).
     public init(
@@ -48,7 +50,8 @@ public struct SupermuxProjectRowActions {
         closeWorkspace: @escaping (UUID) -> Void,
         moveUp: @escaping () -> Void = {},
         moveDown: @escaping () -> Void = {},
-        reorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in }
+        reorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in },
+        openPullRequest: @escaping (URL) -> Void = { _ in }
     ) {
         self.openLocal = openLocal
         self.newWorktree = newWorktree
@@ -64,6 +67,7 @@ public struct SupermuxProjectRowActions {
         self.moveUp = moveUp
         self.moveDown = moveDown
         self.reorderWorkspace = reorderWorkspace
+        self.openPullRequest = openPullRequest
     }
 }
 
@@ -127,6 +131,10 @@ public struct SupermuxProjectRowView: View {
     private let project: SupermuxProject
     private let detectedIcon: NSImage?
     private let worktrees: [SupermuxProjectWorktree]
+    /// Resolved pull requests for this project's unopened worktrees, keyed by
+    /// worktree path. An immutable value snapshot (the row holds no PR store), so
+    /// a PR change in one project never invalidates another project's row.
+    private let worktreePullRequests: [String: SupermuxPullRequest]
     private let openWorkspaces: [SupermuxOpenWorkspace]
     private let isExpanded: Bool
     private let actions: SupermuxProjectRowActions
@@ -146,6 +154,11 @@ public struct SupermuxProjectRowView: View {
     /// straight to the child rows (which read it) — never read in this row's
     /// body, so a workspace-drag-start does not re-run the nested `ForEach`.
     @Binding private var draggingWorkspaceId: UUID?
+
+    /// Sidebar font scale (cmux's `sidebar-font-size`); `1` at the default size.
+    /// Multiplies the row's text and avatar so projects track the same setting
+    /// as the flat workspace list.
+    @Environment(\.supermuxSidebarFontScale) private var fontScale
 
     @State private var isHovered = false
 
@@ -171,6 +184,7 @@ public struct SupermuxProjectRowView: View {
         project: SupermuxProject,
         detectedIcon: NSImage? = nil,
         worktrees: [SupermuxProjectWorktree],
+        worktreePullRequests: [String: SupermuxPullRequest] = [:],
         openWorkspaces: [SupermuxOpenWorkspace] = [],
         isExpanded: Bool,
         actions: SupermuxProjectRowActions,
@@ -184,6 +198,7 @@ public struct SupermuxProjectRowView: View {
         self.project = project
         self.detectedIcon = detectedIcon
         self.worktrees = worktrees
+        self.worktreePullRequests = worktreePullRequests
         self.openWorkspaces = openWorkspaces
         self.isExpanded = isExpanded
         self.actions = actions
@@ -217,7 +232,8 @@ public struct SupermuxProjectRowView: View {
                         draggingWorkspaceId: $draggingWorkspaceId,
                         reorder: actions.reorderWorkspace
                     ),
-                    draggingWorkspaceId: $draggingWorkspaceId
+                    draggingWorkspaceId: $draggingWorkspaceId,
+                    openPullRequest: actions.openPullRequest
                 )
             }
             // The disclosure reveals worktrees that exist on disk but have no
@@ -239,9 +255,9 @@ public struct SupermuxProjectRowView: View {
 
     private var projectRow: some View {
         HStack(spacing: 7) {
-            SupermuxProjectAvatarView(project: project, detectedIcon: detectedIcon, size: 20)
+            SupermuxProjectAvatarView(project: project, detectedIcon: detectedIcon, size: 20 * fontScale)
             Text(project.name)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12 * fontScale, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 2)
@@ -249,11 +265,11 @@ public struct SupermuxProjectRowView: View {
                 Button(action: actions.toggleExpanded) {
                     HStack(spacing: 2) {
                         Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 8.5, weight: .semibold))
+                            .font(.system(size: 8.5 * fontScale, weight: .semibold))
                         Text("\(unopenedWorktrees.count)")
-                            .font(.system(size: 9.5, weight: .semibold).monospacedDigit())
+                            .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 7, weight: .bold))
+                            .font(.system(size: 7 * fontScale, weight: .bold))
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -268,7 +284,7 @@ public struct SupermuxProjectRowView: View {
             if isHovered {
                 Button(action: actions.newWorktree) {
                     Image(systemName: "plus.square.on.square")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 10 * fontScale, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -333,8 +349,10 @@ public struct SupermuxProjectRowView: View {
     private func worktreeRow(_ worktree: SupermuxProjectWorktree) -> some View {
         SupermuxWorktreeRowView(
             worktree: worktree,
+            pullRequest: worktreePullRequests[worktree.path],
             open: { actions.openWorktree(worktree) },
-            delete: { deleteBranch in actions.deleteWorktree(worktree, deleteBranch) }
+            delete: { deleteBranch in actions.deleteWorktree(worktree, deleteBranch) },
+            openPullRequest: actions.openPullRequest
         )
     }
 }
@@ -342,23 +360,35 @@ public struct SupermuxProjectRowView: View {
 /// An indented worktree row under an expanded project.
 struct SupermuxWorktreeRowView: View {
     let worktree: SupermuxProjectWorktree
+    /// The worktree branch's pull request, if one was probed; renders a badge.
+    var pullRequest: SupermuxPullRequest?
     let open: () -> Void
     let delete: (Bool) -> Void
+    /// Opens the PR badge's URL.
+    var openPullRequest: (URL) -> Void = { _ in }
 
+    @Environment(\.supermuxSidebarFontScale) private var fontScale
     @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 9 * fontScale, weight: .medium))
                 .foregroundStyle(.secondary)
             Text(worktree.displayName)
-                .font(.system(size: 11.5))
+                .font(.system(size: 11.5 * fontScale))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 2)
+            if let pullRequest {
+                SupermuxPullRequestBadge(
+                    pullRequest: pullRequest,
+                    fontScale: fontScale,
+                    onOpen: openPullRequest
+                )
+            }
         }
-        .padding(.leading, 24)
+        .padding(.leading, 24 * fontScale)
         .padding(.trailing, 6)
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -401,52 +431,59 @@ struct SupermuxOpenWorkspaceRowView: View {
     /// drag-start write dims only this row in place; reading it in the parent
     /// `ForEach` would recreate the row and cancel the drag.
     @Binding var draggingWorkspaceId: UUID?
+    /// Opens the workspace's PR badge URL (cmux's per-workspace PR state).
+    var openPullRequest: (URL) -> Void = { _ in }
 
+    @Environment(\.supermuxSidebarFontScale) private var fontScale
     @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
-            // Agent activity takes the leading slot when present (spinner /
-            // pulsing / ready dot); otherwise a plain selection dot. The slot is
-            // fixed-width so titles stay aligned across states.
+            // Agent activity fills the leading slot when present (spinner /
+            // pulsing / ready dot); idle workspaces show nothing — selection is
+            // conveyed by the row highlight and bold title. The slot stays
+            // fixed-width so titles align whether or not a dot is shown.
             ZStack {
                 if workspace.activity.isVisible {
-                    SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6)
-                } else {
-                    Circle()
-                        .fill(workspace.isSelected ? Color.accentColor : Color.secondary.opacity(0.4))
-                        .frame(width: 5, height: 5)
+                    SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
                 }
             }
-            .frame(width: 12, height: 12)
+            .frame(width: 12 * fontScale, height: 12 * fontScale)
             VStack(alignment: .leading, spacing: 0) {
                 Text(workspace.title)
-                    .font(.system(size: 11.5, weight: workspace.isSelected ? .semibold : .regular))
+                    .font(.system(size: 11.5 * fontScale, weight: workspace.isSelected ? .semibold : .regular))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if let branch = workspace.branch, !branch.isEmpty {
                     Text(branch)
-                        .font(.system(size: 9.5, design: .monospaced))
+                        .font(.system(size: 9.5 * fontScale, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
             Spacer(minLength: 2)
+            if let pullRequest = workspace.pullRequest {
+                SupermuxPullRequestBadge(
+                    pullRequest: pullRequest,
+                    fontScale: fontScale,
+                    onOpen: openPullRequest
+                )
+            }
             if workspace.isRunning {
                 SupermuxRunIndicator()
             }
             if isHovered {
                 Button(action: close) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 8.5, weight: .semibold))
+                        .font(.system(size: 8.5 * fontScale, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"))
             }
         }
-        .padding(.leading, 22)
+        .padding(.leading, 22 * fontScale)
         .padding(.trailing, 6)
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)

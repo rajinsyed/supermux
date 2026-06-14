@@ -21,6 +21,11 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
 3. **Run actions (⌘G).** Per-project start/stop dev-server commands with running-state display.
 4. **Terminal presets.** Named terminal setups (command + cwd) launchable per project.
 5. **Custom app actions** per project (open editor, open URL, arbitrary commands).
+6. **Worktree setup/teardown scripts.** A per-project setup script runs in a fresh worktree right
+   after it is created (e.g. `bun install`, `cp "$SUPERSET_ROOT_PATH/.env" .env`); a teardown
+   script runs right before a worktree is removed. Setup/teardown/run/actions can be **auto-imported
+   from a repo-shipped `.supermux/config.json` or `.superset/config.json`**, so a project ships its
+   own onboarding (see "Worktree scripts & project config" below).
 
 Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
 diff viewer, per-workspace git branch/dirty tracking), supermux **extends** it rather than
@@ -33,9 +38,11 @@ building a parallel system.
 | Sticky Projects (sidebar section, icons, colors, persisted) | ✅ | `SupermuxProjectsModel`, `SupermuxProjectStore`, `SupermuxProjectsSectionView`; mounted via the `sidebar-projects-section` touchpoint |
 | Open local / create worktree from a project | ✅ | `SupermuxGitWorktreeService` (piggycode semantics: `--no-track -b`, `push.autoSetupRemote`, `branch.<n>.base`, dedup, exclude) |
 | List / open / delete worktrees (dirty-checked) | ✅ | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, project row disclosure |
+| Worktree PR badges (clickable, state-colored) | ✅ | opened worktrees reuse cmux's per-workspace `SidebarPullRequestState` (carried on `SupermuxOpenWorkspace.pullRequest`); unopened ones via `SupermuxWorktreePullRequestModel` + `SupermuxPullRequestProbe` (wrapping `CmuxGit.PullRequestProbeService`); both render `SupermuxPullRequestBadge`. SupermuxKit now depends on `CmuxGit`. |
 | Changes (git) panel | ✅ | right-sidebar `changes` mode (`right-sidebar-changes-mode-*` touchpoints) → `SupermuxChangesPanelView` / `SupermuxChangesModel` / `SupermuxGitChangesService` |
 | Run actions (⌘G start/stop) | ✅ | `supermuxToggleRun` shortcut (shares ⌘G with Find Next) → `SupermuxRunCoordinator` |
 | Custom app actions + terminal presets (per project) | ✅ | `SupermuxProjectAction`, editor Actions section, project-row Actions submenu |
+| Worktree setup/teardown + `config.json` import | ✅ | `SupermuxProjectConfig`(+`Loader`), `SupermuxWorktreeScript`/`SupermuxWorktreeEnvironment`; setup runs in a dedicated terminal via `SupermuxTabManagerOpener`, teardown headless in `SupermuxGitWorktreeService.removeWorktree`; import wired in `SupermuxProjectsModel` |
 | Localization (en + ja) | ✅ | all `supermux.*` keys in `Resources/Localizable.xcstrings`; regenerate with the scripts under "Localization" below |
 
 Both phases are verified against a live tagged build (worktree creation, the Changes panel on
@@ -54,6 +61,48 @@ To refresh after adding/changing supermux strings, re-run the audit tooling kept
 `scripts/` (`supermux-extract-loc-keys.py` → format → translate → `supermux-merge-loc.py`); the
 merge is idempotent and only ever touches `supermux.*` keys, so the existing catalog stays
 byte-stable.
+
+### Worktree scripts & project config
+
+A project carries `setupCommands` / `teardownCommands` (alongside `runCommands` / `actions`).
+
+- **Setup** runs once, right after a worktree is created. `SupermuxTabManagerOpener` opens the
+  worktree workspace with a clean main terminal and spawns **one dedicated, focused setup terminal**
+  that runs the script through the interactive shell (so aliases resolve, and a trailing `exit`
+  closes only that tab). Re-opening an existing worktree never re-runs setup.
+- **Teardown** runs headless in `SupermuxGitWorktreeService.removeWorktree`, *after* the dirty
+  guard and *before* `git worktree remove`, as `env KEY=VALUE … $SHELL -lc <script>` (login shell
+  for `PATH`/tooling; non-interactive, so `.zshrc` aliases are absent). It is best-effort — a
+  non-zero exit or timeout (120 s) is logged and never blocks removal.
+
+**Environment** exported into both scripts (`SupermuxWorktreeEnvironment`):
+
+| Variable | Value |
+|----------|-------|
+| `SUPERSET_ROOT_PATH` | main project checkout (kept for superset/piggycode script compatibility) |
+| `SUPERMUX_ROOT_PATH` | same as above (fork-native alias) |
+| `SUPERMUX_WORKTREE_PATH` | the new worktree's absolute path |
+
+This is what makes `cp "$SUPERSET_ROOT_PATH/.env" .env` work inside a fresh worktree.
+
+**Config import.** If a project root contains `.supermux/config.json` (preferred) or
+`.superset/config.json`, `SupermuxProjectsModel` imports it — overwriting `setup`/`teardown`/`run`/
+`actions` (config is the source of truth) — on add, on load, and before each worktree
+create/remove. When a config is present those four fields are **read-only in the editor** (a note
+points at the file). Config shape:
+
+```json
+{
+  "setup": ["bun install\ncp \"$SUPERSET_ROOT_PATH/.env\" .env\nexit"],
+  "teardown": ["./.superset/teardown.sh"],
+  "run": ["bun run dev"],
+  "actions": [{ "id": "…", "name": "Open GitHub", "command": "open …", "icon": "deploy" }]
+}
+```
+
+Action `icon` accepts superset keywords (`bolt`, `build`, `deploy`, …) mapped to SF Symbols, or a
+raw SF Symbol; action `id` keeps a valid UUID, otherwise derives a deterministic one so re-imports
+stay idempotent. All of this lives in supermux-owned files — no new upstream touchpoints.
 
 ## Fork management — THE RULES
 

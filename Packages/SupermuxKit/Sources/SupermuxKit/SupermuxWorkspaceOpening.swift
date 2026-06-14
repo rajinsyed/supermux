@@ -21,6 +21,18 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     /// regardless of its directory. `nil` for opens not tied to a project, so
     /// those stay standalone in the flat list.
     public var projectId: UUID?
+    /// A setup script to run in a dedicated terminal of the newly created
+    /// workspace, or `nil` for none.
+    ///
+    /// Used when opening a freshly created worktree: the host opens the
+    /// workspace with a clean main terminal and additionally spawns one setup
+    /// terminal that runs this script (with ``setupEnvironment`` exported). It
+    /// runs in its own surface — not the main terminal — so a script ending in
+    /// `exit` closes only the setup tab, never the workspace's primary shell.
+    public var setupScript: String?
+    /// Environment variables exported into the ``setupScript`` terminal (e.g.
+    /// `SUPERSET_ROOT_PATH`). Empty when there is no setup script.
+    public var setupEnvironment: [String: String]
 
     /// Creates a request.
     /// - Parameters:
@@ -29,18 +41,24 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     ///   - colorHex: Optional accent color.
     ///   - initialCommand: Optional command to run in the first terminal.
     ///   - projectId: Owning project to associate the opened workspace with.
+    ///   - setupScript: Setup script for a dedicated setup terminal, or `nil`.
+    ///   - setupEnvironment: Variables exported into the setup terminal.
     public init(
         title: String,
         directory: String,
         colorHex: String? = nil,
         initialCommand: String? = nil,
-        projectId: UUID? = nil
+        projectId: UUID? = nil,
+        setupScript: String? = nil,
+        setupEnvironment: [String: String] = [:]
     ) {
         self.title = title
         self.directory = directory
         self.colorHex = colorHex
         self.initialCommand = initialCommand
         self.projectId = projectId
+        self.setupScript = setupScript
+        self.setupEnvironment = setupEnvironment
     }
 }
 

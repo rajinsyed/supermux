@@ -15,6 +15,13 @@ public struct SupermuxProjectsSectionView: View {
     private let onSelectWorkspace: (UUID) -> Void
     private let onCloseWorkspace: (UUID) -> Void
     private let onReorderWorkspace: (UUID, UUID) -> Void
+    private let onOpenPullRequest: (URL) -> Void
+
+    /// Resolves pull requests for unopened worktrees (opened ones reuse cmux's
+    /// own probe via ``SupermuxOpenWorkspace/pullRequest``). Owned here at the
+    /// section level — never by a row — so rows receive immutable PR value
+    /// snapshots, preserving the sidebar snapshot boundary.
+    @State private var pullRequestModel = SupermuxWorktreePullRequestModel()
 
     @State private var newWorktreeProject: SupermuxProject?
     @State private var editorProject: SupermuxProject?
@@ -29,6 +36,9 @@ public struct SupermuxProjectsSectionView: View {
     /// Resolves and caches each project's auto-detected logo. Owned here, above
     /// the project list, so rows receive only an immutable `NSImage?` snapshot.
     @State private var iconStore = SupermuxProjectIconStore()
+    /// Sidebar font scale (cmux's `sidebar-font-size`); scales the section
+    /// header alongside the project rows. `1` at the default size.
+    @Environment(\.supermuxSidebarFontScale) private var fontScale
 
     /// Creates the section.
     /// - Parameters:
@@ -40,13 +50,16 @@ public struct SupermuxProjectsSectionView: View {
     ///   - onCloseWorkspace: Closes a nested workspace by id.
     ///   - onReorderWorkspace: Reorders a nested workspace `(draggedId,
     ///     targetId)` within its project (wired to the host's tab order).
+    ///   - onOpenPullRequest: Opens a PR badge's URL. Defaults to the system
+    ///     browser; the host overrides it to honor cmux's PR-link routing.
     public init(
         model: SupermuxProjectsModel,
         opener: any SupermuxWorkspaceOpening,
         openWorkspaces: [SupermuxOpenWorkspace] = [],
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
         onCloseWorkspace: @escaping (UUID) -> Void = { _ in },
-        onReorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in }
+        onReorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in },
+        onOpenPullRequest: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     ) {
         self.model = model
         self.opener = opener
@@ -54,6 +67,7 @@ public struct SupermuxProjectsSectionView: View {
         self.onSelectWorkspace = onSelectWorkspace
         self.onCloseWorkspace = onCloseWorkspace
         self.onReorderWorkspace = onReorderWorkspace
+        self.onOpenPullRequest = onOpenPullRequest
     }
 
     public var body: some View {
@@ -66,6 +80,7 @@ public struct SupermuxProjectsSectionView: View {
                         project: project,
                         detectedIcon: iconStore.image(for: project.id),
                         worktrees: model.worktreesByProjectId[project.id] ?? [],
+                        worktreePullRequests: worktreePullRequests(for: project.id),
                         openWorkspaces: grouped[project.id] ?? [],
                         isExpanded: model.expandedProjectIds.contains(project.id),
                         actions: rowActions(for: project),
@@ -107,9 +122,26 @@ public struct SupermuxProjectsSectionView: View {
         .task(id: iconResolutionToken) {
             await iconStore.refresh(projects: model.projects)
         }
+        // Probe pull requests for the unopened worktrees currently shown (under
+        // expanded projects). Re-runs when that set changes, then re-polls on a
+        // slow interval to catch open→merged/closed transitions; opened worktrees
+        // reuse cmux's own probe and aren't fetched here.
+        .task(id: worktreePullRequestProbeToken) {
+            let targets = worktreePullRequestTargets
+            guard !targets.isEmpty else {
+                await pullRequestModel.refresh(targets: [], allowCache: false)
+                return
+            }
+            var allowCache = false
+            while !Task.isCancelled {
+                await pullRequestModel.refresh(targets: targets, allowCache: allowCache)
+                allowCache = true
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
         .sheet(item: $newWorktreeProject) { project in
             SupermuxNewWorktreeSheet(model: model, project: project) { worktree, workspaceName in
-                openWorktree(worktree, project: project, title: workspaceName)
+                openWorktree(worktree, project: project, title: workspaceName, runSetup: true)
             }
         }
         .sheet(item: $editorProject) { project in
@@ -128,10 +160,10 @@ public struct SupermuxProjectsSectionView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: model.isSectionCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 8 * fontScale, weight: .bold))
                         .foregroundStyle(.secondary)
                     Text(String(localized: "supermux.projects.header", defaultValue: "Projects"))
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(.system(size: 10.5 * fontScale, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                 }
@@ -142,7 +174,7 @@ public struct SupermuxProjectsSectionView: View {
                 pickAndAddProject()
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 10 * fontScale, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -158,7 +190,7 @@ public struct SupermuxProjectsSectionView: View {
             localized: "supermux.projects.empty",
             defaultValue: "Add a repo to pin it here"
         ))
-        .font(.system(size: 10.5))
+        .font(.system(size: 10.5 * fontScale))
         .foregroundStyle(.tertiary)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -168,6 +200,46 @@ public struct SupermuxProjectsSectionView: View {
     /// the icon-resolution task re-runs only when logo locations could differ.
     private var iconResolutionToken: String {
         model.projects.map { "\($0.id.uuidString):\($0.rootPath)" }.joined(separator: "|")
+    }
+
+    /// The unopened worktrees (under expanded projects) to probe for pull
+    /// requests. Opened worktrees nest as workspace rows and reuse cmux's own
+    /// probe, so they are excluded here.
+    private var worktreePullRequestTargets: [SupermuxPullRequestTarget] {
+        let openDirectories = Set(openWorkspaces.map {
+            ($0.directory as NSString).standardizingPath
+        })
+        var targets: [SupermuxPullRequestTarget] = []
+        for project in model.projects where model.expandedProjectIds.contains(project.id) {
+            for worktree in model.worktreesByProjectId[project.id] ?? [] {
+                guard let branch = worktree.branch else { continue }
+                if openDirectories.contains((worktree.path as NSString).standardizingPath) { continue }
+                targets.append(SupermuxPullRequestTarget(path: worktree.path, branch: branch))
+            }
+        }
+        return targets
+    }
+
+    /// A value that changes whenever the set of unopened worktrees to probe
+    /// changes (expand/collapse, worktree created/deleted, opened/closed), so the
+    /// probe task restarts with the current targets.
+    private var worktreePullRequestProbeToken: String {
+        worktreePullRequestTargets
+            .map { "\($0.path)\u{1}\($0.branch)" }
+            .sorted()
+            .joined(separator: "\u{2}")
+    }
+
+    /// This project's resolved unopened-worktree pull requests, keyed by worktree
+    /// path — the immutable value snapshot handed to its row.
+    private func worktreePullRequests(for projectId: UUID) -> [String: SupermuxPullRequest] {
+        let resolved = pullRequestModel.pullRequestsByWorktreePath
+        guard !resolved.isEmpty, let worktrees = model.worktreesByProjectId[projectId] else { return [:] }
+        var result: [String: SupermuxPullRequest] = [:]
+        for worktree in worktrees where resolved[worktree.path] != nil {
+            result[worktree.path] = resolved[worktree.path]
+        }
+        return result
     }
 
     // MARK: - Actions
@@ -198,7 +270,8 @@ public struct SupermuxProjectsSectionView: View {
             closeWorkspace: onCloseWorkspace,
             moveUp: { moveProject(project, by: -1) },
             moveDown: { moveProject(project, by: 1) },
-            reorderWorkspace: onReorderWorkspace
+            reorderWorkspace: onReorderWorkspace,
+            openPullRequest: onOpenPullRequest
         )
     }
 
@@ -254,14 +327,33 @@ public struct SupermuxProjectsSectionView: View {
         ))
     }
 
-    private func openWorktree(_ worktree: SupermuxProjectWorktree, project: SupermuxProject, title: String? = nil) {
+    /// Opens a workspace in `worktree`. When `runSetup` is true (only the
+    /// just-created path), the project's setup script runs in a dedicated setup
+    /// terminal of the new workspace; re-opening an existing worktree never
+    /// re-runs setup.
+    private func openWorktree(
+        _ worktree: SupermuxProjectWorktree,
+        project rawProject: SupermuxProject,
+        title: String? = nil,
+        runSetup: Bool = false
+    ) {
+        // Use the model's current record, not the (possibly stale) snapshot the
+        // caller captured: `createWorktree` re-imports config.json just before
+        // this runs, so the setup script must come from the refreshed project.
+        let project = model.projects.first(where: { $0.id == rawProject.id }) ?? rawProject
         model.noteOpened(id: project.id)
         let resolvedTitle = title.map { $0.isEmpty ? worktree.displayName : $0 } ?? worktree.displayName
+        let setupScript = runSetup ? SupermuxWorktreeScript.joined(project.setupCommands) : nil
+        let setupEnvironment: [String: String] = setupScript == nil
+            ? [:]
+            : SupermuxWorktreeEnvironment.variables(projectRoot: project.rootPath, worktreePath: worktree.path)
         opener.openWorkspace(SupermuxOpenWorkspaceRequest(
             title: resolvedTitle,
             directory: worktree.path,
             colorHex: project.colorHex,
-            projectId: project.id
+            projectId: project.id,
+            setupScript: setupScript,
+            setupEnvironment: setupEnvironment
         ))
     }
 

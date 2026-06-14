@@ -30,6 +30,11 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     /// Whether this workspace's project run command is currently running,
     /// for the piggycode-style run indicator on the row.
     public let isRunning: Bool
+    /// The pull request for this workspace's branch, when cmux has probed one.
+    /// Reused directly from cmux's own per-workspace PR state (the host maps
+    /// `Workspace.sidebarPullRequestsInDisplayOrder().first`), so no separate
+    /// probe runs for opened worktrees.
+    public let pullRequest: SupermuxPullRequest?
 
     /// Creates a snapshot.
     /// - Parameters:
@@ -41,6 +46,7 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     ///   - projectId: Owning project for nesting, or `nil` if standalone.
     ///   - activity: Agent activity state for the indicator.
     ///   - isRunning: Whether the project run command is active for this workspace.
+    ///   - pullRequest: The workspace branch's pull request, if cmux probed one.
     public init(
         id: UUID,
         title: String,
@@ -49,7 +55,8 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         branch: String? = nil,
         projectId: UUID? = nil,
         activity: SupermuxWorkspaceActivity = .idle,
-        isRunning: Bool = false
+        isRunning: Bool = false,
+        pullRequest: SupermuxPullRequest? = nil
     ) {
         self.id = id
         self.title = title
@@ -59,5 +66,6 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         self.projectId = projectId
         self.activity = activity
         self.isRunning = isRunning
+        self.pullRequest = pullRequest
     }
 }

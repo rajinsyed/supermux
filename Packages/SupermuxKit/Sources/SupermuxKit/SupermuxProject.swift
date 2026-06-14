@@ -25,6 +25,15 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     public var worktreesDirName: String
     /// Shell commands for the project's run action (started/stopped with ⌘G).
     public var runCommands: [String]
+    /// Shell commands run in a fresh worktree right after it is created
+    /// (e.g. `bun install`, `cp "$SUPERSET_ROOT_PATH/.env" .env`). Each entry
+    /// may itself span multiple lines; they run in the new worktree's terminal
+    /// with the worktree-environment variables exported.
+    public var setupCommands: [String]
+    /// Shell commands run in a worktree right before it is removed (cleanup,
+    /// e.g. stopping containers). Run headless in the worktree directory with
+    /// the worktree-environment variables exported; failures never block removal.
+    public var teardownCommands: [String]
     /// Named custom actions / terminal presets launchable from the project.
     public var actions: [SupermuxProjectAction]
     /// When the project was registered.
@@ -42,6 +51,8 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     ///   - defaultBranch: Base branch for new worktrees; `nil` uses `HEAD`.
     ///   - worktreesDirName: Worktree container directory; defaults to `.worktrees`.
     ///   - runCommands: Run-action commands; defaults to none.
+    ///   - setupCommands: Commands run in a fresh worktree after creation; defaults to none.
+    ///   - teardownCommands: Commands run in a worktree before removal; defaults to none.
     ///   - actions: Named custom actions / terminal presets; defaults to none.
     ///   - createdAt: Registration date; defaults to now.
     ///   - lastOpenedAt: Last-opened date; defaults to `nil`.
@@ -54,6 +65,8 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         defaultBranch: String? = nil,
         worktreesDirName: String = ".worktrees",
         runCommands: [String] = [],
+        setupCommands: [String] = [],
+        teardownCommands: [String] = [],
         actions: [SupermuxProjectAction] = [],
         createdAt: Date = Date(),
         lastOpenedAt: Date? = nil
@@ -66,6 +79,8 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         self.defaultBranch = defaultBranch
         self.worktreesDirName = worktreesDirName
         self.runCommands = runCommands
+        self.setupCommands = setupCommands
+        self.teardownCommands = teardownCommands
         self.actions = actions
         self.createdAt = createdAt
         self.lastOpenedAt = lastOpenedAt
@@ -78,12 +93,14 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, rootPath, colorHex, iconSymbol, defaultBranch
-        case worktreesDirName, runCommands, actions, createdAt, lastOpenedAt
+        case worktreesDirName, runCommands, setupCommands, teardownCommands
+        case actions, createdAt, lastOpenedAt
     }
 
     /// Decodes a project, tolerating older records: `worktreesDirName`,
-    /// `runCommands`, `actions`, and `createdAt` fall back to sensible defaults
-    /// when absent so forward/backward migrations stay lossless.
+    /// `runCommands`, `setupCommands`, `teardownCommands`, `actions`, and
+    /// `createdAt` fall back to sensible defaults when absent so forward/backward
+    /// migrations stay lossless.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -94,6 +111,8 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         defaultBranch = try container.decodeIfPresent(String.self, forKey: .defaultBranch)
         worktreesDirName = try container.decodeIfPresent(String.self, forKey: .worktreesDirName) ?? ".worktrees"
         runCommands = try container.decodeIfPresent([String].self, forKey: .runCommands) ?? []
+        setupCommands = try container.decodeIfPresent([String].self, forKey: .setupCommands) ?? []
+        teardownCommands = try container.decodeIfPresent([String].self, forKey: .teardownCommands) ?? []
         actions = try container.decodeIfPresent([SupermuxProjectAction].self, forKey: .actions) ?? []
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         lastOpenedAt = try container.decodeIfPresent(Date.self, forKey: .lastOpenedAt)

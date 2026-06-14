@@ -17,10 +17,16 @@ public struct SupermuxProjectEditorSheet: View {
     @State private var defaultBranchInput: String
     @State private var worktreesDirInput: String
     @State private var runCommandsInput: String
+    @State private var setupCommandsInput: String
+    @State private var teardownCommandsInput: String
     /// Logo auto-detected from the project files, previewed in the icon row.
     @State private var detectedIcon: NSImage?
     /// Project-relative path of the detected logo, shown next to its preview.
     @State private var detectedIconRelativePath: String?
+    /// Relative path of the project's `config.json` when one manages it, e.g.
+    /// `.superset/config.json`; `nil` when the project has no config file. When
+    /// set, the run/setup/teardown/actions fields are config-owned and read-only.
+    @State private var configRelativePath: String?
 
     /// Creates the editor.
     /// - Parameters:
@@ -33,7 +39,13 @@ public struct SupermuxProjectEditorSheet: View {
         _defaultBranchInput = State(initialValue: project.defaultBranch ?? "")
         _worktreesDirInput = State(initialValue: project.worktreesDirName)
         _runCommandsInput = State(initialValue: project.runCommands.joined(separator: "\n"))
+        _setupCommandsInput = State(initialValue: project.setupCommands.joined(separator: "\n"))
+        _teardownCommandsInput = State(initialValue: project.teardownCommands.joined(separator: "\n"))
     }
+
+    /// Whether a repo-shipped `config.json` owns the run/setup/teardown/actions
+    /// fields. They are then read-only — editing the file is the way to change them.
+    private var isConfigManaged: Bool { configRelativePath != nil }
 
     /// The sheet content.
     public var body: some View {
@@ -55,14 +67,40 @@ public struct SupermuxProjectEditorSheet: View {
                     baseBranchRow
                     worktreesFolderRow
                 }
+                if isConfigManaged {
+                    configManagedSection
+                }
                 Section {
                     runCommandsRow
                 }
+                .disabled(isConfigManaged)
+                Section {
+                    scriptRow(
+                        title: String(localized: "supermux.projectEditor.setupScript", defaultValue: "Setup Script"),
+                        help: String(
+                            localized: "supermux.projectEditor.setupScript.help",
+                            defaultValue: "Runs in a new worktree right after it is created. $SUPERSET_ROOT_PATH points at the main checkout."
+                        ),
+                        text: $setupCommandsInput
+                    )
+                    scriptRow(
+                        title: String(localized: "supermux.projectEditor.teardownScript", defaultValue: "Teardown Script"),
+                        help: String(
+                            localized: "supermux.projectEditor.teardownScript.help",
+                            defaultValue: "Runs in a worktree right before it is removed (cleanup)."
+                        ),
+                        text: $teardownCommandsInput
+                    )
+                } header: {
+                    Text(String(localized: "supermux.projectEditor.scripts", defaultValue: "Worktree Scripts"))
+                }
+                .disabled(isConfigManaged)
                 Section {
                     actionsRow
                 } header: {
                     Text(String(localized: "supermux.projectEditor.actions", defaultValue: "Actions"))
                 }
+                .disabled(isConfigManaged)
                 Section {
                     locationRow
                 }
@@ -71,8 +109,9 @@ public struct SupermuxProjectEditorSheet: View {
             Divider()
             buttonBar
         }
-        .frame(width: 420, height: 620)
+        .frame(width: 420, height: 720)
         .task { await detectIcon() }
+        .task { await loadConfigState() }
     }
 
     // MARK: - Rows
@@ -180,6 +219,46 @@ public struct SupermuxProjectEditorSheet: View {
             ))
             .font(.caption)
             .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// A note shown when a repo-shipped `config.json` owns the run/setup/
+    /// teardown/actions fields, naming the file the user should edit instead.
+    private var configManagedSection: some View {
+        Section {
+            Label {
+                Text(String(
+                    localized: "supermux.projectEditor.configManaged",
+                    defaultValue: "Run, setup, teardown, and actions are managed by \(configRelativePath ?? "config.json"). Edit that file to change them."
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "doc.badge.gearshape")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// A labeled multi-line script editor used for the setup and teardown
+    /// fields. Each preserves newlines as a single multi-line script.
+    private func scriptRow(title: String, help: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+            TextEditor(text: text)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(height: 58)
+                .scrollContentBackground(.hidden)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1)
+                }
+            Text(help)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 2)
     }
@@ -306,6 +385,32 @@ public struct SupermuxProjectEditorSheet: View {
             : url.lastPathComponent
     }
 
+    /// Detects whether a repo-shipped `config.json` manages this project and, if
+    /// so, mirrors its live values into the (read-only) script/run/action fields
+    /// so the editor always reflects the file's current contents. File I/O runs
+    /// off the main actor.
+    private func loadConfigState() async {
+        let rootPath = edited.rootPath
+        let loader = SupermuxProjectConfigLoader()
+        let resolved = await Task.detached { () -> (path: String, config: SupermuxProjectConfig?)? in
+            guard let path = loader.resolvedRelativePath(projectRoot: rootPath) else { return nil }
+            return (path, loader.load(projectRoot: rootPath))
+        }.value
+        // Only a config that actually parses manages the project: a malformed
+        // file is treated as no config (fields stay editable), matching the
+        // model — which also ignores an unparsable config — so the editor and
+        // model never disagree about whether the project is config-managed.
+        guard let resolved, let config = resolved.config else {
+            configRelativePath = nil
+            return
+        }
+        configRelativePath = resolved.path
+        setupCommandsInput = config.setup.joined(separator: "\n")
+        teardownCommandsInput = config.teardown.joined(separator: "\n")
+        runCommandsInput = config.run.joined(separator: "\n")
+        edited.actions = edited.applying(config).actions
+    }
+
     private func save() {
         var project = edited
         project.name = trimmedName
@@ -320,76 +425,30 @@ public struct SupermuxProjectEditorSheet: View {
             .replacingOccurrences(of: "\\", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         project.worktreesDirName = (folder.isEmpty || folder == "." || folder == "..") ? ".worktrees" : folder
-        project.runCommands = runCommandsInput
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        project.actions = edited.actions.map { a in
-            var t = a
-            t.name = a.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            t.command = a.command.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t
-        }.filter { $0.isLaunchable }
+        // Run/setup/teardown/actions are owned by config.json when one is
+        // present; leave the config-derived values (already on `edited`) intact.
+        if !isConfigManaged {
+            project.runCommands = runCommandsInput
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            project.setupCommands = Self.scriptEntries(setupCommandsInput)
+            project.teardownCommands = Self.scriptEntries(teardownCommandsInput)
+            project.actions = edited.actions.map { a in
+                var t = a
+                t.name = a.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                t.command = a.command.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t
+            }.filter { $0.isLaunchable }
+        }
         model.updateProject(project)
         dismiss()
     }
-}
 
-/// A single editable row for a project's custom action / terminal preset.
-///
-/// Binds a ``SupermuxProjectAction`` value in place and exposes a delete
-/// callback so the parent editor can remove it from the project's list.
-private struct SupermuxProjectActionEditorRow: View {
-    @Binding var action: SupermuxProjectAction
-    let onDelete: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: action.resolvedIconSymbol)
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            TextField(
-                String(localized: "supermux.projectEditor.action.namePrompt", defaultValue: "Name"),
-                text: $action.name,
-                prompt: Text(String(
-                    localized: "supermux.projectEditor.action.namePrompt",
-                    defaultValue: "Name"
-                ))
-            )
-            .frame(width: 96)
-            TextField(
-                String(localized: "supermux.projectEditor.action.commandPrompt", defaultValue: "Command"),
-                text: $action.command,
-                prompt: Text(String(
-                    localized: "supermux.projectEditor.action.commandPrompt",
-                    defaultValue: "Command"
-                ))
-            )
-            .font(.system(size: 12, design: .monospaced))
-            .autocorrectionDisabled()
-            TextField(
-                String(localized: "supermux.projectEditor.action.iconPrompt", defaultValue: "Icon"),
-                text: iconBinding,
-                prompt: Text(String(
-                    localized: "supermux.projectEditor.action.iconPrompt",
-                    defaultValue: "Icon"
-                ))
-            )
-            .frame(width: 64)
-            .autocorrectionDisabled()
-            Button(action: onDelete) {
-                Image(systemName: "minus.circle")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(String(localized: "supermux.projectEditor.action.delete", defaultValue: "Remove Action"))
-        }
-    }
-
-    private var iconBinding: Binding<String> {
-        Binding(
-            get: { action.iconSymbol ?? "" },
-            set: { action.iconSymbol = $0.isEmpty ? nil : $0 }
-        )
+    /// Stores a setup/teardown editor's text as a single multi-line script entry
+    /// (internal newlines preserved), unlike run commands which split per line.
+    private static func scriptEntries(_ text: String) -> [String] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? [] : [trimmed]
     }
 }

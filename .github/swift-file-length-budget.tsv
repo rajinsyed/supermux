@@ -154,6 +154,7 @@
 588	cmuxTests/CommandPaletteShortcutCustomizationTests.swift
 586	Sources/JSONCParser.swift
 585	Sources/Cloud/VMClient.swift
+583	Packages/SupermuxKit/Sources/SupermuxKit/UI/SupermuxProjectRowView.swift
 580	Packages/CmuxExtensionKit/Tests/CmuxExtensionKitTests/CmuxExtensionKitTests.swift
 580	cmuxTests/CLIHookNoResponseTests.swift
 578	cmuxUITests/FeedSidebarUITests.swift
@@ -171,7 +172,6 @@
 539	CLI/CodexTeamsApprovalBridge.swift
 538	CLI/CMUXCLI+Themes.swift
 536	cmuxTests/CmuxConfigContextMenuTests.swift
-534	Packages/SupermuxKit/Sources/SupermuxKit/UI/SupermuxProjectRowView.swift
 533	Packages/CmuxControlSocket/Sources/CmuxControlSocket/Coordinator/Pane/ControlCommandCoordinator+Pane.swift
 531	Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Scene/SettingsWindowScene.swift
 531	Sources/App/WorkspaceRuntimeSettings.swift

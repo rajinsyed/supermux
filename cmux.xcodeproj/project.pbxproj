@@ -633,6 +633,7 @@
 		50BE000100000000000000A3 /* SupermuxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 50BE000100000000000000A2 /* SupermuxKit */; };
 		50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B4 /* SupermuxRunSupport.swift */; };
 		50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */; };
+		50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */; };
 		50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */; };
 		A5001303 /* SurfaceSearchOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001301 /* SurfaceSearchOverlay.swift */; };
 		C9A5720BC9A5720BC9A5720B /* TabItemView+WorkspaceGroups.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A5720CC9A5720CC9A5720C /* TabItemView+WorkspaceGroups.swift */; };
@@ -1439,6 +1440,7 @@
 		50BE000100000000000000B1 /* SupermuxAppGlue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxAppGlue.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B4 /* SupermuxRunSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRunSupport.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarBranchTests.swift; sourceTree = "<group>"; };
+		50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarFontScaleStore.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceActivityResolver.swift; sourceTree = "<group>"; };
 		A5001301 /* SurfaceSearchOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Find/SurfaceSearchOverlay.swift; sourceTree = "<group>"; };
 		C9A5720CC9A5720CC9A5720C /* TabItemView+WorkspaceGroups.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TabItemView+WorkspaceGroups.swift"; sourceTree = "<group>"; };
@@ -1714,6 +1716,7 @@
 			children = (
 				50BE000100000000000000B1 /* SupermuxAppGlue.swift */,
 				50BE000100000000000000B4 /* SupermuxRunSupport.swift */,
+				50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */,
 				50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */,
 			);
 			name = Supermux;
@@ -3257,6 +3260,7 @@
 				D35B71010000000000000001 /* StartupBreadcrumbLog.swift in Sources */,
 				50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */,
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
+				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
 				50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */,
 				A5001303 /* SurfaceSearchOverlay.swift in Sources */,
 				C9A5720BC9A5720BC9A5720B /* TabItemView+WorkspaceGroups.swift in Sources */,

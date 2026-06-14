@@ -41,6 +41,9 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     /// Matches a directory against a project's worktrees dir; used to skip
     /// durable links for worktree paths (they already nest structurally).
     @ObservationIgnored private let worktreeMatcher = SupermuxProjectMatcher()
+    /// Reads a project's `.supermux`/`.superset` `config.json`; applied on add
+    /// and on load so a repo-shipped config drives setup/teardown/run/actions.
+    @ObservationIgnored private let configLoader = SupermuxProjectConfigLoader()
     /// Serializes persistence so rapid mutations are written in call order.
     @ObservationIgnored private var persistTask: Task<Void, Never>?
 
@@ -80,6 +83,10 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
             persist { $0.presets = seeded }
         }
         for project in projects {
+            // Re-import each project's shipped config.json (when present) so a
+            // repo's setup/teardown/run/actions stay in sync across launches,
+            // then refresh its worktrees.
+            await importConfig(into: project.id)
             await refreshWorktrees(for: project.id)
         }
     }
@@ -107,8 +114,34 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         projects.append(project)
         let snapshot = projects
         persist { $0.projects = snapshot }
+        // Pull in a repo-shipped config.json, if any, before opening anything so
+        // the project's setup/teardown/run/actions are populated from the start.
+        await importConfig(into: project.id)
         await refreshWorktrees(for: project.id)
-        return project
+        return projects.first(where: { $0.id == project.id }) ?? project
+    }
+
+    /// Imports the project's `config.json` (when present), overwriting its
+    /// config-managed fields (setup, teardown, run, actions). A straight
+    /// overwrite — `config.json` is the source of truth for those fields — that
+    /// no-ops when nothing changed so it never churns persistence.
+    /// - Parameter projectId: Project whose config to (re)import.
+    private func importConfig(into projectId: UUID) async {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        let rootPath = projects[index].rootPath
+        let loader = configLoader
+        // File I/O off the main actor; the loader is a Sendable value type.
+        guard let config = await Task.detached(priority: .utility, operation: {
+            loader.load(projectRoot: rootPath)
+        }).value else { return }
+        // Re-resolve the index after the await — the project may have been
+        // removed or reordered while the config was read.
+        guard let currentIndex = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        let updated = projects[currentIndex].applying(config)
+        guard updated != projects[currentIndex] else { return }
+        projects[currentIndex] = updated
+        let snapshot = projects
+        persist { $0.projects = snapshot }
     }
 
     /// Replaces a project record (rename, recolor, settings edit).
@@ -196,6 +229,9 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         branchName: String,
         baseBranch: String?
     ) async throws -> SupermuxProjectWorktree {
+        // Pick up any edits to the repo's config.json before creating, so the
+        // new worktree's setup script reflects the current source of truth.
+        await importConfig(into: projectId)
         guard let project = projects.first(where: { $0.id == projectId }) else {
             throw SupermuxGitError.notAGitRepository(path: "")
         }
@@ -223,6 +259,8 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         force: Bool,
         deleteBranch: Bool
     ) async throws {
+        // Refresh the teardown script from the repo's config.json before removal.
+        await importConfig(into: projectId)
         guard let project = projects.first(where: { $0.id == projectId }) else { return }
         try await worktreeService.removeWorktree(
             worktree,

@@ -15,12 +15,14 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../CmuxProcess"),
+        .package(path: "../CmuxGit"),
     ],
     targets: [
         .target(
             name: "SupermuxKit",
             dependencies: [
                 .product(name: "CmuxProcess", package: "CmuxProcess"),
+                .product(name: "CmuxGit", package: "CmuxGit"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

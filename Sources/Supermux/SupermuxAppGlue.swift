@@ -86,10 +86,11 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     func openWorkspace(_ request: SupermuxOpenWorkspaceRequest) {
         guard let tabManager else { return }
         let directory = (request.directory as NSString).expandingTildeInPath
-        // A command-carrying request always opens a fresh workspace so the
-        // command runs in a clean terminal; plain "open" requests reuse a
+        // A command- or setup-carrying request always opens a fresh workspace so
+        // the work runs in a clean terminal; plain "open" requests reuse a
         // matching workspace when one already exists.
         if request.initialCommand == nil,
+           request.setupScript == nil,
            let existing = tabManager.tabs.first(where: { workspace in
                (workspace.currentDirectory as NSString).expandingTildeInPath == directory
            }) {
@@ -114,6 +115,28 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             workspace.customColor = colorHex
         }
         associate(workspaceId: workspace.id, directory: directory, with: request)
+        runSetupScriptIfNeeded(in: workspace, directory: directory, request: request)
+    }
+
+    /// Spawns a dedicated, focused setup terminal in `workspace` that runs the
+    /// request's setup script with its environment exported, leaving the
+    /// workspace's clean main terminal untouched. Used right after a worktree is
+    /// created. No-op when the request carries no setup script.
+    private func runSetupScriptIfNeeded(in workspace: Workspace, directory: String, request: SupermuxOpenWorkspaceRequest) {
+        guard let setupScript = request.setupScript,
+              let paneId = workspace.bonsplitController.focusedPaneId
+                ?? workspace.bonsplitController.allPaneIds.first else { return }
+        // Run as interactive-shell input (see SupermuxCommandLaunch) so aliases
+        // resolve and the surface survives the command's exit; the worktree
+        // environment is delivered through the PTY's startup environment so the
+        // script (e.g. `cp "$SUPERSET_ROOT_PATH/.env" .env`) sees it directly.
+        _ = workspace.newTerminalSurface(
+            inPane: paneId,
+            focus: true,
+            workingDirectory: directory,
+            initialInput: SupermuxCommandLaunch.shellInput(for: setupScript),
+            startupEnvironment: request.setupEnvironment
+        )
     }
 
     /// Runs a project action's command as a new terminal tab in the focused
@@ -161,6 +184,11 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
 /// package-owned projects section.
 struct SupermuxProjectsMount: View {
     @EnvironmentObject private var tabManager: TabManager
+
+    /// Live sidebar font scale (cmux's `sidebar-font-size`), injected into the
+    /// Projects section so project rows and nested workspaces grow/shrink with
+    /// the same setting as the flat workspace list.
+    @StateObject private var fontScaleStore = SupermuxSidebarFontScaleStore()
 
     /// Bumped whenever an observed per-workspace sidebar field (git branch,
     /// working directory, …) changes. `TabManager`'s `@Published` `tabs`/
@@ -226,11 +254,28 @@ struct SupermuxProjectsMount: View {
                 } else {
                     _ = tabManager.reorderWorkspace(tabId: draggedId, before: targetId, isDragOperation: true)
                 }
+            },
+            onOpenPullRequest: { [weak tabManager] url in
+                // Honor cmux's PR-link routing: open in the cmux browser when the
+                // setting is on and a workspace is active, else the default browser.
+                if BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowser(),
+                   let tabManager,
+                   let tabId = tabManager.selectedTabId,
+                   tabManager.openBrowser(
+                       inWorkspace: tabId,
+                       url: url,
+                       preferSplitRight: true,
+                       insertAtEnd: true
+                   ) != nil {
+                    return
+                }
+                _ = NSWorkspace.shared.open(url)
             }
         )
         .onReceive(workspaceObservationPublisher(tabManager.tabs)) { _ in
             workspaceObservationToken &+= 1
         }
+        .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
     }
 
     /// Merges every open workspace's cmux sidebar-observation publisher (which
@@ -330,7 +375,12 @@ enum SupermuxWorkspaceRow {
         projectId: UUID?,
         isRunning: Bool
     ) -> SupermuxOpenWorkspace {
-        SupermuxOpenWorkspace(
+        // Reuse cmux's own per-workspace PR probe for opened worktrees: the first
+        // display-ordered PR is the representative one (cmux prioritizes
+        // open > merged > closed and freshness). No supermux probe runs here.
+        let pullRequest = workspace.sidebarPullRequestsInDisplayOrder().first
+            .flatMap(SupermuxPullRequest.init(sidebarState:))
+        return SupermuxOpenWorkspace(
             id: workspace.id,
             title: workspace.customTitle ?? workspace.title,
             directory: workspace.currentDirectory,
@@ -338,8 +388,19 @@ enum SupermuxWorkspaceRow {
             branch: workspace.supermuxSidebarBranch,
             projectId: projectId,
             activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
-            isRunning: isRunning
+            isRunning: isRunning,
+            pullRequest: pullRequest
         )
+    }
+}
+
+extension SupermuxPullRequest {
+    /// Bridges cmux's per-workspace ``SidebarPullRequestState`` into the supermux
+    /// badge value, so opened worktrees reuse cmux's own PR probe. Returns `nil`
+    /// only if the status string is unrecognized.
+    init?(sidebarState state: SidebarPullRequestState) {
+        guard let status = Status(rawValue: state.status.rawValue) else { return nil }
+        self.init(number: state.number, status: status, url: state.url, isStale: state.isStale)
     }
 }
 
