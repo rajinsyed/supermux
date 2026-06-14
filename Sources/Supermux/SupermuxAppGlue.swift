@@ -1,6 +1,9 @@
 import AppKit
 import Combine
 import CmuxProcess
+import CmuxSettings
+import CmuxSocketControl
+import Foundation
 import SupermuxKit
 import SwiftUI
 
@@ -14,11 +17,32 @@ import SwiftUI
 /// constructor injection.
 @MainActor
 enum SupermuxComposition {
+    /// App-wide AI gateway client. Reads the Vercel AI Gateway key from the same
+    /// secure `0600` file the Settings card writes (under the cmux state
+    /// directory), so a key pasted in Settings is picked up without rebuilding
+    /// the client.
+    static let aiClient: any SupermuxAICompleting = {
+        let store = SecretFileStore(
+            baseDirectory: CmuxStateDirectory.url(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+        )
+        let key = SecretFileKey(id: SupermuxAIConfig.secretKeyID, fileName: SupermuxAIConfig.secretFileName)
+        return SupermuxAIGatewayClient(apiKeyProvider: {
+            guard let value = try? await store.value(for: key), !value.isEmpty else { return nil }
+            return value
+        })
+    }()
+
+    /// AI branch-name suggester for the new-worktree flow.
+    static let aiBranchNamer: any SupermuxAIBranchNaming = SupermuxAIBranchNamer(client: aiClient)
+
+    /// AI commit-message generator for the Changes panel.
+    static let aiCommitMessenger: any SupermuxAICommitMessaging = SupermuxAICommitMessenger(client: aiClient)
+
     /// App-wide projects model, shared by every window's sidebar.
     static let projectsModel: SupermuxProjectsModel = {
         let store = SupermuxProjectStore(fileURL: SupermuxPaths.defaultProjectsFileURL)
         let service = SupermuxGitWorktreeService(runner: CommandRunner())
-        return SupermuxProjectsModel(store: store, worktreeService: service)
+        return SupermuxProjectsModel(store: store, worktreeService: service, branchNamer: aiBranchNamer)
     }()
 
     /// App-wide run-action coordinator behind the ⌘G shortcut.
@@ -302,7 +326,10 @@ struct SupermuxChangesMount: View {
     let workspaceDirectory: String?
 
     @EnvironmentObject private var tabManager: TabManager
-    @State private var model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: CommandRunner()))
+    @State private var model = SupermuxChangesModel(
+        service: SupermuxGitChangesService(runner: CommandRunner()),
+        commitGenerator: SupermuxComposition.aiCommitMessenger
+    )
 
     var body: some View {
         SupermuxChangesPanelView(

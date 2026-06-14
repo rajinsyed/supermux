@@ -32,6 +32,7 @@ Rules for adding a touchpoint:
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only); minimal mode keeps the original top-safe-area layout |
 | 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + `AppIcon-Debug.icon` (DEV band) + `AppIcon-Nightly.icon` (NIGHTLY band); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered glass icon. Wiring lives in touchpoint #3. |
+| 18 | `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AutomationSection.swift` | `ai-settings` | Renders `SupermuxAISettingsCard` (Vercel AI Gateway API key + model) at the end of the Automation section, and stores the `secretStore` + `errorLog` the card needs. The card itself is a new supermux-owned file, `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` (no conflict on merge; lives in the upstream package only because the section stack is closed to app injection and cannot import `SupermuxKit`). |
 
 ## How to re-apply
 
@@ -259,3 +260,45 @@ modified upstream files). Supermux code lives in `Packages/SupermuxKit/` and `So
 keep edits to upstream files inside `SUPERMUX:begin/end` fences and registered in the manifest.
 <!-- SUPERMUX:end claude-md-pointer -->
 ```
+
+### 18. `Sources/CmuxSettingsUI/.../AutomationSection.swift` — `ai-settings`
+
+The settings section stack (`SettingsWindowScene.sectionStack`) is a closed,
+hard-coded list inside the upstream `CmuxSettingsUI` package with no app-side
+injection seam, and that package cannot import `SupermuxKit` (a reverse
+dependency). So the AI settings UI is a **new, self-contained file** in the same
+package —
+`Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift`
+— that depends only on `CmuxSettings`/SwiftUI. It shares one contract with
+`SupermuxKit.SupermuxAIConfig`: the secret file name (`supermux-ai-gateway-key`)
+and the model-override UserDefaults key (`supermux.ai.model`), duplicated as
+literals in both places.
+
+Three small fenced edits in `AutomationSection.swift` mount it:
+
+```swift
+// in the struct's stored properties:
+// SUPERMUX:begin ai-settings
+private let supermuxSecretStore: SecretFileStore
+private let supermuxErrorLog: SettingsErrorLog
+// SUPERMUX:end ai-settings
+
+// at the end of init(...):
+// SUPERMUX:begin ai-settings
+self.supermuxSecretStore = secretStore
+self.supermuxErrorLog = errorLog
+// SUPERMUX:end ai-settings
+
+// at the end of the body's `Group { ... }`, after portCard:
+// SUPERMUX:begin ai-settings
+SupermuxAISettingsCard(secretStore: supermuxSecretStore, errorLog: supermuxErrorLog)
+// SUPERMUX:end ai-settings
+```
+
+`AutomationSection.init` already receives `secretStore` and `errorLog`; the only
+additions are storing them and rendering the card. If upstream restructures the
+section, the requirement is: surface a `SecureField`-backed card writing the
+`supermux-ai-gateway-key` secret somewhere in Settings. The app composition root
+(`SupermuxComposition` in `Sources/Supermux/SupermuxAppGlue.swift`) reads the
+same secret file (via `SecretFileStore` rooted at `CmuxStateDirectory`) to power
+the AI features — no fence there (it is a supermux-owned file).

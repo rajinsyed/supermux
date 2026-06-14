@@ -5,14 +5,16 @@ import Foundation
 ///
 /// A tiny SourceTree: shows the current branch with ahead/behind badges,
 /// staged / unstaged / untracked files with hover stage / unstage / discard
-/// actions, and a commit + push / pull area pinned at the bottom. All state
-/// and git work lives in ``SupermuxChangesModel``; this view only renders and
-/// dispatches.
+/// actions, an expandable commit-history section, and a commit + push / pull
+/// area pinned at the bottom. All state and git work lives in
+/// ``SupermuxChangesModel``; this view only renders and dispatches.
 public struct SupermuxChangesPanelView: View {
     @Bindable private var model: SupermuxChangesModel
     private let onOpenDiff: (() -> Void)?
 
     @State private var discardCandidate: SupermuxGitFileChange?
+    @State private var isDiscardAllPresented = false
+    @State private var isHistoryExpanded = false
 
     /// Creates the panel.
     /// - Parameters:
@@ -59,6 +61,21 @@ public struct SupermuxChangesPanelView: View {
         } message: { change in
             Text(discardMessage(for: change))
         }
+        .confirmationDialog(
+            String(localized: "supermux.changes.discardAll.title", defaultValue: "Discard All Changes"),
+            isPresented: $isDiscardAllPresented,
+            titleVisibility: .visible
+        ) {
+            Button(
+                String(localized: "supermux.changes.discardAll.confirm", defaultValue: "Discard All"),
+                role: .destructive
+            ) {
+                Task { await model.discardAll() }
+            }
+            Button(String(localized: "supermux.changes.discard.cancel", defaultValue: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(discardAllMessage)
+        }
     }
 
     // MARK: - Header
@@ -80,6 +97,14 @@ public struct SupermuxChangesPanelView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
+            if model.snapshot.isRepository, model.snapshot.totalChangeCount > 0 {
+                headerButton(
+                    "trash",
+                    help: String(localized: "supermux.changes.discardAll.help", defaultValue: "Discard all changes")
+                ) {
+                    isDiscardAllPresented = true
+                }
+            }
             if let onOpenDiff {
                 headerButton(
                     "doc.text.magnifyingglass",
@@ -163,6 +188,7 @@ public struct SupermuxChangesPanelView: View {
                         isStaged: false
                     )
                 }
+                historySection
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
@@ -236,6 +262,25 @@ public struct SupermuxChangesPanelView: View {
         Task { await model.unstage(change) }
     }
 
+    // MARK: - History
+
+    private var historySection: some View {
+        SupermuxCommitHistorySection(
+            isExpanded: isHistoryExpanded,
+            commits: model.commits,
+            hasMore: model.hasMoreCommits,
+            isLoading: model.isLoadingCommits,
+            onToggle: { toggleHistory() },
+            onLoadMore: { Task { await model.loadMoreCommits() } }
+        )
+    }
+
+    private func toggleHistory() {
+        isHistoryExpanded.toggle()
+        let expanded = isHistoryExpanded
+        Task { await model.setHistoryExpanded(expanded) }
+    }
+
     // MARK: - Commit area
 
     private var commitArea: some View {
@@ -249,16 +294,20 @@ public struct SupermuxChangesPanelView: View {
             .lineLimit(1...4)
             .font(.system(size: 11.5))
             Button {
-                Task { await model.commit() }
+                Task { await model.performCommit() }
             } label: {
-                Text(String(localized: "supermux.changes.commit", defaultValue: "Commit"))
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 4) {
+                    if model.isAICommitMode {
+                        Image(systemName: "sparkles").font(.system(size: 10, weight: .semibold))
+                    }
+                    Text(model.commitButtonTitle).font(.system(size: 11, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
             }
             .controlSize(.small)
             .keyboardShortcut(.return, modifiers: .command)
-            .disabled(isCommitDisabled)
-            .help(String(localized: "supermux.changes.commit.help", defaultValue: "Commit staged changes (⌘↩)"))
+            .disabled(!model.canCommit)
+            .help(commitHelp)
             HStack(spacing: 6) {
                 Button { Task { await model.push() } } label: {
                     Text(pushTitle).font(.system(size: 11)).frame(maxWidth: .infinity)
@@ -275,10 +324,13 @@ public struct SupermuxChangesPanelView: View {
         .padding(8)
     }
 
-    private var isCommitDisabled: Bool {
-        model.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || model.snapshot.staged.isEmpty
-            || model.isWorking
+    private var commitHelp: String {
+        model.isAICommitMode
+            ? String(
+                localized: "supermux.changes.ai.commit.help",
+                defaultValue: "Stage all changes, generate a commit message with AI, and commit (⌘↩)"
+            )
+            : String(localized: "supermux.changes.commit.help", defaultValue: "Commit staged changes (⌘↩)")
     }
 
     private var pushTitle: String {
@@ -326,6 +378,13 @@ public struct SupermuxChangesPanelView: View {
         )
     }
 
+    private var discardAllMessage: String {
+        String(
+            localized: "supermux.changes.discardAll.message",
+            defaultValue: "All staged and unstaged changes will be reverted and untracked files deleted. This cannot be undone."
+        )
+    }
+
     private func discardMessage(for change: SupermuxGitFileChange) -> String {
         change.kind == .untracked
             ? String(
@@ -336,117 +395,5 @@ public struct SupermuxChangesPanelView: View {
                 localized: "supermux.changes.discard.message",
                 defaultValue: "Changes to “\(change.fileName)” will be permanently discarded. This cannot be undone."
             )
-    }
-}
-
-// MARK: - Row
-
-/// One file row: kind badge, file name, directory, and hover actions.
-struct SupermuxChangeRowView: View {
-    let change: SupermuxGitFileChange
-    let onStage: (() -> Void)?
-    let onUnstage: (() -> Void)?
-    let onDiscard: (() -> Void)?
-
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            kindBadge
-            Text(change.fileName)
-                .font(.system(size: 11.5))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            if let directory = change.directory {
-                Text(directory)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .layoutPriority(-1)
-            }
-            Spacer(minLength: 0)
-            if isHovering {
-                hoverActions
-            }
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        .background(Color.primary.opacity(isHovering ? 0.06 : 0), in: RoundedRectangle(cornerRadius: 4))
-        .onHover { isHovering = $0 }
-        .help(change.path)
-    }
-
-    private var kindBadge: some View {
-        Text(kindBadgeStyle.letter)
-            .font(.system(size: 9, weight: .bold, design: .monospaced))
-            .foregroundStyle(kindBadgeStyle.color)
-            .frame(width: 14, height: 14)
-            .background(kindBadgeStyle.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 3))
-            .help(kindLabel)
-            .accessibilityLabel(kindLabel)
-    }
-
-    @ViewBuilder
-    private var hoverActions: some View {
-        if let onDiscard {
-            rowButton(
-                "arrow.uturn.backward",
-                help: String(localized: "supermux.changes.row.discard.help", defaultValue: "Discard changes"),
-                action: onDiscard
-            )
-        }
-        if let onStage {
-            rowButton(
-                "plus",
-                help: String(localized: "supermux.changes.row.stage.help", defaultValue: "Stage file"),
-                action: onStage
-            )
-        }
-        if let onUnstage {
-            rowButton(
-                "minus",
-                help: String(localized: "supermux.changes.row.unstage.help", defaultValue: "Unstage file"),
-                action: onUnstage
-            )
-        }
-    }
-
-    private func rowButton(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 14, height: 14)
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(help)
-    }
-
-    private var kindBadgeStyle: (letter: String, color: Color) {
-        switch change.kind {
-        case .modified: ("M", .yellow)
-        case .added: ("A", .green)
-        case .deleted: ("D", .red)
-        case .renamed: ("R", .blue)
-        case .copied: ("C", .blue)
-        case .untracked: ("U", .secondary)
-        case .conflicted: ("!", .orange)
-        case .typeChanged: ("T", .yellow)
-        }
-    }
-
-    private var kindLabel: String {
-        switch change.kind {
-        case .modified: String(localized: "supermux.changes.kind.modified", defaultValue: "Modified")
-        case .added: String(localized: "supermux.changes.kind.added", defaultValue: "Added")
-        case .deleted: String(localized: "supermux.changes.kind.deleted", defaultValue: "Deleted")
-        case .renamed: String(localized: "supermux.changes.kind.renamed", defaultValue: "Renamed")
-        case .copied: String(localized: "supermux.changes.kind.copied", defaultValue: "Copied")
-        case .untracked: String(localized: "supermux.changes.kind.untracked", defaultValue: "Untracked")
-        case .conflicted: String(localized: "supermux.changes.kind.conflicted", defaultValue: "Conflicted")
-        case .typeChanged: String(localized: "supermux.changes.kind.typeChanged", defaultValue: "Type changed")
-        }
     }
 }

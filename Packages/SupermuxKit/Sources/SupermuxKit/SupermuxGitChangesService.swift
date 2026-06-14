@@ -118,6 +118,57 @@ public actor SupermuxGitChangesService {
         }
     }
 
+    /// Discards every working-tree change, restoring the tree to `HEAD`.
+    ///
+    /// Runs `git reset --hard HEAD` to throw away all staged and unstaged
+    /// modifications to tracked files, then `git clean -fd` to delete untracked
+    /// files and directories. Ignored files are left untouched (no `-x`).
+    /// - Parameter repoPath: Repository directory.
+    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
+    public func discardAll(repoPath: String) async throws {
+        try await runGit(in: repoPath, ["reset", "--hard", "HEAD"], commandLabel: "reset --hard")
+        try await runGit(in: repoPath, ["clean", "-fd"], commandLabel: "clean")
+    }
+
+    /// Reads up to `limit` unpushed local commits (newest first): commits in
+    /// `HEAD` that are not yet on the remote.
+    ///
+    /// With an upstream configured, the range is `@{upstream}..HEAD` (exactly
+    /// the commits the branch is "ahead" by). Without one — a never-pushed or
+    /// detached branch — it falls back to `HEAD --not --remotes`, i.e. commits
+    /// reachable from `HEAD` that are not on any remote-tracking branch (in a
+    /// repository with no remotes at all, that is the whole local history,
+    /// which is correct: nothing has been pushed).
+    ///
+    /// Runs `git log -z --no-color --no-show-signature` with
+    /// ``SupermuxGitCommit/logFormat``; `--no-show-signature` keeps GPG
+    /// verification lines out of the stream for users with
+    /// `log.showSignature=true`. Returns an empty array when git fails —
+    /// including an empty repository / unborn branch or a missing upstream
+    /// ref — so a missing list degrades quietly rather than as an error.
+    /// - Parameters:
+    ///   - repoPath: Repository directory.
+    ///   - hasUpstream: Whether the current branch has an upstream configured.
+    ///   - limit: Maximum number of commits to return.
+    /// - Returns: The parsed unpushed commits, newest first, or `[]` on failure.
+    public func unpushedCommits(
+        repoPath: String, hasUpstream: Bool, limit: Int
+    ) async -> [SupermuxGitCommit] {
+        guard limit > 0 else { return [] }
+        let revision = hasUpstream ? ["@{upstream}..HEAD"] : ["HEAD", "--not", "--remotes"]
+        let result = await runner.run(
+            directory: repoPath,
+            executable: "git",
+            arguments: [
+                "log", "-z", "--no-color", "--no-show-signature",
+                "--max-count=\(limit)", "--format=\(SupermuxGitCommit.logFormat)",
+            ] + revision,
+            timeout: Self.gitTimeout
+        )
+        guard result.exitStatus == 0, let stdout = result.stdout else { return [] }
+        return SupermuxGitCommit.parse(log: stdout)
+    }
+
     /// Commits staged changes (`git commit -m <message>`).
     /// - Parameters:
     ///   - repoPath: Repository directory.
@@ -126,6 +177,49 @@ public actor SupermuxGitChangesService {
     ///   stderr/stdout detail (for example "nothing to commit") on failure.
     public func commit(repoPath: String, message: String) async throws {
         try await runGit(in: repoPath, ["commit", "-m", message], commandLabel: "commit")
+    }
+
+    /// A non-mutating diff of everything a "stage all + commit" would capture,
+    /// for AI commit-message generation.
+    ///
+    /// Combines `git diff HEAD --stat` + `git diff HEAD` (all tracked changes vs
+    /// the last commit, staged or not) with a list of untracked files. It does
+    /// **not** touch the index, so the caller can generate a message first and
+    /// only stage when a message is in hand (keeping the operation atomic).
+    /// Returns an empty string when there is nothing to commit or the path is
+    /// not a repository. On an unborn branch `git diff HEAD` fails and only the
+    /// untracked listing is returned.
+    /// - Parameter repoPath: Repository directory.
+    public func uncommittedDiff(repoPath: String) async -> String {
+        let stat = await runner.run(
+            directory: repoPath,
+            executable: "git",
+            arguments: ["diff", "HEAD", "--stat"],
+            timeout: Self.gitTimeout
+        )
+        let patch = await runner.run(
+            directory: repoPath,
+            executable: "git",
+            arguments: ["diff", "HEAD"],
+            timeout: Self.gitTimeout
+        )
+        let untracked = await runner.run(
+            directory: repoPath,
+            executable: "git",
+            arguments: ["ls-files", "--others", "--exclude-standard"],
+            timeout: Self.gitTimeout
+        )
+        var parts: [String] = []
+        if let summary = stat.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+            parts.append(summary)
+        }
+        if let body = patch.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty {
+            parts.append(body)
+        }
+        if let files = untracked.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !files.isEmpty {
+            parts.append("New untracked files:\n" + files)
+        }
+        return parts.joined(separator: "\n\n")
     }
 
     /// Pushes the current branch.

@@ -37,6 +37,9 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
 
     private let store: SupermuxProjectStore
     private let worktreeService: SupermuxGitWorktreeService
+    /// Optional AI branch-name suggester. When `nil`, blank branch fields fall
+    /// back to the worktree service's random-name behavior.
+    @ObservationIgnored private let branchNamer: (any SupermuxAIBranchNaming)?
     private var hasLoaded = false
     /// Matches a directory against a project's worktrees dir; used to skip
     /// durable links for worktree paths (they already nest structurally).
@@ -51,9 +54,31 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     /// - Parameters:
     ///   - store: Projects persistence.
     ///   - worktreeService: Git worktree operations.
-    public init(store: SupermuxProjectStore, worktreeService: SupermuxGitWorktreeService) {
+    ///   - branchNamer: Optional AI branch-name suggester used by
+    ///     ``suggestBranchName(forWorkspaceName:)``.
+    public init(
+        store: SupermuxProjectStore,
+        worktreeService: SupermuxGitWorktreeService,
+        branchNamer: (any SupermuxAIBranchNaming)? = nil
+    ) {
         self.store = store
         self.worktreeService = worktreeService
+        self.branchNamer = branchNamer
+    }
+
+    /// Whether AI branch naming is wired and a key is configured.
+    public func isAIBranchNamingConfigured() async -> Bool {
+        await branchNamer?.isConfigured() ?? false
+    }
+
+    /// Suggests a git-safe branch name from a workspace description, or `nil`
+    /// when AI naming is unavailable or fails. Callers pass the result straight
+    /// to ``createWorktree(projectId:branchName:baseBranch:)``, which sanitizes
+    /// and deduplicates it again.
+    /// - Parameter name: Free-form workspace name typed by the user.
+    public func suggestBranchName(forWorkspaceName name: String) async -> String? {
+        guard let branchNamer else { return nil }
+        return await branchNamer.suggestBranchName(forWorkspaceName: name)
     }
 
     /// Loads persisted projects once; later calls are no-ops.

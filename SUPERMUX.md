@@ -28,6 +28,14 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    script runs right before a worktree is removed. Setup/teardown/run/actions can be **auto-imported
    from a repo-shipped `.supermux/config.json` or `.superset/config.json`**, so a project ships its
    own onboarding (see "Worktree scripts & project config" below).
+7. **AI integration (Vercel AI Gateway).** A single Vercel AI Gateway API key (pasted in
+   Settings → Automation) powers supermux's AI features through the gateway's OpenAI-compatible
+   Chat Completions API. First features: (a) **AI branch names** — when creating a worktree with a
+   workspace name and a blank branch field, a lightweight model names the branch from the workspace
+   description (falling back to a random name when AI is off or fails); (b) **AI commit messages** —
+   in the Changes panel, an empty commit message turns the Commit button into "Generate & Commit",
+   which stages all changes, asks the model for a Conventional-Commits message, and commits. The key
+   is stored in a private `0600` file (never in `cmux.json`); the model is configurable.
 
 Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
 diff viewer, per-workspace git branch/dirty tracking), supermux **extends** it rather than
@@ -45,6 +53,7 @@ building a parallel system.
 | Run actions (⌘G start/stop) | ✅ | `supermuxToggleRun` shortcut (shares ⌘G with Find Next) → `SupermuxRunCoordinator` |
 | Custom app actions + terminal presets (per project) | ✅ | `SupermuxProjectAction`, editor Actions section, project-row Actions submenu |
 | Worktree setup/teardown + `config.json` import | ✅ | `SupermuxProjectConfig`(+`Loader`), `SupermuxWorktreeScript`/`SupermuxWorktreeEnvironment`; setup runs in a dedicated terminal via `SupermuxTabManagerOpener`, teardown headless in `SupermuxGitWorktreeService.removeWorktree`; import wired in `SupermuxProjectsModel` |
+| AI integration (Vercel AI Gateway key + branch names + commit messages) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/AI/` (`SupermuxAIConfig`, `SupermuxAIGatewayClient`, `SupermuxAIBranchNamer`, `SupermuxAICommitMessenger`); key UI via the `ai-settings` touchpoint (#18) → `SupermuxAISettingsCard`; wired in `SupermuxComposition`. Key in a `0600` secret file under the cmux state dir; model id (default `openai/gpt-5.4-mini`) editable in Settings, persisted in UserDefaults (`supermux.ai.model`). |
 | Localization (en + ja) | ✅ | all `supermux.*` keys in `Resources/Localizable.xcstrings`; regenerate with the scripts under "Localization" below |
 
 Both phases are verified against a live tagged build (worktree creation, the Changes panel on

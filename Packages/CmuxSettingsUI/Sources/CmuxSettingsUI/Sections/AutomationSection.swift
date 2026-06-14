@@ -10,6 +10,10 @@ import SwiftUI
 @MainActor
 public struct AutomationSection: View {
     private let catalog: SettingCatalog
+    // SUPERMUX:begin ai-settings
+    private let supermuxSecretStore: SecretFileStore
+    private let supermuxErrorLog: SettingsErrorLog
+    // SUPERMUX:end ai-settings
 
     @State private var socketPasswordModel: SecretValueModel
     @State private var modeModel: DefaultsValueModel<SocketControlMode>
@@ -43,6 +47,10 @@ public struct AutomationSection: View {
         errorLog: SettingsErrorLog
     ) {
         self.catalog = catalog
+        // SUPERMUX:begin ai-settings
+        self.supermuxSecretStore = secretStore
+        self.supermuxErrorLog = errorLog
+        // SUPERMUX:end ai-settings
         _socketPasswordModel = State(initialValue: SecretValueModel(
             store: secretStore,
             key: catalog.automation.socketPassword,
@@ -78,6 +86,9 @@ public struct AutomationSection: View {
             geminiCard
             kiroCard
             portCard
+            // SUPERMUX:begin ai-settings
+            SupermuxAISettingsCard(secretStore: supermuxSecretStore, errorLog: supermuxErrorLog)
+            // SUPERMUX:end ai-settings
         }
         .confirmationDialog(
             String(localized: "settings.automation.openAccess.dialog.title", defaultValue: "Enable full open access?"),

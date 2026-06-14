@@ -44,6 +44,13 @@ import SupermuxKit
         return root
     }
 
+    /// Creates a bare repository on `main` to serve as a push remote.
+    private func makeBareRemote() throws -> String {
+        let remote = try makeTempDirectory()
+        try runGit(["init", "--bare", "-b", "main"], in: remote)
+        return remote
+    }
+
     /// Writes `content` to `relativePath` inside `root`.
     private func write(_ content: String, to relativePath: String, in root: String) throws {
         let path = (root as NSString).appendingPathComponent(relativePath)
@@ -107,6 +114,7 @@ import SupermuxKit
 
         #expect(snapshot.isRepository)
         #expect(snapshot.branch == "main")
+        #expect(snapshot.headOID?.isEmpty == false)
         #expect(snapshot.staged.isEmpty)
         #expect(snapshot.unstaged.isEmpty)
         #expect(snapshot.untracked.isEmpty)
@@ -251,6 +259,130 @@ import SupermuxKit
         #expect(FileManager.default.fileExists(atPath: oldPath))
         #expect(try read("old.txt", in: root) == "v1\n")
         #expect(FileManager.default.fileExists(atPath: newPath) == false)
+    }
+
+    /// `discardAll` returns the working tree to `HEAD`: staged and unstaged
+    /// modifications to tracked files are reverted, untracked files are deleted,
+    /// and ignored files are left untouched (no `-x` on `git clean`).
+    @Test func discardAllResetsTrackedChangesAndRemovesUntrackedButKeepsIgnored() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        // A tracked file with committed content we can assert is restored.
+        try write("v1\n", to: "tracked.txt", in: root)
+        // An ignored directory whose artifact must survive the discard.
+        try write("build/\n", to: ".gitignore", in: root)
+        try runGit(["add", "tracked.txt", ".gitignore"], in: root)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add tracked + gitignore"], in: root)
+        try FileManager.default.createDirectory(
+            atPath: (root as NSString).appendingPathComponent("build"),
+            withIntermediateDirectories: true
+        )
+        try write("artifact\n", to: "build/out.o", in: root)
+
+        // A staged modification, a further unstaged modification on top of it,
+        // and a brand-new untracked file.
+        try write("v2\n", to: "tracked.txt", in: root)
+        try runGit(["add", "tracked.txt"], in: root)
+        try write("v3\n", to: "tracked.txt", in: root)
+        try write("scratch\n", to: "scratch.txt", in: root)
+
+        let dirty = await service.status(repoPath: root)
+        #expect(dirty.totalChangeCount > 0)
+
+        try await service.discardAll(repoPath: root)
+
+        let clean = await service.status(repoPath: root)
+        #expect(clean.totalChangeCount == 0)
+        #expect(try read("tracked.txt", in: root) == "v1\n")
+        #expect(FileManager.default.fileExists(
+            atPath: (root as NSString).appendingPathComponent("scratch.txt")
+        ) == false)
+        // Ignored artifacts are preserved because `git clean` runs without `-x`.
+        #expect(FileManager.default.fileExists(
+            atPath: (root as NSString).appendingPathComponent("build/out.o")
+        ))
+    }
+
+    // MARK: - Unpushed commits
+
+    @Test func unpushedCommitsReturnsCommitsAheadOfUpstream() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        let remote = try makeBareRemote()
+        defer { cleanUp(remote) }
+        try runGit(["remote", "add", "origin", remote], in: root)
+        try runGit(["push", "-u", "origin", "main"], in: root)
+        try write("a\n", to: "a.txt", in: root)
+        try runGit(["add", "a.txt"], in: root)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Local one"], in: root)
+        try write("b\n", to: "b.txt", in: root)
+        try runGit(["add", "b.txt"], in: root)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Local two"], in: root)
+
+        let commits = await service.unpushedCommits(repoPath: root, hasUpstream: true, limit: 10)
+
+        #expect(commits.count == 2)
+        #expect(commits[0].subject == "Local two")
+        #expect(commits[1].subject == "Local one")
+        #expect(!commits.contains { $0.subject == "Initial commit" })
+        #expect(commits[0].author == "Supermux Tests")
+    }
+
+    @Test func unpushedCommitsAfterPushReturnsNone() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        let remote = try makeBareRemote()
+        defer { cleanUp(remote) }
+        try runGit(["remote", "add", "origin", remote], in: root)
+        try runGit(["push", "-u", "origin", "main"], in: root)
+
+        let commits = await service.unpushedCommits(repoPath: root, hasUpstream: true, limit: 10)
+
+        #expect(commits.isEmpty)
+    }
+
+    @Test func unpushedCommitsHonorsLimit() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        let remote = try makeBareRemote()
+        defer { cleanUp(remote) }
+        try runGit(["remote", "add", "origin", remote], in: root)
+        try runGit(["push", "-u", "origin", "main"], in: root)
+        for index in 1...3 {
+            try write("\(index)\n", to: "f\(index).txt", in: root)
+            try runGit(["add", "f\(index).txt"], in: root)
+            try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Commit \(index)"], in: root)
+        }
+
+        let commits = await service.unpushedCommits(repoPath: root, hasUpstream: true, limit: 2)
+
+        #expect(commits.count == 2)
+        #expect(commits[0].subject == "Commit 3")
+        #expect(commits[1].subject == "Commit 2")
+    }
+
+    @Test func unpushedCommitsWithoutUpstreamReturnsLocalCommits() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        try write("a\n", to: "a.txt", in: root)
+        try runGit(["add", "a.txt"], in: root)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Second"], in: root)
+
+        // No remote at all → nothing is pushed → both commits are unpushed.
+        let commits = await service.unpushedCommits(repoPath: root, hasUpstream: false, limit: 10)
+
+        #expect(commits.count == 2)
+        #expect(commits[0].subject == "Second")
+        #expect(commits[1].subject == "Initial commit")
+    }
+
+    @Test func unpushedCommitsOnPlainDirectoryReturnsNone() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanUp(dir) }
+
+        let commits = await service.unpushedCommits(repoPath: dir, hasUpstream: false, limit: 10)
+
+        #expect(commits.isEmpty)
     }
 
     // MARK: - Commit failures

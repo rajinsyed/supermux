@@ -22,6 +22,14 @@ public struct SupermuxNewWorktreeSheet: View {
     @State private var branchInput = ""
     @State private var isCreating = false
     @State private var errorMessage: String?
+    /// Transient progress text shown while AI names the branch / git creates it.
+    @State private var statusMessage: String?
+    /// Whether AI branch naming is wired and a key is configured (probed on
+    /// appear for the hint; re-checked freshly at submit time).
+    @State private var aiNamingConfigured = false
+    /// The in-flight create work, retained so Cancel / dismiss can abort it
+    /// before it (slowly) names a branch and creates a worktree.
+    @State private var createTask: Task<Void, Never>?
 
     private enum Field { case workspace, branch }
 
@@ -47,6 +55,12 @@ public struct SupermuxNewWorktreeSheet: View {
             header
             workspaceField
             branchField
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let errorMessage {
                 Text(errorMessage)
                     .font(.system(size: 11))
@@ -57,7 +71,13 @@ public struct SupermuxNewWorktreeSheet: View {
         }
         .padding(16)
         .frame(width: 380)
-        .onAppear { focusedField = .workspace }
+        .onAppear {
+            focusedField = .workspace
+            Task { aiNamingConfigured = await model.isAIBranchNamingConfigured() }
+        }
+        // If the sheet goes away while a (possibly slow, AI-naming) create is in
+        // flight, abort it so no worktree is created behind the user's back.
+        .onDisappear { createTask?.cancel() }
     }
 
     // MARK: - Pieces
@@ -81,6 +101,7 @@ public struct SupermuxNewWorktreeSheet: View {
             .textFieldStyle(.roundedBorder)
             .focused($focusedField, equals: .workspace)
             .onSubmit(create)
+            .disabled(isCreating)
         }
     }
 
@@ -96,6 +117,7 @@ public struct SupermuxNewWorktreeSheet: View {
             .textFieldStyle(.roundedBorder)
             .focused($focusedField, equals: .branch)
             .onSubmit(create)
+            .disabled(isCreating)
             Text(branchHint)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -106,6 +128,7 @@ public struct SupermuxNewWorktreeSheet: View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
             Button(String(localized: "supermux.common.cancel", defaultValue: "Cancel")) {
+                createTask?.cancel()
                 dismiss()
             }
             .keyboardShortcut(.cancelAction)
@@ -141,6 +164,15 @@ public struct SupermuxNewWorktreeSheet: View {
             }
             return ""
         }
+        // Branch field is blank: when AI naming is configured and a workspace
+        // name is present, the branch is derived from it; otherwise a friendly
+        // random name is used.
+        if aiNamingConfigured, !workspaceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return String(
+                localized: "supermux.newWorktree.branch.aiHint",
+                defaultValue: "AI will suggest a branch name from the workspace name; a random name is used if that fails."
+            )
+        }
         return String(
             localized: "supermux.newWorktree.branch.randomHint",
             defaultValue: "Leave blank for a random name like “cheerful-umbrella”"
@@ -154,13 +186,37 @@ public struct SupermuxNewWorktreeSheet: View {
         isCreating = true
         errorMessage = nil
         let trimmedName = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
-        Task {
+        let trimmedBranch = branchInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        createTask = Task {
+            var branchToUse = branchInput
+            // Only invoke AI when the user left the branch blank but named the
+            // workspace; a typed branch is always respected verbatim. The
+            // configured check is done freshly here (not the on-appear cache) so
+            // a key pasted after the sheet opened is still used.
+            if trimmedBranch.isEmpty, !trimmedName.isEmpty,
+               await model.isAIBranchNamingConfigured() {
+                statusMessage = String(
+                    localized: "supermux.newWorktree.status.naming",
+                    defaultValue: "Generating branch name with AI…"
+                )
+                if let suggestion = await model.suggestBranchName(forWorkspaceName: trimmedName) {
+                    branchToUse = suggestion
+                }
+            }
+            statusMessage = nil
+            // The user may have cancelled/dismissed during the AI await; if so,
+            // do not create a worktree behind their back.
+            if Task.isCancelled {
+                isCreating = false
+                return
+            }
             do {
                 let worktree = try await model.createWorktree(
                     projectId: project.id,
-                    branchName: branchInput,
+                    branchName: branchToUse,
                     baseBranch: nil
                 )
+                guard !Task.isCancelled else { return }
                 onCreated(worktree, trimmedName.isEmpty ? nil : trimmedName)
                 dismiss()
             } catch {
