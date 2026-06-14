@@ -15,7 +15,7 @@ Rules for adding a touchpoint:
 | # | File | Fence id | What it does |
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
-| 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list; renders the agent-activity indicator on flat-list workspace rows |
+| 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list; renders the agent-activity indicator on flat-list workspace rows; gives the flat-list selection the faint accent tint used by nested project rows |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, and `cmuxTests/SupermuxSidebarBranchTests.swift` into the cmuxTests target |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
@@ -78,6 +78,37 @@ The indicator is reactive via the existing workspace observation (it changes wit
 snapshot/row, the requirement is just: derive activity per workspace and render the indicator
 beside the title.
 
+**`sidebar-selection-faint`:** two computed properties on `SidebarWorkspaceRow` are overridden so
+the flat-list selection highlight matches the nested project-workspace rows
+(`SupermuxOpenWorkspaceRowView`) — a faint accent tint with normal text instead of the loud solid
+selection card with inverted white text:
+
+```swift
+private var usesInvertedActiveForeground: Bool {
+    // SUPERMUX:begin sidebar-selection-faint
+    false
+    // SUPERMUX:end sidebar-selection-faint
+}
+
+private var backgroundColor: Color {
+    // SUPERMUX:begin sidebar-selection-faint
+    if isActive {
+        return Color.accentColor.opacity(0.16)
+    }
+    // SUPERMUX:end sidebar-selection-faint
+    let style = sidebarWorkspaceRowBackgroundStyle( … )   // upstream body unchanged
+    guard let color = style.color else { return .clear }
+    return Color(nsColor: color).opacity(style.opacity)
+}
+```
+
+If upstream restructures the row styling, the requirement is: the selected flat-list row fills with
+`Color.accentColor.opacity(0.16)` (the same expression the nested rows use) and its text stays in
+the normal primary/secondary palette (no white-on-solid inversion). The non-active multi-select /
+custom-color tints and the original `usesInvertedActiveForeground == isActive` logic are otherwise
+untouched. The default `activeTabIndicatorStyle` is `.leftRail`, so no active border or leading rail
+is drawn by default; those paths are deliberately left as upstream.
+
 ### 3. `cmux.xcodeproj/project.pbxproj` — unfenced (comments are not safe there)
 
 Fourteen ID-based additions, all using the reserved supermux ID prefix `50BE0001…`. To re-apply by
@@ -111,7 +142,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 
 | Row | Δ | Reason |
 |-----|---|--------|
-| `Sources/ContentView.swift` | +9 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6) |
+| `Sources/ContentView.swift` | +9, +14 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). |
 | `Sources/WorkspaceContentView.swift` | +12 | `presets-bar` mount above the splits (if/else branch on minimal mode) |
 | `Sources/RightSidebarPanelView.swift` | +18 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |

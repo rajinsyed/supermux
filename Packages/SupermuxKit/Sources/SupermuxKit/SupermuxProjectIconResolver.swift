@@ -73,4 +73,40 @@ public struct SupermuxProjectIconResolver: Sendable {
         }
         return nil
     }
+
+    /// Validates a user-chosen custom icon path and returns its file URL, or
+    /// `nil` when the path is blank, missing, a directory, or unreadable.
+    ///
+    /// Pure and Foundation-only (it cannot tell whether the file decodes as an
+    /// image — that check belongs to the image-loading layer), so a readable file
+    /// that is not a valid image still resolves here and the caller falls back.
+    /// - Parameter customIconPath: User-chosen icon file path, or `nil`.
+    /// - Returns: The custom icon file URL, or `nil`.
+    public func customIconURL(_ customIconPath: String?) -> URL? {
+        guard let trimmed = customIconPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: expanded, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              fileManager.isReadableFile(atPath: expanded) else { return nil }
+        return URL(fileURLWithPath: expanded).standardizedFileURL
+    }
+
+    /// Returns the image URL to use for a project's avatar: the user's explicit
+    /// custom icon file when valid, otherwise the auto-detected repository logo
+    /// from ``resolve(rootPath:)``.
+    ///
+    /// An explicit custom icon therefore overrides auto-detection, while a blank,
+    /// missing, directory, or unreadable `customIconPath` is ignored and
+    /// detection takes over — so a stale custom path never leaves the avatar
+    /// broken.
+    /// - Parameters:
+    ///   - rootPath: Absolute path to the project root.
+    ///   - customIconPath: User-chosen icon file path, or `nil`.
+    /// - Returns: The resolved icon file URL, or `nil`.
+    public func resolveAvatar(rootPath: String, customIconPath: String?) -> URL? {
+        customIconURL(customIconPath) ?? resolve(rootPath: rootPath)
+    }
 }

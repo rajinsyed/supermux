@@ -15468,7 +15468,12 @@ struct TabItemView: View, Equatable {
     }
 
     private var usesInvertedActiveForeground: Bool {
-        isActive
+        // SUPERMUX:begin sidebar-selection-faint
+        // The faint accent selection (see `backgroundColor`) keeps row text in the
+        // normal primary/secondary palette instead of inverting to white-on-solid,
+        // so flat-list rows match the nested project-workspace selection style.
+        false
+        // SUPERMUX:end sidebar-selection-faint
     }
 
     private var activePrimaryTextColor: Color {
@@ -16450,6 +16455,15 @@ struct TabItemView: View, Equatable {
     }
 
     private var backgroundColor: Color {
+        // SUPERMUX:begin sidebar-selection-faint
+        // Unify the selection highlight with the nested project-workspace rows
+        // (`SupermuxOpenWorkspaceRowView`): a faint accent tint instead of the loud
+        // solid selection card. Only the active (selected) row is overridden; the
+        // multi-select / custom-color tints below stay as upstream.
+        if isActive {
+            return Color.accentColor.opacity(0.16)
+        }
+        // SUPERMUX:end sidebar-selection-faint
         let style = sidebarWorkspaceRowBackgroundStyle(
             activeTabIndicatorStyle: activeTabIndicatorStyle,
             isActive: isActive,

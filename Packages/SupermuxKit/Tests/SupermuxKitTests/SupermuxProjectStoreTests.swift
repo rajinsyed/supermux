@@ -32,6 +32,7 @@ struct SupermuxProjectStoreTests {
             rootPath: "/tmp/alpha",
             colorHex: "#3b82f6",
             iconSymbol: "folder",
+            customIconPath: "/tmp/alpha/brand/icon.png",
             defaultBranch: "main",
             worktreesDirName: ".trees",
             runCommands: ["npm run dev", "npm run worker"],
@@ -86,6 +87,7 @@ struct SupermuxProjectStoreTests {
         #expect(loadedA.rootPath == projectA.rootPath)
         #expect(loadedA.colorHex == projectA.colorHex)
         #expect(loadedA.iconSymbol == projectA.iconSymbol)
+        #expect(loadedA.customIconPath == projectA.customIconPath)
         #expect(loadedA.defaultBranch == projectA.defaultBranch)
         #expect(loadedA.worktreesDirName == projectA.worktreesDirName)
         #expect(loadedA.runCommands == projectA.runCommands)

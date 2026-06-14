@@ -14,8 +14,10 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    project row you can:
    - open the project **locally** (a workspace at the repo root), or
    - **create a git worktree** (quick: name a branch, get an isolated checkout + workspace).
-   Projects have icons and colors. Worktrees created from a project are listed under it and can
-   be cleaned up from the UI.
+   Projects have icons and colors: an avatar is auto-detected from the repo's logo/favicon, with
+   a per-project **custom icon file** the user can pick in the editor to override detection (and a
+   fallback SF Symbol or letter avatar). Worktrees created from a project are listed under it and
+   can be cleaned up from the UI.
 2. **Changes panel.** A right-sidebar git panel for the active workspace: changed files, diffs,
    stage/unstage/discard, commit, push/pull — quick git actions without leaving the keyboard.
 3. **Run actions (⌘G).** Per-project start/stop dev-server commands with running-state display.

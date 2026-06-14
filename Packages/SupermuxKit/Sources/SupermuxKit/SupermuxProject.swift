@@ -18,6 +18,11 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     public var colorHex: String?
     /// SF Symbol name for the project avatar, or `nil` for a letter avatar.
     public var iconSymbol: String?
+    /// Absolute path to a user-chosen custom icon image file. When set and the
+    /// file is readable, it is used for the avatar in preference to the
+    /// auto-detected repository logo and the SF Symbol; a missing or blank path
+    /// falls back to that detection chain.
+    public var customIconPath: String?
     /// Branch new worktrees are created from when set; `nil` uses `HEAD`.
     public var defaultBranch: String?
     /// Directory (relative to ``rootPath``) that holds supermux-managed
@@ -48,6 +53,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     ///   - rootPath: Absolute path to the project root.
     ///   - colorHex: Accent color as `#RRGGBB`, or `nil` for the default.
     ///   - iconSymbol: SF Symbol avatar, or `nil` for a letter avatar.
+    ///   - customIconPath: Absolute path to a user-chosen icon image, or `nil`.
     ///   - defaultBranch: Base branch for new worktrees; `nil` uses `HEAD`.
     ///   - worktreesDirName: Worktree container directory; defaults to `.worktrees`.
     ///   - runCommands: Run-action commands; defaults to none.
@@ -62,6 +68,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         rootPath: String,
         colorHex: String? = nil,
         iconSymbol: String? = nil,
+        customIconPath: String? = nil,
         defaultBranch: String? = nil,
         worktreesDirName: String = ".worktrees",
         runCommands: [String] = [],
@@ -76,6 +83,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         self.rootPath = rootPath
         self.colorHex = colorHex
         self.iconSymbol = iconSymbol
+        self.customIconPath = customIconPath
         self.defaultBranch = defaultBranch
         self.worktreesDirName = worktreesDirName
         self.runCommands = runCommands
@@ -92,7 +100,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, rootPath, colorHex, iconSymbol, defaultBranch
+        case id, name, rootPath, colorHex, iconSymbol, customIconPath, defaultBranch
         case worktreesDirName, runCommands, setupCommands, teardownCommands
         case actions, createdAt, lastOpenedAt
     }
@@ -108,6 +116,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         rootPath = try container.decode(String.self, forKey: .rootPath)
         colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex)
         iconSymbol = try container.decodeIfPresent(String.self, forKey: .iconSymbol)
+        customIconPath = try container.decodeIfPresent(String.self, forKey: .customIconPath)
         defaultBranch = try container.decodeIfPresent(String.self, forKey: .defaultBranch)
         worktreesDirName = try container.decodeIfPresent(String.self, forKey: .worktreesDirName) ?? ".worktrees"
         runCommands = try container.decodeIfPresent([String].self, forKey: .runCommands) ?? []

@@ -1,5 +1,4 @@
 public import SwiftUI
-import AppKit
 
 /// A sheet for editing a registered project's settings: name, accent color,
 /// icon, default base branch, worktrees folder, run commands, and custom
@@ -19,10 +18,6 @@ public struct SupermuxProjectEditorSheet: View {
     @State private var runCommandsInput: String
     @State private var setupCommandsInput: String
     @State private var teardownCommandsInput: String
-    /// Logo auto-detected from the project files, previewed in the icon row.
-    @State private var detectedIcon: NSImage?
-    /// Project-relative path of the detected logo, shown next to its preview.
-    @State private var detectedIconRelativePath: String?
     /// Relative path of the project's `config.json` when one manages it, e.g.
     /// `.superset/config.json`; `nil` when the project has no config file. When
     /// set, the run/setup/teardown/actions fields are config-owned and read-only.
@@ -61,7 +56,11 @@ public struct SupermuxProjectEditorSheet: View {
                         text: $edited.name
                     )
                     colorRow
-                    iconRow
+                    SupermuxProjectIconEditor(
+                        rootPath: edited.rootPath,
+                        iconSymbolText: $iconInput,
+                        customIconPath: $edited.customIconPath
+                    )
                 }
                 Section {
                     baseBranchRow
@@ -110,7 +109,6 @@ public struct SupermuxProjectEditorSheet: View {
             buttonBar
         }
         .frame(width: 420, height: 720)
-        .task { await detectIcon() }
         .task { await loadConfigState() }
     }
 
@@ -130,51 +128,6 @@ public struct SupermuxProjectEditorSheet: View {
             }
         }
         .padding(.vertical, 2)
-    }
-
-    private var iconRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                TextField(
-                    String(localized: "supermux.projectEditor.icon", defaultValue: "Icon"),
-                    text: $iconInput,
-                    prompt: Text(String(
-                        localized: "supermux.projectEditor.iconPrompt",
-                        defaultValue: "SF Symbol name"
-                    ))
-                )
-                .autocorrectionDisabled()
-                if isIconPreviewable {
-                    Image(systemName: trimmedIcon)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let detectedIcon, let relativePath = detectedIconRelativePath {
-                HStack(spacing: 6) {
-                    Image(nsImage: detectedIcon)
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFit()
-                        .frame(width: 16, height: 16)
-                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                    Text(String(
-                        localized: "supermux.projectEditor.icon.detected",
-                        defaultValue: "Using detected logo \(relativePath)"
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                }
-            } else {
-                Text(String(
-                    localized: "supermux.projectEditor.icon.help",
-                    defaultValue: "Shown when no logo file is found in the project"
-                ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-        }
     }
 
     private var baseBranchRow: some View {
@@ -356,34 +309,7 @@ public struct SupermuxProjectEditorSheet: View {
         edited.name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var trimmedIcon: String {
-        iconInput.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var isIconPreviewable: Bool {
-        !trimmedIcon.isEmpty
-            && NSImage(systemSymbolName: trimmedIcon, accessibilityDescription: nil) != nil
-    }
-
     // MARK: - Actions
-
-    /// Probes the project files for a logo and updates the preview. Detection
-    /// runs off the main actor; the `NSImage` is built on it.
-    private func detectIcon() async {
-        let rootPath = edited.rootPath
-        let resolver = SupermuxProjectIconResolver()
-        let url = await Task.detached { resolver.resolve(rootPath: rootPath) }.value
-        guard let url else {
-            detectedIcon = nil
-            detectedIconRelativePath = nil
-            return
-        }
-        detectedIcon = NSImage(contentsOf: url)
-        let root = (rootPath as NSString).expandingTildeInPath
-        detectedIconRelativePath = url.path.hasPrefix(root + "/")
-            ? String(url.path.dropFirst(root.count + 1))
-            : url.lastPathComponent
-    }
 
     /// Detects whether a repo-shipped `config.json` manages this project and, if
     /// so, mirrors its live values into the (read-only) script/run/action fields
@@ -414,6 +340,7 @@ public struct SupermuxProjectEditorSheet: View {
     private func save() {
         var project = edited
         project.name = trimmedName
+        let trimmedIcon = iconInput.trimmingCharacters(in: .whitespacesAndNewlines)
         project.iconSymbol = trimmedIcon.isEmpty ? nil : trimmedIcon
         let branch = defaultBranchInput.trimmingCharacters(in: .whitespacesAndNewlines)
         project.defaultBranch = branch.isEmpty ? nil : branch

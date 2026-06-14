@@ -1,9 +1,10 @@
 public import SwiftUI
 public import AppKit
 
-/// The small avatar shown next to a project. Precedence: an auto-detected logo
-/// file from the repository wins; otherwise the project's SF Symbol; otherwise
-/// the first letter of the project name.
+/// The small avatar shown next to a project. Precedence: the resolved icon image
+/// wins (the user's custom icon when set, otherwise an auto-detected logo file
+/// from the repository); otherwise the project's SF Symbol; otherwise the first
+/// letter of the project name.
 public struct SupermuxProjectAvatarView: View {
     private let project: SupermuxProject
     private let detectedIcon: NSImage?
@@ -12,7 +13,8 @@ public struct SupermuxProjectAvatarView: View {
     /// Creates an avatar.
     /// - Parameters:
     ///   - project: The project to represent.
-    ///   - detectedIcon: A logo auto-detected from the project files, shown in
+    ///   - detectedIcon: The resolved icon image — the user's custom icon when
+    ///     set, otherwise a logo auto-detected from the project files — shown in
     ///     preference to the SF Symbol or letter when present.
     ///   - size: Square edge length in points.
     public init(project: SupermuxProject, detectedIcon: NSImage? = nil, size: CGFloat = 20) {

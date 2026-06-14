@@ -196,10 +196,13 @@ public struct SupermuxProjectsSectionView: View {
         .padding(.vertical, 4)
     }
 
-    /// A value that changes whenever a project is added, removed, or moved, so
-    /// the icon-resolution task re-runs only when logo locations could differ.
+    /// A value that changes whenever a project is added, removed, moved, or has
+    /// its icon source edited, so the icon-resolution task re-runs only when an
+    /// avatar could actually differ.
     private var iconResolutionToken: String {
-        model.projects.map { "\($0.id.uuidString):\($0.rootPath)" }.joined(separator: "|")
+        model.projects
+            .map { "\($0.id.uuidString):\($0.rootPath):\($0.customIconPath ?? "")" }
+            .joined(separator: "|")
     }
 
     /// The unopened worktrees (under expanded projects) to probe for pull

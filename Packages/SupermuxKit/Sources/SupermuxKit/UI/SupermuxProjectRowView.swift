@@ -375,6 +375,7 @@ struct SupermuxWorktreeRowView: View {
             Image(systemName: "arrow.triangle.branch")
                 .font(.system(size: 9 * fontScale, weight: .medium))
                 .foregroundStyle(.secondary)
+                .frame(width: 20 * fontScale)
             Text(worktree.displayName)
                 .font(.system(size: 11.5 * fontScale))
                 .lineLimit(1)
@@ -388,7 +389,8 @@ struct SupermuxWorktreeRowView: View {
                 )
             }
         }
-        .padding(.leading, 24 * fontScale)
+        // Match the open-workspace row so worktree names align under the project name.
+        .padding(.leading, 7)
         .padding(.trailing, 6)
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -441,14 +443,14 @@ struct SupermuxOpenWorkspaceRowView: View {
         HStack(spacing: 6) {
             // Agent activity fills the leading slot when present (spinner /
             // pulsing / ready dot); idle workspaces show nothing — selection is
-            // conveyed by the row highlight and bold title. The slot stays
-            // fixed-width so titles align whether or not a dot is shown.
+            // conveyed by the row highlight and bold title. The slot mirrors the
+            // project avatar's width so the title aligns under the project name.
             ZStack {
                 if workspace.activity.isVisible {
                     SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
                 }
             }
-            .frame(width: 12 * fontScale, height: 12 * fontScale)
+            .frame(width: 20 * fontScale, height: 12 * fontScale)
             VStack(alignment: .leading, spacing: 0) {
                 Text(workspace.title)
                     .font(.system(size: 11.5 * fontScale, weight: workspace.isSelected ? .semibold : .regular))
@@ -483,7 +485,8 @@ struct SupermuxOpenWorkspaceRowView: View {
                 .help(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"))
             }
         }
-        .padding(.leading, 22 * fontScale)
+        // 7 + slot(20·s) + 6 == project row's 6 + avatar(20·s) + 7 → title aligns under the project name.
+        .padding(.leading, 7)
         .padding(.trailing, 6)
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)

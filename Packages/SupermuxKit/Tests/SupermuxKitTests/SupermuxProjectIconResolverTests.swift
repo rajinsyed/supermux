@@ -98,4 +98,46 @@ struct SupermuxProjectIconResolverTests {
             #expect(!path.contains(".."))
         }
     }
+
+    // MARK: - resolveAvatar (custom icon override)
+
+    @Test func avatarUsesCustomIconWhenSet() throws {
+        try withTempDirectory { root in
+            // A repo logo exists, but an explicit custom icon must win over it.
+            try touch("favicon.svg", under: root)
+            try touch("brand/custom.png", under: root)
+            let custom = URL(fileURLWithPath: root).appendingPathComponent("brand/custom.png").path
+            let resolved = resolver.resolveAvatar(rootPath: root, customIconPath: custom)
+            #expect(resolved?.lastPathComponent == "custom.png")
+        }
+    }
+
+    @Test func avatarFallsBackToDetectionWhenCustomPathMissing() throws {
+        try withTempDirectory { root in
+            try touch("logo.svg", under: root)
+            let missing = URL(fileURLWithPath: root).appendingPathComponent("nope.png").path
+            #expect(resolver.resolveAvatar(rootPath: root, customIconPath: missing)?.lastPathComponent == "logo.svg")
+        }
+    }
+
+    @Test func avatarFallsBackToDetectionWhenCustomPathIsDirectory() throws {
+        try withTempDirectory { root in
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: root).appendingPathComponent("icons"),
+                withIntermediateDirectories: true
+            )
+            try touch("logo.svg", under: root)
+            let dir = URL(fileURLWithPath: root).appendingPathComponent("icons").path
+            #expect(resolver.resolveAvatar(rootPath: root, customIconPath: dir)?.lastPathComponent == "logo.svg")
+        }
+    }
+
+    @Test func avatarMatchesDetectionWhenNoCustomPath() throws {
+        try withTempDirectory { root in
+            try touch("favicon.ico", under: root)
+            #expect(resolver.resolveAvatar(rootPath: root, customIconPath: nil)
+                == resolver.resolve(rootPath: root))
+            #expect(resolver.resolveAvatar(rootPath: root, customIconPath: "  ")?.lastPathComponent == "favicon.ico")
+        }
+    }
 }
