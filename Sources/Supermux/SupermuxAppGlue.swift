@@ -264,6 +264,11 @@ struct SupermuxProjectsMount: View {
                 guard let workspace = tabManager?.tabs.first(where: { $0.id == id }) else { return }
                 _ = tabManager?.closeWorkspaceWithConfirmation(workspace)
             },
+            onRenameWorkspace: { [weak tabManager] id, title in
+                // Route through cmux's shared rename mutation: an empty/whitespace
+                // title clears the custom title and reverts to the process title.
+                tabManager?.setCustomTitle(tabId: id, title: title)
+            },
             onReorderWorkspace: { [weak tabManager] draggedId, targetId in
                 // Reorder the dragged workspace adjacent to the target in cmux's
                 // own tab order (the source of the nested list). Direction is
@@ -302,14 +307,25 @@ struct SupermuxProjectsMount: View {
         .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
     }
 
-    /// Merges every open workspace's cmux sidebar-observation publisher (which
-    /// already coalesces and de-duplicates `gitBranch`, `currentDirectory`, and
-    /// related fields) into one stream. Each `sidebarObservationPublisher` is a
-    /// per-`Workspace` cached `lazy var`, so the merged set only changes when the
-    /// tab set does. `.receive(on:)` defers delivery past `@Published`'s `willSet`
-    /// so the next body re-read sees the committed value.
+    /// Merges every open workspace's sidebar-observation streams into one. Each
+    /// workspace contributes its `$title` publisher — so renaming a nested
+    /// workspace via `setCustomTitle` (which mutates `title` in place on the
+    /// `Workspace`, firing no `TabManager` `@Published`) re-titles its row at
+    /// once, matching cmux's own sidebar — plus its debounced
+    /// `sidebarObservationPublisher` (`gitBranch`, `currentDirectory`, status —
+    /// the late-detected branch update). We observe `$title` alone rather than
+    /// the full `sidebarImmediateObservationPublisher` so this eager section is
+    /// not rebuilt by the conversation/activity fields that publisher also
+    /// carries. Both are per-`Workspace` cached, so the merged set only changes
+    /// when the tab set does. `.receive(on:)` defers delivery past `@Published`'s
+    /// `willSet` so the next body re-read sees the committed value.
     private func workspaceObservationPublisher(_ tabs: [Workspace]) -> AnyPublisher<Void, Never> {
-        let publishers = tabs.map(\.sidebarObservationPublisher)
+        let publishers: [AnyPublisher<Void, Never>] = tabs.flatMap { workspace in
+            [
+                workspace.$title.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
+                workspace.sidebarObservationPublisher,
+            ]
+        }
         guard !publishers.isEmpty else {
             return Empty<Void, Never>().eraseToAnyPublisher()
         }

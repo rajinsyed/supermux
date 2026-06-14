@@ -14,6 +14,7 @@ public struct SupermuxProjectsSectionView: View {
     private let openWorkspaces: [SupermuxOpenWorkspace]
     private let onSelectWorkspace: (UUID) -> Void
     private let onCloseWorkspace: (UUID) -> Void
+    private let onRenameWorkspace: (UUID, String) -> Void
     private let onReorderWorkspace: (UUID, UUID) -> Void
     private let onOpenPullRequest: (URL) -> Void
 
@@ -48,6 +49,8 @@ public struct SupermuxProjectsSectionView: View {
     ///     nested under the project each belongs to. Defaults to empty.
     ///   - onSelectWorkspace: Focuses a nested workspace by id.
     ///   - onCloseWorkspace: Closes a nested workspace by id.
+    ///   - onRenameWorkspace: Sets a nested workspace's custom title `(id,
+    ///     newTitle)` (an empty title clears it, reverting to the process title).
     ///   - onReorderWorkspace: Reorders a nested workspace `(draggedId,
     ///     targetId)` within its project (wired to the host's tab order).
     ///   - onOpenPullRequest: Opens a PR badge's URL. Defaults to the system
@@ -58,6 +61,7 @@ public struct SupermuxProjectsSectionView: View {
         openWorkspaces: [SupermuxOpenWorkspace] = [],
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
         onCloseWorkspace: @escaping (UUID) -> Void = { _ in },
+        onRenameWorkspace: @escaping (UUID, String) -> Void = { _, _ in },
         onReorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in },
         onOpenPullRequest: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     ) {
@@ -66,6 +70,7 @@ public struct SupermuxProjectsSectionView: View {
         self.openWorkspaces = openWorkspaces
         self.onSelectWorkspace = onSelectWorkspace
         self.onCloseWorkspace = onCloseWorkspace
+        self.onRenameWorkspace = onRenameWorkspace
         self.onReorderWorkspace = onReorderWorkspace
         self.onOpenPullRequest = onOpenPullRequest
     }
@@ -271,6 +276,7 @@ public struct SupermuxProjectsSectionView: View {
             launchAction: { action in launchAction(action, project: project) },
             selectWorkspace: onSelectWorkspace,
             closeWorkspace: onCloseWorkspace,
+            renameWorkspace: { promptRenameWorkspace(id: $0) },
             moveUp: { moveProject(project, by: -1) },
             moveDown: { moveProject(project, by: 1) },
             reorderWorkspace: onReorderWorkspace,
@@ -411,6 +417,34 @@ public struct SupermuxProjectsSectionView: View {
                 await model.addProject(rootPath: path)
             }
         }
+    }
+
+    /// Prompts for a new custom title for the nested workspace `id` and hands the
+    /// result to the host (which sets it via cmux's `TabManager.setCustomTitle`).
+    /// Mirrors cmux's own rename dialog; an empty value clears the custom title.
+    @MainActor
+    private func promptRenameWorkspace(id: UUID) {
+        guard let workspace = openWorkspaces.first(where: { $0.id == id }) else { return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "supermux.workspace.rename.title", defaultValue: "Rename Workspace")
+        alert.informativeText = String(
+            localized: "supermux.workspace.rename.message",
+            defaultValue: "Enter a custom name for this workspace."
+        )
+        let input = NSTextField(string: workspace.title)
+        input.placeholderString = String(localized: "supermux.workspace.rename.placeholder", defaultValue: "Workspace name")
+        input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        alert.accessoryView = input
+        alert.addButton(withTitle: String(localized: "supermux.workspace.rename.confirm", defaultValue: "Rename"))
+        alert.addButton(withTitle: String(localized: "supermux.common.cancel", defaultValue: "Cancel"))
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = input
+        DispatchQueue.main.async {
+            alertWindow.makeFirstResponder(input)
+            input.selectText(nil)
+        }
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        onRenameWorkspace(id, input.stringValue)
     }
 
     @MainActor

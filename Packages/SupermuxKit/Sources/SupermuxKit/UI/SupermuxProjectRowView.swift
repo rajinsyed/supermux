@@ -26,6 +26,8 @@ public struct SupermuxProjectRowActions {
     public var selectWorkspace: (UUID) -> Void
     /// Closes a nested open workspace by id.
     public var closeWorkspace: (UUID) -> Void
+    /// Renames a nested open workspace by id (sets its custom title).
+    public var renameWorkspace: (UUID) -> Void
     /// Moves the project one slot up in sidebar order (no-op when first).
     public var moveUp: () -> Void
     /// Moves the project one slot down in sidebar order (no-op when last).
@@ -48,6 +50,7 @@ public struct SupermuxProjectRowActions {
         launchAction: @escaping (SupermuxProjectAction) -> Void,
         selectWorkspace: @escaping (UUID) -> Void,
         closeWorkspace: @escaping (UUID) -> Void,
+        renameWorkspace: @escaping (UUID) -> Void = { _ in },
         moveUp: @escaping () -> Void = {},
         moveDown: @escaping () -> Void = {},
         reorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in },
@@ -64,6 +67,7 @@ public struct SupermuxProjectRowActions {
         self.launchAction = launchAction
         self.selectWorkspace = selectWorkspace
         self.closeWorkspace = closeWorkspace
+        self.renameWorkspace = renameWorkspace
         self.moveUp = moveUp
         self.moveDown = moveDown
         self.reorderWorkspace = reorderWorkspace
@@ -222,6 +226,7 @@ public struct SupermuxProjectRowView: View {
                     workspace: workspace,
                     select: { actions.selectWorkspace(workspace.id) },
                     close: { actions.closeWorkspace(workspace.id) },
+                    rename: { actions.renameWorkspace(workspace.id) },
                     beginDrag: {
                         draggingWorkspaceId = workspace.id
                         return NSItemProvider(object: workspace.id.uuidString as NSString)
@@ -425,6 +430,8 @@ struct SupermuxOpenWorkspaceRowView: View {
     let workspace: SupermuxOpenWorkspace
     let select: () -> Void
     let close: () -> Void
+    /// Renames the workspace (sets its custom title) via the host.
+    var rename: () -> Void = {}
     /// Starts a drag session, returning the reorder payload.
     var beginDrag: () -> NSItemProvider = { NSItemProvider() }
     /// Accepts reorder drops from sibling workspace rows, if wired.
@@ -501,6 +508,7 @@ struct SupermuxOpenWorkspaceRowView: View {
         .onTapGesture(perform: select)
         .contextMenu {
             Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
+            Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
             Divider()
             Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
         }

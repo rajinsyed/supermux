@@ -65,6 +65,38 @@ final class SupermuxSidebarBranchTests: XCTestCase {
         )
     }
 
+    /// Renaming a project-nested workspace must re-title its row. The supermux
+    /// "Rename Workspace…" action routes through `onRenameWorkspace` →
+    /// `TabManager.setCustomTitle`, and the nested row reads
+    /// `customTitle ?? title` via ``SupermuxWorkspaceRow/snapshot(for:isSelected:projectId:isRunning:)``.
+    /// This guards that exact path, including the blank-name clear that reverts
+    /// the row to the process title.
+    func testSidebarTitleReflectsRenameAndBlankClears() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        // Baseline: with no custom title the row shows the process title.
+        XCTAssertNil(workspace.customTitle)
+        let processTitle = rowTitle(for: workspace)
+
+        manager.setCustomTitle(tabId: workspace.id, title: "Renamed Workspace")
+        XCTAssertEqual(workspace.customTitle, "Renamed Workspace")
+        XCTAssertEqual(
+            rowTitle(for: workspace),
+            "Renamed Workspace",
+            "The nested row must show the custom title after a rename."
+        )
+
+        // A blank/whitespace name clears the custom title (Workspace.setCustomTitle
+        // trims to nil) and the row reverts to the process title.
+        manager.setCustomTitle(tabId: workspace.id, title: "   ")
+        XCTAssertNil(workspace.customTitle, "A blank rename clears the custom title.")
+        XCTAssertEqual(
+            rowTitle(for: workspace),
+            processTitle,
+            "Clearing the custom title reverts the row to the process title."
+        )
+    }
+
     /// The branch the user actually sees, built through the production
     /// ``SupermuxWorkspaceRow`` mapping used by ``SupermuxProjectsMount``.
     private func rowBranch(for workspace: Workspace) -> String? {
@@ -74,5 +106,16 @@ final class SupermuxSidebarBranchTests: XCTestCase {
             projectId: nil,
             isRunning: false
         ).branch
+    }
+
+    /// The title the user actually sees on a project-nested row, built through
+    /// the production ``SupermuxWorkspaceRow`` mapping used by ``SupermuxProjectsMount``.
+    private func rowTitle(for workspace: Workspace) -> String {
+        SupermuxWorkspaceRow.snapshot(
+            for: workspace,
+            isSelected: false,
+            projectId: nil,
+            isRunning: false
+        ).title
     }
 }
