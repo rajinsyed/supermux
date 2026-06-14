@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list; renders the agent-activity indicator on flat-list workspace rows; gives the flat-list selection the faint accent tint used by nested project rows |
-| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, and `cmuxTests/SupermuxSidebarBranchTests.swift` into the cmuxTests target |
+| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17) |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it |
@@ -31,6 +31,7 @@ Rules for adding a touchpoint:
 | 14 | `web/data/cmux.schema.json` | `unfenced` | Adds `supermuxToggleRun` to the shortcut-action enum so cmux.json validation accepts rebinding it |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only); minimal mode keeps the original top-safe-area layout |
+| 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + `AppIcon-Debug.icon` (DEV band) + `AppIcon-Nightly.icon` (NIGHTLY band); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered glass icon. Wiring lives in touchpoint #3. |
 
 ## How to re-apply
 
@@ -205,6 +206,44 @@ exactly (it's only reached when `isMinimalMode` is true). If upstream
 restructures this view, the requirement is: render `SupermuxPresetsBarMount`
 once above the split container for normal-mode workspaces, and leave minimal
 mode's top-safe-area-ignoring layout untouched.
+
+### 17. App icon — Icon Composer `.icon` files (unfenced)
+
+The supermux brand is shipped as Icon Composer "Liquid Glass" `.icon` files (Xcode 26),
+not PNG appiconsets. The upstream PNG appiconsets were **deleted** and replaced by three
+top-level `.icon` folders. These are tool-managed/binary, so they can't be fenced; an
+upstream merge that re-introduces `AppIcon*.appiconset` or rewrites the icon must be
+re-done.
+
+Files:
+- `AppIcon.icon/` — Release. `icon.json` = a purple→blue `linear-gradient` fill + one
+  `glass:true` layer `supermux.png` (the dark glass mark; opaque, so it reads as the dark
+  mark and the gradient sits behind it). This is the source of truth from Icon Composer.
+- `AppIcon-Debug.icon/` — copy of the base with a **DEV** band (`#FF6B00`) baked into the
+  bottom of `supermux.png`.
+- `AppIcon-Nightly.icon/` — copy with a **NIGHTLY** band (`#8C3CDC`) baked in.
+- `Assets.xcassets/AppIcon{Light,Dark}.imageset/` — 1024 PNGs used by the dock-tile plugin
+  (`Sources/AppIconDockTilePlugin.swift`, which overrides the *running* dock icon) and the
+  Settings icon picker. Re-sourced from the actual rendered glass icon
+  (`NSWorkspace.icon(forFile:)` of the built app), so the dock matches Finder.
+
+Badge geometry: the system scales the 1024 layer into an 824×824 squircle at 100 px margin
+(scale ≈ 0.8047), then masks. Bands are baked from mark-space `y≈815..1024` (full width) so
+they land inside the squircle's lower band with rounded bottom corners; text is centered,
+white, Arial-Bold. Badges inherit the layer's glass, so they read as glassy bands (fine for
+dev/nightly distinction).
+
+Wiring (touchpoint #3, `cmux.xcodeproj/project.pbxproj`): each `.icon` needs a
+`PBXFileReference` with `lastKnownFileType = folder.iconcomposer.icon`, a `PBXBuildFile`,
+and membership in the **app target's `PBXResourcesBuildPhase`** — otherwise actool ignores
+it. `ASSETCATALOG_COMPILER_APPICON_NAME` selects the name only: `AppIcon` (Release),
+`AppIcon-Debug` (Debug), and `AppIcon-Nightly` via the CI env override in
+`.github/workflows/{nightly,ci}.yml`. A same-named `.appiconset` must NOT coexist (actool
+errors on the duplicate), which is why the appiconsets were removed. actool auto-generates
+the legacy `.icns`/Assets.car fallbacks from the `.icon` for the 14.0 deployment target.
+
+iOS (`ios/cmux/Assets.xcassets/AppIcon.appiconset/`) is intentionally left to the iOS
+target and not rebranded here.
 
 ### 1. `CLAUDE.md` — `claude-md-pointer`
 
