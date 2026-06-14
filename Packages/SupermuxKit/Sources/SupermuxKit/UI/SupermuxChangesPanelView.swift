@@ -163,6 +163,7 @@ public struct SupermuxChangesPanelView: View {
     private var changeList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 1) {
+                historySection
                 if model.snapshot.totalChangeCount == 0 {
                     emptyState
                 } else {
@@ -188,7 +189,6 @@ public struct SupermuxChangesPanelView: View {
                         isStaged: false
                     )
                 }
-                historySection
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
@@ -305,7 +305,8 @@ public struct SupermuxChangesPanelView: View {
                 .frame(maxWidth: .infinity)
             }
             .controlSize(.small)
-            .keyboardShortcut(.return, modifiers: .command)
+            // ⇧⌘↩ accelerates AI "Generate & Commit"; plain ⌘↩ commits a typed message.
+            .keyboardShortcut(.return, modifiers: model.isAICommitMode ? [.command, .shift] : .command)
             .disabled(!model.canCommit)
             .help(commitHelp)
             HStack(spacing: 6) {
@@ -328,7 +329,7 @@ public struct SupermuxChangesPanelView: View {
         model.isAICommitMode
             ? String(
                 localized: "supermux.changes.ai.commit.help",
-                defaultValue: "Stage all changes, generate a commit message with AI, and commit (⌘↩)"
+                defaultValue: "Stage all changes, generate a commit message with AI, and commit (⇧⌘↩)"
             )
             : String(localized: "supermux.changes.commit.help", defaultValue: "Commit staged changes (⌘↩)")
     }
