@@ -1425,7 +1425,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             installMenuBarVisibilityObserver()
             syncApplicationPresentationPreferences()
             updateController.actionDelegate = self
-            updateController.startUpdaterIfNeeded()
+            // SUPERMUX:begin disable-auto-update
+            // supermux updates via git merge from upstream, not Sparkle — never auto-start the
+            // updater (no launch/periodic probe, no scheduled checks → the pill never appears).
+            // SUPERMUX:end disable-auto-update
         }
         titlebarAccessoryController.start()
         windowDecorationsController.start()

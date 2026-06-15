@@ -32,6 +32,7 @@ Rules for adding a touchpoint:
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only); minimal mode keeps the original top-safe-area layout |
 | 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + `AppIcon-Debug.icon` (DEV band) + `AppIcon-Nightly.icon` (NIGHTLY band); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered glass icon. Wiring lives in touchpoint #3. |
+| 19 | `Sources/AppDelegate.swift` | `disable-auto-update` | Disables the Sparkle auto-updater: removes the launch-time `updateController.startUpdaterIfNeeded()` call so there is no launch/periodic update probe and no scheduled check, which means the sidebar "Update Available" pill never auto-appears. supermux ships updates via git merge from upstream, not Sparkle. |
 | 18 | `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AutomationSection.swift` | `ai-settings` | Renders `SupermuxAISettingsCard` (Vercel AI Gateway API key + model) at the end of the Automation section, and stores the `secretStore` + `errorLog` the card needs. The card itself is a new supermux-owned file, `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` (no conflict on merge; lives in the upstream package only because the section stack is closed to app injection and cannot import `SupermuxKit`). |
 
 ## How to re-apply
@@ -180,7 +181,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
 | `Sources/MainWindowFocusController.swift` | +10 | changes-mode focus routing |
 | `Sources/KeyboardShortcutSettings.swift` | +13 | `supermuxToggleRun` action |
-| `Sources/AppDelegate.swift` | +10 | `run-toggle-shortcut-dispatch` |
+| `Sources/AppDelegate.swift` | +10, +3 | `run-toggle-shortcut-dispatch` (+10); `disable-auto-update` (+3: a 4-line fenced comment replaces the 1-line `startUpdaterIfNeeded()` call, 18128→18131) |
 | `CLI/cmux.swift` | +4 | `changes` CLI mode |
 
 After a merge, re-run and re-bump only by the measured fenced delta:
@@ -332,3 +333,32 @@ section, the requirement is: surface a `SecureField`-backed card writing the
 (`SupermuxComposition` in `Sources/Supermux/SupermuxAppGlue.swift`) reads the
 same secret file (via `SecretFileStore` rooted at `CmuxStateDirectory`) to power
 the AI features — no fence there (it is a supermux-owned file).
+
+### 19. `Sources/AppDelegate.swift` — `disable-auto-update`
+
+cmux uses Sparkle for auto-updates. On launch, `applicationDidFinishLaunching` sets the
+update controller's delegate and starts the updater, which immediately probes the release feed
+(and re-probes periodically + on Sparkle's schedule). When that probe finds a newer version, the
+update controller's model flips to `.updateAvailable` and the sidebar footer renders the blue
+"Update Available: x.y.z" pill (`UpdatePill` in `Sources/ContentView.swift`). supermux ships
+updates by merging from upstream cmux via git, so this auto-update path is unwanted (it would
+also offer to replace the supermux build with an upstream cmux release).
+
+The fix removes only the launch-time auto-start. The `actionDelegate` assignment stays so the
+manual "Check for Updates…" menu still works on explicit invocation (it calls
+`startUpdaterIfNeeded()` itself, lazily). The fence replaces the single `startUpdaterIfNeeded()`
+call:
+
+```swift
+            updateController.actionDelegate = self
+            // SUPERMUX:begin disable-auto-update
+            // supermux updates via git merge from upstream, not Sparkle — never auto-start the
+            // updater (no launch/periodic probe, no scheduled checks → the pill never appears).
+            // SUPERMUX:end disable-auto-update
+```
+
+If upstream restructures the updater bootstrap, the requirement is: do not call
+`startUpdaterIfNeeded()` (or any equivalent that begins automatic/scheduled update checks)
+automatically at launch, so the model never auto-transitions to `.updateAvailable` and the pill
+never appears. Leaving the manual `checkForUpdates(_:)` menu path intact is fine — it only runs
+on explicit user action.
