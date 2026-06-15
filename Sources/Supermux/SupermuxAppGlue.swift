@@ -304,6 +304,10 @@ struct SupermuxProjectsMount: View {
             observation.observe(tabs: tabManager.tabs)
         }
         .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
+        // Publish this section's height so the sidebar shrinks the empty area
+        // below the rows by it (else the content overflows and the empty space
+        // scrolls — see SupermuxProjectsSectionHeightPreferenceKey + cmux #3241).
+        .supermuxReportsProjectsSectionHeight()
     }
 }
 

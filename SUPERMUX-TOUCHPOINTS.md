@@ -15,7 +15,7 @@ Rules for adding a touchpoint:
 | # | File | Fence id | What it does |
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
-| 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list; renders the agent-activity indicator on flat-list workspace rows; gives the flat-list selection the faint accent tint used by nested project rows |
+| 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list; renders the agent-activity indicator on flat-list workspace rows; gives the flat-list selection the faint accent tint used by nested project rows; subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17) |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
@@ -113,9 +113,35 @@ custom-color tints and the original `usesInvertedActiveForeground == isActive` l
 untouched. The default `activeTabIndicatorStyle` is `.leftRail`, so no active border or leading rail
 is drawn by default; those paths are deliberately left as upstream.
 
+**`sidebar-projects-empty-area`:** cmux sizes the sidebar scroll content to exactly fill the
+viewport when everything fits — the empty drop/tap area below the last workspace row is a finite
+remainder (`SidebarWorkspaceScrollLayout.emptyAreaHeight`), not `maxHeight: .infinity`, which is what
+stops the document from overflowing and showing a phantom scroller / scrollable empty space
+(https://github.com/manaflow-ai/cmux/issues/3241). That fit assumes the workspace rows are the only
+content. Because `sidebar-projects-section` inserts `SupermuxProjectsMount()` above the rows in the
+same scroll content, its height must be subtracted from the remainder or the document overflows the
+viewport by exactly the section's height and the empty space becomes scrollable. Three small edits in
+`VerticalTabsSidebar`, all under this one fence id:
+1. A `@State private var supermuxProjectsSectionHeight: CGFloat = 0` field (next to
+   `workspaceRowsMeasurement`).
+2. In `workspaceScrollArea`, the `emptyAreaHeight` call passes
+   `contentMinHeight: max(0, contentMinHeight - supermuxProjectsSectionHeight)` instead of the raw
+   `contentMinHeight`.
+3. In the workspace `ScrollView` modifier chain (next to the
+   `SidebarWorkspaceRowsHeightPreferenceKey` handler) an
+   `.onPreferenceChange(SupermuxProjectsSectionHeightPreferenceKey.self)` writes the measured height
+   into that `@State` (accepts growth immediately; dedupes only shrink jitter with a 0.5pt
+   tolerance, so a stale-low height never inflates the filler into sub-point overflow).
+
+The height is published by `SupermuxProjectsMount` itself via a `GeometryReader` background writing
+`SupermuxProjectsSectionHeightPreferenceKey` (both supermux-owned, so no upstream surface). If
+upstream restructures the sidebar scroll sizing, the requirement is: whatever the empty/filler region
+below the workspace rows is sized to, subtract the measured height of the Projects section first, so
+`projects + rows + filler ≤ one viewport`.
+
 ### 3. `cmux.xcodeproj/project.pbxproj` — unfenced (comments are not safe there)
 
-Fourteen ID-based additions, all using the reserved supermux ID prefix `50BE0001…`. To re-apply by
+Sixteen ID-based additions, all using the reserved supermux ID prefix `50BE0001…`. To re-apply by
 hand, mirror how `CmuxSocketControl` is wired and how `CmuxSidebarActionDispatch.swift` is
 listed, with these exact IDs:
 
@@ -126,18 +152,20 @@ listed, with these exact IDs:
 | `50BE000100000000000000A3` | PBXBuildFile | `SupermuxKit in Frameworks` (also listed in the `cmux` target's Frameworks phase `files`) |
 | `50BE000100000000000000B1` | PBXFileReference | `SupermuxAppGlue.swift` |
 | `50BE000100000000000000B2` | PBXBuildFile | `SupermuxAppGlue.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
-| `50BE000100000000000000B3` | PBXGroup | group `Supermux` (path = `Supermux`, children = `…B1`, `…B4`), listed in the `A5001041 /* Sources */` group's `children` |
+| `50BE000100000000000000B3` | PBXGroup | group `Supermux` (path = `Supermux`, children = `…B1`, `…C3`, `…B4`, `…B8`, `…B6`), listed in the `A5001041 /* Sources */` group's `children` |
 | `50BE000100000000000000B4` | PBXFileReference | `SupermuxRunSupport.swift` |
 | `50BE000100000000000000B5` | PBXBuildFile | `SupermuxRunSupport.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
 | `50BE000100000000000000B6` | PBXFileReference | `SupermuxWorkspaceActivityResolver.swift` (also listed in the `Supermux` group's `children`) |
 | `50BE000100000000000000B7` | PBXBuildFile | `SupermuxWorkspaceActivityResolver.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
 | `50BE000100000000000000B8` | PBXFileReference | `SupermuxSidebarFontScaleStore.swift` (also listed in the `Supermux` group's `children`) |
 | `50BE000100000000000000B9` | PBXBuildFile | `SupermuxSidebarFontScaleStore.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
+| `50BE000100000000000000C3` | PBXFileReference | `SupermuxProjectsSectionHeightPreferenceKey.swift` (also listed in the `Supermux` group's `children`) |
+| `50BE000100000000000000C4` | PBXBuildFile | `SupermuxProjectsSectionHeightPreferenceKey.swift in Sources` (also listed in the `cmux` target's Sources phase `files`) |
 | `50BE000100000000000000C2` | PBXFileReference | `SupermuxSidebarBranchTests.swift` (also listed in the cmuxTests group's `children`) |
 | `50BE000100000000000000C1` | PBXBuildFile | `SupermuxSidebarBranchTests.swift in Sources` (also listed in the `cmuxTests` target's Sources phase `files`) |
 
 After re-applying run `python3 scripts/normalize-pbxproj.py && ./scripts/check-pbxproj.sh`.
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `29`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `33`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 
@@ -146,7 +174,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 
 | Row | Δ | Reason |
 |-----|---|--------|
-| `Sources/ContentView.swift` | +9, +14 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). |
+| `Sources/ContentView.swift` | +9, +14, +28 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). |
 | `Sources/WorkspaceContentView.swift` | +12 | `presets-bar` mount above the splits (if/else branch on minimal mode) |
 | `Sources/RightSidebarPanelView.swift` | +18 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |

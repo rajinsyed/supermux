@@ -10681,6 +10681,11 @@ struct VerticalTabsSidebar: View {
     @State private var frozenShortcutHintsTabId: UUID?
     @State private var frozenShortcutHintsValue: Bool = false
     @State private var workspaceRowsMeasurement: SidebarWorkspaceRowsMeasurement<UUID>?
+    // SUPERMUX:begin sidebar-projects-empty-area
+    // Measured height of the SupermuxProjectsMount section; folded into the
+    // empty-area remainder below (see SupermuxProjectsSectionHeightPreferenceKey).
+    @State private var supermuxProjectsSectionHeight: CGFloat = 0
+    // SUPERMUX:end sidebar-projects-empty-area
     @State private var pendingSelectedWorkspaceScrollId: UUID?
     @State private var collapsedExtensionSidebarSectionIds: Set<String> = []
     @State private var extensionSidebarWorktreeCreationInFlightSectionIds: Set<String> = []
@@ -11220,10 +11225,16 @@ struct VerticalTabsSidebar: View {
             // is what keeps the document view from always overflowing, so the
             // overlay scroller stays hidden when there is nothing to scroll
             // (https://github.com/manaflow-ai/cmux/issues/3241).
+            // SUPERMUX:begin sidebar-projects-empty-area
+            // Subtract the Projects section (mounted above the rows in the same
+            // scroll content) from the empty-area remainder so total content
+            // stays one viewport; otherwise it overflows and the empty space
+            // scrolls. Genuine overflow still scrolls (remainder clamps to 0).
             let emptyAreaHeight = SidebarWorkspaceScrollLayout.emptyAreaHeight(
-                contentMinHeight: contentMinHeight,
+                contentMinHeight: max(0, contentMinHeight - supermuxProjectsSectionHeight),
                 rowsHeight: measuredWorkspaceRowsHeight
             )
+            // SUPERMUX:end sidebar-projects-empty-area
 
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical) {
@@ -11398,6 +11409,23 @@ struct VerticalTabsSidebar: View {
                     }
                     workspaceRowsMeasurement = nextMeasurement
                 }
+                // SUPERMUX:begin sidebar-projects-empty-area
+                .onPreferenceChange(SupermuxProjectsSectionHeightPreferenceKey.self) { height in
+                    // Accept growth immediately: a stale-low height inflates the
+                    // filler into sub-point overflow (the #3241 phantom scroller),
+                    // since contentMinHeight is floored to a whole point. Only
+                    // dedupe shrink jitter (0.5pt) — an over-tall stored height
+                    // just underfills, which `.frame(minHeight:)` pads back. This
+                    // keeps the #2586 livelock guard without weakening the
+                    // no-overflow invariant.
+                    let next = max(0, height)
+                    if next > supermuxProjectsSectionHeight {
+                        supermuxProjectsSectionHeight = next
+                    } else if supermuxProjectsSectionHeight - next > 0.5 {
+                        supermuxProjectsSectionHeight = next
+                    }
+                }
+                // SUPERMUX:end sidebar-projects-empty-area
             }
         }
     }
