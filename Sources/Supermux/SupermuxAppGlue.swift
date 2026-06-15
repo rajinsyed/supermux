@@ -214,22 +214,18 @@ struct SupermuxProjectsMount: View {
     /// the same setting as the flat workspace list.
     @StateObject private var fontScaleStore = SupermuxSidebarFontScaleStore()
 
-    /// Bumped whenever an observed per-workspace sidebar field (git branch,
-    /// working directory, …) changes. `TabManager`'s `@Published` `tabs`/
-    /// `selectedTabId` invalidate this view on add/remove/select, but the nested
-    /// workspace snapshots below also read per-`Workspace` `@Published` state
-    /// (most visibly `gitBranch`, which is detected asynchronously a moment
-    /// after a workspace opens). Without observing each workspace, that late
-    /// branch update wouldn't invalidate the body until an unrelated selection
-    /// change forced a re-read — the "branch only appears after focusing another
-    /// workspace" bug. Mirrors cmux's own `extensionSidebarDebouncedObservationPublisher`.
-    @State private var workspaceObservationToken = 0
+    /// Owns the per-workspace observation subscription (git branch, working
+    /// directory, status, in-place title renames) so a late field change
+    /// re-reads the nested snapshots. Its lifetime is kept out of `body` to avoid
+    /// a render→resubscribe→replay→invalidate spin — see
+    /// ``SupermuxWorkspaceObservation``.
+    @StateObject private var observation = SupermuxWorkspaceObservation()
 
     var body: some View {
         // Make the body's dependency on the observation token explicit (cmux
         // does the same with `extensionSidebarUpdateToken`): a token bump forces
         // the per-workspace snapshots below to be rebuilt from current state.
-        let _ = workspaceObservationToken
+        let _ = observation.token
         // Reading tabs/selectedTabId here subscribes this small, eager section
         // to workspace add/remove/select changes (not per-keystroke output), so
         // a project's live workspaces stay nested and in sync underneath it.
@@ -301,25 +297,54 @@ struct SupermuxProjectsMount: View {
                 _ = NSWorkspace.shared.open(url)
             }
         )
-        .onReceive(workspaceObservationPublisher(tabManager.tabs)) { _ in
-            workspaceObservationToken &+= 1
+        // Subscribe once on appear and re-subscribe only when the set of open
+        // workspaces changes — never per render (see `observation`'s note).
+        .onAppear { observation.observe(tabs: tabManager.tabs) }
+        .onChange(of: tabManager.tabs.map(\.id)) {
+            observation.observe(tabs: tabManager.tabs)
         }
         .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
     }
+}
 
-    /// Merges every open workspace's sidebar-observation streams into one. Each
-    /// workspace contributes its `$title` publisher — so renaming a nested
-    /// workspace via `setCustomTitle` (which mutates `title` in place on the
-    /// `Workspace`, firing no `TabManager` `@Published`) re-titles its row at
-    /// once, matching cmux's own sidebar — plus its debounced
-    /// `sidebarObservationPublisher` (`gitBranch`, `currentDirectory`, status —
-    /// the late-detected branch update). We observe `$title` alone rather than
-    /// the full `sidebarImmediateObservationPublisher` so this eager section is
-    /// not rebuilt by the conversation/activity fields that publisher also
-    /// carries. Both are per-`Workspace` cached, so the merged set only changes
-    /// when the tab set does. `.receive(on:)` defers delivery past `@Published`'s
-    /// `willSet` so the next body re-read sees the committed value.
-    private func workspaceObservationPublisher(_ tabs: [Workspace]) -> AnyPublisher<Void, Never> {
+/// Owns the merged Combine subscription that drives ``SupermuxProjectsMount``'s
+/// per-workspace re-reads, keeping the subscription's lifetime out of `body`.
+///
+/// Each workspace contributes its `$title` publisher — so renaming a nested
+/// workspace via `setCustomTitle` (which mutates `title` in place on the
+/// `Workspace`, firing no `TabManager` `@Published`) re-titles its row at once,
+/// matching cmux's own sidebar — plus its `sidebarObservationPublisher`
+/// (`gitBranch`, `currentDirectory`, status — the late-detected branch update).
+/// We observe `$title` alone rather than the full
+/// `sidebarImmediateObservationPublisher` so this eager section is not rebuilt by
+/// the conversation/activity fields that publisher also carries.
+///
+/// Rebuilding this merge inside `body` and feeding it to `.onReceive` resubscribed
+/// every render, and on each new subscription the `@Published` inputs behind
+/// `sidebarObservationPublisher` re-send their current values (the `CombineLatest`
+/// then emits) — which drove a render→resubscribe→replay→invalidate feedback loop
+/// that pegged a CPU core. By owning the subscription here and rebuilding it only
+/// when the set of open workspaces changes, steady-state renders never resubscribe,
+/// so `removeDuplicates()` suppresses everything but real field changes.
+@MainActor
+final class SupermuxWorkspaceObservation: ObservableObject {
+    /// Bumped on each observed per-workspace field change; read by the mount's
+    /// `body` to re-read the nested workspace snapshots.
+    @Published private(set) var token = 0
+
+    private var observedIds: Set<UUID> = []
+    private var cancellable: AnyCancellable?
+
+    /// (Re)subscribes to the workspaces' sidebar-observation streams, but only
+    /// when the set of open workspaces actually changes — so steady-state renders
+    /// (and pure reorders, which keep the same set) never rebuild the
+    /// subscription. `.receive(on:)` defers delivery past `@Published`'s `willSet`
+    /// so the next body re-read sees the committed value.
+    func observe(tabs: [Workspace]) {
+        let ids = Set(tabs.map(\.id))
+        guard ids != observedIds else { return }
+        observedIds = ids
+
         let publishers: [AnyPublisher<Void, Never>] = tabs.flatMap { workspace in
             [
                 workspace.$title.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
@@ -327,11 +352,12 @@ struct SupermuxProjectsMount: View {
             ]
         }
         guard !publishers.isEmpty else {
-            return Empty<Void, Never>().eraseToAnyPublisher()
+            cancellable = nil
+            return
         }
-        return Publishers.MergeMany(publishers)
+        cancellable = Publishers.MergeMany(publishers)
             .receive(on: RunLoop.main)
-            .eraseToAnyPublisher()
+            .sink { [weak self] in self?.token &+= 1 }
     }
 }
 
