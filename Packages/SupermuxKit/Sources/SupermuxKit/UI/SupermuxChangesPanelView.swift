@@ -97,6 +97,9 @@ public struct SupermuxChangesPanelView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
+            if model.isStashMenuAvailable {
+                stashMenu
+            }
             if model.snapshot.isRepository, model.snapshot.totalChangeCount > 0 {
                 headerButton(
                     "trash",
@@ -156,6 +159,58 @@ public struct SupermuxChangesPanelView: View {
         .buttonStyle(.plain)
         .help(help)
         .accessibilityLabel(help)
+    }
+
+    // MARK: - Stash
+
+    private var stashMenu: some View {
+        Menu {
+            Button {
+                Task { await model.stash(includeUntracked: false) }
+            } label: {
+                Label(
+                    String(localized: "supermux.changes.stash.stash", defaultValue: "Stash Changes"),
+                    systemImage: "tray.and.arrow.down"
+                )
+            }
+            .disabled(!model.canStashTracked)
+
+            Button {
+                Task { await model.stash(includeUntracked: true) }
+            } label: {
+                Label(
+                    String(
+                        localized: "supermux.changes.stash.includeUntracked",
+                        defaultValue: "Stash (Include Untracked)"
+                    ),
+                    systemImage: "tray.and.arrow.down"
+                )
+            }
+            .disabled(!model.canStashIncludingUntracked)
+
+            Divider()
+
+            Button {
+                Task { await model.popStash() }
+            } label: {
+                Label(
+                    String(localized: "supermux.changes.stash.pop", defaultValue: "Pop Stash"),
+                    systemImage: "tray.and.arrow.up"
+                )
+            }
+            .disabled(!model.canPopStash)
+        } label: {
+            Image(systemName: "tray.and.arrow.down")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(model.isWorking)
+        .help(String(localized: "supermux.changes.stash.help", defaultValue: "Stash operations"))
+        .accessibilityLabel(String(localized: "supermux.changes.stash.help", defaultValue: "Stash operations"))
     }
 
     // MARK: - Change sections

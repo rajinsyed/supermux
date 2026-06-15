@@ -415,6 +415,51 @@ public final class SupermuxChangesModel {
         }
     }
 
+    // MARK: - Stash
+
+    /// Whether the stash menu should be offered at all: a repository that has
+    /// something to stash or a stash to pop. Mirrors the discard-all button's
+    /// "only when relevant" visibility so a clean repo with no stash stays
+    /// uncluttered.
+    public var isStashMenuAvailable: Bool {
+        snapshot.isRepository
+            && (snapshot.totalChangeCount > 0 || snapshot.stashEntryCount > 0)
+    }
+
+    /// Whether "Stash Changes" applies: tracked changes exist and the tree is
+    /// not mid-conflict (`git stash` refuses unmerged paths).
+    public var canStashTracked: Bool {
+        snapshot.isRepository && snapshot.hasTrackedChanges && !snapshot.hasConflicts
+    }
+
+    /// Whether "Stash (Include Untracked)" applies: any change exists and the
+    /// tree is not mid-conflict.
+    public var canStashIncludingUntracked: Bool {
+        snapshot.isRepository && snapshot.totalChangeCount > 0 && !snapshot.hasConflicts
+    }
+
+    /// Whether "Pop Stash" applies: a stash exists and the tree is not
+    /// mid-conflict. A dirty tree is fine — git pops onto it when paths do not
+    /// collide.
+    public var canPopStash: Bool {
+        snapshot.isRepository && snapshot.stashEntryCount > 0 && !snapshot.hasConflicts
+    }
+
+    /// Stashes working-tree changes, optionally including untracked files.
+    /// - Parameter includeUntracked: Whether to also stash untracked files.
+    public func stash(includeUntracked: Bool) async {
+        await performMutation { repoPath, service in
+            try await service.stash(repoPath: repoPath, includeUntracked: includeUntracked)
+        }
+    }
+
+    /// Restores the most recent stash (`git stash pop`).
+    public func popStash() async {
+        await performMutation { repoPath, service in
+            try await service.popStash(repoPath: repoPath)
+        }
+    }
+
     // MARK: - Internals
 
     /// Runs one mutation: guards against a missing directory and re-entrancy,

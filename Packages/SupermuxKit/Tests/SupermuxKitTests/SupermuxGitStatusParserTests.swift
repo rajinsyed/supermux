@@ -32,6 +32,15 @@ struct SupermuxGitStatusParserTests {
         #expect(snapshot.upstreamBranch == nil)
     }
 
+    @Test func showStashHeaderSetsStashEntryCount() {
+        // `--show-stash` emits `# stash <count>` only when entries exist.
+        let withStash = parser.parse("# branch.head main\n# stash 3")
+        #expect(withStash.stashEntryCount == 3)
+
+        let noStash = parser.parse("# branch.head main")
+        #expect(noStash.stashEntryCount == 0)
+    }
+
     // MARK: - Ordinary entries (1 ...)
 
     @Test func stagedModifiedEntryLandsInStagedOnly() {
@@ -251,6 +260,32 @@ struct SupermuxGitStatusParserTests {
         #expect(snapshot.ahead == 0)
         #expect(snapshot.behind == 0)
         #expect(snapshot.totalChangeCount == 0)
+        #expect(snapshot.stashEntryCount == 0)
+        #expect(!snapshot.hasTrackedChanges)
+        #expect(!snapshot.hasConflicts)
+    }
+
+    @Test func hasTrackedChangesIgnoresUntrackedFiles() {
+        let untrackedOnly = parser.parse("# branch.head main\n? new.txt")
+        #expect(!untrackedOnly.hasTrackedChanges)
+        #expect(untrackedOnly.totalChangeCount == 1)
+
+        let trackedEdit = parser.parse(
+            "# branch.head main\n1 .M N... 100644 100644 100644 0000000 0000000 edit.txt"
+        )
+        #expect(trackedEdit.hasTrackedChanges)
+    }
+
+    @Test func hasConflictsReflectsUnmergedEntries() {
+        let clean = parser.parse(
+            "# branch.head main\n1 .M N... 100644 100644 100644 0000000 0000000 edit.txt"
+        )
+        #expect(!clean.hasConflicts)
+
+        let conflicted = parser.parse(
+            "# branch.head main\nu UU N... 100644 100644 100644 100644 0 0 0 merge.txt"
+        )
+        #expect(conflicted.hasConflicts)
     }
 
     // MARK: - SupermuxGitFileChange derived properties

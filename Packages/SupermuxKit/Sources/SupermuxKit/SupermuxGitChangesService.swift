@@ -23,8 +23,10 @@ public actor SupermuxGitChangesService {
 
     /// Reads the repository status at `repoPath`.
     ///
-    /// Runs `git status --porcelain=v2 --branch` and parses the output with
-    /// ``SupermuxGitStatusParser``.
+    /// Runs `git status --porcelain=v2 --branch --show-stash` and parses the
+    /// output with ``SupermuxGitStatusParser``. `--show-stash` folds the stash
+    /// depth (`# stash <n>`) into the same invocation that drives every refresh,
+    /// so the panel can gate Pop Stash without spawning a second git process.
     /// - Parameter repoPath: Directory to inspect.
     /// - Returns: The parsed snapshot, or
     ///   ``SupermuxGitStatusSnapshot/notARepository`` when git fails or the
@@ -33,7 +35,7 @@ public actor SupermuxGitChangesService {
         let result = await runner.run(
             directory: repoPath,
             executable: "git",
-            arguments: ["status", "--porcelain=v2", "--branch"],
+            arguments: ["status", "--porcelain=v2", "--branch", "--show-stash"],
             timeout: Self.gitTimeout
         )
         guard result.exitStatus == 0, let stdout = result.stdout else {
@@ -259,6 +261,40 @@ public actor SupermuxGitChangesService {
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
     public func pull(repoPath: String) async throws {
         try await runGit(in: repoPath, ["pull"], commandLabel: "pull", timeout: Self.networkTimeout)
+    }
+
+    // MARK: - Stash
+
+    /// Stashes working-tree changes (`git stash push`).
+    ///
+    /// By default only tracked-file changes (staged or unstaged) are stashed;
+    /// pass `includeUntracked` to add `--include-untracked` so untracked files
+    /// are stashed too. `git stash push` exits `0` with "No local changes to
+    /// save" when there is nothing to stash, so this never throws on a clean
+    /// tree — callers gate the action on having changes.
+    /// - Parameters:
+    ///   - repoPath: Repository directory.
+    ///   - includeUntracked: Whether to also stash untracked files.
+    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
+    public func stash(repoPath: String, includeUntracked: Bool) async throws {
+        var arguments = ["stash", "push"]
+        if includeUntracked { arguments.append("--include-untracked") }
+        try await runGit(
+            in: repoPath, arguments,
+            commandLabel: includeUntracked ? "stash push --include-untracked" : "stash push"
+        )
+    }
+
+    /// Restores the most recent stash and drops it (`git stash pop`).
+    ///
+    /// A `pop` that produces merge conflicts exits non-zero and leaves the
+    /// stash in place with conflict markers in the working tree; that surfaces
+    /// as a ``SupermuxGitError/gitFailed(command:message:)`` for the caller to
+    /// show, while the conflicted files appear on the next status refresh.
+    /// - Parameter repoPath: Repository directory.
+    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
+    public func popStash(repoPath: String) async throws {
+        try await runGit(in: repoPath, ["stash", "pop"], commandLabel: "stash pop")
     }
 
     // MARK: - Internals

@@ -129,6 +129,89 @@ import SupermuxKit
         #expect(calls >= 2)
     }
 
+    // MARK: - Stash enablement
+
+    /// Tracked edit plus a stash: every stash action applies.
+    @Test func trackedChangeWithStashEnablesEveryStashAction() async {
+        let model = await makeModel(forStatus: """
+        # branch.head main
+        1 .M N... 100644 100644 100644 0000000 0000000 edit.txt
+        # stash 1
+        """)
+        #expect(model.isStashMenuAvailable)
+        #expect(model.canStashTracked)
+        #expect(model.canStashIncludingUntracked)
+        #expect(model.canPopStash)
+    }
+
+    /// Untracked files only: plain stash is a no-op (disabled); include-untracked
+    /// applies; nothing to pop.
+    @Test func untrackedOnlyEnablesIncludeUntrackedButNotPlainStash() async {
+        let model = await makeModel(forStatus: "# branch.head main\n? new.txt")
+        #expect(model.isStashMenuAvailable)
+        #expect(!model.canStashTracked)
+        #expect(model.canStashIncludingUntracked)
+        #expect(!model.canPopStash)
+    }
+
+    /// Clean tree with a stash: only Pop applies, and the menu still appears.
+    @Test func cleanRepoWithStashEnablesOnlyPop() async {
+        let model = await makeModel(forStatus: "# branch.head main\n# stash 2")
+        #expect(model.isStashMenuAvailable)
+        #expect(!model.canStashTracked)
+        #expect(!model.canStashIncludingUntracked)
+        #expect(model.canPopStash)
+    }
+
+    /// Unmerged paths: `git stash` refuses, so every stash action is disabled
+    /// even with a stash present.
+    @Test func conflictDisablesAllStashActions() async {
+        let model = await makeModel(forStatus: """
+        # branch.head main
+        u UU N... 100644 100644 100644 100644 0 0 0 merge.txt
+        # stash 1
+        """)
+        #expect(model.snapshot.hasConflicts)
+        #expect(!model.canStashTracked)
+        #expect(!model.canStashIncludingUntracked)
+        #expect(!model.canPopStash)
+    }
+
+    /// Clean tree with no stash: there is nothing to do, so the menu is hidden.
+    @Test func cleanRepoWithoutStashHidesMenu() async {
+        let model = await makeModel(forStatus: "# branch.head main")
+        #expect(!model.isStashMenuAvailable)
+    }
+
+    /// Builds a model whose status reads return `stdout`, settled on its first
+    /// snapshot. Uses ``FixedStatusRunner`` so no real git process runs.
+    private func makeModel(forStatus stdout: String) async -> SupermuxChangesModel {
+        let service = SupermuxGitChangesService(runner: FixedStatusRunner(statusStdout: stdout))
+        let model = SupermuxChangesModel(service: service)
+        model.setDirectory("/repo")
+        await pollUntil { model.snapshot.isRepository }
+        return model
+    }
+
+    /// A `CommandRunning` that returns a fixed `git status` stdout (and a clean
+    /// exit for anything else), so model enablement can be exercised against
+    /// crafted repository states without a real git process.
+    private struct FixedStatusRunner: CommandRunning {
+        let statusStdout: String
+        func run(
+            directory: String, executable: String, arguments: [String], timeout: TimeInterval?
+        ) async -> CommandResult {
+            let isStatus = executable == "git" && arguments.first == "status"
+            return CommandResult(
+                stdout: isStatus ? statusStdout : "",
+                stderr: nil,
+                exitStatus: 0,
+                timedOut: false,
+                executionError: nil
+            )
+        }
+    }
+
     // MARK: - Fake runner
 
     /// A gated `git status --porcelain=v2 --branch` invocation observed by the
@@ -179,7 +262,7 @@ import SupermuxKit
             timeout: TimeInterval?
         ) async -> CommandResult {
             let isStatus = executable == "git"
-                && arguments == ["status", "--porcelain=v2", "--branch"]
+                && arguments == ["status", "--porcelain=v2", "--branch", "--show-stash"]
             guard isStatus else {
                 return CommandResult(
                     stdout: "",

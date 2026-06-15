@@ -74,6 +74,9 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
     public var unstaged: [SupermuxGitFileChange]
     /// Files git does not track yet.
     public var untracked: [SupermuxGitFileChange]
+    /// Number of entries on the stash (from `git status --show-stash`); drives
+    /// the Pop Stash availability in the changes panel.
+    public var stashEntryCount: Int
 
     /// Creates a snapshot.
     /// - Parameters:
@@ -85,6 +88,7 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
     ///   - staged: Changes staged in the index.
     ///   - unstaged: Unstaged tracked-file changes.
     ///   - untracked: Untracked files.
+    ///   - stashEntryCount: Number of stash entries; defaults to `0`.
     public init(
         isRepository: Bool,
         branch: String?,
@@ -93,7 +97,8 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
         behind: Int,
         staged: [SupermuxGitFileChange],
         unstaged: [SupermuxGitFileChange],
-        untracked: [SupermuxGitFileChange]
+        untracked: [SupermuxGitFileChange],
+        stashEntryCount: Int = 0
     ) {
         self.isRepository = isRepository
         self.branch = branch
@@ -103,6 +108,7 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
         self.staged = staged
         self.unstaged = unstaged
         self.untracked = untracked
+        self.stashEntryCount = stashEntryCount
     }
 
     /// The snapshot used for directories that are not git repositories.
@@ -121,10 +127,24 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
     public var totalChangeCount: Int {
         staged.count + unstaged.count + untracked.count
     }
+
+    /// Whether any tracked file has changes (staged or unstaged). A plain
+    /// `git stash` (without `--include-untracked`) only captures these, so it
+    /// is a no-op when this is `false`.
+    public var hasTrackedChanges: Bool {
+        !staged.isEmpty || !unstaged.isEmpty
+    }
+
+    /// Whether any file has unresolved merge conflicts. `git stash` refuses to
+    /// run with unmerged paths, so the panel disables stash/pop in this state.
+    public var hasConflicts: Bool {
+        staged.contains { $0.kind == .conflicted }
+            || unstaged.contains { $0.kind == .conflicted }
+    }
 }
 
-/// Parses the output of `git status --porcelain=v2 --branch` into a
-/// ``SupermuxGitStatusSnapshot``.
+/// Parses the output of `git status --porcelain=v2 --branch --show-stash`
+/// into a ``SupermuxGitStatusSnapshot``.
 ///
 /// Malformed lines are skipped rather than treated as errors, so partially
 /// unexpected output still yields a usable snapshot.
@@ -132,7 +152,7 @@ public struct SupermuxGitStatusParser: Sendable {
     /// Creates a parser.
     public init() {}
 
-    /// Parses `git status --porcelain=v2 --branch` stdout into a snapshot.
+    /// Parses `git status --porcelain=v2 --branch --show-stash` stdout into a snapshot.
     ///
     /// The returned snapshot always has `isRepository == true`; callers decide
     /// separately whether git ran successfully.
@@ -166,7 +186,8 @@ public struct SupermuxGitStatusParser: Sendable {
             behind: state.behind,
             staged: state.staged,
             unstaged: state.unstaged,
-            untracked: state.untracked
+            untracked: state.untracked,
+            stashEntryCount: state.stashEntryCount
         )
     }
 
@@ -177,6 +198,7 @@ public struct SupermuxGitStatusParser: Sendable {
         var upstreamBranch: String?
         var ahead = 0
         var behind = 0
+        var stashEntryCount = 0
         var staged: [SupermuxGitFileChange] = []
         var unstaged: [SupermuxGitFileChange] = []
         var untracked: [SupermuxGitFileChange] = []
@@ -196,6 +218,9 @@ public struct SupermuxGitStatusParser: Sendable {
                     state.behind = value
                 }
             }
+        } else if line.hasPrefix("# stash ") {
+            // `--show-stash` emits `# stash <count>` only when entries exist.
+            state.stashEntryCount = Int(line.dropFirst("# stash ".count)) ?? 0
         }
     }
 
