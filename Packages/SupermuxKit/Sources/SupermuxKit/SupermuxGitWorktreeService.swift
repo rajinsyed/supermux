@@ -220,7 +220,11 @@ public actor SupermuxGitWorktreeService {
             let status = await runner.run(
                 directory: worktree.path,
                 executable: "git",
-                arguments: ["status", "--porcelain"],
+                // --ignore-submodules=none: once removal passes --force (below) it
+                // bypasses git's own dirty check, so this guard is the only thing
+                // protecting uncommitted work — make it see submodule changes too,
+                // regardless of the user's diff.ignoreSubmodules config.
+                arguments: ["status", "--porcelain", "--ignore-submodules=none"],
                 timeout: Self.gitTimeout
             )
             let dirty = !(status.stdout ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -230,15 +234,20 @@ public actor SupermuxGitWorktreeService {
         }
         // Run the project's teardown script while the checkout still exists, but
         // only now that removal is actually going ahead (past the dirty guard).
-        let ranTeardown = await runTeardownIfNeeded(worktree: worktree, project: project)
-        var arguments = ["worktree", "remove"]
-        // Force the removal when the user asked, or when teardown ran: a teardown
-        // script may have written/removed files in a worktree we already verified
-        // clean (or were force-removing anyway), and `git worktree remove` would
-        // otherwise refuse the now-modified checkout.
-        if force || ranTeardown { arguments.append("--force") }
-        arguments.append(worktree.path)
-        try await runGit(in: project.rootPath, arguments, commandLabel: "worktree remove")
+        await runTeardownIfNeeded(worktree: worktree, project: project)
+        // Removal always passes --force. The dirty guard above is the sole
+        // safeguard for the user's uncommitted work, so by this point deletion is
+        // already authorized and the only things git would still refuse are ones
+        // we want to override: a checkout teardown just dirtied, and — since git
+        // 2.17 — a worktree containing initialized submodules (which cmux/supermux
+        // repos ship, and which otherwise fails with "working trees containing
+        // submodules cannot be moved or removed"). --force waives both in one
+        // git-native removal that also cleans up the worktree's admin entry.
+        try await runGit(
+            in: project.rootPath,
+            ["worktree", "remove", "--force", worktree.path],
+            commandLabel: "worktree remove"
+        )
         if deleteBranch, let branch = worktree.branch {
             _ = try? await runGit(in: project.rootPath, ["branch", "-D", branch], commandLabel: "branch -D")
         }
@@ -256,13 +265,11 @@ public actor SupermuxGitWorktreeService {
     /// teardown is expected to call binaries/scripts, not shell aliases.
     ///
     /// Best-effort: a missing checkout, a non-zero exit, or a timeout is logged
-    /// and never blocks removal.
-    /// - Returns: `true` when a teardown script was actually launched (so the
-    ///   caller forces removal, since the script may have dirtied the checkout);
-    ///   `false` when there was nothing to run.
-    private func runTeardownIfNeeded(worktree: SupermuxProjectWorktree, project: SupermuxProject) async -> Bool {
-        guard let body = SupermuxWorktreeScript.joined(project.teardownCommands) else { return false }
-        guard FileManager.default.fileExists(atPath: worktree.path) else { return false }
+    /// and never blocks removal. The script may dirty the checkout, but that is
+    /// fine because ``removeWorktree`` always force-removes afterwards.
+    private func runTeardownIfNeeded(worktree: SupermuxProjectWorktree, project: SupermuxProject) async {
+        guard let body = SupermuxWorktreeScript.joined(project.teardownCommands) else { return }
+        guard FileManager.default.fileExists(atPath: worktree.path) else { return }
         let environment = SupermuxWorktreeEnvironment.variables(
             projectRoot: project.rootPath,
             worktreePath: worktree.path
@@ -281,7 +288,6 @@ public actor SupermuxGitWorktreeService {
                 "teardown failed for \(worktree.path, privacy: .public): \(Self.failureMessage(result), privacy: .public)"
             )
         }
-        return true
     }
 
     private struct ResolvedBase {

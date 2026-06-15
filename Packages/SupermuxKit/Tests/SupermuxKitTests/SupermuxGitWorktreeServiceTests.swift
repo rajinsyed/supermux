@@ -36,6 +36,14 @@ import SupermuxKit
         return (url.path as NSString).standardizingPath
     }
 
+    /// A fixture repository that carries an initialized git submodule, plus the
+    /// standalone repo serving as the submodule's source.
+    private struct SubmoduleFixture {
+        var root: String
+        var submoduleSource: String
+        var project: SupermuxProject
+    }
+
     /// Creates a temp git repository on `main` with one commit, plus a
     /// `SupermuxProject` pointing at it.
     private func makeFixtureRepo() throws -> Fixture {
@@ -48,6 +56,36 @@ import SupermuxKit
         try runGit(["add", "."], in: root)
         try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Initial commit"], in: root)
         return Fixture(root: root, project: SupermuxProject(name: "Fixture", rootPath: root))
+    }
+
+    /// Creates a fixture repo whose tree contains one committed submodule
+    /// (`vendored`). The submodule is added but not yet checked out in any
+    /// worktree; tests initialize it where they need git to see a live submodule.
+    /// `protocol.file.allow=always` is required because the submodule source is a
+    /// local path (git blocks the `file://` transport for submodules by default).
+    private func makeFixtureRepoWithSubmodule() throws -> SubmoduleFixture {
+        // A standalone repo to serve as the submodule's source.
+        let submoduleSource = try makeTempDirectory()
+        try runGit(["init", "-b", "main"], in: submoduleSource)
+        try runGit(["config", "--local", "user.email", "tests@supermux.invalid"], in: submoduleSource)
+        try runGit(["config", "--local", "user.name", "Supermux Tests"], in: submoduleSource)
+        let libReadme = (submoduleSource as NSString).appendingPathComponent("LIB.md")
+        try "library\n".write(toFile: libReadme, atomically: true, encoding: .utf8)
+        try runGit(["add", "."], in: submoduleSource)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Submodule init"], in: submoduleSource)
+
+        // The main fixture repo, with the source wired in as a submodule.
+        let fixture = try makeFixtureRepo()
+        try runGit(
+            ["-c", "protocol.file.allow=always", "submodule", "add", submoduleSource, "vendored"],
+            in: fixture.root
+        )
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add submodule"], in: fixture.root)
+        return SubmoduleFixture(
+            root: fixture.root,
+            submoduleSource: submoduleSource,
+            project: fixture.project
+        )
     }
 
     /// Runs git synchronously via `Process` (test-only helper) and returns
@@ -223,6 +261,64 @@ import SupermuxKit
         }
         #expect(FileManager.default.fileExists(atPath: worktree.path))
 
+        try await service.removeWorktree(worktree, project: fixture.project, force: true)
+        #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
+    }
+
+    @Test func removeWorktreeWithInitializedSubmodule() async throws {
+        let fixture = try makeFixtureRepoWithSubmodule()
+        defer { cleanUp(fixture.root) }
+        defer { cleanUp(fixture.submoduleSource) }
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature"
+        )
+        // Check the submodule out inside the worktree so git's
+        // `validate_no_submodules` makes a plain `git worktree remove` abort with
+        // "working trees containing submodules cannot be moved or removed". This
+        // is the exact state of a real worktree of a submodule-bearing repo.
+        try runGit(
+            ["-c", "protocol.file.allow=always", "-C", worktree.path, "submodule", "update", "--init"],
+            in: fixture.root
+        )
+        let submodulePath = (worktree.path as NSString).appendingPathComponent("vendored/LIB.md")
+        #expect(FileManager.default.fileExists(atPath: submodulePath))
+
+        // Removal must still succeed: it force-removes, which git allows for a
+        // submodule-bearing worktree (and cleans up the admin entry itself).
+        try await service.removeWorktree(worktree, project: fixture.project)
+
+        #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
+        // git's own --force removal drops the admin entry, so the worktree no longer lists.
+        let listed = try await service.listWorktrees(for: fixture.project)
+        #expect(listed.contains { $0.path == worktree.path } == false)
+    }
+
+    @Test func removeWorktreeRefusesDirtySubmoduleUnlessForced() async throws {
+        let fixture = try makeFixtureRepoWithSubmodule()
+        defer { cleanUp(fixture.root) }
+        defer { cleanUp(fixture.submoduleSource) }
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature"
+        )
+        try runGit(
+            ["-c", "protocol.file.allow=always", "-C", worktree.path, "submodule", "update", "--init"],
+            in: fixture.root
+        )
+        // Uncommitted work *inside* the submodule must count as dirty. Removal now
+        // always force-removes (which waives git's own checks), so the porcelain
+        // `--ignore-submodules=none` guard is the only thing standing between a
+        // non-force delete and silently lost submodule work.
+        let trackedInSubmodule = (worktree.path as NSString).appendingPathComponent("vendored/LIB.md")
+        try "local edit\n".write(toFile: trackedInSubmodule, atomically: true, encoding: .utf8)
+
+        await #expect(throws: SupermuxGitError.dirtyWorktree(path: worktree.path)) {
+            try await service.removeWorktree(worktree, project: fixture.project)
+        }
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+
+        // Forcing past the guard still removes it, dirty submodule and all.
         try await service.removeWorktree(worktree, project: fixture.project, force: true)
         #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
     }
