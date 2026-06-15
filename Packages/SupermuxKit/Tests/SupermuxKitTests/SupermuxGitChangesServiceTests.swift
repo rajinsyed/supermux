@@ -384,6 +384,95 @@ import SupermuxKit
         #expect(commits.isEmpty)
     }
 
+    // MARK: - Stash
+
+    @Test func stashTrackedChangeClearsWorkingTreeAndPopRestoresIt() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        try write("stashed\n", to: "README.md", in: root)
+
+        let beforeStash = await service.status(repoPath: root)
+        #expect(beforeStash.hasTrackedChanges)
+        #expect(beforeStash.stashEntryCount == 0)
+
+        try await service.stash(repoPath: root, includeUntracked: false)
+
+        let afterStash = await service.status(repoPath: root)
+        #expect(afterStash.totalChangeCount == 0)
+        #expect(afterStash.stashEntryCount == 1)
+        // The committed content is back in the working tree while the edit waits
+        // on the stash.
+        #expect(try read("README.md", in: root) == "fixture\n")
+
+        try await service.popStash(repoPath: root)
+
+        let afterPop = await service.status(repoPath: root)
+        #expect(afterPop.stashEntryCount == 0)
+        #expect(afterPop.unstaged.contains { $0.path == "README.md" })
+        #expect(try read("README.md", in: root) == "stashed\n")
+    }
+
+    @Test func stashWithoutUntrackedLeavesUntrackedFilesOnDisk() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        try write("edit\n", to: "README.md", in: root)
+        try write("scratch\n", to: "scratch.txt", in: root)
+
+        try await service.stash(repoPath: root, includeUntracked: false)
+
+        let after = await service.status(repoPath: root)
+        // The tracked edit was stashed; the untracked file is untouched.
+        #expect(after.unstaged.isEmpty)
+        #expect(after.untracked.contains { $0.path == "scratch.txt" })
+        #expect(after.stashEntryCount == 1)
+        let scratchPath = (root as NSString).appendingPathComponent("scratch.txt")
+        #expect(FileManager.default.fileExists(atPath: scratchPath))
+    }
+
+    @Test func stashIncludeUntrackedRemovesUntrackedFileAndPopRestoresIt() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        try write("scratch\n", to: "scratch.txt", in: root)
+
+        try await service.stash(repoPath: root, includeUntracked: true)
+
+        let scratchPath = (root as NSString).appendingPathComponent("scratch.txt")
+        let afterStash = await service.status(repoPath: root)
+        #expect(afterStash.totalChangeCount == 0)
+        #expect(afterStash.stashEntryCount == 1)
+        #expect(FileManager.default.fileExists(atPath: scratchPath) == false)
+
+        try await service.popStash(repoPath: root)
+
+        let afterPop = await service.status(repoPath: root)
+        #expect(afterPop.stashEntryCount == 0)
+        #expect(afterPop.untracked.contains { $0.path == "scratch.txt" })
+        #expect(FileManager.default.fileExists(atPath: scratchPath))
+    }
+
+    @Test func statusReportsStashEntryCount() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+
+        #expect(await service.status(repoPath: root).stashEntryCount == 0)
+
+        try write("one\n", to: "README.md", in: root)
+        try await service.stash(repoPath: root, includeUntracked: false)
+        try write("two\n", to: "README.md", in: root)
+        try await service.stash(repoPath: root, includeUntracked: false)
+
+        #expect(await service.status(repoPath: root).stashEntryCount == 2)
+    }
+
+    @Test func popStashWithoutStashThrows() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+
+        await #expect(throws: SupermuxGitError.self) {
+            try await service.popStash(repoPath: root)
+        }
+    }
+
     // MARK: - Commit failures
 
     @Test func commitWithNothingStagedThrows() async throws {
