@@ -15718,6 +15718,15 @@ struct TabItemView: View, Equatable {
                         .safeHelp(protectedWorkspaceTooltip)
                 }
 
+                Text(workspaceSnapshot.title)
+                    .font(.system(size: scaledFontSize(12.5), weight: titleFontWeight))
+                    .foregroundColor(activePrimaryTextColor)
+                    .lineLimit(settings.wrapsWorkspaceTitles ? nil : 1)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+
                 // SUPERMUX:begin sidebar-flatrow-activity
                 if workspaceSnapshot.supermuxActivity.isVisible {
                     SupermuxAgentActivityIndicator(
@@ -15727,15 +15736,6 @@ struct TabItemView: View, Equatable {
                     .frame(width: scaledFontSize(13), height: scaledFontSize(13))
                 }
                 // SUPERMUX:end sidebar-flatrow-activity
-
-                Text(workspaceSnapshot.title)
-                    .font(.system(size: scaledFontSize(12.5), weight: titleFontWeight))
-                    .foregroundColor(activePrimaryTextColor)
-                    .lineLimit(settings.wrapsWorkspaceTitles ? nil : 1)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .layoutPriority(1)
 
                 // The close button is a sibling that always reserves its width
                 // when the workspace is closable, so the title wraps/truncates

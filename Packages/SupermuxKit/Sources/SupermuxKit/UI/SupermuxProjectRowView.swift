@@ -448,16 +448,10 @@ struct SupermuxOpenWorkspaceRowView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            // Agent activity fills the leading slot when present (spinner /
-            // pulsing / ready dot); idle workspaces show nothing — selection is
-            // conveyed by the row highlight and bold title. The slot mirrors the
-            // project avatar's width so the title aligns under the project name.
-            ZStack {
-                if workspace.activity.isVisible {
-                    SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
-                }
-            }
-            .frame(width: 20 * fontScale, height: 12 * fontScale)
+            // Empty leading placeholder matching the project avatar's width so
+            // the title aligns under the project name (activity moved to the right).
+            Color.clear
+                .frame(width: 20 * fontScale, height: 12 * fontScale)
             VStack(alignment: .leading, spacing: 0) {
                 Text(workspace.title)
                     .font(.system(size: 11.5 * fontScale, weight: workspace.isSelected ? .semibold : .regular))
@@ -472,6 +466,12 @@ struct SupermuxOpenWorkspaceRowView: View {
                 }
             }
             Spacer(minLength: 2)
+            // Agent activity (spinner / pulsing / ready dot) sits on the trailing
+            // edge alongside the PR and run status, so it reads as a status
+            // indicator rather than an avatar; idle workspaces show nothing.
+            if workspace.activity.isVisible {
+                SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
+            }
             if let pullRequest = workspace.pullRequest {
                 SupermuxPullRequestBadge(
                     pullRequest: pullRequest,

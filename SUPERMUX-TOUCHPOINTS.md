@@ -73,12 +73,14 @@ activity indicator as the nested rows (amber braille spinner / red pulsing dot /
    `SidebarWorkspaceSnapshotBuilder.Snapshot` (it is `Equatable`-synthesized, so the row
    re-renders when activity changes).
 3. In `makeWorkspaceSnapshot()`, set `supermuxActivity: SupermuxWorkspaceActivityResolver.activity(for: tab)`.
-4. In the row's title `HStack`, before `Text(workspaceSnapshot.title)`, render
-   `SupermuxAgentActivityIndicator(activity:size:)` when `supermuxActivity.isVisible`.
+4. In the row's title `HStack`, after `Text(workspaceSnapshot.title)` (on the row's trailing
+   edge, ahead of the close button), render `SupermuxAgentActivityIndicator(activity:size:)`
+   when `supermuxActivity.isVisible` — so the status dot reads as a trailing indicator rather
+   than a leading icon.
 The indicator is reactive via the existing workspace observation (it changes with
 `statusEntries`/`progress`, which the snapshot already observes). If upstream restructures the
 snapshot/row, the requirement is just: derive activity per workspace and render the indicator
-beside the title.
+on the row's trailing edge.
 
 **`sidebar-selection-faint`:** two computed properties on `SidebarWorkspaceRow` are overridden so
 the flat-list selection highlight matches the nested project-workspace rows
