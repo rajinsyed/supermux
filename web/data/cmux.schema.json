@@ -1280,7 +1280,9 @@
               "diffViewerScrollToBottom",
               "diffViewerScrollToTop",
               "diffViewerOpenFileSearch",
-              "supermuxToggleRun"
+              "supermuxToggleRun",
+              "supermuxWorkspaceSwitcherNext",
+              "supermuxWorkspaceSwitcherPrevious"
             ]
           },
           "properties": {

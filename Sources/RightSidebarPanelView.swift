@@ -313,36 +313,28 @@ struct RightSidebarPanelView: View {
         return ZStack {
             WindowDragHandleView()
 
+            // SUPERMUX:begin right-sidebar-compact-mode-bar
+            // The mode buttons show labels when they fit and collapse to
+            // icon-only (via ViewThatFits) when the sidebar is too narrow.
+            // The open-as-pane and close controls live OUTSIDE the collapsing
+            // region and are pinned at the trailing edge, so the close (X)
+            // button is never clipped no matter how narrow the sidebar is
+            // dragged or how many modes are enabled. The window-drag handle
+            // stays as the ZStack background so dragging the bar still moves
+            // the window.
             HStack(spacing: RightSidebarChromeMetrics.headerControlSpacing) {
-                ForEach(availableModes, id: \.rawValue) { mode in
-                    let shortcut = mode.shortcutAction.map { KeyboardShortcutSettings.shortcut(for: $0) } ?? .unbound
-                    ModeBarButton(
-                        mode: mode,
-                        isSelected: fileExplorerState.mode == mode,
-                        badgeCount: mode == .feed ? feedPendingCount : 0,
-                        shortcutHint: shortcut,
-                        showsShortcutHint: ShortcutHintTitlebarPolicy.shouldShow(
-                            shortcut: shortcut,
-                            alwaysShowShortcutHints: alwaysShowShortcutHints,
-                            modifierPressed: modeShortcutHintMonitor.isModifierPressed,
-                            modifierHoldHintsEnabled: showModifierHoldHints
-                        )
-                    ) {
-                        if AppDelegate.shared?.focusRightSidebarInActiveMainWindow(
-                            mode: mode,
-                            focusFirstItem: true,
-                            preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
-                        ) != true {
-                            selectMode(mode)
-                        }
-                    }
+                ViewThatFits(in: .horizontal) {
+                    modeButtonsRow(showsLabels: true)
+                    modeButtonsRow(showsLabels: false)
                 }
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
                 if fileExplorerState.mode.canOpenAsPane {
                     openAsPaneButton(mode: fileExplorerState.mode)
                 }
                 closeButton
             }
+            // SUPERMUX:end right-sidebar-compact-mode-bar
         }
         .rightSidebarChromeBar(leadingPadding: 4, trailingPadding: 6, height: titlebarHeight)
         .overlay(alignment: .topLeading) {
@@ -356,6 +348,41 @@ struct RightSidebarPanelView: View {
             titlebarHeight: titlebarHeight
         )
     }
+
+    // SUPERMUX:begin right-sidebar-compact-mode-bar
+    /// The row of mode buttons. Rendered twice inside `ViewThatFits` (labeled,
+    /// then icon-only) so the header degrades gracefully as the sidebar narrows.
+    /// The trailing open-as-pane/close controls are laid out by `modeBar`
+    /// outside this row so they stay pinned and never clip.
+    private func modeButtonsRow(showsLabels: Bool) -> some View {
+        HStack(spacing: RightSidebarChromeMetrics.headerControlSpacing) {
+            ForEach(availableModes, id: \.rawValue) { mode in
+                let shortcut = mode.shortcutAction.map { KeyboardShortcutSettings.shortcut(for: $0) } ?? .unbound
+                ModeBarButton(
+                    mode: mode,
+                    isSelected: fileExplorerState.mode == mode,
+                    badgeCount: mode == .feed ? feedPendingCount : 0,
+                    shortcutHint: shortcut,
+                    showsLabel: showsLabels,
+                    showsShortcutHint: ShortcutHintTitlebarPolicy.shouldShow(
+                        shortcut: shortcut,
+                        alwaysShowShortcutHints: alwaysShowShortcutHints,
+                        modifierPressed: modeShortcutHintMonitor.isModifierPressed,
+                        modifierHoldHintsEnabled: showModifierHoldHints
+                    )
+                ) {
+                    if AppDelegate.shared?.focusRightSidebarInActiveMainWindow(
+                        mode: mode,
+                        focusFirstItem: true,
+                        preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
+                    ) != true {
+                        selectMode(mode)
+                    }
+                }
+            }
+        }
+    }
+    // SUPERMUX:end right-sidebar-compact-mode-bar
 
     private func openAsPaneButton(mode: RightSidebarMode) -> some View {
         Button {
@@ -654,6 +681,10 @@ private struct ModeBarButton: View {
     let isSelected: Bool
     var badgeCount: Int = 0
     let shortcutHint: StoredShortcut
+    // SUPERMUX:begin right-sidebar-compact-mode-bar
+    /// When `false`, the pill renders icon-only so the bar fits a narrow sidebar.
+    var showsLabel: Bool = true
+    // SUPERMUX:end right-sidebar-compact-mode-bar
     let showsShortcutHint: Bool
     let action: () -> Void
 
@@ -674,15 +705,19 @@ private struct ModeBarButton: View {
                         keyPrefix: "rightSidebarModeIcon_\(mode.rawValue)",
                         isVisible: true
                     )
-                Text(mode.label)
-                    .font(
-                        .system(
-                            size: RightSidebarChromeControlStyle.labelSize,
-                            weight: RightSidebarChromeControlStyle.labelWeight
+                // SUPERMUX:begin right-sidebar-compact-mode-bar
+                if showsLabel {
+                    Text(mode.label)
+                        .font(
+                            .system(
+                                size: RightSidebarChromeControlStyle.labelSize,
+                                weight: RightSidebarChromeControlStyle.labelWeight
+                            )
                         )
-                    )
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                // SUPERMUX:end right-sidebar-compact-mode-bar
                 if badgeCount > 0 {
                     pendingChip
                 }

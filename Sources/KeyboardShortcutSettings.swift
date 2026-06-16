@@ -166,6 +166,10 @@ enum KeyboardShortcutSettings {
         // SUPERMUX:begin run-toggle-shortcut-case
         case supermuxToggleRun
         // SUPERMUX:end run-toggle-shortcut-case
+        // SUPERMUX:begin workspace-switcher-shortcut-case
+        case supermuxWorkspaceSwitcherNext
+        case supermuxWorkspaceSwitcherPrevious
+        // SUPERMUX:end workspace-switcher-shortcut-case
         case findNext
         case findPrevious
         case hideFind
@@ -280,6 +284,10 @@ enum KeyboardShortcutSettings {
             // SUPERMUX:begin run-toggle-shortcut-label
             case .supermuxToggleRun: return String(localized: "supermux.shortcut.toggleRun.label", defaultValue: "Run / Stop Project Command")
             // SUPERMUX:end run-toggle-shortcut-label
+            // SUPERMUX:begin workspace-switcher-shortcut-label
+            case .supermuxWorkspaceSwitcherNext: return String(localized: "supermux.shortcut.workspaceSwitcherNext.label", defaultValue: "Workspace Switcher")
+            case .supermuxWorkspaceSwitcherPrevious: return String(localized: "supermux.shortcut.workspaceSwitcherPrevious.label", defaultValue: "Workspace Switcher (Reverse)")
+            // SUPERMUX:end workspace-switcher-shortcut-label
             case .findNext: return String(localized: "menu.find.findNext", defaultValue: "Find Next")
             case .findPrevious: return String(localized: "menu.find.findPrevious", defaultValue: "Find Previous")
             case .hideFind: return String(localized: "menu.find.hideFindBar", defaultValue: "Hide Find Bar")
@@ -519,6 +527,16 @@ enum KeyboardShortcutSettings {
             case .supermuxToggleRun:
                 return StoredShortcut(key: "g", command: true, shift: false, option: false, control: false)
             // SUPERMUX:end run-toggle-shortcut-default
+            // SUPERMUX:begin workspace-switcher-shortcut-default
+            // App-switcher-style workspace switcher: hold ⌘ and tap ` to cycle
+            // (⇧ to reverse), release ⌘ to commit. Overrides macOS's in-app
+            // "move focus to next window" ⌘`, which cmux consumes in its local
+            // monitor before AppKit's window cycling sees it.
+            case .supermuxWorkspaceSwitcherNext:
+                return StoredShortcut(key: "`", command: true, shift: false, option: false, control: false)
+            case .supermuxWorkspaceSwitcherPrevious:
+                return StoredShortcut(key: "`", command: true, shift: true, option: false, control: false)
+            // SUPERMUX:end workspace-switcher-shortcut-default
             case .findNext:
                 return StoredShortcut(key: "g", command: true, shift: false, option: false, control: false)
             case .findPrevious:

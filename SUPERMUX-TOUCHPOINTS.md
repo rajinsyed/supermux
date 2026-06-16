@@ -19,7 +19,7 @@ Rules for adding a touchpoint:
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17) |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
-| 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it |
+| 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width) |
 | 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
 | 7 | `Sources/RightSidebarToolPanel.swift` | `right-sidebar-changes-mode-*` | `.changes` joins the `.feed, .dock` no-op groups (sync/focus/intent/anchor, ×4) |
 | 8 | `Sources/MainWindowFocusController.swift` | `right-sidebar-changes-mode-*` | Focus routing for the changes mode (host, no special endpoint) |
@@ -28,7 +28,7 @@ Rules for adding a touchpoint:
 | 11 | `Sources/KeyboardShortcutSettings.swift` | `run-toggle-shortcut-*` | `supermuxToggleRun` action (case/label/default ⌘G, shared with Find Next) |
 | 12 | `Sources/AppDelegate.swift` | `run-toggle-shortcut-*` | ⌘G dispatch: Find Next while find overlay is open, run toggle otherwise |
 | 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit` to the SPM package-test allowlist so its tests gate CI |
-| 14 | `web/data/cmux.schema.json` | `unfenced` | Adds `supermuxToggleRun` to the shortcut-action enum so cmux.json validation accepts rebinding it |
+| 14 | `web/data/cmux.schema.json` | `unfenced` | Adds `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, and `supermuxWorkspaceSwitcherPrevious` to the shortcut-action enum so cmux.json validation accepts rebinding them |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only); minimal mode keeps the original top-safe-area layout |
 | 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + `AppIcon-Debug.icon` (DEV band) + `AppIcon-Nightly.icon` (NIGHTLY band); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered glass icon. Wiring lives in touchpoint #3. |
@@ -37,6 +37,11 @@ Rules for adding a touchpoint:
 | 20 | `Sources/GhosttyTerminalView.swift` | `browser-link-new-tab` | When a cmd-clicked terminal link opens in the embedded browser and there is no existing browser pane to reuse, open it as a new browser tab in the current pane (and switch to it) instead of creating a horizontal split |
 | 21 | `Sources/App/ShortcutRoutingSupport.swift` | `run-toggle-shortcut-dispatch` | ⌘G (the supermux Run/Stop toggle, shared with Find Next) is never ceded to a focused browser's native find, so cmux always owns the chord (otherwise WebKit swallows ⌘G and it is a dead key in the browser) |
 | 22 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `run-toggle-shortcut-dispatch` | Updates the browser-find routing contract for ⌘G (run-toggle chord excluded from browser-first routing) and adds the regression test |
+| 23 | `Sources/KeyboardShortcutSettings.swift` | `workspace-switcher-shortcut-case`, `workspace-switcher-shortcut-label`, `workspace-switcher-shortcut-default` | Adds the two workspace-switcher shortcut actions: `supermuxWorkspaceSwitcherNext` (default ⌘\`) and `supermuxWorkspaceSwitcherPrevious` (default ⇧⌘\`) |
+| 24 | `Sources/AppDelegate.swift` | `workspace-switcher-monitor` | One hook in the app-local NSEvent monitor routes every event to `SupermuxComposition.workspaceSwitcher.handleMonitorEvent(_:appDelegate:)`: idle it acts only on the open chord; while presented it owns keyDown/keyUp/flagsChanged so it can cycle and commit on ⌘ release |
+| 25 | `web/data/cmux-shortcuts.ts` | `workspace-switcher-shortcut-doc` | Documents the two workspace-switcher shortcuts in the keyboard-shortcut registry |
+| 26 | `Packages/CmuxSettings/Sources/CmuxSettings/Policies/RightSidebarWidthSettings.swift` | `right-sidebar-min-width` | Lowers the right-sidebar minimum width floor from upstream's 276 to 200 so the panel can be dragged narrower (mode bar collapses to icon-only via touchpoint #5) |
+| 27 | `cmuxTests/SidebarWidthPolicyTests.swift` | `right-sidebar-min-width-test` | Two right-sidebar clamp assertions read `RightSidebarWidthSettings.minimumWidth` instead of the hardcoded `276`, so they track the lowered floor |
 
 ## How to re-apply
 
@@ -169,7 +174,15 @@ listed, with these exact IDs:
 | `50BE000100000000000000C1` | PBXBuildFile | `SupermuxSidebarBranchTests.swift in Sources` (also listed in the `cmuxTests` target's Sources phase `files`) |
 
 After re-applying run `python3 scripts/normalize-pbxproj.py && ./scripts/check-pbxproj.sh`.
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `33`.
+The workspace-switcher feature (touchpoints #23–25) adds nine more `Sources/Supermux/`
+files under the same reserved prefix: file references `50BE0001…00D1`–`…00D9` and build
+files `50BE0001…00E1`–`…00E9` (each listed in the `Supermux` group's `children` and the
+`cmux` target's Sources phase, mirroring the rows above). The path for
+`SupermuxWorkspaceSwitcherController+Items.swift` MUST be quoted (`path = "…+Items.swift";`)
+because `+` is not a legal bare character in the OpenStep plist xcodebuild parses; the
+lenient `check-pbxproj.sh` does not catch an unquoted `+`, but the project fails to open.
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `69`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 
@@ -180,11 +193,11 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 |-----|---|--------|
 | `Sources/ContentView.swift` | +9, +14, +28 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). |
 | `Sources/WorkspaceContentView.swift` | +12 | `presets-bar` mount above the splits (if/else branch on minimal mode) |
-| `Sources/RightSidebarPanelView.swift` | +18 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content) |
+| `Sources/RightSidebarPanelView.swift` | +18, +35 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content, +18); `right-sidebar-compact-mode-bar` (+35: `ViewThatFits` wrapper with pinned trailing controls + `modeButtonsRow(showsLabels:)` helper + `showsLabel` pill param/conditional, 743→778) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
 | `Sources/MainWindowFocusController.swift` | +10 | changes-mode focus routing |
-| `Sources/KeyboardShortcutSettings.swift` | +13 | `supermuxToggleRun` action |
-| `Sources/AppDelegate.swift` | +10, +3 | `run-toggle-shortcut-dispatch` (+10); `disable-auto-update` (+3: a 4-line fenced comment replaces the 1-line `startUpdaterIfNeeded()` call, 18128→18131) |
+| `Sources/KeyboardShortcutSettings.swift` | +13, +18 | `supermuxToggleRun` action (+13); `workspace-switcher-shortcut-*` (+18: case/label/default for the two switcher actions, 2586→2604) |
+| `Sources/AppDelegate.swift` | +10, +3, +10 | `run-toggle-shortcut-dispatch` (+10); `disable-auto-update` (+3: a 4-line fenced comment replaces the 1-line `startUpdaterIfNeeded()` call, 18128→18131); `workspace-switcher-monitor` (+10, 17791→17801) |
 | `Sources/App/ShortcutRoutingSupport.swift` | +11 | `run-toggle-shortcut-dispatch` (⌘G never browser-first) |
 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | +32 | `run-toggle-shortcut-dispatch` (contract update + regression test) |
 | `CLI/cmux.swift` | +4 | `changes` CLI mode |
@@ -441,3 +454,124 @@ helper, the requirement is: the ⌘G run-toggle chord must never route browser-f
 repoints to ⌘⌥G (Find Previous, still browser-first) to keep keyCode-fallback coverage,
 and a new fenced `testBrowserFirstFindShortcutRoutingExcludesSupermuxRunToggleChord`
 asserts ⌘G (both Latin and keyCode-fallback forms) is not routed browser-first.
+
+### 23–25. Workspace switcher (shortcut actions + event hook + docs)
+
+The Cmd+`-held, app-switcher-style **workspace switcher**. All behavior lives in
+supermux-owned files (`Packages/SupermuxKit/Sources/SupermuxKit/SupermuxWorkspaceSwitcher*.swift`
+for the pure ordering/model, and `Sources/Supermux/SupermuxWorkspaceSwitcher*.swift` for the
+controller/overlay/preview); these three upstream hooks just register and route the chord.
+
+**23. `Sources/KeyboardShortcutSettings.swift` — three fences.** Two new `Action` cases with a
+label and a default chord each, mirroring `supermuxToggleRun`:
+
+```swift
+// in the Action enum, after the run-toggle case fence:
+// SUPERMUX:begin workspace-switcher-shortcut-case
+case supermuxWorkspaceSwitcherNext
+case supermuxWorkspaceSwitcherPrevious
+// SUPERMUX:end workspace-switcher-shortcut-case
+
+// in `var label`, after the run-toggle label fence:
+// SUPERMUX:begin workspace-switcher-shortcut-label
+case .supermuxWorkspaceSwitcherNext: return String(localized: "supermux.shortcut.workspaceSwitcherNext.label", defaultValue: "Workspace Switcher")
+case .supermuxWorkspaceSwitcherPrevious: return String(localized: "supermux.shortcut.workspaceSwitcherPrevious.label", defaultValue: "Workspace Switcher (Reverse)")
+// SUPERMUX:end workspace-switcher-shortcut-label
+
+// in `var defaultShortcut`, after the run-toggle default fence:
+// SUPERMUX:begin workspace-switcher-shortcut-default
+case .supermuxWorkspaceSwitcherNext:
+    return StoredShortcut(key: "`", command: true, shift: false, option: false, control: false)
+case .supermuxWorkspaceSwitcherPrevious:
+    return StoredShortcut(key: "`", command: true, shift: true, option: false, control: false)
+// SUPERMUX:end workspace-switcher-shortcut-default
+```
+
+`isPublicShortcutAction` defaults to `true`, so both actions show up in Settings and are
+config-rebindable automatically. ⌘\` and ⇧⌘\` are in `hardcodedSystemWideHotkeyConflicts`
+(reserved only for the *global* show/hide hotkey) — that list does not block an in-app action
+from binding the chord. If upstream restructures the enum, the requirement is: two single-stroke
+actions defaulting to ⌘\` / ⇧⌘\`.
+
+**24. `Sources/AppDelegate.swift` — `workspace-switcher-monitor`.** One hook at the top of the
+`installShortcutMonitor()` closure, after the `ShortcutRecorderEventRouter` check and *before*
+the `.systemDefined` early-return (so it also sees `.flagsChanged`):
+
+```swift
+// SUPERMUX:begin workspace-switcher-monitor
+if SupermuxComposition.workspaceSwitcher.handleMonitorEvent(event, appDelegate: self) {
+    return nil
+}
+// SUPERMUX:end workspace-switcher-monitor
+```
+
+`handleMonitorEvent` returns `false` immediately for the typing hot path (anything that is not a
+Command-modified keyDown while idle), so it adds no latency. While presented it owns
+keyDown/keyUp/flagsChanged and commits the switch on ⌘ release via `TabManager.selectWorkspace`.
+If upstream restructures the monitor, the requirement is: give the switcher controller first
+crack at every app-local event and swallow it when the controller consumes it.
+
+**25. `web/data/cmux-shortcuts.ts` — `workspace-switcher-shortcut-doc`.** Two registry rows after
+the run-toggle doc fence, documenting ⌘\` (cycle) and ⇧⌘\` (reverse). Pair with the
+`web/data/cmux.schema.json` enum additions (touchpoint #14) and the `supermux.*` localization
+keys in `Resources/Localizable.xcstrings` (touchpoint #4b).
+
+### 5 (cont.) + 26–27. Narrower right sidebar (`right-sidebar-min-width` + `right-sidebar-compact-mode-bar`)
+
+Lets the right sidebar be dragged narrower than upstream's 276 pt floor without clipping the
+header's close button. Two parts:
+
+**26. `Packages/CmuxSettings/Sources/CmuxSettings/Policies/RightSidebarWidthSettings.swift` —
+`right-sidebar-min-width`.** Lower the floor constant:
+
+```swift
+// SUPERMUX:begin right-sidebar-min-width
+// (comment) …
+public static let minimumWidth = 200.0
+// SUPERMUX:end right-sidebar-min-width
+```
+
+This is the single source of truth for the drag clamp (`ContentView.clampedRightSidebarWidth`)
+and the max-width settings editor's lower bound. If upstream changes the constant, keep our
+lowered value inside the fence. Pick the value to match what the icon-only mode bar needs for the
+default mode set (files/find/sessions/changes); going lower risks clipping the close button when
+the beta feed/dock modes are also enabled.
+
+**5 (cont.) `Sources/RightSidebarPanelView.swift` — `right-sidebar-compact-mode-bar`.** The mode
+buttons must collapse to icon-only when narrow, else the labeled pills overflow and the
+`.clipped()` panel hides the trailing close button. Only the mode buttons go through
+`ViewThatFits` (labeled, then icon-only); the open-as-pane and close controls are laid out as
+fixed trailing siblings so they are **pinned and never clip** — even with all beta modes enabled
+at the minimum width (where even icon-only mode buttons overflow, the overflow clips a leading
+mode icon instead of the close button):
+
+```swift
+ZStack {
+    WindowDragHandleView()            // stays as background so dragging still moves the window
+    // SUPERMUX:begin right-sidebar-compact-mode-bar
+    HStack(spacing: RightSidebarChromeMetrics.headerControlSpacing) {
+        ViewThatFits(in: .horizontal) {
+            modeButtonsRow(showsLabels: true)
+            modeButtonsRow(showsLabels: false)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        if fileExplorerState.mode.canOpenAsPane {
+            openAsPaneButton(mode: fileExplorerState.mode)
+        }
+        closeButton
+    }
+    // SUPERMUX:end right-sidebar-compact-mode-bar
+}
+```
+
+`modeButtonsRow(showsLabels:)` is a new helper holding just the mode-button `HStack` (the
+`ForEach` over `availableModes`). `ModeBarButton` gains a `showsLabel` flag that drops the
+`Text(mode.label)` when false. If upstream restructures `modeBar`, the requirement is: render the
+mode buttons through `ViewThatFits` with a labeled and an icon-only variant inside a
+`maxWidth: .infinity` clipped frame, with open-as-pane/close pinned outside it, and keep the drag
+handle as the ZStack background. Budget bump for this file is recorded in the #4 table.
+
+**27. `cmuxTests/SidebarWidthPolicyTests.swift` — `right-sidebar-min-width-test`.** Two clamp
+assertions that previously hardcoded `276` now read `CGFloat(RightSidebarWidthSettings.minimumWidth)`
+so they track the floor regardless of its value.

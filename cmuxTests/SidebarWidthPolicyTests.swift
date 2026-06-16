@@ -124,7 +124,9 @@ final class SidebarWidthPolicyTests: XCTestCase {
                 availableWidth: 1000,
                 configuredMaximumWidth: 120
             ),
-            276,
+            // SUPERMUX:begin right-sidebar-min-width-test
+            CGFloat(RightSidebarWidthSettings.minimumWidth),
+            // SUPERMUX:end right-sidebar-min-width-test
             accuracy: 0.001
         )
     }
@@ -132,10 +134,25 @@ final class SidebarWidthPolicyTests: XCTestCase {
     func testRightSidebarClampKeepsMinimumWidth() {
         XCTAssertEqual(
             ContentView.clampedRightSidebarWidth(20, availableWidth: 1000),
-            276,
+            // SUPERMUX:begin right-sidebar-min-width-test
+            CGFloat(RightSidebarWidthSettings.minimumWidth),
+            // SUPERMUX:end right-sidebar-min-width-test
             accuracy: 0.001
         )
     }
+
+    // SUPERMUX:begin right-sidebar-min-width-test
+    /// supermux lowered the right-sidebar floor below cmux's legacy 276 pt so the
+    /// panel can be dragged narrower; a sub-276 width must survive the clamp.
+    func testRightSidebarClampAllowsWidthBelowLegacyFloor() {
+        XCTAssertLessThan(RightSidebarWidthSettings.minimumWidth, 276)
+        XCTAssertEqual(
+            ContentView.clampedRightSidebarWidth(220, availableWidth: 1000),
+            220,
+            accuracy: 0.001
+        )
+    }
+    // SUPERMUX:end right-sidebar-min-width-test
 
     func testSettingsFileStoreAppliesRightSidebarMaxWidthSetting() throws {
         let defaults = UserDefaults.standard

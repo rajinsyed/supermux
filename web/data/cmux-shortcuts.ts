@@ -297,6 +297,10 @@ export const shortcutCategories: ShortcutCategory[] = [
       // SUPERMUX:begin run-toggle-shortcut-doc
       { id: "supermuxToggleRun", combos: [["⌘", "G"]], description: { en: "Run / stop project command (when find is closed)", ja: "プロジェクトコマンドを実行 / 停止（検索が閉じているとき）" } },
       // SUPERMUX:end run-toggle-shortcut-doc
+      // SUPERMUX:begin workspace-switcher-shortcut-doc
+      { id: "supermuxWorkspaceSwitcherNext", combos: [["⌘", "`"]], description: { en: "Workspace switcher: hold ⌘ and tap ` to cycle workspaces, release ⌘ to switch", ja: "ワークスペース切り替え: ⌘ を押しながら ` で切り替え、⌘ を離すと確定" } },
+      { id: "supermuxWorkspaceSwitcherPrevious", combos: [["⇧", "⌘", "`"]], description: { en: "Workspace switcher (reverse): cycle backward through workspaces", ja: "ワークスペース切り替え（逆順）: ワークスペースを逆方向に切り替え" } },
+      // SUPERMUX:end workspace-switcher-shortcut-doc
       { id: "findPrevious", combos: [["⌥", "⌘", "G"]], description: { en: "Find previous", ja: "前を検索" } },
       { id: "hideFind", combos: [["⌥", "⌘", "⇧", "F"]], description: { en: "Hide find bar", ja: "検索バーを隠す" } },
       { id: "useSelectionForFind", combos: [["⌘", "E"]], description: { en: "Use selection for find", ja: "選択範囲で検索" } },
