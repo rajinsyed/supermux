@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import CmuxProcess
 import CmuxSettings
+import CmuxSidebar
 import CmuxSocketControl
 import Foundation
 import SupermuxKit

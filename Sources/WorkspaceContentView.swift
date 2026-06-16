@@ -1,7 +1,9 @@
 import SwiftUI
 import Foundation
 import AppKit
+import CmuxFoundation
 import Bonsplit
+import CmuxTerminal
 
 enum TmuxOverlayExperimentTarget: String, CaseIterable, Codable, Sendable {
     case surface
@@ -359,14 +361,28 @@ struct WorkspaceContentView: View {
         // SUPERMUX:begin presets-bar
         // Render the piggycode-style terminal presets bar above the splits in
         // normal mode. Minimal mode stays chrome-free and keeps the original
-        // top-safe-area-ignoring layout untouched.
+        // top-safe-area-ignoring layout untouched. The content is upstream's
+        // canvas-vs-bonsplit Group; supermux only wraps it with the presets bar.
+        let workspaceContent = Group {
+            if workspace.layoutMode == .canvas {
+                WorkspaceCanvasHostView(
+                    workspace: workspace,
+                    isWorkspaceVisible: isWorkspaceVisible,
+                    isWorkspaceInputActive: isWorkspaceInputActive,
+                    portalPriority: workspacePortalPriority,
+                    appearance: appearance
+                )
+            } else {
+                bonsplitView
+            }
+        }
         if isMinimalMode {
-            bonsplitView
+            workspaceContent
                 .ignoresSafeArea(.container, edges: isFullScreen ? [] : .top)
         } else {
             VStack(spacing: 0) {
                 SupermuxPresetsBarMount(workspace: workspace)
-                bonsplitView
+                workspaceContent
             }
         }
         // SUPERMUX:end presets-bar
@@ -794,7 +810,7 @@ struct EmptyPanelView: View {
         cmuxDebugLog("emptyPane.newTerminal pane=\(paneId.id.uuidString.prefix(5))")
         #endif
         focusPane()
-        _ = workspace.newTerminalSurface(inPane: paneId)
+        _ = workspace.newTerminalSurface(inPane: paneId, inheritWorkingDirectoryFallback: true)
     }
 
     private func createBrowser() {
