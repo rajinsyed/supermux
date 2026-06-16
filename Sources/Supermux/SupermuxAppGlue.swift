@@ -299,8 +299,11 @@ struct SupermuxProjectsMount: View {
             }
         )
         // Subscribe once on appear and re-subscribe only when the set of open
-        // workspaces changes — never per render (see `observation`'s note).
-        .onAppear { observation.observe(tabs: tabManager.tabs) }
+        // workspaces changes; `register` eagerly seeds the switcher's MRU order.
+        .onAppear {
+            observation.observe(tabs: tabManager.tabs)
+            SupermuxComposition.workspaceSwitcher.register(tabManager: tabManager)
+        }
         .onChange(of: tabManager.tabs.map(\.id)) {
             observation.observe(tabs: tabManager.tabs)
         }

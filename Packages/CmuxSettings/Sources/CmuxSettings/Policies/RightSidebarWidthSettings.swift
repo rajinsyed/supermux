@@ -21,7 +21,13 @@ public struct RightSidebarWidthSettings: Sendable {
     public static let noOverrideValue = -1.0
 
     /// The smallest allowed right sidebar width, in points.
-    public static let minimumWidth = 276.0
+    // SUPERMUX:begin right-sidebar-min-width
+    // Lowered from upstream's 276 so the right sidebar can be dragged narrower.
+    // The mode bar collapses its labels to icon-only at narrow widths
+    // (see RightSidebarPanelView `right-sidebar-compact-mode-bar`), so the
+    // header chrome stays usable down to this floor.
+    public static let minimumWidth = 200.0
+    // SUPERMUX:end right-sidebar-min-width
 
     /// The built-in right sidebar maximum width, in points, used when no override is active.
     public static let builtInMaximumWidth = 1200.0

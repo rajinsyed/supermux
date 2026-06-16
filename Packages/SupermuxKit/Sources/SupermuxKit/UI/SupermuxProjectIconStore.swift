@@ -1,4 +1,5 @@
-import AppKit
+public import AppKit
+public import Foundation
 import Observation
 
 /// Loads and caches the auto-detected logo image for each project, kept off the
@@ -12,7 +13,7 @@ import Observation
 /// reference to an observable store.
 @MainActor
 @Observable
-final class SupermuxProjectIconStore {
+public final class SupermuxProjectIconStore {
     /// Resolved avatar image per project id — the user's custom icon when set
     /// and decodable, otherwise the auto-detected logo; absent when neither
     /// resolves.
@@ -22,11 +23,18 @@ final class SupermuxProjectIconStore {
     /// resolved against, so an unchanged project is never re-probed across
     /// refreshes; changing either re-resolves on the next pass.
     @ObservationIgnored private var resolvedKeys: [UUID: String] = [:]
+    /// Monotonic token identifying the in-flight ``refresh(projects:)``. Each call
+    /// bumps it; a call that suspended for an off-actor probe drops its result if a
+    /// newer refresh started meanwhile, so a slow probe can't clobber fresh state.
+    @ObservationIgnored private var refreshGeneration = 0
     private let resolver = SupermuxProjectIconResolver()
+
+    /// Creates an empty icon store.
+    public init() {}
 
     /// The cached logo for a project, or `nil` when none was found.
     /// - Parameter id: Project identifier.
-    func image(for id: UUID) -> NSImage? { images[id] }
+    public func image(for id: UUID) -> NSImage? { images[id] }
 
     /// Resolves logos for projects whose root changed since the last pass and
     /// drops cache entries for projects that no longer exist.
@@ -35,11 +43,12 @@ final class SupermuxProjectIconStore {
     /// an unchanged root are skipped, so only newly added or moved projects pay
     /// the filesystem probe.
     /// - Parameter projects: Current project list.
-    func refresh(projects: [SupermuxProject]) async {
+    public func refresh(projects: [SupermuxProject]) async {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         for project in projects {
             let key = Self.resolutionKey(for: project)
             guard resolvedKeys[project.id] != key else { continue }
-            resolvedKeys[project.id] = key
             let rootPath = project.rootPath
             let customIconPath = project.customIconPath
             let resolver = self.resolver
@@ -49,12 +58,19 @@ final class SupermuxProjectIconStore {
             let candidates = await Task.detached { () -> (custom: URL?, detected: URL?) in
                 (resolver.customIconURL(customIconPath), resolver.resolve(rootPath: rootPath))
             }.value
+            // A newer refresh superseded this one while we were probing off-actor;
+            // drop our now-stale result rather than clobbering the newer state.
+            // (resolvedKeys is recorded only after a kept write, so bailing here
+            // never poisons the cache into skipping a future re-probe.)
+            guard generation == refreshGeneration else { return }
             // The custom image overrides detection, but a custom file that fails
             // to decode as an image falls back to the detected logo rather than
             // leaving the avatar blank.
             images[project.id] = candidates.custom.flatMap { NSImage(contentsOf: $0) }
                 ?? candidates.detected.flatMap { NSImage(contentsOf: $0) }
+            resolvedKeys[project.id] = key
         }
+        guard generation == refreshGeneration else { return }
         let live = Set(projects.map(\.id))
         images = images.filter { live.contains($0.key) }
         resolvedKeys = resolvedKeys.filter { live.contains($0.key) }

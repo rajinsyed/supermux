@@ -11873,6 +11873,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ) {
                 return nil
             }
+            // SUPERMUX:begin workspace-switcher-monitor
+            // The workspace switcher (held ⌘`) owns keyDown/keyUp/flagsChanged
+            // while presented and otherwise only acts on its open chord, so it
+            // can detect ⌘ release here without its own monitor. Idle cost is a
+            // couple of cheap guards (see handleMonitorEvent), keeping the
+            // typing hot path clear.
+            if SupermuxComposition.workspaceSwitcher.handleMonitorEvent(event, appDelegate: self) {
+                return nil
+            }
+            // SUPERMUX:end workspace-switcher-monitor
             if event.type == .systemDefined {
                 return event
             }
