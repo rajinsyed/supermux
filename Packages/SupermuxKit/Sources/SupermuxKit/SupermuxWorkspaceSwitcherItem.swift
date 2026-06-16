@@ -7,9 +7,9 @@ public import Foundation
 /// The host app builds these from its live `TabManager.tabs` at the moment the
 /// switcher opens and freezes them for the whole hold session, so the strip never
 /// reshuffles while the user is cycling. The card view consumes only this value
-/// plus an optional cached preview image — it never holds a reference to a live
-/// workspace/store (see the snapshot-boundary rule in CLAUDE.md), which keeps the
-/// `LazyHStack` of cards cheap to diff.
+/// (including the terminal preview text captured here) — it never holds a
+/// reference to a live workspace/store (see the snapshot-boundary rule in
+/// CLAUDE.md), which keeps the row of cards cheap to diff.
 public struct SupermuxWorkspaceSwitcherItem: Identifiable, Hashable, Sendable {
     /// The cmux workspace identifier (session-scoped, stable within a session).
     public let id: UUID
@@ -32,6 +32,20 @@ public struct SupermuxWorkspaceSwitcherItem: Identifiable, Hashable, Sendable {
     /// Whether this is the workspace that was active when the switcher opened
     /// (rendered at index 0, the "current" card).
     public let isCurrent: Bool
+    /// The last few non-empty lines of the terminal's live viewport text, used to
+    /// render a faithful "mini terminal" preview. Empty for non-terminal panels or
+    /// a blank/cold terminal, in which case the card shows a metadata fallback.
+    /// Text (not a pixel screenshot) because background workspaces stop rendering —
+    /// their GPU surface is stale, but libghostty keeps the text grid current.
+    public let previewLines: [String]
+    /// The owning project, when the workspace resolves to one — used to render the
+    /// project's avatar badge on the card (matching the sidebar via
+    /// ``SupermuxProjectAvatarView``). `nil` for a standalone workspace.
+    public let project: SupermuxProject?
+    /// The workspace's agent-activity state (working / needs input / ready / idle),
+    /// shown as the card's status indicator so you can tell at a glance what each
+    /// workspace is doing. `idle` shows no indicator.
+    public let activity: SupermuxWorkspaceActivity
 
     /// Creates a switcher item.
     public init(
@@ -43,7 +57,10 @@ public struct SupermuxWorkspaceSwitcherItem: Identifiable, Hashable, Sendable {
         monogram: String = "",
         projectId: UUID? = nil,
         projectName: String? = nil,
-        isCurrent: Bool = false
+        isCurrent: Bool = false,
+        previewLines: [String] = [],
+        project: SupermuxProject? = nil,
+        activity: SupermuxWorkspaceActivity = .idle
     ) {
         self.id = id
         self.title = title
@@ -54,6 +71,34 @@ public struct SupermuxWorkspaceSwitcherItem: Identifiable, Hashable, Sendable {
         self.projectId = projectId
         self.projectName = projectName
         self.isCurrent = isCurrent
+        self.previewLines = previewLines
+        self.project = project
+        self.activity = activity
+    }
+
+    /// Cleans raw terminal viewport text into the last few display lines for the
+    /// compact mini-terminal preview: drops trailing blank lines so the prompt /
+    /// most recent output anchors the preview, keeps at most `maxLines`, expands
+    /// tabs, and caps line length to bound layout cost. Returns `[]` when there is
+    /// no usable content (the caller then shows a metadata fallback card).
+    public static func terminalPreviewLines(
+        fromViewport text: String,
+        maxLines: Int = 8,
+        maxLineLength: Int = 240
+    ) -> [String] {
+        guard maxLines > 0, maxLineLength > 0 else { return [] }
+        var lines = text
+            .replacingOccurrences(of: "\r", with: "")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.removeLast()
+        }
+        guard !lines.isEmpty else { return [] }
+        return lines.suffix(maxLines).map { line in
+            let expanded = line.replacingOccurrences(of: "\t", with: "  ")
+            return expanded.count > maxLineLength ? String(expanded.prefix(maxLineLength)) : expanded
+        }
     }
 
     /// Derives the monogram for a title: the first letter of the first

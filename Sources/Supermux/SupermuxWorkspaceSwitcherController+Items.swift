@@ -1,3 +1,4 @@
+import CmuxTerminal
 import Foundation
 import SupermuxKit
 
@@ -11,6 +12,16 @@ extension SupermuxWorkspaceSwitcherController {
     /// worktree directory), so "all workspaces (projects and normal)" are
     /// represented uniformly.
     func buildItems(order: [UUID], manager: TabManager) -> [SupermuxWorkspaceSwitcherItem] {
+        #if DEBUG
+        let buildStart = CFAbsoluteTimeGetCurrent()
+        defer {
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - buildStart) * 1000
+            if elapsedMs > 8 {
+                NSLog("[supermux switcher] buildItems read %d workspaces in %.1fms", order.count, elapsedMs)
+            }
+        }
+        #endif
+
         let currentId = manager.selectedTabId
         let projects = SupermuxComposition.projectsModel.projects
         let workspacesById = Dictionary(
@@ -42,8 +53,36 @@ extension SupermuxWorkspaceSwitcherController {
                 monogram: SupermuxWorkspaceSwitcherItem.monogram(for: title),
                 projectId: resolvedProjectId,
                 projectName: project?.name,
-                isCurrent: id == currentId
+                isCurrent: id == currentId,
+                previewLines: terminalPreviewLines(for: workspace),
+                project: project,
+                activity: SupermuxWorkspaceActivityResolver.activity(for: workspace)
             )
         }
+    }
+
+    /// Reads the representative terminal panel's live viewport text into compact
+    /// preview lines. Safe on the main actor: `visibleText()` validates surface
+    /// liveness and a surface can't be freed mid-call within a main-actor turn;
+    /// background terminals aren't rendering, so there's no render-lock contention.
+    /// Non-terminal panels (e.g. browsers) and cold/blank terminals yield `[]`.
+    private func terminalPreviewLines(for workspace: Workspace) -> [String] {
+        guard let panel = representativePanel(for: workspace) as? TerminalPanel,
+              let text = panel.surface.visibleText() else {
+            return []
+        }
+        return SupermuxWorkspaceSwitcherItem.terminalPreviewLines(fromViewport: text)
+    }
+
+    /// The panel whose content best represents the workspace: the focused panel,
+    /// else the first in display order.
+    private func representativePanel(for workspace: Workspace) -> (any Panel)? {
+        if let focused = workspace.focusedPanelId, let panel = workspace.panels[focused] {
+            return panel
+        }
+        if let firstId = workspace.orderedPanelIds.first, let panel = workspace.panels[firstId] {
+            return panel
+        }
+        return workspace.panels.values.first
     }
 }

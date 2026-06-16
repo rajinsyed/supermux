@@ -713,8 +713,6 @@
 		50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */; };
 		50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */; };
 		50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */; };
-		50BE000100000000000000E1 /* SupermuxWorkspacePreviewCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D1 /* SupermuxWorkspacePreviewCache.swift */; };
-		50BE000100000000000000E2 /* SupermuxWorkspacePreviewSnapshotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D2 /* SupermuxWorkspacePreviewSnapshotter.swift */; };
 		50BE000100000000000000E5 /* SupermuxWorkspaceSwitcherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */; };
 		50BE000100000000000000E9 /* SupermuxWorkspaceSwitcherController+Items.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D9 /* SupermuxWorkspaceSwitcherController+Items.swift */; };
 		50BE000100000000000000E8 /* SupermuxWorkspaceSwitcherController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D8 /* SupermuxWorkspaceSwitcherController.swift */; };
@@ -1597,8 +1595,6 @@
 		50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarBranchTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarFontScaleStore.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceActivityResolver.swift; sourceTree = "<group>"; };
-		50BE000100000000000000D1 /* SupermuxWorkspacePreviewCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspacePreviewCache.swift; sourceTree = "<group>"; };
-		50BE000100000000000000D2 /* SupermuxWorkspacePreviewSnapshotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspacePreviewSnapshotter.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceSwitcherCard.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D9 /* SupermuxWorkspaceSwitcherController+Items.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxWorkspaceSwitcherController+Items.swift"; sourceTree = "<group>"; };
 		50BE000100000000000000D8 /* SupermuxWorkspaceSwitcherController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceSwitcherController.swift; sourceTree = "<group>"; };
@@ -1945,8 +1941,6 @@
 				50BE000100000000000000B4 /* SupermuxRunSupport.swift */,
 				50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */,
 				50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */,
-				50BE000100000000000000D1 /* SupermuxWorkspacePreviewCache.swift */,
-				50BE000100000000000000D2 /* SupermuxWorkspacePreviewSnapshotter.swift */,
 				50BE000100000000000000D3 /* SupermuxWorkspaceSwitcherViewState.swift */,
 				50BE000100000000000000D4 /* SupermuxWorkspaceSwitcherStyle.swift */,
 				50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */,
@@ -3650,8 +3644,6 @@
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
 				50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */,
-				50BE000100000000000000E1 /* SupermuxWorkspacePreviewCache.swift in Sources */,
-				50BE000100000000000000E2 /* SupermuxWorkspacePreviewSnapshotter.swift in Sources */,
 				50BE000100000000000000E5 /* SupermuxWorkspaceSwitcherCard.swift in Sources */,
 				50BE000100000000000000E9 /* SupermuxWorkspaceSwitcherController+Items.swift in Sources */,
 				50BE000100000000000000E8 /* SupermuxWorkspaceSwitcherController.swift in Sources */,

@@ -6,7 +6,7 @@ import SupermuxKit
 extension SupermuxComposition {
     /// App-wide workspace switcher (the Cmd+`-held, app-switcher-style overlay).
     /// Receives every app-local event through one fenced hook in `AppDelegate`'s
-    /// shortcut monitor; owns the overlay, per-window MRU order, and preview cache.
+    /// shortcut monitor; owns the overlay and per-window MRU order.
     static let workspaceSwitcher = SupermuxWorkspaceSwitcherController()
 }
 
@@ -29,7 +29,6 @@ final class SupermuxWorkspaceSwitcherController {
     private static let overlayShowDelay: Duration = .milliseconds(150)
 
     @ObservationIgnored let overlay = SupermuxWorkspaceSwitcherOverlayController()
-    @ObservationIgnored private let previewCache = SupermuxWorkspacePreviewCache()
 
     /// MRU workspace ids per window's `TabManager`.
     @ObservationIgnored private var mruByManager: [ObjectIdentifier: [UUID]] = [:]
@@ -44,10 +43,8 @@ final class SupermuxWorkspaceSwitcherController {
     @ObservationIgnored private var isCommitting = false
     @ObservationIgnored private var holdModifier: NSEvent.ModifierFlags = .command
     @ObservationIgnored private var showOverlayTask: Task<Void, Never>?
-    @ObservationIgnored private var warmOpenTask: Task<Void, Never>?
     @ObservationIgnored private var resignObserver: NSObjectProtocol?
     @ObservationIgnored private var windowObservers: [NSObjectProtocol] = []
-    @ObservationIgnored private var pendingWarm: [UUID: Task<Void, Never>] = [:]
 
     /// A hold session is in progress (modifier down): the controller owns the
     /// keyboard even before the overlay is shown.
@@ -185,40 +182,11 @@ final class SupermuxWorkspaceSwitcherController {
         showOverlayTask = nil
         overlay.viewState.items = items
         overlay.viewState.selectedIndex = selectedIndex
-        overlay.viewState.previews = cachedPreviews(for: sessionOrder)
         overlay.viewState.onSelectIndex = { [weak self] index in self?.selectAndCommit(index: index) }
         overlay.viewState.onPointerOverCard = { [weak self] index in self?.pointerSelect(index: index) }
         overlay.viewState.onCancel = { [weak self] in self?.cancel() }
         overlay.show(in: window)
         isOverlayVisible = true
-        warmSessionPreviewsOnOpen()
-    }
-
-    /// Fills the strip with previews when the overlay appears: the current
-    /// workspace is captured fresh first (its surface is guaranteed valid), then
-    /// the rest are captured one-at-a-time, staggered off the main thread, using
-    /// each backgrounded surface's last rendered frame (blank ones keep the
-    /// fallback card). Cached previews are reused so reopening is instant.
-    private func warmSessionPreviewsOnOpen() {
-        guard let manager = sessionManager else { return }
-        let ids = sessionOrder
-        warmOpenTask?.cancel()
-        warmOpenTask = Task { [weak self, weak manager] in
-            for (index, id) in ids.enumerated() {
-                guard !Task.isCancelled, let self, let manager else { return }
-                if index > 0 {
-                    if self.previewCache.image(for: id) != nil { continue }
-                    try? await Task.sleep(for: .milliseconds(24))
-                    guard !Task.isCancelled, self.isOverlayVisible else { return }
-                }
-                guard let workspace = manager.tabs.first(where: { $0.id == id }) else { continue }
-                SupermuxWorkspacePreviewSnapshotter.capture(workspace: workspace) { [weak self] image in
-                    guard let self, let image else { return }
-                    self.previewCache.store(image, for: id)
-                    if self.isOverlayVisible { self.overlay.viewState.previews[id] = image }
-                }
-            }
-        }
     }
 
     private func advance(backward: Bool) {
@@ -274,8 +242,6 @@ final class SupermuxWorkspaceSwitcherController {
     private func endSession() {
         showOverlayTask?.cancel()
         showOverlayTask = nil
-        warmOpenTask?.cancel()
-        warmOpenTask = nil
         if isOverlayVisible { overlay.hide() }
         isOverlayVisible = false
         isSessionActive = false
@@ -285,7 +251,7 @@ final class SupermuxWorkspaceSwitcherController {
         removeLifecycleObservers()
     }
 
-    // MARK: - MRU + preview warming
+    // MARK: - MRU tracking
 
     private func subscribeIfNeeded(to manager: TabManager) {
         let key = ObjectIdentifier(manager)
@@ -313,42 +279,12 @@ final class SupermuxWorkspaceSwitcherController {
         if let selectedId {
             let key = ObjectIdentifier(manager)
             mruByManager[key] = SupermuxWorkspaceSwitcherOrder.promote(selectedId, in: mruByManager[key] ?? [])
-            scheduleWarmPreview(for: selectedId, manager: manager)
         }
         // An external selection change (not our own commit) invalidates the
         // frozen session — cancel rather than show a stale strip.
         if isSessionActive, !isCommitting, manager === sessionManager {
             cancel()
         }
-    }
-
-    /// Captures the now-visible workspace shortly after it becomes active, warming
-    /// the cache so future switcher opens show a real thumbnail for it.
-    private func scheduleWarmPreview(for id: UUID, manager: TabManager) {
-        pendingWarm[id]?.cancel()
-        pendingWarm[id] = Task { [weak self, weak manager] in
-            try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled, let self, let manager else { return }
-            self.pendingWarm[id] = nil
-            // Only warm a workspace that is still the visible one — a stale job
-            // from a quick switch-away would just waste work or cache a stale
-            // thumbnail.
-            guard manager.selectedTabId == id,
-                  let workspace = manager.tabs.first(where: { $0.id == id }) else { return }
-            SupermuxWorkspacePreviewSnapshotter.capture(workspace: workspace) { [weak self] image in
-                guard let self, let image else { return }
-                self.previewCache.store(image, for: id)
-                if self.isOverlayVisible { self.overlay.viewState.previews[id] = image }
-            }
-        }
-    }
-
-    private func cachedPreviews(for order: [UUID]) -> [UUID: NSImage] {
-        var result: [UUID: NSImage] = [:]
-        for id in order {
-            if let image = previewCache.image(for: id) { result[id] = image }
-        }
-        return result
     }
 
     // MARK: - Lifecycle helpers

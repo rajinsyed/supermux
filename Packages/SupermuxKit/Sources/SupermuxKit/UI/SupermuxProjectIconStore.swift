@@ -1,4 +1,5 @@
-import AppKit
+public import AppKit
+public import Foundation
 import Observation
 
 /// Loads and caches the auto-detected logo image for each project, kept off the
@@ -12,7 +13,7 @@ import Observation
 /// reference to an observable store.
 @MainActor
 @Observable
-final class SupermuxProjectIconStore {
+public final class SupermuxProjectIconStore {
     /// Resolved avatar image per project id — the user's custom icon when set
     /// and decodable, otherwise the auto-detected logo; absent when neither
     /// resolves.
@@ -24,9 +25,12 @@ final class SupermuxProjectIconStore {
     @ObservationIgnored private var resolvedKeys: [UUID: String] = [:]
     private let resolver = SupermuxProjectIconResolver()
 
+    /// Creates an empty icon store.
+    public init() {}
+
     /// The cached logo for a project, or `nil` when none was found.
     /// - Parameter id: Project identifier.
-    func image(for id: UUID) -> NSImage? { images[id] }
+    public func image(for id: UUID) -> NSImage? { images[id] }
 
     /// Resolves logos for projects whose root changed since the last pass and
     /// drops cache entries for projects that no longer exist.
@@ -35,7 +39,7 @@ final class SupermuxProjectIconStore {
     /// an unchanged root are skipped, so only newly added or moved projects pay
     /// the filesystem probe.
     /// - Parameter projects: Current project list.
-    func refresh(projects: [SupermuxProject]) async {
+    public func refresh(projects: [SupermuxProject]) async {
         for project in projects {
             let key = Self.resolutionKey(for: project)
             guard resolvedKeys[project.id] != key else { continue }

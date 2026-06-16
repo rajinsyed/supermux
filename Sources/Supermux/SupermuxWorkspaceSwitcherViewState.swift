@@ -1,4 +1,3 @@
-import AppKit
 import Observation
 import SupermuxKit
 
@@ -6,8 +5,9 @@ import SupermuxKit
 ///
 /// The controller owns one instance, installs it into the overlay's SwiftUI host
 /// once, and then mutates its properties as the user cycles — SwiftUI re-renders
-/// reactively. Cards below the strip receive plain value snapshots (item + an
-/// optional `NSImage`), not this object, so only the affected cards re-evaluate.
+/// reactively. Cards below the strip receive plain value snapshots (the item,
+/// which carries its own preview text), not this object, so only the affected
+/// cards re-evaluate.
 @MainActor
 @Observable
 final class SupermuxWorkspaceSwitcherViewState {
@@ -15,8 +15,6 @@ final class SupermuxWorkspaceSwitcherViewState {
     var items: [SupermuxWorkspaceSwitcherItem] = []
     /// Index of the highlighted card within `items`.
     var selectedIndex: Int = 0
-    /// Captured preview thumbnails keyed by workspace id (absent → fallback card).
-    var previews: [UUID: NSImage] = [:]
 
     /// Invoked when a card is clicked (commits to that index).
     @ObservationIgnored var onSelectIndex: (Int) -> Void = { _ in }

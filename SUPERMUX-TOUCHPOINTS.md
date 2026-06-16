@@ -182,7 +182,7 @@ files `50BE0001…00E1`–`…00E9` (each listed in the `Supermux` group's `chil
 because `+` is not a legal bare character in the OpenStep plist xcodebuild parses; the
 lenient `check-pbxproj.sh` does not catch an unquoted `+`, but the project fails to open.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `69`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `61`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 
