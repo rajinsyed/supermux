@@ -23,6 +23,10 @@ public final class SupermuxProjectIconStore {
     /// resolved against, so an unchanged project is never re-probed across
     /// refreshes; changing either re-resolves on the next pass.
     @ObservationIgnored private var resolvedKeys: [UUID: String] = [:]
+    /// Monotonic token identifying the in-flight ``refresh(projects:)``. Each call
+    /// bumps it; a call that suspended for an off-actor probe drops its result if a
+    /// newer refresh started meanwhile, so a slow probe can't clobber fresh state.
+    @ObservationIgnored private var refreshGeneration = 0
     private let resolver = SupermuxProjectIconResolver()
 
     /// Creates an empty icon store.
@@ -40,10 +44,11 @@ public final class SupermuxProjectIconStore {
     /// the filesystem probe.
     /// - Parameter projects: Current project list.
     public func refresh(projects: [SupermuxProject]) async {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         for project in projects {
             let key = Self.resolutionKey(for: project)
             guard resolvedKeys[project.id] != key else { continue }
-            resolvedKeys[project.id] = key
             let rootPath = project.rootPath
             let customIconPath = project.customIconPath
             let resolver = self.resolver
@@ -53,12 +58,19 @@ public final class SupermuxProjectIconStore {
             let candidates = await Task.detached { () -> (custom: URL?, detected: URL?) in
                 (resolver.customIconURL(customIconPath), resolver.resolve(rootPath: rootPath))
             }.value
+            // A newer refresh superseded this one while we were probing off-actor;
+            // drop our now-stale result rather than clobbering the newer state.
+            // (resolvedKeys is recorded only after a kept write, so bailing here
+            // never poisons the cache into skipping a future re-probe.)
+            guard generation == refreshGeneration else { return }
             // The custom image overrides detection, but a custom file that fails
             // to decode as an image falls back to the detected logo rather than
             // leaving the avatar blank.
             images[project.id] = candidates.custom.flatMap { NSImage(contentsOf: $0) }
                 ?? candidates.detected.flatMap { NSImage(contentsOf: $0) }
+            resolvedKeys[project.id] = key
         }
+        guard generation == refreshGeneration else { return }
         let live = Set(projects.map(\.id))
         images = images.filter { live.contains($0.key) }
         resolvedKeys = resolvedKeys.filter { live.contains($0.key) }

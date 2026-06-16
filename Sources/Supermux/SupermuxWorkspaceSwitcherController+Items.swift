@@ -65,24 +65,31 @@ extension SupermuxWorkspaceSwitcherController {
     /// preview lines. Safe on the main actor: `visibleText()` validates surface
     /// liveness and a surface can't be freed mid-call within a main-actor turn;
     /// background terminals aren't rendering, so there's no render-lock contention.
-    /// Non-terminal panels (e.g. browsers) and cold/blank terminals yield `[]`.
+    /// Workspaces with no terminal panel (e.g. browser-only) and cold/blank
+    /// terminals yield `[]`.
     private func terminalPreviewLines(for workspace: Workspace) -> [String] {
-        guard let panel = representativePanel(for: workspace) as? TerminalPanel,
-              let text = panel.surface.visibleText() else {
+        guard let surface = representativeTerminalSurface(for: workspace),
+              let text = surface.visibleText() else {
             return []
         }
         return SupermuxWorkspaceSwitcherItem.terminalPreviewLines(fromViewport: text)
     }
 
-    /// The panel whose content best represents the workspace: the focused panel,
-    /// else the first in display order.
-    private func representativePanel(for workspace: Workspace) -> (any Panel)? {
-        if let focused = workspace.focusedPanelId, let panel = workspace.panels[focused] {
-            return panel
+    /// The terminal surface that best represents the workspace's activity: the
+    /// focused panel when it is a terminal, else the first terminal panel in
+    /// display order, else any terminal panel. A workspace whose focused panel is
+    /// a browser still previews its terminal content when one exists; a workspace
+    /// with no terminal panel yields `nil` (the card shows a metadata fallback).
+    private func representativeTerminalSurface(for workspace: Workspace) -> TerminalSurface? {
+        if let focused = workspace.focusedPanelId,
+           let terminal = workspace.panels[focused] as? TerminalPanel {
+            return terminal.surface
         }
-        if let firstId = workspace.orderedPanelIds.first, let panel = workspace.panels[firstId] {
-            return panel
+        for id in workspace.orderedPanelIds {
+            if let terminal = workspace.panels[id] as? TerminalPanel {
+                return terminal.surface
+            }
         }
-        return workspace.panels.values.first
+        return workspace.panels.values.compactMap { $0 as? TerminalPanel }.first?.surface
     }
 }

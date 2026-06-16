@@ -204,6 +204,7 @@
 514	cmuxUITests/UpdatePillUITests.swift
 510	Sources/TerminalImageTransfer.swift
 509	Packages/CMUXAgentLaunch/Sources/CMUXAgentLaunch/AgentLaunchSanitizerAdditionalPolicies.swift
+509	cmuxTests/SidebarWidthPolicyTests.swift
 507	Sources/TerminalControllerTopSupport.swift
 506	Sources/App/MainWindowVisibilityController.swift
 505	cmuxUITests/DisplayResolutionRegressionUITests.swift
