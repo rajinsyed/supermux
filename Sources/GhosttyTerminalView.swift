@@ -2915,10 +2915,22 @@ class GhosttyApp {
             #endif
             openedInBrowser = workspace.newBrowserSurface(inPane: targetPane, url: url, focus: true) != nil
         } else {
-            #if DEBUG
-            cmuxDebugLog("link.openURL opening as new browser split from surface=\(sourcePanelId)")
-            #endif
-            openedInBrowser = workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url) != nil
+            // SUPERMUX:begin browser-link-new-tab
+            // Open the link as a new browser tab in the current pane and switch to it,
+            // instead of creating a split (upstream's fallback was newBrowserSplit). Only
+            // fall back to a split if the source pane can't be resolved.
+            if let sourcePane = workspace.paneId(forPanelId: sourcePanelId) {
+                #if DEBUG
+                cmuxDebugLog("link.openURL opening as new browser tab in current pane=\(sourcePane)")
+                #endif
+                openedInBrowser = workspace.newBrowserSurface(inPane: sourcePane, url: url, focus: true) != nil
+            } else {
+                #if DEBUG
+                cmuxDebugLog("link.openURL opening as new browser split from surface=\(sourcePanelId)")
+                #endif
+                openedInBrowser = workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url) != nil
+            }
+            // SUPERMUX:end browser-link-new-tab
         }
 
         guard openedInBrowser else {

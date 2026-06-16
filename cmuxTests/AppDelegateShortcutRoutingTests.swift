@@ -5888,8 +5888,10 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
     // MARK: - Browser find shortcut routing tests
 
     func testBrowserFirstFindShortcutRoutingRecognizesBrowserLocalFindCommandFamily() {
+        // SUPERMUX: ⌘G (Find Next) is deliberately excluded here — it doubles as
+        // the supermux Run/Stop toggle, so cmux always owns it and it must never
+        // route browser-first. See testBrowserFirstFindShortcutRoutingExcludesSupermuxRunToggleChord.
         let cases: [(name: String, modifiers: NSEvent.ModifierFlags, chars: String, keyCode: UInt16)] = [
-            ("cmd-g", [.command], "g", 5),
             ("cmd-option-g", [.command, .option], "g", 5),
             ("cmd-option-shift-f", [.command, .option, .shift], "f", 3),
             ("cmd-e", [.command], "e", 14),
@@ -5931,8 +5933,11 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
     }
 
     func testBrowserFirstFindShortcutRoutingFallsBackToKeyCodeForNonLatinInput() {
+        // ⌘⌥G (Find Previous) exercises the keyCode fallback on a chord that is
+        // still browser-first. (Plain ⌘G is the supermux Run/Stop toggle and is
+        // covered by testBrowserFirstFindShortcutRoutingExcludesSupermuxRunToggleChord.)
         let event = makeKeyEvent(
-            modifierFlags: [.command],
+            modifierFlags: [.command, .option],
             characters: "",
             charactersIgnoringModifiers: "п", // Cyrillic p from a non-Latin input source
             keyCode: 5 // kVK_ANSI_G
@@ -5940,9 +5945,36 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         XCTAssertTrue(
             shouldRouteBrowserFindCommandEquivalentThroughWebContentFirst(event),
-            "Expected browser-first routing to keep Cmd+G eligible under non-Latin input"
+            "Expected browser-first routing to keep Cmd+Option+G eligible under non-Latin input"
         )
     }
+
+    // SUPERMUX:begin run-toggle-shortcut-dispatch
+    /// ⌘G is shared between Find Next and the supermux Run/Stop toggle, so cmux
+    /// must keep ownership of the chord even while a browser surface is focused.
+    /// Regression: routing it browser-first let WebKit swallow ⌘G (it has no
+    /// native ⌘G action), so neither the run toggle nor Find Next fired.
+    func testBrowserFirstFindShortcutRoutingExcludesSupermuxRunToggleChord() {
+        let cases: [(name: String, chars: String, keyCode: UInt16)] = [
+            ("cmd-g-latin", "g", 5),
+            ("cmd-g-keycode-fallback-non-latin", "п", 5), // Cyrillic input source, kVK_ANSI_G
+        ]
+
+        for testCase in cases {
+            let event = makeKeyEvent(
+                modifierFlags: [.command],
+                characters: testCase.chars,
+                charactersIgnoringModifiers: testCase.chars,
+                keyCode: testCase.keyCode
+            )
+
+            XCTAssertFalse(
+                shouldRouteBrowserFindCommandEquivalentThroughWebContentFirst(event),
+                "\(testCase.name): ⌘G is the supermux run-toggle chord and must not route browser-first"
+            )
+        }
+    }
+    // SUPERMUX:end run-toggle-shortcut-dispatch
 
     func testBrowserFirstFindShortcutRoutingDoesNotUseANSIPositionsForMismatchedASCIICharacters() {
         let cases: [(name: String, modifiers: NSEvent.ModifierFlags, chars: String, keyCode: UInt16)] = [

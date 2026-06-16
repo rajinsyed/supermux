@@ -34,6 +34,9 @@ Rules for adding a touchpoint:
 | 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + `AppIcon-Debug.icon` (DEV band) + `AppIcon-Nightly.icon` (NIGHTLY band); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered glass icon. Wiring lives in touchpoint #3. |
 | 19 | `Sources/AppDelegate.swift` | `disable-auto-update` | Disables the Sparkle auto-updater: removes the launch-time `updateController.startUpdaterIfNeeded()` call so there is no launch/periodic update probe and no scheduled check, which means the sidebar "Update Available" pill never auto-appears. supermux ships updates via git merge from upstream, not Sparkle. |
 | 18 | `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AutomationSection.swift` | `ai-settings` | Renders `SupermuxAISettingsCard` (Vercel AI Gateway API key + model) at the end of the Automation section, and stores the `secretStore` + `errorLog` the card needs. The card itself is a new supermux-owned file, `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` (no conflict on merge; lives in the upstream package only because the section stack is closed to app injection and cannot import `SupermuxKit`). |
+| 20 | `Sources/GhosttyTerminalView.swift` | `browser-link-new-tab` | When a cmd-clicked terminal link opens in the embedded browser and there is no existing browser pane to reuse, open it as a new browser tab in the current pane (and switch to it) instead of creating a horizontal split |
+| 21 | `Sources/App/ShortcutRoutingSupport.swift` | `run-toggle-shortcut-dispatch` | ⌘G (the supermux Run/Stop toggle, shared with Find Next) is never ceded to a focused browser's native find, so cmux always owns the chord (otherwise WebKit swallows ⌘G and it is a dead key in the browser) |
+| 22 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `run-toggle-shortcut-dispatch` | Updates the browser-find routing contract for ⌘G (run-toggle chord excluded from browser-first routing) and adds the regression test |
 
 ## How to re-apply
 
@@ -182,6 +185,8 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | `Sources/MainWindowFocusController.swift` | +10 | changes-mode focus routing |
 | `Sources/KeyboardShortcutSettings.swift` | +13 | `supermuxToggleRun` action |
 | `Sources/AppDelegate.swift` | +10, +3 | `run-toggle-shortcut-dispatch` (+10); `disable-auto-update` (+3: a 4-line fenced comment replaces the 1-line `startUpdaterIfNeeded()` call, 18128→18131) |
+| `Sources/App/ShortcutRoutingSupport.swift` | +11 | `run-toggle-shortcut-dispatch` (⌘G never browser-first) |
+| `cmuxTests/AppDelegateShortcutRoutingTests.swift` | +32 | `run-toggle-shortcut-dispatch` (contract update + regression test) |
 | `CLI/cmux.swift` | +4 | `changes` CLI mode |
 
 After a merge, re-run and re-bump only by the measured fenced delta:
@@ -362,3 +367,77 @@ If upstream restructures the updater bootstrap, the requirement is: do not call
 automatically at launch, so the model never auto-transitions to `.updateAvailable` and the pill
 never appears. Leaving the manual `checkForUpdates(_:)` menu path intact is fine — it only runs
 on explicit user action.
+
+### 20. `Sources/GhosttyTerminalView.swift` — `browser-link-new-tab`
+
+`GhosttyTerminalView.openEmbeddedBrowserLink(url:sourceWorkspaceId:sourcePanelId:host:)`
+chooses where a cmd-clicked terminal link opens in the embedded browser. Upstream
+reuses an existing right-side browser pane when one exists, and otherwise creates a
+new horizontal **split** (`newBrowserSplit`). The fence replaces only that split
+fallback so the link instead opens as a **new browser tab in the current pane and
+switches to it** (`newBrowserSurface(inPane:url:focus:true)`), keeping a split only
+when the source pane can't be resolved. The reuse-an-existing-browser-pane branch is
+left untouched.
+
+The whole `else { … }` body is fenced; the upstream `if let targetPane = …` reuse
+branch and the surrounding `let openedInBrowser: Bool` / external-fallback code are
+unchanged:
+
+```swift
+} else {
+    // SUPERMUX:begin browser-link-new-tab
+    if let sourcePane = workspace.paneId(forPanelId: sourcePanelId) {
+        openedInBrowser = workspace.newBrowserSurface(inPane: sourcePane, url: url, focus: true) != nil
+    } else {
+        openedInBrowser = workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url) != nil
+    }
+    // SUPERMUX:end browser-link-new-tab
+}
+```
+
+If upstream restructures this method, the requirement is: when no existing browser
+pane is reused, open the link via `newBrowserSurface(inPane:url:focus:true)` on the
+source link's pane (`workspace.paneId(forPanelId: sourcePanelId)`) rather than
+`newBrowserSplit(...)`. Budget row for `Sources/GhosttyTerminalView.swift` carries
++12 for this fence.
+
+### 21–22. `Sources/App/ShortcutRoutingSupport.swift` + tests — `run-toggle-shortcut-dispatch`
+
+Supermux shares ⌘G between Find Next (while a find overlay is open) and the Run/Stop
+toggle (otherwise) — see touchpoints #11/#12. Upstream's browser-find pre-routing
+(`shouldRouteBrowserFindCommandEquivalentThroughWebContentFirst`) assumed ⌘G is purely
+Find Next, so with a browser surface focused and no find bar open it ceded the chord to
+the focused web view's native find. WebKit has no ⌘G action, so it silently swallowed
+the chord and neither Find Next nor the run toggle fired — ⌘G was a dead key in the
+browser. This is the single shared predicate that both the window pre-routing
+(`AppDelegate.cmux_performKeyEquivalent`) and `shouldLetFocusedBrowserOwnFindShortcut`
+consult, so fixing it here repairs every routing layer at once.
+
+**`Sources/App/ShortcutRoutingSupport.swift`:** inside
+`shouldRouteBrowserFindCommandEquivalentThroughWebContentFirst`, right after
+`guard let shortcut = browserFindCommandEquivalent(for: event)`:
+
+```swift
+// SUPERMUX:begin run-toggle-shortcut-dispatch
+// ⌘G (Find Next's default) doubles as the supermux Run/Stop toggle, so cmux
+// owns the chord whether or not a find overlay is open. Never cede it to a
+// focused browser's native find: WebKit has no ⌘G action and silently
+// swallows it, which left the chord dead while the browser was focused.
+if case .findNext = shortcut,
+   KeyboardShortcutSettings.shortcut(for: .supermuxToggleRun).matches(event: event) {
+    return false
+}
+// SUPERMUX:end run-toggle-shortcut-dispatch
+```
+
+Gating on `.findNext` *and* the configured `supermuxToggleRun` chord keeps this a no-op
+when the user rebinds either action off ⌘G (Find Next then routes browser-first as
+upstream; an unbound action's `matches` is always false). If upstream restructures this
+helper, the requirement is: the ⌘G run-toggle chord must never route browser-first.
+
+**`cmuxTests/AppDelegateShortcutRoutingTests.swift`:** the upstream contract test
+`testBrowserFirstFindShortcutRoutingRecognizesBrowserLocalFindCommandFamily` drops its
+`cmd-g` case (now supermux-owned), `testBrowserFirstFindShortcutRoutingFallsBackToKeyCodeForNonLatinInput`
+repoints to ⌘⌥G (Find Previous, still browser-first) to keep keyCode-fallback coverage,
+and a new fenced `testBrowserFirstFindShortcutRoutingExcludesSupermuxRunToggleChord`
+asserts ⌘G (both Latin and keyCode-fallback forms) is not routed browser-first.

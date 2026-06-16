@@ -712,6 +712,17 @@ func shouldRouteBrowserFindCommandEquivalentThroughWebContentFirst(
         return false
     }
 
+    // SUPERMUX:begin run-toggle-shortcut-dispatch
+    // ⌘G (Find Next's default) doubles as the supermux Run/Stop toggle, so cmux
+    // owns the chord whether or not a find overlay is open. Never cede it to a
+    // focused browser's native find: WebKit has no ⌘G action and silently
+    // swallows it, which left the chord dead while the browser was focused.
+    if case .findNext = shortcut,
+       KeyboardShortcutSettings.shortcut(for: .supermuxToggleRun).matches(event: event) {
+        return false
+    }
+    // SUPERMUX:end run-toggle-shortcut-dispatch
+
     if case .find = shortcut {
         return false
     }
