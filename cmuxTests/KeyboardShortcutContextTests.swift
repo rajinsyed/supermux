@@ -158,9 +158,11 @@ final class KeyboardShortcutContextTests: XCTestCase {
         // Scoped to browser panels so it only claims the key when a browser is focused.
         XCTAssertEqual(focusMode.shortcutContext, .browserPanel)
 
-        // Default is Option+Cmd+Return: a modifier tier web pages rarely bind,
-        // distinct from the other Return-based shortcut (Cmd+Shift+Return = toggle
-        // split zoom), and clear of the Ctrl+Cmd+Return some screen recorders use.
+        // SUPERMUX:begin toggle-split-zoom-rebind
+        // Default is Option+Cmd+Return: a modifier tier web pages rarely bind, and
+        // clear of the Ctrl+Cmd+Return some screen recorders use. (Toggle Pane Zoom,
+        // formerly the other Return shortcut at ⇧⌘↩, is now ⌃⌘Z — ⇧⌘↩ went to commit.)
+        // SUPERMUX:end toggle-split-zoom-rebind
         let focusModeShortcut = focusMode.defaultShortcut
         XCTAssertEqual(
             focusModeShortcut,

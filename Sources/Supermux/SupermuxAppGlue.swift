@@ -165,14 +165,10 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     }
 
     /// Runs a project action's command as a new terminal tab in the focused
-    /// workspace (the ⌘-presets-bar behavior), not as a separate workspace.
-    ///
-    /// The command runs through the workspace's interactive shell (see
-    /// ``SupermuxCommandLaunch``) so shell aliases/functions resolve and the tab
-    /// survives the command exit. The action's project directory is used as the
-    /// tab's working directory so a build/run command still runs in the right
-    /// place. With no focused workspace to host the tab, falls back to opening a
-    /// fresh workspace.
+    /// workspace (the presets-bar behavior), not as a separate workspace. The
+    /// command runs through the workspace's interactive shell (see
+    /// ``SupermuxCommandLaunch``). With no focused workspace, falls back to
+    /// opening a fresh workspace.
     func runAction(_ request: SupermuxOpenWorkspaceRequest) {
         guard let tabManager,
               let command = request.initialCommand,
@@ -182,7 +178,11 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             openWorkspace(request)
             return
         }
-        let directory = (request.directory as NSString).expandingTildeInPath
+        // Run where the user is looking: the focused workspace's directory (e.g.
+        // a worktree), not the action's project root — matching ⌘G/presets.
+        let resolved = SupermuxCommandLaunch.workingDirectory(
+            focusedWorkspaceDirectory: workspace.currentDirectory, fallback: request.directory)
+        let directory = (resolved as NSString).expandingTildeInPath
         _ = workspace.newTerminalSurface(
             inPane: paneId,
             focus: true,

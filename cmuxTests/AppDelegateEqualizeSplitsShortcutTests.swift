@@ -10,7 +10,10 @@ import XCTest
 
 @MainActor
 final class AppDelegateEqualizeSplitsShortcutTests: XCTestCase {
-    func testCmdShiftReturnFocusedBrowserTogglesSplitZoom() {
+    // SUPERMUX:begin toggle-split-zoom-rebind
+    // Supermux rebound toggleSplitZoom from ⇧⌘↩ to ⌃⌘Z so ⇧⌘↩ is free for the Changes-panel
+    // commit accelerator; this test drives the configured default, so it presses ⌃⌘Z now.
+    func testCmdControlZFocusedBrowserTogglesSplitZoom() {
         withTemporaryShortcut(action: .toggleSplitZoom) {
             guard let appDelegate = AppDelegate.shared else {
                 XCTFail("Expected AppDelegate.shared")
@@ -25,8 +28,8 @@ final class AppDelegateEqualizeSplitsShortcutTests: XCTestCase {
                   let workspace = manager.selectedWorkspace,
                   let browserPanelId = manager.openBrowser(inWorkspace: workspace.id, preferSplitRight: true),
                   let browserPanel = workspace.browserPanel(for: browserPanelId),
-                  let event = makeKeyDownEvent(key: "\r", modifiers: [.command, .shift], keyCode: 36, windowNumber: window.windowNumber) else {
-                XCTFail("Expected focused browser panel and Cmd+Shift+Return event")
+                  let event = makeKeyDownEvent(key: "z", modifiers: [.command, .control], keyCode: 6, windowNumber: window.windowNumber) else {
+                XCTFail("Expected focused browser panel and Cmd+Ctrl+Z event")
                 return
             }
 
@@ -48,18 +51,23 @@ final class AppDelegateEqualizeSplitsShortcutTests: XCTestCase {
             XCTAssertTrue(window.makeFirstResponder(browserPanel.webView))
             XCTAssertTrue(KeyboardShortcutSettings.shortcut(for: .toggleSplitZoom).matches(event: event))
 
+            // ⌃⌘Z is not a Return-key shortcut, so a focused browser's
+            // performKeyEquivalent Return-key branch (handleBrowserSurfaceKeyEquivalent)
+            // never claims it — the app-local key monitor owns it, exactly as in real use
+            // (the monitor fires ahead of the responder chain, so the browser webView never
+            // sees the chord). Verify the monitor toggles zoom on then off while the browser
+            // webView is first responder.
 #if DEBUG
             XCTAssertTrue(appDelegate.debugHandleShortcutMonitorEvent(event: event))
             XCTAssertTrue(workspace.bonsplitController.isSplitZoomed)
-            XCTAssertTrue(workspace.clearSplitZoom())
+            XCTAssertTrue(appDelegate.debugHandleShortcutMonitorEvent(event: event))
+            XCTAssertFalse(workspace.bonsplitController.isSplitZoomed)
 #else
             XCTFail("debugHandleShortcutMonitorEvent is only available in DEBUG")
 #endif
-
-            XCTAssertTrue(browserPanel.webView.performKeyEquivalent(with: event))
-            XCTAssertTrue(workspace.bonsplitController.isSplitZoomed)
         }
     }
+    // SUPERMUX:end toggle-split-zoom-rebind
 
     func testConfiguredEqualizeSplitsShortcutBalancesWorkspaceDividers() {
         guard let appDelegate = AppDelegate.shared else {

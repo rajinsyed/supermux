@@ -42,6 +42,12 @@ Rules for adding a touchpoint:
 | 25 | `web/data/cmux-shortcuts.ts` | `workspace-switcher-shortcut-doc` | Documents the two workspace-switcher shortcuts in the keyboard-shortcut registry |
 | 26 | `Packages/CmuxSettings/Sources/CmuxSettings/Policies/RightSidebarWidthSettings.swift` | `right-sidebar-min-width` | Lowers the right-sidebar minimum width floor from upstream's 276 to 200 so the panel can be dragged narrower (mode bar collapses to icon-only via touchpoint #5) |
 | 27 | `cmuxTests/SidebarWidthPolicyTests.swift` | `right-sidebar-min-width-test` | Two right-sidebar clamp assertions read `RightSidebarWidthSettings.minimumWidth` instead of the hardcoded `276`, so they track the lowered floor |
+| 28 | `Sources/KeyboardShortcutSettings.swift` | `toggle-split-zoom-rebind` | Rebinds the `toggleSplitZoom` default from ⇧⌘↩ to ⌃⌘Z (canonical table) so ⇧⌘↩ is free for the supermux Changes-panel commit accelerator |
+| 29 | `Packages/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Defaults.swift` | `toggle-split-zoom-rebind` | Mirror of the rebound ⌃⌘Z default for the settings-UI package |
+| 30 | `web/data/cmux-shortcuts.ts` | `toggle-split-zoom-rebind` | Documents Toggle Pane Zoom as ⌃⌘Z in the keyboard-shortcut registry |
+| 31 | `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift` | `toggle-split-zoom-rebind` | The split-zoom shortcut test drives the configured default, so it presses ⌃⌘Z (was ⇧⌘↩) |
+| 32 | `cmuxTests/KeyboardShortcutContextTests.swift` | `toggle-split-zoom-rebind` | Comment accuracy: toggleSplitZoom is no longer the Return-based shortcut (now ⌃⌘Z); assertions unchanged |
+| 33 | `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift` | `toggle-split-zoom-rebind` | Two browser zoom round-trip UI tests press ⌃⌘Z instead of ⇧⌘↩ |
 
 ## How to re-apply
 
@@ -196,7 +202,9 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | `Sources/RightSidebarPanelView.swift` | +18, +35 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content, +18); `right-sidebar-compact-mode-bar` (+35: `ViewThatFits` wrapper with pinned trailing controls + `modeButtonsRow(showsLabels:)` helper + `showsLabel` pill param/conditional, 743→778) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
 | `Sources/MainWindowFocusController.swift` | +10 | changes-mode focus routing |
-| `Sources/KeyboardShortcutSettings.swift` | +13, +18 | `supermuxToggleRun` action (+13); `workspace-switcher-shortcut-*` (+18: case/label/default for the two switcher actions, 2586→2604) |
+| `Sources/KeyboardShortcutSettings.swift` | +13, +18, +4 | `supermuxToggleRun` action (+13); `workspace-switcher-shortcut-*` (+18: case/label/default for the two switcher actions, 2586→2604); `toggle-split-zoom-rebind` (+4: fence + comment around the rebound default, 2604→2608) |
+| `cmuxTests/KeyboardShortcutContextTests.swift` | +2 | `toggle-split-zoom-rebind` (fence around the updated rationale comment, 688→690) |
+| `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift` | +6 | `toggle-split-zoom-rebind` (fences around the two browser zoom round-trip tests, 1677→1683) |
 | `Sources/AppDelegate.swift` | +10, +3, +10 | `run-toggle-shortcut-dispatch` (+10); `disable-auto-update` (+3: a 4-line fenced comment replaces the 1-line `startUpdaterIfNeeded()` call, 18128→18131); `workspace-switcher-monitor` (+10, 17791→17801) |
 | `Sources/App/ShortcutRoutingSupport.swift` | +11 | `run-toggle-shortcut-dispatch` (⌘G never browser-first) |
 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | +32 | `run-toggle-shortcut-dispatch` (contract update + regression test) |
@@ -575,3 +583,42 @@ handle as the ZStack background. Budget bump for this file is recorded in the #4
 **27. `cmuxTests/SidebarWidthPolicyTests.swift` — `right-sidebar-min-width-test`.** Two clamp
 assertions that previously hardcoded `276` now read `CGFloat(RightSidebarWidthSettings.minimumWidth)`
 so they track the floor regardless of its value.
+
+### 28–33. Toggle Pane Zoom rebind (`toggle-split-zoom-rebind`)
+
+supermux's Changes panel binds **⇧⌘↩** to its Commit accelerator (typed-message commit or AI
+"Generate & Commit", whichever applies — see `SupermuxChangesPanelView.commitArea` /
+`commitShiftReturnAccelerator`, a supermux-owned file with no fence). But ⇧⌘↩ was the cmux default
+for **Toggle Pane Zoom** (`toggleSplitZoom`), and the app-local NSEvent monitor in `AppDelegate`
+consumes that chord before any SwiftUI button shortcut can fire. So the commit accelerator only
+works once Toggle Pane Zoom is moved off ⇧⌘↩. All six edits share the fence id
+`toggle-split-zoom-rebind`; the new default is **⌃⌘Z** ("Z" for Zoom; pairs with ⌃⌘= equalize, and
+deliberately *not* ⌃⌘↩ which some screen recorders use — see the rationale comment in #32).
+
+- **28. `Sources/KeyboardShortcutSettings.swift`** (canonical `defaultStroke` table) and
+  **29. `Packages/CmuxSettings/.../ShortcutAction+Defaults.swift`** (the settings-UI package mirror):
+  the `case .toggleSplitZoom` default returns `key: "z", command: true, control: true` instead of
+  `key: "\r", command: true, shift: true`. Both tables must agree.
+- **30. `web/data/cmux-shortcuts.ts`:** the `toggleSplitZoom` registry row's `combos` is
+  `[["⌃", "⌘", "Z"]]` (was `[["⌘", "⇧", "↩"]]`).
+- **31. `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift`:** the whole
+  `testCmdControlZFocusedBrowserTogglesSplitZoom` method is fenced; it builds a ⌃⌘Z key event
+  (`key: "z", modifiers: [.command, .control], keyCode: 6`) instead of ⇧⌘↩ and asserts the
+  configured `toggleSplitZoom` shortcut matches it. The browser-focused assertion now verifies
+  the **app monitor** toggles zoom (`debugHandleShortcutMonitorEvent`) rather than the browser
+  webView's `performKeyEquivalent`: a Return-key shortcut (⇧⌘↩) routed through the browser's
+  Return-key branch (`handleBrowserSurfaceKeyEquivalent` → full dispatcher), but a non-Return
+  chord (⌃⌘Z) is owned by the local key monitor, which fires ahead of the responder chain — so
+  the browser never claims it in real use.
+- **32. `cmuxTests/KeyboardShortcutContextTests.swift`:** comment-only — the rationale for
+  `toggleBrowserFocusMode`'s ⌥⌘↩ default no longer calls Toggle Pane Zoom "the other Return-based
+  shortcut". Assertions are unchanged (⌥⌘↩ still differs from and does not conflict with ⌃⌘Z).
+- **33. `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift`:** the two browser zoom round-trip
+  tests (`testCmdControlZKeepsBrowserOmnibarHittableAcrossZoomRoundTripWhenWebViewFocused`,
+  `testCmdControlZHidesBrowserPortalWhenTerminalPaneZooms`) press `app.typeKey("z", [.command, .control])`
+  instead of ⇧⌘↩, with matching renamed methods and assertion messages.
+
+If upstream changes the `toggleSplitZoom` default or these tests, keep our ⌃⌘Z value inside the
+fence. If upstream adds a different action on ⌃⌘Z, pick another free, non-`⌃⌘↩` chord for zoom and
+update all six sites. Budget bumps for #28/#32/#33 are in the #4 table; #29 (a package file) and
+#31 (a test) are not budget-tracked.

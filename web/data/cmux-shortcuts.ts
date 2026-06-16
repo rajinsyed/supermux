@@ -173,7 +173,10 @@ export const shortcutCategories: ShortcutCategory[] = [
       { id: "splitDown", combos: [["⌘", "⇧", "D"]], description: { en: "Split down", ja: "下に分割" } },
       { id: "splitBrowserRight", combos: [["⌥", "⌘", "D"]], description: { en: "Split browser right", ja: "右にブラウザ分割" } },
       { id: "splitBrowserDown", combos: [["⌥", "⌘", "⇧", "D"]], description: { en: "Split browser down", ja: "下にブラウザ分割" } },
-      { id: "toggleSplitZoom", combos: [["⌘", "⇧", "↩"]], description: { en: "Toggle pane zoom", ja: "ペインズームを切り替え" } },
+      // SUPERMUX:begin toggle-split-zoom-rebind
+      // Rebound from ⇧⌘↩ to ⌃⌘Z so ⇧⌘↩ is free for the supermux Changes-panel commit accelerator.
+      { id: "toggleSplitZoom", combos: [["⌃", "⌘", "Z"]], description: { en: "Toggle pane zoom", ja: "ペインズームを切り替え" } },
+      // SUPERMUX:end toggle-split-zoom-rebind
       { id: "equalizeSplits", combos: [["⌃", "⌘", "="]], description: { en: "Equalize split sizes", ja: "分割サイズを均等にする" } },
     ],
   },

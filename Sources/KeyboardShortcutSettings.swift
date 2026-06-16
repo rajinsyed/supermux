@@ -434,7 +434,11 @@ enum KeyboardShortcutSettings {
             case .splitRight:
                 return StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
             case .splitDown: return StoredShortcut(key: "d", command: true, shift: true, option: false, control: false)
-            case .toggleSplitZoom: return StoredShortcut(key: "\r", command: true, shift: true, option: false, control: false)
+            // SUPERMUX:begin toggle-split-zoom-rebind
+            // Rebound from ⇧⌘↩ to ⌃⌘Z ("Z" for Zoom; pairs with ⌃⌘= equalize) so ⇧⌘↩ is
+            // free for the supermux Changes-panel commit accelerator (SupermuxChangesPanelView).
+            case .toggleSplitZoom: return StoredShortcut(key: "z", command: true, shift: false, option: false, control: true)
+            // SUPERMUX:end toggle-split-zoom-rebind
             case .equalizeSplits: return StoredShortcut(key: "=", command: true, shift: false, option: false, control: true)
             case .splitBrowserRight:
                 return StoredShortcut(key: "d", command: true, shift: false, option: true, control: false)

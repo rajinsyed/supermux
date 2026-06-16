@@ -372,8 +372,11 @@ public struct SupermuxChangesPanelView: View {
                 .frame(maxWidth: .infinity)
             }
             .controlSize(.small)
-            // ⇧⌘↩ accelerates AI "Generate & Commit"; plain ⌘↩ commits a typed message.
-            .keyboardShortcut(.return, modifiers: model.isAICommitMode ? [.command, .shift] : .command)
+            // ⌘↩ commits in every mode (typed message or AI "Generate & Commit");
+            // the invisible accelerator binds ⇧⌘↩ to the same action so the user's
+            // shift-modified muscle memory works whether or not a message is typed.
+            .keyboardShortcut(.return, modifiers: .command)
+            .background(commitShiftReturnAccelerator)
             .disabled(!model.canCommit)
             .help(commitHelp)
             HStack(spacing: 6) {
@@ -392,13 +395,34 @@ public struct SupermuxChangesPanelView: View {
         .padding(8)
     }
 
+    /// Invisible ⇧⌘↩ accelerator for the commit button.
+    ///
+    /// A SwiftUI `Button` carries a single `keyboardShortcut`, so a second combo
+    /// for the same action needs its own button. This zero-size, transparent,
+    /// accessibility-hidden button binds ⇧⌘↩ to ``SupermuxChangesModel/performCommit()``
+    /// and shares the visible button's ``SupermuxChangesModel/canCommit`` gate, so
+    /// ⇧⌘↩ commits in every mode without affecting layout or VoiceOver. Hosted via
+    /// `.background` on the visible button so it never adds spacing to the stack.
+    private var commitShiftReturnAccelerator: some View {
+        Button {
+            Task { await model.performCommit() }
+        } label: {
+            Color.clear.frame(width: 0, height: 0)
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.return, modifiers: [.command, .shift])
+        .disabled(!model.canCommit)
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
     private var commitHelp: String {
         model.isAICommitMode
             ? String(
                 localized: "supermux.changes.ai.commit.help",
-                defaultValue: "Stage all changes, generate a commit message with AI, and commit (⇧⌘↩)"
+                defaultValue: "Stage all changes, generate a commit message with AI, and commit (⌘↩ or ⇧⌘↩)"
             )
-            : String(localized: "supermux.changes.commit.help", defaultValue: "Commit staged changes (⌘↩)")
+            : String(localized: "supermux.changes.commit.help", defaultValue: "Commit staged changes (⌘↩ or ⇧⌘↩)")
     }
 
     private var pushTitle: String {
