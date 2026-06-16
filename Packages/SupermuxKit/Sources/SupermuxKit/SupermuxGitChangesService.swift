@@ -14,6 +14,10 @@ public actor SupermuxGitChangesService {
     private let parser = SupermuxGitStatusParser()
     private static let gitTimeout: TimeInterval = 30
     private static let networkTimeout: TimeInterval = 120
+    /// Shorter deadline for the best-effort background fetch: it runs on a timer
+    /// and must give up quickly (and retry next cycle) rather than linger on a
+    /// stalled network or auth like the user-initiated push/pull paths.
+    private static let fetchTimeout: TimeInterval = 30
 
     /// Creates a service.
     /// - Parameter runner: Executes git; defaults to a production ``CommandRunner``.
@@ -171,6 +175,46 @@ public actor SupermuxGitChangesService {
         ) ?? []
     }
 
+    /// Counts unpushed commits for a branch with no upstream:
+    /// `git rev-list --count HEAD --not --remotes` — commits reachable from
+    /// `HEAD` but not on any remote-tracking branch (the same set
+    /// ``unpushedCommits(repoPath:hasUpstream:limit:)`` falls back to).
+    ///
+    /// Used only when `git status` reports no `ahead` count to drive the panel's
+    /// "hide the Unpushed section when empty" decision without loading the whole
+    /// list. Returns `0` on failure (e.g. an unborn branch) or an empty range.
+    /// - Parameter repoPath: Repository directory.
+    public func unpushedCountWithoutUpstream(repoPath: String) async -> Int {
+        let stdout = await runner.runStandardOutput(
+            directory: repoPath,
+            executable: "git",
+            arguments: ["rev-list", "--count", "HEAD", "--not", "--remotes"],
+            timeout: Self.gitTimeout
+        )
+        return stdout.flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 0
+    }
+
+    /// Reads up to `limit` incoming commits (newest first): commits on the
+    /// upstream that are not yet in `HEAD` — exactly what `git pull` would bring.
+    ///
+    /// The range is `HEAD..@{upstream}`. The remote-tracking ref is only as
+    /// fresh as the last `git fetch`, so callers run ``fetch(repoPath:)`` first
+    /// to surface commits pushed elsewhere (e.g. a merged worktree). Unlike
+    /// ``unpushedCommits(repoPath:hasUpstream:limit:)`` there is no
+    /// remotes-based fallback: with no upstream there is nothing to pull, so an
+    /// empty array is returned. Also `[]` when the range is empty or git fails
+    /// (for example a detached HEAD without `@{upstream}`).
+    /// - Parameters:
+    ///   - repoPath: Repository directory.
+    ///   - limit: Maximum number of commits to return.
+    /// - Returns: The parsed incoming commits, newest first, or `[]`.
+    public func incomingCommits(repoPath: String, limit: Int) async -> [SupermuxGitCommit] {
+        guard limit > 0 else { return [] }
+        return await commitLog(
+            repoPath: repoPath, revision: ["HEAD..@{upstream}"], limit: limit
+        ) ?? []
+    }
+
     /// Runs `git log` over `revision` and parses the result; `nil` on git
     /// failure (so callers can fall back) versus `[]` for a successful empty
     /// range.
@@ -261,6 +305,44 @@ public actor SupermuxGitChangesService {
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
     public func pull(repoPath: String) async throws {
         try await runGit(in: repoPath, ["pull"], commandLabel: "pull", timeout: Self.networkTimeout)
+    }
+
+    /// Best-effort `git fetch` that refreshes the remote-tracking refs without
+    /// merging, so the ahead/behind counts and the incoming/outgoing commit
+    /// lists reflect what is on the remote (e.g. a worktree merged elsewhere).
+    ///
+    /// Runs `git fetch --no-tags --quiet` with no remote argument: the default
+    /// refspec is what updates `refs/remotes/<remote>/*` — and therefore
+    /// `@{upstream}` and `behind` — whereas an explicit `git fetch <remote>
+    /// <branch>` would only move `FETCH_HEAD`.
+    ///
+    /// The background fetch must be fully non-interactive: a credential or SSH
+    /// prompt would otherwise pop a GUI or stall until the timeout. Because the
+    /// shared ``CommandRunner`` cannot set a per-command environment, git is run
+    /// via `/usr/bin/env` with the prompt/askpass knobs cleared
+    /// (`GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS`/`SSH_ASKPASS=/usr/bin/false`,
+    /// `GCM_INTERACTIVE=never`), so a missing credential fails fast; stored
+    /// credentials (e.g. the keychain helper) are still consulted first and keep
+    /// working. A short ``fetchTimeout`` bounds the network call, and the result
+    /// is a flag rather than a throw — an auto-fetch that fails (offline, no
+    /// remote, auth) must degrade quietly and never surface as a user error.
+    /// - Parameter repoPath: Repository directory.
+    /// - Returns: `true` when git exited cleanly, otherwise `false`.
+    @discardableResult
+    public func fetch(repoPath: String) async -> Bool {
+        let result = await runner.run(
+            directory: repoPath,
+            executable: "/usr/bin/env",
+            arguments: [
+                "GIT_TERMINAL_PROMPT=0",
+                "GIT_ASKPASS=/usr/bin/false",
+                "SSH_ASKPASS=/usr/bin/false",
+                "GCM_INTERACTIVE=never",
+                "git", "fetch", "--no-tags", "--quiet",
+            ],
+            timeout: Self.fetchTimeout
+        )
+        return result.exitStatus == 0
     }
 
     // MARK: - Stash

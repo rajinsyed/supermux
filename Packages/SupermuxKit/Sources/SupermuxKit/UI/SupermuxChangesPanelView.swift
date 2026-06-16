@@ -9,12 +9,21 @@ import Foundation
 /// area pinned at the bottom. All state and git work lives in
 /// ``SupermuxChangesModel``; this view only renders and dispatches.
 public struct SupermuxChangesPanelView: View {
-    @Bindable private var model: SupermuxChangesModel
+    // Internal (not private) so the section builders in
+    // `SupermuxChangesPanelView+Sections.swift` can read them; the panel is
+    // still the snapshot boundary and only hands value snapshots to rows.
+    @Bindable var model: SupermuxChangesModel
     private let onOpenDiff: (() -> Void)?
 
     @State private var discardCandidate: SupermuxGitFileChange?
     @State private var isDiscardAllPresented = false
-    @State private var isHistoryExpanded = false
+    @State var isHistoryExpanded = false
+    @State var isIncomingExpanded = false
+
+    /// How often the visible panel re-fetches in the background. Long enough to
+    /// stay quiet (and out of git's way); workspace switches fetch immediately
+    /// via the directory-keyed task regardless.
+    private static let autoFetchInterval: Duration = .seconds(180)
 
     /// Creates the panel.
     /// - Parameters:
@@ -44,6 +53,18 @@ public struct SupermuxChangesPanelView: View {
             }
         }
         .task { model.startObserving() }
+        // Best-effort background fetch so behind/incoming reflect the remote
+        // without a manual pull. Keyed on the directory so it restarts (and
+        // fetches immediately) on a workspace switch — the exact moment a
+        // just-merged worktree's commits become pullable on the main branch —
+        // then re-fetches on a slow timer while the panel stays visible.
+        // SwiftUI cancels the task on disappear / id change.
+        .task(id: model.directory) {
+            while !Task.isCancelled {
+                await model.fetchAndRefresh()
+                try? await Task.sleep(for: Self.autoFetchInterval)
+            }
+        }
         .onDisappear { model.stopObserving() }
         .confirmationDialog(
             String(localized: "supermux.changes.discard.title", defaultValue: "Discard Changes"),
@@ -119,7 +140,9 @@ public struct SupermuxChangesPanelView: View {
                 "arrow.clockwise",
                 help: String(localized: "supermux.changes.refresh.help", defaultValue: "Refresh status")
             ) {
-                Task { await model.refresh() }
+                // Force a remote check too, so the user can pull the latest
+                // incoming/behind status on demand without waiting for the timer.
+                Task { await model.fetchAndRefresh() }
             }
         }
         .padding(.horizontal, 8)
@@ -218,7 +241,15 @@ public struct SupermuxChangesPanelView: View {
     private var changeList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 1) {
-                historySection
+                // Show each sync section only when it has commits, so an
+                // up-to-date branch stays uncluttered. The counts are
+                // authoritative regardless of expansion (see the model).
+                if model.incomingCount > 0 {
+                    incomingSection
+                }
+                if model.outgoingCount > 0 {
+                    historySection
+                }
                 if model.snapshot.totalChangeCount == 0 {
                     emptyState
                 } else {
@@ -315,25 +346,6 @@ public struct SupermuxChangesPanelView: View {
 
     private func unstage(_ change: SupermuxGitFileChange) {
         Task { await model.unstage(change) }
-    }
-
-    // MARK: - History
-
-    private var historySection: some View {
-        SupermuxCommitHistorySection(
-            isExpanded: isHistoryExpanded,
-            commits: model.commits,
-            hasMore: model.hasMoreCommits,
-            isLoading: model.isLoadingCommits,
-            onToggle: { toggleHistory() },
-            onLoadMore: { Task { await model.loadMoreCommits() } }
-        )
-    }
-
-    private func toggleHistory() {
-        isHistoryExpanded.toggle()
-        let expanded = isHistoryExpanded
-        Task { await model.setHistoryExpanded(expanded) }
     }
 
     // MARK: - Commit area

@@ -1,16 +1,31 @@
 import SwiftUI
 
-/// Collapsible unpushed-commits section for the Changes panel.
+/// Collapsible commit-list section for the Changes panel, used for both the
+/// outgoing (Unpushed, ↑) and incoming (↓) feeds.
 ///
-/// A disclosure header that, when expanded, lists the local commits not yet on
-/// the remote and offers a "Show more" affordance when more exist. Receives
-/// only immutable value snapshots plus action closures — never the changes
-/// model — so it sits safely below the panel's `LazyVStack` snapshot boundary.
+/// A disclosure header — a direction arrow, a title, and a count badge — that,
+/// when expanded, lists commits and offers a "Show more" affordance when more
+/// exist. Receives only immutable value snapshots plus action closures — never
+/// the changes model — so it sits safely below the panel's `LazyVStack`
+/// snapshot boundary.
 struct SupermuxCommitHistorySection: View {
+    /// Section title (e.g. "Unpushed", "Incoming").
+    let title: String
+    /// SF Symbol for the direction arrow (e.g. `arrow.up`, `arrow.down`).
+    let directionSymbol: String
+    /// Authoritative commit count for the header badge, shown collapsed or
+    /// expanded (the loaded ``commits`` may lag or be paged below this).
+    let count: Int
     let isExpanded: Bool
     let commits: [SupermuxGitCommit]
     let hasMore: Bool
     let isLoading: Bool
+    /// Text shown when expanded with no commits.
+    let emptyText: String
+    /// Help shown on the header while collapsed (the expand affordance).
+    let expandHelp: String
+    /// Help shown on the header while expanded (the collapse affordance).
+    let collapseHelp: String
     let onToggle: () -> Void
     let onLoadMore: () -> Void
 
@@ -36,12 +51,15 @@ struct SupermuxCommitHistorySection: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 10)
-                Text(String(localized: "supermux.changes.unpushed.title", defaultValue: "Unpushed"))
+                Image(systemName: directionSymbol)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                Text(title)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                if isExpanded, !commits.isEmpty {
-                    Text(hasMore ? "\(commits.count)+" : "\(commits.count)")
+                if count > 0 {
+                    Text("\(count)")
                         .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
@@ -53,9 +71,7 @@ struct SupermuxCommitHistorySection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(isExpanded
-            ? String(localized: "supermux.changes.unpushed.collapse.help", defaultValue: "Hide unpushed commits")
-            : String(localized: "supermux.changes.unpushed.expand.help", defaultValue: "Show unpushed commits"))
+        .help(isExpanded ? collapseHelp : expandHelp)
         .padding(.horizontal, 5)
         .padding(.top, 6)
         .padding(.bottom, 2)
@@ -65,7 +81,7 @@ struct SupermuxCommitHistorySection: View {
     private var placeholder: some View {
         Text(isLoading
             ? String(localized: "supermux.changes.unpushed.loading", defaultValue: "Loading…")
-            : String(localized: "supermux.changes.unpushed.empty", defaultValue: "No unpushed commits"))
+            : emptyText)
             .font(.system(size: 11))
             .foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, alignment: .leading)

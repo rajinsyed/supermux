@@ -473,6 +473,137 @@ import SupermuxKit
         }
     }
 
+    // MARK: - Incoming commits
+
+    @Test func incomingCommitsReturnsCommitsBehindUpstream() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        let remote = try makeBareRemote()
+        defer { cleanUp(remote) }
+        try runGit(["remote", "add", "origin", remote], in: root)
+        try runGit(["push", "-u", "origin", "main"], in: root)
+        // Advance the branch and push so origin/main carries the commit...
+        try write("a\n", to: "a.txt", in: root)
+        try runGit(["add", "a.txt"], in: root)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Remote one"], in: root)
+        try runGit(["push"], in: root)
+        // ...then move local HEAD back, making that commit "incoming" again.
+        try runGit(["reset", "--hard", "HEAD~1"], in: root)
+
+        let snapshot = await service.status(repoPath: root)
+        #expect(snapshot.behind == 1)
+
+        let commits = await service.incomingCommits(repoPath: root, limit: 10)
+        #expect(commits.count == 1)
+        #expect(commits[0].subject == "Remote one")
+        #expect(!commits.contains { $0.subject == "Initial commit" })
+    }
+
+    @Test func incomingCommitsHonorsLimit() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        let remote = try makeBareRemote()
+        defer { cleanUp(remote) }
+        try runGit(["remote", "add", "origin", remote], in: root)
+        try runGit(["push", "-u", "origin", "main"], in: root)
+        for index in 1...3 {
+            try write("\(index)\n", to: "f\(index).txt", in: root)
+            try runGit(["add", "f\(index).txt"], in: root)
+            try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Commit \(index)"], in: root)
+        }
+        try runGit(["push"], in: root)
+        try runGit(["reset", "--hard", "HEAD~3"], in: root)
+
+        let commits = await service.incomingCommits(repoPath: root, limit: 2)
+
+        #expect(commits.count == 2)
+        #expect(commits[0].subject == "Commit 3")
+        #expect(commits[1].subject == "Commit 2")
+    }
+
+    @Test func incomingCommitsWithoutUpstreamReturnsNone() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+
+        // No upstream → nothing is pullable, and there is no remotes fallback.
+        let commits = await service.incomingCommits(repoPath: root, limit: 10)
+
+        #expect(commits.isEmpty)
+    }
+
+    @Test func unpushedCountWithoutUpstreamCountsLocalThenZeroAfterPush() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+
+        // No remote yet → every local commit is unpushed.
+        #expect(await service.unpushedCountWithoutUpstream(repoPath: root) == 1)
+        try write("a\n", to: "a.txt", in: root)
+        try runGit(["add", "a.txt"], in: root)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Second"], in: root)
+        #expect(await service.unpushedCountWithoutUpstream(repoPath: root) == 2)
+
+        // After pushing, those commits live on a remote-tracking branch, so the
+        // "--not --remotes" count drops to zero.
+        let remote = try makeBareRemote()
+        defer { cleanUp(remote) }
+        try runGit(["remote", "add", "origin", remote], in: root)
+        try runGit(["push", "-u", "origin", "main"], in: root)
+
+        #expect(await service.unpushedCountWithoutUpstream(repoPath: root) == 0)
+    }
+
+    // MARK: - Fetch
+
+    /// `fetch` updates the remote-tracking ref so a commit pushed elsewhere
+    /// becomes visible as "behind" / incoming without the user pulling.
+    @Test func fetchUpdatesBehindFromRemote() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        let remote = try makeBareRemote()
+        defer { cleanUp(remote) }
+        try runGit(["remote", "add", "origin", remote], in: root)
+        try runGit(["push", "-u", "origin", "main"], in: root)
+
+        // Simulate someone else pushing: clone, commit, push.
+        let otherParent = try makeTempDirectory()
+        defer { cleanUp(otherParent) }
+        try runGit(["clone", remote, "clone"], in: otherParent)
+        let other = (otherParent as NSString).appendingPathComponent("clone")
+        try runGit(["config", "--local", "user.email", "other@supermux.invalid"], in: other)
+        try runGit(["config", "--local", "user.name", "Other Dev"], in: other)
+        try runGit(["config", "--local", "commit.gpgsign", "false"], in: other)
+        try write("elsewhere\n", to: "elsewhere.txt", in: other)
+        try runGit(["add", "elsewhere.txt"], in: other)
+        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Pushed elsewhere"], in: other)
+        try runGit(["push"], in: other)
+
+        // Root has not fetched yet, so it still believes it is up to date.
+        let before = await service.status(repoPath: root)
+        #expect(before.behind == 0)
+
+        let didFetch = await service.fetch(repoPath: root)
+        #expect(didFetch)
+
+        let after = await service.status(repoPath: root)
+        #expect(after.behind == 1)
+        let incoming = await service.incomingCommits(repoPath: root, limit: 10)
+        #expect(incoming.first?.subject == "Pushed elsewhere")
+    }
+
+    @Test func fetchWithUnreachableRemoteReportsFailure() async throws {
+        let root = try makeFixtureRepo()
+        defer { cleanUp(root) }
+        // origin points at a path that is not a repository → fetch fails fast
+        // (and `core.askpass=true` keeps it from stalling on a prompt). The
+        // failure is reported as `false` rather than thrown, so an auto-fetch
+        // degrades quietly.
+        try runGit(["remote", "add", "origin", "/nonexistent/supermux-not-a-repo"], in: root)
+
+        let didFetch = await service.fetch(repoPath: root)
+
+        #expect(didFetch == false)
+    }
+
     // MARK: - Commit failures
 
     @Test func commitWithNothingStagedThrows() async throws {
