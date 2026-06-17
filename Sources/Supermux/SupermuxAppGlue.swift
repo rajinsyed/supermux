@@ -380,15 +380,22 @@ struct SupermuxChangesMount: View {
     var isVisible: Bool = true
 
     @EnvironmentObject private var tabManager: TabManager
+    // Re-render when the user rebinds a shortcut (the configured commit chords
+    // are read from `KeyboardShortcutSettings`, which is not itself observable).
+    @ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
     @State private var model = SupermuxChangesModel(
         service: SupermuxGitChangesService(runner: CommandRunner()),
         commitGenerator: SupermuxComposition.aiCommitMessenger
     )
 
     var body: some View {
+        let _ = shortcutObserver.revision
         SupermuxChangesPanelView(
             model: model,
             isVisible: isVisible,
+            commitShortcut: Self.keyboardShortcut(for: .supermuxCommit),
+            commitAcceleratorShortcut: Self.keyboardShortcut(for: .supermuxCommitAccelerator),
+            commitShortcutHint: KeyboardShortcutSettings.shortcut(for: .supermuxCommit).displayString,
             onOpenDiff: { [weak tabManager] in
                 guard let tabManager,
                       let appDelegate = NSApp.delegate as? AppDelegate else { return }
@@ -399,6 +406,15 @@ struct SupermuxChangesMount: View {
         .onChange(of: workspaceDirectory) { _, newDirectory in
             model.setDirectory(newDirectory)
         }
+    }
+
+    /// Resolves a configured shortcut into a SwiftUI ``KeyboardShortcut`` the
+    /// panel can apply directly; `nil` when the action is unbound or a chord
+    /// (the panel then carries no key equivalent for it).
+    private static func keyboardShortcut(for action: KeyboardShortcutSettings.Action) -> KeyboardShortcut? {
+        let stored = KeyboardShortcutSettings.shortcut(for: action)
+        guard let keyEquivalent = stored.keyEquivalent else { return nil }
+        return KeyboardShortcut(keyEquivalent, modifiers: stored.eventModifiers)
     }
 }
 

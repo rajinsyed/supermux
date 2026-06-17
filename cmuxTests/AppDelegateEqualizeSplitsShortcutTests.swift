@@ -69,6 +69,31 @@ final class AppDelegateEqualizeSplitsShortcutTests: XCTestCase {
     }
     // SUPERMUX:end toggle-split-zoom-rebind
 
+    // SUPERMUX:begin supermux-commit-shortcut
+    func testSupermuxCommitDefaultsBindReturnChords() {
+        // Clear any persisted overrides so we assert the registered defaults.
+        UserDefaults.standard.removeObject(forKey: KeyboardShortcutSettings.Action.supermuxCommit.defaultsKey)
+        UserDefaults.standard.removeObject(forKey: KeyboardShortcutSettings.Action.supermuxCommitAccelerator.defaultsKey)
+
+        guard
+            let cmdReturn = makeKeyDownEvent(key: "\r", modifiers: [.command], keyCode: 36, windowNumber: 0),
+            let cmdShiftReturn = makeKeyDownEvent(key: "\r", modifiers: [.command, .shift], keyCode: 36, windowNumber: 0)
+        else {
+            XCTFail("Expected ⌘↩ and ⇧⌘↩ key events")
+            return
+        }
+
+        // Commit defaults to ⌘↩ and the accelerator to ⇧⌘↩. Both are registered
+        // so they are editable in Settings / cmux.json and seen by conflict
+        // detection; the Changes panel applies them via SwiftUI.
+        XCTAssertTrue(KeyboardShortcutSettings.shortcut(for: .supermuxCommit).matches(event: cmdReturn))
+        XCTAssertTrue(KeyboardShortcutSettings.shortcut(for: .supermuxCommitAccelerator).matches(event: cmdShiftReturn))
+        // Distinct chords: no self-conflict and no cross-match.
+        XCTAssertFalse(KeyboardShortcutSettings.shortcut(for: .supermuxCommit).matches(event: cmdShiftReturn))
+        XCTAssertFalse(KeyboardShortcutSettings.shortcut(for: .supermuxCommitAccelerator).matches(event: cmdReturn))
+    }
+    // SUPERMUX:end supermux-commit-shortcut
+
     func testConfiguredEqualizeSplitsShortcutBalancesWorkspaceDividers() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")

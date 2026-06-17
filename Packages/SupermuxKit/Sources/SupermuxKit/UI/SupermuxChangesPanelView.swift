@@ -21,6 +21,13 @@ public struct SupermuxChangesPanelView: View {
     /// window-wide commit key equivalents (⌘↩ / ⇧⌘↩) deactivate so they cannot
     /// commit from a focused terminal/browser while the panel is not even visible.
     private let isVisible: Bool
+    /// Configured key equivalent for Commit (default ⌘↩); `nil` when unbound.
+    /// Supplied by the host so the chord is editable in Settings / `cmux.json`.
+    private let commitShortcut: KeyboardShortcut?
+    /// Configured key equivalent for the second commit chord (default ⇧⌘↩).
+    private let commitAcceleratorShortcut: KeyboardShortcut?
+    /// Display string for the primary commit chord, shown in the button's help.
+    private let commitShortcutHint: String
 
     @State private var discardCandidate: SupermuxGitFileChange?
     @State private var isDiscardAllPresented = false
@@ -45,11 +52,24 @@ public struct SupermuxChangesPanelView: View {
     ///   - isVisible: Whether the right sidebar is currently shown; gates the
     ///     background auto-fetch and the commit key equivalents (defaults to
     ///     `true` for callers — previews/tests — with no sidebar lifecycle).
+    ///   - commitShortcut: Configured key equivalent for Commit (default ⌘↩).
+    ///   - commitAcceleratorShortcut: Configured second commit chord (default ⇧⌘↩).
+    ///   - commitShortcutHint: Display string for the primary chord (button help).
     ///   - onOpenDiff: Host-app callback that opens a full diff view; the
     ///     "Open Diff" header button is hidden when `nil`.
-    public init(model: SupermuxChangesModel, isVisible: Bool = true, onOpenDiff: (() -> Void)?) {
+    public init(
+        model: SupermuxChangesModel,
+        isVisible: Bool = true,
+        commitShortcut: KeyboardShortcut? = KeyboardShortcut(.return, modifiers: .command),
+        commitAcceleratorShortcut: KeyboardShortcut? = KeyboardShortcut(.return, modifiers: [.command, .shift]),
+        commitShortcutHint: String = "⌘↩",
+        onOpenDiff: (() -> Void)?
+    ) {
         self.model = model
         self.isVisible = isVisible
+        self.commitShortcut = commitShortcut
+        self.commitAcceleratorShortcut = commitAcceleratorShortcut
+        self.commitShortcutHint = commitShortcutHint
         self.onOpenDiff = onOpenDiff
     }
 
@@ -392,10 +412,10 @@ public struct SupermuxChangesPanelView: View {
                 .frame(maxWidth: .infinity)
             }
             .controlSize(.small)
-            // ⌘↩ commits in every mode (typed message or AI "Generate & Commit");
-            // the invisible accelerator binds ⇧⌘↩ to the same action so the user's
-            // shift-modified muscle memory works whether or not a message is typed.
-            .keyboardShortcut(.return, modifiers: .command)
+            // The configured Commit chord (default ⌘↩) commits in every mode;
+            // the invisible accelerator carries the second configured chord
+            // (default ⇧⌘↩) for the same action. Both are editable in Settings.
+            .keyboardShortcut(commitShortcut)
             .background(commitShiftReturnAccelerator)
             // `!isVisible` deactivates the window-wide ⌘↩ key equivalent while the
             // sidebar is hidden, so it cannot commit from a focused terminal/browser
@@ -436,7 +456,7 @@ public struct SupermuxChangesPanelView: View {
             Color.clear.frame(width: 0, height: 0)
         }
         .buttonStyle(.plain)
-        .keyboardShortcut(.return, modifiers: [.command, .shift])
+        .keyboardShortcut(commitAcceleratorShortcut)
         .disabled(!model.canCommit || !isVisible)
         .opacity(0)
         .accessibilityHidden(true)
@@ -445,10 +465,19 @@ public struct SupermuxChangesPanelView: View {
     private var commitHelp: String {
         model.isAICommitMode
             ? String(
-                localized: "supermux.changes.ai.commit.help",
-                defaultValue: "Stage all changes, generate a commit message with AI, and commit (⌘↩ or ⇧⌘↩)"
+                format: String(
+                    localized: "supermux.changes.ai.commit.help",
+                    defaultValue: "Stage all changes, generate a commit message with AI, and commit (%@)"
+                ),
+                commitShortcutHint
             )
-            : String(localized: "supermux.changes.commit.help", defaultValue: "Commit staged changes (⌘↩ or ⇧⌘↩)")
+            : String(
+                format: String(
+                    localized: "supermux.changes.commit.help",
+                    defaultValue: "Commit staged changes (%@)"
+                ),
+                commitShortcutHint
+            )
     }
 
     private var pushTitle: String {
