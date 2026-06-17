@@ -1,27 +1,21 @@
 {
   "fill" : {
-    "linear-gradient" : [
-      "display-p3:0.68096,0.00000,0.96783,1.00000",
-      "display-p3:0.09071,0.04781,1.00000,1.00000"
-    ],
-    "orientation" : {
-      "start" : {
-        "x" : 0.5,
-        "y" : 0
-      },
-      "stop" : {
-        "x" : 0.5,
-        "y" : 0.7
-      }
-    }
+    "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
-          "glass" : true,
-          "image-name" : "supermux.png",
-          "name" : "supermux"
+          "glass" : false,
+          "image-name" : "supermux.jpg",
+          "name" : "supermux",
+          "position" : {
+            "scale" : 1.85,
+            "translation-in-points" : [
+              -5.535992838144466,
+              10.004258887533524
+            ]
+          }
         }
       ],
       "shadow" : {

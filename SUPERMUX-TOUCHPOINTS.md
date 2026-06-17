@@ -31,7 +31,7 @@ Rules for adding a touchpoint:
 | 14 | `web/data/cmux.schema.json` | `unfenced` | Adds `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, and `supermuxWorkspaceSwitcherPrevious` to the shortcut-action enum so cmux.json validation accepts rebinding them |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only); minimal mode keeps the original top-safe-area layout |
-| 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + `AppIcon-Debug.icon` (DEV band) + `AppIcon-Nightly.icon` (NIGHTLY band); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered glass icon. Wiring lives in touchpoint #3. || 18 | `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AutomationSection.swift` | `ai-settings` | Renders `SupermuxAISettingsCard` (Vercel AI Gateway API key + model) at the end of the Automation section, and stores the `secretStore` + `errorLog` the card needs. The card itself is a new supermux-owned file, `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` (no conflict on merge; lives in the upstream package only because the section stack is closed to app injection and cannot import `SupermuxKit`). |
+| 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + byte-identical `AppIcon-Debug.icon` + `AppIcon-Nightly.icon` (no DEV/NIGHTLY bands — all three channels share one mark); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered icon. Wiring lives in touchpoint #3. || 18 | `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AutomationSection.swift` | `ai-settings` | Renders `SupermuxAISettingsCard` (Vercel AI Gateway API key + model) at the end of the Automation section, and stores the `secretStore` + `errorLog` the card needs. The card itself is a new supermux-owned file, `Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` (no conflict on merge; lives in the upstream package only because the section stack is closed to app injection and cannot import `SupermuxKit`). |
 | 20 | `Sources/GhosttyTerminalView.swift` | `browser-link-new-tab` | When a cmd-clicked terminal link opens in the embedded browser and there is no existing browser pane to reuse, open it as a new browser tab in the current pane (and switch to it) instead of creating a horizontal split |
 | 21 | `Sources/App/ShortcutRoutingSupport.swift` | `run-toggle-shortcut-dispatch` | ⌘G (the supermux Run/Stop toggle, shared with Find Next) is never ceded to a focused browser's native find, so cmux always owns the chord (otherwise WebKit swallows ⌘G and it is a dead key in the browser) |
 | 22 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `run-toggle-shortcut-dispatch` | Updates the browser-find routing contract for ⌘G (run-toggle chord excluded from browser-first routing) and adds the regression test |
@@ -278,22 +278,25 @@ upstream merge that re-introduces `AppIcon*.appiconset` or rewrites the icon mus
 re-done.
 
 Files:
-- `AppIcon.icon/` — Release. `icon.json` = a purple→blue `linear-gradient` fill + one
-  `glass:true` layer `supermux.png` (the dark glass mark; opaque, so it reads as the dark
-  mark and the gradient sits behind it). This is the source of truth from Icon Composer.
-- `AppIcon-Debug.icon/` — copy of the base with a **DEV** band (`#FF6B00`) baked into the
-  bottom of `supermux.png`.
-- `AppIcon-Nightly.icon/` — copy with a **NIGHTLY** band (`#8C3CDC`) baked in.
+- `AppIcon.icon/` — Release. `icon.json` = one `glass:false` layer `supermux.jpg` (the
+  orange/black mark with the white lightning-S, exported from Icon Composer). The image is
+  opaque and scaled `1.85` so it fills the canvas and the system squircle crops it — which is
+  why the `automatic-gradient` fill declared behind it never shows. This is the source of
+  truth from Icon Composer.
+- `AppIcon-Debug.icon/` and `AppIcon-Nightly.icon/` — byte-identical copies of the Release
+  bundle. As of the 2026 rebrand there are **no DEV/NIGHTLY bands** (the new orange
+  background would have swallowed the old `#FF6B00` DEV band), so all three channels render
+  the same mark and a Debug/tagged build is no longer visually distinct from Release in the
+  Dock. Re-introduce per-channel badges in the Debug/Nightly bundles if that distinction is
+  wanted again.
 - `Assets.xcassets/AppIcon{Light,Dark}.imageset/` — 1024 PNGs used by the dock-tile plugin
   (`Sources/AppIconDockTilePlugin.swift`, which overrides the *running* dock icon) and the
-  Settings icon picker. Re-sourced from the actual rendered glass icon
-  (`NSWorkspace.icon(forFile:)` of the built app), so the dock matches Finder.
-
-Badge geometry: the system scales the 1024 layer into an 824×824 squircle at 100 px margin
-(scale ≈ 0.8047), then masks. Bands are baked from mark-space `y≈815..1024` (full width) so
-they land inside the squircle's lower band with rounded bottom corners; text is centered,
-white, Arial-Bold. Badges inherit the layer's glass, so they read as glassy bands (fine for
-dev/nightly distinction).
+  Settings icon picker. Re-sourced from the actual rendered icon via
+  `NSWorkspace.icon(forFile:)` — point it at the built app, or at a throwaway `.app` that
+  wraps the `actool`-compiled `Assets.car` (`xcrun actool AppIcon.icon --compile … --app-icon
+  AppIcon --platform macosx`) when you only need the render and not a full app build, so the
+  Dock matches Finder. Light and dark are identical (the mark has no separate appearance
+  variants).
 
 Wiring (touchpoint #3, `cmux.xcodeproj/project.pbxproj`): each `.icon` needs a
 `PBXFileReference` with `lastKnownFileType = folder.iconcomposer.icon`, a `PBXBuildFile`,
