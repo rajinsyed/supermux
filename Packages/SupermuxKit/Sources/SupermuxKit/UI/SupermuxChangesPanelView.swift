@@ -14,6 +14,13 @@ public struct SupermuxChangesPanelView: View {
     // still the snapshot boundary and only hands value snapshots to rows.
     @Bindable var model: SupermuxChangesModel
     private let onOpenDiff: (() -> Void)?
+    /// Whether the right sidebar is actually on-screen. The sidebar keeps the
+    /// changes panel mounted after its first show (so re-showing is instant), so
+    /// the panel gates visibility-dependent work itself: the background auto-fetch
+    /// pauses while hidden (no `git fetch` for an off-screen panel), and the
+    /// window-wide commit key equivalents (⌘↩ / ⇧⌘↩) deactivate so they cannot
+    /// commit from a focused terminal/browser while the panel is not even visible.
+    private let isVisible: Bool
 
     @State private var discardCandidate: SupermuxGitFileChange?
     @State private var isDiscardAllPresented = false
@@ -25,13 +32,24 @@ public struct SupermuxChangesPanelView: View {
     /// via the directory-keyed task regardless.
     private static let autoFetchInterval: Duration = .seconds(180)
 
+    /// Identity for the auto-fetch `.task`: it restarts on a workspace switch and
+    /// pauses (the task body returns immediately) while the sidebar is hidden.
+    private struct AutoFetchKey: Equatable {
+        let directory: String?
+        let isVisible: Bool
+    }
+
     /// Creates the panel.
     /// - Parameters:
     ///   - model: Shared changes model owning git status and mutations.
+    ///   - isVisible: Whether the right sidebar is currently shown; gates the
+    ///     background auto-fetch and the commit key equivalents (defaults to
+    ///     `true` for callers — previews/tests — with no sidebar lifecycle).
     ///   - onOpenDiff: Host-app callback that opens a full diff view; the
     ///     "Open Diff" header button is hidden when `nil`.
-    public init(model: SupermuxChangesModel, onOpenDiff: (() -> Void)?) {
+    public init(model: SupermuxChangesModel, isVisible: Bool = true, onOpenDiff: (() -> Void)?) {
         self.model = model
+        self.isVisible = isVisible
         self.onOpenDiff = onOpenDiff
     }
 
@@ -54,12 +72,14 @@ public struct SupermuxChangesPanelView: View {
         }
         .task { model.startObserving() }
         // Best-effort background fetch so behind/incoming reflect the remote
-        // without a manual pull. Keyed on the directory so it restarts (and
-        // fetches immediately) on a workspace switch — the exact moment a
-        // just-merged worktree's commits become pullable on the main branch —
-        // then re-fetches on a slow timer while the panel stays visible.
-        // SwiftUI cancels the task on disappear / id change.
-        .task(id: model.directory) {
+        // without a manual pull. Keyed on the directory *and* visibility so it
+        // restarts (and fetches immediately) on a workspace switch — the exact
+        // moment a just-merged worktree's commits become pullable on the main
+        // branch — and pauses entirely while the sidebar is hidden (the panel
+        // stays mounted after first show, so an unkeyed task would keep fetching
+        // off-screen). SwiftUI cancels the task on disappear / id change.
+        .task(id: AutoFetchKey(directory: model.directory, isVisible: isVisible)) {
+            guard isVisible else { return }
             while !Task.isCancelled {
                 await model.fetchAndRefresh()
                 try? await Task.sleep(for: Self.autoFetchInterval)
@@ -377,7 +397,10 @@ public struct SupermuxChangesPanelView: View {
             // shift-modified muscle memory works whether or not a message is typed.
             .keyboardShortcut(.return, modifiers: .command)
             .background(commitShiftReturnAccelerator)
-            .disabled(!model.canCommit)
+            // `!isVisible` deactivates the window-wide ⌘↩ key equivalent while the
+            // sidebar is hidden, so it cannot commit from a focused terminal/browser
+            // when the panel is off-screen (it stays mounted after first show).
+            .disabled(!model.canCommit || !isVisible)
             .help(commitHelp)
             HStack(spacing: 6) {
                 Button { Task { await model.push() } } label: {
@@ -403,6 +426,9 @@ public struct SupermuxChangesPanelView: View {
     /// and shares the visible button's ``SupermuxChangesModel/canCommit`` gate, so
     /// ⇧⌘↩ commits in every mode without affecting layout or VoiceOver. Hosted via
     /// `.background` on the visible button so it never adds spacing to the stack.
+    /// Gated on ``isVisible`` for the same reason as the visible button: the key
+    /// equivalent must not fire from a focused terminal/browser while the
+    /// (still-mounted) panel is hidden.
     private var commitShiftReturnAccelerator: some View {
         Button {
             Task { await model.performCommit() }
@@ -411,7 +437,7 @@ public struct SupermuxChangesPanelView: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.return, modifiers: [.command, .shift])
-        .disabled(!model.canCommit)
+        .disabled(!model.canCommit || !isVisible)
         .opacity(0)
         .accessibilityHidden(true)
     }

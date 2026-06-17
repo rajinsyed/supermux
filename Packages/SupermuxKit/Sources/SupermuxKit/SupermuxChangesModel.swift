@@ -75,12 +75,18 @@ public final class SupermuxChangesModel {
     /// sets ``refreshPending`` rather than racing or being silently dropped.
     @ObservationIgnored private var isRefreshing = false
     @ObservationIgnored private var refreshPending = false
-    /// True while a background `git fetch` is in flight. Gates the auto-fetch in
-    /// ``fetchAndRefresh()`` so two fetches never overlap; combined with the
-    /// `isWorking` check it also keeps the silent fetch from racing a
-    /// user-initiated push/pull (whose own fetch would otherwise hit a ref lock
-    /// and surface a spurious error). Module-internal for the sync extension.
-    @ObservationIgnored var isFetching = false
+    /// The in-flight background `git fetch` as an awaitable handle (`nil` when no
+    /// fetch is running — it is the single source of truth for "a fetch is in
+    /// flight", replacing a separate boolean). Three consumers use it:
+    /// ``fetchAndRefresh()`` serializes on it so two fetches never overlap; a
+    /// user mutation (push/pull/commit) drains it before running git so a
+    /// best-effort fetch and a visible mutation never update the same ref
+    /// concurrently (the ref-lock error the auto-fetch was meant to avoid — an
+    /// `isWorking`-only guard is one-directional); and a switched-to directory's
+    /// fetch awaits it instead of skipping, so the new directory still fetches
+    /// promptly rather than waiting out the timer. Module-internal for the sync
+    /// extension.
+    @ObservationIgnored var activeFetchTask: Task<Bool, Never>?
     /// Whether the Unpushed section is expanded; gates whether ``refresh()``
     /// reads the outgoing commit log, so a collapsed panel does no extra git work.
     @ObservationIgnored var commitsRequested = false
@@ -161,10 +167,15 @@ public final class SupermuxChangesModel {
             let generation = directoryGeneration
             if let directory {
                 let result = await service.status(repoPath: directory)
-                // Discard a read whose directory was switched away mid-flight.
-                if generation == directoryGeneration {
-                    snapshot = result
-                }
+                // Discard a read whose directory was switched away mid-flight,
+                // and skip the helper chain entirely: every write below is
+                // generation-guarded anyway, so running them for a stale
+                // directory only issues three known-discarded git subprocesses
+                // ahead of the pending current-directory iteration (which
+                // `refreshPending` guarantees, since a directory switch always
+                // requests a refresh while this one is in flight).
+                guard generation == directoryGeneration else { continue }
+                snapshot = result
                 // Refresh the always-visible outgoing/incoming counts (drive
                 // section visibility), then reload the (small) commit sets while
                 // their sections are expanded. Helpers gate on their own request
@@ -333,6 +344,9 @@ public final class SupermuxChangesModel {
         let generation = directoryGeneration
         isWorking = true
         defer { isWorking = false }
+        // Drain any in-flight background fetch so the stage+commit git work never
+        // races the silent fetch into a ref-lock error (see ``performMutation``).
+        _ = await activeFetchTask?.value
         let outcome = await runAICommit(generator: commitGenerator, directory: directory)
         // Drop the result if the user switched the focused workspace mid-flight.
         guard generation == directoryGeneration else { return }
@@ -448,6 +462,10 @@ public final class SupermuxChangesModel {
         guard let directory, !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
+        // Claiming `isWorking` above blocks a new background fetch from starting;
+        // draining any fetch already in flight closes the reverse race so the
+        // mutation's git never updates a ref alongside the silent fetch.
+        _ = await activeFetchTask?.value
         do {
             try await work(directory, service)
             lastError = nil

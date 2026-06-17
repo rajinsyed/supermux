@@ -374,6 +374,10 @@ final class SupermuxWorkspaceObservation: ObservableObject {
 /// so separate windows track their own active workspace independently.
 struct SupermuxChangesMount: View {
     let workspaceDirectory: String?
+    /// Whether the right sidebar is on-screen. Forwarded to the panel so its
+    /// background auto-fetch and commit key equivalents pause while hidden (the
+    /// sidebar keeps this content mounted after its first show).
+    var isVisible: Bool = true
 
     @EnvironmentObject private var tabManager: TabManager
     @State private var model = SupermuxChangesModel(
@@ -384,6 +388,7 @@ struct SupermuxChangesMount: View {
     var body: some View {
         SupermuxChangesPanelView(
             model: model,
+            isVisible: isVisible,
             onOpenDiff: { [weak tabManager] in
                 guard let tabManager,
                       let appDelegate = NSApp.delegate as? AppDelegate else { return }

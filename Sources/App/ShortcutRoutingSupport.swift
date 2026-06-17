@@ -112,7 +112,12 @@ func shouldDispatchBrowserReturnViaFirstResponderKeyDown(
     guard !firstResponderHasMarkedText else { return false }
     guard keyCode == 36 || keyCode == 76 else { return false }
     // Keep browser Return forwarding narrow: only plain/Shift Return is submit;
-    // Command-modified Return is reserved for app shortcuts like Toggle Pane Zoom.
+    // Command-modified Return is reserved for app shortcuts.
+    // SUPERMUX:begin toggle-split-zoom-rebind
+    // (supermux rebound Toggle Pane Zoom off ⇧⌘↩ to ⌃⌘Z; ⇧⌘↩ now drives the
+    // Changes-panel commit accelerator — still a Command-modified Return, so it
+    // correctly stays out of the browser's plain/Shift-Return submit path.)
+    // SUPERMUX:end toggle-split-zoom-rebind
     return browserOmnibarShouldSubmitOnReturn(flags: flags)
 }
 

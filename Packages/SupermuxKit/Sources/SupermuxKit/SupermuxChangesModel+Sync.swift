@@ -197,19 +197,40 @@ extension SupermuxChangesModel {
     /// the file-system watcher, so the fetch's own writes under `.git` cannot
     /// trigger another fetch.
     ///
-    /// The fetch is skipped while a user mutation is in flight (``isWorking``)
-    /// or another fetch is already running (``isFetching``), so the silent fetch
-    /// never races a visible push/pull into a ref-lock error. The refresh after
-    /// the fetch runs regardless of this fetch's own outcome: a sibling window
-    /// or worktree sharing the remote may have advanced the tracking refs
-    /// meanwhile, and the local `git status` picks that up.
+    /// The fetch is skipped while a user mutation is in flight (``isWorking``),
+    /// and a user mutation conversely drains any in-flight fetch before running
+    /// git (see ``SupermuxChangesModel/performMutation`` /
+    /// ``SupermuxChangesModel/generateAndCommit``), so the silent fetch and a
+    /// visible push/pull never update the same ref at once (a ref-lock error).
+    /// Concurrent fetches serialize on ``activeFetchTask`` rather than being
+    /// dropped: a fetch for a just-switched-to directory awaits the previous
+    /// one (which is not cancellation-aware) and then runs, so the new
+    /// directory's counts are not left stale until the next timer tick. The
+    /// refresh after the fetch runs regardless of this fetch's own outcome: a
+    /// sibling window or worktree sharing the remote may have advanced the
+    /// tracking refs meanwhile, and the local `git status` picks that up.
     public func fetchAndRefresh() async {
         await refresh()
-        guard let directory, !isWorking, !isFetching else { return }
-        isFetching = true
-        defer { isFetching = false }
+        // No fetch for a non-repository (it would just spawn a failing `git
+        // fetch` on every tick) or while a user mutation owns the model.
+        guard directory != nil, snapshot.isRepository, !isWorking else { return }
+        // Drain any in-flight fetch (rather than skip ours) so a workspace
+        // switch still fetches the new directory promptly instead of waiting out
+        // the timer. We deliberately do not bail if another fetch then starts:
+        // two fetches racing only risk one losing a benign remote-ref lock (it
+        // retries next tick), whereas the serious case — a fetch racing a user
+        // push/pull — is handled by the mutation side draining us first.
+        _ = await activeFetchTask?.value
+        // Re-check after the await: a mutation may have begun or the workspace
+        // may have become a non-repository while we waited.
+        guard let directory, snapshot.isRepository, !isWorking else { return }
         let generation = directoryGeneration
-        await service.fetch(repoPath: directory)
+        let task = Task { await service.fetch(repoPath: directory) }
+        activeFetchTask = task
+        // Clear only if a later fetch has not replaced us (`Task` is Equatable by
+        // identity), so a racing fetch's handle is never clobbered to nil.
+        defer { if activeFetchTask == task { activeFetchTask = nil } }
+        _ = await task.value
         // Drop the follow-up if the user switched workspaces during the fetch.
         guard generation == directoryGeneration else { return }
         await refresh()

@@ -326,6 +326,14 @@ public actor SupermuxGitChangesService {
     /// working. A short ``fetchTimeout`` bounds the network call, and the result
     /// is a flag rather than a throw — an auto-fetch that fails (offline, no
     /// remote, auth) must degrade quietly and never surface as a user error.
+    ///
+    /// Running through `/usr/bin/env` bypasses ``CommandRunner``'s own
+    /// PATH/bundled-bin/fallback resolution (every other call passes
+    /// `executable: "git"`), so `env` would otherwise resolve `git` against only
+    /// the GUI process's minimal inherited `PATH` (`/usr/bin:/bin:…`) and miss a
+    /// Homebrew/MacPorts git. We therefore set `PATH` explicitly to the inherited
+    /// value plus the same fallback directories the runner searches, so the
+    /// background fetch finds git wherever the foreground git calls do.
     /// - Parameter repoPath: Repository directory.
     /// - Returns: `true` when git exited cleanly, otherwise `false`.
     @discardableResult
@@ -334,6 +342,7 @@ public actor SupermuxGitChangesService {
             directory: repoPath,
             executable: "/usr/bin/env",
             arguments: [
+                "PATH=\(Self.gitSearchPath)",
                 "GIT_TERMINAL_PROMPT=0",
                 "GIT_ASKPASS=/usr/bin/false",
                 "SSH_ASKPASS=/usr/bin/false",
@@ -344,6 +353,17 @@ public actor SupermuxGitChangesService {
         )
         return result.exitStatus == 0
     }
+
+    /// `PATH` for the `env`-launched background fetch: the inherited `PATH` first
+    /// (so a user's custom git wins, matching ``CommandRunner``'s search order),
+    /// then the runner's fallback directories and the standard system bins.
+    private static let gitSearchPath: String = {
+        let inherited = ProcessInfo.processInfo.environment["PATH"]
+        let fallbacks = CommandRunner.defaultFallbackSearchDirectories
+            + ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        let parts = ([inherited].compactMap { $0 } + fallbacks).filter { !$0.isEmpty }
+        return parts.joined(separator: ":")
+    }()
 
     // MARK: - Stash
 

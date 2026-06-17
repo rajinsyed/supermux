@@ -79,8 +79,13 @@ struct SupermuxCommitHistorySection: View {
 
     @ViewBuilder
     private var placeholder: some View {
-        Text(isLoading
-            ? String(localized: "supermux.changes.unpushed.loading", defaultValue: "Loading…")
+        // Show "Loading…" not just while a read is in flight but whenever the
+        // authoritative `count` says commits exist yet the paged list has not
+        // landed — otherwise the badge ("3") and the body ("No commits") would
+        // momentarily contradict each other. "No commits" shows only once the
+        // count itself is zero.
+        Text((isLoading || count > 0)
+            ? String(localized: "supermux.changes.commitHistory.loading", defaultValue: "Loading…")
             : emptyText)
             .font(.system(size: 11))
             .foregroundStyle(.tertiary)

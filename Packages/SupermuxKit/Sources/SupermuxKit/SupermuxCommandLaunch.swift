@@ -50,7 +50,10 @@ public enum SupermuxCommandLaunch {
         focusedWorkspaceDirectory: String,
         fallback: String
     ) -> String {
+        // Trim only to decide "is this blank"; return the directory verbatim
+        // otherwise so a path that legitimately contains leading/trailing spaces
+        // is not silently corrupted (POSIX allows such paths).
         let trimmed = focusedWorkspaceDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallback : trimmed
+        return trimmed.isEmpty ? fallback : focusedWorkspaceDirectory
     }
 }
