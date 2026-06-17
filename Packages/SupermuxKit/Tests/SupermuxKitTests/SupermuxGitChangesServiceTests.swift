@@ -593,10 +593,11 @@ import SupermuxKit
     @Test func fetchWithUnreachableRemoteReportsFailure() async throws {
         let root = try makeFixtureRepo()
         defer { cleanUp(root) }
-        // origin points at a path that is not a repository → fetch fails fast
-        // (and `core.askpass=true` keeps it from stalling on a prompt). The
-        // failure is reported as `false` rather than thrown, so an auto-fetch
-        // degrades quietly.
+        // origin points at a path that is not a repository → fetch fails fast.
+        // A local non-repo path never reaches an auth prompt; `fetch()`'s own
+        // knobs (GIT_TERMINAL_PROMPT=0, GIT_ASKPASS=/usr/bin/false) are what keep
+        // even a networked unreachable remote from stalling. The failure is
+        // reported as `false` rather than thrown, so an auto-fetch degrades quietly.
         try runGit(["remote", "add", "origin", "/nonexistent/supermux-not-a-repo"], in: root)
 
         let didFetch = await service.fetch(repoPath: root)

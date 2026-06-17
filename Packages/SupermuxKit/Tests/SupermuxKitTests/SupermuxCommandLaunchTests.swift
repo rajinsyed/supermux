@@ -40,11 +40,14 @@ struct SupermuxCommandLaunchTests {
         #expect(directory == "/repo")
     }
 
-    @Test func trimsSurroundingWhitespaceFromFocusedDirectory() {
+    @Test func preservesNonBlankFocusedDirectoryVerbatim() {
+        // A non-blank directory is returned exactly as given: surrounding spaces
+        // are part of a legal POSIX path and must not be silently trimmed away
+        // (the trim is only used to decide whether the directory is blank).
         let directory = SupermuxCommandLaunch.workingDirectory(
             focusedWorkspaceDirectory: "  /repo/.worktrees/feature  ",
             fallback: "/repo"
         )
-        #expect(directory == "/repo/.worktrees/feature")
+        #expect(directory == "  /repo/.worktrees/feature  ")
     }
 }

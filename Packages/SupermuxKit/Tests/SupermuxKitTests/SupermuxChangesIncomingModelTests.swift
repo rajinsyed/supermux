@@ -147,6 +147,68 @@ import SupermuxKit
         #expect(await runner.fetchCallCount() == 1)
     }
 
+    /// With no upstream, the outgoing count comes from `rev-list --count HEAD
+    /// --not --remotes` (git status omits `ahead`), and it drives the Unpushed
+    /// section's visibility without loading the commit list.
+    @Test func noUpstreamOutgoingCountComesFromRevList() async {
+        let runner = IncomingRunner(hasUpstream: false, revListCount: 4)
+        let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
+
+        model.setDirectory("/repo")
+        await model.refresh()
+
+        #expect(model.outgoingCount == 4)
+        #expect(model.incomingCount == 0)
+        // The count came from `rev-list` (its only source without an upstream);
+        // `setDirectory` also schedules a refresh, so don't pin the exact count.
+        #expect(await runner.revListCallCount() >= 1)
+    }
+
+    /// Incoming paging: a second page loads the next batch and keeps
+    /// `hasMoreIncoming` set while further commits remain.
+    @Test func loadMoreIncomingPagesInTheNextBatch() async {
+        let runner = IncomingRunner(behind: 250, incomingCount: 250)
+        let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
+
+        model.setDirectory("/repo")
+        await model.refresh()
+        await model.setIncomingExpanded(true)
+        #expect(model.incomingCommits.count == 100)
+        #expect(model.hasMoreIncoming)
+
+        await model.loadMoreIncoming()
+        #expect(model.incomingCommits.count == 200)
+        #expect(model.hasMoreIncoming)
+    }
+
+    /// A user mutation drains an in-flight background fetch before running its
+    /// own git, so a best-effort fetch and a visible push never update the same
+    /// ref at once. Regression for the previously one-directional exclusion (the
+    /// fetch deferred to `isWorking`, but a push did not defer to the fetch).
+    @Test func mutationDrainsInFlightFetchBeforeRunningGit() async {
+        let runner = BlockingFetchRunner()
+        let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
+
+        model.setDirectory("/repo")
+        await model.refresh()
+
+        // Start a fetch that blocks inside the runner (holding the fetch handle).
+        let fetchTask = Task { await model.fetchAndRefresh() }
+        await runner.waitUntilFetchStarted()
+
+        // A push started now must wait for the fetch to drain before its git runs.
+        let pushTask = Task { await model.push() }
+
+        // Release the fetch; the push's git may only run afterwards.
+        await runner.releaseFetch()
+        await fetchTask.value
+        await pushTask.value
+
+        #expect(await runner.pushRanWhileFetchHeld == false)
+        #expect(await runner.fetchCount() == 1)
+        #expect(await runner.pushCount() == 1)
+    }
+
     // MARK: - Fake runners
 
     /// A `CommandRunning` fake answering `status` (with a behind count a `fetch`
@@ -159,6 +221,9 @@ import SupermuxKit
         private let behind: Int
         private let behindAfterFetch: Int?
         private let incomingCount: Int
+        /// Answer for `rev-list --count HEAD --not --remotes` — the no-upstream
+        /// outgoing count the model reads when there is no `ahead`.
+        private let revListCount: Int
         private var didFetch = false
 
         init(
@@ -166,16 +231,20 @@ import SupermuxKit
             ahead: Int = 0,
             behind: Int = 0,
             behindAfterFetch: Int? = nil,
-            incomingCount: Int = 0
+            incomingCount: Int = 0,
+            revListCount: Int = 0
         ) {
             self.hasUpstream = hasUpstream
             self.ahead = ahead
             self.behind = behind
             self.behindAfterFetch = behindAfterFetch
             self.incomingCount = incomingCount
+            self.revListCount = revListCount
         }
 
         func fetchCallCount() -> Int { calls.filter { $0.contains("fetch") }.count }
+
+        func revListCallCount() -> Int { calls.filter { $0.first == "rev-list" }.count }
 
         func incomingLogCallCount() -> Int {
             calls.filter { $0.first == "log" && $0.contains("HEAD..@{upstream}") }.count
@@ -204,6 +273,8 @@ import SupermuxKit
                     stdout += "# branch.upstream origin/main\n# branch.ab +\(ahead) -\(value)\n"
                 }
                 return result(stdout: stdout)
+            case "rev-list":
+                return result(stdout: "\(revListCount)\n")
             case "log" where arguments.contains("HEAD..@{upstream}"):
                 let limit = Self.maxCount(in: arguments) ?? incomingCount
                 let count = max(0, min(limit, incomingCount))
@@ -272,6 +343,70 @@ import SupermuxKit
                 if !releaseRequested {
                     await withCheckedContinuation { releaseWaiter = $0 }
                 }
+                return ok("")
+            }
+            if arguments.first == "status" {
+                return ok("# branch.head main\n# branch.upstream origin/main\n# branch.ab +1 -0\n")
+            }
+            return ok("")
+        }
+
+        private func ok(_ stdout: String) -> CommandResult {
+            CommandResult(stdout: stdout, stderr: nil, exitStatus: 0, timedOut: false, executionError: nil)
+        }
+    }
+
+    /// A `CommandRunning` fake that answers `status`/`push` immediately but
+    /// suspends a `fetch` until ``releaseFetch()`` is called, recording whether a
+    /// `push`'s git ran while the fetch was still held — so a test can prove a
+    /// mutation drains the in-flight fetch before touching git.
+    private actor BlockingFetchRunner: CommandRunning {
+        private var calls: [[String]] = []
+        private var fetchStarted = false
+        private var fetchReleased = false
+        private(set) var pushRanWhileFetchHeld = false
+        private var startedWaiter: CheckedContinuation<Void, Never>?
+        private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+        func fetchCount() -> Int { calls.filter { $0.contains("fetch") }.count }
+        func pushCount() -> Int { calls.filter { $0.first == "push" }.count }
+
+        /// Suspends until a `fetch` reaches the runner.
+        func waitUntilFetchStarted() async {
+            if fetchStarted { return }
+            await withCheckedContinuation { startedWaiter = $0 }
+        }
+
+        /// Lets the in-flight `fetch` complete.
+        func releaseFetch() {
+            fetchReleased = true
+            releaseWaiter?.resume()
+            releaseWaiter = nil
+        }
+
+        nonisolated func run(
+            directory: String,
+            executable: String,
+            arguments: [String],
+            timeout: TimeInterval?
+        ) async -> CommandResult {
+            await handle(arguments: arguments)
+        }
+
+        private func handle(arguments: [String]) async -> CommandResult {
+            calls.append(arguments)
+            if arguments.contains("fetch") {
+                fetchStarted = true
+                startedWaiter?.resume()
+                startedWaiter = nil
+                if !fetchReleased {
+                    await withCheckedContinuation { releaseWaiter = $0 }
+                }
+                return ok("")
+            }
+            if arguments.first == "push" {
+                // If the drain worked, the fetch is already released by now.
+                pushRanWhileFetchHeld = !fetchReleased
                 return ok("")
             }
             if arguments.first == "status" {
