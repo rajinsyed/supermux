@@ -72,7 +72,11 @@ extension ShortcutAction {
         case .focusDown: return ShortcutStroke(key: "↓", command: true, option: true)
         case .splitRight: return ShortcutStroke(key: "d", command: true)
         case .splitDown: return ShortcutStroke(key: "d", command: true, shift: true)
-        case .toggleSplitZoom: return ShortcutStroke(key: "\r", command: true, shift: true)
+        // SUPERMUX:begin toggle-split-zoom-rebind
+        // Rebound from ⇧⌘↩ to ⌃⌘Z so ⇧⌘↩ is free for the supermux Changes-panel commit
+        // accelerator. Mirrors Sources/KeyboardShortcutSettings.swift.
+        case .toggleSplitZoom: return ShortcutStroke(key: "z", command: true, control: true)
+        // SUPERMUX:end toggle-split-zoom-rebind
         case .equalizeSplits: return ShortcutStroke(key: "=", command: true, control: true)
         case .splitBrowserRight: return ShortcutStroke(key: "d", command: true, option: true)
         case .splitBrowserDown: return ShortcutStroke(key: "d", command: true, shift: true, option: true)

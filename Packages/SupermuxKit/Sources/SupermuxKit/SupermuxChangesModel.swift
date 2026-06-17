@@ -34,34 +34,69 @@ public final class SupermuxChangesModel {
     /// Refreshed alongside the git status so the commit button can switch into
     /// "Generate & Commit" mode reactively.
     public private(set) var aiCommitConfigured: Bool = false
-    /// Unpushed local commits (commits ahead of the remote), newest first.
-    /// Populated only while the section is expanded (see
-    /// ``setHistoryExpanded(_:)``).
-    public private(set) var commits: [SupermuxGitCommit] = []
+    /// Unpushed local commits (commits ahead of the remote / outgoing), newest
+    /// first. Populated only while the section is expanded (see
+    /// ``setHistoryExpanded(_:)``). The setter is module-internal so the
+    /// commit-feed loaders in `SupermuxChangesModel+Sync.swift` can write it.
+    public internal(set) var commits: [SupermuxGitCommit] = []
     /// Whether more unpushed commits exist beyond the loaded ``commits`` page.
-    public private(set) var hasMoreCommits = false
-    /// Whether a commit-log read is in flight; lets the UI distinguish
+    public internal(set) var hasMoreCommits = false
+    /// Whether an unpushed-commit-log read is in flight; lets the UI distinguish
     /// "still loading" from "loaded and genuinely empty".
-    public private(set) var isLoadingCommits = false
+    public internal(set) var isLoadingCommits = false
+    /// Authoritative count of unpushed (outgoing) commits, independent of
+    /// whether the section is expanded: `ahead` with an upstream, otherwise a
+    /// `rev-list` of local-only commits. Drives whether the Unpushed section is
+    /// shown at all (hidden when `0`) and its header badge.
+    public internal(set) var outgoingCount = 0
+    /// Authoritative count of incoming (pullable) commits: `behind` with an
+    /// upstream, otherwise `0`. Drives whether the Incoming section is shown.
+    public internal(set) var incomingCount = 0
+    /// Incoming commits (on the upstream but not in `HEAD` / pullable), newest
+    /// first. Populated only while the Incoming section is expanded (see
+    /// ``setIncomingExpanded(_:)``) and only meaningful with an upstream.
+    public internal(set) var incomingCommits: [SupermuxGitCommit] = []
+    /// Whether more incoming commits exist beyond the loaded
+    /// ``incomingCommits`` page.
+    public internal(set) var hasMoreIncoming = false
+    /// Whether an incoming-commit-log read is in flight.
+    public internal(set) var isLoadingIncoming = false
 
-    private let service: SupermuxGitChangesService
+    let service: SupermuxGitChangesService
     /// Optional AI commit-message generator; `nil` disables AI commit.
     @ObservationIgnored private let commitGenerator: (any SupermuxAICommitMessaging)?
     @ObservationIgnored private var observeTask: Task<Void, Never>?
     /// Identifies the directory a given refresh was issued for. Bumped on every
     /// directory change so an in-flight status read for the previous directory
     /// is discarded instead of overwriting the new directory's snapshot.
-    @ObservationIgnored private var directoryGeneration = 0
+    /// Module-internal so the sync extension can guard its awaits the same way.
+    @ObservationIgnored var directoryGeneration = 0
     /// True while a status read is awaiting; a request that arrives during one
     /// sets ``refreshPending`` rather than racing or being silently dropped.
     @ObservationIgnored private var isRefreshing = false
     @ObservationIgnored private var refreshPending = false
-    /// Whether the history section is expanded; gates whether ``refresh()``
-    /// reads the commit log, so a collapsed panel does no extra git work.
-    @ObservationIgnored private var commitsRequested = false
-    /// Current commit-log page size; grown by ``loadMoreCommits()``.
-    @ObservationIgnored private var commitLimit = SupermuxChangesModel.commitPageSize
-    private static let commitPageSize = 100
+    /// The in-flight background `git fetch` as an awaitable handle (`nil` when no
+    /// fetch is running — it is the single source of truth for "a fetch is in
+    /// flight", replacing a separate boolean). Three consumers use it:
+    /// ``fetchAndRefresh()`` serializes on it so two fetches never overlap; a
+    /// user mutation (push/pull/commit) drains it before running git so a
+    /// best-effort fetch and a visible mutation never update the same ref
+    /// concurrently (the ref-lock error the auto-fetch was meant to avoid — an
+    /// `isWorking`-only guard is one-directional); and a switched-to directory's
+    /// fetch awaits it instead of skipping, so the new directory still fetches
+    /// promptly rather than waiting out the timer. Module-internal for the sync
+    /// extension.
+    @ObservationIgnored var activeFetchTask: Task<Bool, Never>?
+    /// Whether the Unpushed section is expanded; gates whether ``refresh()``
+    /// reads the outgoing commit log, so a collapsed panel does no extra git work.
+    @ObservationIgnored var commitsRequested = false
+    /// Current outgoing commit-log page size; grown by ``loadMoreCommits()``.
+    @ObservationIgnored var commitLimit = SupermuxChangesModel.commitPageSize
+    /// Whether the Incoming section is expanded; gates the incoming commit-log read.
+    @ObservationIgnored var incomingRequested = false
+    /// Current incoming commit-log page size; grown by ``loadMoreIncoming()``.
+    @ObservationIgnored var incomingLimit = SupermuxChangesModel.commitPageSize
+    static let commitPageSize = 100
 
     /// Creates the model.
     /// - Parameters:
@@ -98,6 +133,11 @@ public final class SupermuxChangesModel {
         commits = []
         hasMoreCommits = false
         commitLimit = Self.commitPageSize
+        incomingCommits = []
+        hasMoreIncoming = false
+        incomingLimit = Self.commitPageSize
+        outgoingCount = 0
+        incomingCount = 0
         if observeTask != nil {
             startObserving()
         } else {
@@ -127,50 +167,28 @@ public final class SupermuxChangesModel {
             let generation = directoryGeneration
             if let directory {
                 let result = await service.status(repoPath: directory)
-                // Discard a read whose directory was switched away mid-flight.
-                if generation == directoryGeneration {
-                    snapshot = result
-                }
-                // The unpushed set is small, so reload it on each refresh while
-                // expanded — that catches every change (commit, push, fetch,
-                // amend, force-push) without a fragile cache key. The one cheap
-                // shortcut: with an upstream and nothing ahead, the range is
-                // provably empty, so skip the `git log` entirely.
-                if commitsRequested, result.isRepository {
-                    let hasUpstream = result.upstreamBranch != nil
-                    if hasUpstream, result.ahead == 0 {
-                        if generation == directoryGeneration, commitsRequested {
-                            commits = []
-                            hasMoreCommits = false
-                        }
-                        isLoadingCommits = false
-                    } else {
-                        isLoadingCommits = true
-                        // Read one extra commit to detect whether more pages exist.
-                        let loaded = await service.unpushedCommits(
-                            repoPath: directory,
-                            hasUpstream: hasUpstream,
-                            limit: commitLimit + 1
-                        )
-                        // Discard the result if the directory changed or the
-                        // section was collapsed while the read was in flight.
-                        if generation == directoryGeneration, commitsRequested {
-                            hasMoreCommits = loaded.count > commitLimit
-                            commits = Array(loaded.prefix(commitLimit))
-                        }
-                        isLoadingCommits = false
-                    }
-                } else if commitsRequested {
-                    // Expanded but not a repository: nothing to show.
-                    commits = []
-                    hasMoreCommits = false
-                    isLoadingCommits = false
-                }
+                // Discard a read whose directory was switched away mid-flight,
+                // and skip the helper chain entirely: every write below is
+                // generation-guarded anyway, so running them for a stale
+                // directory only issues three known-discarded git subprocesses
+                // ahead of the pending current-directory iteration (which
+                // `refreshPending` guarantees, since a directory switch always
+                // requests a refresh while this one is in flight).
+                guard generation == directoryGeneration else { continue }
+                snapshot = result
+                // Refresh the always-visible outgoing/incoming counts (drive
+                // section visibility), then reload the (small) commit sets while
+                // their sections are expanded. Helpers gate on their own request
+                // flags and discard stale results; see SupermuxChangesModel+Sync.swift.
+                await updateSyncCounts(directory: directory, status: result, generation: generation)
+                await loadOutgoingCommits(directory: directory, status: result, generation: generation)
+                await loadIncomingCommits(directory: directory, status: result, generation: generation)
             } else {
                 snapshot = .notARepository
-                commits = []
-                hasMoreCommits = false
-                isLoadingCommits = false
+                outgoingCount = 0
+                incomingCount = 0
+                clearOutgoingCommits()
+                clearIncomingCommits()
             }
             // Cheap key-presence probe (reads one small file) so the commit
             // button reflects AI availability. Kept inside the loop so a refresh
@@ -252,41 +270,11 @@ public final class SupermuxChangesModel {
         }
     }
 
-    // MARK: - History
-
-    /// Expands or collapses the commit-history section.
-    ///
-    /// Expanding marks the log as requested, resets paging, and refreshes so the
-    /// commits load (and stay fresh on later refreshes). Collapsing stops the
-    /// log from being read and clears the loaded commits, so a collapsed panel
-    /// does no extra git work.
-    /// - Parameter expanded: Whether the history section is now expanded.
-    public func setHistoryExpanded(_ expanded: Bool) async {
-        if expanded {
-            guard !commitsRequested else { return }
-            commitsRequested = true
-            commitLimit = Self.commitPageSize
-            // Show the loading state immediately; if a refresh is already in
-            // flight this expand only sets `refreshPending`, so the flag would
-            // otherwise lag a frame behind.
-            isLoadingCommits = true
-            await refresh()
-        } else {
-            commitsRequested = false
-            commits = []
-            hasMoreCommits = false
-            isLoadingCommits = false
-        }
-    }
-
-    /// Loads the next page of commit history; a no-op when collapsed or when no
-    /// further commits exist.
-    public func loadMoreCommits() async {
-        guard commitsRequested, hasMoreCommits else { return }
-        commitLimit += Self.commitPageSize
-        isLoadingCommits = true
-        await refresh()
-    }
+    // MARK: - Commit history & sync
+    //
+    // The Unpushed/Incoming commit feeds and the background auto-fetch live in
+    // `SupermuxChangesModel+Sync.swift` to keep this file focused on status and
+    // working-tree mutations.
 
     /// Commits the staged changes using ``commitMessage``; clears the
     /// message on success. A blank message is a no-op.
@@ -356,6 +344,9 @@ public final class SupermuxChangesModel {
         let generation = directoryGeneration
         isWorking = true
         defer { isWorking = false }
+        // Drain any in-flight background fetch so the stage+commit git work never
+        // races the silent fetch into a ref-lock error (see ``performMutation``).
+        _ = await activeFetchTask?.value
         let outcome = await runAICommit(generator: commitGenerator, directory: directory)
         // Drop the result if the user switched the focused workspace mid-flight.
         guard generation == directoryGeneration else { return }
@@ -471,6 +462,10 @@ public final class SupermuxChangesModel {
         guard let directory, !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
+        // Claiming `isWorking` above blocks a new background fetch from starting;
+        // draining any fetch already in flight closes the reverse race so the
+        // mutation's git never updates a ref alongside the silent fetch.
+        _ = await activeFetchTask?.value
         do {
             try await work(directory, service)
             lastError = nil

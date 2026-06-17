@@ -609,7 +609,10 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         )
     }
 
-    func testCmdShiftEnterKeepsBrowserOmnibarHittableAcrossZoomRoundTripWhenWebViewFocused() {
+    // SUPERMUX:begin toggle-split-zoom-rebind
+    // Supermux rebound toggleSplitZoom ⇧⌘↩ → ⌃⌘Z (⇧⌘↩ now commits in the Changes panel),
+    // so these browser zoom round-trip tests press ⌃⌘Z.
+    func testCmdControlZKeepsBrowserOmnibarHittableAcrossZoomRoundTripWhenWebViewFocused() {
         let app = XCUIApplication()
         configureSocketLaunch(app)
         app.launchEnvironment["CMUX_UI_TEST_GOTO_SPLIT_SETUP"] = "1"
@@ -656,37 +659,37 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(browserPane.waitForExistence(timeout: 6.0), "Expected browser pane content before zoom")
         browserPane.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
 
-        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [.command, .shift])
+        app.typeKey("z", modifierFlags: [.command, .control])
         XCTAssertTrue(
             waitForDataMatch(timeout: 8.0) { data in
                 data["splitZoomedAfterToggle"] == "true" &&
                     data["otherTerminalHostHiddenAfterToggle"] == "true" &&
                     data["otherTerminalVisibleFlagAfterToggle"] == "false"
             },
-            "Expected Cmd+Shift+Enter zoom-in to hide the non-browser terminal portal. data=\(loadData() ?? [:])"
+            "Expected Cmd+Ctrl+Z zoom-in to hide the non-browser terminal portal. data=\(loadData() ?? [:])"
         )
-        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [.command, .shift])
+        app.typeKey("z", modifierFlags: [.command, .control])
         XCTAssertTrue(
             waitForDataMatch(timeout: 8.0) { data in
                 data["splitZoomedAfterToggle"] == "false" &&
                     data["otherTerminalHostHiddenAfterToggle"] == "false" &&
                     data["otherTerminalVisibleFlagAfterToggle"] == "true"
             },
-            "Expected Cmd+Shift+Enter zoom-out to restore the non-browser terminal portal. data=\(loadData() ?? [:])"
+            "Expected Cmd+Ctrl+Z zoom-out to restore the non-browser terminal portal. data=\(loadData() ?? [:])"
         )
 
-        XCTAssertTrue(omnibar.waitForExistence(timeout: 6.0), "Expected browser omnibar text field after Cmd+Shift+Enter zoom round-trip")
-        XCTAssertTrue(pill.waitForExistence(timeout: 6.0), "Expected browser omnibar pill after Cmd+Shift+Enter zoom round-trip")
+        XCTAssertTrue(omnibar.waitForExistence(timeout: 6.0), "Expected browser omnibar text field after Cmd+Ctrl+Z zoom round-trip")
+        XCTAssertTrue(pill.waitForExistence(timeout: 6.0), "Expected browser omnibar pill after Cmd+Ctrl+Z zoom round-trip")
         XCTAssertTrue(
             waitForElementToBecomeHittable(pill, timeout: 6.0),
-            "Expected browser omnibar to stay hittable after Cmd+Shift+Enter zoom round-trip"
+            "Expected browser omnibar to stay hittable after Cmd+Ctrl+Z zoom round-trip"
         )
         let page = app.webViews.firstMatch
-        XCTAssertTrue(page.waitForExistence(timeout: 6.0), "Expected browser web area after Cmd+Shift+Enter")
+        XCTAssertTrue(page.waitForExistence(timeout: 6.0), "Expected browser web area after Cmd+Ctrl+Z")
         XCTAssertLessThanOrEqual(
             pill.frame.maxY,
             page.frame.minY + 12,
-            "Expected browser omnibar to remain above the web content after Cmd+Shift+Enter. pill=\(pill.frame) page=\(page.frame)"
+            "Expected browser omnibar to remain above the web content after Cmd+Ctrl+Z. pill=\(pill.frame) page=\(page.frame)"
         )
 
         pill.click()
@@ -696,11 +699,13 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
 
         XCTAssertTrue(
             waitForOmnibarToContain(omnibar, value: "issue1144", timeout: 4.0),
-            "Expected browser omnibar to stay editable after Cmd+Shift+Enter. value=\(String(describing: omnibar.value))"
+            "Expected browser omnibar to stay editable after Cmd+Ctrl+Z. value=\(String(describing: omnibar.value))"
         )
     }
+    // SUPERMUX:end toggle-split-zoom-rebind
 
-    func testCmdShiftEnterHidesBrowserPortalWhenTerminalPaneZooms() {
+    // SUPERMUX:begin toggle-split-zoom-rebind
+    func testCmdControlZHidesBrowserPortalWhenTerminalPaneZooms() {
         let app = XCUIApplication()
         configureSocketLaunch(app)
         app.launchEnvironment["CMUX_UI_TEST_GOTO_SPLIT_SETUP"] = "1"
@@ -732,26 +737,27 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
             "Expected Cmd+Ctrl+H to focus the terminal pane before zoom. data=\(loadData() ?? [:])"
         )
 
-        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [.command, .shift])
+        app.typeKey("z", modifierFlags: [.command, .control])
         XCTAssertTrue(
             waitForDataMatch(timeout: 8.0) { data in
                 data["splitZoomedAfterToggle"] == "true" &&
                     data["browserContainerHiddenAfterToggle"] == "true" &&
                     data["browserVisibleFlagAfterToggle"] == "false"
             },
-            "Expected Cmd+Shift+Enter zoom-in on the terminal pane to hide the browser portal. data=\(loadData() ?? [:])"
+            "Expected Cmd+Ctrl+Z zoom-in on the terminal pane to hide the browser portal. data=\(loadData() ?? [:])"
         )
 
-        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [.command, .shift])
+        app.typeKey("z", modifierFlags: [.command, .control])
         XCTAssertTrue(
             waitForDataMatch(timeout: 8.0) { data in
                 data["splitZoomedAfterToggle"] == "false" &&
                     data["browserContainerHiddenAfterToggle"] == "false" &&
                     data["browserVisibleFlagAfterToggle"] == "true"
             },
-            "Expected Cmd+Shift+Enter zoom-out from the terminal pane to restore the browser portal. data=\(loadData() ?? [:])"
+            "Expected Cmd+Ctrl+Z zoom-out from the terminal pane to restore the browser portal. data=\(loadData() ?? [:])"
         )
     }
+    // SUPERMUX:end toggle-split-zoom-rebind
 
     func testCmdDSplitsRightWhenOmnibarFocused() {
         let app = XCUIApplication()

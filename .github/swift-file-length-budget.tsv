@@ -7,8 +7,8 @@
 14785	Sources/TerminalController.swift
 13358	Sources/Panels/BrowserPanel.swift
 12361	Sources/Workspace.swift
-12105	Sources/GhosttyTerminalView.swift
-12078	cmuxTests/AppDelegateShortcutRoutingTests.swift
+12121	Sources/GhosttyTerminalView.swift
+12104	cmuxTests/AppDelegateShortcutRoutingTests.swift
 9331	cmuxTests/CLINotifyProcessIntegrationRegressionTests.swift
 7925	Sources/Panels/BrowserPanelView.swift
 7355	cmuxTests/WorkspaceUnitTests.swift
@@ -35,7 +35,7 @@
 3055	Sources/Update/UpdateTitlebarAccessory.swift
 2878	Sources/SessionIndexView.swift
 2871	cmuxTests/CMUXOpenCommandTests.swift
-2604	Sources/KeyboardShortcutSettings.swift
+2630	Sources/KeyboardShortcutSettings.swift
 2565	Sources/Panels/CmuxWebView.swift
 2546	cmuxTests/WorkspaceManualUnreadTests.swift
 2460	cmuxTests/CommandPaletteSearchEngineTests.swift
@@ -55,7 +55,7 @@
 1748	Sources/WindowDragHandleView.swift
 1724	cmuxTests/TerminalControllerSocketSecurityTests.swift
 1695	cmuxTests/WorkspacePullRequestSidebarTests.swift
-1677	cmuxUITests/BrowserPaneNavigationKeybindUITests.swift
+1683	cmuxUITests/BrowserPaneNavigationKeybindUITests.swift
 1652	cmuxTests/CMUXCLIErrorOutputRegressionTests.swift
 1574	cmuxTests/MarkdownPanelTests.swift
 1560	cmuxTests/TextBoxMentionCompletionTests.swift
@@ -87,10 +87,10 @@
 1006	cmuxTests/CmuxSSHURLRequestTests.swift
 1000	cmuxTests/CmuxTopSnapshotScopeTests.swift
 951	Sources/App/TerminalDirectoryOpenSupport.swift
+950	Sources/App/ShortcutRoutingSupport.swift
 947	Sources/TerminalNotificationPolicy.swift
 945	Sources/SessionIndexRegisteredAgents.swift
 937	Sources/TextBoxMentionIndexStore.swift
-945	Sources/App/ShortcutRoutingSupport.swift
 926	Sources/DockPanelView.swift
 920	Sources/CommandPalette/CommandPaletteSettingsToggle.swift
 918	cmuxTests/WorkspaceGroupTests.swift
@@ -107,6 +107,7 @@
 810	Packages/CmuxSwiftRender/Tests/CmuxSwiftRenderTests/SwiftViewInterpreterTests.swift
 787	Sources/ClosedItemHistory.swift
 783	Sources/MainWindowFocusController.swift
+781	Sources/RightSidebarPanelView.swift
 779	cmuxUITests/BrowserOmnibarSuggestionsUITests.swift
 774	cmuxUITests/BrowserFixtureInteractionUITests.swift
 762	Packages/CmuxMobileTransport/Sources/CmuxMobileTransport/CmxNetworkByteTransport.swift
@@ -116,7 +117,6 @@
 753	cmuxTests/RestorableAgentHookProviderResumeTests.swift
 752	cmuxUITests/CloseWorkspaceCmdDUITests.swift
 746	Sources/App/MenuBarExtraController.swift
-778	Sources/RightSidebarPanelView.swift
 738	Packages/CMUXProjectModel/Sources/CMUXProjectModel/XcodeProjectAdapter.swift
 736	Packages/CmuxAuthRuntime/Sources/CmuxAuthRuntime/Coordinator/AuthCoordinator.swift
 726	cmuxTests/CLICodexHookTimeoutRegressionTests.swift
@@ -131,7 +131,7 @@
 693	Sources/Panels/BrowserPopupWindowController.swift
 691	Sources/NotificationSoundSettings.swift
 691	cmuxTests/TaskManagerResourcesTests.swift
-688	cmuxTests/KeyboardShortcutContextTests.swift
+690	cmuxTests/KeyboardShortcutContextTests.swift
 683	Packages/CmuxSwiftRender/Sources/CmuxSwiftRender/SwiftViewInterpreter.swift
 683	Sources/Panels/CodexAppServerSession.swift
 681	Sources/Panels/AgentSessionProcessStore.swift
@@ -148,6 +148,7 @@
 621	cmuxTests/FinderFileDropRegressionTests.swift
 621	cmuxUITests/RightSidebarChromeHeightUITests.swift
 620	cmuxTests/TerminalNotificationQueueTests.swift
+618	Packages/SupermuxKit/Tests/SupermuxKitTests/SupermuxGitChangesServiceTests.swift
 614	Sources/PortScanner.swift
 614	cmuxTests/SessionIndexViewTests.swift
 611	Sources/TerminalController+ControlPaneContext.swift
@@ -177,6 +178,7 @@
 551	Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/BrowserSection.swift
 547	Packages/CmuxSocketControl/Sources/CmuxSocketControl/SocketControlSettings.swift
 547	Sources/Windowing/WindowGlassEffect.swift
+546	Packages/SupermuxKit/Sources/SupermuxKit/UI/SupermuxChangesPanelView.swift
 545	Packages/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalSurface.swift
 540	Packages/CmuxWorkspaces/Sources/CmuxWorkspaces/Coordinators/WorkspaceReorderCoordinator.swift
 539	CLI/CMUXCLI+Themes.swift
@@ -194,6 +196,7 @@
 527	CLI/CLISocketPathResolver.swift
 524	CLI/CMUXCLI+AutoNaming.swift
 520	CLI/CMUXCLI+AmpExtension.swift
+520	Sources/Supermux/SupermuxAppGlue.swift
 520	cmuxTests/MainWindowVisibilityControllerTests.swift
 519	Packages/CmuxSwiftRender/Tests/CmuxSwiftRenderTests/Corpus/stress-two-column-cockpit-sidebar.swift
 519	Sources/CmuxConfigExecutor.swift

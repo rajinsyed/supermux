@@ -42,6 +42,17 @@ Rules for adding a touchpoint:
 | 25 | `web/data/cmux-shortcuts.ts` | `workspace-switcher-shortcut-doc` | Documents the two workspace-switcher shortcuts in the keyboard-shortcut registry |
 | 26 | `Packages/CmuxSettings/Sources/CmuxSettings/Policies/RightSidebarWidthSettings.swift` | `right-sidebar-min-width` | Lowers the right-sidebar minimum width floor from upstream's 276 to 200 so the panel can be dragged narrower (mode bar collapses to icon-only via touchpoint #5) |
 | 27 | `cmuxTests/SidebarWidthPolicyTests.swift` | `right-sidebar-min-width-test` | Two right-sidebar clamp assertions read `RightSidebarWidthSettings.minimumWidth` instead of the hardcoded `276`, so they track the lowered floor |
+| 28 | `Sources/KeyboardShortcutSettings.swift` | `toggle-split-zoom-rebind` | Rebinds the `toggleSplitZoom` default from ⇧⌘↩ to ⌃⌘Z (canonical table) so ⇧⌘↩ is free for the supermux Changes-panel commit accelerator |
+| 29 | `Packages/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Defaults.swift` | `toggle-split-zoom-rebind` | Mirror of the rebound ⌃⌘Z default for the settings-UI package |
+| 30 | `web/data/cmux-shortcuts.ts` | `toggle-split-zoom-rebind` | Documents Toggle Pane Zoom as ⌃⌘Z in the keyboard-shortcut registry |
+| 31 | `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift` | `toggle-split-zoom-rebind` | The split-zoom shortcut test drives the configured default, so it presses ⌃⌘Z (was ⇧⌘↩) |
+| 32 | `cmuxTests/KeyboardShortcutContextTests.swift` | `toggle-split-zoom-rebind` | Comment accuracy: toggleSplitZoom is no longer the Return-based shortcut (now ⌃⌘Z); assertions unchanged |
+| 33 | `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift` | `toggle-split-zoom-rebind` | Two browser zoom round-trip UI tests press ⌃⌘Z instead of ⇧⌘↩ |
+| 34 | `Sources/GhosttyTerminalView.swift` | `ghostty-unbind-split-zoom-return` | Unbinds Ghostty's built-in `super+shift+enter = toggle_split_zoom` so the freed ⇧⌘↩ actually reaches the Changes-panel commit accelerator in a focused terminal (without it the rebind is incomplete — same class as the numbered-tab unbinds, #5189) |
+| 35 | `Sources/App/ShortcutRoutingSupport.swift` | `toggle-split-zoom-rebind` | Comment accuracy: the browser-Return rule no longer cites Toggle Pane Zoom as the Command-Return app shortcut (now ⌃⌘Z); notes ⇧⌘↩ is the commit accelerator. Logic unchanged |
+| 36 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `toggle-split-zoom-rebind` | Regression test `testGhosttyConfigDoesNotRetainSplitZoomReturnFallback` asserts the loaded Ghostty config has no `super+shift+enter` binding (companion to the #5189 numbered-fallback test) |
+| 37 | `Sources/KeyboardShortcutSettings.swift` | `supermux-commit-shortcut` | Registers the Changes-panel `supermuxCommit` (⌘↩) and `supermuxCommitAccelerator` (⇧⌘↩) actions (case/label/default) so both are editable in Settings, live in `cmux.json`, and participate in conflict detection; applied by the panel's SwiftUI buttons (read via `SupermuxChangesMount`), not the app monitor |
+| 38 | `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift` | `supermux-commit-shortcut` | `testSupermuxCommitDefaultsBindReturnChords` asserts the two commit actions default to ⌘↩ / ⇧⌘↩ and do not cross-match |
 
 ## How to re-apply
 
@@ -193,13 +204,16 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 |-----|---|--------|
 | `Sources/ContentView.swift` | +9, +14, +28 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). |
 | `Sources/WorkspaceContentView.swift` | +12 | `presets-bar` mount above the splits (if/else branch on minimal mode) |
-| `Sources/RightSidebarPanelView.swift` | +18, +35 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content, +18); `right-sidebar-compact-mode-bar` (+35: `ViewThatFits` wrapper with pinned trailing controls + `modeButtonsRow(showsLabels:)` helper + `showsLabel` pill param/conditional, 743→778) |
+| `Sources/RightSidebarPanelView.swift` | +18, +35, +3 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content, +18); `right-sidebar-compact-mode-bar` (+35: `ViewThatFits` wrapper with pinned trailing controls + `modeButtonsRow(showsLabels:)` helper + `showsLabel` pill param/conditional, 743→778); `right-sidebar-changes-mode-content` (+3: `SupermuxChangesMount` now also passes `isVisible: fileExplorerState.isVisible`, 778→781) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
 | `Sources/MainWindowFocusController.swift` | +10 | changes-mode focus routing |
-| `Sources/KeyboardShortcutSettings.swift` | +13, +18 | `supermuxToggleRun` action (+13); `workspace-switcher-shortcut-*` (+18: case/label/default for the two switcher actions, 2586→2604) |
+| `Sources/KeyboardShortcutSettings.swift` | +13, +18, +4, +22 | `supermuxToggleRun` action (+13); `workspace-switcher-shortcut-*` (+18: case/label/default for the two switcher actions, 2586→2604); `toggle-split-zoom-rebind` (+4: fence + comment around the rebound default, 2604→2608); `supermux-commit-shortcut` (+22: case/label/default for the two commit actions, 2608→2630) |
+| `cmuxTests/KeyboardShortcutContextTests.swift` | +2 | `toggle-split-zoom-rebind` (fence around the updated rationale comment, 688→690) |
+| `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift` | +6 | `toggle-split-zoom-rebind` (fences around the two browser zoom round-trip tests, 1677→1683) |
 | `Sources/AppDelegate.swift` | +10, +3, +10 | `run-toggle-shortcut-dispatch` (+10); `disable-auto-update` (+3: a 4-line fenced comment replaces the 1-line `startUpdaterIfNeeded()` call, 18128→18131); `workspace-switcher-monitor` (+10, 17791→17801) |
-| `Sources/App/ShortcutRoutingSupport.swift` | +11 | `run-toggle-shortcut-dispatch` (⌘G never browser-first) |
-| `cmuxTests/AppDelegateShortcutRoutingTests.swift` | +32 | `run-toggle-shortcut-dispatch` (contract update + regression test) |
+| `Sources/App/ShortcutRoutingSupport.swift` | +11, +5 | `run-toggle-shortcut-dispatch` (⌘G never browser-first); `toggle-split-zoom-rebind` (+5: fenced comment correcting the stale Toggle Pane Zoom reference, 945→950) |
+| `cmuxTests/AppDelegateShortcutRoutingTests.swift` | +32, +26 | `run-toggle-shortcut-dispatch` (contract update + regression test); `toggle-split-zoom-rebind` (+26: fenced `testGhosttyConfigDoesNotRetainSplitZoomReturnFallback`, 12078→12104) |
+| `Sources/GhosttyTerminalView.swift` | +16 | `ghostty-unbind-split-zoom-return` (fenced second `loadInlineGhosttyConfig` unbinding `super+shift+enter`, 12105→12121) |
 | `CLI/cmux.swift` | +4 | `changes` CLI mode |
 
 After a merge, re-run and re-bump only by the measured fenced delta:
@@ -575,3 +589,96 @@ handle as the ZStack background. Budget bump for this file is recorded in the #4
 **27. `cmuxTests/SidebarWidthPolicyTests.swift` — `right-sidebar-min-width-test`.** Two clamp
 assertions that previously hardcoded `276` now read `CGFloat(RightSidebarWidthSettings.minimumWidth)`
 so they track the floor regardless of its value.
+
+### 28–33. Toggle Pane Zoom rebind (`toggle-split-zoom-rebind`)
+
+supermux's Changes panel binds **⇧⌘↩** to its Commit accelerator (typed-message commit or AI
+"Generate & Commit", whichever applies — see `SupermuxChangesPanelView.commitArea` /
+`commitShiftReturnAccelerator`, a supermux-owned file with no fence). But ⇧⌘↩ was the cmux default
+for **Toggle Pane Zoom** (`toggleSplitZoom`), and the app-local NSEvent monitor in `AppDelegate`
+consumes that chord before any SwiftUI button shortcut can fire. So the commit accelerator only
+works once Toggle Pane Zoom is moved off ⇧⌘↩. All six edits share the fence id
+`toggle-split-zoom-rebind`; the new default is **⌃⌘Z** ("Z" for Zoom; pairs with ⌃⌘= equalize, and
+deliberately *not* ⌃⌘↩ which some screen recorders use — see the rationale comment in #32).
+
+- **28. `Sources/KeyboardShortcutSettings.swift`** (canonical `defaultStroke` table) and
+  **29. `Packages/CmuxSettings/.../ShortcutAction+Defaults.swift`** (the settings-UI package mirror):
+  the `case .toggleSplitZoom` default returns `key: "z", command: true, control: true` instead of
+  `key: "\r", command: true, shift: true`. Both tables must agree.
+- **30. `web/data/cmux-shortcuts.ts`:** the `toggleSplitZoom` registry row's `combos` is
+  `[["⌃", "⌘", "Z"]]` (was `[["⌘", "⇧", "↩"]]`).
+- **31. `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift`:** the whole
+  `testCmdControlZFocusedBrowserTogglesSplitZoom` method is fenced; it builds a ⌃⌘Z key event
+  (`key: "z", modifiers: [.command, .control], keyCode: 6`) instead of ⇧⌘↩ and asserts the
+  configured `toggleSplitZoom` shortcut matches it. The browser-focused assertion now verifies
+  the **app monitor** toggles zoom (`debugHandleShortcutMonitorEvent`) rather than the browser
+  webView's `performKeyEquivalent`: a Return-key shortcut (⇧⌘↩) routed through the browser's
+  Return-key branch (`handleBrowserSurfaceKeyEquivalent` → full dispatcher), but a non-Return
+  chord (⌃⌘Z) is owned by the local key monitor, which fires ahead of the responder chain — so
+  the browser never claims it in real use.
+- **32. `cmuxTests/KeyboardShortcutContextTests.swift`:** comment-only — the rationale for
+  `toggleBrowserFocusMode`'s ⌥⌘↩ default no longer calls Toggle Pane Zoom "the other Return-based
+  shortcut". Assertions are unchanged (⌥⌘↩ still differs from and does not conflict with ⌃⌘Z).
+- **33. `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift`:** the two browser zoom round-trip
+  tests (`testCmdControlZKeepsBrowserOmnibarHittableAcrossZoomRoundTripWhenWebViewFocused`,
+  `testCmdControlZHidesBrowserPortalWhenTerminalPaneZooms`) press `app.typeKey("z", [.command, .control])`
+  instead of ⇧⌘↩, with matching renamed methods and assertion messages.
+
+If upstream changes the `toggleSplitZoom` default or these tests, keep our ⌃⌘Z value inside the
+fence. If upstream adds a different action on ⌃⌘Z, pick another free, non-`⌃⌘↩` chord for zoom and
+update all six sites. Budget bumps for #28/#32/#33 are in the #4 table; #29 (a package file) and
+#31 (a test) are not budget-tracked.
+
+### 34–36. Completing the rebind: Ghostty must release ⇧⌘↩ too
+
+Moving the cmux *default* off ⇧⌘↩ (#28–33) is necessary but **not sufficient**: Ghostty has its
+own built-in keybind `super+shift+enter = toggle_split_zoom` (`ghostty/src/config/Config.zig`,
+the submodule cmux does not patch). When a terminal surface is first responder, cmux's
+`cmux_performKeyEquivalent` hands a Command-modified Return to the Ghostty surface on a main-menu
+miss, and Ghostty consumes it for split zoom **before** the SwiftUI commit accelerator's key
+equivalent is ever reached — so without unbinding it, ⇧⌘↩ in a focused terminal still zooms and
+never commits (the same "rebind looks hardcoded because Ghostty keeps its fallback" failure as the
+numbered-tab unbinds, https://github.com/manaflow-ai/cmux/issues/5189).
+
+- **34. `Sources/GhosttyTerminalView.swift`:** a fenced second `loadInlineGhosttyConfig` call in
+  `loadCmuxOwnedGhosttyKeybindOverrides` adds `keybind = super+shift+enter=unbind` (prefix
+  `supermux-owned-keybind-overrides`). `super+shift+enter` parses to the physical Enter trigger,
+  exactly matching the default binding, and Ghostty's `unbind` removes it (`Binding.zig`), after
+  which the chord falls through to the SwiftUI accelerator. If upstream adds the equalize/zoom
+  unbinds itself, drop this fence; if it changes the zoom trigger, mirror the new trigger here.
+- **35. `Sources/App/ShortcutRoutingSupport.swift`:** a fenced comment in
+  `shouldDispatchBrowserReturnViaFirstResponderKeyDown` no longer cites Toggle Pane Zoom as the
+  example Command-Return app shortcut (it is ⌃⌘Z now, not Return-based); it notes ⇧⌘↩ is the
+  Changes-panel commit accelerator. Comment-only — the routing logic is unchanged.
+- **36. `cmuxTests/AppDelegateShortcutRoutingTests.swift`:** a fenced regression test,
+  `testGhosttyConfigDoesNotRetainSplitZoomReturnFallback`, asserts the loaded Ghostty config has no
+  `super+shift+enter` binding (via the same `ghosttyConfigKeyIsBinding` helper as the #5189
+  numbered-fallback test). Red without #34, green with it.
+
+Budget bumps for #34/#35/#36 are in the #4 table.
+
+### 37–38. Commit shortcut promoted to the registry (`supermux-commit-shortcut`)
+
+The Changes-panel Commit chords were hardcoded SwiftUI `.keyboardShortcut`s, so they
+were not editable in Settings, not in `cmux.json`, and invisible to conflict detection.
+They are now registered actions, following the `supermuxToggleRun` pattern, but applied
+via SwiftUI rather than the app monitor (the action is inherently panel-scoped, so a
+global monitor handler would have to route to the focused panel's model).
+
+- **37. `Sources/KeyboardShortcutSettings.swift`:** three fences (`-case`, `-label`,
+  `-default`) add `case supermuxCommit` (default ⌘↩) and `case supermuxCommitAccelerator`
+  (default ⇧⌘↩) with localized labels (`supermux.shortcut.commit.label` /
+  `…commitAccelerator.label`). Because the app monitor has **no** handler for these, it
+  never consumes the chords; the Changes panel applies them. Return was free among defaults
+  once Toggle Pane Zoom moved to ⌃⌘Z (#28), so neither default conflicts.
+- **38. `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift`:** `testSupermuxCommit
+  DefaultsBindReturnChords` clears any overrides, then asserts the two defaults match
+  ⌘↩ / ⇧⌘↩ and do not cross-match.
+
+The wiring lives in supermux-owned files (no fence): `SupermuxChangesMount`
+(`Sources/Supermux/SupermuxAppGlue.swift`) resolves each configured shortcut to a SwiftUI
+`KeyboardShortcut` and passes it (plus the primary's display string for the button help)
+into `SupermuxChangesPanelView`, which applies them to the visible Commit button and the
+invisible accelerator. If upstream adds an action on ⌘↩ or ⇧⌘↩, rebind these or accept the
+conflict warning. Budget bump for #37 is in the #4 table; #38 (a small test file) is not
+budget-tracked.

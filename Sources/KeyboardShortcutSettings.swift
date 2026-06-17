@@ -170,6 +170,14 @@ enum KeyboardShortcutSettings {
         case supermuxWorkspaceSwitcherNext
         case supermuxWorkspaceSwitcherPrevious
         // SUPERMUX:end workspace-switcher-shortcut-case
+        // SUPERMUX:begin supermux-commit-shortcut-case
+        // The Changes-panel Commit button (⌘↩) and its Shift-Return accelerator
+        // (⇧⌘↩). Registered so both are editable in Settings, live in cmux.json,
+        // and participate in conflict detection; they are applied by the panel's
+        // SwiftUI buttons (read via SupermuxChangesMount), not the app monitor.
+        case supermuxCommit
+        case supermuxCommitAccelerator
+        // SUPERMUX:end supermux-commit-shortcut-case
         case findNext
         case findPrevious
         case hideFind
@@ -288,6 +296,10 @@ enum KeyboardShortcutSettings {
             case .supermuxWorkspaceSwitcherNext: return String(localized: "supermux.shortcut.workspaceSwitcherNext.label", defaultValue: "Workspace Switcher")
             case .supermuxWorkspaceSwitcherPrevious: return String(localized: "supermux.shortcut.workspaceSwitcherPrevious.label", defaultValue: "Workspace Switcher (Reverse)")
             // SUPERMUX:end workspace-switcher-shortcut-label
+            // SUPERMUX:begin supermux-commit-shortcut-label
+            case .supermuxCommit: return String(localized: "supermux.shortcut.commit.label", defaultValue: "Commit Changes")
+            case .supermuxCommitAccelerator: return String(localized: "supermux.shortcut.commitAccelerator.label", defaultValue: "Commit Changes (Accelerator)")
+            // SUPERMUX:end supermux-commit-shortcut-label
             case .findNext: return String(localized: "menu.find.findNext", defaultValue: "Find Next")
             case .findPrevious: return String(localized: "menu.find.findPrevious", defaultValue: "Find Previous")
             case .hideFind: return String(localized: "menu.find.hideFindBar", defaultValue: "Hide Find Bar")
@@ -434,7 +446,11 @@ enum KeyboardShortcutSettings {
             case .splitRight:
                 return StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
             case .splitDown: return StoredShortcut(key: "d", command: true, shift: true, option: false, control: false)
-            case .toggleSplitZoom: return StoredShortcut(key: "\r", command: true, shift: true, option: false, control: false)
+            // SUPERMUX:begin toggle-split-zoom-rebind
+            // Rebound from ⇧⌘↩ to ⌃⌘Z ("Z" for Zoom; pairs with ⌃⌘= equalize) so ⇧⌘↩ is
+            // free for the supermux Changes-panel commit accelerator (SupermuxChangesPanelView).
+            case .toggleSplitZoom: return StoredShortcut(key: "z", command: true, shift: false, option: false, control: true)
+            // SUPERMUX:end toggle-split-zoom-rebind
             case .equalizeSplits: return StoredShortcut(key: "=", command: true, shift: false, option: false, control: true)
             case .splitBrowserRight:
                 return StoredShortcut(key: "d", command: true, shift: false, option: true, control: false)
@@ -537,6 +553,16 @@ enum KeyboardShortcutSettings {
             case .supermuxWorkspaceSwitcherPrevious:
                 return StoredShortcut(key: "`", command: true, shift: true, option: false, control: false)
             // SUPERMUX:end workspace-switcher-shortcut-default
+            // SUPERMUX:begin supermux-commit-shortcut-default
+            // Changes-panel Commit: ⌘↩ commits in every mode; the ⇧⌘↩ accelerator
+            // is the second chord (freed from Toggle Pane Zoom). Both reach the
+            // panel's SwiftUI buttons (Ghostty's super+shift+enter is unbound so
+            // ⇧⌘↩ is not eaten in a focused terminal).
+            case .supermuxCommit:
+                return StoredShortcut(key: "\r", command: true, shift: false, option: false, control: false)
+            case .supermuxCommitAccelerator:
+                return StoredShortcut(key: "\r", command: true, shift: true, option: false, control: false)
+            // SUPERMUX:end supermux-commit-shortcut-default
             case .findNext:
                 return StoredShortcut(key: "g", command: true, shift: false, option: false, control: false)
             case .findPrevious:

@@ -1,3 +1,5 @@
+import Foundation
+
 /// Shared rule for how supermux launches a user-configured command (terminal
 /// preset, project app-action, or the ⌘G run command) in a workspace terminal.
 ///
@@ -30,5 +32,28 @@ public enum SupermuxCommandLaunch {
     /// - Returns: The command followed by a newline.
     public static func shellInput(for command: String) -> String {
         command + "\n"
+    }
+
+    /// Chooses the working directory a project action runs in.
+    ///
+    /// Supermux runs these commands "where the user is looking": in the focused
+    /// workspace's directory (e.g. a git worktree checkout), the same as the ⌘G
+    /// run toggle and the presets bar — not a fixed project root. Falls back to
+    /// `fallback` only when the focused workspace has no resolved directory yet
+    /// (blank/whitespace), so a just-opened workspace still lands somewhere
+    /// sensible.
+    /// - Parameters:
+    ///   - focusedWorkspaceDirectory: The focused workspace's working directory.
+    ///   - fallback: Directory to use when the focused one is blank.
+    /// - Returns: The directory the command should run in.
+    public static func workingDirectory(
+        focusedWorkspaceDirectory: String,
+        fallback: String
+    ) -> String {
+        // Trim only to decide "is this blank"; return the directory verbatim
+        // otherwise so a path that legitimately contains leading/trailing spaces
+        // is not silently corrupted (POSIX allows such paths).
+        let trimmed = focusedWorkspaceDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : focusedWorkspaceDirectory
     }
 }

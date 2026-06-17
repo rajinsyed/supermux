@@ -522,7 +522,10 @@ struct RightSidebarPanelView: View {
                 DockPanelView(rootDirectory: dockRootDirectory, workspaceId: workspaceId, store: dockStore)
             // SUPERMUX:begin right-sidebar-changes-mode-content
             case .changes:
-                SupermuxChangesMount(workspaceDirectory: tabManager.selectedWorkspace?.currentDirectory)
+                SupermuxChangesMount(
+                    workspaceDirectory: tabManager.selectedWorkspace?.currentDirectory,
+                    isVisible: fileExplorerState.isVisible
+                )
             // SUPERMUX:end right-sidebar-changes-mode-content
             }
         } else {

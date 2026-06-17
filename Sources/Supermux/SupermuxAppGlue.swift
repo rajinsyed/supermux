@@ -165,14 +165,10 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     }
 
     /// Runs a project action's command as a new terminal tab in the focused
-    /// workspace (the ⌘-presets-bar behavior), not as a separate workspace.
-    ///
-    /// The command runs through the workspace's interactive shell (see
-    /// ``SupermuxCommandLaunch``) so shell aliases/functions resolve and the tab
-    /// survives the command exit. The action's project directory is used as the
-    /// tab's working directory so a build/run command still runs in the right
-    /// place. With no focused workspace to host the tab, falls back to opening a
-    /// fresh workspace.
+    /// workspace (the presets-bar behavior), not as a separate workspace. The
+    /// command runs through the workspace's interactive shell (see
+    /// ``SupermuxCommandLaunch``). With no focused workspace, falls back to
+    /// opening a fresh workspace.
     func runAction(_ request: SupermuxOpenWorkspaceRequest) {
         guard let tabManager,
               let command = request.initialCommand,
@@ -182,7 +178,11 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             openWorkspace(request)
             return
         }
-        let directory = (request.directory as NSString).expandingTildeInPath
+        // Run where the user is looking: the focused workspace's directory (e.g.
+        // a worktree), not the action's project root — matching ⌘G/presets.
+        let resolved = SupermuxCommandLaunch.workingDirectory(
+            focusedWorkspaceDirectory: workspace.currentDirectory, fallback: request.directory)
+        let directory = (resolved as NSString).expandingTildeInPath
         _ = workspace.newTerminalSurface(
             inPane: paneId,
             focus: true,
@@ -374,16 +374,28 @@ final class SupermuxWorkspaceObservation: ObservableObject {
 /// so separate windows track their own active workspace independently.
 struct SupermuxChangesMount: View {
     let workspaceDirectory: String?
+    /// Whether the right sidebar is on-screen. Forwarded to the panel so its
+    /// background auto-fetch and commit key equivalents pause while hidden (the
+    /// sidebar keeps this content mounted after its first show).
+    var isVisible: Bool = true
 
     @EnvironmentObject private var tabManager: TabManager
+    // Re-render when the user rebinds a shortcut (the configured commit chords
+    // are read from `KeyboardShortcutSettings`, which is not itself observable).
+    @ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
     @State private var model = SupermuxChangesModel(
         service: SupermuxGitChangesService(runner: CommandRunner()),
         commitGenerator: SupermuxComposition.aiCommitMessenger
     )
 
     var body: some View {
+        let _ = shortcutObserver.revision
         SupermuxChangesPanelView(
             model: model,
+            isVisible: isVisible,
+            commitShortcut: Self.keyboardShortcut(for: .supermuxCommit),
+            commitAcceleratorShortcut: Self.keyboardShortcut(for: .supermuxCommitAccelerator),
+            commitShortcutHint: KeyboardShortcutSettings.shortcut(for: .supermuxCommit).displayString,
             onOpenDiff: { [weak tabManager] in
                 guard let tabManager,
                       let appDelegate = NSApp.delegate as? AppDelegate else { return }
@@ -394,6 +406,15 @@ struct SupermuxChangesMount: View {
         .onChange(of: workspaceDirectory) { _, newDirectory in
             model.setDirectory(newDirectory)
         }
+    }
+
+    /// Resolves a configured shortcut into a SwiftUI ``KeyboardShortcut`` the
+    /// panel can apply directly; `nil` when the action is unbound or a chord
+    /// (the panel then carries no key equivalent for it).
+    private static func keyboardShortcut(for action: KeyboardShortcutSettings.Action) -> KeyboardShortcut? {
+        let stored = KeyboardShortcutSettings.shortcut(for: action)
+        guard let keyEquivalent = stored.keyEquivalent else { return nil }
+        return KeyboardShortcut(keyEquivalent, modifiers: stored.eventModifiers)
     }
 }
 

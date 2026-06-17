@@ -1,4 +1,8 @@
 import XCTest
+// `SidebarGitBranchState` is public in CmuxSidebar; import it explicitly (like
+// SidebarOrderingTests) so this compiles in the plain-`cmux` unit config and not
+// only when `cmux_DEV` happens to re-export it.
+import CmuxSidebar
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV

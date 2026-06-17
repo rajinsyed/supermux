@@ -9,20 +9,67 @@ import Foundation
 /// area pinned at the bottom. All state and git work lives in
 /// ``SupermuxChangesModel``; this view only renders and dispatches.
 public struct SupermuxChangesPanelView: View {
-    @Bindable private var model: SupermuxChangesModel
+    // Internal (not private) so the section builders in
+    // `SupermuxChangesPanelView+Sections.swift` can read them; the panel is
+    // still the snapshot boundary and only hands value snapshots to rows.
+    @Bindable var model: SupermuxChangesModel
     private let onOpenDiff: (() -> Void)?
+    /// Whether the right sidebar is actually on-screen. The sidebar keeps the
+    /// changes panel mounted after its first show (so re-showing is instant), so
+    /// the panel gates visibility-dependent work itself: the background auto-fetch
+    /// pauses while hidden (no `git fetch` for an off-screen panel), and the
+    /// window-wide commit key equivalents (⌘↩ / ⇧⌘↩) deactivate so they cannot
+    /// commit from a focused terminal/browser while the panel is not even visible.
+    private let isVisible: Bool
+    /// Configured key equivalent for Commit (default ⌘↩); `nil` when unbound.
+    /// Supplied by the host so the chord is editable in Settings / `cmux.json`.
+    private let commitShortcut: KeyboardShortcut?
+    /// Configured key equivalent for the second commit chord (default ⇧⌘↩).
+    private let commitAcceleratorShortcut: KeyboardShortcut?
+    /// Display string for the primary commit chord, shown in the button's help.
+    private let commitShortcutHint: String
 
     @State private var discardCandidate: SupermuxGitFileChange?
     @State private var isDiscardAllPresented = false
-    @State private var isHistoryExpanded = false
+    @State var isHistoryExpanded = false
+    @State var isIncomingExpanded = false
+
+    /// How often the visible panel re-fetches in the background. Long enough to
+    /// stay quiet (and out of git's way); workspace switches fetch immediately
+    /// via the directory-keyed task regardless.
+    private static let autoFetchInterval: Duration = .seconds(180)
+
+    /// Identity for the auto-fetch `.task`: it restarts on a workspace switch and
+    /// pauses (the task body returns immediately) while the sidebar is hidden.
+    private struct AutoFetchKey: Equatable {
+        let directory: String?
+        let isVisible: Bool
+    }
 
     /// Creates the panel.
     /// - Parameters:
     ///   - model: Shared changes model owning git status and mutations.
+    ///   - isVisible: Whether the right sidebar is currently shown; gates the
+    ///     background auto-fetch and the commit key equivalents (defaults to
+    ///     `true` for callers — previews/tests — with no sidebar lifecycle).
+    ///   - commitShortcut: Configured key equivalent for Commit (default ⌘↩).
+    ///   - commitAcceleratorShortcut: Configured second commit chord (default ⇧⌘↩).
+    ///   - commitShortcutHint: Display string for the primary chord (button help).
     ///   - onOpenDiff: Host-app callback that opens a full diff view; the
     ///     "Open Diff" header button is hidden when `nil`.
-    public init(model: SupermuxChangesModel, onOpenDiff: (() -> Void)?) {
+    public init(
+        model: SupermuxChangesModel,
+        isVisible: Bool = true,
+        commitShortcut: KeyboardShortcut? = KeyboardShortcut(.return, modifiers: .command),
+        commitAcceleratorShortcut: KeyboardShortcut? = KeyboardShortcut(.return, modifiers: [.command, .shift]),
+        commitShortcutHint: String = "⌘↩",
+        onOpenDiff: (() -> Void)?
+    ) {
         self.model = model
+        self.isVisible = isVisible
+        self.commitShortcut = commitShortcut
+        self.commitAcceleratorShortcut = commitAcceleratorShortcut
+        self.commitShortcutHint = commitShortcutHint
         self.onOpenDiff = onOpenDiff
     }
 
@@ -44,6 +91,20 @@ public struct SupermuxChangesPanelView: View {
             }
         }
         .task { model.startObserving() }
+        // Best-effort background fetch so behind/incoming reflect the remote
+        // without a manual pull. Keyed on the directory *and* visibility so it
+        // restarts (and fetches immediately) on a workspace switch — the exact
+        // moment a just-merged worktree's commits become pullable on the main
+        // branch — and pauses entirely while the sidebar is hidden (the panel
+        // stays mounted after first show, so an unkeyed task would keep fetching
+        // off-screen). SwiftUI cancels the task on disappear / id change.
+        .task(id: AutoFetchKey(directory: model.directory, isVisible: isVisible)) {
+            guard isVisible else { return }
+            while !Task.isCancelled {
+                await model.fetchAndRefresh()
+                try? await Task.sleep(for: Self.autoFetchInterval)
+            }
+        }
         .onDisappear { model.stopObserving() }
         .confirmationDialog(
             String(localized: "supermux.changes.discard.title", defaultValue: "Discard Changes"),
@@ -119,7 +180,9 @@ public struct SupermuxChangesPanelView: View {
                 "arrow.clockwise",
                 help: String(localized: "supermux.changes.refresh.help", defaultValue: "Refresh status")
             ) {
-                Task { await model.refresh() }
+                // Force a remote check too, so the user can pull the latest
+                // incoming/behind status on demand without waiting for the timer.
+                Task { await model.fetchAndRefresh() }
             }
         }
         .padding(.horizontal, 8)
@@ -218,7 +281,15 @@ public struct SupermuxChangesPanelView: View {
     private var changeList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 1) {
-                historySection
+                // Show each sync section only when it has commits, so an
+                // up-to-date branch stays uncluttered. The counts are
+                // authoritative regardless of expansion (see the model).
+                if model.incomingCount > 0 {
+                    incomingSection
+                }
+                if model.outgoingCount > 0 {
+                    historySection
+                }
                 if model.snapshot.totalChangeCount == 0 {
                     emptyState
                 } else {
@@ -317,25 +388,6 @@ public struct SupermuxChangesPanelView: View {
         Task { await model.unstage(change) }
     }
 
-    // MARK: - History
-
-    private var historySection: some View {
-        SupermuxCommitHistorySection(
-            isExpanded: isHistoryExpanded,
-            commits: model.commits,
-            hasMore: model.hasMoreCommits,
-            isLoading: model.isLoadingCommits,
-            onToggle: { toggleHistory() },
-            onLoadMore: { Task { await model.loadMoreCommits() } }
-        )
-    }
-
-    private func toggleHistory() {
-        isHistoryExpanded.toggle()
-        let expanded = isHistoryExpanded
-        Task { await model.setHistoryExpanded(expanded) }
-    }
-
     // MARK: - Commit area
 
     private var commitArea: some View {
@@ -360,9 +412,15 @@ public struct SupermuxChangesPanelView: View {
                 .frame(maxWidth: .infinity)
             }
             .controlSize(.small)
-            // ⇧⌘↩ accelerates AI "Generate & Commit"; plain ⌘↩ commits a typed message.
-            .keyboardShortcut(.return, modifiers: model.isAICommitMode ? [.command, .shift] : .command)
-            .disabled(!model.canCommit)
+            // The configured Commit chord (default ⌘↩) commits in every mode;
+            // the invisible accelerator carries the second configured chord
+            // (default ⇧⌘↩) for the same action. Both are editable in Settings.
+            .keyboardShortcut(commitShortcut)
+            .background(commitShiftReturnAccelerator)
+            // `!isVisible` deactivates the window-wide ⌘↩ key equivalent while the
+            // sidebar is hidden, so it cannot commit from a focused terminal/browser
+            // when the panel is off-screen (it stays mounted after first show).
+            .disabled(!model.canCommit || !isVisible)
             .help(commitHelp)
             HStack(spacing: 6) {
                 Button { Task { await model.push() } } label: {
@@ -380,13 +438,46 @@ public struct SupermuxChangesPanelView: View {
         .padding(8)
     }
 
+    /// Invisible ⇧⌘↩ accelerator for the commit button.
+    ///
+    /// A SwiftUI `Button` carries a single `keyboardShortcut`, so a second combo
+    /// for the same action needs its own button. This zero-size, transparent,
+    /// accessibility-hidden button binds ⇧⌘↩ to ``SupermuxChangesModel/performCommit()``
+    /// and shares the visible button's ``SupermuxChangesModel/canCommit`` gate, so
+    /// ⇧⌘↩ commits in every mode without affecting layout or VoiceOver. Hosted via
+    /// `.background` on the visible button so it never adds spacing to the stack.
+    /// Gated on ``isVisible`` for the same reason as the visible button: the key
+    /// equivalent must not fire from a focused terminal/browser while the
+    /// (still-mounted) panel is hidden.
+    private var commitShiftReturnAccelerator: some View {
+        Button {
+            Task { await model.performCommit() }
+        } label: {
+            Color.clear.frame(width: 0, height: 0)
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(commitAcceleratorShortcut)
+        .disabled(!model.canCommit || !isVisible)
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
     private var commitHelp: String {
         model.isAICommitMode
             ? String(
-                localized: "supermux.changes.ai.commit.help",
-                defaultValue: "Stage all changes, generate a commit message with AI, and commit (⇧⌘↩)"
+                format: String(
+                    localized: "supermux.changes.ai.commit.help",
+                    defaultValue: "Stage all changes, generate a commit message with AI, and commit (%@)"
+                ),
+                commitShortcutHint
             )
-            : String(localized: "supermux.changes.commit.help", defaultValue: "Commit staged changes (⌘↩)")
+            : String(
+                format: String(
+                    localized: "supermux.changes.commit.help",
+                    defaultValue: "Commit staged changes (%@)"
+                ),
+                commitShortcutHint
+            )
     }
 
     private var pushTitle: String {

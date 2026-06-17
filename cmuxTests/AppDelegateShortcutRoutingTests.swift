@@ -2560,6 +2560,32 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
     }
 
+    // SUPERMUX:begin toggle-split-zoom-rebind
+    func testGhosttyConfigDoesNotRetainSplitZoomReturnFallback() throws {
+        // supermux rebinds Toggle Pane Zoom off ⇧⌘↩ to ⌃⌘Z and frees ⇧⌘↩ for the
+        // Changes-panel commit accelerator. Ghostty's built-in
+        // `super+shift+enter = toggle_split_zoom` (ghostty Config.zig) must be
+        // unbound — exactly like the super+d / super+w / numbered fallbacks above
+        // — or it consumes ⇧⌘↩ in a focused terminal before the SwiftUI
+        // accelerator can fire, leaving the chord un-freed (the rebind would look
+        // hardcoded, the same failure mode as #5189). The default binds the
+        // physical Enter key, so this probes keyCode kVK_Return with ⇧⌘.
+        guard let ghosttyConfig = GhosttyApp.shared.config else {
+            XCTFail("Expected loaded Ghostty config")
+            return
+        }
+        XCTAssertFalse(
+            ghosttyConfigKeyIsBinding(
+                ghosttyConfig,
+                key: "\r",
+                modifiers: [.command, .shift],
+                keyCode: UInt32(kVK_Return)
+            ),
+            "Ghostty must not retain its super+shift+enter toggle_split_zoom fallback; ⇧⌘↩ is owned by the supermux Changes-panel commit accelerator"
+        )
+    }
+    // SUPERMUX:end toggle-split-zoom-rebind
+
     func testRebindingSelectWorkspaceByNumberHonorsNewModifierAndDropsDefault() {
         // Companion to testGhosttyConfigDoesNotRetainNumberedGotoTabFallback (#5189):
         // the cmux routing layer must drive the numbered shortcut from the configured
