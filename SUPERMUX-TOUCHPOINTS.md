@@ -223,7 +223,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | `Sources/GhosttyTerminalView.swift` | +16 | `ghostty-unbind-split-zoom-return` (fenced second `loadInlineGhosttyConfig` unbinding `super+shift+enter`, 12105→12121) |
 | `CLI/cmux.swift` | +4 | `changes` CLI mode |
 | `Sources/FileExplorerView.swift` | +14, +6 | `file-explorer-operations` (+3: end-of-menu call), `file-explorer-operations-empty` (+5: empty-area `else` block adding root New File/Folder), `file-explorer-operations-keys` (+6: ⌘⌫/Return hook in the outline `keyDown`), 2355→2369; `file-explorer-operations-reveal` (+6: scroll-into-view hook in `reloadIfNeeded`, 2369→2375) |
-| `Sources/FileExplorerStore.swift` | +17 | `file-explorer-operations-reveal` (`supermuxRevealPath` property + `supermuxReveal(path:)` method, 1446→1463) |
+| `Sources/FileExplorerStore.swift` | +17, +14 | `file-explorer-operations-reveal` (`supermuxRevealPath` property + `supermuxReveal(path:)` method, 1446→1463; then `supermuxClearSelection()` + the `setRootPath` reveal-flag clear, 1463→1477) |
 
 After a merge, re-run and re-bump only by the measured fenced delta:
 
@@ -683,6 +683,10 @@ supermux-owned files; the three fences are one-line calls into a
   unit-tested filesystem create/rename/duplicate/trash logic (name validation, collision handling,
   English, locale-independent " copy" naming — deliberately not localized, since it is an
   on-disk filename, not UI text).
+- `Packages/SupermuxKit/Sources/SupermuxKit/SupermuxFileExplorerSelection.swift` — the pure,
+  unit-tested selection/reconciliation seams (`authoritativePaths`, `contextTargetPaths`,
+  `fileOpAction`/`FileOpReveal`, `revealAfterTrash`) that back the destructive-action targeting,
+  post-op reveal/clear, and stale-workspace handling.
 
 **`file-explorer-operations`:** at the end of the `Coordinator.menuNeedsUpdate(_:)` node branch
 (after the Copy Relative Path item):

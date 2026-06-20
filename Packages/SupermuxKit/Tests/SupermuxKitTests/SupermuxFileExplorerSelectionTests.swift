@@ -59,43 +59,49 @@ import Testing
     // MARK: - fileOpAction
 
     @Test func fileOpActionStaleIgnoresAndDoesNotRefresh() {
-        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: true, didFail: true, revealPath: "/x")
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: true, didFail: true, reveal: .reveal("/x"))
         #expect(a == .ignore)
         #expect(a.refreshesTree == false)
     }
 
     @Test func fileOpActionFailurePresentsErrorAndRefreshes() {
-        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: true, revealPath: nil)
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: true, reveal: .none)
         #expect(a == .presentError)
         #expect(a.refreshesTree)   // the tree MUST refresh even after a (partial) failure
     }
 
     @Test func fileOpActionSuccessRevealsAndRefreshes() {
-        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: false, revealPath: "/new")
-        #expect(a == .reveal("/new"))
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: false, reveal: .reveal("/new"))
+        #expect(a == .apply(.reveal("/new")))
         #expect(a.refreshesTree)
     }
 
-    @Test func fileOpActionSuccessWithoutRevealStillRefreshes() {
-        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: false, revealPath: nil)
-        #expect(a == .reveal(nil))
+    @Test func fileOpActionSuccessWithClearStillRefreshes() {
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: false, reveal: .clearSelection)
+        #expect(a == .apply(.clearSelection))
+        #expect(a.refreshesTree)
+    }
+
+    @Test func fileOpActionSuccessWithNoneStillRefreshes() {
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: false, reveal: .none)
+        #expect(a == .apply(.none))
         #expect(a.refreshesTree)
     }
 
     // MARK: - revealAfterTrash
 
-    @Test func revealAfterTrashReturnsParentForNestedItem() {
+    @Test func revealAfterTrashRevealsParentForNestedItem() {
         #expect(SupermuxFileExplorerSelection.revealAfterTrash(
-            firstParentPath: "/repo/src", rootPath: "/repo") == "/repo/src")
+            firstParentPath: "/repo/src", rootPath: "/repo") == .reveal("/repo/src"))
     }
 
-    @Test func revealAfterTrashReturnsNilWhenParentIsRoot() {
+    @Test func revealAfterTrashClearsWhenParentIsRoot() {
         #expect(SupermuxFileExplorerSelection.revealAfterTrash(
-            firstParentPath: "/repo", rootPath: "/repo") == nil)
+            firstParentPath: "/repo", rootPath: "/repo") == .clearSelection)
     }
 
-    @Test func revealAfterTrashReturnsNilWhenNoParent() {
+    @Test func revealAfterTrashClearsWhenNoParent() {
         #expect(SupermuxFileExplorerSelection.revealAfterTrash(
-            firstParentPath: nil, rootPath: "/repo") == nil)
+            firstParentPath: nil, rootPath: "/repo") == .clearSelection)
     }
 }

@@ -21,7 +21,7 @@ import Testing
 
     @Test func validatedNameRejectsEmptyAndSeparators() {
         for bad in ["", "   ", "a/b", ".", "..", "x\u{0}y"] {
-            #expect(throws: SupermuxFileSystemOperationError.self) {
+            #expect(throws: SupermuxFileSystemOperationError.invalidName(bad)) {
                 try SupermuxFileSystemOperations.validatedName(bad)
             }
         }
@@ -219,6 +219,25 @@ import Testing
                 // NOTE: this assertion is only valid here — on a case-insensitive
                 // volume "Readme.md" still resolves to the renamed file.
                 #expect(!FileManager.default.fileExists(atPath: original.path))
+            }
+        }
+    }
+
+    @Test func renameCaseOnlyCollisionThrowsOnCaseSensitiveVolume() throws {
+        try withTemporaryDirectory { root in
+            let probe = root.appendingPathComponent("CaseProbe")
+            try Data().write(to: probe)
+            let caseInsensitive = FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("caseprobe").path)
+            try FileManager.default.removeItem(at: probe)
+            // Distinct-case items only coexist on a case-sensitive volume; the
+            // isCaseOnlyRename && !sameOnDiskItem collision branch is unreachable
+            // on case-insensitive volumes, so skip there.
+            guard !caseInsensitive else { return }
+            let foo = try SupermuxFileSystemOperations.createFile(named: "Foo.txt", in: root)
+            _ = try SupermuxFileSystemOperations.createFile(named: "foo.txt", in: root)
+            #expect(throws: SupermuxFileSystemOperationError.alreadyExists(name: "foo.txt")) {
+                try SupermuxFileSystemOperations.rename(foo, to: "foo.txt")
             }
         }
     }

@@ -62,7 +62,7 @@
 1512	cmuxTests/RestorableAgentSessionIndexTests.swift
 1497	cmuxTests/OmnibarAndToolsTests.swift
 1496	cmuxUITests/MultiWindowNotificationsUITests.swift
-1463	Sources/FileExplorerStore.swift
+1477	Sources/FileExplorerStore.swift
 1426	Sources/VaultAgentProcessScanner.swift
 1384	cmuxTests/KeyboardShortcutSettingsFileStoreStartupTests.swift
 1380	cmuxUITests/MenuKeyEquivalentRoutingUITests.swift

@@ -783,6 +783,15 @@ final class FileExplorerStore: ObservableObject {
         pendingDescendIntoFirstChildPath = nil
         supermuxRevealPath = path
     }
+
+    /// Clears the navigation selection so the next reload's root-load picks a
+    /// default first row. Used after trashing a root-level item, whose path would
+    /// otherwise linger as a stale `selectedPath` (`reload()` does not clear it).
+    func supermuxClearSelection() {
+        selectedPath = nil
+        selectedPaths = []
+        supermuxRevealPath = nil
+    }
     // SUPERMUX:end file-explorer-operations-reveal
 
     /// Paths currently being loaded
@@ -857,6 +866,11 @@ final class FileExplorerStore: ObservableObject {
             selectedPaths = []
             pendingDescendIntoFirstChildPath = nil
         }
+        // SUPERMUX:begin file-explorer-operations-reveal
+        // A root change invalidates any pending supermux file-op reveal, so the
+        // flag can't linger pointing at the old tree.
+        supermuxRevealPath = nil
+        // SUPERMUX:end file-explorer-operations-reveal
         rootPath = path
         reload()
         refreshGitStatus()
