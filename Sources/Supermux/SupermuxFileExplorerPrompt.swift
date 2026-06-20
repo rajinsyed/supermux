@@ -113,6 +113,7 @@ extension FileExplorerPanelView.Coordinator {
         message: String,
         defaultValue: String,
         confirmTitle: String,
+        selectsBaseName: Bool = false,
         onConfirm: @escaping (String) -> Void
     ) {
         guard let window = supermuxHostWindow else { return }
@@ -134,6 +135,19 @@ extension FileExplorerPanelView.Coordinator {
         alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else { return }
             onConfirm(field.stringValue)
+        }
+
+        // Finder-style rename: pre-select just the base name so the extension is
+        // preserved on a quick overwrite. Best-effort (deferred until the field
+        // editor exists); falls back to the select-all above if it isn't ready.
+        if selectsBaseName {
+            let fullLength = (defaultValue as NSString).length
+            let baseLength = ((defaultValue as NSString).deletingPathExtension as NSString).length
+            if baseLength > 0, baseLength < fullLength {
+                DispatchQueue.main.async {
+                    field.currentEditor()?.selectedRange = NSRange(location: 0, length: baseLength)
+                }
+            }
         }
     }
 

@@ -48,4 +48,13 @@ public enum SupermuxFileExplorerSelection {
         if didFail { return .presentError }
         return .reveal(revealPath)
     }
+
+    /// The path to select/reveal after trashing: the first trashed item's parent,
+    /// unless that parent is the explorer root (then nil — there is no root row to
+    /// select, so selection simply clears on reload). Keeps the post-trash
+    /// selection off the now-deleted path so the next ⌘⌫/Return doesn't dead-end.
+    public static func revealAfterTrash(firstParentPath: String?, rootPath: String) -> String? {
+        guard let firstParentPath, firstParentPath != rootPath else { return nil }
+        return firstParentPath
+    }
 }

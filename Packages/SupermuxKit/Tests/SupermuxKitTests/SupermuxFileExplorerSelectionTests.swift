@@ -81,4 +81,21 @@ import Testing
         #expect(a == .reveal(nil))
         #expect(a.refreshesTree)
     }
+
+    // MARK: - revealAfterTrash
+
+    @Test func revealAfterTrashReturnsParentForNestedItem() {
+        #expect(SupermuxFileExplorerSelection.revealAfterTrash(
+            firstParentPath: "/repo/src", rootPath: "/repo") == "/repo/src")
+    }
+
+    @Test func revealAfterTrashReturnsNilWhenParentIsRoot() {
+        #expect(SupermuxFileExplorerSelection.revealAfterTrash(
+            firstParentPath: "/repo", rootPath: "/repo") == nil)
+    }
+
+    @Test func revealAfterTrashReturnsNilWhenNoParent() {
+        #expect(SupermuxFileExplorerSelection.revealAfterTrash(
+            firstParentPath: nil, rootPath: "/repo") == nil)
+    }
 }

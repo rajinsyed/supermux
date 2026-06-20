@@ -60,48 +60,64 @@ extension NSMenu {
 extension FileExplorerPanelView.Coordinator {
     @objc func supermuxNewFile(_ sender: NSMenuItem) {
         guard let request = sender.representedObject as? SupermuxFileOpRequest else { return }
-        let identity = store.workspaceRootIdentity
-        supermuxPromptForName(
+        supermuxPromptAndCreate(
             title: SupermuxFileOpText.newFileTitle,
-            message: String(format: SupermuxFileOpText.newFileMessageFormat, request.parentDirectory.lastPathComponent),
-            defaultValue: "",
-            confirmTitle: SupermuxFileOpText.createButton
-        ) { [weak self] name in
-            guard let self else { return }
-            do {
-                let created = try SupermuxFileSystemOperations.createFile(named: name, in: request.parentDirectory)
-                guard self.store.workspaceRootIdentity == identity else { return }
-                if let node = request.expandNode { self.store.expand(node: node) }
-                self.store.supermuxReveal(path: created.path)
-                self.supermuxRefreshAfterFileOperation()
-            } catch {
-                guard self.store.workspaceRootIdentity == identity else { return }
-                self.supermuxPresentFileOpError(error)
-            }
+            messageFormat: SupermuxFileOpText.newFileMessageFormat,
+            request: request
+        ) { name, directory in
+            try SupermuxFileSystemOperations.createFile(named: name, in: directory)
         }
     }
 
     @objc func supermuxNewFolder(_ sender: NSMenuItem) {
         guard let request = sender.representedObject as? SupermuxFileOpRequest else { return }
-        let identity = store.workspaceRootIdentity
-        supermuxPromptForName(
+        supermuxPromptAndCreate(
             title: SupermuxFileOpText.newFolderTitle,
-            message: String(format: SupermuxFileOpText.newFolderMessageFormat, request.parentDirectory.lastPathComponent),
+            messageFormat: SupermuxFileOpText.newFolderMessageFormat,
+            request: request
+        ) { name, directory in
+            try SupermuxFileSystemOperations.createDirectory(named: name, in: directory)
+        }
+    }
+
+    /// Shared New File / New Folder flow: prompt for a name, create the item in
+    /// the request's parent, then (if the store still shows the same workspace +
+    /// root) expand the parent, reveal the new item, and refresh. On failure it
+    /// surfaces the error and still refreshes, matching the duplicate/trash path.
+    private func supermuxPromptAndCreate(
+        title: String,
+        messageFormat: String,
+        request: SupermuxFileOpRequest,
+        make: @escaping (String, URL) throws -> URL
+    ) {
+        let identity = store.workspaceRootIdentity
+        let rootPath = store.rootPath
+        supermuxPromptForName(
+            title: title,
+            message: String(format: messageFormat, request.parentDirectory.lastPathComponent),
             defaultValue: "",
             confirmTitle: SupermuxFileOpText.createButton
         ) { [weak self] name in
             guard let self else { return }
             do {
-                let created = try SupermuxFileSystemOperations.createDirectory(named: name, in: request.parentDirectory)
-                guard self.store.workspaceRootIdentity == identity else { return }
+                let created = try make(name, request.parentDirectory)
+                guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
                 if let node = request.expandNode { self.store.expand(node: node) }
                 self.store.supermuxReveal(path: created.path)
                 self.supermuxRefreshAfterFileOperation()
             } catch {
-                guard self.store.workspaceRootIdentity == identity else { return }
+                guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
                 self.supermuxPresentFileOpError(error)
+                self.supermuxRefreshAfterFileOperation()
             }
         }
+    }
+
+    /// Whether the (window-lifetime, reused) store still shows the workspace and
+    /// root that an async op was dispatched for. The file explorer can re-root the
+    /// SAME workspace (e.g. the terminal cd's), so identity alone is insufficient.
+    private func supermuxStoreStillCurrent(identity: UUID?, rootPath: String) -> Bool {
+        store.workspaceRootIdentity == identity && store.rootPath == rootPath
     }
 
     @objc func supermuxRename(_ sender: NSMenuItem) {
@@ -130,21 +146,24 @@ extension FileExplorerPanelView.Coordinator {
     /// Shared rename entrypoint used by both the context menu and the keyboard.
     func supermuxBeginRename(_ node: FileExplorerNode) {
         let identity = store.workspaceRootIdentity
+        let rootPath = store.rootPath
         supermuxPromptForName(
             title: SupermuxFileOpText.renameTitle,
             message: String(format: SupermuxFileOpText.renameMessageFormat, node.name),
             defaultValue: node.name,
-            confirmTitle: SupermuxFileOpText.renameTitle
+            confirmTitle: SupermuxFileOpText.renameTitle,
+            selectsBaseName: true
         ) { [weak self] name in
             guard let self else { return }
             do {
                 let renamed = try SupermuxFileSystemOperations.rename(URL(fileURLWithPath: node.path), to: name)
-                guard self.store.workspaceRootIdentity == identity else { return }
+                guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
                 self.store.supermuxReveal(path: renamed.path)
                 self.supermuxRefreshAfterFileOperation()
             } catch {
-                guard self.store.workspaceRootIdentity == identity else { return }
+                guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
                 self.supermuxPresentFileOpError(error)
+                self.supermuxRefreshAfterFileOperation()
             }
         }
     }
@@ -159,7 +178,8 @@ extension FileExplorerPanelView.Coordinator {
         // would otherwise dead-end the next ⌘⌫/Return. Skip when the parent is the
         // explorer root (no row to select; selection simply clears on reload).
         let firstParent = urls.first?.deletingLastPathComponent().path
-        let revealAfter = (firstParent != nil && firstParent != store.rootPath) ? firstParent : nil
+        let revealAfter = SupermuxFileExplorerSelection.revealAfterTrash(
+            firstParentPath: firstParent, rootPath: store.rootPath)
         supermuxConfirmTrash(targets) { [weak self] in
             self?.supermuxRunFileOperation {
                 try SupermuxFileSystemOperations.moveToTrash(urls)
@@ -178,6 +198,7 @@ extension FileExplorerPanelView.Coordinator {
         // detached work finishes we must NOT reveal/refresh this (now-foreign)
         // store with the old workspace's path.
         let identity = store.workspaceRootIdentity
+        let rootPath = store.rootPath
         Task { [weak self] in
             let result: Result<String?, any Error>
             do {
@@ -193,7 +214,7 @@ extension FileExplorerPanelView.Coordinator {
             case .failure(let error): revealPath = nil; failure = error
             }
             let action = SupermuxFileExplorerSelection.fileOpAction(
-                isStale: self.store.workspaceRootIdentity != identity,
+                isStale: !self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath),
                 didFail: failure != nil,
                 revealPath: revealPath)
             switch action {

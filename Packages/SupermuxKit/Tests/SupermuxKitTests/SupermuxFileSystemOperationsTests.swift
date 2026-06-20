@@ -213,6 +213,12 @@ import Testing
                 let matches = try FileManager.default.contentsOfDirectory(atPath: root.path)
                     .filter { $0.lowercased() == "readme.md" }
                 #expect(matches == ["README.md"])
+            } else {
+                // Case-sensitive volume: this was a plain move, so the old name
+                // must be gone (a copy-instead-of-move regression would fail here).
+                // NOTE: this assertion is only valid here — on a case-insensitive
+                // volume "Readme.md" still resolves to the renamed file.
+                #expect(!FileManager.default.fileExists(atPath: original.path))
             }
         }
     }
