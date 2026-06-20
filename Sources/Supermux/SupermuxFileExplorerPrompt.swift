@@ -155,6 +155,10 @@ extension FileExplorerPanelView.Coordinator {
     func supermuxConfirmTrash(_ nodes: [FileExplorerNode], onConfirm: @escaping () -> Void) {
         guard let window = supermuxHostWindow, !nodes.isEmpty else { return }
         let alert = NSAlert()
+        // Signal a destructive action. "Move to Trash" stays the default button:
+        // the chord is ⌘⌫, so ⌘⌫→Return is the natural confirm flow, and the move
+        // is recoverable from the Trash.
+        alert.alertStyle = .warning
         if nodes.count == 1 {
             alert.messageText = String(format: SupermuxFileOpText.trashConfirmTitleSingleFormat, nodes[0].name)
         } else {

@@ -121,10 +121,14 @@ extension FileExplorerPanelView.Coordinator {
     }
 
     /// Reveals `url`, unless it is a hidden item while hidden files are off — then
-    /// it would never appear in the tree and the reveal flag would dangle.
-    private func supermuxRevealIfVisible(_ url: URL) {
-        guard !(url.lastPathComponent.hasPrefix(".") && !store.showHiddenFiles) else { return }
+    /// it would never appear in the tree and the reveal flag would dangle. Returns
+    /// whether it actually revealed, so callers that just deleted the old path
+    /// (rename) can clear the now-stale selection when the reveal is suppressed.
+    @discardableResult
+    private func supermuxRevealIfVisible(_ url: URL) -> Bool {
+        guard !(url.lastPathComponent.hasPrefix(".") && !store.showHiddenFiles) else { return false }
         store.supermuxReveal(path: url.path)
+        return true
     }
 
     @objc func supermuxRename(_ sender: NSMenuItem) {
@@ -168,7 +172,12 @@ extension FileExplorerPanelView.Coordinator {
             do {
                 let renamed = try SupermuxFileSystemOperations.rename(URL(fileURLWithPath: node.path), to: name)
                 guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
-                self.supermuxRevealIfVisible(renamed)
+                if !self.supermuxRevealIfVisible(renamed) {
+                    // Renamed to a hidden name that won't show: the old path is gone,
+                    // so clear the selection rather than leave it pointing at a
+                    // deleted item (which would dead-end ⌘⌫/Return), mirroring trash.
+                    self.store.supermuxClearSelection()
+                }
                 self.supermuxRefreshAfterFileOperation()
             } catch {
                 guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
