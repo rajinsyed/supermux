@@ -3,7 +3,7 @@
 # Reduce counts as files shrink. CI fails if tracked files exceed this budget.
 34206	CLI/cmux.swift
 17798	Sources/AppDelegate.swift
-16751	Sources/ContentView.swift
+16777	Sources/ContentView.swift
 14785	Sources/TerminalController.swift
 13358	Sources/Panels/BrowserPanel.swift
 12361	Sources/Workspace.swift
@@ -16,7 +16,7 @@
 6317	cmuxTests/SessionPersistenceTests.swift
 6299	cmuxTests/GhosttyConfigTests.swift
 6153	CLI/cmux_open.swift
-6116	Sources/TabManager.swift
+6169	Sources/TabManager.swift
 6074	Sources/TextBoxInput.swift
 5925	cmuxTests/TerminalAndGhosttyTests.swift
 5526	cmuxTests/BrowserConfigTests.swift
@@ -26,7 +26,7 @@
 4400	cmuxTests/BrowserPanelTests.swift
 4227	Sources/BrowserWindowPortal.swift
 3937	Sources/Feed/FeedPanelView.swift
-3926	cmuxTests/TabManagerUnitTests.swift
+3995	cmuxTests/TabManagerUnitTests.swift
 3903	cmuxTests/WindowAndDragTests.swift
 3699	cmuxTests/CLIGenericHookPersistenceTests.swift
 3672	Packages/CmuxMobileTerminal/Sources/CmuxMobileTerminal/GhosttySurfaceView.swift
@@ -195,7 +195,7 @@
 528	cmuxUITests/AutomationSocketUITests.swift
 527	CLI/CLISocketPathResolver.swift
 524	CLI/CMUXCLI+AutoNaming.swift
-523	Sources/Supermux/SupermuxAppGlue.swift
+518	Sources/Supermux/SupermuxAppGlue.swift
 520	CLI/CMUXCLI+AmpExtension.swift
 520	cmuxTests/MainWindowVisibilityControllerTests.swift
 519	Packages/CmuxSwiftRender/Tests/CmuxSwiftRenderTests/Corpus/stress-two-column-cockpit-sidebar.swift

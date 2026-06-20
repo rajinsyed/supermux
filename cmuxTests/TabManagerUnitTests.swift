@@ -690,7 +690,12 @@ final class TabManagerChildExitCloseTests: XCTestCase {
         XCTAssertNotNil(workspace.panels[initialPanelId], "Expected sibling panel to remain")
     }
 
-    func testChildExitWindowCloseRequestsNoClosedWindowHistory() throws {
+    // SUPERMUX:begin keep-window-on-last-close
+    // Repurposed for the empty-home behavior: child-exit on the last workspace
+    // keeps the window open (zero workspaces, Projects sidebar) instead of
+    // requesting a window close, so the close observer must never fire.
+    func testChildExitOnLastWorkspaceKeepsWindowOpenAsEmptyHome() throws {
+    // SUPERMUX:end keep-window-on-last-close
         let originalAppDelegate = AppDelegate.shared
         let appDelegate = AppDelegate()
         AppDelegate.shared = appDelegate
@@ -718,14 +723,76 @@ final class TabManagerChildExitCloseTests: XCTestCase {
         manager.closePanelAfterChildExited(tabId: workspace.id, surfaceId: panelId)
         drainMainQueue()
 
-        XCTAssertEqual(closeRequest?.tabId, workspace.id)
-        XCTAssertEqual(closeRequest?.recordHistory, false)
-
-        appDelegate.suppressClosedWindowHistoryForTesting(windowId: windowId)
-        appDelegate.recordClosedWindowHistoryForTesting(windowId: windowId)
-        XCTAssertFalse(ClosedItemHistoryStore.shared.canReopen)
-        XCTAssertFalse(appDelegate.isClosedWindowHistorySuppressedForTesting(windowId: windowId))
+        // SUPERMUX:begin keep-window-on-last-close
+        // Empty-home: the last workspace's last surface exiting must NOT request
+        // a window close. The window stays open with zero workspaces (Projects
+        // sidebar), so the close observer never fires and the selection clears.
+        XCTAssertNil(closeRequest, "Last-workspace child-exit must not close the window")
+        XCTAssertTrue(manager.tabs.isEmpty, "Window stays open as an empty home")
+        XCTAssertNil(manager.selectedTabId)
+        // SUPERMUX:end keep-window-on-last-close
     }
+
+    // SUPERMUX:begin keep-window-on-last-close
+    /// Closing the last workspace empties the window (keeping it open as the
+    /// Projects home) when the caller opts in — the repro for "app stays open
+    /// when all tabs are closed".
+    func testClosingLastWorkspaceEmptiesWindowWhenAllowed() {
+        let manager = TabManager()
+        let only = manager.tabs[0]
+        manager.closeWorkspace(only, allowEmptyingWindow: true)
+        XCTAssertTrue(manager.tabs.isEmpty, "Last workspace should be removable for the empty home")
+        XCTAssertNil(manager.selectedTabId, "No workspace remains to select")
+    }
+
+    /// Without the opt-in, the upstream guard still refuses to remove the last
+    /// workspace, so ordinary callers can never leave a window with no tabs.
+    func testCloseWorkspaceWithoutOptInKeepsLastWorkspace() {
+        let manager = TabManager()
+        let only = manager.tabs[0]
+        manager.closeWorkspace(only)
+        XCTAssertEqual(manager.tabs.map(\.id), [only.id], "Last workspace must survive a plain close")
+        XCTAssertEqual(manager.selectedTabId, only.id)
+    }
+
+    /// Failed closed-workspace restore should clean up its temporary workspace
+    /// even when the window started from the empty-home state.
+    func testFailedClosedWorkspaceRestoreFromEmptyHomeCleansUpTemporaryWorkspace() throws {
+        let manager = TabManager()
+        let only = manager.tabs[0]
+        let panelSnapshot = try XCTUnwrap(only.sessionSnapshot(includeScrollback: false).panels.first)
+        manager.closeWorkspace(only, allowEmptyingWindow: true)
+        XCTAssertTrue(manager.tabs.isEmpty)
+
+        let snapshot = SessionWorkspaceSnapshot(
+            processTitle: "Failed Restore",
+            customTitle: nil,
+            customDescription: nil,
+            customColor: nil,
+            isPinned: false,
+            terminalScrollBarHidden: nil,
+            currentDirectory: NSHomeDirectory(),
+            focusedPanelId: panelSnapshot.id,
+            layout: .pane(SessionPaneLayoutSnapshot(panelIds: [], selectedPanelId: nil)),
+            panels: [panelSnapshot],
+            statusEntries: [],
+            logEntries: [],
+            progress: nil,
+            gitBranch: nil,
+            remote: nil
+        )
+        let entry = ClosedWorkspaceHistoryEntry(
+            workspaceId: UUID(),
+            windowId: nil,
+            workspaceIndex: 0,
+            snapshot: snapshot
+        )
+
+        XCTAssertFalse(manager.restoreClosedWorkspace(entry))
+        XCTAssertTrue(manager.tabs.isEmpty, "Failed restore should return to the empty home")
+        XCTAssertNil(manager.selectedTabId)
+    }
+    // SUPERMUX:end keep-window-on-last-close
 
     func testSessionSnapshotKeepsWindowWithNoRestorableWorkspaces() throws {
         let originalAppDelegate = AppDelegate.shared
@@ -1308,10 +1375,11 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
 
         manager.closeWorkspacesWithConfirmation([manager.tabs[0].id, second.id], allowPinned: true)
 
+        // SUPERMUX:begin keep-window-on-last-close
         let expectedMessage = String(
             format: String(
-                localized: "dialog.closeWorkspacesWindow.message",
-                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their panels:\n%2$@"
+                localized: "dialog.closeWorkspaces.message",
+                defaultValue: "This will close %1$lld workspaces and all of their panels:\n%2$@"
             ),
             locale: .current,
             Int64(2),
@@ -1320,10 +1388,11 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         XCTAssertEqual(prompts.count, 1)
         XCTAssertEqual(
             prompts.first?.title,
-            String(localized: "dialog.closeWindow.title", defaultValue: "Close window?")
+            String(localized: "dialog.closeWorkspaces.title", defaultValue: "Close workspaces?")
         )
         XCTAssertEqual(prompts.first?.message, expectedMessage)
-        XCTAssertEqual(prompts.first?.acceptCmdD, true)
+        XCTAssertEqual(prompts.first?.acceptCmdD, false)
+        // SUPERMUX:end keep-window-on-last-close
         XCTAssertEqual(manager.tabs.map(\.title), ["Alpha", "Beta"])
     }
 

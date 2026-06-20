@@ -74,6 +74,13 @@ extension TabManager {
 
             applyCreationChromeInheritance(to: newWorkspace, from: sourceWorkspace ?? capturedTabs.first)
             newWorkspace.owningTabManager = self
+            // SUPERMUX:begin new-workspace-standalone
+            // Detaching a surface into a NEW workspace (move-tab / move-surface)
+            // is a fresh standalone container, not a project open — keep it at
+            // the root of the flat list even if the moved surface's directory
+            // sits in a project. Mirrors the marking in `addWorkspace`.
+            SupermuxComposition.workspaceAssociations.markStandalone(workspaceId: newWorkspace.id)
+            // SUPERMUX:end new-workspace-standalone
             if title != nil {
                 newWorkspace.setCustomTitle(title)
             }

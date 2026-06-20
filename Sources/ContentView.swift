@@ -1850,6 +1850,19 @@ struct ContentView: View {
                 .opacity(sidebarSelectionState.selection == .notifications ? 1 : 0)
                 .allowsHitTesting(sidebarSelectionState.selection == .notifications)
                 .accessibilityHidden(sidebarSelectionState.selection != .notifications)
+
+            // SUPERMUX:begin empty-home
+            // Supermux keeps the window open with zero workspaces when the last
+            // tab is closed (the `keep-window-on-last-close` touchpoint), so the
+            // ForEach above renders nothing. Fill the empty main area with a
+            // quiet home hint while the Tabs surface is showing.
+            if tabManager.tabs.isEmpty {
+                SupermuxEmptyHomeView()
+                    .opacity(sidebarSelectionState.selection == .tabs ? 1 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(sidebarSelectionState.selection != .tabs)
+            }
+            // SUPERMUX:end empty-home
         }
         .padding(.top, effectiveTitlebarPadding)
     }
@@ -2540,11 +2553,15 @@ struct ContentView: View {
                 guard let tabManager else { return }
                 var didRecover = false
 
-                // Ensure there is at least one workspace.
-                if tabManager.tabs.isEmpty {
-                    tabManager.addWorkspace()
-                    didRecover = true
-                }
+                // SUPERMUX:begin empty-home
+                // Zero workspaces is a valid state in supermux — the window stays
+                // open as an empty home with the Projects sidebar. The startup
+                // safety net must NOT re-add a workspace here, or it would refill
+                // a window the user intentionally emptied (e.g. closed the last
+                // tab within ~0.5s of the window appearing). The selection/mount
+                // recovery below still runs and is a no-op when tabs is empty.
+                // (upstream: `if tabManager.tabs.isEmpty { addWorkspace(); didRecover = true }`)
+                // SUPERMUX:end empty-home
 
                 // Ensure selectedTabId points to an existing workspace.
                 if tabManager.selectedTabId == nil || !tabManager.tabs.contains(where: { $0.id == tabManager.selectedTabId }) {
@@ -2596,7 +2613,16 @@ struct ContentView: View {
             startWorkspaceHandoffIfNeeded(newSelectedId: newValue)
             reconcileMountedWorkspaceIds(selectedId: newValue)
             AppDelegate.shared?.syncBonsplitTabShortcutHintEligibility(in: observedWindow)
-            guard let newValue else { return }
+            guard let newValue else {
+                // SUPERMUX:begin empty-home
+                // Emptied to the home state: clear the now-stale workspace title
+                // from the custom titlebar. Upstream returns here before
+                // updateTitlebarText() (which clears the title when nothing is
+                // selected), so without this the empty window keeps the old name.
+                updateTitlebarText()
+                // SUPERMUX:end empty-home
+                return
+            }
             if selectedTabIds.count <= 1 {
                 selectedTabIds = [newValue]
                 lastSidebarSelectionIndex = tabManager.tabs.firstIndex { $0.id == newValue }

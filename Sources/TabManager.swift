@@ -1116,6 +1116,17 @@ class TabManager: ObservableObject {
                 from: sourceWorkspace ?? capturedTabs.first
             )
             newWorkspace.owningTabManager = self
+            // SUPERMUX:begin new-workspace-standalone
+            // Every workspace created through cmux's normal new-workspace flow
+            // (the `+` button / ⌘T / surface tab bar) is standalone — it must
+            // appear at the root of the flat list, never nested under the
+            // focused project, even when it inherits that project's directory.
+            // The supermux project opener clears this via `associate` right
+            // after it creates a project-originated workspace, so those still
+            // nest. Restore builds Workspace objects directly (not addWorkspace),
+            // so restored project workspaces re-nest by directory as before.
+            SupermuxComposition.workspaceAssociations.markStandalone(workspaceId: newWorkspace.id)
+            // SUPERMUX:end new-workspace-standalone
             if title != nil {
                 newWorkspace.setCustomTitle(title)
             }
@@ -1994,8 +2005,22 @@ class TabManager: ObservableObject {
     }
 
 
-    func closeWorkspace(_ workspace: Workspace, recordHistory: Bool = true) {
-        guard tabs.count > 1 else { return }
+    func closeWorkspace(
+        _ workspace: Workspace,
+        recordHistory: Bool = true,
+        // SUPERMUX:begin keep-window-on-last-close
+        // Supermux keeps the window open as an empty home (Projects sidebar)
+        // when the last workspace closes instead of closing the window (which
+        // would quit the app on the last window). Callers in the last-workspace
+        // close paths opt in here so the final workspace can actually be removed.
+        allowEmptyingWindow: Bool = false
+        // SUPERMUX:end keep-window-on-last-close
+    ) {
+        // SUPERMUX:begin keep-window-on-last-close
+        // Upstream guard is `tabs.count > 1`; relax it when the caller allows the
+        // window to empty so the last workspace can be torn down and removed.
+        guard tabs.count > 1 || allowEmptyingWindow else { return }
+        // SUPERMUX:end keep-window-on-last-close
         sentryBreadcrumb("workspace.close", data: ["tabCount": tabs.count - 1])
         if recordHistory,
            workspace.isRestorableInSessionSnapshot,
@@ -2032,6 +2057,12 @@ class TabManager: ObservableObject {
 
         if let index = tabs.firstIndex(where: { $0.id == workspace.id }) {
             tabs.remove(at: index)
+            // SUPERMUX:begin new-workspace-standalone
+            // The closed workspace is gone from the session, so clear any
+            // supermux session-only project association or standalone marker.
+            // Durable directory links intentionally remain in the project store.
+            SupermuxComposition.workspaceAssociations.forget(workspaceId: workspace.id)
+            // SUPERMUX:end new-workspace-standalone
             // Real-close path: if the closed workspace anchored a group, the
             // group dissolves now and its remaining members survive as
             // ungrouped workspaces. This lives at the explicit close site (not
@@ -2040,11 +2071,20 @@ class TabManager: ObservableObject {
             workspaces.dissolveGroupsAnchoredBy(closedWorkspaceId: workspace.id)
 
             if selectedTabId == workspace.id {
-                // Keep the "focused index" stable when possible:
-                // - If we closed workspace i and there is still a workspace at index i, focus it (the one that moved up).
-                // - Otherwise (we closed the last workspace), focus the new last workspace (i-1).
-                let newIndex = min(index, max(0, tabs.count - 1))
-                selectedTabId = tabs[newIndex].id
+                // SUPERMUX:begin keep-window-on-last-close
+                if tabs.isEmpty {
+                    // Emptied the window (supermux empty home): no workspace
+                    // remains to select. tabs[...] below would crash on an empty
+                    // array, so clear the selection instead.
+                    selectedTabId = nil
+                } else {
+                    // Keep the "focused index" stable when possible:
+                    // - If we closed workspace i and there is still a workspace at index i, focus it (the one that moved up).
+                    // - Otherwise (we closed the last workspace), focus the new last workspace (i-1).
+                    let newIndex = min(index, max(0, tabs.count - 1))
+                    selectedTabId = tabs[newIndex].id
+                }
+                // SUPERMUX:end keep-window-on-last-close
             }
         }
         publishCmuxWorkspaceClosed(workspace)
@@ -2234,17 +2274,13 @@ class TabManager: ObservableObject {
             ) else { return }
         }
 
-        if plan.workspaces.count == tabs.count,
-           let firstWorkspace = plan.workspaces.first {
-            if let window {
-                window.performClose(nil)
-                return
-            }
-            if AppDelegate.shared != nil {
-                AppDelegate.shared?.closeMainWindowContainingTabId(firstWorkspace.id)
-                return
-            }
-        }
+        // SUPERMUX:begin keep-window-on-last-close
+        // Upstream closed the whole window here when every workspace was being
+        // closed at once. Supermux keeps the window open as an empty home
+        // (Projects sidebar), so this window-closing short-circuit is omitted —
+        // the loop below closes each workspace and the last one empties the
+        // window via closeWorkspace(allowEmptyingWindow:).
+        // SUPERMUX:end keep-window-on-last-close
 
         for workspace in plan.workspaces {
             guard tabs.contains(where: { $0.id == workspace.id }) else { continue }
@@ -2264,15 +2300,11 @@ class TabManager: ObservableObject {
                 }
                 // Anchor confirmed (or suppressed); skip the inner re-prompt
                 // by closing without going through closeWorkspaceIfRunningProcess.
-                if tabs.count <= 1 {
-                    if let window {
-                        window.performClose(nil)
-                    } else {
-                        AppDelegate.shared?.closeMainWindowContainingTabId(workspace.id)
-                    }
-                } else {
-                    closeWorkspace(workspace)
-                }
+                // SUPERMUX:begin keep-window-on-last-close
+                // Keep the window open as an empty home when this is the last
+                // workspace (allowEmptyingWindow is a no-op when others remain).
+                closeWorkspace(workspace, allowEmptyingWindow: true)
+                // SUPERMUX:end keep-window-on-last-close
                 continue
             }
             closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: false)
@@ -2440,7 +2472,12 @@ class TabManager: ObservableObject {
     }
 
     private func closeWorkspacesPlan(for workspaces: [Workspace]) -> CloseWorkspacesPlan {
-        let willCloseWindow = workspaces.count == tabs.count
+        // SUPERMUX:begin keep-window-on-last-close
+        // Closing every workspace keeps the window open as an empty home rather
+        // than closing it, so this is never a window-closing action — always use
+        // the "close workspaces" copy (upstream: `workspaces.count == tabs.count`).
+        let willCloseWindow = false
+        // SUPERMUX:end keep-window-on-last-close
         let title = willCloseWindow
             ? String(localized: "dialog.closeWindow.title", defaultValue: "Close window?")
             : String(localized: "dialog.closeWorkspaces.title", defaultValue: "Close workspaces?")
@@ -2509,16 +2546,13 @@ class TabManager: ObservableObject {
            ) {
             return
         }
-        if tabs.count <= 1 {
-            // Last workspace in this window: match Close Workspace shortcut behavior.
-            if let window {
-                window.performClose(nil)
-            } else {
-                AppDelegate.shared?.closeMainWindowContainingTabId(workspace.id)
-            }
-        } else {
-            closeWorkspace(workspace)
-        }
+        // SUPERMUX:begin keep-window-on-last-close
+        // Closing the last workspace leaves the window open as an empty home
+        // (Projects sidebar) instead of closing the window — which on the last
+        // window would quit the app. allowEmptyingWindow lets the final
+        // workspace actually be removed.
+        closeWorkspace(workspace, allowEmptyingWindow: true)
+        // SUPERMUX:end keep-window-on-last-close
     }
 
     private func shouldConfirmClose(requiresConfirmation: Bool, source: CloseConfirmationSource) -> Bool {
@@ -2623,7 +2657,12 @@ class TabManager: ObservableObject {
                 localized: "dialog.closePinnedWorkspace.message",
                 defaultValue: "This workspace is pinned. Closing it will close the workspace and all of its panels."
             ),
-            acceptCmdD: tabs.count <= 1
+            // SUPERMUX:begin keep-window-on-last-close
+            // Closing the last workspace no longer closes the window in supermux,
+            // so this workspace-close confirmation should never advertise the
+            // window-closing Cmd-D acceptance path.
+            acceptCmdD: false
+            // SUPERMUX:end keep-window-on-last-close
         )
     }
 
@@ -2819,17 +2858,15 @@ class TabManager: ObservableObject {
         // Child-exit on the last panel should collapse the workspace, matching explicit close
         // semantics (and close the window when it was the last workspace).
         if tab.panels.count <= 1 {
-            if tabs.count <= 1 {
-                if let app = AppDelegate.shared {
-                    app.notificationStore?.clearNotifications(forTabId: tabId)
-                    app.closeMainWindowContainingTabId(tabId, recordHistory: false)
-                } else {
-                    // Headless/test fallback when no AppDelegate window context exists.
-                    closeRuntimeSurface(tabId: tabId, surfaceId: surfaceId)
-                }
-            } else {
-                closeWorkspace(tab, recordHistory: false)
-            }
+            // SUPERMUX:begin keep-window-on-last-close
+            // The last surface of the last workspace exited (e.g. `exit` typed):
+            // collapse the workspace but keep the window open as an empty home
+            // instead of closing the window (which would quit the app on the
+            // last window). allowEmptyingWindow lets the final workspace be
+            // removed; closeWorkspace clears its notifications itself. For
+            // tabs.count > 1 this behaves exactly like the prior plain close.
+            closeWorkspace(tab, recordHistory: false, allowEmptyingWindow: true)
+            // SUPERMUX:end keep-window-on-last-close
             return
         }
 
@@ -4096,13 +4133,29 @@ class TabManager: ObservableObject {
             select: false,
             autoWelcomeIfNeeded: false
         )
+        // SUPERMUX:begin new-workspace-standalone
+        // Reopening a closed workspace is a restore, not a fresh `+` create, so
+        // clear the standalone marking addWorkspace applied. This lets the
+        // restored workspace re-nest under its project by directory (durable
+        // link / worktree match) exactly as it was before being closed.
+        SupermuxComposition.workspaceAssociations.forget(workspaceId: workspace.id)
+        // SUPERMUX:end new-workspace-standalone
         let restoredPanelIds = workspace.restoreSessionSnapshot(entry.snapshot)
         guard !entry.snapshot.hasRestorablePanels || !restoredPanelIds.isEmpty else {
-            closeWorkspace(workspace, recordHistory: false)
+            // SUPERMUX:begin keep-window-on-last-close
+            // A failed restore created a temporary workspace. If this window was
+            // empty before the reopen attempt, that workspace is now the only tab,
+            // so cleanup must opt into emptying the window again.
+            closeWorkspace(workspace, recordHistory: false, allowEmptyingWindow: true)
+            // SUPERMUX:end keep-window-on-last-close
             return false
         }
         guard !workspace.panels.isEmpty else {
-            closeWorkspace(workspace, recordHistory: false)
+            // SUPERMUX:begin keep-window-on-last-close
+            // Same failed-restore cleanup as above: remove the temporary
+            // workspace even when it is the only one in the window.
+            closeWorkspace(workspace, recordHistory: false, allowEmptyingWindow: true)
+            // SUPERMUX:end keep-window-on-last-close
             return false
         }
         // The snapshot may carry a groupId for a group that no longer exists
