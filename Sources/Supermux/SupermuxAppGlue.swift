@@ -256,11 +256,6 @@ struct SupermuxProjectsMount: View {
                 tabManager?.selectWorkspace(workspace)
             },
             onCloseWorkspace: { [weak tabManager] id in
-                // Drop only the session link; the durable directory link is a
-                // project-level fact that survives until the project is removed,
-                // so a cancelled close or a sibling at the same directory still
-                // nests.
-                SupermuxComposition.workspaceAssociations.forget(workspaceId: id)
                 guard let workspace = tabManager?.tabs.first(where: { $0.id == id }) else { return }
                 _ = tabManager?.closeWorkspaceWithConfirmation(workspace)
             },

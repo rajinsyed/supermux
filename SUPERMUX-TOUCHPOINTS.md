@@ -53,6 +53,11 @@ Rules for adding a touchpoint:
 | 38 | `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift` | `supermux-commit-shortcut` | `testSupermuxCommitDefaultsBindReturnChords` asserts the two commit actions default to ⌘↩ / ⇧⌘↩ and do not cross-match |
 | 39 | `Sources/FileExplorerView.swift` | `file-explorer-operations`, `file-explorer-operations-empty`, `file-explorer-operations-keys`, `file-explorer-operations-reveal` | Adds file-management to the right-sidebar file tree (local provider only): context-menu items New File/New Folder/Rename/Duplicate/Move to Trash on a clicked node, New File/New Folder on the empty area (root), and ⌘⌫ (Move to Trash) / Return (Rename) keyboard handling when the outline view is focused; the `-reveal` fence scrolls a just-created/renamed item into view after the reload. All logic lives in supermux-owned files (`Sources/Supermux/SupermuxFileExplorerCommands.swift`, `SupermuxFileExplorerPrompt.swift`) and `Packages/SupermuxKit/Sources/SupermuxKit/SupermuxFileSystemOperations.swift`; the fences are one-line calls into a `FileExplorerPanelView.Coordinator` extension |
 | 40 | `Sources/FileExplorerStore.swift` | `file-explorer-operations-reveal` | Adds `supermuxRevealPath` + `supermuxReveal(path:)` to `FileExplorerStore` so a supermux file operation can select a just-created/renamed item by path (the selection state is `private(set)`, so this must live in the store's own file). Paired with the coordinator's `-reveal` hook in touchpoint #39 |
+| 41 | `Sources/TabManager.swift` | `new-workspace-standalone` | Marks every workspace created through cmux's normal new-workspace flow (`+` / ⌘T / surface tab bar) as standalone (`SupermuxWorkspaceAssociationStore.markStandalone` in `addWorkspace`) so it lands at the root of the flat list, never nested under the focused project. The project opener clears it via `associate`; the central close path clears it via `forget`. `restoreClosedWorkspace` (reopen) goes through `addWorkspace` too, so it explicitly `forget`s the mark afterwards to re-nest by directory; **session**-restore builds `Workspace` objects directly (no `addWorkspace`) and is unaffected |
+| 42 | `Sources/TabManager+DetachedWorkspace.swift` | `new-workspace-standalone` | The detached-surface path (move-tab / move-surface to a new workspace) builds a `Workspace` directly, not via `addWorkspace`, so it marks the new workspace standalone too — a moved-out surface becomes a root-level workspace, never nested under a project whose directory it inherited |
+| 43 | `Sources/TabManager.swift` | `keep-window-on-last-close` | Keeps the window open as an empty home when the last workspace closes — instead of `window.performClose`, which quit the app on the last window. `closeWorkspace(allowEmptyingWindow:)` removes the final workspace (selection clears to `nil`); the three last-workspace close sites + the bulk-close short-circuit/plan + the child-exit path route through it, failed closed-workspace restore cleanup can empty the window again, and close confirmations no longer mark last-workspace closes as window-closing. Explicit window close (red button / ⌘⇧W) is unchanged |
+| 44 | `Sources/ContentView.swift` | `empty-home` | `terminalContent` renders `SupermuxEmptyHomeView` (centered "No open tabs" hint) when `tabManager.tabs` is empty, gated to the `.tabs` sidebar surface and non-interactive. New file `Sources/Supermux/SupermuxEmptyHomeView.swift` wired via touchpoint #3 (IDs `…F5`/`…F6`); `supermux.emptyHome.*` keys under #4b |
+| 45 | `cmuxTests/TabManagerUnitTests.swift` | `keep-window-on-last-close` | Repurposes the child-exit window-close test to assert the window stays open (empty home), adds two tests for `closeWorkspace(allowEmptyingWindow:)` emptying the window vs. a plain close keeping the last workspace, and covers failed closed-workspace restore cleanup from empty home |
 
 ## How to re-apply
 
@@ -200,7 +205,12 @@ in the `Supermux` group's `children` and the `cmux` target's Sources phase, mirr
 above). The matching domain logic (`SupermuxFileSystemOperations.swift`) and its unit test live in
 the `SupermuxKit` SPM package, so they need no pbxproj wiring.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `69`.
+The empty-home feature (touchpoint #44) adds one more `Sources/Supermux/` file under the
+same reserved prefix: file reference `50BE0001…00F5` and build file `50BE0001…00F6` for
+`SupermuxEmptyHomeView.swift` (listed in the `Supermux` group's `children` and the `cmux`
+target's Sources phase, mirroring the rows above).
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `73`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 
@@ -209,7 +219,9 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 
 | Row | Δ | Reason |
 |-----|---|--------|
-| `Sources/ContentView.swift` | +9, +14, +28 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). |
+| `Sources/ContentView.swift` | +9, +14, +28, +26 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). `empty-home` (+26: `SupermuxEmptyHomeView` mount in `terminalContent`, the startup-recovery auto-add suppression, and clearing the titlebar title on empty, 16751→16777) |
+| `Sources/TabManager.swift` | +25, +28 | `new-workspace-standalone` (+25: `markStandalone` call in `addWorkspace`, the central close-path `forget` cleanup, and the `forget` clear in `restoreClosedWorkspace` so reopened project workspaces re-nest); `keep-window-on-last-close` (+28: `allowEmptyingWindow` param/guard, selection-to-`nil`, the three last-workspace close sites + bulk short-circuit/plan, the child-exit path, close-confirmation metadata cleanup, and failed closed-workspace restore cleanup, 6116→6169) |
+| `cmuxTests/TabManagerUnitTests.swift` | +69 | `keep-window-on-last-close` (repurposed `testChildExitOnLastWorkspaceKeepsWindowOpenAsEmptyHome`, updated all-workspaces confirmation copy expectations, two new empty-home close tests, and failed restore cleanup coverage, 3926→3995) |
 | `Sources/WorkspaceContentView.swift` | +12 | `presets-bar` mount above the splits (if/else branch on minimal mode) |
 | `Sources/RightSidebarPanelView.swift` | +18, +35, +3 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content, +18); `right-sidebar-compact-mode-bar` (+35: `ViewThatFits` wrapper with pinned trailing controls + `modeButtonsRow(showsLabels:)` helper + `showsLabel` pill param/conditional, 743→778); `right-sidebar-changes-mode-content` (+3: `SupermuxChangesMount` now also passes `isVisible: fileExplorerState.isVisible`, 778→781) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
@@ -756,3 +768,93 @@ selected and scrolled into view after the post-operation reload.
   row actually exists (the item may appear a reload later when its parent folder finishes loading).
   If upstream restructures the store/reload, the requirement is: after a file op, select the new
   path and scroll it into view once its row loads.
+
+### 41. `Sources/TabManager.swift` — `new-workspace-standalone`
+
+The `+` / New Workspace button must always create a workspace at the **root** of the flat
+list, never nested under the focused project — the user nests intentionally by double-clicking
+a project. Supermux project nesting is decided per-render by
+`SupermuxWorkspaceAssociationStore.projectId(forWorkspace:directory:in:)`, which (besides an
+explicit session association) matches by directory: the durable directory link and the worktree
+matcher. A `+` workspace inherits the focused workspace's directory
+(`addWorkspace(inheritWorkingDirectory: true)`), so when focused in a project it inherited the
+project's root/worktree directory and got re-captured.
+
+One fenced line in `TabManager.addWorkspace`, right after `newWorkspace.owningTabManager = self`:
+
+```swift
+// SUPERMUX:begin new-workspace-standalone
+SupermuxComposition.workspaceAssociations.markStandalone(workspaceId: newWorkspace.id)
+// SUPERMUX:end new-workspace-standalone
+```
+
+This is the store's own stated rule ("workspaces created via cmux's normal flow stay
+standalone"). `markStandalone` adds the id to a session-scoped set that `projectId(...)` checks
+**first** (returns `nil`); the project opener's `associate(...)` clears it so project-originated
+opens still nest; the central `closeWorkspace` removal path calls `forget(...)` after the workspace
+is actually removed, clearing both the session association and standalone mark while preserving
+durable directory links.
+
+Restore and move paths need care because they don't all go through `addWorkspace`:
+- **Session restore** builds `Workspace` objects directly (no `addWorkspace`), so restored
+  project main/worktree workspaces re-nest by directory unaffected.
+- **`restoreClosedWorkspace`** (reopen, ⌘⇧T) *does* call `addWorkspace`, so it would wrongly mark
+  the reopened workspace standalone — it explicitly `forget`s the mark right after, restoring
+  directory-based nesting (a reopened project workspace re-nests; the only residual imprecision is
+  a standalone `+` workspace that sat exactly at a project's durable-linked root or inside a
+  worktree dir, which re-nests on reopen — matching pre-change behavior and not worth persisting
+  per-workspace standalone state through closed-workspace history).
+- **`TabManager+DetachedWorkspace`** (move-tab / move-surface) builds a `Workspace` directly, so it
+  marks the new workspace standalone too (touchpoint #42).
+
+Native cmux workspace groups (`groupId`) are deliberately untouched. If upstream restructures
+`addWorkspace`, the requirement is: mark every workspace created by the normal new-workspace flow
+standalone (and the detached-surface create), while restore/reopen paths re-nest by directory. The
+`SupermuxWorkspaceAssociationStore` API additions live in the package (no fence).
+
+### 43–45. Empty home — keep the window open on last-tab close (`keep-window-on-last-close` + `empty-home`)
+
+Closing the last workspace used to escalate to `window.performClose(nil)`, and on the last
+window `handleMainTerminalWindowShouldClose` → `handleQuitShortcutWarning` quit the app. Supermux
+keeps the window open as a "home" (the always-present Projects sidebar) with zero workspaces.
+
+**`Sources/TabManager.swift` (`keep-window-on-last-close`):**
+1. `closeWorkspace` gains a fenced `allowEmptyingWindow: Bool = false` parameter; the guard
+   becomes `guard tabs.count > 1 || allowEmptyingWindow else { return }`; and the post-remove
+   selection update sets `selectedTabId = nil` when `tabs.isEmpty` (the upstream `tabs[newIndex]`
+   would crash on the empty array).
+2. The three last-workspace close sites that called `window.performClose(nil)` —
+   `closeWorkspaceIfRunningProcess`, the bulk-close anchor branch, and `closePanelAfterChildExited`
+   — now call `closeWorkspace(workspace, allowEmptyingWindow: true)`.
+3. The bulk-close top short-circuit (`plan.workspaces.count == tabs.count` → close window) is
+   omitted so the loop empties the window instead; `closeWorkspacesPlan`'s `willCloseWindow` is
+   forced `false` so the confirmation copy reads "Close workspaces?" not "Close window?". The
+   pinned-workspace confirmation also passes `acceptCmdD: false`, because closing the final
+   workspace is no longer a window-closing action.
+4. `restoreClosedWorkspace` failure cleanup passes `allowEmptyingWindow: true` so a malformed or
+   unrestorable closed-workspace snapshot does not leave behind its temporary workspace when the
+   reopen was attempted from the empty-home state.
+
+   The explicit window-close paths (red button / ⌘⇧W / `closeWindow`) are intentionally left as
+   upstream — closing the *window* still quits on the last window; only closing the last *tab*
+   keeps it open.
+
+**`Sources/ContentView.swift` (`empty-home`):** `terminalContent` renders `SupermuxEmptyHomeView`
+(centered "No open tabs" hint) inside the existing `ZStack` when `tabManager.tabs.isEmpty`, gated
+to the `.tabs` sidebar surface and non-interactive. The one-shot startup recovery's upstream
+`if tabManager.tabs.isEmpty { addWorkspace() }` block is suppressed, because zero workspaces is a
+valid supermux runtime state and the delayed recovery could otherwise refill a window the user had
+intentionally emptied.
+
+**`cmuxTests/TabManagerUnitTests.swift` (`keep-window-on-last-close`):** the child-exit
+window-close test is repurposed to assert the window stays open (no close request, tabs empty,
+selection `nil`), all-workspace close confirmation expectations now use "Close workspaces?", plus
+two new tests cover `closeWorkspace(allowEmptyingWindow:)` emptying the window and the plain close
+still keeping the last workspace. `testFailedClosedWorkspaceRestoreFromEmptyHomeCleansUpTemporaryWorkspace`
+covers cubic's review finding that failed closed-workspace restore cleanup must not leave a
+temporary workspace behind when reopening from empty home.
+
+New supermux-owned file `Sources/Supermux/SupermuxEmptyHomeView.swift` (wired via touchpoint #3,
+IDs `…F5`/`…F6`); `supermux.emptyHome.{title,subtitle}` localization keys (en+ja) under #4b.
+If upstream restructures these paths, the requirement is: closing the last *tab* removes it and
+keeps the window open with an empty-state view; closing the *window* is unchanged.

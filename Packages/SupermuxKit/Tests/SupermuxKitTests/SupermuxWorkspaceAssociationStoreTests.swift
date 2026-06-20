@@ -115,4 +115,54 @@ struct SupermuxWorkspaceAssociationStoreTests {
         // The project is no longer registered, so the durable link must not nest.
         #expect(store.projectId(forWorkspace: UUID(), directory: "/repos/a", in: []) == nil)
     }
+
+    @Test func standaloneWorkspaceAtRootStaysFlatDespiteDurableLink() {
+        // The `+` / New Workspace flow marks every created workspace standalone.
+        // Even when the project's root already has a durable directory link (its
+        // main workspace was opened earlier), a *different* standalone workspace
+        // that inherited the same root directory must stay in the flat list.
+        let persistence = StubDirectoryAssociationStore()
+        let p = project(name: "a", root: "/repos/a")
+        let store = SupermuxWorkspaceAssociationStore(persistence: persistence)
+        store.associate(workspaceId: UUID(), projectId: p.id, directory: "/repos/a")
+        let plus = UUID()
+        store.markStandalone(workspaceId: plus)
+        #expect(store.projectId(forWorkspace: plus, directory: "/repos/a", in: [p]) == nil)
+    }
+
+    @Test func standaloneWorkspaceInWorktreeDirStaysFlat() {
+        // A `+` workspace created while focused in a worktree inherits the
+        // worktree directory, which the worktree matcher would otherwise nest.
+        // The standalone marking keeps it at the root, matching "the New
+        // Workspace button always creates at the root".
+        let store = SupermuxWorkspaceAssociationStore()
+        let p = project(name: "a", root: "/repos/a")
+        let plus = UUID()
+        store.markStandalone(workspaceId: plus)
+        #expect(store.projectId(forWorkspace: plus, directory: "/repos/a/.worktrees/feature", in: [p]) == nil)
+    }
+
+    @Test func associateOverridesStandaloneMarking() {
+        // Opening a workspace from a project after it was created (and marked
+        // standalone) must re-nest it: the project opener calls `associate`
+        // right after `addWorkspace`.
+        let store = SupermuxWorkspaceAssociationStore()
+        let p = project(name: "a", root: "/repos/a")
+        let ws = UUID()
+        store.markStandalone(workspaceId: ws)
+        store.associate(workspaceId: ws, projectId: p.id, directory: "/repos/a")
+        #expect(store.projectId(forWorkspace: ws, directory: "/repos/a", in: [p]) == p.id)
+    }
+
+    @Test func forgetClearsStandaloneMarking() {
+        // A reused/closed workspace id must not stay pinned standalone forever.
+        let store = SupermuxWorkspaceAssociationStore()
+        let p = project(name: "a", root: "/repos/a")
+        let ws = UUID()
+        store.markStandalone(workspaceId: ws)
+        store.forget(workspaceId: ws)
+        // With the standalone marking cleared, directory-based nesting applies
+        // again (here: the worktree matcher).
+        #expect(store.projectId(forWorkspace: ws, directory: "/repos/a/.worktrees/feature", in: [p]) == p.id)
+    }
 }
