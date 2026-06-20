@@ -707,6 +707,8 @@
 		F20F85FC5900550685FA33AD /* StackAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A8BD195031FC4B82B4354297 /* StackAuth */; };
 		D35B71010000000000000001 /* StartupBreadcrumbLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D35B71010000000000000002 /* StartupBreadcrumbLog.swift */; };
 		50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B1 /* SupermuxAppGlue.swift */; };
+		50BE000100000000000000F3 /* SupermuxFileExplorerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */; };
+		50BE000100000000000000F4 /* SupermuxFileExplorerPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F2 /* SupermuxFileExplorerPrompt.swift */; };
 		50BE000100000000000000A3 /* SupermuxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 50BE000100000000000000A2 /* SupermuxKit */; };
 		50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */; };
 		50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B4 /* SupermuxRunSupport.swift */; };
@@ -1590,6 +1592,8 @@
 		F6355601A1B2C3D4E5F60718 /* SSHStartupSignalLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHStartupSignalLifecycleTests.swift; sourceTree = "<group>"; };
 		D35B71010000000000000002 /* StartupBreadcrumbLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/StartupBreadcrumbLog.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B1 /* SupermuxAppGlue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxAppGlue.swift; sourceTree = "<group>"; };
+		50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxFileExplorerCommands.swift; sourceTree = "<group>"; };
+		50BE000100000000000000F2 /* SupermuxFileExplorerPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxFileExplorerPrompt.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxProjectsSectionHeightPreferenceKey.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B4 /* SupermuxRunSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRunSupport.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarBranchTests.swift; sourceTree = "<group>"; };
@@ -1937,6 +1941,8 @@
 			isa = PBXGroup;
 			children = (
 				50BE000100000000000000B1 /* SupermuxAppGlue.swift */,
+				50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */,
+				50BE000100000000000000F2 /* SupermuxFileExplorerPrompt.swift */,
 				50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */,
 				50BE000100000000000000B4 /* SupermuxRunSupport.swift */,
 				50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */,
@@ -3640,6 +3646,8 @@
 				E30780000000000000000012 /* SSHPTYAttachStartupCommandBuilder.swift in Sources */,
 				D35B71010000000000000001 /* StartupBreadcrumbLog.swift in Sources */,
 				50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */,
+				50BE000100000000000000F3 /* SupermuxFileExplorerCommands.swift in Sources */,
+				50BE000100000000000000F4 /* SupermuxFileExplorerPrompt.swift in Sources */,
 				50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */,
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,

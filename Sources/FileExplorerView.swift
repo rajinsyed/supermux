@@ -660,7 +660,12 @@ struct FileExplorerPanelView: NSViewRepresentable {
             guard let outlineView else { return }
             let clickedRow = outlineView.clickedRow
             guard clickedRow >= 0,
-                  let node = outlineView.item(atRow: clickedRow) as? FileExplorerNode else { return }
+                  let node = outlineView.item(atRow: clickedRow) as? FileExplorerNode else {
+                // SUPERMUX:begin file-explorer-operations-empty
+                menu.addSupermuxRootFileOperationItems(coordinator: self)
+                // SUPERMUX:end file-explorer-operations-empty
+                return
+            }
 
             let isLocal = store.provider is LocalFileExplorerProvider
 
@@ -705,6 +710,9 @@ struct FileExplorerPanelView: NSViewRepresentable {
             copyRelItem.target = self
             copyRelItem.representedObject = node
             menu.addItem(copyRelItem)
+            // SUPERMUX:begin file-explorer-operations
+            menu.addSupermuxFileOperationItems(coordinator: self, clickedNode: node)
+            // SUPERMUX:end file-explorer-operations
         }
 
         @objc private func contextMenuOpenExternally(_ sender: NSMenuItem) {
@@ -2163,6 +2171,12 @@ final class FileExplorerNSOutlineView: NSOutlineView {
         if quickSearchActive, handleQuickSearchKey(event) {
             return
         }
+
+        // SUPERMUX:begin file-explorer-operations-keys
+        if fileExplorerCoordinator?.handleSupermuxFileOperationKey(event, in: self) == true {
+            return
+        }
+        // SUPERMUX:end file-explorer-operations-keys
 
         if let delta = RightSidebarKeyboardNavigation.moveDelta(for: event) {
             endQuickSearch()
