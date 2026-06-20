@@ -93,9 +93,15 @@ public enum SupermuxFileSystemOperations {
         if destination.standardizedFileURL == url.standardizedFileURL {
             return url
         }
-        let isCaseOnlyRename = destination.path.lowercased() == url.path.lowercased()
-        if !isCaseOnlyRename, fileManager.fileExists(atPath: destination.path) {
-            throw SupermuxFileSystemOperationError.alreadyExists(name: name)
+        if fileManager.fileExists(atPath: destination.path) {
+            // A case-only rename (Foo → foo) on a case-insensitive volume resolves
+            // to the *same* on-disk item and must be allowed; a genuine collision
+            // with a different item (e.g. two distinct items on a case-sensitive
+            // volume) still throws .alreadyExists.
+            let isCaseOnlyRename = destination.path.lowercased() == url.path.lowercased()
+            if !(isCaseOnlyRename && sameOnDiskItem(url, destination)) {
+                throw SupermuxFileSystemOperationError.alreadyExists(name: name)
+            }
         }
         do {
             try fileManager.moveItem(at: url, to: destination)
@@ -122,18 +128,23 @@ public enum SupermuxFileSystemOperations {
         return destination
     }
 
-    /// Moves each URL to the user's Trash, stopping at the first failure.
+    /// Moves each URL to the user's Trash. Missing items are treated as already
+    /// removed (skipped, so the operation is idempotent). Every existing item is
+    /// attempted; if one or more fail, a single aggregate error is thrown after
+    /// the whole batch rather than stopping midway.
     public static func moveToTrash(_ urls: [URL]) throws {
         let fileManager = FileManager.default
+        var failures: [String] = []
         for url in urls {
-            guard fileManager.fileExists(atPath: url.path) else {
-                throw SupermuxFileSystemOperationError.notFound(path: url.path)
-            }
+            guard fileManager.fileExists(atPath: url.path) else { continue }
             do {
                 try fileManager.trashItem(at: url, resultingItemURL: nil)
             } catch {
-                throw SupermuxFileSystemOperationError.failed(reason: error.localizedDescription)
+                failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }
+        }
+        if !failures.isEmpty {
+            throw SupermuxFileSystemOperationError.failed(reason: failures.joined(separator: "\n"))
         }
     }
 
@@ -144,7 +155,11 @@ public enum SupermuxFileSystemOperations {
     /// parity): `report copy.md` → `report copy 2.md`, not `report copy copy.md`.
     public static func uniqueCopyDestination(for url: URL, fileManager: FileManager = .default) -> URL {
         let directory = url.deletingLastPathComponent()
-        let ext = url.pathExtension
+        // Only files carry an extension to preserve; a dotted *folder* name
+        // (e.g. "my.config") is a whole base, not name + extension.
+        var isDirectory: ObjCBool = false
+        fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        let ext = isDirectory.boolValue ? "" : url.pathExtension
         let fullBase = ext.isEmpty ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
         let stem = copyStem(from: fullBase)
 
@@ -169,5 +184,31 @@ public enum SupermuxFileSystemOperations {
             return base
         }
         return String(base[..<range.lowerBound])
+    }
+
+    /// Whether two URLs refer to the same on-disk item (same file id). Used to
+    /// distinguish a legitimate case-only rename from a real collision.
+    private static func sameOnDiskItem(_ a: URL, _ b: URL) -> Bool {
+        let idA = (try? a.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
+        let idB = (try? b.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
+        guard let idA, let idB else { return false }
+        return idA.isEqual(idB)
+    }
+
+    /// Returns only the paths that are not descendants of another path in the
+    /// input set, so trashing a folder doesn't then fail on its (already-trashed)
+    /// children when a parent and child are both selected. Pure and order-stable.
+    public static func topLevelPaths(_ paths: [String]) -> [String] {
+        paths.filter { candidate in
+            !paths.contains { other in other != candidate && pathIsAncestor(other, of: candidate) }
+        }
+    }
+
+    /// Whether `ancestor` strictly contains `descendant` in the path hierarchy.
+    /// Uses a trailing "/" so "/foo" is not treated as an ancestor of "/foobar".
+    public static func pathIsAncestor(_ ancestor: String, of descendant: String) -> Bool {
+        guard ancestor != descendant else { return false }
+        if ancestor == "/" { return descendant.hasPrefix("/") }
+        return descendant.hasPrefix(ancestor + "/")
     }
 }

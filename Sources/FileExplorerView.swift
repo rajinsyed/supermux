@@ -276,6 +276,12 @@ struct FileExplorerPanelView: NSViewRepresentable {
                 }
                 applyStoredSelection(in: outlineView, fallbackToFirstVisible: false, scroll: false)
             }
+            // SUPERMUX:begin file-explorer-operations-reveal
+            if let revealPath = store.supermuxRevealPath,
+               supermuxRevealRowIfPresent(revealPath, in: outlineView) {
+                store.supermuxRevealPath = nil
+            }
+            // SUPERMUX:end file-explorer-operations-reveal
         }
 
         private func restoreExpansionState(_ expandedPaths: Set<String>, in outlineView: NSOutlineView) {

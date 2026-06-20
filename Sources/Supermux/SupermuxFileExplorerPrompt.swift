@@ -76,6 +76,10 @@ enum SupermuxFileOpText {
         String(localized: "supermux.fileOps.trash.confirmMessage",
                defaultValue: "You can restore them later from the Trash.")
     }
+    static var trashConfirmMessageSingle: String {
+        String(localized: "supermux.fileOps.trash.confirmMessageSingle",
+               defaultValue: "You can restore it later from the Trash.")
+    }
 
     static var errorTitle: String {
         String(localized: "supermux.fileOps.error.title", defaultValue: "Couldn’t Complete the Operation")
@@ -142,7 +146,9 @@ extension FileExplorerPanelView.Coordinator {
         } else {
             alert.messageText = String(format: SupermuxFileOpText.trashConfirmTitleMultipleFormat, nodes.count)
         }
-        alert.informativeText = SupermuxFileOpText.trashConfirmMessage
+        alert.informativeText = nodes.count == 1
+            ? SupermuxFileOpText.trashConfirmMessageSingle
+            : SupermuxFileOpText.trashConfirmMessage
         alert.addButton(withTitle: SupermuxFileOpText.moveToTrashMenu)
         alert.addButton(withTitle: SupermuxFileOpText.cancelButton)
         alert.beginSheetModal(for: window) { response in

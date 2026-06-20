@@ -154,7 +154,52 @@ import Testing
         }
     }
 
-    // MARK: - Trash
+    @Test func duplicatePreservesOnlyTheLastExtension() throws {
+        try withTemporaryDirectory { root in
+            let original = try SupermuxFileSystemOperations.createFile(named: "archive.tar.gz", in: root)
+            let copy = try SupermuxFileSystemOperations.duplicate(original)
+            #expect(copy.lastPathComponent == "archive.tar copy.gz")
+        }
+    }
+
+    @Test func duplicateDotfileTreatsWholeNameAsBase() throws {
+        try withTemporaryDirectory { root in
+            let original = try SupermuxFileSystemOperations.createFile(named: ".env", in: root)
+            let copy = try SupermuxFileSystemOperations.duplicate(original)
+            #expect(copy.lastPathComponent == ".env copy")
+        }
+    }
+
+    @Test func duplicateDottedDirectoryKeepsFullName() throws {
+        try withTemporaryDirectory { root in
+            let dir = try SupermuxFileSystemOperations.createDirectory(named: "my.config", in: root)
+            let copy = try SupermuxFileSystemOperations.duplicate(dir)
+            // A dotted folder name is a whole base, not name + extension.
+            #expect(copy.lastPathComponent == "my.config copy")
+        }
+    }
+
+    @Test func duplicateFolderCopiesChildrenRecursively() throws {
+        try withTemporaryDirectory { root in
+            let dir = try SupermuxFileSystemOperations.createDirectory(named: "src", in: root)
+            _ = try SupermuxFileSystemOperations.createFile(named: "a.txt", in: dir)
+            let copy = try SupermuxFileSystemOperations.duplicate(dir)
+            #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("a.txt").path))
+        }
+    }
+
+    // MARK: - Case-only rename
+
+    @Test func renameCaseOnlySucceeds() throws {
+        try withTemporaryDirectory { root in
+            let original = try SupermuxFileSystemOperations.createFile(named: "Readme.md", in: root)
+            let renamed = try SupermuxFileSystemOperations.rename(original, to: "README.md")
+            #expect(renamed.lastPathComponent == "README.md")
+            #expect(FileManager.default.fileExists(atPath: renamed.path))
+        }
+    }
+
+    // MARK: - Trash (best-effort, idempotent)
 
     @Test func moveToTrashRemovesItemFromDirectory() throws {
         try withTemporaryDirectory { root in
@@ -164,12 +209,52 @@ import Testing
         }
     }
 
-    @Test func moveToTrashThrowsWhenMissing() throws {
+    @Test func moveToTrashSkipsMissingItems() throws {
         try withTemporaryDirectory { root in
+            // A missing item is treated as already-removed: no throw, idempotent.
             let ghost = root.appendingPathComponent("ghost.txt")
-            #expect(throws: SupermuxFileSystemOperationError.notFound(path: ghost.path)) {
-                try SupermuxFileSystemOperations.moveToTrash([ghost])
-            }
+            try SupermuxFileSystemOperations.moveToTrash([ghost])
         }
+    }
+
+    @Test func moveToTrashTrashesPresentAndSkipsMissingInOneBatch() throws {
+        try withTemporaryDirectory { root in
+            let present = try SupermuxFileSystemOperations.createFile(named: "present.txt", in: root)
+            let ghost = root.appendingPathComponent("ghost.txt")
+            // Mixed batch: the present item is trashed, the missing one skipped,
+            // and the call does not throw (the partial-failure path Codex flagged).
+            try SupermuxFileSystemOperations.moveToTrash([present, ghost])
+            #expect(!FileManager.default.fileExists(atPath: present.path))
+        }
+    }
+
+    // MARK: - Nested-selection de-dup (topLevelPaths)
+
+    @Test func topLevelPathsDropsDescendantsOfSelectedAncestor() {
+        let result = SupermuxFileSystemOperations.topLevelPaths(["/a", "/a/b", "/a/b/c"])
+        #expect(result == ["/a"])
+    }
+
+    @Test func topLevelPathsKeepsSiblings() {
+        let result = SupermuxFileSystemOperations.topLevelPaths(["/a/x", "/a/y"])
+        #expect(result == ["/a/x", "/a/y"])
+    }
+
+    @Test func topLevelPathsDoesNotTreatPrefixSiblingAsAncestor() {
+        // "/foo" must NOT be considered an ancestor of "/foobar".
+        let result = SupermuxFileSystemOperations.topLevelPaths(["/foo", "/foobar"])
+        #expect(result == ["/foo", "/foobar"])
+    }
+
+    @Test func topLevelPathsTreatsRootAsAncestorOfEverything() {
+        let result = SupermuxFileSystemOperations.topLevelPaths(["/", "/a", "/b"])
+        #expect(result == ["/"])
+    }
+
+    @Test func pathIsAncestorEdgeCases() {
+        #expect(SupermuxFileSystemOperations.pathIsAncestor("/a", of: "/a/b"))
+        #expect(!SupermuxFileSystemOperations.pathIsAncestor("/a", of: "/a"))
+        #expect(!SupermuxFileSystemOperations.pathIsAncestor("/foo", of: "/foobar"))
+        #expect(SupermuxFileSystemOperations.pathIsAncestor("/", of: "/anything"))
     }
 }

@@ -40,7 +40,7 @@
 2546	cmuxTests/WorkspaceManualUnreadTests.swift
 2460	cmuxTests/CommandPaletteSearchEngineTests.swift
 2395	Sources/Mobile/MobileHostService.swift
-2369	Sources/FileExplorerView.swift
+2375	Sources/FileExplorerView.swift
 2328	cmuxTests/CJKIMEInputTests.swift
 2259	Sources/TerminalWindowPortal.swift
 2236	Sources/TerminalNotificationStore.swift
@@ -62,7 +62,7 @@
 1512	cmuxTests/RestorableAgentSessionIndexTests.swift
 1497	cmuxTests/OmnibarAndToolsTests.swift
 1496	cmuxUITests/MultiWindowNotificationsUITests.swift
-1446	Sources/FileExplorerStore.swift
+1463	Sources/FileExplorerStore.swift
 1426	Sources/VaultAgentProcessScanner.swift
 1384	cmuxTests/KeyboardShortcutSettingsFileStoreStartupTests.swift
 1380	cmuxUITests/MenuKeyEquivalentRoutingUITests.swift

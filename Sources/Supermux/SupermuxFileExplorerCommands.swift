@@ -68,8 +68,9 @@ extension FileExplorerPanelView.Coordinator {
         ) { [weak self] name in
             guard let self else { return }
             do {
-                try SupermuxFileSystemOperations.createFile(named: name, in: request.parentDirectory)
+                let created = try SupermuxFileSystemOperations.createFile(named: name, in: request.parentDirectory)
                 if let node = request.expandNode { self.store.expand(node: node) }
+                self.store.supermuxReveal(path: created.path)
                 self.supermuxRefreshAfterFileOperation()
             } catch {
                 self.supermuxPresentFileOpError(error)
@@ -87,8 +88,9 @@ extension FileExplorerPanelView.Coordinator {
         ) { [weak self] name in
             guard let self else { return }
             do {
-                try SupermuxFileSystemOperations.createDirectory(named: name, in: request.parentDirectory)
+                let created = try SupermuxFileSystemOperations.createDirectory(named: name, in: request.parentDirectory)
                 if let node = request.expandNode { self.store.expand(node: node) }
+                self.store.supermuxReveal(path: created.path)
                 self.supermuxRefreshAfterFileOperation()
             } catch {
                 self.supermuxPresentFileOpError(error)
@@ -103,8 +105,13 @@ extension FileExplorerPanelView.Coordinator {
 
     @objc func supermuxDuplicate(_ sender: NSMenuItem) {
         guard let node = sender.representedObject as? FileExplorerNode else { return }
-        let url = URL(fileURLWithPath: node.path)
-        supermuxRunFileOperation { _ = try SupermuxFileSystemOperations.duplicate(url) }
+        // Honor the active multi-selection, like Move to Trash, so Duplicate is
+        // not silently partial. Each item is duplicated independently (Finder
+        // duplicates a selected folder and a selected child separately).
+        let urls = supermuxContextNodes(clicked: node).map { URL(fileURLWithPath: $0.path) }
+        supermuxRunFileOperation {
+            for url in urls { _ = try SupermuxFileSystemOperations.duplicate(url) }
+        }
     }
 
     @objc func supermuxMoveToTrash(_ sender: NSMenuItem) {
@@ -122,7 +129,8 @@ extension FileExplorerPanelView.Coordinator {
         ) { [weak self] name in
             guard let self else { return }
             do {
-                _ = try SupermuxFileSystemOperations.rename(URL(fileURLWithPath: node.path), to: name)
+                let renamed = try SupermuxFileSystemOperations.rename(URL(fileURLWithPath: node.path), to: name)
+                self.store.supermuxReveal(path: renamed.path)
                 self.supermuxRefreshAfterFileOperation()
             } catch {
                 self.supermuxPresentFileOpError(error)
@@ -168,16 +176,20 @@ extension FileExplorerPanelView.Coordinator {
     /// first responder. Returns `true` when the event was consumed.
     func handleSupermuxFileOperationKey(_ event: NSEvent, in outlineView: NSOutlineView) -> Bool {
         guard store.provider is LocalFileExplorerProvider else { return false }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // Check only the command/control/option modifiers, matching
+        // RightSidebarKeyboardNavigation's plain-key convention. This ignores
+        // .numericPad (set on keypad Enter, keyCode 76), .shift, and capsLock —
+        // otherwise keypad Enter would never reach the rename path.
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option])
 
-        if event.keyCode == 51, flags == [.command] {
+        if event.keyCode == 51, modifiers == [.command] {
             let nodes = supermuxSelectedNodes(in: outlineView)
             guard !nodes.isEmpty else { return false }
             supermuxMoveNodesToTrash(nodes)
             return true
         }
 
-        if event.keyCode == 36 || event.keyCode == 76, flags.isEmpty {
+        if event.keyCode == 36 || event.keyCode == 76, modifiers.isEmpty {
             guard let node = supermuxAnchorNode(in: outlineView) else { return false }
             supermuxBeginRename(node)
             return true
@@ -200,17 +212,25 @@ extension FileExplorerPanelView.Coordinator {
 
     /// Drops nodes that are descendants of another node in the same set, so
     /// trashing a folder does not then fail on its already-trashed children.
+    /// Delegates to the pure, unit-tested `SupermuxFileSystemOperations.topLevelPaths`.
     private func supermuxTopLevelNodes(_ nodes: [FileExplorerNode]) -> [FileExplorerNode] {
-        let paths = nodes.map(\.path)
-        return nodes.filter { node in
-            !paths.contains { $0 != node.path && Self.supermuxPath($0, isAncestorOf: node.path) }
-        }
+        let keep = Set(SupermuxFileSystemOperations.topLevelPaths(nodes.map(\.path)))
+        return nodes.filter { keep.contains($0.path) }
     }
 
-    private static func supermuxPath(_ ancestor: String, isAncestorOf descendant: String) -> Bool {
-        guard ancestor != descendant else { return false }
-        if ancestor == "/" { return descendant.hasPrefix("/") }
-        return descendant.hasPrefix(ancestor + "/")
+    /// Scrolls the row for `path` into view if it is present, returning whether it
+    /// was found. The selection itself is applied by the store's `applyStoredSelection`
+    /// (selectedPath == path); this only handles the scroll. Called from
+    /// `reloadIfNeeded` so a just-created/renamed item is revealed once its row loads.
+    func supermuxRevealRowIfPresent(_ path: String, in outlineView: NSOutlineView) -> Bool {
+        for row in 0..<outlineView.numberOfRows {
+            guard let node = outlineView.item(atRow: row) as? FileExplorerNode else { continue }
+            if node.path == path {
+                outlineView.scrollRowToVisible(row)
+                return true
+            }
+        }
+        return false
     }
 
     /// Resolves which nodes a node-targeted context action applies to: the whole

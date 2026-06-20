@@ -51,7 +51,8 @@ Rules for adding a touchpoint:
 | 36 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `toggle-split-zoom-rebind` | Regression test `testGhosttyConfigDoesNotRetainSplitZoomReturnFallback` asserts the loaded Ghostty config has no `super+shift+enter` binding (companion to the #5189 numbered-fallback test) |
 | 37 | `Sources/KeyboardShortcutSettings.swift` | `supermux-commit-shortcut-case`, `supermux-commit-shortcut-label`, `supermux-commit-shortcut-default` | Registers the Changes-panel `supermuxCommit` (⌘↩) and `supermuxCommitAccelerator` (⇧⌘↩) actions (case/label/default) so both are editable in Settings, live in `cmux.json`, and participate in conflict detection; applied by the panel's SwiftUI buttons (read via `SupermuxChangesMount`), not the app monitor |
 | 38 | `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift` | `supermux-commit-shortcut` | `testSupermuxCommitDefaultsBindReturnChords` asserts the two commit actions default to ⌘↩ / ⇧⌘↩ and do not cross-match |
-| 39 | `Sources/FileExplorerView.swift` | `file-explorer-operations`, `file-explorer-operations-empty`, `file-explorer-operations-keys` | Adds file-management to the right-sidebar file tree (local provider only): context-menu items New File/New Folder/Rename/Duplicate/Move to Trash on a clicked node, New File/New Folder on the empty area (root), and ⌘⌫ (Move to Trash) / Return (Rename) keyboard handling when the outline view is focused. All logic lives in supermux-owned files (`Sources/Supermux/SupermuxFileExplorerCommands.swift`, `SupermuxFileExplorerPrompt.swift`) and `Packages/SupermuxKit/Sources/SupermuxKit/SupermuxFileSystemOperations.swift`; the three fences are one-line calls into a `FileExplorerPanelView.Coordinator` extension |
+| 39 | `Sources/FileExplorerView.swift` | `file-explorer-operations`, `file-explorer-operations-empty`, `file-explorer-operations-keys`, `file-explorer-operations-reveal` | Adds file-management to the right-sidebar file tree (local provider only): context-menu items New File/New Folder/Rename/Duplicate/Move to Trash on a clicked node, New File/New Folder on the empty area (root), and ⌘⌫ (Move to Trash) / Return (Rename) keyboard handling when the outline view is focused; the `-reveal` fence scrolls a just-created/renamed item into view after the reload. All logic lives in supermux-owned files (`Sources/Supermux/SupermuxFileExplorerCommands.swift`, `SupermuxFileExplorerPrompt.swift`) and `Packages/SupermuxKit/Sources/SupermuxKit/SupermuxFileSystemOperations.swift`; the fences are one-line calls into a `FileExplorerPanelView.Coordinator` extension |
+| 40 | `Sources/FileExplorerStore.swift` | `file-explorer-operations-reveal` | Adds `supermuxRevealPath` + `supermuxReveal(path:)` to `FileExplorerStore` so a supermux file operation can select a just-created/renamed item by path (the selection state is `private(set)`, so this must live in the store's own file). Paired with the coordinator's `-reveal` hook in touchpoint #39 |
 
 ## How to re-apply
 
@@ -221,7 +222,8 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | +32, +26 | `run-toggle-shortcut-dispatch` (contract update + regression test); `toggle-split-zoom-rebind` (+26: fenced `testGhosttyConfigDoesNotRetainSplitZoomReturnFallback`, 12078→12104) |
 | `Sources/GhosttyTerminalView.swift` | +16 | `ghostty-unbind-split-zoom-return` (fenced second `loadInlineGhosttyConfig` unbinding `super+shift+enter`, 12105→12121) |
 | `CLI/cmux.swift` | +4 | `changes` CLI mode |
-| `Sources/FileExplorerView.swift` | +14 | `file-explorer-operations` (+3: end-of-menu call), `file-explorer-operations-empty` (+5: empty-area `else` block adding root New File/Folder), `file-explorer-operations-keys` (+6: ⌘⌫/Return hook in the outline `keyDown`), 2355→2369 |
+| `Sources/FileExplorerView.swift` | +14, +6 | `file-explorer-operations` (+3: end-of-menu call), `file-explorer-operations-empty` (+5: empty-area `else` block adding root New File/Folder), `file-explorer-operations-keys` (+6: ⌘⌫/Return hook in the outline `keyDown`), 2355→2369; `file-explorer-operations-reveal` (+6: scroll-into-view hook in `reloadIfNeeded`, 2369→2375) |
+| `Sources/FileExplorerStore.swift` | +17 | `file-explorer-operations-reveal` (`supermuxRevealPath` property + `supermuxReveal(path:)` method, 1446→1463) |
 
 After a merge, re-run and re-bump only by the measured fenced delta:
 
@@ -724,3 +726,28 @@ the supermux file-operation items (node branch and empty-area branch) and route 
 `handleSupermuxFileOperationKey` before the outline view's own navigation handling. Operations are
 local-provider only. Budget bump for this file is in the #4 table; the pbxproj additions for the
 two new app files are in the #3 note.
+
+**`file-explorer-operations-reveal` (#39 + #40, two files):** a just-created or renamed item is
+selected and scrolled into view after the post-operation reload.
+
+- **#40 `Sources/FileExplorerStore.swift`:** add a `var supermuxRevealPath: String?` and a
+  `func supermuxReveal(path:)` that sets `selectedPath`/`selectedPaths` (which are `private(set)`,
+  so this must live in the store) and stores `supermuxRevealPath`. The app handlers call
+  `store.supermuxReveal(path: created/renamed.path)` before the reload.
+- **#39 `Sources/FileExplorerView.swift`:** in `Coordinator.reloadIfNeeded()`, right after the
+  `withProgrammaticOutlineUpdate { … applyStoredSelection(…) }` block:
+
+  ```swift
+  // SUPERMUX:begin file-explorer-operations-reveal
+  if let revealPath = store.supermuxRevealPath,
+     supermuxRevealRowIfPresent(revealPath, in: outlineView) {
+      store.supermuxRevealPath = nil
+  }
+  // SUPERMUX:end file-explorer-operations-reveal
+  ```
+
+  `supermuxRevealRowIfPresent` (supermux-owned, in `SupermuxFileExplorerCommands.swift`) scrolls the
+  row for the path if present and returns whether it found it, so the flag is cleared only once the
+  row actually exists (the item may appear a reload later when its parent folder finishes loading).
+  If upstream restructures the store/reload, the requirement is: after a file op, select the new
+  path and scroll it into view once its row loads.

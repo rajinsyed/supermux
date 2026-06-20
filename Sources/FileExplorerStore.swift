@@ -768,6 +768,23 @@ final class FileExplorerStore: ObservableObject {
     /// Folder path whose first child should be selected once its async load completes.
     private var pendingDescendIntoFirstChildPath: String?
 
+    // SUPERMUX:begin file-explorer-operations-reveal
+    /// Path a supermux file operation wants selected and scrolled into view on the
+    /// next reload (a just-created or renamed item). The coordinator clears it once
+    /// the row is revealed. See Sources/Supermux/SupermuxFileExplorerCommands.swift.
+    var supermuxRevealPath: String?
+
+    /// Selects `path` (so it survives the reload that follows a file operation) and
+    /// marks it to be scrolled into view. Setting `selectedPath`/`selectedPaths`
+    /// here requires being inside the store (they are `private(set)`).
+    func supermuxReveal(path: String) {
+        selectedPath = path
+        selectedPaths = [path]
+        pendingDescendIntoFirstChildPath = nil
+        supermuxRevealPath = path
+    }
+    // SUPERMUX:end file-explorer-operations-reveal
+
     /// Paths currently being loaded
     private(set) var loadingPaths: Set<String> = []
 
