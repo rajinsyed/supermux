@@ -192,10 +192,25 @@ import Testing
 
     @Test func renameCaseOnlySucceeds() throws {
         try withTemporaryDirectory { root in
+            // Probe volume case-sensitivity deterministically so the assertions
+            // are explicit about which branch ran.
+            let probe = root.appendingPathComponent("CaseProbe")
+            try Data().write(to: probe)
+            let caseInsensitive = FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("caseprobe").path)
+            try FileManager.default.removeItem(at: probe)
+
             let original = try SupermuxFileSystemOperations.createFile(named: "Readme.md", in: root)
             let renamed = try SupermuxFileSystemOperations.rename(original, to: "README.md")
             #expect(renamed.lastPathComponent == "README.md")
             #expect(FileManager.default.fileExists(atPath: renamed.path))
+            if caseInsensitive {
+                // Case-only rename went through the sameOnDiskItem branch: the
+                // single underlying file was renamed in place (no duplicate item).
+                let matches = try FileManager.default.contentsOfDirectory(atPath: root.path)
+                    .filter { $0.lowercased() == "readme.md" }
+                #expect(matches == ["README.md"])
+            }
         }
     }
 
@@ -230,17 +245,30 @@ import Testing
 
     @Test func moveToTrashAttemptsWholeBatchAndAggregatesFailures() throws {
         try withTemporaryDirectory { root in
-            let good = try SupermuxFileSystemOperations.createFile(named: "good.txt", in: root)
             let bad = try SupermuxFileSystemOperations.createFile(named: "bad.txt", in: root)
-            // A FileManager that fails to trash exactly `bad`. The batch must still
-            // trash `good`, then throw a single aggregate .failed naming `bad` — the
-            // genuine partial-failure path (not just skip-missing).
+            let good1 = try SupermuxFileSystemOperations.createFile(named: "good1.txt", in: root)
+            let good2 = try SupermuxFileSystemOperations.createFile(named: "good2.txt", in: root)
+            // Failing item FIRST: a stop-on-first-failure regression would leave
+            // good1/good2 on disk and fail this test. The batch must continue past
+            // the mid-batch failure and throw one aggregate .failed naming `bad`.
             let fm = FailingTrashFileManager(failingFor: bad)
+            var thrown: (any Error)?
             #expect(throws: SupermuxFileSystemOperationError.self) {
-                try SupermuxFileSystemOperations.moveToTrash([good, bad], fileManager: fm)
+                do {
+                    try SupermuxFileSystemOperations.moveToTrash([bad, good1, good2], fileManager: fm)
+                } catch {
+                    thrown = error
+                    throw error
+                }
             }
-            #expect(!FileManager.default.fileExists(atPath: good.path))   // good was trashed
-            #expect(FileManager.default.fileExists(atPath: bad.path))     // bad remains
+            #expect(FileManager.default.fileExists(atPath: bad.path))      // bad remains
+            #expect(!FileManager.default.fileExists(atPath: good1.path))   // good1 trashed
+            #expect(!FileManager.default.fileExists(atPath: good2.path))   // good2 trashed (loop continued)
+            if case let .failed(reason)? = thrown as? SupermuxFileSystemOperationError {
+                #expect(reason.contains("bad.txt"))
+            } else {
+                Issue.record("expected .failed naming bad.txt, got \(String(describing: thrown))")
+            }
         }
     }
 

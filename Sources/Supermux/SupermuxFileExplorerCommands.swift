@@ -158,14 +158,26 @@ extension FileExplorerPanelView.Coordinator {
     /// the tree — including after a partial failure — surfaces any error, and
     /// reveals the path `work` returns (a newly created item), if any.
     private func supermuxRunFileOperation(_ work: @escaping @Sendable () throws -> String?) {
+        // Capture the workspace the op belongs to. The store is reused across
+        // workspace switches in the window, so if the user switches before the
+        // detached work finishes we must NOT reveal/refresh this (now-foreign)
+        // store with the old workspace's path.
+        let identity = store.workspaceRootIdentity
         Task { [weak self] in
+            let result: Result<String?, any Error>
             do {
-                let revealPath = try await Task.detached(priority: .userInitiated) { try work() }.value
-                if let revealPath { self?.store.supermuxReveal(path: revealPath) }
+                result = .success(try await Task.detached(priority: .userInitiated) { try work() }.value)
             } catch {
-                self?.supermuxPresentFileOpError(error)
+                result = .failure(error)
             }
-            self?.supermuxRefreshAfterFileOperation()
+            guard let self, self.store.workspaceRootIdentity == identity else { return }
+            switch result {
+            case .success(let revealPath):
+                if let revealPath { self.store.supermuxReveal(path: revealPath) }
+            case .failure(let error):
+                self.supermuxPresentFileOpError(error)
+            }
+            self.supermuxRefreshAfterFileOperation()
         }
     }
 
@@ -207,14 +219,28 @@ extension FileExplorerPanelView.Coordinator {
 
     // MARK: - Node resolution
 
+    /// Destructive keyboard targets, resolved from the *authoritative* store
+    /// selection (not the raw visual selection). During a reveal into a
+    /// not-yet-loaded subtree the visual selection can transiently sit on a
+    /// parent folder while `store.selectedPaths` already holds the new item — so
+    /// trusting the visual selection could ⌘⌫-trash the wrong (parent) folder.
     private func supermuxSelectedNodes(in outlineView: NSOutlineView) -> [FileExplorerNode] {
-        outlineView.selectedRowIndexes.compactMap { outlineView.item(atRow: $0) as? FileExplorerNode }
+        let visible = outlineView.selectedRowIndexes.compactMap { outlineView.item(atRow: $0) as? FileExplorerNode }
+        let keep = Set(SupermuxFileExplorerSelection.authoritativePaths(
+            visible: visible.map(\.path), authoritative: store.selectedPaths))
+        return visible.filter { keep.contains($0.path) }
     }
 
     private func supermuxAnchorNode(in outlineView: NSOutlineView) -> FileExplorerNode? {
-        let row = outlineView.selectedRow
-        guard row >= 0 else { return nil }
-        return outlineView.item(atRow: row) as? FileExplorerNode
+        // Resolve the rename anchor from the authoritative store path, not the
+        // transient visual row (same reveal-gap divergence as above).
+        guard let anchorPath = store.selectedPath else { return nil }
+        for row in 0..<outlineView.numberOfRows {
+            if let node = outlineView.item(atRow: row) as? FileExplorerNode, node.path == anchorPath {
+                return node
+            }
+        }
+        return nil
     }
 
     /// Drops nodes that are descendants of another node in the same set, so

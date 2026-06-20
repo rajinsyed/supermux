@@ -681,7 +681,8 @@ supermux-owned files; the three fences are one-line calls into a
   error presentation.
 - `Packages/SupermuxKit/Sources/SupermuxKit/SupermuxFileSystemOperations.swift` — the pure,
   unit-tested filesystem create/rename/duplicate/trash logic (name validation, collision handling,
-  Finder-style " copy" naming).
+  English, locale-independent " copy" naming — deliberately not localized, since it is an
+  on-disk filename, not UI text).
 
 **`file-explorer-operations`:** at the end of the `Coordinator.menuNeedsUpdate(_:)` node branch
 (after the Copy Relative Path item):

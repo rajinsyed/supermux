@@ -150,8 +150,11 @@ public enum SupermuxFileSystemOperations {
     /// Computes a non-colliding " copy" destination for `url`, preserving the
     /// file extension: `name copy.ext`, then `name copy 2.ext`, and so on.
     ///
-    /// Duplicating an already-suffixed copy increments the counter (Finder
-    /// parity): `report copy.md` → `report copy 2.md`, not `report copy copy.md`.
+    /// The suffix is a fixed English " copy" — a portable, locale-independent
+    /// on-disk convention, deliberately NOT localized like Finder's (so a
+    /// duplicate's filename never depends on the UI language; this is a developer
+    /// tool). Duplicating an already-suffixed copy fills the lowest free slot:
+    /// `report copy.md` → `report copy 2.md`, not `report copy copy.md`.
     public static func uniqueCopyDestination(for url: URL, fileManager: FileManager = .default) -> URL {
         let directory = url.deletingLastPathComponent()
         // Only files carry an extension to preserve; a dotted *folder* name
