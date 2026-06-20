@@ -107,6 +107,10 @@ final class SupermuxRunCoordinator {
             ?? workspace.bonsplitController.allPaneIds.first else {
             return false
         }
+        // Capture the user's surface before opening the run surface so we can
+        // keep focus on it: the run surface is launched in the background and
+        // then moved to the front, and the move must not steal keyboard focus.
+        let previousFocusedPanelId = workspace.focusedPanelId
         // Launch through the interactive shell (see SupermuxCommandLaunch), the
         // same path the restart branch above uses via sendText + Return: shell
         // aliases/functions resolve and the surface survives the command exit.
@@ -118,6 +122,15 @@ final class SupermuxRunCoordinator {
         ) else {
             return false
         }
+        // Always place the run surface as the first tab instead of at the end of
+        // the pane's tab bar, so the project's dev-server lives in a predictable
+        // spot. keepFocus: false re-focuses the user's surface after the move, so
+        // it lands at the front in the background without stealing focus.
+        workspace.supermuxMoveSurfaceToFront(
+            panelId: panel.id,
+            keepFocus: false,
+            restoreFocusTo: previousFocusedPanelId
+        )
         handlesByWorkspaceId[workspace.id] = RunHandle(
             workspaceId: workspace.id,
             panelId: panel.id,
@@ -140,5 +153,31 @@ final class SupermuxRunCoordinator {
         )
         alert.alertStyle = .informational
         alert.runModal()
+    }
+}
+
+extension Workspace {
+    /// Moves a freshly opened supermux surface to the front (index 0) of its
+    /// pane, so the ⌘G run action and project run-action commands open their
+    /// terminal as the *first* tab instead of being appended at the end.
+    ///
+    /// bonsplit's reorder always selects and focuses the moved tab, so:
+    /// - `keepFocus == true` (foreground actions) is a single reorder — the new
+    ///   surface stays selected and focused at the front.
+    /// - `keepFocus == false` (the background ⌘G run path) reorders, then
+    ///   re-focuses `restoreFocusTo` as the final selection so the run tab lands
+    ///   at the front without stealing keyboard focus from the surface the user
+    ///   was on. Capture `restoreFocusTo` (the workspace's `focusedPanelId`)
+    ///   *before* opening the new surface.
+    ///
+    /// Note: when the pane has pinned tabs, "front" is the first *unpinned* slot,
+    /// since pinned tabs always precede unpinned ones in a pane.
+    func supermuxMoveSurfaceToFront(panelId: UUID, keepFocus: Bool, restoreFocusTo: UUID? = nil) {
+        reorderSurface(panelId: panelId, toIndex: 0, focus: keepFocus)
+        guard !keepFocus,
+              let restoreFocusTo,
+              restoreFocusTo != panelId,
+              panels[restoreFocusTo] != nil else { return }
+        focusPanel(restoreFocusTo)
     }
 }

@@ -183,12 +183,15 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         let resolved = SupermuxCommandLaunch.workingDirectory(
             focusedWorkspaceDirectory: workspace.currentDirectory, fallback: request.directory)
         let directory = (resolved as NSString).expandingTildeInPath
-        _ = workspace.newTerminalSurface(
+        guard let panel = workspace.newTerminalSurface(
             inPane: paneId,
             focus: true,
             workingDirectory: directory,
             initialInput: SupermuxCommandLaunch.shellInput(for: command)
-        )
+        ) else { return }
+        // Open the action's tab as the first tab, matching the ⌘G run action.
+        // The action runs in the foreground, so the new surface keeps focus.
+        workspace.supermuxMoveSurfaceToFront(panelId: panel.id, keepFocus: true)
     }
 
     /// Records the workspace→project association for project-originated opens,

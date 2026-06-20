@@ -195,8 +195,8 @@
 528	cmuxUITests/AutomationSocketUITests.swift
 527	CLI/CLISocketPathResolver.swift
 524	CLI/CMUXCLI+AutoNaming.swift
+523	Sources/Supermux/SupermuxAppGlue.swift
 520	CLI/CMUXCLI+AmpExtension.swift
-520	Sources/Supermux/SupermuxAppGlue.swift
 520	cmuxTests/MainWindowVisibilityControllerTests.swift
 519	Packages/CmuxSwiftRender/Tests/CmuxSwiftRenderTests/Corpus/stress-two-column-cockpit-sidebar.swift
 519	Sources/CmuxConfigExecutor.swift
