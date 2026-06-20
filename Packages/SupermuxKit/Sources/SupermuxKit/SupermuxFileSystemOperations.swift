@@ -132,8 +132,7 @@ public enum SupermuxFileSystemOperations {
     /// removed (skipped, so the operation is idempotent). Every existing item is
     /// attempted; if one or more fail, a single aggregate error is thrown after
     /// the whole batch rather than stopping midway.
-    public static func moveToTrash(_ urls: [URL]) throws {
-        let fileManager = FileManager.default
+    public static func moveToTrash(_ urls: [URL], fileManager: FileManager = .default) throws {
         var failures: [String] = []
         for url in urls {
             guard fileManager.fileExists(atPath: url.path) else { continue }
@@ -177,8 +176,9 @@ public enum SupermuxFileSystemOperations {
         return destination
     }
 
-    /// Strips a trailing " copy" or " copy N" so re-duplicating a copy continues
-    /// the " copy 2", " copy 3" sequence instead of stacking " copy copy".
+    /// Strips a trailing " copy" or " copy N" so re-duplicating a copy reuses the
+    /// " copy" stem and `uniqueCopyDestination` then fills the lowest free slot
+    /// (" copy", " copy 2", …) instead of stacking " copy copy".
     private static func copyStem(from base: String) -> String {
         guard let range = base.range(of: #" copy( \d+)?$"#, options: .regularExpression) else {
             return base

@@ -110,7 +110,9 @@ extension FileExplorerPanelView.Coordinator {
         // duplicates a selected folder and a selected child separately).
         let urls = supermuxContextNodes(clicked: node).map { URL(fileURLWithPath: $0.path) }
         supermuxRunFileOperation {
-            for url in urls { _ = try SupermuxFileSystemOperations.duplicate(url) }
+            var lastCopy: String?
+            for url in urls { lastCopy = try SupermuxFileSystemOperations.duplicate(url).path }
+            return lastCopy
         }
     }
 
@@ -144,17 +146,22 @@ extension FileExplorerPanelView.Coordinator {
         guard !targets.isEmpty else { return }
         let urls = targets.map { URL(fileURLWithPath: $0.path) }
         supermuxConfirmTrash(targets) { [weak self] in
-            self?.supermuxRunFileOperation { try SupermuxFileSystemOperations.moveToTrash(urls) }
+            self?.supermuxRunFileOperation {
+                try SupermuxFileSystemOperations.moveToTrash(urls)
+                return nil
+            }
         }
     }
 
     /// Runs a filesystem mutation off the main actor (so duplicating a large
     /// folder or trashing many items never blocks the UI), then always refreshes
-    /// the tree — including after a partial failure — and surfaces any error.
-    private func supermuxRunFileOperation(_ work: @escaping @Sendable () throws -> Void) {
+    /// the tree — including after a partial failure — surfaces any error, and
+    /// reveals the path `work` returns (a newly created item), if any.
+    private func supermuxRunFileOperation(_ work: @escaping @Sendable () throws -> String?) {
         Task { [weak self] in
             do {
-                try await Task.detached(priority: .userInitiated) { try work() }.value
+                let revealPath = try await Task.detached(priority: .userInitiated) { try work() }.value
+                if let revealPath { self?.store.supermuxReveal(path: revealPath) }
             } catch {
                 self?.supermuxPresentFileOpError(error)
             }

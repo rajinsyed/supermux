@@ -221,10 +221,26 @@ import Testing
         try withTemporaryDirectory { root in
             let present = try SupermuxFileSystemOperations.createFile(named: "present.txt", in: root)
             let ghost = root.appendingPathComponent("ghost.txt")
-            // Mixed batch: the present item is trashed, the missing one skipped,
-            // and the call does not throw (the partial-failure path Codex flagged).
+            // Mixed batch: the present item is trashed and the missing one is
+            // skipped (not an error), so the call does not throw.
             try SupermuxFileSystemOperations.moveToTrash([present, ghost])
             #expect(!FileManager.default.fileExists(atPath: present.path))
+        }
+    }
+
+    @Test func moveToTrashAttemptsWholeBatchAndAggregatesFailures() throws {
+        try withTemporaryDirectory { root in
+            let good = try SupermuxFileSystemOperations.createFile(named: "good.txt", in: root)
+            let bad = try SupermuxFileSystemOperations.createFile(named: "bad.txt", in: root)
+            // A FileManager that fails to trash exactly `bad`. The batch must still
+            // trash `good`, then throw a single aggregate .failed naming `bad` — the
+            // genuine partial-failure path (not just skip-missing).
+            let fm = FailingTrashFileManager(failingFor: bad)
+            #expect(throws: SupermuxFileSystemOperationError.self) {
+                try SupermuxFileSystemOperations.moveToTrash([good, bad], fileManager: fm)
+            }
+            #expect(!FileManager.default.fileExists(atPath: good.path))   // good was trashed
+            #expect(FileManager.default.fileExists(atPath: bad.path))     // bad remains
         }
     }
 
@@ -256,5 +272,96 @@ import Testing
         #expect(!SupermuxFileSystemOperations.pathIsAncestor("/a", of: "/a"))
         #expect(!SupermuxFileSystemOperations.pathIsAncestor("/foo", of: "/foobar"))
         #expect(SupermuxFileSystemOperations.pathIsAncestor("/", of: "/anything"))
+    }
+
+    // MARK: - Duplicate copies real content
+
+    @Test func duplicateCopiesFileContents() throws {
+        try withTemporaryDirectory { root in
+            let original = root.appendingPathComponent("note.txt")
+            try "hello world".write(to: original, atomically: true, encoding: .utf8)
+            let copy = try SupermuxFileSystemOperations.duplicate(original)
+            #expect(try String(contentsOf: copy, encoding: .utf8) == "hello world")
+        }
+    }
+
+    @Test func duplicateFolderCopiesChildContents() throws {
+        try withTemporaryDirectory { root in
+            let dir = try SupermuxFileSystemOperations.createDirectory(named: "src", in: root)
+            try "fn main() {}".write(to: dir.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
+            let copy = try SupermuxFileSystemOperations.duplicate(dir)
+            let copiedChild = copy.appendingPathComponent("main.swift")
+            #expect(try String(contentsOf: copiedChild, encoding: .utf8) == "fn main() {}")
+        }
+    }
+
+    // MARK: - .notFound on a vanished source
+
+    @Test func renameThrowsNotFoundWhenSourceMissing() throws {
+        try withTemporaryDirectory { root in
+            let ghost = root.appendingPathComponent("ghost.txt")
+            #expect(throws: SupermuxFileSystemOperationError.notFound(path: ghost.path)) {
+                try SupermuxFileSystemOperations.rename(ghost, to: "new.txt")
+            }
+        }
+    }
+
+    @Test func duplicateThrowsNotFoundWhenSourceMissing() throws {
+        try withTemporaryDirectory { root in
+            let ghost = root.appendingPathComponent("ghost.txt")
+            #expect(throws: SupermuxFileSystemOperationError.notFound(path: ghost.path)) {
+                try SupermuxFileSystemOperations.duplicate(ghost)
+            }
+        }
+    }
+
+    // MARK: - Copy-stem lowest-free-slot policy
+
+    @Test func duplicateOfNumberedCopyFillsLowestFreeSlot() throws {
+        try withTemporaryDirectory { root in
+            // Only "x copy 3.txt" exists; duplicating it reuses the " copy" stem and
+            // fills the lowest free slot → "x copy.txt".
+            let numbered = try SupermuxFileSystemOperations.createFile(named: "x copy 3.txt", in: root)
+            let copy = try SupermuxFileSystemOperations.duplicate(numbered)
+            #expect(copy.lastPathComponent == "x copy.txt")
+        }
+    }
+
+    @Test func duplicateWalksToNextFreeSlotWhenLowerExist() throws {
+        try withTemporaryDirectory { root in
+            _ = try SupermuxFileSystemOperations.createFile(named: "x copy.txt", in: root)
+            _ = try SupermuxFileSystemOperations.createFile(named: "x copy 2.txt", in: root)
+            let numbered = try SupermuxFileSystemOperations.createFile(named: "x copy 3.txt", in: root)
+            // stem "x", slots " copy"/" copy 2"/" copy 3" taken → next free is " copy 4".
+            let copy = try SupermuxFileSystemOperations.duplicate(numbered)
+            #expect(copy.lastPathComponent == "x copy 4.txt")
+        }
+    }
+
+    // MARK: - createDirectory invalid-name propagation
+
+    @Test func createDirectoryThrowsOnInvalidName() throws {
+        try withTemporaryDirectory { root in
+            #expect(throws: SupermuxFileSystemOperationError.invalidName("bad/name")) {
+                try SupermuxFileSystemOperations.createDirectory(named: "bad/name", in: root)
+            }
+        }
+    }
+}
+
+/// A `FileManager` that fails to trash exactly one URL (delegating everything
+/// else to the real implementation), so the aggregate-failure path of
+/// `moveToTrash` can be exercised deterministically.
+private final class FailingTrashFileManager: FileManager, @unchecked Sendable {
+    private let failingPath: String
+    init(failingFor url: URL) {
+        self.failingPath = url.standardizedFileURL.path
+        super.init()
+    }
+    override func trashItem(at url: URL, resultingItemURL outResultingURL: AutoreleasingUnsafeMutablePointer<NSURL?>?) throws {
+        if url.standardizedFileURL.path == failingPath {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try super.trashItem(at: url, resultingItemURL: outResultingURL)
     }
 }
