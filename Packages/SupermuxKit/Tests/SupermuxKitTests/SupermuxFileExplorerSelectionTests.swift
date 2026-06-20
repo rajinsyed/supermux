@@ -32,4 +32,53 @@ import Testing
         )
         #expect(result == ["/a", "/b"])
     }
+
+    // MARK: - contextTargetPaths
+
+    @Test func contextUsesSelectionWhenClickedRowIsSelected() {
+        let result = SupermuxFileExplorerSelection.contextTargetPaths(
+            clickedPath: "/a", clickedRowIsSelected: true, selectedPaths: ["/a", "/b"]
+        )
+        #expect(result == ["/a", "/b"])
+    }
+
+    @Test func contextUsesClickedAloneWhenNotInSelection() {
+        let result = SupermuxFileExplorerSelection.contextTargetPaths(
+            clickedPath: "/c", clickedRowIsSelected: false, selectedPaths: ["/a", "/b"]
+        )
+        #expect(result == ["/c"])
+    }
+
+    @Test func contextUsesClickedAloneWhenSelectionEmpty() {
+        let result = SupermuxFileExplorerSelection.contextTargetPaths(
+            clickedPath: "/c", clickedRowIsSelected: true, selectedPaths: []
+        )
+        #expect(result == ["/c"])
+    }
+
+    // MARK: - fileOpAction
+
+    @Test func fileOpActionStaleIgnoresAndDoesNotRefresh() {
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: true, didFail: true, revealPath: "/x")
+        #expect(a == .ignore)
+        #expect(a.refreshesTree == false)
+    }
+
+    @Test func fileOpActionFailurePresentsErrorAndRefreshes() {
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: true, revealPath: nil)
+        #expect(a == .presentError)
+        #expect(a.refreshesTree)   // the tree MUST refresh even after a (partial) failure
+    }
+
+    @Test func fileOpActionSuccessRevealsAndRefreshes() {
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: false, revealPath: "/new")
+        #expect(a == .reveal("/new"))
+        #expect(a.refreshesTree)
+    }
+
+    @Test func fileOpActionSuccessWithoutRevealStillRefreshes() {
+        let a = SupermuxFileExplorerSelection.fileOpAction(isStale: false, didFail: false, revealPath: nil)
+        #expect(a == .reveal(nil))
+        #expect(a.refreshesTree)
+    }
 }

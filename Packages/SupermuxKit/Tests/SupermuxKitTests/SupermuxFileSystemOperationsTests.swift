@@ -32,8 +32,11 @@ import Testing
     @Test func createFileMakesEmptyFile() throws {
         try withTemporaryDirectory { root in
             let url = try SupermuxFileSystemOperations.createFile(named: "hello.swift", in: root)
-            #expect(FileManager.default.fileExists(atPath: url.path))
+            var isDir: ObjCBool = true
+            #expect(FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir))
+            #expect(!isDir.boolValue)                      // a regular file, not a directory
             #expect(url.lastPathComponent == "hello.swift")
+            #expect(try Data(contentsOf: url).isEmpty)     // and it is empty
         }
     }
 
@@ -245,30 +248,43 @@ import Testing
 
     @Test func moveToTrashAttemptsWholeBatchAndAggregatesFailures() throws {
         try withTemporaryDirectory { root in
-            let bad = try SupermuxFileSystemOperations.createFile(named: "bad.txt", in: root)
-            let good1 = try SupermuxFileSystemOperations.createFile(named: "good1.txt", in: root)
-            let good2 = try SupermuxFileSystemOperations.createFile(named: "good2.txt", in: root)
-            // Failing item FIRST: a stop-on-first-failure regression would leave
-            // good1/good2 on disk and fail this test. The batch must continue past
-            // the mid-batch failure and throw one aggregate .failed naming `bad`.
-            let fm = FailingTrashFileManager(failingFor: bad)
+            let bad1 = try SupermuxFileSystemOperations.createFile(named: "bad1.txt", in: root)
+            let good = try SupermuxFileSystemOperations.createFile(named: "good.txt", in: root)
+            let bad2 = try SupermuxFileSystemOperations.createFile(named: "bad2.txt", in: root)
+            // TWO failing items with a good one between: proves the loop continues
+            // past a mid-batch failure AND that BOTH failures are aggregated into a
+            // single .failed(reason:) (exercises the failures.joined branch).
+            let fm = FailingTrashFileManager(failingFor: [bad1, bad2])
             var thrown: (any Error)?
             #expect(throws: SupermuxFileSystemOperationError.self) {
                 do {
-                    try SupermuxFileSystemOperations.moveToTrash([bad, good1, good2], fileManager: fm)
+                    try SupermuxFileSystemOperations.moveToTrash([bad1, good, bad2], fileManager: fm)
                 } catch {
                     thrown = error
                     throw error
                 }
             }
-            #expect(FileManager.default.fileExists(atPath: bad.path))      // bad remains
-            #expect(!FileManager.default.fileExists(atPath: good1.path))   // good1 trashed
-            #expect(!FileManager.default.fileExists(atPath: good2.path))   // good2 trashed (loop continued)
+            #expect(FileManager.default.fileExists(atPath: bad1.path))    // both bads remain
+            #expect(FileManager.default.fileExists(atPath: bad2.path))
+            #expect(!FileManager.default.fileExists(atPath: good.path))   // good trashed despite both failures
             if case let .failed(reason)? = thrown as? SupermuxFileSystemOperationError {
-                #expect(reason.contains("bad.txt"))
+                #expect(reason.contains("bad1.txt"))
+                #expect(reason.contains("bad2.txt"))
             } else {
-                Issue.record("expected .failed naming bad.txt, got \(String(describing: thrown))")
+                Issue.record("expected aggregate .failed naming both items, got \(String(describing: thrown))")
             }
+        }
+    }
+
+    @Test func moveToTrashUsesTrashItemNotDelete() throws {
+        try withTemporaryDirectory { root in
+            let file = try SupermuxFileSystemOperations.createFile(named: "recoverable.txt", in: root)
+            // Proves the recoverable-Trash contract behind the "Move to Trash" /
+            // "restore later from the Trash" UI copy: trashItem is invoked (not removeItem).
+            let fm = RecordingTrashFileManager()
+            try SupermuxFileSystemOperations.moveToTrash([file], fileManager: fm)
+            #expect(fm.trashedPaths == [file.standardizedFileURL.path])
+            #expect(!FileManager.default.fileExists(atPath: file.path))
         }
     }
 
@@ -381,15 +397,25 @@ import Testing
 /// else to the real implementation), so the aggregate-failure path of
 /// `moveToTrash` can be exercised deterministically.
 private final class FailingTrashFileManager: FileManager, @unchecked Sendable {
-    private let failingPath: String
-    init(failingFor url: URL) {
-        self.failingPath = url.standardizedFileURL.path
+    private let failingPaths: Set<String>
+    init(failingFor urls: [URL]) {
+        self.failingPaths = Set(urls.map { $0.standardizedFileURL.path })
         super.init()
     }
     override func trashItem(at url: URL, resultingItemURL outResultingURL: AutoreleasingUnsafeMutablePointer<NSURL?>?) throws {
-        if url.standardizedFileURL.path == failingPath {
+        if failingPaths.contains(url.standardizedFileURL.path) {
             throw CocoaError(.fileWriteNoPermission)
         }
+        try super.trashItem(at: url, resultingItemURL: outResultingURL)
+    }
+}
+
+/// A `FileManager` that records which URLs `trashItem` was asked to move (and
+/// performs the real move), proving the operation uses the recoverable Trash.
+private final class RecordingTrashFileManager: FileManager, @unchecked Sendable {
+    private(set) var trashedPaths: [String] = []
+    override func trashItem(at url: URL, resultingItemURL outResultingURL: AutoreleasingUnsafeMutablePointer<NSURL?>?) throws {
+        trashedPaths.append(url.standardizedFileURL.path)
         try super.trashItem(at: url, resultingItemURL: outResultingURL)
     }
 }

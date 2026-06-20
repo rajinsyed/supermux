@@ -60,6 +60,7 @@ extension NSMenu {
 extension FileExplorerPanelView.Coordinator {
     @objc func supermuxNewFile(_ sender: NSMenuItem) {
         guard let request = sender.representedObject as? SupermuxFileOpRequest else { return }
+        let identity = store.workspaceRootIdentity
         supermuxPromptForName(
             title: SupermuxFileOpText.newFileTitle,
             message: String(format: SupermuxFileOpText.newFileMessageFormat, request.parentDirectory.lastPathComponent),
@@ -69,10 +70,12 @@ extension FileExplorerPanelView.Coordinator {
             guard let self else { return }
             do {
                 let created = try SupermuxFileSystemOperations.createFile(named: name, in: request.parentDirectory)
+                guard self.store.workspaceRootIdentity == identity else { return }
                 if let node = request.expandNode { self.store.expand(node: node) }
                 self.store.supermuxReveal(path: created.path)
                 self.supermuxRefreshAfterFileOperation()
             } catch {
+                guard self.store.workspaceRootIdentity == identity else { return }
                 self.supermuxPresentFileOpError(error)
             }
         }
@@ -80,6 +83,7 @@ extension FileExplorerPanelView.Coordinator {
 
     @objc func supermuxNewFolder(_ sender: NSMenuItem) {
         guard let request = sender.representedObject as? SupermuxFileOpRequest else { return }
+        let identity = store.workspaceRootIdentity
         supermuxPromptForName(
             title: SupermuxFileOpText.newFolderTitle,
             message: String(format: SupermuxFileOpText.newFolderMessageFormat, request.parentDirectory.lastPathComponent),
@@ -89,10 +93,12 @@ extension FileExplorerPanelView.Coordinator {
             guard let self else { return }
             do {
                 let created = try SupermuxFileSystemOperations.createDirectory(named: name, in: request.parentDirectory)
+                guard self.store.workspaceRootIdentity == identity else { return }
                 if let node = request.expandNode { self.store.expand(node: node) }
                 self.store.supermuxReveal(path: created.path)
                 self.supermuxRefreshAfterFileOperation()
             } catch {
+                guard self.store.workspaceRootIdentity == identity else { return }
                 self.supermuxPresentFileOpError(error)
             }
         }
@@ -123,6 +129,7 @@ extension FileExplorerPanelView.Coordinator {
 
     /// Shared rename entrypoint used by both the context menu and the keyboard.
     func supermuxBeginRename(_ node: FileExplorerNode) {
+        let identity = store.workspaceRootIdentity
         supermuxPromptForName(
             title: SupermuxFileOpText.renameTitle,
             message: String(format: SupermuxFileOpText.renameMessageFormat, node.name),
@@ -132,9 +139,11 @@ extension FileExplorerPanelView.Coordinator {
             guard let self else { return }
             do {
                 let renamed = try SupermuxFileSystemOperations.rename(URL(fileURLWithPath: node.path), to: name)
+                guard self.store.workspaceRootIdentity == identity else { return }
                 self.store.supermuxReveal(path: renamed.path)
                 self.supermuxRefreshAfterFileOperation()
             } catch {
+                guard self.store.workspaceRootIdentity == identity else { return }
                 self.supermuxPresentFileOpError(error)
             }
         }
@@ -145,10 +154,16 @@ extension FileExplorerPanelView.Coordinator {
         let targets = supermuxTopLevelNodes(nodes)
         guard !targets.isEmpty else { return }
         let urls = targets.map { URL(fileURLWithPath: $0.path) }
+        // After trashing, retarget the selection to a surviving parent so the
+        // authoritative store selection no longer points at a deleted path — which
+        // would otherwise dead-end the next ⌘⌫/Return. Skip when the parent is the
+        // explorer root (no row to select; selection simply clears on reload).
+        let firstParent = urls.first?.deletingLastPathComponent().path
+        let revealAfter = (firstParent != nil && firstParent != store.rootPath) ? firstParent : nil
         supermuxConfirmTrash(targets) { [weak self] in
             self?.supermuxRunFileOperation {
                 try SupermuxFileSystemOperations.moveToTrash(urls)
-                return nil
+                return revealAfter
             }
         }
     }
@@ -170,14 +185,26 @@ extension FileExplorerPanelView.Coordinator {
             } catch {
                 result = .failure(error)
             }
-            guard let self, self.store.workspaceRootIdentity == identity else { return }
+            guard let self else { return }
+            let revealPath: String?
+            let failure: (any Error)?
             switch result {
-            case .success(let revealPath):
-                if let revealPath { self.store.supermuxReveal(path: revealPath) }
-            case .failure(let error):
-                self.supermuxPresentFileOpError(error)
+            case .success(let path): revealPath = path; failure = nil
+            case .failure(let error): revealPath = nil; failure = error
             }
-            self.supermuxRefreshAfterFileOperation()
+            let action = SupermuxFileExplorerSelection.fileOpAction(
+                isStale: self.store.workspaceRootIdentity != identity,
+                didFail: failure != nil,
+                revealPath: revealPath)
+            switch action {
+            case .ignore:
+                return
+            case .reveal(let path):
+                if let path { self.store.supermuxReveal(path: path) }
+            case .presentError:
+                if let failure { self.supermuxPresentFileOpError(failure) }
+            }
+            if action.refreshesTree { self.supermuxRefreshAfterFileOperation() }
         }
     }
 
@@ -271,11 +298,16 @@ extension FileExplorerPanelView.Coordinator {
     private func supermuxContextNodes(clicked node: FileExplorerNode) -> [FileExplorerNode] {
         guard let outlineView else { return [node] }
         let clickedRow = outlineView.clickedRow
-        guard clickedRow >= 0, outlineView.selectedRowIndexes.contains(clickedRow) else { return [node] }
-        let nodes = outlineView.selectedRowIndexes.compactMap { row -> FileExplorerNode? in
+        let clickedRowIsSelected = clickedRow >= 0 && outlineView.selectedRowIndexes.contains(clickedRow)
+        let selectedNodes = outlineView.selectedRowIndexes.compactMap { row -> FileExplorerNode? in
             guard row >= 0, row < outlineView.numberOfRows else { return nil }
             return outlineView.item(atRow: row) as? FileExplorerNode
         }
-        return nodes.isEmpty ? [node] : nodes
+        let targets = Set(SupermuxFileExplorerSelection.contextTargetPaths(
+            clickedPath: node.path,
+            clickedRowIsSelected: clickedRowIsSelected,
+            selectedPaths: selectedNodes.map(\.path)))
+        let resolved = selectedNodes.filter { targets.contains($0.path) }
+        return resolved.isEmpty ? [node] : resolved
     }
 }
