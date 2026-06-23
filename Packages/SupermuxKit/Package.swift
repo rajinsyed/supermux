@@ -14,14 +14,16 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(path: "../CmuxProcess"),
-        .package(path: "../CmuxGit"),
+        // Upstream relocated packages under Packages/macOS/ and folded the old
+        // CmuxProcess micro-package into CmuxFoundation (cmux #6356).
+        .package(path: "../macOS/CmuxFoundation"),
+        .package(path: "../macOS/CmuxGit"),
     ],
     targets: [
         .target(
             name: "SupermuxKit",
             dependencies: [
-                .product(name: "CmuxProcess", package: "CmuxProcess"),
+                .product(name: "CmuxFoundation", package: "CmuxFoundation"),
                 .product(name: "CmuxGit", package: "CmuxGit"),
             ],
             swiftSettings: [

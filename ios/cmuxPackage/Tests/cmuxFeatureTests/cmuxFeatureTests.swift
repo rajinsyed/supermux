@@ -85,7 +85,7 @@ final class TerminalOutputCollector {
 // Auth error mapping + cached-session recovery are now owned and tested by
 // CmuxAuthRuntime (AuthErrorMapperTests). The display-safe error and
 // cached-session-validation assertions moved there with the AuthCoordinator
-// lift; see Packages/CmuxAuthRuntime/Tests.
+// lift; see Packages/Shared/CmuxAuthRuntime/Tests.
 
 @Test func mobileRuntimeDefaultsToThirtySecondRPCTimeout() {
     let runtime = CMUXMobileRuntime(
@@ -96,6 +96,13 @@ final class TerminalOutputCollector {
 
     #expect(runtime.rpcRequestTimeoutNanoseconds == 30 * 1_000_000_000)
     #expect(runtime.pairingRequestTimeoutNanoseconds == 8 * 1_000_000_000)
+}
+
+@Test func mobileRuntimeMapsTimedOutStackTokenToRequestTimeout() {
+    guard case .requestTimedOut = CMUXMobileRuntime.connectionError(forStackAuthError: AuthError.timedOut) else {
+        Issue.record("expected timed-out Stack token acquisition to stay retryable")
+        return
+    }
 }
 
 @MainActor
@@ -180,7 +187,12 @@ final class TerminalOutputCollector {
     let store = CMUXMobileShellStore.preview()
 
     store.signIn()
-    await store.connectPairingURL(try payload.encodedURL().absoluteString)
+    let result = await store.connectPairingURLResult(try payload.encodedURL().absoluteString)
+
+    #expect(result == .needsUserApproval)
+    #expect(store.pairingVersionWarning?.contains("unknown compatibility") == true)
+
+    await store.acceptPairingVersionWarning()
 
     #expect(store.phase == .workspaces)
     #expect(store.connectedHostName == "Test Mac")
@@ -272,7 +284,9 @@ final class TerminalOutputCollector {
     #expect(store.phase == .pairing)
     #expect(store.connectionState == .disconnected)
     #expect(store.activeTicket == nil)
-    #expect(store.connectionError == "Invalid pairing code.")
+    // Assert the category's message rather than a literal so the test tracks
+    // the invalid-code copy instead of breaking each time it is reworded.
+    #expect(store.connectionError == MobilePairingFailureCategory.invalidCode.message)
 }
 
 @MainActor
@@ -498,7 +512,8 @@ final class TerminalOutputCollector {
 
     #expect(store.phase == .workspaces)
     #expect(store.connectionError == nil)
-    #expect(store.activeTicket == ticket)
+    let expectedTicket = try ticket.withCurrentMacPairingCompatibilityVersionForTest()
+    #expect(store.activeTicket == expectedTicket)
     #expect(store.activeRoute == route)
 }
 
@@ -832,6 +847,7 @@ final class TerminalOutputCollector {
         terminalID: nil,
         macDeviceID: "test-mac",
         macDisplayName: "Test Mac",
+        macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion,
         routes: [route],
         expiresAt: ticketExpiresAt,
         authToken: "ticket-secret"
@@ -1434,6 +1450,7 @@ final class TerminalOutputCollector {
         terminalID: nil,
         macDeviceID: "qr-mac",
         macDisplayName: "QR Mac",
+        macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion,
         routes: [route],
         expiresAt: mintedAt.addingTimeInterval(600),
         authToken: "minted-but-never-in-the-qr"
@@ -1803,7 +1820,9 @@ final class TerminalOutputCollector {
     #expect(store.connectionState == .disconnected)
     #expect(store.activeTicket == nil)
     #expect(store.connectionError?.contains("Tailscale") == true)
-    #expect(store.connectionError != "Invalid pairing code.")
+    // The loopback failure must name the fix (Tailscale), not fall through to
+    // the generic invalid-code copy.
+    #expect(store.connectionError != MobilePairingFailureCategory.invalidCode.message)
 }
 
 @MainActor
@@ -2483,16 +2502,17 @@ final class TerminalOutputCollector {
     await store.connectPairingURL(try attachURL(for: ticket).absoluteString)
 
     let subscribeRequests = try await waitForRequestCount("mobile.events.subscribe", count: 1, router: router)
-    #expect(subscribeRequests.first?.topics == ["workspace.updated", "terminal.render_grid", "notification.dismissed", "notification.badge"])
+    #expect(subscribeRequests.first?.topics == ["workspace.updated", "terminal.render_grid", "terminal.set_font", "notification.dismissed", "notification.badge"])
 
     collector.mount(store: store, surfaceID: "live-terminal")
     _ = try await waitForRequestCount("mobile.terminal.replay", count: 1, router: router)
-    for _ in 0..<200 where collector.lines.count < 2 {
+    let liveText = try terminalRenderGridStyledReplacementText(seq: 2, text: "live")
+    for _ in 0..<200 where !collector.lines.contains(liveText) {
         try await Task.sleep(nanoseconds: 1_000_000)
     }
 
-    let liveText = try terminalRenderGridStyledReplacementText(seq: 2, text: "live")
-    #expect(collector.lines == [liveText])
+    #expect(collector.lines.contains(liveText))
+    #expect(collector.lines.last == liveText)
     #expect(liveText.contains("\u{1B}[0;1;4;38;2;255;0;0;48;2;0;0;255mlive"))
     #expect(liveText.contains("\u{1B}[6 q\u{1B}[?25h\u{1B}[2;3H"))
     collector.unmount()
@@ -2650,8 +2670,31 @@ private func testRuntime(
 private func attachURL(for ticket: CmxAttachTicket) throws -> URL {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
-    let payload = base64URLEncode(try encoder.encode(ticket))
+    let payload = base64URLEncode(try encoder.encode(ticket.withCurrentMacPairingCompatibilityVersionForTest()))
     return try #require(URL(string: "cmux-ios://attach?v=\(ticket.version)&payload=\(payload)"))
+}
+
+private extension CmxAttachTicket {
+    func withCurrentMacPairingCompatibilityVersionForTest() throws -> CmxAttachTicket {
+        guard macPairingCompatibilityVersion == nil else {
+            return self
+        }
+        return try CmxAttachTicket(
+            version: version,
+            workspaceID: workspaceID,
+            terminalID: terminalID,
+            macDeviceID: macDeviceID,
+            macDisplayName: macDisplayName,
+            macUserEmail: macUserEmail,
+            macUserID: macUserID,
+            macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion,
+            macAppVersion: macAppVersion,
+            macAppBuild: macAppBuild,
+            routes: routes,
+            expiresAt: expiresAt,
+            authToken: authToken
+        )
+    }
 }
 
 private func base64URLEncode(_ data: Data) -> String {
@@ -2965,6 +3008,7 @@ private func rpcAttachTicketFrame(
         terminalID: terminalID,
         macDeviceID: "test-mac",
         macDisplayName: nil,
+        macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion,
         routes: [route],
         expiresAt: Date(timeIntervalSince1970: 2_000_000_000),
         authToken: "ticket-secret"
@@ -3920,7 +3964,7 @@ private struct InertPushRegistration: PushRegistering {
 
     // Root view mounts: store binds already carrying the attached list.
     let store = deeplinkTestStore()
-    store.workspaces = PreviewMobileHost.workspaces
+    store.setWorkspacesForTesting(PreviewMobileHost.workspaces)
     coordinator.bind(store: store)
 
     #expect(store.selectedWorkspaceID == MobileWorkspacePreview.ID(rawValue: "workspace-docs"))
@@ -3939,7 +3983,7 @@ private struct InertPushRegistration: PushRegistering {
     // Target not loaded yet: no navigation to an absent workspace.
     #expect(store.selectedWorkspaceID == nil)
 
-    store.workspaces = PreviewMobileHost.workspaces
+    store.setWorkspacesForTesting(PreviewMobileHost.workspaces)
     coordinator.workspacesDidChange()
 
     #expect(store.selectedWorkspaceID == MobileWorkspacePreview.ID(rawValue: "workspace-docs"))
@@ -3958,7 +4002,7 @@ private struct InertPushRegistration: PushRegistering {
 
     currentTime = currentTime.addingTimeInterval(121)
     let store = deeplinkTestStore()
-    store.workspaces = PreviewMobileHost.workspaces
+    store.setWorkspacesForTesting(PreviewMobileHost.workspaces)
     coordinator.bind(store: store)
 
     #expect(store.selectedWorkspaceID == nil)
@@ -3979,7 +4023,7 @@ private struct InertPushRegistration: PushRegistering {
     // Nothing loaded yet: the tap must stay parked, not be spent.
     #expect(store.selectedTerminalID == nil)
 
-    store.workspaces = PreviewMobileHost.workspaces
+    store.setWorkspacesForTesting(PreviewMobileHost.workspaces)
     coordinator.workspacesDidChange()
 
     #expect(store.selectedWorkspaceID == MobileWorkspacePreview.ID(rawValue: "workspace-docs"))
@@ -3996,16 +4040,16 @@ private struct InertPushRegistration: PushRegistering {
     coordinator.bind(store: store)
 
     coordinator.handleTap(workspaceId: "workspace-docs", surfaceId: "terminal-notes")
-    store.workspaces = [
+    store.setWorkspacesForTesting([
         MobileWorkspacePreview(id: "workspace-docs", name: "Docs", terminals: [])
-    ]
+    ])
     coordinator.workspacesDidChange()
 
     // Workspace navigation happens now; the absent terminal is not selected.
     #expect(store.selectedWorkspaceID == MobileWorkspacePreview.ID(rawValue: "workspace-docs"))
     #expect(store.selectedTerminalID == nil)
 
-    store.workspaces = PreviewMobileHost.workspaces
+    store.setWorkspacesForTesting(PreviewMobileHost.workspaces)
     coordinator.workspacesDidChange()
 
     #expect(store.selectedTerminalID == MobileTerminalPreview.ID(rawValue: "terminal-notes"))
@@ -4018,7 +4062,7 @@ private struct InertPushRegistration: PushRegistering {
 @Test @MainActor func notificationTapEmitsConsumableCompactNavigationIntent() async throws {
     let coordinator = MobilePushCoordinator(registration: InertPushRegistration())
     let store = deeplinkTestStore()
-    store.workspaces = PreviewMobileHost.workspaces
+    store.setWorkspacesForTesting(PreviewMobileHost.workspaces)
     coordinator.bind(store: store)
 
     coordinator.handleTap(workspaceId: "workspace-docs", surfaceId: nil)

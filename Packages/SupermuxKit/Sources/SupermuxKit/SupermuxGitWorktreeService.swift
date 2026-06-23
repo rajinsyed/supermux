@@ -1,4 +1,4 @@
-public import CmuxProcess
+public import CmuxFoundation
 import Foundation
 import os
 

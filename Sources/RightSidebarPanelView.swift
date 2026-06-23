@@ -1,6 +1,6 @@
 import AppKit
 import Bonsplit
-import CMUXWorkstream
+import CMUXAgentLaunch
 import CmuxFoundation
 import CmuxSettings
 import CmuxSettingsUI
@@ -21,6 +21,7 @@ nonisolated enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
     // SUPERMUX:begin right-sidebar-changes-mode-case
     case changes
     // SUPERMUX:end right-sidebar-changes-mode-case
+    case customSidebar = "custom-sidebar"
 
     var label: String {
         switch self {
@@ -32,6 +33,7 @@ nonisolated enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
         // SUPERMUX:begin right-sidebar-changes-mode-label
         case .changes: return String(localized: "supermux.rightSidebar.mode.changes", defaultValue: "Changes")
         // SUPERMUX:end right-sidebar-changes-mode-label
+        case .customSidebar: return String(localized: "rightSidebar.mode.customSidebar", defaultValue: "Custom")
         }
     }
 
@@ -45,6 +47,7 @@ nonisolated enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
         // SUPERMUX:begin right-sidebar-changes-mode-symbol
         case .changes: return "plusminus.circle"
         // SUPERMUX:end right-sidebar-changes-mode-symbol
+        case .customSidebar: return "wand.and.stars"
         }
     }
 
@@ -58,6 +61,7 @@ nonisolated enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
         // SUPERMUX:begin right-sidebar-changes-mode-shortcut
         case .changes: return nil
         // SUPERMUX:end right-sidebar-changes-mode-shortcut
+        case .customSidebar: return nil
         }
     }
 }
@@ -83,7 +87,7 @@ nonisolated enum FileExplorerRootSyncPolicy {
         case .files, .find:
             return true
         // SUPERMUX:begin right-sidebar-changes-mode-rootsync
-        case .sessions, .feed, .dock, .changes:
+        case .sessions, .feed, .dock, .changes, .customSidebar:
         // SUPERMUX:end right-sidebar-changes-mode-rootsync
             return false
         }
@@ -121,73 +125,6 @@ extension RightSidebarMode {
             return mode
         }
         return nil
-    }
-}
-
-enum RightSidebarKeyboardNavigation {
-    enum DisclosureAction {
-        case collapse
-        case expand
-    }
-
-    static func moveDelta(for event: NSEvent) -> Int? {
-        guard event.type == .keyDown else { return nil }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let hasCommandOrOption = !flags.intersection([.command, .option]).isEmpty
-        if flags.contains(.control), !hasCommandOrOption {
-            switch event.keyCode {
-            case 45: return 1   // Ctrl+N
-            case 35: return -1  // Ctrl+P
-            default: break
-            }
-        }
-
-        guard flags.intersection([.command, .control, .option]).isEmpty else {
-            return nil
-        }
-        switch event.keyCode {
-        case 38, 125: return 1   // J or Down
-        case 40, 126: return -1  // K or Up
-        default: return nil
-        }
-    }
-
-    static func disclosureAction(for event: NSEvent) -> DisclosureAction? {
-        guard event.type == .keyDown else { return nil }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags.intersection([.command, .control, .option]).isEmpty else {
-            return nil
-        }
-        switch event.keyCode {
-        case 4: return .collapse  // H
-        case 37: return .expand   // L
-        case 123: return .collapse  // Left
-        case 124: return .expand   // Right
-        default: return nil
-        }
-    }
-
-    static func isPlainSlash(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown else { return false }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags.intersection([.command, .control, .option]).isEmpty else {
-            return false
-        }
-        return event.keyCode == 44
-    }
-
-    static func isPlainPrintableText(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown else { return false }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags.intersection([.command, .control, .option]).isEmpty else {
-            return false
-        }
-        guard let text = event.charactersIgnoringModifiers, !text.isEmpty else {
-            return false
-        }
-        return text.unicodeScalars.allSatisfy {
-            !CharacterSet.controlCharacters.contains($0)
-        }
     }
 }
 
@@ -233,6 +170,10 @@ struct RightSidebarPanelView: View {
 
     private var availableModes: [RightSidebarMode] {
         RightSidebarMode.availableModes(feedEnabled: feedEnabled, dockEnabled: dockEnabled)
+    }
+
+    private var modeBarItems: [RightSidebarModeBarItem] {
+        availableModes.map { RightSidebarModeBarItem(kind: .mode($0)) }
     }
 
     private var focusShortcutHintAnimationValue: Bool {
@@ -356,12 +297,12 @@ struct RightSidebarPanelView: View {
     /// outside this row so they stay pinned and never clip.
     private func modeButtonsRow(showsLabels: Bool) -> some View {
         HStack(spacing: RightSidebarChromeMetrics.headerControlSpacing) {
-            ForEach(availableModes, id: \.rawValue) { mode in
-                let shortcut = mode.shortcutAction.map { KeyboardShortcutSettings.shortcut(for: $0) } ?? .unbound
+            ForEach(modeBarItems) { item in
+                let shortcut = item.shortcutAction.map { KeyboardShortcutSettings.shortcut(for: $0) } ?? .unbound
                 ModeBarButton(
-                    mode: mode,
-                    isSelected: fileExplorerState.mode == mode,
-                    badgeCount: mode == .feed ? feedPendingCount : 0,
+                    item: item,
+                    isSelected: item.isSelected(mode: fileExplorerState.mode),
+                    badgeCount: item.mode == .feed ? feedPendingCount : 0,
                     shortcutHint: shortcut,
                     showsLabel: showsLabels,
                     showsShortcutHint: ShortcutHintTitlebarPolicy.shouldShow(
@@ -371,6 +312,7 @@ struct RightSidebarPanelView: View {
                         modifierHoldHintsEnabled: showModifierHoldHints
                     )
                 ) {
+                    let mode = item.mode
                     if AppDelegate.shared?.focusRightSidebarInActiveMainWindow(
                         mode: mode,
                         focusFirstItem: true,
@@ -527,6 +469,8 @@ struct RightSidebarPanelView: View {
                     isVisible: fileExplorerState.isVisible
                 )
             // SUPERMUX:end right-sidebar-changes-mode-content
+            case .customSidebar:
+                EmptyView()
             }
         } else {
             Color.clear
@@ -676,106 +620,5 @@ extension NSView {
             view = current.superview
         }
         return true
-    }
-}
-
-private struct ModeBarButton: View {
-    let mode: RightSidebarMode
-    let isSelected: Bool
-    var badgeCount: Int = 0
-    let shortcutHint: StoredShortcut
-    // SUPERMUX:begin right-sidebar-compact-mode-bar
-    /// When `false`, the pill renders icon-only so the bar fits a narrow sidebar.
-    var showsLabel: Bool = true
-    // SUPERMUX:end right-sidebar-compact-mode-bar
-    let showsShortcutHint: Bool
-    let action: () -> Void
-
-    @State private var isHovered: Bool = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: mode.symbolName)
-                    .symbolRenderingMode(.monochrome)
-                    .font(
-                        .system(
-                            size: RightSidebarChromeControlStyle.modeIconSize,
-                            weight: RightSidebarChromeControlStyle.iconWeight
-                        )
-                    )
-                    .reportRightSidebarChromeNamedGeometryForBonsplitUITest(
-                        keyPrefix: "rightSidebarModeIcon_\(mode.rawValue)",
-                        isVisible: true
-                    )
-                // SUPERMUX:begin right-sidebar-compact-mode-bar
-                if showsLabel {
-                    Text(mode.label)
-                        .font(
-                            .system(
-                                size: RightSidebarChromeControlStyle.labelSize,
-                                weight: RightSidebarChromeControlStyle.labelWeight
-                            )
-                        )
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                // SUPERMUX:end right-sidebar-compact-mode-bar
-                if badgeCount > 0 {
-                    pendingChip
-                }
-            }
-            .rightSidebarChromePill(
-                isSelected: isSelected,
-                isHovered: isHovered,
-                geometryKeyPrefix: "rightSidebarModeControl_\(mode.rawValue)"
-            )
-            .overlay(alignment: .trailing) {
-                if showsShortcutHint {
-                    ShortcutHintPill(shortcut: shortcutHint, fontSize: 9, emphasis: isSelected ? 1.15 : 0.95)
-                        .offset(x: 5)
-                        .shortcutHintTransition()
-                        .accessibilityIdentifier("rightSidebarModeShortcutHint.\(mode.rawValue)")
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .titlebarInteractiveControl()
-        .onHover { isHovered = $0 }
-        .help(helpText)
-        .accessibilityIdentifier("RightSidebarModeButton.\(mode.rawValue)")
-        .shortcutHintVisibilityAnimation(value: showsShortcutHint)
-    }
-
-    private var helpText: String {
-        if badgeCount > 0 {
-            return String(
-                localized: "rightSidebar.mode.pendingHelp",
-                defaultValue: "\(mode.label) · \(badgeCount) pending"
-            )
-        }
-        return mode.label
-    }
-
-    /// Subtle inline count chip that sits after the label instead of
-    /// floating a red capsule over the icon. Tinted orange (the "needs
-    /// attention" color used elsewhere in the Feed) and sized to match
-    /// the label's typography.
-    private var pendingChip: some View {
-        let countText = badgeCount > 9 ? "9+" : String(badgeCount)
-        return Text(countText)
-            .font(.system(size: 10, weight: .bold).monospacedDigit())
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: true)
-            .foregroundColor(.orange)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.orange.opacity(0.20))
-            )
-            .fixedSize(horizontal: true, vertical: true)
-            .layoutPriority(2)
     }
 }

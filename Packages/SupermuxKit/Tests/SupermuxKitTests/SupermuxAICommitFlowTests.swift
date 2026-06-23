@@ -35,7 +35,12 @@ struct SupermuxAICommitFlowTests {
             commitGenerator: FixedCommitGenerator(message: "feat: add greeting", configured: true)
         )
         model.setDirectory(repo)
-        await pollUntil { model.snapshot.isRepository && model.snapshot.totalChangeCount > 0 }
+        // aiCommitConfigured is probed at the end of the same refresh that fills
+        // the snapshot, so poll for it too — otherwise this races under full-suite
+        // load (the snapshot can be ready a beat before the AI probe resolves).
+        await pollUntil {
+            model.snapshot.isRepository && model.snapshot.totalChangeCount > 0 && model.aiCommitConfigured
+        }
 
         #expect(model.aiCommitConfigured)
         #expect(model.isAICommitMode)            // empty message + configured + changes

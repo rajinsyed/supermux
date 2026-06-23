@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-import CmuxProcess
+import CmuxFoundation
 import SupermuxKit
 
 /// Behavior tests for ``SupermuxChangesModel``'s unpushed-commits loading.

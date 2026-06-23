@@ -1,4 +1,4 @@
-public import CmuxProcess
+public import CmuxFoundation
 import Foundation
 
 /// Reads and mutates git working-tree state for the supermux changes panel.

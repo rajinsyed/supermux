@@ -1,9 +1,8 @@
 import AppKit
 import Combine
-import CmuxProcess
+import CmuxFoundation
 import CmuxSettings
 import CmuxSidebar
-import CmuxSocketControl
 import Foundation
 import SupermuxKit
 import SwiftUI
@@ -24,7 +23,10 @@ enum SupermuxComposition {
     /// the client.
     static let aiClient: any SupermuxAICompleting = {
         let store = SecretFileStore(
-            baseDirectory: CmuxStateDirectory.url(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+            // CmuxStateDirectory is re-exported by both CmuxSettings and
+            // CmuxSocketControl after upstream's package consolidation, so qualify
+            // it to the defining module to avoid an ambiguous-use error.
+            baseDirectory: CmuxSettings.CmuxStateDirectory.url(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
         )
         let key = SecretFileKey(id: SupermuxAIConfig.secretKeyID, fileName: SupermuxAIConfig.secretFileName)
         return SupermuxAIGatewayClient(apiKeyProvider: {

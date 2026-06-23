@@ -26,15 +26,36 @@ export interface VersionMedia {
 }
 
 export const changelogMedia: Record<string, VersionMedia> = {
-  "0.64.16": {
+  "0.64.17": {
     title:
-      "Freeform 2D Canvas, AI Auto-Naming, Per-Workspace Env Vars, Left/Right Option as Alt",
+      "Global Font Magnification, Remote tmux Mirroring, Diff Viewer Branch Picker",
     features: [
       {
-        title: "Freeform 2D Canvas Layout",
+        title: "Global Font Magnification",
         description:
-          "Arrange a workspace's panes anywhere on a zoomable 2D canvas instead of a fixed split grid, with a polished minimap for navigation.",
+          "Scale the entire cmux interface up or down with a single magnification control, not just the terminal font.",
       },
+      {
+        title: "Remote tmux Mirroring (Beta)",
+        description:
+          "Mirror a remote tmux session over SSH using -CC control mode, so remote windows show up as native cmux tabs that stay in sync with renames and reorders.",
+      },
+      {
+        title: "Browser and Diff Viewer Polish",
+        description:
+          "Browser panes get a Chrome-style audio-playing indicator and a hard-refresh shortcut. The diff viewer adds a searchable, uncapped branch-base picker with smart defaults and a toolbar that never overlaps at small widths.",
+      },
+      {
+        title: "Stability and Performance",
+        description:
+          "Fixes for a sidebar lag regression, a vertical-sidebar tab-switch crash, a ~100% CPU re-render loop on bundled extension sidebars, blank SF Symbol controls on macOS 27, terminal content duplication on resize, and quit hangs from analytics flushing.",
+      },
+    ],
+  },
+  "0.64.16": {
+    title:
+      "AI Auto-Naming, Per-Workspace Env Vars, Left/Right Option as Alt",
+    features: [
       {
         title: "AI Auto-Naming for Workspaces and Tabs",
         description:

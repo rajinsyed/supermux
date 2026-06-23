@@ -429,4 +429,26 @@ extension CMUXCLI {
 
         return nil
     }
+
+    func isRightSidebarCLIMode(_ value: String) -> Bool {
+        switch value.lowercased() {
+        // SUPERMUX:begin right-sidebar-changes-mode-cli-set
+        case "files", "find", "vault", "sessions", "feed", "dock", "changes":
+        // SUPERMUX:end right-sidebar-changes-mode-cli-set
+            return true
+        default:
+            return false
+        }
+    }
+
+    func normalizedRightSidebarCLIArgument(_ value: String) -> String {
+        switch value.lowercased() {
+        // SUPERMUX:begin right-sidebar-changes-mode-cli-normalize
+        case "files", "find", "vault", "sessions", "feed", "dock", "changes":
+        // SUPERMUX:end right-sidebar-changes-mode-cli-normalize
+            return value.lowercased()
+        default:
+            return value
+        }
+    }
 }

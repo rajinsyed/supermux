@@ -32,6 +32,8 @@ enum KeyboardShortcutSettings {
             .focusRightSidebar,
             .toggleRightSidebar,
             .findInDirectory,
+            .fileExplorerOpenSelection,
+            .fileExplorerOpenSelectionFinderAlias,
         ].filter(actions.contains)
         let actionSet = Set(colocatedSidebarActions)
         let baseActions = actions.filter { !actionSet.contains($0) }
@@ -116,6 +118,7 @@ enum KeyboardShortcutSettings {
         case focusTextBoxInput
         case attachTextBoxFile
         case sendCtrlFToTerminal
+        case clearScreenKeepScrollback
 
         // Panes / splits
         case focusLeft
@@ -147,6 +150,8 @@ enum KeyboardShortcutSettings {
 
         // File Explorer
         case toggleRightSidebar = "toggleFileExplorer"
+        case fileExplorerOpenSelection
+        case fileExplorerOpenSelectionFinderAlias
 
         // Panels
         case saveFilePreview
@@ -155,6 +160,7 @@ enum KeyboardShortcutSettings {
         case browserBack
         case browserForward
         case browserReload
+        case browserHardReload
         case browserZoomIn
         case browserZoomOut
         case browserZoomReset
@@ -249,6 +255,7 @@ enum KeyboardShortcutSettings {
             case .focusTextBoxInput: return String(localized: "shortcut.focusTextBoxInput.label", defaultValue: "Focus TextBox Input")
             case .attachTextBoxFile: return String(localized: "shortcut.attachTextBoxFile.label", defaultValue: "Attach File to TextBox Input")
             case .sendCtrlFToTerminal: return String(localized: "shortcut.sendCtrlFToTerminal.label", defaultValue: "Send Ctrl-F to Terminal")
+            case .clearScreenKeepScrollback: return String(localized: "shortcut.clearScreenKeepScrollback.label", defaultValue: "Clear Screen (Keep Scrollback)")
             case .focusLeft: return String(localized: "shortcut.focusPaneLeft.label", defaultValue: "Focus Pane Left")
             case .focusRight: return String(localized: "shortcut.focusPaneRight.label", defaultValue: "Focus Pane Right")
             case .focusUp: return String(localized: "shortcut.focusPaneUp.label", defaultValue: "Focus Pane Up")
@@ -275,12 +282,15 @@ enum KeyboardShortcutSettings {
             case .canvasDistributeHorizontally: return String(localized: "shortcut.canvasDistributeHorizontally.label", defaultValue: "Canvas: Distribute Horizontally")
             case .canvasDistributeVertically: return String(localized: "shortcut.canvasDistributeVertically.label", defaultValue: "Canvas: Distribute Vertically")
             case .toggleRightSidebar: return String(localized: "shortcut.toggleRightSidebar.label", defaultValue: "Toggle Right Sidebar")
+            case .fileExplorerOpenSelection: return String(localized: "shortcut.fileExplorerOpenSelection.label", defaultValue: "File Explorer: Open Selection")
+            case .fileExplorerOpenSelectionFinderAlias: return String(localized: "shortcut.fileExplorerOpenSelectionFinderAlias.label", defaultValue: "File Explorer: Open Selection (Finder Alias)")
             case .saveFilePreview: return String(localized: "shortcut.saveFilePreview.label", defaultValue: "Save File Preview")
             case .openBrowser: return String(localized: "shortcut.openBrowser.label", defaultValue: "Open Browser")
             case .focusBrowserAddressBar: return String(localized: "command.browserFocusAddressBar.title", defaultValue: "Focus Address Bar")
             case .browserBack: return String(localized: "menu.view.back", defaultValue: "Back")
             case .browserForward: return String(localized: "menu.view.forward", defaultValue: "Forward")
             case .browserReload: return String(localized: "menu.view.reloadPage", defaultValue: "Reload Page")
+            case .browserHardReload: return String(localized: "menu.view.hardRefresh", defaultValue: "Hard Refresh")
             case .browserZoomIn: return String(localized: "menu.view.zoomIn", defaultValue: "Zoom In")
             case .browserZoomOut: return String(localized: "menu.view.zoomOut", defaultValue: "Zoom Out")
             case .browserZoomReset: return String(localized: "menu.view.actualSize", defaultValue: "Actual Size")
@@ -502,10 +512,20 @@ enum KeyboardShortcutSettings {
                 // opt in via Settings; it stays reachable through the command palette and
                 // the `send_key ctrl-f` socket command.
                 return .unbound
+            case .clearScreenKeepScrollback:
+                // Cmd+Shift+K: the less-destructive sibling of Ghostty's Cmd+K
+                // (clear_screen), which also wipes scrollback. Shift+K is unbound in
+                // both Ghostty defaults and cmux, and sits next to the full-clear
+                // chord. Rebindable in Settings → Keyboard Shortcuts.
+                return StoredShortcut(key: "k", command: true, shift: true, option: false, control: false)
             case .selectWorkspaceByNumber:
                 return StoredShortcut(key: "1", command: true, shift: false, option: false, control: false)
             case .toggleRightSidebar:
                 return StoredShortcut(key: "b", command: true, shift: false, option: true, control: false)
+            case .fileExplorerOpenSelection:
+                return StoredShortcut(key: "\r", command: false, shift: false, option: false, control: false)
+            case .fileExplorerOpenSelectionFinderAlias:
+                return StoredShortcut(key: "↓", command: true, shift: false, option: false, control: false)
             case .saveFilePreview:
                 return StoredShortcut(key: "s", command: true, shift: false, option: false, control: false)
             case .openBrowser:
@@ -518,6 +538,8 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "]", command: true, shift: false, option: false, control: false)
             case .browserReload:
                 return StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+            case .browserHardReload:
+                return StoredShortcut(key: "r", command: true, shift: true, option: false, control: false)
             case .browserZoomIn:
                 return StoredShortcut(key: "=", command: true, shift: false, option: false, control: false)
             case .browserZoomOut:
@@ -629,11 +651,17 @@ enum KeyboardShortcutSettings {
                  .diffViewerScrollUp,
                  .diffViewerScrollToBottom,
                  .diffViewerScrollToTop,
-                 .diffViewerOpenFileSearch:
+                 .diffViewerOpenFileSearch,
+                 .fileExplorerOpenSelection,
+                 .fileExplorerOpenSelectionFinderAlias:
                 return true
             default:
                 return false
             }
+        }
+
+        var allowsChordShortcut: Bool {
+            self != .fileExplorerOpenSelection && self != .fileExplorerOpenSelectionFinderAlias
         }
 
         var isBrowserContentShortcut: Bool {
@@ -692,6 +720,9 @@ enum KeyboardShortcutSettings {
             if shortcut.isUnbound {
                 return .accepted(.unbound)
             }
+            if shortcut.hasChord && !allowsChordShortcut {
+                return .rejected(.reservedBySystem)
+            }
 
             if let conflictingAction = KeyboardShortcutSettings.conflictingAction(
                 for: shortcut,
@@ -708,6 +739,9 @@ enum KeyboardShortcutSettings {
             // Keep this path free of conflict and hotkey checks that consult global shortcut state.
             if shortcut.isUnbound {
                 return .unbound
+            }
+            if shortcut.hasChord && !allowsChordShortcut {
+                return nil
             }
 
             if case let .accepted(normalized) = resolvedRecordedShortcutIgnoringConflicts(
@@ -839,7 +873,7 @@ enum KeyboardShortcutSettings {
             reserved.append(shortcut)
         }
 
-        reserved.append(contentsOf: hardcodedSystemWideHotkeyConflicts)
+        reserved.append(contentsOf: hardcodedSystemWideHotkeyConflicts.filter { currentAction != .showHideAllWindows || $0.key != "`" || !$0.command || $0.option || $0.control })
         return reserved
     }
 
@@ -988,15 +1022,17 @@ enum KeyboardShortcutSettings {
         _ shortcut: StoredShortcut,
         action: Action
     ) -> StoredShortcut? {
-        if shortcut.isUnbound {
-            return shortcut
-        }
+        if shortcut.isUnbound { return shortcut }
+        if shortcut.hasChord && !action.allowsChordShortcut { return nil }
 
         switch action.resolvedRecordedShortcutIgnoringConflicts(shortcut) {
         case let .accepted(normalizedShortcut):
             return normalizedShortcut
         case .rejected:
-            if action.usesNumberedDigitMatching || action == .showHideAllWindows || action == .globalSearch {
+            if action.usesNumberedDigitMatching ||
+                action == .showHideAllWindows ||
+                action == .globalSearch ||
+                !action.allowsChordShortcut {
                 return nil
             }
             return shortcut
@@ -2456,12 +2492,11 @@ extension ShortcutStroke {
     }
 
     private func configKeyString(preserveDigit: Bool) -> String {
-        if preserveDigit {
-            return key
-        }
         if let digit = Int(key), (1...9).contains(digit) {
-            return "1"
+            return preserveDigit ? key : "1"
         }
+        if key == "\r" { return "return" }
+        if key == "\t" { return "tab" }
         return key
     }
 

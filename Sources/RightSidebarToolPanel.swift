@@ -82,7 +82,7 @@ final class RightSidebarToolPanel: Panel, ObservableObject {
             guard let store = sessionIndexStoreStorage else { return }
             syncSessionIndexRoot(from: workspace, store: store)
         // SUPERMUX:begin right-sidebar-changes-mode-toolpanel
-        case .feed, .dock, .changes:
+        case .feed, .dock, .changes, .customSidebar:
         // SUPERMUX:end right-sidebar-changes-mode-toolpanel
             break
         }
@@ -142,7 +142,7 @@ final class RightSidebarToolPanel: Panel, ObservableObject {
                   let window = anchor.window else { return }
             _ = window.makeFirstResponder(anchor)
         // SUPERMUX:begin right-sidebar-changes-mode-toolpanel
-        case .feed, .dock, .changes:
+        case .feed, .dock, .changes, .customSidebar:
         // SUPERMUX:end right-sidebar-changes-mode-toolpanel
             break
         }
@@ -166,7 +166,7 @@ final class RightSidebarToolPanel: Panel, ObservableObject {
             guard sessionIndexFocusAnchorView?.ownsKeyboardFocus(responder) == true else { return nil }
             return .panel
         // SUPERMUX:begin right-sidebar-changes-mode-toolpanel
-        case .feed, .dock, .changes:
+        case .feed, .dock, .changes, .customSidebar:
         // SUPERMUX:end right-sidebar-changes-mode-toolpanel
             return nil
         }
@@ -295,7 +295,7 @@ struct RightSidebarToolPanelView: View {
                     .frame(width: 0, height: 0)
             )
         // SUPERMUX:begin right-sidebar-changes-mode-toolpanel
-        case .feed, .dock, .changes:
+        case .feed, .dock, .changes, .customSidebar:
         // SUPERMUX:end right-sidebar-changes-mode-toolpanel
             EmptyView()
         }
@@ -331,7 +331,7 @@ struct RightSidebarToolPanelView: View {
     }
 }
 
-private struct RightSidebarToolFocusAnchor: NSViewRepresentable {
+struct RightSidebarToolFocusAnchor: NSViewRepresentable {
     final class Coordinator {
         var onViewChange: (RightSidebarToolFocusAnchorView?) -> Void
         weak var attachedView: RightSidebarToolFocusAnchorView?
@@ -375,7 +375,7 @@ private struct RightSidebarToolFocusAnchor: NSViewRepresentable {
     }
 }
 
-fileprivate final class RightSidebarToolFocusAnchorView: NSView {
+final class RightSidebarToolFocusAnchorView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func ownsKeyboardFocus(_ responder: NSResponder) -> Bool {

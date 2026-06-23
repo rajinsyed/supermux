@@ -1,4 +1,5 @@
 import AppKit
+import CmuxAppKitSupportUI
 import SwiftUI
 
 /// Installs and tears down the workspace switcher's SwiftUI overlay inside a
@@ -76,8 +77,12 @@ final class SupermuxWorkspaceSwitcherOverlayController {
     /// overlay floats above portal-hosted terminals/browsers), else the window's
     /// theme frame over its content view.
     private func installationTarget(for window: NSWindow) -> (container: NSView, reference: NSView)? {
-        if let glassTarget = WindowGlassEffect.portalInstallationTarget(for: window) {
-            return glassTarget
+        // Upstream moved WindowGlassEffect into CmuxAppKitSupportUI and made
+        // portalInstallationTarget an instance method returning a struct (was a
+        // static returning a tuple). The lookup reads window-scoped associated
+        // objects, so a fresh instance resolves the same target.
+        if let glassTarget = WindowGlassEffect().portalInstallationTarget(for: window) {
+            return (container: glassTarget.container, reference: glassTarget.reference)
         }
         guard let contentView = window.contentView, let themeFrame = contentView.superview else {
             return nil

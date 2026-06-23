@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-import CmuxProcess
+import CmuxFoundation
 import SupermuxKit
 
 /// Regression tests for `SupermuxChangesModel`'s refresh coordination.
