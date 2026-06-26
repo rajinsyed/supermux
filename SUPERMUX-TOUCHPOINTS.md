@@ -62,6 +62,7 @@ Rules for adding a touchpoint:
 | 47 | `CLI/CMUXCLI+ThemeSupport.swift` | `right-sidebar-changes-mode-cli-set`, `right-sidebar-changes-mode-cli-normalize` | Adds `"changes"` to `isRightSidebarCLIMode` and `normalizedRightSidebarCLIArgument` so `cmux right-sidebar set changes` / `cmux right-sidebar changes` validate and normalize. Upstream (cmux CLI refactor) moved these two helpers out of `CLI/cmux.swift` into this file, so the `-cli-set` fence (originally part of #10) moved here; `-cli-normalize` is new (the normalizer did not exist at the previous merge base) |
 | 48 | `Sources/RightSidebarChromeStyle.swift` | `right-sidebar-compact-mode-bar` | Adds a `showsLabel` flag to upstream's `ModeBarButton` (icon-only when the sidebar is narrow). Upstream relocated `ModeBarButton` here from `RightSidebarPanelView.swift` and switched it to an `item:`-based API; the compact-mode-bar fence (part of #5) moved with it. `RightSidebarPanelView.modeButtonsRow` now drives the `modeBarItems`/`ModeBarButton(item:showsLabel:)` API inside `ViewThatFits` |
 | 49 | `Sources/Sidebar/SidebarWorkspaceSnapshotRefreshPolicy.swift` | `sidebar-flatrow-activity` | Carries `supermuxActivity` through the frozen-snapshot `applyingContextMenuImmediateFields` rebuild (the third construction site of `SidebarWorkspaceSnapshotBuilder.Snapshot`, alongside the two in `ContentView.swift`). Previously an unfenced edit; fenced and registered during the upstream merge that added `finderDirectoryPath`/`mediaActivity` to the same initializer |
+| 50 | `Sources/ContentView.swift` | `sidebar-hide-scrollbar` | Hides the left workspace sidebar's scrollbar. Two layers: (a) `VerticalTabsSidebar.configureSidebarScrollView` (the shared resolver hook for both the default projects+workspaces list and the extension-provider list) no longer calls upstream's `applySidebarOverlayScrollerConfiguration()`; it instead forces `hasHorizontalScroller`/`hasVerticalScroller` to `false` (write-only-when-differs). (b) Both sidebar `ScrollView`s get `.scrollIndicators(.hidden)` so SwiftUI itself keeps the indicator hidden — the AppKit resolver alone loses to SwiftUI, which re-asserts the scroller from its default `.scrollIndicators(.automatic)` after the resolver's deferred apply. Scrolling still works via trackpad/wheel |
 
 ## How to re-apply
 
@@ -223,7 +224,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 
 | Row | Δ | Reason |
 |-----|---|--------|
-| `Sources/ContentView.swift` | +9, +14, +28, +26 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). `empty-home` (+26: `SupermuxEmptyHomeView` mount in `terminalContent`, the startup-recovery auto-add suppression, and clearing the titlebar title on empty, 16751→16777) |
+| `Sources/ContentView.swift` | +9, +14, +28, +26, +19 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). `empty-home` (+26: `SupermuxEmptyHomeView` mount in `terminalContent`, the startup-recovery auto-add suppression, and clearing the titlebar title on empty, 16751→16777); `sidebar-hide-scrollbar` (+19: replaces the one-line `applySidebarOverlayScrollerConfiguration()` call in `configureSidebarScrollView` with the inlined hidden-scroller config and folds the now-stale upstream overlay-scroller doc comment into the fence; plus `.scrollIndicators(.hidden)` on both sidebar `ScrollView`s — workspace list and extension-provider list — so SwiftUI does not re-assert the scroller, 16236→16255) |
 | `Sources/TabManager.swift` | +25, +28 | `new-workspace-standalone` (+25: `markStandalone` call in `addWorkspace`, the central close-path `forget` cleanup, and the `forget` clear in `restoreClosedWorkspace` so reopened project workspaces re-nest); `keep-window-on-last-close` (+28: `allowEmptyingWindow` param/guard, selection-to-`nil`, the three last-workspace close sites + bulk short-circuit/plan, the child-exit path, close-confirmation metadata cleanup, and failed closed-workspace restore cleanup, 6116→6169) |
 | `cmuxTests/TabManagerUnitTests.swift` | +69 | `keep-window-on-last-close` (repurposed `testChildExitOnLastWorkspaceKeepsWindowOpenAsEmptyHome`, updated all-workspaces confirmation copy expectations, two new empty-home close tests, and failed restore cleanup coverage, 3926→3995) |
 | `Sources/WorkspaceContentView.swift` | +12 | `presets-bar` mount above the splits (if/else branch on minimal mode) |
@@ -862,3 +863,49 @@ New supermux-owned file `Sources/Supermux/SupermuxEmptyHomeView.swift` (wired vi
 IDs `…F5`/`…F6`); `supermux.emptyHome.{title,subtitle}` localization keys (en+ja) under #4b.
 If upstream restructures these paths, the requirement is: closing the last *tab* removes it and
 keeps the window open with an empty-state view; closing the *window* is unchanged.
+
+### 50. `Sources/ContentView.swift` — `sidebar-hide-scrollbar`
+
+`VerticalTabsSidebar.configureSidebarScrollView(_:)` is the resolver hook that configures the left
+sidebar's backing `NSScrollView`. It is the single chokepoint for both the default
+projects+workspaces list (`workspaceScrollArea`) and the extension-provider list
+(`extensionSidebarScrollArea`); the supermux Projects section mounts inside the same scroll view, so
+hiding the scroller here covers projects + workspaces in one place. Upstream's body was a single
+call to `scrollView.applySidebarOverlayScrollerConfiguration()`, preceded by a doc comment
+describing that stable overlay/autohide config. The fence starts above the doc comment (so the now-
+stale comment is replaced/owned by supermux) and replaces the body:
+
+```swift
+// SUPERMUX:begin sidebar-hide-scrollbar
+// The workspace sidebar … hides its scrollers entirely … (rationale comment;
+// replaces upstream's stale overlay/autohide doc comment)
+private func configureSidebarScrollView(_ scrollView: NSScrollView?) {
+    guard let scrollView else { return }
+    if scrollView.hasHorizontalScroller { scrollView.hasHorizontalScroller = false }
+    if scrollView.hasVerticalScroller { scrollView.hasVerticalScroller = false }
+    // SUPERMUX:end sidebar-hide-scrollbar
+}
+```
+
+Do **not** keep the upstream `applySidebarOverlayScrollerConfiguration()` call and hide the scroller
+afterwards: that helper forces `hasVerticalScroller = true`, so each resolver re-apply (frequent
+during agent activity) would write `true` then `false`, re-tiling AppKit's scrollers every time —
+the exact #3241 stuck-knob churn the helper was written to avoid. Owning the config directly and
+only writing a property when it differs keeps every re-resolve a pure no-op.
+
+**The AppKit resolver is not enough on its own.** SwiftUI's `ScrollView` representable re-asserts
+`hasVerticalScroller` from its default `.scrollIndicators(.automatic)` on every update pass, and the
+resolver applies its config one runloop hop later (a deferred `Task { @MainActor }`), so SwiftUI
+wins and the bar stays visible. The fix is a second fence (same id) adding `.scrollIndicators(.hidden)`
+to **both** sidebar `ScrollView`s — the workspace list in `workspaceScrollArea` (`ScrollView(.vertical)`)
+and the built-in extension-provider list in `extensionSidebarTimelineContent` (the else-branch helper
+that `extensionSidebarScrollAreaContent` delegates to — the only extension branch using this
+`ScrollView`/`SidebarScrollViewResolver`) — placed right after the `ScrollView { … }` closing brace,
+before `.background(SidebarScrollViewResolver …)`. With SwiftUI told
+to hide the indicator, the two layers agree and the bar never reappears.
+
+If upstream restructures the sidebar scroll configuration, the requirement is: the left sidebar's
+`NSScrollView` has both scrollers hidden (`hasVerticalScroller`/`hasHorizontalScroller == false`)
+written idempotently, **and** the SwiftUI `ScrollView`s carry `.scrollIndicators(.hidden)` so SwiftUI
+does not re-show them — with scrolling still driven by trackpad/wheel. Budget row for
+`Sources/ContentView.swift` carries +19 for this fence (16236→16255).
