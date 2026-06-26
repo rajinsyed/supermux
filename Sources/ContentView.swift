@@ -10630,6 +10630,14 @@ struct VerticalTabsSidebar: View {
                         minHeight: contentMinHeight
                     )
                 }
+                // SUPERMUX:begin sidebar-hide-scrollbar
+                // SwiftUI re-asserts the scroller from its default
+                // `.scrollIndicators(.automatic)` on every update pass, which
+                // wins over the AppKit resolver's deferred `hasVerticalScroller =
+                // false`. Tell SwiftUI itself to keep the indicator hidden so the
+                // two layers agree and the bar never reappears.
+                .scrollIndicators(.hidden)
+                // SUPERMUX:end sidebar-hide-scrollbar
                 .background(
                     SidebarScrollViewResolver { scrollView in
                         configureSidebarScrollView(scrollView)
@@ -10796,14 +10804,22 @@ struct VerticalTabsSidebar: View {
         }
     }
 
-    // Applies one stable overlay/autohide scroller config and never toggles it.
-    // Toggling `hasVerticalScroller`/style from SwiftUI re-renders (constant
-    // while agents update rows) re-flashes the overlay knob so it never reaches
-    // its idle fade; a stable config lets AppKit own appear/scroll/fade and the
-    // finite empty-area height keeps it hidden when content fits (#3241).
+    // SUPERMUX:begin sidebar-hide-scrollbar
+    // The workspace sidebar (projects + workspaces, and the extension provider
+    // list) hides its scrollers entirely — scrolling still works via
+    // trackpad/wheel. This replaces upstream's stable overlay/autohide scroller
+    // config (which kept an overlay knob that AppKit faded out): we deliberately
+    // do NOT call `applySidebarOverlayScrollerConfiguration()` here, because it
+    // forces `hasVerticalScroller = true`, so calling it and then hiding the
+    // scroller would write true→false on every resolver re-apply and re-tile
+    // AppKit's scrollers each time — the #3241 stuck-knob churn that helper
+    // guards. Owning the config directly and writing a property only when it
+    // differs keeps every re-resolve a pure no-op.
     private func configureSidebarScrollView(_ scrollView: NSScrollView?) {
         guard let scrollView else { return }
-        scrollView.applySidebarOverlayScrollerConfiguration()
+        if scrollView.hasHorizontalScroller { scrollView.hasHorizontalScroller = false }
+        if scrollView.hasVerticalScroller { scrollView.hasVerticalScroller = false }
+        // SUPERMUX:end sidebar-hide-scrollbar
     }
 
     private func extensionSidebarScrollArea(renderContext: WorkspaceListRenderContext) -> some View {
@@ -10934,6 +10950,9 @@ struct VerticalTabsSidebar: View {
                     )
                 }
             }
+            // SUPERMUX:begin sidebar-hide-scrollbar
+            .scrollIndicators(.hidden)
+            // SUPERMUX:end sidebar-hide-scrollbar
             .background(
                 SidebarScrollViewResolver { scrollView in
                     configureSidebarScrollView(scrollView)
