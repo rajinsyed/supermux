@@ -63,6 +63,7 @@ Rules for adding a touchpoint:
 | 48 | `Sources/RightSidebarChromeStyle.swift` | `right-sidebar-compact-mode-bar` | Adds a `showsLabel` flag to upstream's `ModeBarButton` (icon-only when the sidebar is narrow). Upstream relocated `ModeBarButton` here from `RightSidebarPanelView.swift` and switched it to an `item:`-based API; the compact-mode-bar fence (part of #5) moved with it. `RightSidebarPanelView.modeButtonsRow` now drives the `modeBarItems`/`ModeBarButton(item:showsLabel:)` API inside `ViewThatFits` |
 | 49 | `Sources/Sidebar/SidebarWorkspaceSnapshotRefreshPolicy.swift` | `sidebar-flatrow-activity` | Carries `supermuxActivity` through the frozen-snapshot `applyingContextMenuImmediateFields` rebuild (the third construction site of `SidebarWorkspaceSnapshotBuilder.Snapshot`, alongside the two in `ContentView.swift`). Previously an unfenced edit; fenced and registered during the upstream merge that added `finderDirectoryPath`/`mediaActivity` to the same initializer |
 | 50 | `Sources/ContentView.swift` | `sidebar-hide-scrollbar` | Hides the left workspace sidebar's scrollbar. Two layers: (a) `VerticalTabsSidebar.configureSidebarScrollView` (the shared resolver hook for both the default projects+workspaces list and the extension-provider list) no longer calls upstream's `applySidebarOverlayScrollerConfiguration()`; it instead forces `hasHorizontalScroller`/`hasVerticalScroller` to `false` (write-only-when-differs). (b) Both sidebar `ScrollView`s get `.scrollIndicators(.hidden)` so SwiftUI itself keeps the indicator hidden — the AppKit resolver alone loses to SwiftUI, which re-asserts the scroller from its default `.scrollIndicators(.automatic)` after the resolver's deferred apply. Scrolling still works via trackpad/wheel |
+| 51 | `scripts/reload.sh` | `reload-prune-leftover-base-app` | After a tagged build renames the raw `cmux DEV.app` into `cmux DEV <tag>.app`, calls the supermux-owned `scripts/supermux-prune-dev-builds.sh --reload-leftover` to deregister + delete the never-launched leftover base bundle, so macOS stops accumulating one stale "cmux DEV" row per tag in System Settings > Login Items & Extensions. The prune script is supermux-owned (no touchpoint); only this one-line call into it is fenced |
 
 ## How to re-apply
 
@@ -909,3 +910,37 @@ If upstream restructures the sidebar scroll configuration, the requirement is: t
 written idempotently, **and** the SwiftUI `ScrollView`s carry `.scrollIndicators(.hidden)` so SwiftUI
 does not re-show them — with scrolling still driven by trackpad/wheel. Budget row for
 `Sources/ContentView.swift` carries +19 for this fence (16236→16255).
+
+### 51. `scripts/reload.sh` — `reload-prune-leftover-base-app`
+
+A tagged build (`reload.sh --tag <tag>`) builds the raw `cmux DEV.app`, copies it to a staging
+bundle, rewrites the copy's `CFBundleIdentifier`/name, and `mv`s the copy to
+`cmux DEV <tag>.app`. The original `cmux DEV.app` is left behind in the same
+`Build/Products/Debug/` dir. It is never launched, but macOS still registers its bundled sidebar
+ExtensionKit app-extension and Dock Tile plugin, so every distinct tag adds a stale "cmux DEV" row
+to System Settings → General → Login Items & Extensions (both the "Allow in the Background" and
+"Added Extensions" lists). The fence deletes that leftover right after the final `mv`.
+
+In the block that finalizes the tagged app (after `APP_PATH="$TAG_APP_FINAL_PATH"`):
+
+```bash
+if [[ -n "${TAG_APP_FINAL_PATH:-}" && -n "${TAG_APP_STAGING_PATH:-}" ]]; then
+  rm -rf "$TAG_APP_FINAL_PATH"
+  mv "$TAG_APP_STAGING_PATH" "$TAG_APP_FINAL_PATH"
+  APP_PATH="$TAG_APP_FINAL_PATH"
+  # SUPERMUX:begin reload-prune-leftover-base-app
+  SUPERMUX_PRUNE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/supermux-prune-dev-builds.sh"
+  if [[ -x "$SUPERMUX_PRUNE" ]]; then
+    "$SUPERMUX_PRUNE" --reload-leftover "$TAG_APP_FINAL_PATH" >/dev/null 2>&1 || true
+  fi
+  # SUPERMUX:end reload-prune-leftover-base-app
+fi
+```
+
+`scripts/supermux-prune-dev-builds.sh` is supermux-owned (not an upstream touchpoint); only this
+one-line call into it is fenced. `--reload-leftover <final-app>` deregisters (`lsregister -u`) and
+removes the sibling base `cmux DEV.app` plus any dead `.<name>.reload-*.app` staging copies, keeping
+the final app and any staging whose reload pid is still running (so a concurrent same-tag reload is
+never disturbed). The same script (no args) is the manual full cleanup: `--apply` deregisters + removes all
+redundant leftovers, `--prune-derived` also sweeps DerivedData (via `cleanup-dev-builds.sh`), and
+`--rebuild-lsdb` rebuilds the LaunchServices DB. Active/running/`--keep` tags are always protected.

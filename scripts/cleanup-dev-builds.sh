@@ -135,8 +135,12 @@ fi
 # Running cmux DEV processes by tag (the app name embeds the tag).
 running_tags=()
 while IFS= read -r line; do
-    # Match "cmux DEV <tag>" (with or without .app suffix).
-    if [[ "$line" =~ cmux\ DEV\ ([A-Za-z0-9._-]+) ]]; then
+    # The running process path is ".../cmux DEV <slug>.app/Contents/MacOS/cmux DEV".
+    # Capture the slug only so it matches the cmux-<slug> DerivedData dir name:
+    # the char class excludes '.' and the literal ".app" anchor stops the match
+    # at the bundle suffix. Without the anchor the greedy class ate ".app",
+    # yielding "<slug>.app" and silently failing the running-app protection.
+    if [[ "$line" =~ cmux\ DEV\ ([A-Za-z0-9-]+)\.app ]]; then
         running_tags+=("${BASH_REMATCH[1]}")
     fi
 done < <(pgrep -fl "cmux DEV " 2>/dev/null || true)

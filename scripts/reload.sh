@@ -1001,6 +1001,16 @@ if [[ -n "${TAG_APP_FINAL_PATH:-}" && -n "${TAG_APP_STAGING_PATH:-}" ]]; then
   rm -rf "$TAG_APP_FINAL_PATH"
   mv "$TAG_APP_STAGING_PATH" "$TAG_APP_FINAL_PATH"
   APP_PATH="$TAG_APP_FINAL_PATH"
+  # SUPERMUX:begin reload-prune-leftover-base-app
+  # The tagged app is a renamed copy of the raw "cmux DEV.app"; the original
+  # base bundle stays beside it and macOS registers it (sidebar app-extension +
+  # Dock Tile plugin), cluttering System Settings > Login Items & Extensions.
+  # Deregister + remove that never-launched leftover so it stops piling up.
+  SUPERMUX_PRUNE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/supermux-prune-dev-builds.sh"
+  if [[ -x "$SUPERMUX_PRUNE" ]]; then
+    "$SUPERMUX_PRUNE" --reload-leftover "$TAG_APP_FINAL_PATH" >/dev/null 2>&1 || true
+  fi
+  # SUPERMUX:end reload-prune-leftover-base-app
 fi
 CLI_PATH="$APP_PATH/Contents/Resources/bin/cmux"
 if [[ -x "$CLI_PATH" ]]; then
