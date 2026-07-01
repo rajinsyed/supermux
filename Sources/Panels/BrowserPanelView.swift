@@ -6498,13 +6498,39 @@ struct WebViewRepresentable: NSViewRepresentable {
         }
 
         // SUPERMUX:begin browser-hover-webkit-topmost-gate
+        /// WebKit's `WKMouseTrackingObserver` only forwards mouseMoved/mouseEntered
+        /// to the web page when `window.contentView.hitTest(...)` resolves to the
+        /// WKWebView or a descendant (`updateViewIsTopmostAtMouseLocation:` in
+        /// WebKit's WebViewImpl.mm). cmux hosts browser web views in a window-level
+        /// portal attached to the theme frame — outside the contentView subtree —
+        /// so that hit test resolves to this SwiftUI-side anchor instead and WebKit
+        /// silently drops every hover event (no CSS `:hover`, no cursor updates,
+        /// no tooltips). Delegating hover-time hit tests from the anchor to the
+        /// portal-hosted web view makes WebKit's topmost gate pass. Only hover-kind
+        /// events are delegated: real event routing (clicks, drags, scroll) is
+        /// handled by the portal host above the contentView and never consults
+        /// this anchor.
         weak var portalHoverHitTestWebView: WKWebView?
 
         func portalHoverDelegationTarget(
             at point: NSPoint,
             routingContext: WindowInputRoutingContext = WindowInputRoutingContext(event: NSApp.currentEvent)
         ) -> NSView? {
-            nil
+            guard routingContext.eventKind == .pointerHover else {
+                return nil
+            }
+            guard let window else { return nil }
+            for candidate in [hostedInspectorFrontendWebView, portalHoverHitTestWebView] {
+                guard let webView = candidate,
+                      webView.window === window,
+                      webView.superview != nil,
+                      !webView.isHiddenOrHasHiddenAncestor else { continue }
+                let pointInWebView = webView.convert(point, from: self)
+                if webView.bounds.contains(pointInWebView) {
+                    return webView
+                }
+            }
+            return nil
         }
         // SUPERMUX:end browser-hover-webkit-topmost-gate
 
@@ -6538,6 +6564,14 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
                 return self
             }
+            // SUPERMUX:begin browser-hover-webkit-topmost-gate
+            if let delegated = portalHoverDelegationTarget(at: point) {
+#if DEBUG
+                debugLogHitTest(stage: "hitTest.portalHoverDelegate", point: point, passThrough: false, hitView: delegated)
+#endif
+                return delegated
+            }
+            // SUPERMUX:end browser-hover-webkit-topmost-gate
             let hit = super.hitTest(point)
 #if DEBUG
             debugLogHitTest(stage: "hitTest.result", point: point, passThrough: false, hitView: hit)
@@ -7821,6 +7855,9 @@ struct WebViewRepresentable: NSViewRepresentable {
         }
         coordinator.panel = panel
         coordinator.webView = webView
+        // SUPERMUX:begin browser-hover-webkit-topmost-gate
+        (nsView as? HostContainerView)?.portalHoverHitTestWebView = webView
+        // SUPERMUX:end browser-hover-webkit-topmost-gate
 
         Self.clearPortalCallbacks(for: nsView)
         let hostOwnsPortal = useLocalInlineHosting
