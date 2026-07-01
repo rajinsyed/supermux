@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- SUPERMUX local build config: opt this DEBUG iOS build into the PRODUCTION
+     auth environment so it pairs with the installed production Supermux Mac.
+     Selecting production picks the production Stack project, its publishable
+     key, AND the cmux.dev callback that project trusts (so email-code sign-in
+     works). Read by MobileAuthComposition via the force-production-auth fence.
+     Delete this file (and its pbxproj Resources entry) to revert to development. -->
+<plist version="1.0">
+<dict>
+	<key>STACK_ENVIRONMENT</key>
+	<string>production</string>
+</dict>
+</plist>

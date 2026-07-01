@@ -64,3 +64,6 @@ artifacts/
 
 # tmux verbose debug logs (tmux -v) that land in the cwd
 tmux-*.log
+
+# Local-only phone-build backup (patch + LocalConfig backup + restore notes).
+.phone-build/

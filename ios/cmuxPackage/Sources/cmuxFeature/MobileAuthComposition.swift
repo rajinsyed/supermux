@@ -47,8 +47,15 @@ public struct MobileAuthComposition {
     ) {
         self.reachability = reachability
 
-        let isDevelopment = Self.isDevelopmentBuild
+        // SUPERMUX:begin force-production-auth (LocalConfig STACK_ENVIRONMENT=production)
+        // Lets a tagged DEBUG build opt into the PRODUCTION Stack project AND its
+        // cmux.dev callback, so it can pair with the installed production Supermux
+        // Mac. Without the key, behavior is unchanged (DEBUG -> development).
         let overrides = Self.localConfigStringOverrides(in: bundle)
+        let isDevelopment = overrides["STACK_ENVIRONMENT"]?.lowercased() == "production"
+            ? false
+            : Self.isDevelopmentBuild
+        // SUPERMUX:end force-production-auth
         let resolvedConfig = AuthConfig(
             environment: isDevelopment ? .development : .production,
             overrides: overrides

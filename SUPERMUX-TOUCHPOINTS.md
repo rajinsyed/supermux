@@ -64,6 +64,10 @@ Rules for adding a touchpoint:
 | 49 | `Sources/Sidebar/SidebarWorkspaceSnapshotRefreshPolicy.swift` | `sidebar-flatrow-activity` | Carries `supermuxActivity` through the frozen-snapshot `applyingContextMenuImmediateFields` rebuild (the third construction site of `SidebarWorkspaceSnapshotBuilder.Snapshot`, alongside the two in `ContentView.swift`). Previously an unfenced edit; fenced and registered during the upstream merge that added `finderDirectoryPath`/`mediaActivity` to the same initializer |
 | 50 | `Sources/ContentView.swift` | `sidebar-hide-scrollbar` | Hides the left workspace sidebar's scrollbar. Two layers: (a) `VerticalTabsSidebar.configureSidebarScrollView` (the shared resolver hook for both the default projects+workspaces list and the extension-provider list) no longer calls upstream's `applySidebarOverlayScrollerConfiguration()`; it instead forces `hasHorizontalScroller`/`hasVerticalScroller` to `false` (write-only-when-differs). (b) Both sidebar `ScrollView`s get `.scrollIndicators(.hidden)` so SwiftUI itself keeps the indicator hidden — the AppKit resolver alone loses to SwiftUI, which re-asserts the scroller from its default `.scrollIndicators(.automatic)` after the resolver's deferred apply. Scrolling still works via trackpad/wheel |
 | 51 | `scripts/reload.sh` | `reload-prune-leftover-base-app` | After a tagged build renames the raw `cmux DEV.app` into `cmux DEV <tag>.app`, calls the supermux-owned `scripts/supermux-prune-dev-builds.sh --reload-leftover` to deregister + delete the never-launched leftover base bundle, so macOS stops accumulating one stale "cmux DEV" row per tag in System Settings > Login Items & Extensions. The prune script is supermux-owned (no touchpoint); only this one-line call into it is fenced |
+| 52 | `ios/cmuxPackage/Sources/cmuxFeature/MobileAuthComposition.swift` | `force-production-auth` | Lets the DEBUG iOS build opt into the PRODUCTION Stack project + cmux.dev callback when the bundled `LocalConfig.plist` sets `STACK_ENVIRONMENT=production`, so a personally-signed DEBUG phone build pairs with the installed production Supermux Mac. Without the key, behavior is unchanged (DEBUG → development) |
+| 53 | `ios/Config/cmux.entitlements` | `unfenced` | Strips `com.apple.developer.applesignin`, `aps-environment`, and `com.apple.developer.usernotifications.time-sensitive` so automatic signing can provision a personal Apple team that lacks those capabilities (comments are unsafe to fence around a plist-key removal) |
+| 54 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Wires `LocalConfig.plist` into the iOS app's Copy Bundle Resources phase (build file `FCAB1004…`, file ref `FCAB101B…`) so the app can read it from the bundle |
+| 55 | `ios/cmux/Resources/LocalConfig.plist` | `unfenced` | New supermux-owned resource read by touchpoint #52; sets `STACK_ENVIRONMENT=production`. Not an upstream modification — registered so the check guards its existence (the pbxproj entry in #54 references it) |
 
 ## How to re-apply
 
@@ -944,3 +948,67 @@ the final app and any staging whose reload pid is still running (so a concurrent
 never disturbed). The same script (no args) is the manual full cleanup: `--apply` deregisters + removes all
 redundant leftovers, `--prune-derived` also sweeps DerivedData (via `cleanup-dev-builds.sh`), and
 `--rebuild-lsdb` rebuilds the LaunchServices DB. Active/running/`--keep` tags are always protected.
+
+### 52–55. iOS phone build — production-auth override on a personally-signed DEBUG build
+
+These four touchpoints let a locally-built DEBUG iOS app (personal Apple team) pair with the
+**installed production Supermux Mac**. The stock DEBUG build authenticates against the *development*
+Stack project, so its user id never matches the production Mac and pairing is rejected; and the
+stock entitlements require capabilities a personal team cannot provision. All four are needed
+together.
+
+**52. `ios/cmuxPackage/Sources/cmuxFeature/MobileAuthComposition.swift` — `force-production-auth`.**
+In `init(...)`, right before `AuthConfig(environment:overrides:)` is built, derive `isDevelopment`
+from the bundled `LocalConfig.plist` instead of the raw `#if DEBUG` flag:
+
+```swift
+// SUPERMUX:begin force-production-auth (LocalConfig STACK_ENVIRONMENT=production)
+// Lets a tagged DEBUG build opt into the PRODUCTION Stack project AND its
+// cmux.dev callback, so it can pair with the installed production Supermux
+// Mac. Without the key, behavior is unchanged (DEBUG -> development).
+let overrides = Self.localConfigStringOverrides(in: bundle)
+let isDevelopment = overrides["STACK_ENVIRONMENT"]?.lowercased() == "production"
+    ? false
+    : Self.isDevelopmentBuild
+// SUPERMUX:end force-production-auth
+```
+
+`localConfigStringOverrides(in:)` already exists upstream and is reused for the `AuthConfig`
+overrides table. If upstream restructures the composition root, the requirement is: when the bundled
+`LocalConfig.plist` says `STACK_ENVIRONMENT=production`, resolve the auth config for `.production`
+even in a DEBUG build.
+
+**53. `ios/Config/cmux.entitlements` — unfenced.** Remove the three capability keys the personal team
+can't provision: the `com.apple.developer.applesignin` array, the `aps-environment` string, and the
+`com.apple.developer.usernotifications.time-sensitive` bool. Tradeoff: no APNs push and the
+Apple-sign-in button is dead (Google / email-code sign-in still work). To restore the stock file:
+`git checkout <upstream> -- ios/Config/cmux.entitlements`. A plist-key *removal* can't be wrapped in a
+comment fence, so this file is `unfenced` — re-apply by deleting the same three keys after a merge.
+
+**54. `ios/cmux-ios.xcodeproj/project.pbxproj` — unfenced.** Add `LocalConfig.plist` to the app's
+Copy Bundle Resources, mirroring the existing `Localizable.xcstrings` entries with reserved IDs:
+a `PBXBuildFile` `FCAB10042DF5000000A66F90` (`LocalConfig.plist in Resources`), a `PBXFileReference`
+`FCAB101B2DF5000000A66F90` (`lastKnownFileType = text.plist.xml; path = LocalConfig.plist`), the file
+ref listed in the `Resources` group's `children`, and the build file listed in the app target's
+`PBXResourcesBuildPhase` `files`. Verify: `plutil -lint ios/cmux-ios.xcodeproj/project.pbxproj`.
+
+**55. `ios/cmux/Resources/LocalConfig.plist` — new supermux-owned resource.** A one-key plist,
+`STACK_ENVIRONMENT=production`, read by touchpoint #52 and bundled via #54. Contains no secret (the
+production Stack project id + publishable key are already in
+`Packages/Shared/CMUXAuthCore/.../CMUXAuthConfig.swift` / `CmuxAuthRuntime/.../AuthConfig.swift`).
+Because a Copy-Bundle-Resources entry points at it, a fresh clone/CI must have the file present or
+the iOS build fails with "Build input file cannot be found" — which is why it is committed rather
+than gitignored.
+
+**Rebuilding the phone app** (personal team cert lasts ~1 year; rerun to renew):
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer /opt/homebrew/bin/bash \
+  ios/scripts/reload.sh --tag rajin --device-only --team NRGUG8GVV4 \
+  --allow-device-registration --no-setup
+```
+
+Needs Homebrew bash 5 (`ios/scripts/reload.sh` trips a bash 3.2 empty-array bug under `set -u`) and
+the Xcode 27 beta toolchain (stable Xcode couldn't see the device). iPhone connected via USB +
+trusted. The Mac side must have `mobile.iOSPairingHost.enabled` on; the phone reaches it over
+Tailscale (LAN-speed / direct at home).
