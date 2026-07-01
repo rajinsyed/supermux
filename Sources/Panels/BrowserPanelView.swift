@@ -6497,6 +6497,17 @@ struct WebViewRepresentable: NSViewRepresentable {
             clearActiveDividerCursor(restoreArrow: true)
         }
 
+        // SUPERMUX:begin browser-hover-webkit-topmost-gate
+        weak var portalHoverHitTestWebView: WKWebView?
+
+        func portalHoverDelegationTarget(
+            at point: NSPoint,
+            routingContext: WindowInputRoutingContext = WindowInputRoutingContext(event: NSApp.currentEvent)
+        ) -> NSView? {
+            nil
+        }
+        // SUPERMUX:end browser-hover-webkit-topmost-gate
+
         override func hitTest(_ point: NSPoint) -> NSView? {
             let hostedInspectorHit = hostedInspectorDividerHit(at: point)
             updateDividerCursor(at: point, hostedInspectorHit: hostedInspectorHit)

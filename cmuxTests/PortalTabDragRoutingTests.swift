@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 import SwiftUI
+import WebKit
 @testable import Bonsplit
 
 #if canImport(cmux_DEV)
@@ -591,4 +592,123 @@ final class PortalTabDragRoutingTests: XCTestCase {
             CGRect(x: 4, y: 4, width: 192, height: 46)
         )
     }
+
+    // SUPERMUX:begin browser-hover-drag-guard
+    // Regression: browser hover dies after a tab drag.
+    //
+    // The `.drag` pasteboard retains its declared types after a Bonsplit pane-tab or
+    // sidebar-tab drag ends (nothing clears it in production). A plain hover carries no
+    // pressed mouse button, so with a *stale* tab-transfer payload still on the drag
+    // pasteboard, the browser portal would treat every subsequent hover as an in-flight
+    // tab drag and pass it through — routing mouse-moved past the WKWebView and breaking
+    // CSS :hover, hover menus, and tooltips in the embedded browser. Gating hover-routing
+    // on the left button actually being held keeps real drags working while letting
+    // ordinary hover reach the web view again.
+    func testBrowserPortalDoesNotPassHoverThroughWithoutPressedMouseButton() {
+        let stalePayloads: [[NSPasteboard.PasteboardType]] = [
+            [DragOverlayRoutingPolicy.bonsplitTabTransferType],
+            [DragOverlayRoutingPolicy.sidebarTabReorderType],
+        ]
+        let hoverEvents: [NSEvent.EventType] = [.mouseMoved, .cursorUpdate, .mouseEntered, .mouseExited]
+
+        for stale in stalePayloads {
+            for event in hoverEvents {
+                XCTAssertFalse(
+                    DragOverlayRoutingPolicy.shouldPassThroughPortalHitTesting(
+                        pasteboardTypes: stale,
+                        eventType: event,
+                        pressedMouseButtons: 0
+                    ),
+                    "Hover (\(event)) with no mouse button held must reach the web view, not pass through"
+                )
+                XCTAssertTrue(
+                    DragOverlayRoutingPolicy.shouldPassThroughPortalHitTesting(
+                        pasteboardTypes: stale,
+                        eventType: event,
+                        pressedMouseButtons: 1
+                    ),
+                    "Hover (\(event)) during an active tab drag (left button held) must still pass through"
+                )
+            }
+        }
+
+        // A genuine drag event keeps passing through regardless of the pressed-button
+        // snapshot (its routing does not gate on the button state).
+        XCTAssertTrue(
+            DragOverlayRoutingPolicy.shouldPassThroughPortalHitTesting(
+                pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
+                eventType: .leftMouseDragged,
+                pressedMouseButtons: 0
+            ),
+            "Active drag events should keep passing through to Bonsplit drop targets"
+        )
+    }
+    // SUPERMUX:end browser-hover-drag-guard
+
+    // SUPERMUX:begin browser-hover-webkit-topmost-gate
+    // Regression: WKWebView hover is dead in portal-hosted browser panes.
+    //
+    // WebKit's WKMouseTrackingObserver only forwards mouseMoved/mouseEntered to the
+    // web page when `window.contentView.hitTest(...)` resolves to the WKWebView or a
+    // descendant (`updateViewIsTopmostAtMouseLocation:` in WebKit's WebViewImpl.mm).
+    // cmux hosts browser web views in a window-level portal attached to the theme
+    // frame — outside the contentView subtree — so that hit test resolves to the
+    // SwiftUI-side anchor instead and WebKit silently drops every hover event
+    // (no CSS :hover, no cursor changes, no tooltips), while clicks and scrolling
+    // keep working. The anchor must delegate hover-time hit tests to the
+    // portal-hosted web view so WebKit's topmost gate passes.
+    func testBrowserAnchorDelegatesHoverHitTestToPortalHostedWebView() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let contentView = try XCTUnwrap(window.contentView)
+        let themeFrame = try XCTUnwrap(contentView.superview)
+
+        let anchor = WebViewRepresentable.HostContainerView(
+            frame: NSRect(x: 400, y: 0, width: 400, height: 600)
+        )
+        contentView.addSubview(anchor)
+
+        // Portal-style hosting: the web view lives OUTSIDE the contentView subtree,
+        // in an overlay attached above it on the theme frame — mirroring how
+        // WindowBrowserHostView installs its slots.
+        let overlay = NSView(frame: themeFrame.bounds)
+        themeFrame.addSubview(overlay, positioned: .above, relativeTo: contentView)
+        let webView = WKWebView(frame: NSRect(x: 400, y: 0, width: 400, height: 600))
+        overlay.addSubview(webView)
+
+        anchor.portalHoverHitTestWebView = webView
+
+        let hover = WindowInputRoutingContext(eventType: .mouseMoved)
+        let pointOverWebView = NSPoint(x: 50, y: 50) // anchor-local; maps into the web view
+
+        XCTAssertIdentical(
+            anchor.portalHoverDelegationTarget(at: pointOverWebView, routingContext: hover),
+            webView,
+            "Hover hit tests over the page area must resolve to the portal-hosted web view so WebKit's topmost-at-mouse-location gate passes"
+        )
+        XCTAssertNil(
+            anchor.portalHoverDelegationTarget(
+                at: pointOverWebView,
+                routingContext: WindowInputRoutingContext(eventType: .keyDown)
+            ),
+            "Non-hover hit tests must not be delegated; real event routing is owned by the portal host"
+        )
+        XCTAssertNil(
+            anchor.portalHoverDelegationTarget(at: NSPoint(x: -10, y: 50), routingContext: hover),
+            "Points outside the web view's bounds must not be claimed for it"
+        )
+
+        webView.removeFromSuperview()
+        XCTAssertNil(
+            anchor.portalHoverDelegationTarget(at: pointOverWebView, routingContext: hover),
+            "A web view not hosted in this window (e.g. parked in the background preload window) must not be claimed"
+        )
+    }
+    // SUPERMUX:end browser-hover-webkit-topmost-gate
 }

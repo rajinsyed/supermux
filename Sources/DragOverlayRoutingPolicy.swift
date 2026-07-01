@@ -354,7 +354,10 @@ enum DragOverlayRoutingPolicy {
 
     static func shouldPassThroughPortalHitTesting(
         pasteboardTypes: [NSPasteboard.PasteboardType]?,
-        eventType: NSEvent.EventType?
+        eventType: NSEvent.EventType?,
+        // SUPERMUX:begin browser-hover-drag-guard
+        pressedMouseButtons: Int = NSEvent.pressedMouseButtons
+        // SUPERMUX:end browser-hover-drag-guard
     ) -> Bool {
         let routingContext = WindowInputRoutingContext(eventType: eventType)
         guard routingContext.allowsBrowserPortalDragRouting else { return false }
