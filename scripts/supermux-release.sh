@@ -81,15 +81,18 @@ if [[ -d "${REPO_ROOT}/cmuxd" ]]; then
   (cd "${REPO_ROOT}/cmuxd" && zig build -Doptimize=ReleaseFast)
 fi
 
-echo "==> Installing to ${INSTALL_APP}"
-/usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
-sleep 0.3
-pkill -f "${INSTALL_APP}/Contents/MacOS/${BASE_APP_NAME}" 2>/dev/null || true
-sleep 0.3
-rm -rf "${INSTALL_APP}"
-cp -R "${BUILT_APP}" "${INSTALL_APP}"
+# Patch, sign, and verify a STAGED copy first; /Applications is only touched
+# after the staged bundle fully verifies. A codesign failure (e.g. a transient
+# timestamp-server error) must never leave an unsigned app installed — an
+# unsigned app can't hold TCC grants, so macOS re-prompts for Documents/Desktop
+# access on every launch and Allow never sticks.
+echo "==> Staging bundle"
+STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/supermux-release.XXXXXX")"
+trap 'rm -rf "${STAGE_DIR}"' EXIT
+STAGED_APP="${STAGE_DIR}/${APP_NAME}.app"
+cp -R "${BUILT_APP}" "${STAGED_APP}"
 
-INFO_PLIST="${INSTALL_APP}/Contents/Info.plist"
+INFO_PLIST="${STAGED_APP}/Contents/Info.plist"
 plist_set() {
   local key="$1" type="$2" value="$3" plist="${4:-$INFO_PLIST}"
   /usr/libexec/PlistBuddy -c "Set :${key} ${value}" "${plist}" 2>/dev/null \
@@ -113,13 +116,13 @@ plist_set "LSEnvironment:CMUX_ALLOW_SOCKET_OVERRIDE" string "1"
 
 # Keep the embedded Dock Tile plugin's id prefixed by the (new) host id; its
 # filename stays CmuxDockTilePlugin.plugin (NSDockTilePlugIn is filename-based).
-DOCKTILE_PLIST="${INSTALL_APP}/Contents/PlugIns/CmuxDockTilePlugin.plugin/Contents/Info.plist"
+DOCKTILE_PLIST="${STAGED_APP}/Contents/PlugIns/CmuxDockTilePlugin.plugin/Contents/Info.plist"
 [[ -f "${DOCKTILE_PLIST}" ]] && plist_set "CFBundleIdentifier" string "${DOCKTILE_BUNDLE_ID}" "${DOCKTILE_PLIST}"
 
 # Bundle the freshly built daemon.
 CMUXD_SRC="${REPO_ROOT}/cmuxd/zig-out/bin/cmuxd"
 if [[ -x "${CMUXD_SRC}" ]]; then
-  BIN_DIR="${INSTALL_APP}/Contents/Resources/bin"
+  BIN_DIR="${STAGED_APP}/Contents/Resources/bin"
   mkdir -p "${BIN_DIR}"
   cp "${CMUXD_SRC}" "${BIN_DIR}/cmuxd"
   chmod +x "${BIN_DIR}/cmuxd"
@@ -127,34 +130,57 @@ fi
 
 # Drop Sparkle's sandboxed XPC services before signing (matches release tooling).
 [[ -x "${REPO_ROOT}/scripts/remove-sparkle-sandbox-xpc-services.sh" ]] \
-  && "${REPO_ROOT}/scripts/remove-sparkle-sandbox-xpc-services.sh" "${INSTALL_APP}" || true
+  && "${REPO_ROOT}/scripts/remove-sparkle-sandbox-xpc-services.sh" "${STAGED_APP}" || true
 
 echo "==> Signing with: ${SIGN_IDENTITY}"
-sign_one() { codesign --force --options runtime --timestamp --sign "${SIGN_IDENTITY}" "$@"; }
+# Retry each codesign a few times: the --timestamp flag needs Apple's timestamp
+# server, and a transient network failure there is exactly what stranded a
+# half-signed install once.
+sign_one() {
+  local attempt
+  for attempt in 1 2 3; do
+    if codesign --force --options runtime --timestamp --sign "${SIGN_IDENTITY}" "$@"; then
+      return 0
+    fi
+    echo "warn: codesign failed (attempt ${attempt}/3): $*" >&2
+    sleep 2
+  done
+  echo "error: codesign failed after 3 attempts: $*" >&2
+  return 1
+}
 
 # Inside-out: frameworks (deep handles their own nested code, e.g. Sparkle's
 # Updater.app), loose dylibs, the dock plugin, the Mach-O helpers (with helper
 # entitlements), then the host app LAST with the app entitlements. The final
 # app sign is NOT --deep, so it cannot clobber the nested signatures above.
-for fw in "${INSTALL_APP}"/Contents/Frameworks/*.framework; do
+for fw in "${STAGED_APP}"/Contents/Frameworks/*.framework; do
   [[ -d "${fw}" ]] && sign_one --deep "${fw}"
 done
-for dy in "${INSTALL_APP}"/Contents/Frameworks/*.dylib; do
+for dy in "${STAGED_APP}"/Contents/Frameworks/*.dylib; do
   [[ -f "${dy}" ]] && sign_one "${dy}"
 done
-for pl in "${INSTALL_APP}"/Contents/PlugIns/*.plugin; do
+for pl in "${STAGED_APP}"/Contents/PlugIns/*.plugin; do
   [[ -d "${pl}" ]] && sign_one "${pl}"
 done
 for h in cmux ghostty cmuxd; do
-  f="${INSTALL_APP}/Contents/Resources/bin/${h}"
+  f="${STAGED_APP}/Contents/Resources/bin/${h}"
   [[ -f "${f}" ]] && file -b "${f}" | grep -q "Mach-O" \
     && sign_one --entitlements "${HELPER_ENT}" "${f}"
 done
-sign_one --entitlements "${APP_ENT}" "${INSTALL_APP}"
+sign_one --entitlements "${APP_ENT}" "${STAGED_APP}"
 
 echo "==> Verifying signature"
-codesign --verify --deep --strict --verbose=2 "${INSTALL_APP}" || {
+codesign --verify --deep --strict --verbose=2 "${STAGED_APP}" || {
   echo "error: signature verification failed" >&2; exit 1; }
+
+echo "==> Installing to ${INSTALL_APP}"
+/usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
+sleep 0.3
+pkill -f "${INSTALL_APP}/Contents/MacOS/${BASE_APP_NAME}" 2>/dev/null || true
+sleep 0.3
+rm -rf "${INSTALL_APP}"
+mv "${STAGED_APP}" "${INSTALL_APP}"
+
 # Informational: a non-notarized Developer ID app is 'rejected' by spctl but
 # still runs locally (it is not quarantined). Notarize later to clear this.
 spctl -a -vv --type execute "${INSTALL_APP}" 2>&1 | sed 's/^/    spctl: /' || true
