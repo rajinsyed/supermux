@@ -775,6 +775,10 @@ final class FileExplorerStore: ObservableObject {
     /// the row is revealed. See Sources/Supermux/SupermuxFileExplorerCommands.swift.
     var supermuxRevealPath: String?
 
+    /// When the pending reveal was requested; the coordinator uses it to expire
+    /// a reveal whose row never materializes (see `supermuxRevealRowIfPresent`).
+    var supermuxRevealRequestedAt: Date?
+
     /// Selects `path` (so it survives the reload that follows a file operation) and
     /// marks it to be scrolled into view. Setting `selectedPath`/`selectedPaths`
     /// here requires being inside the store (they are `private(set)`).
@@ -783,6 +787,7 @@ final class FileExplorerStore: ObservableObject {
         selectedPaths = [path]
         pendingDescendIntoFirstChildPath = nil
         supermuxRevealPath = path
+        supermuxRevealRequestedAt = Date()
     }
 
     /// Clears the navigation selection so the next reload's root-load picks a
@@ -792,6 +797,7 @@ final class FileExplorerStore: ObservableObject {
         selectedPath = nil
         selectedPaths = []
         supermuxRevealPath = nil
+        supermuxRevealRequestedAt = nil
     }
     // SUPERMUX:end file-explorer-operations-reveal
 
@@ -1022,6 +1028,12 @@ final class FileExplorerStore: ObservableObject {
         if path != pendingDescendIntoFirstChildPath {
             pendingDescendIntoFirstChildPath = nil
         }
+        // SUPERMUX:begin file-explorer-operations-reveal
+        // Moving the selection cancels a pending file-op reveal to another path,
+        // so a stale reveal can't later yank the viewport (mirrors the
+        // pendingDescendIntoFirstChildPath invalidation above).
+        if supermuxRevealPath != path { supermuxRevealPath = nil }
+        // SUPERMUX:end file-explorer-operations-reveal
     }
 
     func select(nodes: [FileExplorerNode], anchor: FileExplorerNode?) {
@@ -1033,6 +1045,10 @@ final class FileExplorerStore: ObservableObject {
         if path != pendingDescendIntoFirstChildPath {
             pendingDescendIntoFirstChildPath = nil
         }
+        // SUPERMUX:begin file-explorer-operations-reveal
+        // Selection moves cancel a pending file-op reveal (see select(node:)).
+        if supermuxRevealPath != path { supermuxRevealPath = nil }
+        // SUPERMUX:end file-explorer-operations-reveal
     }
 
     func requestDescendIntoFirstChild(of node: FileExplorerNode) {

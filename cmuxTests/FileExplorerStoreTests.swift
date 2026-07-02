@@ -582,6 +582,61 @@ struct FileExplorerStoreTests {
         #expect(store.selectedPaths.isEmpty)
     }
 
+    // SUPERMUX:begin file-explorer-operations-reveal
+    // MARK: - Supermux file-op reveal invalidation
+
+    @Test
+    func testSelectingDifferentPathCancelsPendingSupermuxReveal() {
+        let store = FileExplorerStore()
+        store.supermuxReveal(path: "/project/new.txt")
+        #expect(store.supermuxRevealPath == "/project/new.txt")
+        #expect(store.supermuxRevealRequestedAt != nil)
+
+        // The user clicks another file before the revealed row materializes:
+        // the pending reveal must not survive to hijack a later reload.
+        let other = FileExplorerNode(name: "other.txt", path: "/project/other.txt", isDirectory: false)
+        store.select(node: other)
+
+        #expect(store.supermuxRevealPath == nil)
+    }
+
+    @Test
+    func testMultiSelectingAwayCancelsPendingSupermuxReveal() {
+        let store = FileExplorerStore()
+        store.supermuxReveal(path: "/project/new.txt")
+
+        let a = FileExplorerNode(name: "a.txt", path: "/project/a.txt", isDirectory: false)
+        let b = FileExplorerNode(name: "b.txt", path: "/project/b.txt", isDirectory: false)
+        store.select(nodes: [a, b], anchor: a)
+
+        #expect(store.supermuxRevealPath == nil)
+    }
+
+    @Test
+    func testReselectingRevealPathKeepsPendingSupermuxReveal() {
+        let store = FileExplorerStore()
+        store.supermuxReveal(path: "/project/new.txt")
+
+        // A programmatic selection restore re-selects the same path once the row
+        // loads; that must not cancel the reveal before it can scroll.
+        let revealed = FileExplorerNode(name: "new.txt", path: "/project/new.txt", isDirectory: false)
+        store.select(node: revealed)
+
+        #expect(store.supermuxRevealPath == "/project/new.txt")
+    }
+
+    @Test
+    func testClearingSelectionResetsSupermuxRevealState() {
+        let store = FileExplorerStore()
+        store.supermuxReveal(path: "/project/new.txt")
+
+        store.supermuxClearSelection()
+
+        #expect(store.supermuxRevealPath == nil)
+        #expect(store.supermuxRevealRequestedAt == nil)
+    }
+    // SUPERMUX:end file-explorer-operations-reveal
+
     @Test
     func testRestoredMultiSelectionScrollsToAnchorRow() {
         let exactRows = IndexSet([2, 7, 11])

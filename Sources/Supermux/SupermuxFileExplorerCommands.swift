@@ -1,6 +1,11 @@
 import AppKit
 import SupermuxKit
 
+/// How long a pending post-file-op reveal stays eligible. Generous enough for
+/// the legitimate multi-reload case (the parent folder's async child load), yet
+/// bounded so an orphaned reveal cannot linger for the whole session.
+private let supermuxRevealTimeout: TimeInterval = 10
+
 // MARK: - Context-menu population
 
 extension NSMenu {
@@ -80,15 +85,17 @@ extension FileExplorerPanelView.Coordinator {
         }
     }
 
-    /// Shared New File / New Folder flow: prompt for a name, create the item in
-    /// the request's parent, then (if the store still shows the same workspace +
-    /// root) expand the parent, reveal the new item, and refresh. On failure it
-    /// surfaces the error and still refreshes, matching the duplicate/trash path.
+    /// Shared New File / New Folder flow: prompt for a name, then create the
+    /// item through `supermuxRunFileOperation` — off the main actor, like
+    /// duplicate/trash, because even an empty-file write can block for seconds
+    /// on a stalled network volume. On success the request's directory node is
+    /// expanded (main actor, via `onApply`) and the new item revealed; on
+    /// failure the error is surfaced and the tree still refreshes.
     private func supermuxPromptAndCreate(
         title: String,
         messageFormat: String,
         request: SupermuxFileOpRequest,
-        make: @escaping (String, URL) throws -> URL
+        make: @escaping @Sendable (String, URL) throws -> URL
     ) {
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
@@ -99,16 +106,20 @@ extension FileExplorerPanelView.Coordinator {
             confirmTitle: SupermuxFileOpText.createButton
         ) { [weak self] name in
             guard let self else { return }
-            do {
-                let created = try make(name, request.parentDirectory)
-                guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
-                if let node = request.expandNode { self.store.expand(node: node) }
-                self.supermuxRevealIfVisible(created)
-                self.supermuxRefreshAfterFileOperation()
-            } catch {
-                guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
-                self.supermuxPresentFileOpError(error)
-                self.supermuxRefreshAfterFileOperation()
+            let showHiddenFiles = self.store.showHiddenFiles
+            let parentDirectory = request.parentDirectory
+            let expandNode = request.expandNode
+            self.supermuxRunFileOperation(
+                identity: identity,
+                rootPath: rootPath,
+                mutatedParentPaths: [parentDirectory.path],
+                onApply: { [weak self] in
+                    if let expandNode { self?.store.expand(node: expandNode) }
+                }
+            ) {
+                let created = try make(name, parentDirectory)
+                return SupermuxFileExplorerSelection.revealForCreatedItem(
+                    path: created.path, showHiddenFiles: showHiddenFiles)
             }
         }
     }
@@ -118,17 +129,6 @@ extension FileExplorerPanelView.Coordinator {
     /// SAME workspace (e.g. the terminal cd's), so identity alone is insufficient.
     private func supermuxStoreStillCurrent(identity: UUID?, rootPath: String) -> Bool {
         store.workspaceRootIdentity == identity && store.rootPath == rootPath
-    }
-
-    /// Reveals `url`, unless it is a hidden item while hidden files are off — then
-    /// it would never appear in the tree and the reveal flag would dangle. Returns
-    /// whether it actually revealed, so callers that just deleted the old path
-    /// (rename) can clear the now-stale selection when the reveal is suppressed.
-    @discardableResult
-    private func supermuxRevealIfVisible(_ url: URL) -> Bool {
-        guard !(url.lastPathComponent.hasPrefix(".") && !store.showHiddenFiles) else { return false }
-        store.supermuxReveal(path: url.path)
-        return true
     }
 
     @objc func supermuxRename(_ sender: NSMenuItem) {
@@ -142,7 +142,11 @@ extension FileExplorerPanelView.Coordinator {
         // not silently partial. Each item is duplicated independently (Finder
         // duplicates a selected folder and a selected child separately).
         let urls = supermuxContextNodes(clicked: node).map { URL(fileURLWithPath: $0.path) }
-        supermuxRunFileOperation(identity: store.workspaceRootIdentity, rootPath: store.rootPath) {
+        supermuxRunFileOperation(
+            identity: store.workspaceRootIdentity,
+            rootPath: store.rootPath,
+            mutatedParentPaths: urls.map { $0.deletingLastPathComponent().path }
+        ) {
             var reveal: SupermuxFileExplorerSelection.FileOpReveal = .none
             for url in urls { reveal = .reveal(try SupermuxFileSystemOperations.duplicate(url).path) }
             return reveal
@@ -155,6 +159,9 @@ extension FileExplorerPanelView.Coordinator {
     }
 
     /// Shared rename entrypoint used by both the context menu and the keyboard.
+    /// The move itself runs off the main actor via `supermuxRunFileOperation`
+    /// (a `moveItem` on a stalled network volume can block for seconds),
+    /// mirroring create/duplicate/trash.
     func supermuxBeginRename(_ node: FileExplorerNode) {
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
@@ -169,20 +176,16 @@ extension FileExplorerPanelView.Coordinator {
             // Confirming the pre-filled name unchanged is a true no-op (don't let
             // name validation's whitespace-trim silently retarget a padded name).
             guard name != node.name else { return }
-            do {
-                let renamed = try SupermuxFileSystemOperations.rename(URL(fileURLWithPath: node.path), to: name)
-                guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
-                if !self.supermuxRevealIfVisible(renamed) {
-                    // Renamed to a hidden name that won't show: the old path is gone,
-                    // so clear the selection rather than leave it pointing at a
-                    // deleted item (which would dead-end ⌘⌫/Return), mirroring trash.
-                    self.store.supermuxClearSelection()
-                }
-                self.supermuxRefreshAfterFileOperation()
-            } catch {
-                guard self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath) else { return }
-                self.supermuxPresentFileOpError(error)
-                self.supermuxRefreshAfterFileOperation()
+            let showHiddenFiles = self.store.showHiddenFiles
+            let source = URL(fileURLWithPath: node.path)
+            self.supermuxRunFileOperation(
+                identity: identity,
+                rootPath: rootPath,
+                mutatedParentPaths: [source.deletingLastPathComponent().path]
+            ) {
+                let renamed = try SupermuxFileSystemOperations.rename(source, to: name)
+                return SupermuxFileExplorerSelection.revealForRenamedItem(
+                    path: renamed.path, showHiddenFiles: showHiddenFiles)
             }
         }
     }
@@ -204,24 +207,32 @@ extension FileExplorerPanelView.Coordinator {
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
         supermuxConfirmTrash(targets) { [weak self] in
-            self?.supermuxRunFileOperation(identity: identity, rootPath: rootPath) {
+            self?.supermuxRunFileOperation(
+                identity: identity,
+                rootPath: rootPath,
+                mutatedParentPaths: urls.map { $0.deletingLastPathComponent().path }
+            ) {
                 try SupermuxFileSystemOperations.moveToTrash(urls)
                 return revealAfter
             }
         }
     }
 
-    /// Runs a filesystem mutation off the main actor (so duplicating a large
-    /// folder or trashing many items never blocks the UI), then always refreshes
-    /// the tree — including after a partial failure — surfaces any error, and
-    /// reveals the path `work` returns (a newly created item), if any.
-    /// Runs an async file mutation, then reconciles the (window-lifetime, reused)
-    /// store against a possible mid-op workspace/root switch. `identity`/`rootPath`
-    /// are captured by the caller BEFORE any confirmation sheet, so the staleness
-    /// check reflects the workspace the user actually acted in.
+    /// Runs a filesystem mutation off the main actor (so file I/O on a stalled
+    /// volume, duplicating a large folder, or trashing many items never blocks
+    /// the UI), then reconciles the (window-lifetime, reused) store against a
+    /// possible mid-op workspace/root switch. `identity`/`rootPath` are captured
+    /// by the caller BEFORE any confirmation sheet, so the staleness check
+    /// reflects the workspace the user actually acted in. On success `onApply`
+    /// runs on the main actor (e.g. expanding the destination folder) before the
+    /// reveal `work` returns is applied, and the refresh may be skipped when the
+    /// root watcher covers every mutated parent; a failure surfaces the error
+    /// and always refreshes (which directories actually mutated is unknown).
     private func supermuxRunFileOperation(
         identity: UUID?,
         rootPath: String,
+        mutatedParentPaths: [String],
+        onApply: (() -> Void)? = nil,
         _ work: @escaping @Sendable () throws -> SupermuxFileExplorerSelection.FileOpReveal
     ) {
         Task { [weak self] in
@@ -246,24 +257,41 @@ extension FileExplorerPanelView.Coordinator {
             case .ignore:
                 return
             case .apply(let reveal):
+                onApply?()
                 switch reveal {
                 case .none: break
                 case .reveal(let path): self.store.supermuxReveal(path: path)
                 case .clearSelection: self.store.supermuxClearSelection()
                 }
+                self.supermuxRefreshAfterFileOperation(mutatedParentPaths: mutatedParentPaths)
             case .presentError:
                 if let failure { self.supermuxPresentFileOpError(failure) }
+                self.supermuxRefreshAfterFileOperation()
             }
-            if action.refreshesTree { self.supermuxRefreshAfterFileOperation() }
         }
     }
 
     /// Re-reads the tree and git status after a mutation. The local directory
     /// watcher only observes the root (non-recursive), so subdirectory edits need
-    /// an explicit reload to appear.
+    /// an explicit reload to appear. Used directly on failure paths, where the
+    /// set of actually-mutated directories is unknown.
     func supermuxRefreshAfterFileOperation() {
         store.reload()
         store.refreshGitStatus()
+    }
+
+    /// Post-success refresh, skipped when the root directory watcher already
+    /// covers every mutated parent (root-level create/rename/duplicate/trash):
+    /// the watcher fires for the same mutation and runs the identical
+    /// `reload()` + `refreshGitStatus()` after its 300ms throttle, so refreshing
+    /// here too would double a full tree relist and a `git status` spawn per op.
+    private func supermuxRefreshAfterFileOperation(mutatedParentPaths: [String]) {
+        if SupermuxFileExplorerSelection.explicitRefreshIsRedundant(
+            mutatedParentPaths: mutatedParentPaths,
+            rootPath: store.rootPath,
+            rootIsWatched: store.provider is LocalFileExplorerProvider
+        ) { return }
+        supermuxRefreshAfterFileOperation()
     }
 
     // MARK: - Keyboard
@@ -277,21 +305,41 @@ extension FileExplorerPanelView.Coordinator {
         // .numericPad (set on keypad Enter, keyCode 76), .shift, and capsLock —
         // otherwise keypad Enter would never reach the rename path.
         let modifiers = event.modifierFlags.intersection([.command, .control, .option])
+        let claimsTrash = event.keyCode == 51 && modifiers == [.command]
+        let claimsRename = (event.keyCode == 36 || event.keyCode == 76) && modifiers.isEmpty
+        guard claimsTrash || claimsRename else { return false }
 
-        if event.keyCode == 51, modifiers == [.command] {
+        // Return-to-rename deliberately shadows Open Selection's BUILT-IN plain-
+        // Return default (touchpoint #46; ⌘↓ still opens). But when the user has
+        // EXPLICITLY rebound Open Selection onto the pressed keystroke, that
+        // choice must win — otherwise the configured binding would be dead UI
+        // with no way to restore Return-to-open.
+        if supermuxUserConfiguredOpenSelectionMatches(event) { return false }
+
+        if claimsTrash {
             let nodes = supermuxSelectedNodes(in: outlineView)
             guard !nodes.isEmpty else { return false }
             supermuxMoveNodesToTrash(nodes)
             return true
         }
+        guard let node = supermuxAnchorNode(in: outlineView) else { return false }
+        supermuxBeginRename(node)
+        return true
+    }
 
-        if event.keyCode == 36 || event.keyCode == 76, modifiers.isEmpty {
-            guard let node = supermuxAnchorNode(in: outlineView) else { return false }
-            supermuxBeginRename(node)
-            return true
+    /// Whether the user explicitly configured Open Selection (or its Finder
+    /// alias) to a shortcut matching `event`. Riding the built-in default does
+    /// not count — only a cmux.json `shortcuts` entry or a Settings-UI override
+    /// expresses intent to reclaim the keystroke from rename/trash.
+    private func supermuxUserConfiguredOpenSelectionMatches(_ event: NSEvent) -> Bool {
+        let openSelectionActions: [KeyboardShortcutSettings.Action] = [
+            .fileExplorerOpenSelection, .fileExplorerOpenSelectionFinderAlias,
+        ]
+        return openSelectionActions.contains { action in
+            let isUserConfigured = KeyboardShortcutSettings.isManagedBySettingsFile(action)
+                || UserDefaults.standard.data(forKey: action.defaultsKey) != nil
+            return isUserConfigured && KeyboardShortcutSettings.shortcut(for: action).matches(event: event)
         }
-
-        return false
     }
 
     // MARK: - Node resolution
@@ -332,7 +380,16 @@ extension FileExplorerPanelView.Coordinator {
     /// was found. The selection itself is applied by the store's `applyStoredSelection`
     /// (selectedPath == path); this only handles the scroll. Called from
     /// `reloadIfNeeded` so a just-created/renamed item is revealed once its row loads.
+    /// A reveal whose row never materializes (parent collapsed mid-load, item
+    /// filtered out) expires after `supermuxRevealTimeout` — without a deadline
+    /// the flag would dangle across unrelated reloads and yank the viewport
+    /// whenever the row eventually appears, minutes later.
     func supermuxRevealRowIfPresent(_ path: String, in outlineView: NSOutlineView) -> Bool {
+        if let requestedAt = store.supermuxRevealRequestedAt,
+           Date().timeIntervalSince(requestedAt) > supermuxRevealTimeout {
+            store.supermuxRevealPath = nil
+            return false
+        }
         for row in 0..<outlineView.numberOfRows {
             guard let node = outlineView.item(atRow: row) as? FileExplorerNode else { continue }
             if node.path == path {
