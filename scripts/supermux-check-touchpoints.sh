@@ -16,6 +16,18 @@ fi
 
 fail=0
 
+# 0. Reject malformed registry rows. Two rows glued onto one line (e.g. by a
+#    merge eating a newline: '… | || 18 | `path` | …') make loop 1 below parse
+#    only the first row and silently skip verifying the second one's fences.
+#    Match a second row-START cell (pipes, row number, backticked path) rather
+#    than a bare ' || ', which legitimately appears when a description quotes
+#    code like `tabs.count > 1 || allowEmptyingWindow`.
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  echo "FAIL: malformed registry row (two rows glued onto one line?): ${line:0:100}" >&2
+  fail=1
+done < <(sed -n '/^| [0-9]/p' "$MANIFEST" | grep -E '\| *\| *[0-9]+[a-z]* *\| *`' || true)
+
 # 1. Every registry row's fence id must exist in its file (begin AND end).
 #    Registry rows look like: | 1 | `path` | `fence-id` | description |
 while IFS='|' read -r _ _ file fences _; do
