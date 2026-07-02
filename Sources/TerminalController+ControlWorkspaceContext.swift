@@ -161,7 +161,15 @@ extension TerminalController: ControlWorkspaceContext {
         guard tabManager.canCloseWorkspace(ws) else {
             return .protected(windowID: windowId)
         }
-        tabManager.closeWorkspace(ws)
+        // SUPERMUX:begin keep-window-on-last-close
+        // Plain closeWorkspace silently refuses a window's last workspace
+        // while this replied `.resolved`. Route through the empty-home path
+        // and report success only if the workspace actually left `tabs`.
+        tabManager.closeWorkspace(ws, allowEmptyingWindow: true)
+        guard !tabManager.tabs.contains(where: { $0.id == ws.id }) else {
+            return .protected(windowID: windowId)
+        }
+        // SUPERMUX:end keep-window-on-last-close
         return .resolved(windowID: windowId)
     }
 

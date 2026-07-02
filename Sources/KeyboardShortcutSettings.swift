@@ -578,8 +578,9 @@ enum KeyboardShortcutSettings {
             // SUPERMUX:begin supermux-commit-shortcut-default
             // Changes-panel Commit: ⌘↩ commits in every mode; the ⇧⌘↩ accelerator
             // is the second chord (freed from Toggle Pane Zoom). Both reach the
-            // panel's SwiftUI buttons (Ghostty's super+shift+enter is unbound so
-            // ⇧⌘↩ is not eaten in a focused terminal).
+            // panel's SwiftUI buttons (Ghostty's super+enter and super+shift+enter
+            // built-ins are both unbound so neither chord is eaten in a focused
+            // terminal).
             case .supermuxCommit:
                 return StoredShortcut(key: "\r", command: true, shift: false, option: false, control: false)
             case .supermuxCommitAccelerator:

@@ -248,9 +248,13 @@ extension TerminalController {
         ]
     }
 
+    // SUPERMUX:begin keep-window-on-last-close
     /// Mobile-gated close of one explicit workspace. The Mac remains
-    /// authoritative: protected/last-workspace cases are rejected here and the
-    /// phone refreshes afterward to snap back to the real list state.
+    /// authoritative: protected cases are rejected here and the phone
+    /// refreshes afterward to snap back to the real list state. (Supermux
+    /// closes a window's last workspace into the empty home, so unlike
+    /// upstream the last workspace is not treated as protected.)
+    // SUPERMUX:end keep-window-on-last-close
     func v2MobileWorkspaceClose(params: [String: Any]) -> V2CallResult {
         if v2HasNonNullParam(params, "workspace_id"), v2UUID(params, "workspace_id") == nil {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
@@ -271,23 +275,34 @@ extension TerminalController {
                 ])
                 return
             }
-            guard tabManager.tabs.count > 1, tabManager.canCloseWorkspace(workspace) else {
-                result = .err(
-                    code: "protected",
-                    message: String(
-                        localized: "workspace.closeBlocked.message",
-                        defaultValue: "This workspace can't be closed right now."
-                    ),
-                    data: [
-                        "workspace_id": workspaceID.uuidString,
-                        "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceID),
-                        "window_id": v2OrNull(windowID?.uuidString),
-                        "window_ref": v2Ref(kind: .window, uuid: windowID),
-                    ]
-                )
+            // SUPERMUX:begin keep-window-on-last-close
+            // Supermux closes a window's last workspace into the empty home,
+            // so the upstream `tabs.count > 1` guard is gone; close via the
+            // empty-home path and reply ok only if the workspace actually
+            // left `tabs` (plain close silently no-ops on the last one).
+            let protectedResult = V2CallResult.err(
+                code: "protected",
+                message: String(
+                    localized: "workspace.closeBlocked.message",
+                    defaultValue: "This workspace can't be closed right now."
+                ),
+                data: [
+                    "workspace_id": workspaceID.uuidString,
+                    "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceID),
+                    "window_id": v2OrNull(windowID?.uuidString),
+                    "window_ref": v2Ref(kind: .window, uuid: windowID),
+                ]
+            )
+            guard tabManager.canCloseWorkspace(workspace) else {
+                result = protectedResult
                 return
             }
-            tabManager.closeWorkspace(workspace)
+            tabManager.closeWorkspace(workspace, allowEmptyingWindow: true)
+            guard !tabManager.tabs.contains(where: { $0.id == workspaceID }) else {
+                result = protectedResult
+                return
+            }
+            // SUPERMUX:end keep-window-on-last-close
             result = .ok([
                 "closed": true,
                 "workspace_id": workspaceID.uuidString,

@@ -17,10 +17,13 @@ import SwiftUI
 @MainActor
 public struct SupermuxAISettingsCard: View {
     // MARK: Contract with SupermuxKit.SupermuxAIConfig — keep in sync.
-    private static let secretKeyID = "supermux.ai.gatewayApiKey"
-    private static let secretFileName = "supermux-ai-gateway-key"
-    private static let modelDefaultsKey = "supermux.ai.model"
-    private static let defaultModelPlaceholder = "openai/gpt-5.4-mini"
+    // Internal (not private) so SupermuxAISettingsCardContractTests can pin
+    // each literal; SupermuxAIConfigTests pins the SupermuxKit side, so a
+    // one-sided rename fails CI instead of silently severing the key wiring.
+    static let secretKeyID = "supermux.ai.gatewayApiKey"
+    static let secretFileName = "supermux-ai-gateway-key"
+    static let modelDefaultsKey = "supermux.ai.model"
+    static let defaultModelPlaceholder = "openai/gpt-5.4-mini"
 
     @State private var keyModel: SecretValueModel
     @State private var keyDraft: String = ""
@@ -64,6 +67,11 @@ public struct SupermuxAISettingsCard: View {
                     .padding(.bottom, 8)
             }
         }
+        // The observation stream is the single writer of `keyModel.current`
+        // (set/reset never touch it), so without this the row never reflects a
+        // stored key and the Clear button is unreachable. Same pattern as
+        // SettingsTextFieldRow / SettingsStepperRow.
+        .task { keyModel.startObserving() }
     }
 
     @ViewBuilder

@@ -1303,7 +1303,9 @@
               "diffViewerOpenFileSearch",
               "supermuxToggleRun",
               "supermuxWorkspaceSwitcherNext",
-              "supermuxWorkspaceSwitcherPrevious"
+              "supermuxWorkspaceSwitcherPrevious",
+              "supermuxCommit",
+              "supermuxCommitAccelerator"
             ]
           },
           "properties": {

@@ -2133,8 +2133,15 @@ class TabManager: ObservableObject {
         lastFocusedPanelByTab.removeValue(forKey: removed.id)
 
         if tabs.isEmpty {
-            // The UI assumes each window always has at least one workspace.
-            _ = addWorkspace()
+            // SUPERMUX:begin keep-window-on-last-close
+            // Zero-workspace windows are valid in supermux (empty home), so
+            // moving the last workspace to another window leaves the source
+            // window empty — consistent with closeWorkspace(allowEmptyingWindow:)
+            // — instead of spawning a replacement workspace and shell.
+            // (upstream: `_ = addWorkspace()` — "The UI assumes each window
+            // always has at least one workspace.")
+            selectedTabId = nil
+            // SUPERMUX:end keep-window-on-last-close
             return removed
         }
 
@@ -2269,6 +2276,14 @@ class TabManager: ObservableObject {
         sidebarMultiSelection.replaceSelection(with: workspaceIds.intersection(existingIds))
     }
 
+    // SUPERMUX:begin keep-window-on-last-close
+    // Intentionally orphaned: both upstream call sites named in the doc comment
+    // below were removed by keep-window-on-last-close (last-workspace closes no
+    // longer close the window; they route through
+    // closeWorkspace(allowEmptyingWindow:), which kills remote-tmux mirrors
+    // per-workspace via handleWorkspaceClosed). The function is kept verbatim
+    // so upstream merges to it apply cleanly.
+    // SUPERMUX:end keep-window-on-last-close
     /// Marks the window's pending close as a tab/session close so a remote-tmux
     /// mirror among `workspaces` is KILLED (synced with tmux) on the close commit
     /// rather than detached. The single decision point for every close path that
@@ -5964,6 +5979,12 @@ extension TabManager {
         workspace.teardownAllPanels()
         workspace.teardownRemoteConnection()
         workspace.owningTabManager = nil
+        // SUPERMUX:begin new-workspace-standalone
+        // A released pre-restore workspace never reaches the central
+        // closeWorkspace forget, so drop its association/standalone entries
+        // here (the restored replacement re-nests by directory).
+        SupermuxComposition.workspaceAssociations.forget(workspaceId: workspace.id)
+        // SUPERMUX:end new-workspace-standalone
     }
 
     @discardableResult
@@ -6019,7 +6040,16 @@ extension TabManager {
             restoredOriginalWorkspaceIds.append(workspaceSnapshot.workspaceId)
         }
 
-        if newTabs.isEmpty {
+        // SUPERMUX:begin keep-window-on-last-close
+        // `!snapshot.workspaces.isEmpty`: a snapshot persisted with zero
+        // workspaces is the supermux empty home (the user intentionally emptied
+        // the window before quitting), so restore it empty — selection resolves
+        // to nil below — instead of refilling it with a fallback workspace.
+        // The fallback stays for defensive coverage of snapshots whose
+        // workspaces were lost some other way.
+        // (upstream: `if newTabs.isEmpty {`)
+        if newTabs.isEmpty && !snapshot.workspaces.isEmpty {
+        // SUPERMUX:end keep-window-on-last-close
             let ordinal = Self.nextPortOrdinal
             Self.nextPortOrdinal += 1
             let fallback = Workspace(title: "Terminal 1", portOrdinal: ordinal, closeTabWarningDefaults: closeTabWarningDefaults)

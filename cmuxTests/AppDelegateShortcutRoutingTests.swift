@@ -2565,14 +2565,15 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
     // SUPERMUX:begin toggle-split-zoom-rebind
     func testGhosttyConfigDoesNotRetainSplitZoomReturnFallback() throws {
-        // supermux rebinds Toggle Pane Zoom off ⇧⌘↩ to ⌃⌘Z and frees ⇧⌘↩ for the
-        // Changes-panel commit accelerator. Ghostty's built-in
-        // `super+shift+enter = toggle_split_zoom` (ghostty Config.zig) must be
+        // supermux owns both Changes-panel commit chords: ⌘↩ (supermuxCommit)
+        // and ⇧⌘↩ (the accelerator, freed by rebinding Toggle Pane Zoom to ⌃⌘Z).
+        // Ghostty's built-in `super+shift+enter = toggle_split_zoom` and
+        // `super+enter = toggle_fullscreen` (ghostty Config.zig) must both be
         // unbound — exactly like the super+d / super+w / numbered fallbacks above
-        // — or it consumes ⇧⌘↩ in a focused terminal before the SwiftUI
-        // accelerator can fire, leaving the chord un-freed (the rebind would look
-        // hardcoded, the same failure mode as #5189). The default binds the
-        // physical Enter key, so this probes keyCode kVK_Return with ⇧⌘.
+        // — or they consume the chords in a focused terminal before the SwiftUI
+        // buttons can fire (⌘↩ was a silent no-op: cmux has no
+        // GHOSTTY_ACTION_TOGGLE_FULLSCREEN handler). Both defaults bind the
+        // physical Enter key, so this probes keyCode kVK_Return.
         guard let ghosttyConfig = GhosttyApp.shared.config else {
             XCTFail("Expected loaded Ghostty config")
             return
@@ -2585,6 +2586,15 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
                 keyCode: UInt32(kVK_Return)
             ),
             "Ghostty must not retain its super+shift+enter toggle_split_zoom fallback; ⇧⌘↩ is owned by the supermux Changes-panel commit accelerator"
+        )
+        XCTAssertFalse(
+            ghosttyConfigKeyIsBinding(
+                ghosttyConfig,
+                key: "\r",
+                modifiers: [.command],
+                keyCode: UInt32(kVK_Return)
+            ),
+            "Ghostty must not retain its super+enter toggle_fullscreen fallback; ⌘↩ is owned by the supermux Changes-panel commit shortcut"
         )
     }
     // SUPERMUX:end toggle-split-zoom-rebind
@@ -6072,6 +6082,35 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
                 "\(testCase.name): ⌘G is the supermux run-toggle chord and must not route browser-first"
             )
         }
+    }
+
+    /// Holding ⌘G delivers auto-repeat key events; each one used to reach
+    /// toggleRun and flap the dev server (start → Ctrl+C → restart …). Repeats
+    /// must be rejected by the run dispatch and fall through to Find Next.
+    func testRunToggleDispatchRejectsAutoRepeatKeyEvents() throws {
+        func cmdGEvent(isARepeat: Bool) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [.command],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: 0,
+                context: nil,
+                characters: "g",
+                charactersIgnoringModifiers: "g",
+                isARepeat: isARepeat,
+                keyCode: 5 // kVK_ANSI_G
+            ))
+        }
+
+        XCTAssertTrue(
+            SupermuxRunCoordinator.shouldDispatchRunToggle(for: try cmdGEvent(isARepeat: false)),
+            "An initial ⌘G press must reach the run toggle"
+        )
+        XCTAssertFalse(
+            SupermuxRunCoordinator.shouldDispatchRunToggle(for: try cmdGEvent(isARepeat: true)),
+            "Auto-repeat ⌘G events must not reach the run toggle"
+        )
     }
     // SUPERMUX:end run-toggle-shortcut-dispatch
 

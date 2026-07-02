@@ -4626,6 +4626,9 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func recordAgentLifecycleChange(panelId: UUID) {
+        // SUPERMUX:begin workspace-agent-lifecycle-observation
+        SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self)
+        // SUPERMUX:end workspace-agent-lifecycle-observation
         AgentHibernationController.shared.recordAgentLifecycleChange(
             workspaceId: id,
             panelId: panelId
@@ -12076,6 +12079,16 @@ extension Workspace: BonsplitDelegate {
                 if let manager, manager.tabs.count > 1 { manager.closeWorkspace(self, recordHistory: false); scheduleTerminalGeometryReconcile(); return }
                 if let manager, let appDelegate = AppDelegate.shared, appDelegate.mainWindowContexts.count > 1,
                    let windowId = appDelegate.windowId(for: manager) { appDelegate.discardMainWindowWithoutClosedHistory(windowId: windowId); scheduleTerminalGeometryReconcile(); return }
+                // SUPERMUX:begin keep-window-on-last-close
+                // Last workspace of the last window: leave the empty home
+                // instead of falling through to a replacement local shell in
+                // the dead mirror (multi-window discard above stays upstream).
+                if let manager {
+                    manager.closeWorkspace(self, recordHistory: false, allowEmptyingWindow: true)
+                    scheduleTerminalGeometryReconcile()
+                    return
+                }
+                // SUPERMUX:end keep-window-on-last-close
             }
             if remoteTmuxKeepWorkspaceOpen {
                 pendingRemoteDisconnectReplacement = nil; remoteTmuxKeepWorkspaceOpenAfterSessionEnd = false; isRemoteTmuxMirror = false

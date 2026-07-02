@@ -792,6 +792,27 @@ final class TabManagerChildExitCloseTests: XCTestCase {
         XCTAssertTrue(manager.tabs.isEmpty, "Failed restore should return to the empty home")
         XCTAssertNil(manager.selectedTabId)
     }
+
+    /// Moving the only workspace to another window leaves the source window as
+    /// the empty home instead of fabricating a replacement workspace/shell.
+    func testDetachingLastWorkspaceLeavesEmptyHome() throws {
+        let manager = TabManager()
+        let only = manager.tabs[0]
+        let removed = try XCTUnwrap(manager.detachWorkspace(tabId: only.id))
+        XCTAssertEqual(removed.id, only.id)
+        XCTAssertTrue(manager.tabs.isEmpty, "Detach must not refill the source window")
+        XCTAssertNil(manager.selectedTabId)
+    }
+
+    /// A session snapshot persisted with zero workspaces is the empty home;
+    /// restoring it must not refill the window with a fallback workspace.
+    func testRestoreSessionSnapshotKeepsPersistedEmptyHomeEmpty() {
+        let manager = TabManager()
+        let snapshot = SessionTabManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: [])
+        _ = manager.restoreSessionSnapshot(snapshot, remapClosedPanelHistory: false)
+        XCTAssertTrue(manager.tabs.isEmpty, "Persisted empty home must restore as empty")
+        XCTAssertNil(manager.selectedTabId)
+    }
     // SUPERMUX:end keep-window-on-last-close
 
     func testSessionSnapshotKeepsWindowWithNoRestorableWorkspaces() throws {

@@ -59,6 +59,27 @@ import Testing
         #expect(perms == 0o600)
     }
 
+    // SUPERMUX:begin secret-file-0600-write
+    @Test func overwriteKeepsOwnerOnlyPermissionsAndLeavesNoTempFiles() async throws {
+        // The write path stages the secret in a 0600 temp file and renames it
+        // over the destination, so the secret is never readable through a
+        // default-permission window (CWE-378) and no staging file lingers.
+        let dir = tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = SecretFileStore(baseDirectory: dir)
+
+        try await store.set("first", for: key)
+        try await store.set("second", for: key)
+        #expect(try await store.value(for: key) == "second")
+
+        let attrs = try FileManager.default.attributesOfItem(atPath: store.fileURL(for: key).path)
+        #expect((attrs[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+
+        let contents = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        #expect(contents == [key.fileName])
+    }
+    // SUPERMUX:end secret-file-0600-write
+
     @Test func emptyValueClears() async throws {
         let dir = tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

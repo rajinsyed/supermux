@@ -13833,8 +13833,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // SUPERMUX:begin run-toggle-shortcut-dispatch
         // ⌘G is shared: Find Next wins while the find overlay is open,
-        // otherwise the chord toggles the project run command.
+        // otherwise the chord toggles the project run command. Auto-repeat
+        // events fall through to Find Next so a held ⌘G cannot flap the run.
         if matchConfiguredShortcut(event: event, action: .supermuxToggleRun),
+           SupermuxRunCoordinator.shouldDispatchRunToggle(for: event),
            tabManager?.isFindVisible != true,
            !shouldLetFocusedBrowserOwnFindShortcut(event),
            SupermuxComposition.runCoordinator.toggleRun(tabManager: tabManager) {
@@ -15957,6 +15959,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 store.clearNotifications(forTabId: tab.id)
             }
         }
+
+        // SUPERMUX:begin new-workspace-standalone
+        // Whole-window teardown skips the per-workspace close path, so prune
+        // association/standalone entries against the union of every remaining
+        // window's workspaces — never one window's list, which would drop the
+        // others' links. Durable directory links live in the projects model and
+        // survive, so a revived closed window re-nests by directory.
+        SupermuxComposition.workspaceAssociations.prune(
+            retainingWorkspaceIds: Set(mainWindowContexts.values.flatMap { $0.tabManager.tabs.map(\.id) })
+        )
+        // SUPERMUX:end new-workspace-standalone
 
         if tabManager === removed.tabManager {
             // Repoint "active" pointers to any remaining main terminal window.
