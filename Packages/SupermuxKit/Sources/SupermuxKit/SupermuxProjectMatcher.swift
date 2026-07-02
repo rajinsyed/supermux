@@ -5,8 +5,10 @@ import os
 ///
 /// Used by the run action (⌘G) to find the project whose `runCommands` apply
 /// to the active workspace: the workspace may sit at the project root, inside
-/// one of its worktrees, or anywhere below the root. The most specific
-/// (longest) matching root wins so nested projects resolve correctly.
+/// one of its worktrees, or anywhere below the root. The most specific match
+/// wins: projects rank by the deepest registered form that actually contains
+/// the directory, so nested projects resolve correctly even when the outer
+/// project matches only through a symlink alias of a different length.
 ///
 /// Registered project paths are compared in both their logical (as-written)
 /// and symlink-resolved forms, so a shell that reports the physical path
@@ -27,13 +29,21 @@ public struct SupermuxProjectMatcher: Sendable {
         let normalized = Self.normalize(directory)
         var best: (project: SupermuxProject, specificity: Int)?
         for project in projects {
-            let roots = Self.registeredForms(of: project.rootPath)
-            let worktreeDirs = Self.registeredForms(of: project.worktreesDirPath)
-            let matches = roots.contains(where: { Self.isDirectory(normalized, atOrUnder: $0) })
-                || worktreeDirs.contains(where: { Self.isDirectory(normalized, atOrUnder: $0) })
-            guard matches else { continue }
-            if best == nil || roots[0].count > best!.specificity {
-                best = (project, roots[0].count)
+            let forms = Self.registeredForms(of: project.rootPath)
+                + Self.registeredForms(of: project.worktreesDirPath)
+            // Rank by the longest form that ACTUALLY contains the directory.
+            // Every matched form (across all projects) is a prefix of the same
+            // path, so the longest one is the deepest owning directory; a
+            // fixed form's length would mix unrelated spellings and let an
+            // outer project registered through a long symlink alias outrank a
+            // project nested inside it.
+            let specificity = forms
+                .filter { Self.isDirectory(normalized, atOrUnder: $0) }
+                .map(\.count)
+                .max()
+            guard let specificity else { continue }
+            if best == nil || specificity > best!.specificity {
+                best = (project, specificity)
             }
         }
         return best?.project
@@ -70,10 +80,15 @@ public struct SupermuxProjectMatcher: Sendable {
         guard !normalized.isEmpty else { return nil }
         var best: (project: SupermuxProject, specificity: Int)?
         for project in projects {
-            let worktreeDirs = Self.registeredForms(of: project.worktreesDirPath)
-            guard worktreeDirs.contains(where: { normalized.hasPrefix($0 + "/") }) else { continue }
-            if best == nil || worktreeDirs[0].count > best!.specificity {
-                best = (project, worktreeDirs[0].count)
+            // Same matched-form ranking as ``project(for:in:)``: the deepest
+            // worktrees-dir form that actually contains the directory wins.
+            let specificity = Self.registeredForms(of: project.worktreesDirPath)
+                .filter { normalized.hasPrefix($0 + "/") }
+                .map(\.count)
+                .max()
+            guard let specificity else { continue }
+            if best == nil || specificity > best!.specificity {
+                best = (project, specificity)
             }
         }
         return best?.project

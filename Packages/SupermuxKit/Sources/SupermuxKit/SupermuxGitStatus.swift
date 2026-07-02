@@ -179,12 +179,22 @@ public struct SupermuxGitStatusParser: Sendable {
                 parseOrdinaryEntry(record, into: &state)
             } else if record.hasPrefix("2 ") {
                 // In -z mode the rename/copy source path is the next record.
-                var origPath: String?
-                if index < records.endIndex {
-                    origPath = String(records[index])
-                    index = records.index(after: index)
+                // Consume it only after the rename header parses, so a
+                // malformed record is skipped without swallowing the record
+                // that follows it.
+                if let header = parseRenameHeader(record) {
+                    var origPath: String?
+                    if index < records.endIndex {
+                        origPath = String(records[index])
+                        index = records.index(after: index)
+                    }
+                    appendChanges(
+                        statusPair: header.statusPair,
+                        path: header.path,
+                        oldPath: (origPath?.isEmpty ?? true) ? nil : origPath,
+                        into: &state
+                    )
                 }
-                parseRenameEntry(record, origPath: origPath, into: &state)
             } else if record.hasPrefix("u ") {
                 parseUnmergedEntry(record, into: &state)
             } else if record.hasPrefix("? ") {
@@ -251,21 +261,19 @@ public struct SupermuxGitStatusParser: Sendable {
         appendChanges(statusPair: fields[1], path: path, oldPath: nil, into: &state)
     }
 
-    /// Parses `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>`; in `-z`
-    /// mode the source path is a separate record, passed in as `origPath`.
-    private func parseRenameEntry(
-        _ record: String, origPath: String?, into state: inout ParseState
-    ) {
+    /// Parses `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>` into its
+    /// status pair and new path, or `nil` when the record is malformed. In
+    /// `-z` mode the source path is a separate record that the caller consumes
+    /// only after this header parses, so a malformed record cannot swallow the
+    /// record that follows it.
+    private func parseRenameHeader(
+        _ record: String
+    ) -> (statusPair: Substring, path: String)? {
         let fields = record.split(separator: " ", maxSplits: 9, omittingEmptySubsequences: false)
-        guard fields.count == 10 else { return }
+        guard fields.count == 10 else { return nil }
         let newPath = String(fields[9])
-        guard !newPath.isEmpty else { return }
-        appendChanges(
-            statusPair: fields[1],
-            path: newPath,
-            oldPath: (origPath?.isEmpty ?? true) ? nil : origPath,
-            into: &state
-        )
+        guard !newPath.isEmpty else { return nil }
+        return (fields[1], newPath)
     }
 
     /// Parses `u <XY> ...`, pragmatically taking the last whitespace field as

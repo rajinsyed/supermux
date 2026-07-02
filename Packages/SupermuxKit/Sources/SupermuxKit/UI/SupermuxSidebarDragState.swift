@@ -120,8 +120,10 @@ public final class SupermuxSidebarDragState {
     /// suffices: when it moved down the target is its previewed predecessor
     /// (`moveProject` inserts after a lower target), when it moved up the
     /// target is its previewed follower (inserts before a higher target).
-    /// Projects added or removed mid-drag are tolerated by restricting the
-    /// preview to ids still present in `currentOrder`.
+    /// Projects added or removed mid-drag are tolerated by comparing both
+    /// orders projected onto their shared ids: the preview is restricted to
+    /// ids still present in `currentOrder`, and the dragged project's current
+    /// position counts only ids the preview knows about.
     /// - Parameters:
     ///   - dragged: The dragged project.
     ///   - previewOrder: The final previewed display order.
@@ -131,9 +133,15 @@ public final class SupermuxSidebarDragState {
         previewOrder: [UUID],
         currentOrder: [UUID]
     ) -> UUID? {
-        guard let from = currentOrder.firstIndex(of: dragged),
-              let previewIndex = previewOrder.firstIndex(of: dragged) else { return nil }
+        guard let previewIndex = previewOrder.firstIndex(of: dragged) else { return nil }
         let liveIds = Set(currentOrder)
+        let previewIds = Set(previewOrder)
+        // `from` must count only ids the preview knows about: a project
+        // inserted before the dragged one mid-drag would otherwise inflate the
+        // raw index and turn the previewed move into a false no-op (or pick a
+        // target on the wrong side).
+        guard let from = currentOrder.filter({ previewIds.contains($0) }).firstIndex(of: dragged)
+        else { return nil }
         let othersBefore = previewOrder[..<previewIndex].filter { liveIds.contains($0) && $0 != dragged }
         let othersAfter = previewOrder[(previewIndex + 1)...].filter { liveIds.contains($0) && $0 != dragged }
         if othersBefore.count == from { return nil }

@@ -132,6 +132,37 @@ struct SupermuxGitStatusParserTests {
         ])
     }
 
+    /// Regression: a malformed `2` record (too few fields) must be skipped in
+    /// isolation. It must not consume the following record as its source path,
+    /// which previously dropped the next valid entry from the snapshot.
+    @Test func malformedRenameRecordDoesNotSwallowFollowingEntry() {
+        let snapshot = parser.parse(zJoined([
+            "2 R. incomplete",
+            "1 .M N... 100644 100644 100644 abc def survivor.txt",
+            "? extra.txt",
+        ]))
+        #expect(snapshot.staged.isEmpty)
+        #expect(snapshot.unstaged == [
+            SupermuxGitFileChange(path: "survivor.txt", oldPath: nil, kind: .modified)
+        ])
+        #expect(snapshot.untracked == [
+            SupermuxGitFileChange(path: "extra.txt", oldPath: nil, kind: .untracked)
+        ])
+    }
+
+    /// A rename record with the right field count but an empty new path is
+    /// also malformed and must not consume the following record.
+    @Test func renameRecordWithEmptyPathDoesNotSwallowFollowingEntry() {
+        let snapshot = parser.parse(zJoined([
+            "2 R. N... 100644 100644 100644 abc def R100 ",
+            "1 M. N... 100644 100644 100644 abc def staged.txt",
+        ]))
+        #expect(snapshot.staged == [
+            SupermuxGitFileChange(path: "staged.txt", oldPath: nil, kind: .modified)
+        ])
+        #expect(snapshot.unstaged.isEmpty)
+    }
+
     // MARK: - Untracked and ignored entries
 
     @Test func untrackedEntryIsListedAndIgnoredEntryIsSkipped() {

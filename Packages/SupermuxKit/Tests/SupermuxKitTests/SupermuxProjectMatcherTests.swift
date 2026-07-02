@@ -111,6 +111,64 @@ struct SupermuxProjectMatcherTests {
         #expect(matcher.projectOwningWorktree(for: logicalRoot + "/.worktrees/feature", in: [p])?.id == p.id)
     }
 
+    // MARK: - Nested projects across differently-sized registered forms
+
+    /// Creates `base/p/.worktrees/inner/.worktrees/feature` plus `base/p/sub/src`
+    /// on disk and a long-named `base/<alias> → base/p` symlink, so an outer
+    /// project registered through the alias has a LONG logical spelling whose
+    /// symlink-resolved form (`base/p`) is SHORTER than the nested inner
+    /// project's registered paths.
+    private func makeAliasedNestedRepos() throws -> (base: URL, outerAliasRoot: String, physicalOuterRoot: String) {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        for dir in ["p/sub/src", "p/.worktrees/inner/.worktrees/feature"] {
+            try FileManager.default.createDirectory(
+                at: base.appendingPathComponent(dir),
+                withIntermediateDirectories: true
+            )
+        }
+        let alias = "really-long-alias-name-for-the-outer-project"
+        try FileManager.default.createSymbolicLink(
+            at: base.appendingPathComponent(alias),
+            withDestinationURL: base.appendingPathComponent("p")
+        )
+        return (base, base.appendingPathComponent(alias).path, base.appendingPathComponent("p").path)
+    }
+
+    @Test func nestedProjectBeatsOuterProjectMatchedThroughLongerAlias() throws {
+        let (base, outerAliasRoot, physicalOuterRoot) = try makeAliasedNestedRepos()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let outer = project(name: "outer", root: outerAliasRoot)
+        let inner = project(name: "inner", root: physicalOuterRoot + "/sub")
+
+        // The workspace sits inside inner, which nests inside outer's physical
+        // root. Outer matches only through its symlink-resolved form (short),
+        // but its logical alias spelling is longer than inner's whole path —
+        // ranking by logical length would wrongly hand the workspace to outer.
+        let workspace = physicalOuterRoot + "/sub/src"
+        #expect(matcher.project(for: workspace, in: [outer, inner])?.id == inner.id)
+        #expect(matcher.project(for: workspace, in: [inner, outer])?.id == inner.id)
+        // Outside inner, outer still owns its physical subtree via the alias.
+        #expect(matcher.project(for: physicalOuterRoot + "/other", in: [outer, inner])?.id == outer.id)
+    }
+
+    @Test func nestedWorktreeOwnerBeatsOuterProjectMatchedThroughLongerAlias() throws {
+        let (base, outerAliasRoot, physicalOuterRoot) = try makeAliasedNestedRepos()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let outer = project(name: "outer", root: outerAliasRoot)
+        let inner = project(name: "inner", root: physicalOuterRoot + "/.worktrees/inner")
+
+        // Inner is itself registered inside outer's worktrees dir. A checkout
+        // in INNER's worktrees dir lies under both projects' worktrees dirs;
+        // the deeper matched dir (inner's) must win even though outer's
+        // logical worktrees-dir spelling (through the alias) is longer.
+        let workspace = physicalOuterRoot + "/.worktrees/inner/.worktrees/feature"
+        #expect(matcher.projectOwningWorktree(for: workspace, in: [outer, inner])?.id == inner.id)
+        #expect(matcher.projectOwningWorktree(for: workspace, in: [inner, outer])?.id == inner.id)
+        // A sibling checkout directly in outer's worktrees dir still nests under outer.
+        let sibling = physicalOuterRoot + "/.worktrees/feature"
+        #expect(matcher.projectOwningWorktree(for: sibling, in: [outer, inner])?.id == outer.id)
+    }
+
     @Test func resolvedDirectoryConvergesLogicalAndPhysicalSpellings() throws {
         let (base, logicalRoot, physicalRoot) = try makeSymlinkedRepo()
         defer { try? FileManager.default.removeItem(at: base) }

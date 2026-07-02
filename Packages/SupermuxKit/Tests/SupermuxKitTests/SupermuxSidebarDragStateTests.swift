@@ -90,6 +90,36 @@ struct SupermuxSidebarDragStateTests {
         #expect(applyMove(a, over: b, to: current) == [b, a, c, e])
     }
 
+    @Test func commitTargetToleratesInsertionBeforeDraggedMidDrag() {
+        // A project (x) appeared *before* the dragged project while dragging
+        // (e.g. a sibling instance's file edit adopted mid-drag). The inflated
+        // raw index must not turn the previewed move into a false no-op.
+        let x = UUID()
+        let preview = [b, a, c]             // dragged a below b
+        let current = [x, a, b, c]          // x inserted at the front mid-drag
+        let target = SupermuxSidebarDragState.commitTarget(
+            dragged: a, previewOrder: preview, currentOrder: current
+        )
+        #expect(target == b)
+        #expect(applyMove(a, over: b, to: current) == [x, b, a, c])
+    }
+
+    @Test func commitTargetToleratesMultipleInsertionsBeforeDragged() {
+        // Enough insertions before the dragged project to flip the raw-index
+        // comparison past "unchanged" — the target must stay the previewed
+        // predecessor (c), not a follower on the wrong side.
+        let x = UUID()
+        let y = UUID()
+        let z = UUID()
+        let preview = [b, c, a, d]          // dragged a below c
+        let current = [x, y, z, a, b, c, d]
+        let target = SupermuxSidebarDragState.commitTarget(
+            dragged: a, previewOrder: preview, currentOrder: current
+        )
+        #expect(target == c)
+        #expect(applyMove(a, over: c, to: current) == [x, y, z, b, c, a, d])
+    }
+
     @Test func commitTargetNilForUnknownDragged() {
         #expect(SupermuxSidebarDragState.commitTarget(
             dragged: UUID(), previewOrder: [a, b], currentOrder: [a, b]
