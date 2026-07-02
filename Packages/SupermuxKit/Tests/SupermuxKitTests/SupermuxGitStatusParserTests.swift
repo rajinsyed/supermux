@@ -3,20 +3,27 @@ import Testing
 import SupermuxKit
 
 /// Unit tests for `SupermuxGitStatusParser` against inline fixtures of
-/// `git status --porcelain=v2 --branch` output: branch headers, ordinary,
-/// rename, and unmerged entries, untracked/ignored paths, and the derived
-/// properties on `SupermuxGitFileChange` and `SupermuxGitStatusSnapshot`.
+/// `git status --porcelain=v2 -z --branch` output: NUL-terminated records for
+/// branch headers, ordinary, rename, and unmerged entries, untracked/ignored
+/// paths, and the derived properties on `SupermuxGitFileChange` and
+/// `SupermuxGitStatusSnapshot`. In `-z` mode paths are printed verbatim (no
+/// C-quoting) and a rename's source path is the record after the rename entry.
 struct SupermuxGitStatusParserTests {
     private let parser = SupermuxGitStatusParser()
+
+    /// Joins porcelain-v2 records the way `-z` output arrives: NUL-terminated.
+    private func zJoined(_ records: [String]) -> String {
+        records.map { $0 + "\u{0}" }.joined()
+    }
 
     // MARK: - Branch headers
 
     @Test func parsesBranchUpstreamAndAheadBehindHeaders() {
-        let output = """
-        # branch.head main
-        # branch.upstream origin/main
-        # branch.ab +2 -1
-        """
+        let output = zJoined([
+            "# branch.head main",
+            "# branch.upstream origin/main",
+            "# branch.ab +2 -1",
+        ])
         let snapshot = parser.parse(output)
         #expect(snapshot.isRepository)
         #expect(snapshot.branch == "main")
@@ -26,7 +33,7 @@ struct SupermuxGitStatusParserTests {
     }
 
     @Test func detachedHeadYieldsNilBranch() {
-        let snapshot = parser.parse("# branch.head (detached)")
+        let snapshot = parser.parse("# branch.head (detached)\u{0}")
         #expect(snapshot.isRepository)
         #expect(snapshot.branch == nil)
         #expect(snapshot.upstreamBranch == nil)
@@ -34,17 +41,17 @@ struct SupermuxGitStatusParserTests {
 
     @Test func showStashHeaderSetsStashEntryCount() {
         // `--show-stash` emits `# stash <count>` only when entries exist.
-        let withStash = parser.parse("# branch.head main\n# stash 3")
+        let withStash = parser.parse(zJoined(["# branch.head main", "# stash 3"]))
         #expect(withStash.stashEntryCount == 3)
 
-        let noStash = parser.parse("# branch.head main")
+        let noStash = parser.parse("# branch.head main\u{0}")
         #expect(noStash.stashEntryCount == 0)
     }
 
     // MARK: - Ordinary entries (1 ...)
 
     @Test func stagedModifiedEntryLandsInStagedOnly() {
-        let snapshot = parser.parse("1 M. N... 100644 100644 100644 abc def file.txt")
+        let snapshot = parser.parse("1 M. N... 100644 100644 100644 abc def file.txt\u{0}")
         #expect(snapshot.staged == [
             SupermuxGitFileChange(path: "file.txt", oldPath: nil, kind: .modified)
         ])
@@ -53,7 +60,7 @@ struct SupermuxGitStatusParserTests {
     }
 
     @Test func unstagedModifiedEntryLandsInUnstagedOnly() {
-        let snapshot = parser.parse("1 .M N... 100644 100644 100644 abc def file.txt")
+        let snapshot = parser.parse("1 .M N... 100644 100644 100644 abc def file.txt\u{0}")
         #expect(snapshot.unstaged == [
             SupermuxGitFileChange(path: "file.txt", oldPath: nil, kind: .modified)
         ])
@@ -62,14 +69,14 @@ struct SupermuxGitStatusParserTests {
     }
 
     @Test func entryModifiedInIndexAndWorktreeLandsInBothLists() {
-        let snapshot = parser.parse("1 MM N... 100644 100644 100644 abc def file.txt")
+        let snapshot = parser.parse("1 MM N... 100644 100644 100644 abc def file.txt\u{0}")
         let expected = SupermuxGitFileChange(path: "file.txt", oldPath: nil, kind: .modified)
         #expect(snapshot.staged == [expected])
         #expect(snapshot.unstaged == [expected])
     }
 
     @Test func stagedAddedEntryHasAddedKind() {
-        let snapshot = parser.parse("1 A. N... 000000 100644 100644 000 abc new.txt")
+        let snapshot = parser.parse("1 A. N... 000000 100644 100644 000 abc new.txt\u{0}")
         #expect(snapshot.staged == [
             SupermuxGitFileChange(path: "new.txt", oldPath: nil, kind: .added)
         ])
@@ -77,7 +84,7 @@ struct SupermuxGitStatusParserTests {
     }
 
     @Test func unstagedDeletedEntryHasDeletedKind() {
-        let snapshot = parser.parse("1 .D N... 100644 100644 000000 abc def gone.txt")
+        let snapshot = parser.parse("1 .D N... 100644 100644 000000 abc def gone.txt\u{0}")
         #expect(snapshot.unstaged == [
             SupermuxGitFileChange(path: "gone.txt", oldPath: nil, kind: .deleted)
         ])
@@ -85,7 +92,7 @@ struct SupermuxGitStatusParserTests {
     }
 
     @Test func unstagedTypeChangedEntryHasTypeChangedKind() {
-        let snapshot = parser.parse("1 .T N... 100644 100644 120000 abc def link.txt")
+        let snapshot = parser.parse("1 .T N... 100644 100644 120000 abc def link.txt\u{0}")
         #expect(snapshot.unstaged == [
             SupermuxGitFileChange(path: "link.txt", oldPath: nil, kind: .typeChanged)
         ])
@@ -94,10 +101,13 @@ struct SupermuxGitStatusParserTests {
 
     // MARK: - Rename entries (2 ...)
 
+    /// In `-z` mode the rename record carries the new path and the *next*
+    /// NUL-separated record is the original path (no tab separator).
     @Test func stagedRenameCapturesNewAndOldPaths() {
-        let snapshot = parser.parse(
-            "2 R. N... 100644 100644 100644 abc def R100 new/name.txt\told/name.txt"
-        )
+        let snapshot = parser.parse(zJoined([
+            "2 R. N... 100644 100644 100644 abc def R100 new/name.txt",
+            "old/name.txt",
+        ]))
         #expect(snapshot.staged == [
             SupermuxGitFileChange(path: "new/name.txt", oldPath: "old/name.txt", kind: .renamed)
         ])
@@ -105,13 +115,30 @@ struct SupermuxGitStatusParserTests {
         #expect(snapshot.untracked.isEmpty)
     }
 
+    /// The record after a rename is its source path even when it looks like
+    /// another entry type (e.g. a file literally named like a header), and the
+    /// entry after the source parses independently.
+    @Test func renameSourceRecordDoesNotSwallowFollowingEntry() {
+        let snapshot = parser.parse(zJoined([
+            "2 R. N... 100644 100644 100644 abc def R100 renamed.txt",
+            "original.txt",
+            "? extra.txt",
+        ]))
+        #expect(snapshot.staged == [
+            SupermuxGitFileChange(path: "renamed.txt", oldPath: "original.txt", kind: .renamed)
+        ])
+        #expect(snapshot.untracked == [
+            SupermuxGitFileChange(path: "extra.txt", oldPath: nil, kind: .untracked)
+        ])
+    }
+
     // MARK: - Untracked and ignored entries
 
     @Test func untrackedEntryIsListedAndIgnoredEntryIsSkipped() {
-        let output = """
-        ? foo/bar.txt
-        ! junk.log
-        """
+        let output = zJoined([
+            "? foo/bar.txt",
+            "! junk.log",
+        ])
         let snapshot = parser.parse(output)
         #expect(snapshot.untracked == [
             SupermuxGitFileChange(path: "foo/bar.txt", oldPath: nil, kind: .untracked)
@@ -121,11 +148,30 @@ struct SupermuxGitStatusParserTests {
         #expect(snapshot.totalChangeCount == 1)
     }
 
+    /// `-z` prints paths verbatim: a non-ASCII filename must arrive intact,
+    /// never as a C-quoted escape string (`"r\303\251sum\303\251.txt"`).
+    @Test func nonASCIIPathIsPreservedVerbatim() {
+        let snapshot = parser.parse("? résumé.txt\u{0}")
+        #expect(snapshot.untracked == [
+            SupermuxGitFileChange(path: "résumé.txt", oldPath: nil, kind: .untracked)
+        ])
+    }
+
+    /// NUL termination (not newline) delimits records, so a path containing a
+    /// newline survives as one entry.
+    @Test func pathContainingNewlineStaysOneRecord() {
+        let snapshot = parser.parse("? weird\nname.txt\u{0}? plain.txt\u{0}")
+        #expect(snapshot.untracked == [
+            SupermuxGitFileChange(path: "weird\nname.txt", oldPath: nil, kind: .untracked),
+            SupermuxGitFileChange(path: "plain.txt", oldPath: nil, kind: .untracked),
+        ])
+    }
+
     // MARK: - Unmerged entries (u ...)
 
     @Test func unmergedEntryIsUnstagedConflicted() {
         let snapshot = parser.parse(
-            "u UU N... 100644 100644 100644 100644 abc def ghi conflicted.txt"
+            "u UU N... 100644 100644 100644 100644 abc def ghi conflicted.txt\u{0}"
         )
         #expect(snapshot.unstaged == [
             SupermuxGitFileChange(path: "conflicted.txt", oldPath: nil, kind: .conflicted)
@@ -134,13 +180,13 @@ struct SupermuxGitStatusParserTests {
         #expect(snapshot.untracked.isEmpty)
     }
 
-    /// Regression: a porcelain-v2 unmerged line whose path contains spaces was
+    /// Regression: a porcelain-v2 unmerged record whose path contains spaces was
     /// truncated to its last whitespace token (e.g. "file.txt" instead of
     /// "my conflicted file.txt"). The path must be preserved exactly, with all
     /// interior spaces intact.
     @Test func unmergedEntryWithSpacesInPathPreservesFullPath() {
         let snapshot = parser.parse(
-            "u UU N... 100644 100644 100644 100644 1111111 2222222 3333333 my conflicted file.txt"
+            "u UU N... 100644 100644 100644 100644 1111111 2222222 3333333 my conflicted file.txt\u{0}"
         )
         #expect(snapshot.unstaged == [
             SupermuxGitFileChange(
@@ -159,7 +205,7 @@ struct SupermuxGitStatusParserTests {
     /// case).
     @Test func unmergedEntryWithoutSpacesStillParses() {
         let snapshot = parser.parse(
-            "u UU N... 100644 100644 100644 100644 1111111 2222222 3333333 conflicted.txt"
+            "u UU N... 100644 100644 100644 100644 1111111 2222222 3333333 conflicted.txt\u{0}"
         )
         #expect(snapshot.unstaged.count == 1)
         #expect(snapshot.unstaged.first?.kind == .conflicted)
@@ -172,7 +218,7 @@ struct SupermuxGitStatusParserTests {
 
     @Test func pathContainingSpacesIsPreservedExactly() {
         let snapshot = parser.parse(
-            "1 .M N... 100644 100644 100644 abc def my file with spaces.txt"
+            "1 .M N... 100644 100644 100644 abc def my file with spaces.txt\u{0}"
         )
         #expect(snapshot.unstaged == [
             SupermuxGitFileChange(path: "my file with spaces.txt", oldPath: nil, kind: .modified)
@@ -197,17 +243,18 @@ struct SupermuxGitStatusParserTests {
     // MARK: - Combined fixture
 
     @Test func parsesFullStatusOutputAcrossAllSections() {
-        let output = """
-        # branch.head feature/changes
-        # branch.upstream origin/feature/changes
-        # branch.ab +3 -0
-        1 M. N... 100644 100644 100644 abc def staged.txt
-        1 .M N... 100644 100644 100644 abc def unstaged.txt
-        2 R. N... 100644 100644 100644 abc def R100 new/name.txt\told/name.txt
-        u UU N... 100644 100644 100644 100644 abc def ghi conflicted.txt
-        ? brand-new.txt
-        ! ignored.log
-        """
+        let output = zJoined([
+            "# branch.head feature/changes",
+            "# branch.upstream origin/feature/changes",
+            "# branch.ab +3 -0",
+            "1 M. N... 100644 100644 100644 abc def staged.txt",
+            "1 .M N... 100644 100644 100644 abc def unstaged.txt",
+            "2 R. N... 100644 100644 100644 abc def R100 new/name.txt",
+            "old/name.txt",
+            "u UU N... 100644 100644 100644 100644 abc def ghi conflicted.txt",
+            "? brand-new.txt",
+            "! ignored.log",
+        ])
         let snapshot = parser.parse(output)
         #expect(snapshot.branch == "feature/changes")
         #expect(snapshot.upstreamBranch == "origin/feature/changes")
@@ -266,25 +313,28 @@ struct SupermuxGitStatusParserTests {
     }
 
     @Test func hasTrackedChangesIgnoresUntrackedFiles() {
-        let untrackedOnly = parser.parse("# branch.head main\n? new.txt")
+        let untrackedOnly = parser.parse(zJoined(["# branch.head main", "? new.txt"]))
         #expect(!untrackedOnly.hasTrackedChanges)
         #expect(untrackedOnly.totalChangeCount == 1)
 
-        let trackedEdit = parser.parse(
-            "# branch.head main\n1 .M N... 100644 100644 100644 0000000 0000000 edit.txt"
-        )
+        let trackedEdit = parser.parse(zJoined([
+            "# branch.head main",
+            "1 .M N... 100644 100644 100644 0000000 0000000 edit.txt",
+        ]))
         #expect(trackedEdit.hasTrackedChanges)
     }
 
     @Test func hasConflictsReflectsUnmergedEntries() {
-        let clean = parser.parse(
-            "# branch.head main\n1 .M N... 100644 100644 100644 0000000 0000000 edit.txt"
-        )
+        let clean = parser.parse(zJoined([
+            "# branch.head main",
+            "1 .M N... 100644 100644 100644 0000000 0000000 edit.txt",
+        ]))
         #expect(!clean.hasConflicts)
 
-        let conflicted = parser.parse(
-            "# branch.head main\nu UU N... 100644 100644 100644 100644 0 0 0 merge.txt"
-        )
+        let conflicted = parser.parse(zJoined([
+            "# branch.head main",
+            "u UU N... 100644 100644 100644 100644 0 0 0 merge.txt",
+        ]))
         #expect(conflicted.hasConflicts)
     }
 

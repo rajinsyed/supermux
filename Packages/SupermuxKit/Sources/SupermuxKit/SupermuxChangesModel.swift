@@ -13,8 +13,9 @@ public import Observation
 /// `onAppear`/`onDisappear`). A ``SupermuxRepositoryWatcher`` yields an
 /// `AsyncStream` of file-system changes under the working directory and the
 /// model refreshes on each — no busy-loop polling. The observe task holds the
-/// model weakly, so an abandoned model deinitializes and its stream iteration
-/// ends rather than leaking.
+/// model weakly (so it never keeps an abandoned model alive) and is cancelled
+/// in `deinit`, which ends the stream iteration and tears the FSEvents
+/// watcher down even when ``stopObserving()`` was never called.
 @MainActor
 @Observable
 public final class SupermuxChangesModel {
@@ -23,13 +24,22 @@ public final class SupermuxChangesModel {
     public private(set) var directory: String?
     /// The latest git status for ``directory``.
     public private(set) var snapshot: SupermuxGitStatusSnapshot = .notARepository
-    /// Whether a mutation (stage/commit/push/...) is in flight.
-    public private(set) var isWorking: Bool = false
+    /// Whether a mutation (stage/commit/push/...) is in flight. The setter is
+    /// module-internal so the AI-commit flow in
+    /// `SupermuxChangesModel+AICommit.swift` can claim it.
+    public internal(set) var isWorking: Bool = false
     /// The most recent mutation error, for UI display; cleared on success.
-    public private(set) var lastError: String?
+    /// Internal setter for the AI-commit extension.
+    public internal(set) var lastError: String?
     /// The commit message bound to the commit box; cleared after a
     /// successful ``commit()``.
     public var commitMessage: String = ""
+    /// ``commitMessage`` with surrounding whitespace/newlines stripped — the
+    /// one emptiness/content test shared by ``commit()`` and the AI-commit
+    /// entry points in `SupermuxChangesModel+AICommit.swift`.
+    var trimmedCommitMessage: String {
+        commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     /// Whether AI commit-message generation is wired and a key is configured.
     /// Refreshed alongside the git status so the commit button can switch into
     /// "Generate & Commit" mode reactively.
@@ -64,7 +74,8 @@ public final class SupermuxChangesModel {
 
     let service: SupermuxGitChangesService
     /// Optional AI commit-message generator; `nil` disables AI commit.
-    @ObservationIgnored private let commitGenerator: (any SupermuxAICommitMessaging)?
+    /// Module-internal for the AI-commit extension.
+    @ObservationIgnored let commitGenerator: (any SupermuxAICommitMessaging)?
     @ObservationIgnored private var observeTask: Task<Void, Never>?
     /// Identifies the directory a given refresh was issued for. Bumped on every
     /// directory change so an in-flight status read for the previous directory
@@ -109,6 +120,15 @@ public final class SupermuxChangesModel {
     ) {
         self.service = service
         self.commitGenerator = commitGenerator
+    }
+
+    deinit {
+        // The view layer pairs start/stopObserving, but a window close can
+        // tear the owning @State down without onDisappear ever firing.
+        // Task.cancel() is thread-safe from a nonisolated deinit; cancelling
+        // ends the stream iteration, which fires the watcher stream's
+        // onTermination and stops the underlying FSEventStream.
+        observeTask?.cancel()
     }
 
     /// Points the model at a new working directory.
@@ -175,7 +195,11 @@ public final class SupermuxChangesModel {
                 // `refreshPending` guarantees, since a directory switch always
                 // requests a refresh while this one is in flight).
                 guard generation == directoryGeneration else { continue }
-                snapshot = result
+                // Write-only-when-changed: `@Observable` fires on every
+                // assignment, so an unconditional write would invalidate the
+                // whole panel on each watcher-driven refresh even when the
+                // status is identical.
+                if snapshot != result { snapshot = result }
                 // Refresh the always-visible outgoing/incoming counts (drive
                 // section visibility), then reload the (small) commit sets while
                 // their sections are expanded. Helpers gate on their own request
@@ -184,9 +208,9 @@ public final class SupermuxChangesModel {
                 await loadOutgoingCommits(directory: directory, status: result, generation: generation)
                 await loadIncomingCommits(directory: directory, status: result, generation: generation)
             } else {
-                snapshot = .notARepository
-                outgoingCount = 0
-                incomingCount = 0
+                if snapshot != .notARepository { snapshot = .notARepository }
+                if outgoingCount != 0 { outgoingCount = 0 }
+                if incomingCount != 0 { incomingCount = 0 }
                 clearOutgoingCommits()
                 clearIncomingCommits()
             }
@@ -194,10 +218,17 @@ public final class SupermuxChangesModel {
             // button reflects AI availability. Kept inside the loop so a refresh
             // requested during this await is still honored by `refreshPending`.
             if let commitGenerator {
-                aiCommitConfigured = await commitGenerator.isConfigured()
+                let configured = await commitGenerator.isConfigured()
+                if aiCommitConfigured != configured { aiCommitConfigured = configured }
             }
         } while refreshPending
     }
+
+    /// Minimum spacing between watcher-driven refreshes. Sustained churn (a
+    /// build writing thousands of files) collapses to one refresh per window:
+    /// the watcher stream buffers the newest pending signal, so a final
+    /// catch-up refresh always lands after the churn stops.
+    static let watcherRefreshInterval: Duration = .seconds(2)
 
     /// Starts observing the current directory for file-system changes and
     /// refreshes on each, cancelling any previous observation. Pair with
@@ -206,12 +237,26 @@ public final class SupermuxChangesModel {
         observeTask?.cancel()
         let directory = self.directory
         observeTask = Task { [weak self] in
-            await self?.refresh()
-            guard let directory else { return }
-            let watcher = SupermuxRepositoryWatcher(path: directory)
-            for await _ in watcher.changes() {
-                if Task.isCancelled { return }
+            guard let directory else {
                 await self?.refresh()
+                return
+            }
+            // Start the FSEvents stream *before* the initial refresh
+            // (`changes()` builds its stream eagerly), so a change landing
+            // while that first status read runs is buffered and consumed —
+            // refresh-then-watch would silently drop it.
+            let watcher = SupermuxRepositoryWatcher(path: directory)
+            let changes = watcher.changes()
+            await self?.refresh()
+            for await _ in changes {
+                if Task.isCancelled { return }
+                guard let self else { return }
+                await self.refresh()
+                // Throttle: wait before consuming the next batch so build
+                // churn cannot drive back-to-back git spawns (see
+                // ``watcherRefreshInterval``). Cancellation ends the sleep
+                // immediately and the loop exits via the cancelled stream.
+                try? await Task.sleep(for: Self.watcherRefreshInterval)
             }
         }
     }
@@ -225,8 +270,19 @@ public final class SupermuxChangesModel {
     /// Stages one change.
     /// - Parameter change: File to stage; for renames the old path is staged too.
     public func stage(_ change: SupermuxGitFileChange) async {
+        await stage(changes: [change])
+    }
+
+    /// Stages the given changes with a single `git add` and a single refresh —
+    /// the one mutation path for both the single-file row action and the
+    /// Untracked section's Stage All, so N files never cost N add+status
+    /// cycles. A failure is reported once for the whole batch (matching
+    /// ``stageAll()``'s semantics). Empty input is a no-op.
+    /// - Parameter changes: Files to stage; rename old paths are staged too.
+    public func stage(changes: [SupermuxGitFileChange]) async {
+        guard !changes.isEmpty else { return }
         await performMutation { repoPath, service in
-            try await service.stage(repoPath: repoPath, paths: Self.paths(for: change))
+            try await service.stage(repoPath: repoPath, paths: changes.flatMap(Self.paths(for:)))
         }
     }
 
@@ -270,124 +326,28 @@ public final class SupermuxChangesModel {
         }
     }
 
-    // MARK: - Commit history & sync
+    // MARK: - Commit history, sync & AI commit
     //
     // The Unpushed/Incoming commit feeds and the background auto-fetch live in
-    // `SupermuxChangesModel+Sync.swift` to keep this file focused on status and
-    // working-tree mutations.
+    // `SupermuxChangesModel+Sync.swift`; the AI "Generate & Commit" flow lives
+    // in `SupermuxChangesModel+AICommit.swift`. Both keep this file focused on
+    // status and working-tree mutations.
 
     /// Commits the staged changes using ``commitMessage``; clears the
     /// message on success. A blank message is a no-op.
-    public func commit() async {
-        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else { return }
-        await performMutation { [weak self] repoPath, service in
-            try await service.commit(repoPath: repoPath, message: message)
-            self?.commitMessage = ""
-        }
-    }
-
-    /// Whether the commit button is in AI mode: the message box is empty, AI is
-    /// configured, and there is at least one change to commit.
-    public var isAICommitMode: Bool {
-        commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && aiCommitConfigured
-            && snapshot.totalChangeCount > 0
-    }
-
-    /// Whether the commit button should be enabled. With a typed message it
-    /// requires staged changes; with an empty message it requires AI mode.
-    public var canCommit: Bool {
-        guard !isWorking, snapshot.isRepository else { return false }
-        if commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return isAICommitMode
-        }
-        return !snapshot.staged.isEmpty
-    }
-
-    /// Localized title for the commit button, reflecting AI vs. normal mode.
-    public var commitButtonTitle: String {
-        isAICommitMode
-            ? String(localized: "supermux.changes.ai.generateAndCommit", defaultValue: "Generate & Commit")
-            : String(localized: "supermux.changes.commit", defaultValue: "Commit")
-    }
-
-    /// Commit entry point used by the button: a typed message commits staged
-    /// changes directly; an empty message triggers the AI flow
-    /// (``generateAndCommit()``).
-    public func performCommit() async {
-        if commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            await generateAndCommit()
-        } else {
-            await commit()
-        }
-    }
-
-    private enum AICommitOutcome {
-        case committed
-        case failed(String)
-    }
-
-    /// Generates a commit message with AI, then stages everything and commits.
     ///
-    /// Atomic by construction: the message is produced from a *non-mutating*
-    /// diff (``SupermuxGitChangesService/uncommittedDiff(repoPath:)``), so a
-    /// missing key, an offline gateway, or an empty diff returns without ever
-    /// touching the index — `git add -A` runs only once a message is in hand.
-    /// All network/git work happens in ``runAICommit(generator:directory:)``;
-    /// the resulting state is applied only if the user has not switched
-    /// workspaces during the (multi-second) AI call, so a slow commit's
-    /// outcome never bleeds onto another workspace's panel.
-    private func generateAndCommit() async {
-        guard let commitGenerator, let directory, !isWorking,
-              snapshot.totalChangeCount > 0 else { return }
-        let generation = directoryGeneration
-        isWorking = true
-        defer { isWorking = false }
-        // Drain any in-flight background fetch so the stage+commit git work never
-        // races the silent fetch into a ref-lock error (see ``performMutation``).
-        _ = await activeFetchTask?.value
-        let outcome = await runAICommit(generator: commitGenerator, directory: directory)
-        // Drop the result if the user switched the focused workspace mid-flight.
-        guard generation == directoryGeneration else { return }
-        switch outcome {
-        case .committed:
+    /// The message is cleared only when the commit's outcome applied to the
+    /// panel's current directory — after a mid-commit workspace switch the
+    /// clear would otherwise wipe whatever the user has typed for the *new*
+    /// directory (`setDirectory` already reset the box for it).
+    public func commit() async {
+        let message = trimmedCommitMessage
+        guard !message.isEmpty else { return }
+        let applied = await performMutation { repoPath, service in
+            try await service.commit(repoPath: repoPath, message: message)
+        }
+        if applied {
             commitMessage = ""
-            lastError = nil
-        case .failed(let message):
-            lastError = message
-        }
-        await refresh()
-    }
-
-    /// Runs the AI commit pipeline against `directory`, returning the outcome
-    /// without mutating any `@Published` model state (the caller applies it).
-    private func runAICommit(
-        generator: any SupermuxAICommitMessaging,
-        directory: String
-    ) async -> AICommitOutcome {
-        guard await generator.isConfigured() else {
-            return .failed(SupermuxAIError.notConfigured.localizedDescription)
-        }
-        let diff = await service.uncommittedDiff(repoPath: directory)
-        guard !diff.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return .failed(String(
-                localized: "supermux.changes.ai.nothingToCommit",
-                defaultValue: "Nothing to commit."
-            ))
-        }
-        guard let message = await generator.generateMessage(forDiff: diff) else {
-            return .failed(String(
-                localized: "supermux.changes.ai.generateFailed",
-                defaultValue: "Couldn’t generate a commit message. Check your AI settings."
-            ))
-        }
-        do {
-            try await service.stageAll(repoPath: directory)
-            try await service.commit(repoPath: directory, message: message)
-            return .committed
-        } catch {
-            return .failed(error.localizedDescription)
         }
     }
 
@@ -456,23 +416,54 @@ public final class SupermuxChangesModel {
     /// Runs one mutation: guards against a missing directory and re-entrancy,
     /// flips ``isWorking``, records or clears ``lastError``, and always
     /// refreshes afterwards.
-    private func performMutation(
+    ///
+    /// `lastError` is only written when the panel still shows the directory the
+    /// mutation ran against — a slow push/pull's outcome must not bleed onto
+    /// another workspace's panel after a mid-flight switch (`setDirectory`
+    /// bumps the generation and clears the new directory's error/message).
+    /// - Returns: `true` when the work succeeded *and* its outcome applied to
+    ///   the current directory, so callers can gate success side effects (like
+    ///   clearing the commit box) without re-deriving the generation check.
+    @discardableResult
+    func performMutation(
         _ work: @MainActor (String, SupermuxGitChangesService) async throws -> Void
-    ) async {
-        guard let directory, !isWorking else { return }
+    ) async -> Bool {
+        guard let directory, !isWorking else { return false }
         isWorking = true
         defer { isWorking = false }
+        let generation = directoryGeneration
         // Claiming `isWorking` above blocks a new background fetch from starting;
         // draining any fetch already in flight closes the reverse race so the
         // mutation's git never updates a ref alongside the silent fetch.
-        _ = await activeFetchTask?.value
+        await drainActiveFetch()
+        var succeeded = false
         do {
             try await work(directory, service)
-            lastError = nil
+            succeeded = true
         } catch {
-            lastError = error.localizedDescription
+            if generation == directoryGeneration {
+                lastError = error.localizedDescription
+            }
+        }
+        if succeeded, generation == directoryGeneration, lastError != nil {
+            lastError = nil
         }
         await refresh()
+        return succeeded && generation == directoryGeneration
+    }
+
+    /// Awaits every in-flight background fetch, including one that starts while
+    /// waiting. A single-shot `await activeFetchTask?.value` can miss a fetch
+    /// that replaced the handle during the await, letting a mutation's git run
+    /// alongside it after all.
+    func drainActiveFetch() async {
+        while let task = activeFetchTask {
+            _ = await task.value
+            // Handle unchanged: that fetch finished (its owner clears the
+            // handle imminently). A changed handle means a new fetch started
+            // mid-drain — loop and await it too.
+            if activeFetchTask == task { break }
+        }
     }
 
     private static func paths(for change: SupermuxGitFileChange) -> [String] {

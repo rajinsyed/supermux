@@ -10,14 +10,21 @@ import Foundation
 /// user's machine. Local commands use a 30 second timeout; network commands
 /// (`push`/`pull`) get 120 seconds.
 public actor SupermuxGitChangesService {
-    private let runner: any CommandRunning
+    // `runner`, `gitTimeout`, and `noOptionalLocks` are internal (not
+    // private): also used by the AI-capture extension in
+    // `SupermuxGitChangesService+AICapture.swift`.
+    let runner: any CommandRunning
     private let parser = SupermuxGitStatusParser()
-    private static let gitTimeout: TimeInterval = 30
+    static let gitTimeout: TimeInterval = 30
     private static let networkTimeout: TimeInterval = 120
     /// Shorter deadline for the best-effort background fetch: it runs on a timer
     /// and must give up quickly (and retry next cycle) rather than linger on a
     /// stalled network or auth like the user-initiated push/pull paths.
     private static let fetchTimeout: TimeInterval = 30
+    /// Global git flag prepended to every read-only invocation so a refresh
+    /// never takes the optional `.git/index` lock (or rewrites the index),
+    /// which would re-trigger the FSEvents watcher that requested the refresh.
+    static let noOptionalLocks = "--no-optional-locks"
 
     /// Creates a service.
     /// - Parameter runner: Executes git; defaults to a production ``CommandRunner``.
@@ -27,9 +34,11 @@ public actor SupermuxGitChangesService {
 
     /// Reads the repository status at `repoPath`.
     ///
-    /// Runs `git status --porcelain=v2 --branch --show-stash` and parses the
-    /// output with ``SupermuxGitStatusParser``. `--show-stash` folds the stash
-    /// depth (`# stash <n>`) into the same invocation that drives every refresh,
+    /// Runs `git status --porcelain=v2 -z --branch --show-stash` and parses the
+    /// output with ``SupermuxGitStatusParser``. `-z` makes git print paths
+    /// verbatim (no C-quoting of non-ASCII/special filenames) with
+    /// NUL-terminated records. `--show-stash` folds the stash depth
+    /// (`# stash <n>`) into the same invocation that drives every refresh,
     /// so the panel can gate Pop Stash without spawning a second git process.
     /// - Parameter repoPath: Directory to inspect.
     /// - Returns: The parsed snapshot, or
@@ -39,23 +48,115 @@ public actor SupermuxGitChangesService {
         let result = await runner.run(
             directory: repoPath,
             executable: "git",
-            arguments: ["status", "--porcelain=v2", "--branch", "--show-stash"],
+            arguments: [
+                Self.noOptionalLocks, "status", "--porcelain=v2", "-z", "--branch", "--show-stash",
+            ],
             timeout: Self.gitTimeout
         )
-        guard result.exitStatus == 0, let stdout = result.stdout else {
+        guard result.exitStatus == 0 else {
             return .notARepository
+        }
+        guard let stdout = result.stdout, !stdout.isEmpty else {
+            // git succeeded but the capture is unusable. nil: the output
+            // failed CommandRunner's strict UTF-8 decode — with `-z` git
+            // prints path bytes verbatim, so a single non-UTF-8 filename
+            // anywhere in the repo (e.g. a latin-1 name committed on Linux)
+            // nils the ENTIRE stdout. Empty: impossible from a successful
+            // `--branch` status (the branch headers always print), i.e. a
+            // transient pipe-read artifact under subprocess load. Recapture
+            // (lossily) so the panel degrades to one mangled filename — or
+            // just re-reads the real output — instead of falsely reporting
+            // "not a repository" with every action disabled.
+            return await statusViaLossyCapture(repoPath: repoPath)
         }
         return parser.parse(stdout)
     }
 
-    /// Stages the given repo-relative paths (`git add -- <paths>`).
+    /// Fallback status capture for repositories whose `-z` output is not valid
+    /// UTF-8. Base64-armors the bytes through the shell (pure ASCII, so the
+    /// runner's strict decode always succeeds), then decodes them lossily:
+    /// the offending filename renders with U+FFFD replacement characters (its
+    /// per-file mutations fail cleanly against the mangled path) while every
+    /// other file and panel action stays fully operable. `pipefail` keeps
+    /// git's own failure (repo deleted between the two captures) detectable.
+    ///
+    /// The recapture also absorbs ``CommandRunner``'s partial/empty-read
+    /// artifact (a transient of the concurrent pipe reads, shared by every
+    /// runner call site) — it is not purely an encoding fallback.
+    private func statusViaLossyCapture(repoPath: String) async -> SupermuxGitStatusSnapshot {
+        let script = "set -o pipefail; git \(Self.noOptionalLocks) status"
+            + " --porcelain=v2 -z --branch --show-stash | /usr/bin/base64"
+        let result = await runShellPipeline(script, in: repoPath, shell: "/bin/bash")
+        guard result.exitStatus == 0,
+              let armored = result.stdout,
+              let data = Data(base64Encoded: armored, options: .ignoreUnknownCharacters),
+              !data.isEmpty
+        else { return .notARepository }
+        return parser.parse(String(decoding: data, as: UTF8.self))
+    }
+
+    /// Byte budget for one `git add` invocation's joined pathspec arguments:
+    /// well under the kernel's ARG_MAX so a huge multi-select can never fail
+    /// exec, with a path-count cap as a second bound.
+    private static let maxStageChunkBytes = 100_000
+    private static let maxStageChunkPaths = 500
+
+    /// Stages the given repo-relative paths (`git add -- <paths>`), chunked so
+    /// each argv stays under ``maxStageChunkBytes`` / ``maxStageChunkPaths``.
+    ///
+    /// `git add` is all-or-nothing per invocation: one bad pathspec (a file
+    /// vanished between status and stage) fails the whole call with nothing
+    /// staged. A failed chunk therefore falls back to per-path adds so the
+    /// survivors still stage, and the per-path failures are aggregated into a
+    /// single thrown error. Deleted *tracked* paths stay in the batches
+    /// unconditionally — their pathspecs match the index, so staging the
+    /// deletion succeeds.
     /// - Parameters:
     ///   - repoPath: Repository directory.
     ///   - paths: Repo-relative paths to stage; no-op when empty.
-    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
+    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` aggregating
+    ///   every path that could not be staged.
     public func stage(repoPath: String, paths: [String]) async throws {
         guard !paths.isEmpty else { return }
-        try await runGit(in: repoPath, ["add", "--"] + paths, commandLabel: "add")
+        var failures: [String] = []
+        for chunk in Self.stageChunks(paths) {
+            do {
+                try await runGit(in: repoPath, ["add", "--"] + chunk, commandLabel: "add")
+            } catch {
+                for path in chunk {
+                    do {
+                        try await runGit(in: repoPath, ["add", "--", path], commandLabel: "add")
+                    } catch SupermuxGitError.gitFailed(_, let message) {
+                        failures.append("\(path): \(message)")
+                    }
+                }
+            }
+        }
+        guard failures.isEmpty else {
+            throw SupermuxGitError.gitFailed(command: "add", message: failures.joined(separator: "\n"))
+        }
+    }
+
+    /// Splits `paths` into `git add` argv chunks bounded by
+    /// ``maxStageChunkBytes`` joined path bytes and ``maxStageChunkPaths``
+    /// entries; a single oversized path still gets its own chunk.
+    private static func stageChunks(_ paths: [String]) -> [[String]] {
+        var chunks: [[String]] = []
+        var chunk: [String] = []
+        var chunkBytes = 0
+        for path in paths {
+            let bytes = path.utf8.count + 1
+            if !chunk.isEmpty,
+               chunkBytes + bytes > maxStageChunkBytes || chunk.count >= maxStageChunkPaths {
+                chunks.append(chunk)
+                chunk = []
+                chunkBytes = 0
+            }
+            chunk.append(path)
+            chunkBytes += bytes
+        }
+        if !chunk.isEmpty { chunks.append(chunk) }
+        return chunks
     }
 
     /// Stages everything, including untracked files (`git add -A`).
@@ -75,11 +176,15 @@ public actor SupermuxGitChangesService {
         try await runGit(in: repoPath, ["reset", "-q", "HEAD", "--"] + paths, commandLabel: "reset")
     }
 
-    /// Unstages everything (`git reset -q HEAD`).
+    /// Unstages everything (`git reset -q`).
+    ///
+    /// No explicit `HEAD`: on a born branch `git reset -q` behaves identically,
+    /// while on an unborn branch (fresh `git init`, nothing committed) `HEAD`
+    /// does not resolve and the explicit form fails with "ambiguous argument".
     /// - Parameter repoPath: Repository directory.
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
     public func unstageAll(repoPath: String) async throws {
-        try await runGit(in: repoPath, ["reset", "-q", "HEAD"], commandLabel: "reset")
+        try await runGit(in: repoPath, ["reset", "-q"], commandLabel: "reset")
     }
 
     /// Discards the working-tree change for a single file.
@@ -87,8 +192,16 @@ public actor SupermuxGitChangesService {
     /// Untracked files are deleted from disk. Renamed files restore the
     /// original path from `HEAD` and remove the renamed-to file when it is not
     /// itself tracked in `HEAD` — otherwise the rename would be only half
-    /// undone, leaving the moved file behind as untracked. All other kinds run
-    /// `git checkout -- <path>`.
+    /// undone, leaving the moved file behind as untracked. Conflicted files
+    /// present in `HEAD` restore its content (`git checkout HEAD -- <path>`),
+    /// which also clears the unmerged index entry — the plain
+    /// `git checkout -- <path>` form refuses unmerged paths outright.
+    /// Conflicted paths absent from `HEAD` (deleted-by-us, added-by-them,
+    /// both-deleted) are discarded via `git rm -f -- <path>` instead: it
+    /// clears all unmerged stages and removes the working file when present,
+    /// succeeding even when the file is already gone — the checkout form has
+    /// no `HEAD` content to restore and `git restore --source=HEAD` errors
+    /// with "path is unmerged". All other kinds run `git checkout -- <path>`.
     /// - Parameters:
     ///   - repoPath: Repository directory.
     ///   - change: The change to discard.
@@ -119,6 +232,14 @@ public actor SupermuxGitChangesService {
                     try? FileManager.default.removeItem(atPath: movedPath)
                 }
             }
+        case .conflicted:
+            if await existsInHEAD(repoPath: repoPath, path: change.path) {
+                try await runGit(
+                    in: repoPath, ["checkout", "HEAD", "--", change.path], commandLabel: "checkout HEAD"
+                )
+            } else {
+                try await runGit(in: repoPath, ["rm", "-f", "--", change.path], commandLabel: "rm -f")
+            }
         default:
             try await runGit(in: repoPath, ["checkout", "--", change.path], commandLabel: "checkout")
         }
@@ -129,109 +250,29 @@ public actor SupermuxGitChangesService {
     /// Runs `git reset --hard HEAD` to throw away all staged and unstaged
     /// modifications to tracked files, then `git clean -fd` to delete untracked
     /// files and directories. Ignored files are left untouched (no `-x`).
+    /// On an unborn branch (no commits yet) `HEAD` does not resolve, so the
+    /// reset falls back to `git reset -q` — there is no commit to restore
+    /// tracked content from; unstaging plus the clean is the whole discard.
     /// - Parameter repoPath: Repository directory.
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
     public func discardAll(repoPath: String) async throws {
-        try await runGit(in: repoPath, ["reset", "--hard", "HEAD"], commandLabel: "reset --hard")
+        if await headExists(repoPath: repoPath) {
+            try await runGit(in: repoPath, ["reset", "--hard", "HEAD"], commandLabel: "reset --hard")
+        } else {
+            try await runGit(in: repoPath, ["reset", "-q"], commandLabel: "reset")
+        }
         try await runGit(in: repoPath, ["clean", "-fd"], commandLabel: "clean")
     }
 
-    /// Reads up to `limit` unpushed local commits (newest first): commits in
-    /// `HEAD` that are not yet on the remote.
-    ///
-    /// With an upstream configured, the range is `@{upstream}..HEAD` (exactly
-    /// the commits the branch is "ahead" by). Without one — a never-pushed or
-    /// detached branch — it falls back to `HEAD --not --remotes`, i.e. commits
-    /// reachable from `HEAD` that are not on any remote-tracking branch (in a
-    /// repository with no remotes at all, that is the whole local history,
-    /// which is correct: nothing has been pushed).
-    ///
-    /// Runs `git log -z --no-color --no-show-signature` with
-    /// ``SupermuxGitCommit/logFormat``; `--no-show-signature` keeps GPG
-    /// verification lines out of the stream for users with
-    /// `log.showSignature=true`. Returns an empty array when git fails —
-    /// including an empty repository / unborn branch or a missing upstream
-    /// ref — so a missing list degrades quietly rather than as an error.
-    /// - Parameters:
-    ///   - repoPath: Repository directory.
-    ///   - hasUpstream: Whether the current branch has an upstream configured.
-    ///   - limit: Maximum number of commits to return.
-    /// - Returns: The parsed unpushed commits, newest first, or `[]` on failure.
-    public func unpushedCommits(
-        repoPath: String, hasUpstream: Bool, limit: Int
-    ) async -> [SupermuxGitCommit] {
-        guard limit > 0 else { return [] }
-        if hasUpstream,
-           let upstreamCommits = await commitLog(
-               repoPath: repoPath, revision: ["@{upstream}..HEAD"], limit: limit
-           ) {
-            return upstreamCommits
-        }
-        // No upstream, or the `@{upstream}` range failed (e.g. the
-        // remote-tracking ref is missing locally): fall back to "not on any
-        // remote" rather than misleadingly claiming nothing is unpushed.
-        return await commitLog(
-            repoPath: repoPath, revision: ["HEAD", "--not", "--remotes"], limit: limit
-        ) ?? []
-    }
-
-    /// Counts unpushed commits for a branch with no upstream:
-    /// `git rev-list --count HEAD --not --remotes` — commits reachable from
-    /// `HEAD` but not on any remote-tracking branch (the same set
-    /// ``unpushedCommits(repoPath:hasUpstream:limit:)`` falls back to).
-    ///
-    /// Used only when `git status` reports no `ahead` count to drive the panel's
-    /// "hide the Unpushed section when empty" decision without loading the whole
-    /// list. Returns `0` on failure (e.g. an unborn branch) or an empty range.
-    /// - Parameter repoPath: Repository directory.
-    public func unpushedCountWithoutUpstream(repoPath: String) async -> Int {
-        let stdout = await runner.runStandardOutput(
-            directory: repoPath,
-            executable: "git",
-            arguments: ["rev-list", "--count", "HEAD", "--not", "--remotes"],
-            timeout: Self.gitTimeout
-        )
-        return stdout.flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 0
-    }
-
-    /// Reads up to `limit` incoming commits (newest first): commits on the
-    /// upstream that are not yet in `HEAD` — exactly what `git pull` would bring.
-    ///
-    /// The range is `HEAD..@{upstream}`. The remote-tracking ref is only as
-    /// fresh as the last `git fetch`, so callers run ``fetch(repoPath:)`` first
-    /// to surface commits pushed elsewhere (e.g. a merged worktree). Unlike
-    /// ``unpushedCommits(repoPath:hasUpstream:limit:)`` there is no
-    /// remotes-based fallback: with no upstream there is nothing to pull, so an
-    /// empty array is returned. Also `[]` when the range is empty or git fails
-    /// (for example a detached HEAD without `@{upstream}`).
-    /// - Parameters:
-    ///   - repoPath: Repository directory.
-    ///   - limit: Maximum number of commits to return.
-    /// - Returns: The parsed incoming commits, newest first, or `[]`.
-    public func incomingCommits(repoPath: String, limit: Int) async -> [SupermuxGitCommit] {
-        guard limit > 0 else { return [] }
-        return await commitLog(
-            repoPath: repoPath, revision: ["HEAD..@{upstream}"], limit: limit
-        ) ?? []
-    }
-
-    /// Runs `git log` over `revision` and parses the result; `nil` on git
-    /// failure (so callers can fall back) versus `[]` for a successful empty
-    /// range.
-    private func commitLog(
-        repoPath: String, revision: [String], limit: Int
-    ) async -> [SupermuxGitCommit]? {
+    /// Whether `HEAD` resolves to a commit (`false` on an unborn branch).
+    private func headExists(repoPath: String) async -> Bool {
         let result = await runner.run(
             directory: repoPath,
             executable: "git",
-            arguments: [
-                "log", "-z", "--no-color", "--no-show-signature",
-                "--max-count=\(limit)", "--format=\(SupermuxGitCommit.logFormat)",
-            ] + revision,
+            arguments: [Self.noOptionalLocks, "rev-parse", "--verify", "--quiet", "HEAD"],
             timeout: Self.gitTimeout
         )
-        guard result.exitStatus == 0, let stdout = result.stdout else { return nil }
-        return SupermuxGitCommit.parse(log: stdout)
+        return result.exitStatus == 0
     }
 
     /// Commits staged changes (`git commit -m <message>`).
@@ -244,48 +285,9 @@ public actor SupermuxGitChangesService {
         try await runGit(in: repoPath, ["commit", "-m", message], commandLabel: "commit")
     }
 
-    /// A non-mutating diff of everything a "stage all + commit" would capture,
-    /// for AI commit-message generation.
-    ///
-    /// Combines `git diff HEAD --stat` + `git diff HEAD` (all tracked changes vs
-    /// the last commit, staged or not) with a list of untracked files. It does
-    /// **not** touch the index, so the caller can generate a message first and
-    /// only stage when a message is in hand (keeping the operation atomic).
-    /// Returns an empty string when there is nothing to commit or the path is
-    /// not a repository. On an unborn branch `git diff HEAD` fails and only the
-    /// untracked listing is returned.
-    /// - Parameter repoPath: Repository directory.
-    public func uncommittedDiff(repoPath: String) async -> String {
-        let stat = await runner.run(
-            directory: repoPath,
-            executable: "git",
-            arguments: ["diff", "HEAD", "--stat"],
-            timeout: Self.gitTimeout
-        )
-        let patch = await runner.run(
-            directory: repoPath,
-            executable: "git",
-            arguments: ["diff", "HEAD"],
-            timeout: Self.gitTimeout
-        )
-        let untracked = await runner.run(
-            directory: repoPath,
-            executable: "git",
-            arguments: ["ls-files", "--others", "--exclude-standard"],
-            timeout: Self.gitTimeout
-        )
-        var parts: [String] = []
-        if let summary = stat.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
-            parts.append(summary)
-        }
-        if let body = patch.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty {
-            parts.append(body)
-        }
-        if let files = untracked.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !files.isEmpty {
-            parts.append("New untracked files:\n" + files)
-        }
-        return parts.joined(separator: "\n\n")
-    }
+    // The AI-flow change captures (`uncommittedDiff`, its bounded patch, and
+    // the untracked-content identity) live in
+    // `SupermuxGitChangesService+AICapture.swift` (Swift file-length budget).
 
     /// Pushes the current branch.
     ///
@@ -354,10 +356,12 @@ public actor SupermuxGitChangesService {
         return result.exitStatus == 0
     }
 
-    /// `PATH` for the `env`-launched background fetch: the inherited `PATH` first
-    /// (so a user's custom git wins, matching ``CommandRunner``'s search order),
-    /// then the runner's fallback directories and the standard system bins.
-    private static let gitSearchPath: String = {
+    /// `PATH` for the `env`-launched shell pipelines (background fetch, AI
+    /// captures): the inherited `PATH` first (so a user's custom git wins,
+    /// matching ``CommandRunner``'s search order), then the runner's fallback
+    /// directories and the standard system bins. Internal (not private): also
+    /// used by `SupermuxGitChangesService+AICapture.swift`.
+    static let gitSearchPath: String = {
         let inherited = ProcessInfo.processInfo.environment["PATH"]
         let fallbacks = CommandRunner.defaultFallbackSearchDirectories
             + ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
@@ -365,55 +369,43 @@ public actor SupermuxGitChangesService {
         return parts.joined(separator: ":")
     }()
 
-    // MARK: - Stash
-
-    /// Stashes working-tree changes (`git stash push`).
-    ///
-    /// By default only tracked-file changes (staged or unstaged) are stashed;
-    /// pass `includeUntracked` to add `--include-untracked` so untracked files
-    /// are stashed too. `git stash push` exits `0` with "No local changes to
-    /// save" when there is nothing to stash, so this never throws on a clean
-    /// tree — callers gate the action on having changes.
-    /// - Parameters:
-    ///   - repoPath: Repository directory.
-    ///   - includeUntracked: Whether to also stash untracked files.
-    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
-    public func stash(repoPath: String, includeUntracked: Bool) async throws {
-        var arguments = ["stash", "push"]
-        if includeUntracked { arguments.append("--include-untracked") }
-        try await runGit(
-            in: repoPath, arguments,
-            commandLabel: includeUntracked ? "stash push --include-untracked" : "stash push"
+    /// Runs a shell pipeline with ``gitSearchPath`` as its `PATH` — the shared
+    /// shape for every `env`-launched capture (`statusViaLossyCapture` plus the
+    /// AI captures in `SupermuxGitChangesService+AICapture.swift`). The
+    /// background ``fetch(repoPath:)`` deliberately does not route through
+    /// here: it runs git directly (no shell) with askpass env and its own
+    /// shorter timeout.
+    func runShellPipeline(
+        _ script: String, in directory: String, shell: String = "/bin/sh"
+    ) async -> CommandResult {
+        await runner.run(
+            directory: directory,
+            executable: "/usr/bin/env",
+            arguments: ["PATH=\(Self.gitSearchPath)", shell, "-c", script],
+            timeout: Self.gitTimeout
         )
     }
 
-    /// Restores the most recent stash and drops it (`git stash pop`).
-    ///
-    /// A `pop` that produces merge conflicts exits non-zero and leaves the
-    /// stash in place with conflict markers in the working tree; that surfaces
-    /// as a ``SupermuxGitError/gitFailed(command:message:)`` for the caller to
-    /// show, while the conflicted files appear on the next status refresh.
-    /// - Parameter repoPath: Repository directory.
-    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
-    public func popStash(repoPath: String) async throws {
-        try await runGit(in: repoPath, ["stash", "pop"], commandLabel: "stash pop")
-    }
-
     // MARK: - Internals
+    //
+    // The stash operations live in `SupermuxGitChangesService+Stash.swift`
+    // (Swift file-length budget).
 
     /// Whether `path` exists as a blob/tree in `HEAD`.
     private func existsInHEAD(repoPath: String, path: String) async -> Bool {
         let result = await runner.run(
             directory: repoPath,
             executable: "git",
-            arguments: ["cat-file", "-e", "HEAD:\(path)"],
+            arguments: [Self.noOptionalLocks, "cat-file", "-e", "HEAD:\(path)"],
             timeout: Self.gitTimeout
         )
         return result.exitStatus == 0
     }
 
+    // Internal (not private): also used by the stash extension in
+    // `SupermuxGitChangesService+Stash.swift`.
     @discardableResult
-    private func runGit(
+    func runGit(
         in directory: String,
         _ arguments: [String],
         commandLabel: String,

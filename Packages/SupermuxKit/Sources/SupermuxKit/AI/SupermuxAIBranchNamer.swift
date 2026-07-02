@@ -48,7 +48,11 @@ public struct SupermuxAIBranchNamer: SupermuxAIBranchNaming {
                 user: trimmed,
                 maxOutputTokens: 24
             )
-            let firstLine = raw.split(whereSeparator: { $0.isNewline }).first.map(String.init) ?? raw
+            // Strip a wrapping code fence before taking the first line: a
+            // fenced reply ("```\nfix-login\n```") would otherwise yield
+            // "```", sanitize to nil, and silently discard the suggestion.
+            let cleaned = SupermuxAIReplyCleanup.strippingCodeFence(raw)
+            let firstLine = cleaned.split(whereSeparator: { $0.isNewline }).first.map(String.init) ?? cleaned
             return naming.sanitize(firstLine)
         } catch {
             return nil

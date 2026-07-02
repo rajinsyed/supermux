@@ -13,92 +13,30 @@ import SupermuxKit
 @Suite(.serialized) struct SupermuxGitChangesServiceTests {
     private let service = SupermuxGitChangesService()
 
-    // MARK: - Fixture helpers
+    // MARK: - Fixture helpers (shared implementation in `GitFixture`)
 
-    /// A git invocation made by the fixture helper failed.
-    private enum FixtureError: Error {
-        case gitFailed(arguments: [String], message: String)
-    }
-
-    /// Creates a unique temporary directory and returns its path,
-    /// standardized the same way the services normalize paths.
+    /// This suite's temp-directory prefix, kept distinct per file so parallel
+    /// test runs stay distinguishable.
     private func makeTempDirectory() throws -> String {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("supermux-changes-tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return (url.path as NSString).standardizingPath
+        try GitFixture.makeTempDirectory(prefix: "supermux-changes-tests")
     }
 
-    /// Creates a temp git repository on `main` with one committed `README.md`.
-    /// Commit signing is disabled locally so service-side commits also work
-    /// on machines with global `commit.gpgsign` enabled.
     private func makeFixtureRepo() throws -> String {
-        let root = try makeTempDirectory()
-        try runGit(["init", "-b", "main"], in: root)
-        try runGit(["config", "--local", "user.email", "tests@supermux.invalid"], in: root)
-        try runGit(["config", "--local", "user.name", "Supermux Tests"], in: root)
-        try runGit(["config", "--local", "commit.gpgsign", "false"], in: root)
-        try write("fixture\n", to: "README.md", in: root)
-        try runGit(["add", "."], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Initial commit"], in: root)
-        return root
+        try GitFixture.makeFixtureRepo(prefix: "supermux-changes-tests")
     }
 
     /// Creates a bare repository on `main` to serve as a push remote.
     private func makeBareRemote() throws -> String {
         let remote = try makeTempDirectory()
-        try runGit(["init", "--bare", "-b", "main"], in: remote)
+        try GitFixture.runGit(["init", "--bare", "-b", "main"], in: remote)
         return remote
-    }
-
-    /// Writes `content` to `relativePath` inside `root`.
-    private func write(_ content: String, to relativePath: String, in root: String) throws {
-        let path = (root as NSString).appendingPathComponent(relativePath)
-        try content.write(toFile: path, atomically: true, encoding: .utf8)
-    }
-
-    /// Reads the contents of `relativePath` inside `root`.
-    private func read(_ relativePath: String, in root: String) throws -> String {
-        let path = (root as NSString).appendingPathComponent(relativePath)
-        return try String(contentsOfFile: path, encoding: .utf8)
-    }
-
-    /// Runs git synchronously via `Process` (test-only helper) and returns
-    /// its standard output; throws on a non-zero exit.
-    @discardableResult
-    private func runGit(_ arguments: [String], in directory: String) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: directory)
-        process.standardInput = FileHandle.nullDevice
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        try process.run()
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw FixtureError.gitFailed(
-                arguments: arguments,
-                message: String(data: stderrData, encoding: .utf8) ?? ""
-            )
-        }
-        return String(data: stdoutData, encoding: .utf8) ?? ""
-    }
-
-    /// Best-effort removal of a fixture directory.
-    private func cleanUp(_ path: String) {
-        try? FileManager.default.removeItem(atPath: path)
     }
 
     // MARK: - Status
 
     @Test func statusOnPlainDirectoryReportsNotARepository() async throws {
         let dir = try makeTempDirectory()
-        defer { cleanUp(dir) }
+        defer { GitFixture.cleanUp(dir) }
 
         let snapshot = await service.status(repoPath: dir)
 
@@ -108,7 +46,7 @@ import SupermuxKit
 
     @Test func statusOnCleanRepoReportsBranchAndEmptyLists() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
 
         let snapshot = await service.status(repoPath: root)
 
@@ -124,8 +62,8 @@ import SupermuxKit
 
     @Test func stageAndUnstageMoveNewFileBetweenLists() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("new\n", to: "new.txt", in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("new\n", to: "new.txt", in: root)
 
         let beforeStage = await service.status(repoPath: root)
         let untracked = try #require(beforeStage.untracked.first { $0.path == "new.txt" })
@@ -147,8 +85,8 @@ import SupermuxKit
 
     @Test func stageAllThenCommitProducesCleanStatus() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("updated\n", to: "README.md", in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("updated\n", to: "README.md", in: root)
 
         let dirty = await service.status(repoPath: root)
         let modified = try #require(dirty.unstaged.first { $0.path == "README.md" })
@@ -163,16 +101,47 @@ import SupermuxKit
         try await service.commit(repoPath: root, message: "Update README")
         let clean = await service.status(repoPath: root)
         #expect(clean.totalChangeCount == 0)
-        let subject = try runGit(["log", "-1", "--format=%s"], in: root)
+        let subject = try GitFixture.runGit(["log", "-1", "--format=%s"], in: root)
         #expect(subject.trimmingCharacters(in: .whitespacesAndNewlines) == "Update README")
+    }
+
+    /// A path vanishing between status and stage must not sink the batch:
+    /// `git add` is all-or-nothing per invocation (one bad pathspec stages
+    /// nothing), so the service retries the failed chunk per path — the
+    /// survivors stage and the aggregated error names the vanished path.
+    @Test func stageBatchWithVanishedPathStagesSurvivorsAndReportsIt() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("a\n", to: "a.txt", in: root)
+        try GitFixture.write("b\n", to: "vanished.txt", in: root)
+        try GitFixture.write("c\n", to: "c.txt", in: root)
+        try FileManager.default.removeItem(
+            atPath: (root as NSString).appendingPathComponent("vanished.txt")
+        )
+
+        var thrown: SupermuxGitError?
+        do {
+            try await service.stage(repoPath: root, paths: ["a.txt", "vanished.txt", "c.txt"])
+        } catch let error as SupermuxGitError {
+            thrown = error
+        }
+        guard case .gitFailed(_, let message) = try #require(thrown) else {
+            Issue.record("expected gitFailed, got \(String(describing: thrown))")
+            return
+        }
+        #expect(message.contains("vanished.txt"))
+
+        let after = await service.status(repoPath: root)
+        #expect(after.staged.contains { $0.path == "a.txt" })
+        #expect(after.staged.contains { $0.path == "c.txt" })
     }
 
     @Test func unstageAllEmptiesStagedList() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("one\n", to: "one.txt", in: root)
-        try write("two\n", to: "two.txt", in: root)
-        try write("updated\n", to: "README.md", in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("one\n", to: "one.txt", in: root)
+        try GitFixture.write("two\n", to: "two.txt", in: root)
+        try GitFixture.write("updated\n", to: "README.md", in: root)
         try await service.stageAll(repoPath: root)
 
         let staged = await service.status(repoPath: root)
@@ -191,26 +160,26 @@ import SupermuxKit
 
     @Test func discardRestoresModifiedTrackedFileContent() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("v1\n", to: "file.txt", in: root)
-        try runGit(["add", "file.txt"], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add file"], in: root)
-        try write("v2\n", to: "file.txt", in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("v1\n", to: "file.txt", in: root)
+        try GitFixture.runGit(["add", "file.txt"], in: root)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add file"], in: root)
+        try GitFixture.write("v2\n", to: "file.txt", in: root)
 
         let snapshot = await service.status(repoPath: root)
         let change = try #require(snapshot.unstaged.first { $0.path == "file.txt" })
 
         try await service.discard(repoPath: root, change: change)
 
-        #expect(try read("file.txt", in: root) == "v1\n")
+        #expect(try GitFixture.read("file.txt", in: root) == "v1\n")
         let after = await service.status(repoPath: root)
         #expect(after.totalChangeCount == 0)
     }
 
     @Test func discardDeletesUntrackedFileFromDisk() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("scratch\n", to: "scratch.txt", in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("scratch\n", to: "scratch.txt", in: root)
 
         let snapshot = await service.status(repoPath: root)
         let change = try #require(snapshot.untracked.first { $0.path == "scratch.txt" })
@@ -236,14 +205,14 @@ import SupermuxKit
     /// HEAD path, the fix deletes it.
     @Test func discardUnstagedRenameRestoresOldPathAndRemovesNewFile() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("v1\n", to: "old.txt", in: root)
-        try runGit(["add", "old.txt"], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add old"], in: root)
-        try runGit(["mv", "old.txt", "new.txt"], in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("v1\n", to: "old.txt", in: root)
+        try GitFixture.runGit(["add", "old.txt"], in: root)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add old"], in: root)
+        try GitFixture.runGit(["mv", "old.txt", "new.txt"], in: root)
         // `reset -N` unstages the rename while keeping `new.txt` intent-to-add,
         // so git reports a worktree-side rename instead of a staged one.
-        try runGit(["reset", "-N", "-q", "HEAD", "--"], in: root)
+        try GitFixture.runGit(["reset", "-N", "-q", "HEAD", "--"], in: root)
 
         let snapshot = await service.status(repoPath: root)
         let change = try #require(snapshot.unstaged.first { $0.path == "new.txt" })
@@ -256,7 +225,7 @@ import SupermuxKit
         let oldPath = (root as NSString).appendingPathComponent("old.txt")
         let newPath = (root as NSString).appendingPathComponent("new.txt")
         #expect(FileManager.default.fileExists(atPath: oldPath))
-        #expect(try read("old.txt", in: root) == "v1\n")
+        #expect(try GitFixture.read("old.txt", in: root) == "v1\n")
         #expect(FileManager.default.fileExists(atPath: newPath) == false)
     }
 
@@ -265,25 +234,25 @@ import SupermuxKit
     /// and ignored files are left untouched (no `-x` on `git clean`).
     @Test func discardAllResetsTrackedChangesAndRemovesUntrackedButKeepsIgnored() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
         // A tracked file with committed content we can assert is restored.
-        try write("v1\n", to: "tracked.txt", in: root)
+        try GitFixture.write("v1\n", to: "tracked.txt", in: root)
         // An ignored directory whose artifact must survive the discard.
-        try write("build/\n", to: ".gitignore", in: root)
-        try runGit(["add", "tracked.txt", ".gitignore"], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add tracked + gitignore"], in: root)
+        try GitFixture.write("build/\n", to: ".gitignore", in: root)
+        try GitFixture.runGit(["add", "tracked.txt", ".gitignore"], in: root)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add tracked + gitignore"], in: root)
         try FileManager.default.createDirectory(
             atPath: (root as NSString).appendingPathComponent("build"),
             withIntermediateDirectories: true
         )
-        try write("artifact\n", to: "build/out.o", in: root)
+        try GitFixture.write("artifact\n", to: "build/out.o", in: root)
 
         // A staged modification, a further unstaged modification on top of it,
         // and a brand-new untracked file.
-        try write("v2\n", to: "tracked.txt", in: root)
-        try runGit(["add", "tracked.txt"], in: root)
-        try write("v3\n", to: "tracked.txt", in: root)
-        try write("scratch\n", to: "scratch.txt", in: root)
+        try GitFixture.write("v2\n", to: "tracked.txt", in: root)
+        try GitFixture.runGit(["add", "tracked.txt"], in: root)
+        try GitFixture.write("v3\n", to: "tracked.txt", in: root)
+        try GitFixture.write("scratch\n", to: "scratch.txt", in: root)
 
         let dirty = await service.status(repoPath: root)
         #expect(dirty.totalChangeCount > 0)
@@ -292,7 +261,7 @@ import SupermuxKit
 
         let clean = await service.status(repoPath: root)
         #expect(clean.totalChangeCount == 0)
-        #expect(try read("tracked.txt", in: root) == "v1\n")
+        #expect(try GitFixture.read("tracked.txt", in: root) == "v1\n")
         #expect(FileManager.default.fileExists(
             atPath: (root as NSString).appendingPathComponent("scratch.txt")
         ) == false)
@@ -306,17 +275,17 @@ import SupermuxKit
 
     @Test func unpushedCommitsReturnsCommitsAheadOfUpstream() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
         let remote = try makeBareRemote()
-        defer { cleanUp(remote) }
-        try runGit(["remote", "add", "origin", remote], in: root)
-        try runGit(["push", "-u", "origin", "main"], in: root)
-        try write("a\n", to: "a.txt", in: root)
-        try runGit(["add", "a.txt"], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Local one"], in: root)
-        try write("b\n", to: "b.txt", in: root)
-        try runGit(["add", "b.txt"], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Local two"], in: root)
+        defer { GitFixture.cleanUp(remote) }
+        try GitFixture.runGit(["remote", "add", "origin", remote], in: root)
+        try GitFixture.runGit(["push", "-u", "origin", "main"], in: root)
+        try GitFixture.write("a\n", to: "a.txt", in: root)
+        try GitFixture.runGit(["add", "a.txt"], in: root)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Local one"], in: root)
+        try GitFixture.write("b\n", to: "b.txt", in: root)
+        try GitFixture.runGit(["add", "b.txt"], in: root)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Local two"], in: root)
 
         let commits = await service.unpushedCommits(repoPath: root, hasUpstream: true, limit: 10)
 
@@ -329,11 +298,11 @@ import SupermuxKit
 
     @Test func unpushedCommitsAfterPushReturnsNone() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
         let remote = try makeBareRemote()
-        defer { cleanUp(remote) }
-        try runGit(["remote", "add", "origin", remote], in: root)
-        try runGit(["push", "-u", "origin", "main"], in: root)
+        defer { GitFixture.cleanUp(remote) }
+        try GitFixture.runGit(["remote", "add", "origin", remote], in: root)
+        try GitFixture.runGit(["push", "-u", "origin", "main"], in: root)
 
         let commits = await service.unpushedCommits(repoPath: root, hasUpstream: true, limit: 10)
 
@@ -342,15 +311,15 @@ import SupermuxKit
 
     @Test func unpushedCommitsHonorsLimit() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
         let remote = try makeBareRemote()
-        defer { cleanUp(remote) }
-        try runGit(["remote", "add", "origin", remote], in: root)
-        try runGit(["push", "-u", "origin", "main"], in: root)
+        defer { GitFixture.cleanUp(remote) }
+        try GitFixture.runGit(["remote", "add", "origin", remote], in: root)
+        try GitFixture.runGit(["push", "-u", "origin", "main"], in: root)
         for index in 1...3 {
-            try write("\(index)\n", to: "f\(index).txt", in: root)
-            try runGit(["add", "f\(index).txt"], in: root)
-            try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Commit \(index)"], in: root)
+            try GitFixture.write("\(index)\n", to: "f\(index).txt", in: root)
+            try GitFixture.runGit(["add", "f\(index).txt"], in: root)
+            try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Commit \(index)"], in: root)
         }
 
         let commits = await service.unpushedCommits(repoPath: root, hasUpstream: true, limit: 2)
@@ -362,10 +331,10 @@ import SupermuxKit
 
     @Test func unpushedCommitsWithoutUpstreamReturnsLocalCommits() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("a\n", to: "a.txt", in: root)
-        try runGit(["add", "a.txt"], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Second"], in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("a\n", to: "a.txt", in: root)
+        try GitFixture.runGit(["add", "a.txt"], in: root)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Second"], in: root)
 
         // No remote at all → nothing is pushed → both commits are unpushed.
         let commits = await service.unpushedCommits(repoPath: root, hasUpstream: false, limit: 10)
@@ -377,7 +346,7 @@ import SupermuxKit
 
     @Test func unpushedCommitsOnPlainDirectoryReturnsNone() async throws {
         let dir = try makeTempDirectory()
-        defer { cleanUp(dir) }
+        defer { GitFixture.cleanUp(dir) }
 
         let commits = await service.unpushedCommits(repoPath: dir, hasUpstream: false, limit: 10)
 
@@ -388,8 +357,8 @@ import SupermuxKit
 
     @Test func stashTrackedChangeClearsWorkingTreeAndPopRestoresIt() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("stashed\n", to: "README.md", in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("stashed\n", to: "README.md", in: root)
 
         let beforeStash = await service.status(repoPath: root)
         #expect(beforeStash.hasTrackedChanges)
@@ -402,21 +371,21 @@ import SupermuxKit
         #expect(afterStash.stashEntryCount == 1)
         // The committed content is back in the working tree while the edit waits
         // on the stash.
-        #expect(try read("README.md", in: root) == "fixture\n")
+        #expect(try GitFixture.read("README.md", in: root) == "fixture\n")
 
         try await service.popStash(repoPath: root)
 
         let afterPop = await service.status(repoPath: root)
         #expect(afterPop.stashEntryCount == 0)
         #expect(afterPop.unstaged.contains { $0.path == "README.md" })
-        #expect(try read("README.md", in: root) == "stashed\n")
+        #expect(try GitFixture.read("README.md", in: root) == "stashed\n")
     }
 
     @Test func stashWithoutUntrackedLeavesUntrackedFilesOnDisk() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("edit\n", to: "README.md", in: root)
-        try write("scratch\n", to: "scratch.txt", in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("edit\n", to: "README.md", in: root)
+        try GitFixture.write("scratch\n", to: "scratch.txt", in: root)
 
         try await service.stash(repoPath: root, includeUntracked: false)
 
@@ -431,8 +400,8 @@ import SupermuxKit
 
     @Test func stashIncludeUntrackedRemovesUntrackedFileAndPopRestoresIt() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
-        try write("scratch\n", to: "scratch.txt", in: root)
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("scratch\n", to: "scratch.txt", in: root)
 
         try await service.stash(repoPath: root, includeUntracked: true)
 
@@ -452,13 +421,13 @@ import SupermuxKit
 
     @Test func statusReportsStashEntryCount() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
 
         #expect(await service.status(repoPath: root).stashEntryCount == 0)
 
-        try write("one\n", to: "README.md", in: root)
+        try GitFixture.write("one\n", to: "README.md", in: root)
         try await service.stash(repoPath: root, includeUntracked: false)
-        try write("two\n", to: "README.md", in: root)
+        try GitFixture.write("two\n", to: "README.md", in: root)
         try await service.stash(repoPath: root, includeUntracked: false)
 
         #expect(await service.status(repoPath: root).stashEntryCount == 2)
@@ -466,7 +435,7 @@ import SupermuxKit
 
     @Test func popStashWithoutStashThrows() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
 
         await #expect(throws: SupermuxGitError.self) {
             try await service.popStash(repoPath: root)
@@ -477,18 +446,18 @@ import SupermuxKit
 
     @Test func incomingCommitsReturnsCommitsBehindUpstream() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
         let remote = try makeBareRemote()
-        defer { cleanUp(remote) }
-        try runGit(["remote", "add", "origin", remote], in: root)
-        try runGit(["push", "-u", "origin", "main"], in: root)
+        defer { GitFixture.cleanUp(remote) }
+        try GitFixture.runGit(["remote", "add", "origin", remote], in: root)
+        try GitFixture.runGit(["push", "-u", "origin", "main"], in: root)
         // Advance the branch and push so origin/main carries the commit...
-        try write("a\n", to: "a.txt", in: root)
-        try runGit(["add", "a.txt"], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Remote one"], in: root)
-        try runGit(["push"], in: root)
+        try GitFixture.write("a\n", to: "a.txt", in: root)
+        try GitFixture.runGit(["add", "a.txt"], in: root)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Remote one"], in: root)
+        try GitFixture.runGit(["push"], in: root)
         // ...then move local HEAD back, making that commit "incoming" again.
-        try runGit(["reset", "--hard", "HEAD~1"], in: root)
+        try GitFixture.runGit(["reset", "--hard", "HEAD~1"], in: root)
 
         let snapshot = await service.status(repoPath: root)
         #expect(snapshot.behind == 1)
@@ -501,18 +470,18 @@ import SupermuxKit
 
     @Test func incomingCommitsHonorsLimit() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
         let remote = try makeBareRemote()
-        defer { cleanUp(remote) }
-        try runGit(["remote", "add", "origin", remote], in: root)
-        try runGit(["push", "-u", "origin", "main"], in: root)
+        defer { GitFixture.cleanUp(remote) }
+        try GitFixture.runGit(["remote", "add", "origin", remote], in: root)
+        try GitFixture.runGit(["push", "-u", "origin", "main"], in: root)
         for index in 1...3 {
-            try write("\(index)\n", to: "f\(index).txt", in: root)
-            try runGit(["add", "f\(index).txt"], in: root)
-            try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Commit \(index)"], in: root)
+            try GitFixture.write("\(index)\n", to: "f\(index).txt", in: root)
+            try GitFixture.runGit(["add", "f\(index).txt"], in: root)
+            try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Commit \(index)"], in: root)
         }
-        try runGit(["push"], in: root)
-        try runGit(["reset", "--hard", "HEAD~3"], in: root)
+        try GitFixture.runGit(["push"], in: root)
+        try GitFixture.runGit(["reset", "--hard", "HEAD~3"], in: root)
 
         let commits = await service.incomingCommits(repoPath: root, limit: 2)
 
@@ -523,7 +492,7 @@ import SupermuxKit
 
     @Test func incomingCommitsWithoutUpstreamReturnsNone() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
 
         // No upstream → nothing is pullable, and there is no remotes fallback.
         let commits = await service.incomingCommits(repoPath: root, limit: 10)
@@ -533,21 +502,21 @@ import SupermuxKit
 
     @Test func unpushedCountWithoutUpstreamCountsLocalThenZeroAfterPush() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
 
         // No remote yet → every local commit is unpushed.
         #expect(await service.unpushedCountWithoutUpstream(repoPath: root) == 1)
-        try write("a\n", to: "a.txt", in: root)
-        try runGit(["add", "a.txt"], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Second"], in: root)
+        try GitFixture.write("a\n", to: "a.txt", in: root)
+        try GitFixture.runGit(["add", "a.txt"], in: root)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Second"], in: root)
         #expect(await service.unpushedCountWithoutUpstream(repoPath: root) == 2)
 
         // After pushing, those commits live on a remote-tracking branch, so the
         // "--not --remotes" count drops to zero.
         let remote = try makeBareRemote()
-        defer { cleanUp(remote) }
-        try runGit(["remote", "add", "origin", remote], in: root)
-        try runGit(["push", "-u", "origin", "main"], in: root)
+        defer { GitFixture.cleanUp(remote) }
+        try GitFixture.runGit(["remote", "add", "origin", remote], in: root)
+        try GitFixture.runGit(["push", "-u", "origin", "main"], in: root)
 
         #expect(await service.unpushedCountWithoutUpstream(repoPath: root) == 0)
     }
@@ -558,24 +527,24 @@ import SupermuxKit
     /// becomes visible as "behind" / incoming without the user pulling.
     @Test func fetchUpdatesBehindFromRemote() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
         let remote = try makeBareRemote()
-        defer { cleanUp(remote) }
-        try runGit(["remote", "add", "origin", remote], in: root)
-        try runGit(["push", "-u", "origin", "main"], in: root)
+        defer { GitFixture.cleanUp(remote) }
+        try GitFixture.runGit(["remote", "add", "origin", remote], in: root)
+        try GitFixture.runGit(["push", "-u", "origin", "main"], in: root)
 
         // Simulate someone else pushing: clone, commit, push.
         let otherParent = try makeTempDirectory()
-        defer { cleanUp(otherParent) }
-        try runGit(["clone", remote, "clone"], in: otherParent)
+        defer { GitFixture.cleanUp(otherParent) }
+        try GitFixture.runGit(["clone", remote, "clone"], in: otherParent)
         let other = (otherParent as NSString).appendingPathComponent("clone")
-        try runGit(["config", "--local", "user.email", "other@supermux.invalid"], in: other)
-        try runGit(["config", "--local", "user.name", "Other Dev"], in: other)
-        try runGit(["config", "--local", "commit.gpgsign", "false"], in: other)
-        try write("elsewhere\n", to: "elsewhere.txt", in: other)
-        try runGit(["add", "elsewhere.txt"], in: other)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Pushed elsewhere"], in: other)
-        try runGit(["push"], in: other)
+        try GitFixture.runGit(["config", "--local", "user.email", "other@supermux.invalid"], in: other)
+        try GitFixture.runGit(["config", "--local", "user.name", "Other Dev"], in: other)
+        try GitFixture.runGit(["config", "--local", "commit.gpgsign", "false"], in: other)
+        try GitFixture.write("elsewhere\n", to: "elsewhere.txt", in: other)
+        try GitFixture.runGit(["add", "elsewhere.txt"], in: other)
+        try GitFixture.runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Pushed elsewhere"], in: other)
+        try GitFixture.runGit(["push"], in: other)
 
         // Root has not fetched yet, so it still believes it is up to date.
         let before = await service.status(repoPath: root)
@@ -592,13 +561,13 @@ import SupermuxKit
 
     @Test func fetchWithUnreachableRemoteReportsFailure() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
         // origin points at a path that is not a repository → fetch fails fast.
         // A local non-repo path never reaches an auth prompt; `fetch()`'s own
         // knobs (GIT_TERMINAL_PROMPT=0, GIT_ASKPASS=/usr/bin/false) are what keep
         // even a networked unreachable remote from stalling. The failure is
         // reported as `false` rather than thrown, so an auto-fetch degrades quietly.
-        try runGit(["remote", "add", "origin", "/nonexistent/supermux-not-a-repo"], in: root)
+        try GitFixture.runGit(["remote", "add", "origin", "/nonexistent/supermux-not-a-repo"], in: root)
 
         let didFetch = await service.fetch(repoPath: root)
 
@@ -609,7 +578,7 @@ import SupermuxKit
 
     @Test func commitWithNothingStagedThrows() async throws {
         let root = try makeFixtureRepo()
-        defer { cleanUp(root) }
+        defer { GitFixture.cleanUp(root) }
 
         await #expect(throws: SupermuxGitError.self) {
             try await service.commit(repoPath: root, message: "Empty commit attempt")
