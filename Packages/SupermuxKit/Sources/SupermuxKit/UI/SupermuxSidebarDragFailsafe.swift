@@ -29,16 +29,18 @@ public final class SupermuxSidebarDragFailsafe {
         self.dragState = dragState
         guard localMouseMonitor == nil else { return }
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-            MainActor.assumeIsolated { self?.scheduleClear() }
+            MainActor.assumeIsolated { self?.scheduleEnd(cancelled: false) }
             return event
         }
         // Global monitor catches a release outside the app's own windows.
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
-            MainActor.assumeIsolated { self?.scheduleClear() }
+            MainActor.assumeIsolated { self?.scheduleEnd(cancelled: false) }
         }
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == Self.escapeKeyCode {
-                MainActor.assumeIsolated { self?.scheduleClear() }
+                // Escape cancels: the previewed order is discarded, never
+                // committed (a release ends the drag and commits instead).
+                MainActor.assumeIsolated { self?.scheduleEnd(cancelled: true) }
             }
             return event
         }
@@ -55,13 +57,27 @@ public final class SupermuxSidebarDragFailsafe {
         dragState = nil
     }
 
-    /// Clears on the next runloop tick so a real drop — whose `performDrop` runs
-    /// as part of the same mouse-up and still needs the dragged id — completes
-    /// the reorder before the marker is cleared.
-    private func scheduleClear() {
-        let dragState = dragState
+    /// Ends the drag on the next runloop tick so a real drop — whose
+    /// `performDrop` runs as part of the same mouse-up and still needs the
+    /// dragged id — completes the reorder before the marker is cleared. A
+    /// release (`cancelled: false`) commits any previewed order; Escape
+    /// (`cancelled: true`) discards it.
+    private func scheduleEnd(cancelled: Bool) {
+        // Idle steady state (no drag in flight): bail before dispatching. These
+        // monitors see every left mouse-up app-wide (and, via the global
+        // monitor, in other apps) plus every Escape press; without this guard
+        // each such event would mutate the @Observable drag state and
+        // re-render every project/workspace row. The reads here run outside
+        // any SwiftUI observation scope, so they register no dependency.
+        guard let dragState, dragState.hasActiveDrag else { return }
         DispatchQueue.main.async {
-            MainActor.assumeIsolated { dragState?.clear() }
+            MainActor.assumeIsolated {
+                if cancelled {
+                    dragState.cancel()
+                } else {
+                    dragState.clear()
+                }
+            }
         }
     }
 }

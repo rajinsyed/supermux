@@ -54,6 +54,24 @@ public enum SupermuxWorkspaceSwitcherOrder {
         return result
     }
 
+    /// Remaps the highlighted index after the frozen order is rebuilt (a
+    /// workspace can close between session begin and overlay show, shifting
+    /// every later index down by one). The previously highlighted workspace
+    /// keeps the highlight by identity; when it no longer exists, the index is
+    /// clamped numerically as a fallback.
+    public static func remappedSelection(
+        previousIndex: Int,
+        previousOrder: [UUID],
+        newOrder: [UUID]
+    ) -> Int {
+        guard !newOrder.isEmpty else { return 0 }
+        if previousOrder.indices.contains(previousIndex),
+           let index = newOrder.firstIndex(of: previousOrder[previousIndex]) {
+            return index
+        }
+        return min(max(previousIndex, 0), newOrder.count - 1)
+    }
+
     /// The initially highlighted index when the switcher opens.
     ///
     /// Forward (Cmd+`): the previous workspace (index 1), mirroring the macOS app

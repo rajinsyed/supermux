@@ -3,6 +3,12 @@ import Foundation
 import SupermuxKit
 
 extension SupermuxWorkspaceSwitcherController {
+    /// Only the first this-many cards get an eager viewport read at build time.
+    /// Reading every workspace's terminal grid before presenting delays the
+    /// overlay with many workspaces; later cards start with the metadata
+    /// fallback and are filled lazily when the highlight lands on them.
+    private static let eagerPreviewLimit = 12
+
     /// Builds the frozen, value-typed cards for one hold session.
     ///
     /// Every open workspace in `order` becomes a card — including project-owned
@@ -17,7 +23,10 @@ extension SupermuxWorkspaceSwitcherController {
         defer {
             let elapsedMs = (CFAbsoluteTimeGetCurrent() - buildStart) * 1000
             if elapsedMs > 8 {
-                NSLog("[supermux switcher] buildItems read %d workspaces in %.1fms", order.count, elapsedMs)
+                NSLog(
+                    "[supermux switcher] buildItems built %d cards (%d eager previews) in %.1fms",
+                    order.count, min(order.count, Self.eagerPreviewLimit), elapsedMs
+                )
             }
         }
         #endif
@@ -28,7 +37,7 @@ extension SupermuxWorkspaceSwitcherController {
             manager.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
         )
 
-        return order.compactMap { id in
+        return order.enumerated().compactMap { index, id in
             guard let workspace = workspacesById[id] else { return nil }
 
             let resolvedProjectId: UUID? = projects.isEmpty ? nil : SupermuxComposition.workspaceAssociations.projectId(
@@ -54,7 +63,7 @@ extension SupermuxWorkspaceSwitcherController {
                 projectId: resolvedProjectId,
                 projectName: project?.name,
                 isCurrent: id == currentId,
-                previewLines: terminalPreviewLines(for: workspace),
+                previewLines: index < Self.eagerPreviewLimit ? terminalPreviewLines(for: workspace) : [],
                 project: project,
                 activity: SupermuxWorkspaceActivityResolver.activity(for: workspace)
             )
@@ -66,8 +75,9 @@ extension SupermuxWorkspaceSwitcherController {
     /// liveness and a surface can't be freed mid-call within a main-actor turn;
     /// background terminals aren't rendering, so there's no render-lock contention.
     /// Workspaces with no terminal panel (e.g. browser-only) and cold/blank
-    /// terminals yield `[]`.
-    private func terminalPreviewLines(for workspace: Workspace) -> [String] {
+    /// terminals yield `[]`. Internal so the controller can lazily fill cards
+    /// past the eager cap when they become selected.
+    func terminalPreviewLines(for workspace: Workspace) -> [String] {
         guard let surface = representativeTerminalSurface(for: workspace),
               let text = surface.visibleText() else {
             return []

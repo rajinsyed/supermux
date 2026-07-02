@@ -47,4 +47,32 @@ struct SupermuxWorkspaceSwitcherPreviewTests {
         #expect(result.count == 1)
         #expect(result[0].count == 240)
     }
+
+    @Test func withPreviewLinesReplacesOnlyThePreview() {
+        let item = SupermuxWorkspaceSwitcherItem(
+            id: UUID(),
+            title: "build",
+            subtitle: "main",
+            accentColorHex: "#FF0000",
+            iconSymbol: "hammer",
+            monogram: "B",
+            projectId: UUID(),
+            projectName: "cmux",
+            isCurrent: true,
+            previewLines: [],
+            activity: .working
+        )
+        let filled = item.withPreviewLines(["$ make", "ok"])
+        #expect(filled.previewLines == ["$ make", "ok"])
+        #expect(filled.id == item.id)
+        #expect(filled.title == item.title)
+        #expect(filled.subtitle == item.subtitle)
+        #expect(filled.accentColorHex == item.accentColorHex)
+        #expect(filled.iconSymbol == item.iconSymbol)
+        #expect(filled.monogram == item.monogram)
+        #expect(filled.projectId == item.projectId)
+        #expect(filled.projectName == item.projectName)
+        #expect(filled.isCurrent == item.isCurrent)
+        #expect(filled.activity == item.activity)
+    }
 }
