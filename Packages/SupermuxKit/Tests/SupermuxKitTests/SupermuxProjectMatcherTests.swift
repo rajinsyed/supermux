@@ -73,4 +73,51 @@ struct SupermuxProjectMatcherTests {
         #expect(matcher.projectOwningWorktree(for: nil, in: [p]) == nil)
         #expect(matcher.projectOwningWorktree(for: "", in: [p]) == nil)
     }
+
+    // MARK: - Symlinked project roots
+
+    /// Creates `base/physical/repo/.worktrees/feature` on disk plus a
+    /// `base/link → base/physical` symlink, so a project registered through
+    /// the link has a distinct physical spelling.
+    private func makeSymlinkedRepo() throws -> (base: URL, logicalRoot: String, physicalRoot: String) {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: base.appendingPathComponent("physical/repo/.worktrees/feature"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: base.appendingPathComponent("link"),
+            withDestinationURL: base.appendingPathComponent("physical")
+        )
+        return (
+            base,
+            base.appendingPathComponent("link/repo").path,
+            base.appendingPathComponent("physical/repo").path
+        )
+    }
+
+    @Test func matchesPhysicalPathForProjectRegisteredThroughASymlink() throws {
+        let (base, logicalRoot, physicalRoot) = try makeSymlinkedRepo()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let p = project(name: "a", root: logicalRoot)
+
+        // A shell/PWD probe can report the physical path even though the
+        // project was registered through the symlink; both spellings match.
+        #expect(matcher.project(for: physicalRoot, in: [p])?.id == p.id)
+        #expect(matcher.project(for: physicalRoot + "/src", in: [p])?.id == p.id)
+        #expect(matcher.projectOwningWorktree(for: physicalRoot + "/.worktrees/feature", in: [p])?.id == p.id)
+        // The logical spelling keeps matching too.
+        #expect(matcher.project(for: logicalRoot, in: [p])?.id == p.id)
+        #expect(matcher.projectOwningWorktree(for: logicalRoot + "/.worktrees/feature", in: [p])?.id == p.id)
+    }
+
+    @Test func resolvedDirectoryConvergesLogicalAndPhysicalSpellings() throws {
+        let (base, logicalRoot, physicalRoot) = try makeSymlinkedRepo()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let resolvedLogical = SupermuxProjectMatcher.resolvedDirectory(logicalRoot)
+        let resolvedPhysical = SupermuxProjectMatcher.resolvedDirectory(physicalRoot)
+        #expect(resolvedLogical == resolvedPhysical)
+        #expect(resolvedLogical != SupermuxProjectMatcher.normalizedDirectory(logicalRoot))
+    }
 }

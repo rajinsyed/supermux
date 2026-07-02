@@ -2,6 +2,30 @@ public import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+/// Deregisters this window's PR-badge client when the section's `@State` is
+/// torn down — a whole-window close skips `onDisappear` (see
+/// ``SupermuxChangesModel``'s `deinit` for the same pitfall), but `@State`
+/// storage is still destroyed, so this token's `deinit` is the backstop that
+/// keeps a closed window's paths out of the shared model's prune union and its
+/// entry out of the client registry. The section's `onDisappear` still calls
+/// ``SupermuxWorktreePullRequestModel/endTracking(client:)`` directly for
+/// prompt cleanup; the double call is harmless because `endTracking` treats
+/// unknown clients as a no-op.
+@MainActor final class SupermuxPullRequestClientToken {
+    /// This section's stable client identity with the (possibly shared) model.
+    let id = UUID()
+    /// The model to deregister from; wired once before the first refresh.
+    /// Weak: the token must never keep a host-shared model alive.
+    weak var model: SupermuxWorktreePullRequestModel?
+    deinit {
+        // deinit of a @MainActor class is not MainActor-isolated, so hop via a
+        // Task — capturing locals, never `self` (it is being destroyed).
+        let model = self.model
+        let id = self.id
+        Task { @MainActor in model?.endTracking(client: id) }
+    }
+}
+
 /// The sticky "Projects" section rendered at the top of the cmux sidebar.
 ///
 /// Shows every registered project with quick actions to open it locally or
@@ -9,20 +33,31 @@ import UniformTypeIdentifiers
 /// app supplies a ``SupermuxWorkspaceOpening`` so activating a row opens (or
 /// focuses) a real cmux workspace.
 public struct SupermuxProjectsSectionView: View {
-    @Bindable private var model: SupermuxProjectsModel
+    // Internal (not private) where the PR-probe extension in
+    // `SupermuxProjectsSectionView+PullRequests.swift` needs access.
+    @Bindable var model: SupermuxProjectsModel
     private let opener: any SupermuxWorkspaceOpening
-    private let openWorkspaces: [SupermuxOpenWorkspace]
+    let openWorkspaces: [SupermuxOpenWorkspace]
     private let onSelectWorkspace: (UUID) -> Void
     private let onCloseWorkspace: (UUID) -> Void
     private let onRenameWorkspace: (UUID, String) -> Void
     private let onReorderWorkspace: (UUID, UUID) -> Void
-    private let onOpenPullRequest: (URL) -> Void
+    private let onOpenPullRequest: (URL, UUID?) -> Void
+    /// Host-supplied gate/cadence for the worktree PR probe (mirrors cmux's
+    /// own PR polling settings). Defaults to enabled at 60s.
+    let pullRequestPolling: SupermuxPullRequestPollingPolicy
 
     /// Resolves pull requests for unopened worktrees (opened ones reuse cmux's
     /// own probe via ``SupermuxOpenWorkspace/pullRequest``). Owned here at the
     /// section level — never by a row — so rows receive immutable PR value
-    /// snapshots, preserving the sidebar snapshot boundary.
-    @State private var pullRequestModel = SupermuxWorktreePullRequestModel()
+    /// snapshots, preserving the sidebar snapshot boundary. May be a shared,
+    /// host-injected instance serving every window (see `init`).
+    @State var pullRequestModel: SupermuxWorktreePullRequestModel
+    /// This section's stable identity with the (possibly shared) PR model, so
+    /// one window's refresh never prunes badges another window still tracks.
+    /// A deinit token rather than a bare `UUID` so a whole-window close (which
+    /// skips `onDisappear`) still deregisters the client.
+    @State var pullRequestClientToken = SupermuxPullRequestClientToken()
 
     @State private var newWorktreeProject: SupermuxProject?
     @State private var editorProject: SupermuxProject?
@@ -34,12 +69,16 @@ public struct SupermuxProjectsSectionView: View {
     /// Clears `dragState` on mouse-up / Escape so an aborted drag (released off
     /// any row) doesn't leave a row stuck dimmed. Mirrors cmux's failsafe.
     @State private var dragFailsafe = SupermuxSidebarDragFailsafe()
-    /// Resolves and caches each project's auto-detected logo. Owned here, above
-    /// the project list, so rows receive only an immutable `NSImage?` snapshot.
-    @State private var iconStore = SupermuxProjectIconStore()
+    /// Resolves and caches each project's auto-detected logo. Owned above the
+    /// project list so rows receive only an immutable `NSImage?` snapshot. May
+    /// be a shared, host-injected instance (see `init`) so every window — and
+    /// the workspace switcher — reuses one decoded-logo cache.
+    @State private var iconStore: SupermuxProjectIconStore
     /// Sidebar font scale (cmux's `sidebar-font-size`); scales the section
-    /// header alongside the project rows. `1` at the default size.
-    @Environment(\.supermuxSidebarFontScale) private var fontScale
+    /// header alongside the project rows. `1` at the default size. Internal
+    /// (not private) for the header extension in
+    /// `SupermuxProjectsSectionView+Header.swift`.
+    @Environment(\.supermuxSidebarFontScale) var fontScale
 
     /// Creates the section.
     /// - Parameters:
@@ -53,8 +92,24 @@ public struct SupermuxProjectsSectionView: View {
     ///     newTitle)` (an empty title clears it, reverting to the process title).
     ///   - onReorderWorkspace: Reorders a nested workspace `(draggedId,
     ///     targetId)` within its project (wired to the host's tab order).
-    ///   - onOpenPullRequest: Opens a PR badge's URL. Defaults to the system
-    ///     browser; the host overrides it to honor cmux's PR-link routing.
+    ///   - onOpenPullRequest: Opens a PR badge's URL; the second argument is
+    ///     the open workspace the badge belongs to (`nil` for an unopened
+    ///     worktree's badge). Defaults to the system browser; the host
+    ///     overrides it to honor cmux's PR-link routing and open the PR in the
+    ///     badge's own workspace.
+    ///   - pullRequestPolling: Gate + cadence for the worktree PR probe; the
+    ///     host derives it from cmux's PR polling settings. Defaults to the
+    ///     standalone behavior (enabled, 60s).
+    ///   - pullRequestModel: A host-owned PR model shared across windows so one
+    ///     poll pass and one repo cache serve every sidebar. Pass a **stable**
+    ///     instance (it seeds `@State` on first mount). `nil` (the default)
+    ///     keeps a private per-section model.
+    ///   - iconStore: A host-owned logo cache shared across windows (and the
+    ///     workspace switcher). Same stable-instance contract as
+    ///     `pullRequestModel`; `nil` keeps a private per-section store. Note
+    ///     the store's `refresh(projects:)` prunes entries missing from the
+    ///     passed list, so shared callers must always pass the full project
+    ///     list (this section does).
     public init(
         model: SupermuxProjectsModel,
         opener: any SupermuxWorkspaceOpening,
@@ -63,7 +118,10 @@ public struct SupermuxProjectsSectionView: View {
         onCloseWorkspace: @escaping (UUID) -> Void = { _ in },
         onRenameWorkspace: @escaping (UUID, String) -> Void = { _, _ in },
         onReorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in },
-        onOpenPullRequest: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
+        onOpenPullRequest: @escaping (URL, UUID?) -> Void = { url, _ in _ = NSWorkspace.shared.open(url) },
+        pullRequestPolling: SupermuxPullRequestPollingPolicy = SupermuxPullRequestPollingPolicy(),
+        pullRequestModel: SupermuxWorktreePullRequestModel? = nil,
+        iconStore: SupermuxProjectIconStore? = nil
     ) {
         self.model = model
         self.opener = opener
@@ -73,14 +131,30 @@ public struct SupermuxProjectsSectionView: View {
         self.onRenameWorkspace = onRenameWorkspace
         self.onReorderWorkspace = onReorderWorkspace
         self.onOpenPullRequest = onOpenPullRequest
+        self.pullRequestPolling = pullRequestPolling
+        _pullRequestModel = State(initialValue: pullRequestModel ?? SupermuxWorktreePullRequestModel())
+        _iconStore = State(initialValue: iconStore ?? SupermuxProjectIconStore())
     }
 
     public var body: some View {
         let grouped = workspacesByProject()
+        let projects = displayProjects
         VStack(alignment: .leading, spacing: 2) {
             header
+            // Persistence problems are otherwise invisible: a sticky "projects
+            // file was reset (backup at …)" notice, and the latest save error
+            // (cleared automatically by the next successful save). Independent
+            // `if`s on purpose: the reset notice is session-sticky, so an
+            // `else if` would hide every later save error in exactly the
+            // session where the user is rebuilding the list.
+            if let notice = model.loadFailureNotice {
+                storageNotice(notice)
+            }
+            if let error = model.lastError {
+                storageNotice(error)
+            }
             if !model.isSectionCollapsed {
-                ForEach(Array(model.projects.enumerated()), id: \.element.id) { index, project in
+                ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
                     SupermuxProjectRowView(
                         project: project,
                         detectedIcon: iconStore.image(for: project.id),
@@ -90,7 +164,7 @@ public struct SupermuxProjectsSectionView: View {
                         isExpanded: model.expandedProjectIds.contains(project.id),
                         actions: rowActions(for: project),
                         canMoveUp: index > 0,
-                        canMoveDown: index < model.projects.count - 1,
+                        canMoveDown: index < projects.count - 1,
                         beginDrag: {
                             dragState.draggingProjectId = project.id
                             return NSItemProvider(object: project.id.uuidString as NSString)
@@ -98,11 +172,19 @@ public struct SupermuxProjectsSectionView: View {
                         dropDelegate: SupermuxProjectDropDelegate(
                             targetProjectId: project.id,
                             draggingProjectId: $dragState.draggingProjectId,
+                            // Hover-moves only update the in-memory preview; the
+                            // model is reordered (and the projects file written)
+                            // once, when the drag ends.
                             move: { dragged, target in
                                 withAnimation(.easeInOut(duration: 0.18)) {
-                                    model.moveProject(dragged, over: target)
+                                    dragState.previewProjectMove(
+                                        dragged: dragged,
+                                        over: target,
+                                        baseOrder: model.projects.map(\.id)
+                                    )
                                 }
-                            }
+                            },
+                            end: { dragState.clear() }
                         ),
                         draggingProjectId: $dragState.draggingProjectId,
                         draggingWorkspaceId: $dragState.draggingWorkspaceId
@@ -115,34 +197,54 @@ public struct SupermuxProjectsSectionView: View {
         }
         .padding(.horizontal, 6)
         .padding(.top, 6)
-        // A drag released off any row (an abort) never reaches a `performDrop`,
-        // so without this the source row would stay dimmed. The failsafe clears
-        // the marker on the next mouse-up / Escape; the deferred clear lets a
-        // real drop's `performDrop` run (and reorder) first.
-        .onAppear { dragFailsafe.start(clearing: dragState) }
-        .onDisappear { dragFailsafe.stop() }
+        // A drag released off any row never reaches a `performDrop`, so without
+        // this the source row would stay dimmed. The failsafe ends the drag on
+        // the next mouse-up or Escape; the deferred end lets a real drop's
+        // `performDrop` run first. A release commits the previewed project
+        // order — even off-row, the order the user last saw persists (once per
+        // drag, not per hovered row) — while Escape cancels and discards it.
+        .onAppear {
+            dragFailsafe.start(clearing: dragState)
+            // Commits a finished drag's previewed order to the model as a
+            // single `moveProject` (one reorder + one persist per drag).
+            // Captures ONLY the class-reference model, never the view struct:
+            // a closure holding the view would also hold its `_dragState`
+            // State location, closing a dragState → closure → view → dragState
+            // retain cycle that leaks the section's snapshots on teardown.
+            dragState.commitProjectOrder = { [model] preview in
+                guard let target = SupermuxSidebarDragState.commitTarget(
+                    dragged: preview.draggedProjectId,
+                    previewOrder: preview.order,
+                    currentOrder: model.projects.map(\.id)
+                ) else { return }
+                model.moveProject(preview.draggedProjectId, over: target)
+            }
+        }
+        .onDisappear {
+            dragFailsafe.stop()
+            dragState.commitProjectOrder = nil
+            // The (possibly shared) PR model prunes badges to the union of all
+            // clients' tracked paths, so a torn-down section must deregister —
+            // otherwise its paths stay in the union forever and the client
+            // registry grows across window open/close cycles. Kept alongside
+            // the token's deinit backstop for prompt cleanup; the eventual
+            // double endTracking is a no-op for the already-removed client.
+            pullRequestModel.endTracking(client: pullRequestClientToken.id)
+        }
         .task { await model.loadIfNeeded() }
         // Re-resolve logos whenever the set of projects (or their roots) changes.
-        // The store skips projects whose root is unchanged, so this is cheap.
+        // The store skips projects whose resolved icon file is unchanged, so
+        // this is cheap.
         .task(id: iconResolutionToken) {
             await iconStore.refresh(projects: model.projects)
         }
         // Probe pull requests for the unopened worktrees currently shown (under
-        // expanded projects). Re-runs when that set changes, then re-polls on a
-        // slow interval to catch open→merged/closed transitions; opened worktrees
-        // reuse cmux's own probe and aren't fetched here.
+        // expanded projects, section not collapsed, polling enabled). Re-runs
+        // when that set changes, then re-polls on the policy interval to catch
+        // open→merged/closed transitions; opened worktrees reuse cmux's own
+        // probe and aren't fetched here.
         .task(id: worktreePullRequestProbeToken) {
-            let targets = worktreePullRequestTargets
-            guard !targets.isEmpty else {
-                await pullRequestModel.refresh(targets: [], allowCache: false)
-                return
-            }
-            var allowCache = false
-            while !Task.isCancelled {
-                await pullRequestModel.refresh(targets: targets, allowCache: allowCache)
-                allowCache = true
-                try? await Task.sleep(for: .seconds(60))
-            }
+            await runWorktreePullRequestProbe()
         }
         .sheet(item: $newWorktreeProject) { project in
             SupermuxNewWorktreeSheet(model: model, project: project) { worktree, workspaceName in
@@ -155,51 +257,9 @@ public struct SupermuxProjectsSectionView: View {
     }
 
     // MARK: - Pieces
-
-    private var header: some View {
-        HStack(spacing: 4) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    model.isSectionCollapsed.toggle()
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: model.isSectionCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 8 * fontScale, weight: .bold))
-                        .foregroundStyle(.secondary)
-                    Text(String(localized: "supermux.projects.header", defaultValue: "Projects"))
-                        .font(.system(size: 10.5 * fontScale, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                }
-            }
-            .buttonStyle(.plain)
-            Spacer(minLength: 0)
-            Button {
-                pickAndAddProject()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 10 * fontScale, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(String(localized: "supermux.projects.add.help", defaultValue: "Add a project folder"))
-            .accessibilityLabel(String(localized: "supermux.projects.add.help", defaultValue: "Add a project folder"))
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-    }
-
-    private var emptyHint: some View {
-        Text(String(
-            localized: "supermux.projects.empty",
-            defaultValue: "Add a repo to pin it here"
-        ))
-        .font(.system(size: 10.5 * fontScale))
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-    }
+    //
+    // The header, empty hint, storage notice, and add-project picker live in
+    // `SupermuxProjectsSectionView+Header.swift` (Swift file-length budget).
 
     /// A value that changes whenever a project is added, removed, moved, or has
     /// its icon source edited, so the icon-resolution task re-runs only when an
@@ -208,46 +268,6 @@ public struct SupermuxProjectsSectionView: View {
         model.projects
             .map { "\($0.id.uuidString):\($0.rootPath):\($0.customIconPath ?? "")" }
             .joined(separator: "|")
-    }
-
-    /// The unopened worktrees (under expanded projects) to probe for pull
-    /// requests. Opened worktrees nest as workspace rows and reuse cmux's own
-    /// probe, so they are excluded here.
-    private var worktreePullRequestTargets: [SupermuxPullRequestTarget] {
-        let openDirectories = Set(openWorkspaces.map {
-            ($0.directory as NSString).standardizingPath
-        })
-        var targets: [SupermuxPullRequestTarget] = []
-        for project in model.projects where model.expandedProjectIds.contains(project.id) {
-            for worktree in model.worktreesByProjectId[project.id] ?? [] {
-                guard let branch = worktree.branch else { continue }
-                if openDirectories.contains((worktree.path as NSString).standardizingPath) { continue }
-                targets.append(SupermuxPullRequestTarget(path: worktree.path, branch: branch))
-            }
-        }
-        return targets
-    }
-
-    /// A value that changes whenever the set of unopened worktrees to probe
-    /// changes (expand/collapse, worktree created/deleted, opened/closed), so the
-    /// probe task restarts with the current targets.
-    private var worktreePullRequestProbeToken: String {
-        worktreePullRequestTargets
-            .map { "\($0.path)\u{1}\($0.branch)" }
-            .sorted()
-            .joined(separator: "\u{2}")
-    }
-
-    /// This project's resolved unopened-worktree pull requests, keyed by worktree
-    /// path — the immutable value snapshot handed to its row.
-    private func worktreePullRequests(for projectId: UUID) -> [String: SupermuxPullRequest] {
-        let resolved = pullRequestModel.pullRequestsByWorktreePath
-        guard !resolved.isEmpty, let worktrees = model.worktreesByProjectId[projectId] else { return [:] }
-        var result: [String: SupermuxPullRequest] = [:]
-        for worktree in worktrees where resolved[worktree.path] != nil {
-            result[worktree.path] = resolved[worktree.path]
-        }
-        return result
     }
 
     // MARK: - Actions
@@ -282,6 +302,27 @@ public struct SupermuxProjectsSectionView: View {
             reorderWorkspace: onReorderWorkspace,
             openPullRequest: onOpenPullRequest
         )
+    }
+
+    /// The projects in display order: the model's order, or the transient
+    /// drag-preview order while a reorder drag is in flight (the model is
+    /// reordered and persisted only once, at drag end). Nothing here reads the
+    /// dragged-id markers, so a drag *start* still never invalidates this body.
+    private var displayProjects: [SupermuxProject] {
+        guard let preview = dragState.projectOrderPreview else { return model.projects }
+        // `uniquingKeysWith`, not `uniqueKeysWithValues`: the projects file is
+        // user-editable JSON and nothing dedupes ids on load, so a hand-edited
+        // duplicate must degrade to ForEach identity warnings — as it does
+        // outside a drag — never to a fatalError mid-drag.
+        let byId = Dictionary(model.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var ordered = preview.order.compactMap { byId[$0] }
+        if ordered.count != model.projects.count {
+            // Projects added mid-drag still render (appended); removed ids
+            // simply drop out of the preview.
+            let placed = Set(preview.order)
+            ordered.append(contentsOf: model.projects.filter { !placed.contains($0.id) })
+        }
+        return ordered
     }
 
     /// Moves a project one slot up (`delta == -1`) or down (`delta == 1`) by
@@ -397,25 +438,6 @@ public struct SupermuxProjectsSectionView: View {
             try await model.removeWorktree(worktree, projectId: project.id, force: true, deleteBranch: deleteBranch)
         } catch {
             presentError(error)
-        }
-    }
-
-    private func pickAndAddProject() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = true
-        panel.prompt = String(localized: "supermux.projects.add.prompt", defaultValue: "Add Project")
-        panel.message = String(
-            localized: "supermux.projects.add.message",
-            defaultValue: "Choose a repository or folder to pin as a project"
-        )
-        guard panel.runModal() == .OK else { return }
-        let paths = panel.urls.map(\.path)
-        Task {
-            for path in paths {
-                await model.addProject(rootPath: path)
-            }
         }
     }
 

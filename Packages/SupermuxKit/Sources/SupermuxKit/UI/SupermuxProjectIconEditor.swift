@@ -168,15 +168,26 @@ struct SupermuxProjectIconEditor: View {
         customIcon = nil
     }
 
-    /// Loads both previews: the auto-detected repository logo (probed off the
-    /// main actor) and the custom image, if a path is set. `NSImage` is built on
-    /// the main actor so no non-`Sendable` image crosses an actor boundary.
+    /// Loads both previews: the auto-detected repository logo and the custom
+    /// image, if a path is set. The probe *and* the file reads run off the main
+    /// actor (only `Sendable` `Data`/`URL` cross back); the non-`Sendable`
+    /// `NSImage` is decoded on the main actor.
     private func refreshPreviews() async {
         let root = rootPath
+        let customPath = customIconPath?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolver = SupermuxProjectIconResolver()
-        let detectedURL = await Task.detached { resolver.resolve(rootPath: root) }.value
-        if let detectedURL {
-            detectedIcon = NSImage(contentsOf: detectedURL)
+        let loaded = await Task.detached { () -> (detectedURL: URL?, detectedData: Data?, customURL: URL?, customData: Data?) in
+            let detectedURL = resolver.resolve(rootPath: root)
+            let detectedData = detectedURL.flatMap { try? Data(contentsOf: $0) }
+            var customURL: URL?
+            if let customPath, !customPath.isEmpty {
+                customURL = URL(fileURLWithPath: (customPath as NSString).expandingTildeInPath)
+            }
+            let customData = customURL.flatMap { try? Data(contentsOf: $0) }
+            return (detectedURL, detectedData, customURL, customData)
+        }.value
+        if let detectedURL = loaded.detectedURL {
+            detectedIcon = Self.decode(loaded.detectedData, fallbackURL: detectedURL)
             let expandedRoot = (root as NSString).expandingTildeInPath
             detectedRelativePath = detectedURL.path.hasPrefix(expandedRoot + "/")
                 ? String(detectedURL.path.dropFirst(expandedRoot.count + 1))
@@ -185,10 +196,13 @@ struct SupermuxProjectIconEditor: View {
             detectedIcon = nil
             detectedRelativePath = nil
         }
-        if let path = customIconPath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
-            customIcon = NSImage(contentsOfFile: (path as NSString).expandingTildeInPath)
-        } else {
-            customIcon = nil
-        }
+        customIcon = Self.decode(loaded.customData, fallbackURL: loaded.customURL)
+    }
+
+    /// Decodes icon bytes into an image; rare formats whose rep needs the file
+    /// URL (rather than sniffing the data) fall back to a direct file load.
+    private static func decode(_ data: Data?, fallbackURL: URL?) -> NSImage? {
+        if let data, let image = NSImage(data: data) { return image }
+        return fallbackURL.flatMap { NSImage(contentsOf: $0) }
     }
 }

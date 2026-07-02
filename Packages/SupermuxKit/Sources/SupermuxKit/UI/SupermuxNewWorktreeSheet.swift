@@ -20,7 +20,6 @@ public struct SupermuxNewWorktreeSheet: View {
     @FocusState private var focusedField: Field?
     @State private var workspaceName = ""
     @State private var branchInput = ""
-    @State private var isCreating = false
     @State private var errorMessage: String?
     /// Transient progress text shown while AI names the branch / git creates it.
     @State private var statusMessage: String?
@@ -28,8 +27,21 @@ public struct SupermuxNewWorktreeSheet: View {
     /// appear for the hint; re-checked freshly at submit time).
     @State private var aiNamingConfigured = false
     /// The in-flight create work, retained so Cancel / dismiss can abort it
-    /// before it (slowly) names a branch and creates a worktree.
+    /// while it is still (slowly) naming a branch — before git runs.
     @State private var createTask: Task<Void, Never>?
+    /// Where the create flow currently is; drives which controls are enabled.
+    private enum CreatePhase {
+        /// No create in flight.
+        case idle
+        /// The (still cancellable) AI branch-naming step is running.
+        case naming
+        /// `git worktree add` has started. Cancelling a task cannot stop a
+        /// running git process, so in this phase the Cancel button is disabled:
+        /// creation completes (it takes seconds) and is delivered via `onCreated`
+        /// rather than silently leaving an orphaned worktree behind.
+        case runningGit
+    }
+    @State private var phase: CreatePhase = .idle
 
     private enum Field { case workspace, branch }
 
@@ -75,8 +87,11 @@ public struct SupermuxNewWorktreeSheet: View {
             focusedField = .workspace
             Task { aiNamingConfigured = await model.isAIBranchNamingConfigured() }
         }
-        // If the sheet goes away while a (possibly slow, AI-naming) create is in
+        // If the sheet goes away while the (possibly slow) AI-naming phase is in
         // flight, abort it so no worktree is created behind the user's back.
+        // Once git itself is running, cancellation can't stop it — the Cancel
+        // button is disabled for that window, so this only covers programmatic
+        // dismissal.
         .onDisappear { createTask?.cancel() }
     }
 
@@ -101,7 +116,7 @@ public struct SupermuxNewWorktreeSheet: View {
             .textFieldStyle(.roundedBorder)
             .focused($focusedField, equals: .workspace)
             .onSubmit(create)
-            .disabled(isCreating)
+            .disabled(phase != .idle)
         }
     }
 
@@ -117,7 +132,7 @@ public struct SupermuxNewWorktreeSheet: View {
             .textFieldStyle(.roundedBorder)
             .focused($focusedField, equals: .branch)
             .onSubmit(create)
-            .disabled(isCreating)
+            .disabled(phase != .idle)
             Text(branchHint)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -132,9 +147,13 @@ public struct SupermuxNewWorktreeSheet: View {
                 dismiss()
             }
             .keyboardShortcut(.cancelAction)
+            // Cancelling can genuinely abort the AI-naming phase, but not a git
+            // process already creating the worktree — so it is disabled (rather
+            // than pretending, then discarding a worktree that was created).
+            .disabled(phase == .runningGit)
             Button(action: create) {
                 HStack(spacing: 5) {
-                    if isCreating {
+                    if phase != .idle {
                         ProgressView()
                             .controlSize(.small)
                     }
@@ -142,15 +161,15 @@ public struct SupermuxNewWorktreeSheet: View {
                 }
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(isCreating)
+            .disabled(phase != .idle)
         }
     }
 
     // MARK: - State
 
-    /// The branch field is optional, so creation is only blocked while a git
-    /// command is already in flight.
-    private var canCreate: Bool { !isCreating }
+    /// The branch field is optional, so creation is only blocked while a
+    /// create is already in flight.
+    private var canCreate: Bool { phase == .idle }
 
     /// Subtitle under the branch field: a sanitized preview when the typed name
     /// differs from what git will use, or a note that a name will be generated.
@@ -183,7 +202,7 @@ public struct SupermuxNewWorktreeSheet: View {
 
     private func create() {
         guard canCreate else { return }
-        isCreating = true
+        phase = .naming
         errorMessage = nil
         let trimmedName = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBranch = branchInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,21 +226,29 @@ public struct SupermuxNewWorktreeSheet: View {
             // The user may have cancelled/dismissed during the AI await; if so,
             // do not create a worktree behind their back.
             if Task.isCancelled {
-                isCreating = false
+                phase = .idle
                 return
             }
+            // Point of no return: Cancel is disabled from here (no await sits
+            // between the check above and this write, so a cancel can't slip
+            // in), and the created worktree is always delivered via onCreated.
+            phase = .runningGit
             do {
                 let worktree = try await model.createWorktree(
                     projectId: project.id,
                     branchName: branchToUse,
                     baseBranch: nil
                 )
+                // Cancellation here can only come from programmatic sheet
+                // teardown (Cancel is disabled). The worktree exists either
+                // way; it stays on disk and is listed under the project's
+                // disclosure, just not opened as a workspace.
                 guard !Task.isCancelled else { return }
                 onCreated(worktree, trimmedName.isEmpty ? nil : trimmedName)
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
-                isCreating = false
+                phase = .idle
             }
         }
     }

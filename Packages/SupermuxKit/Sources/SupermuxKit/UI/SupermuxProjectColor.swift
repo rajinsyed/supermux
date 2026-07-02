@@ -2,7 +2,10 @@ public import SwiftUI
 
 /// The piggycode-style 12-color palette for project accents.
 public struct SupermuxProjectColor: Identifiable, Hashable, Sendable {
-    /// Palette entry name shown in pickers (already localized at declaration).
+    /// Palette entry name shown in pickers, tooltips, and VoiceOver labels.
+    /// Localized at declaration via `String(localized:)` (the palette is a
+    /// `static let`, so names resolve once per launch, which matches macOS's
+    /// relaunch-on-locale-change behavior).
     public let name: String
     /// Color as `#RRGGBB`.
     public let hex: String
@@ -11,18 +14,54 @@ public struct SupermuxProjectColor: Identifiable, Hashable, Sendable {
 
     /// The standard palette, mirroring piggycode's project colors.
     public static let palette: [SupermuxProjectColor] = [
-        SupermuxProjectColor(name: "Red", hex: "#ef4444"),
-        SupermuxProjectColor(name: "Orange", hex: "#f97316"),
-        SupermuxProjectColor(name: "Yellow", hex: "#eab308"),
-        SupermuxProjectColor(name: "Lime", hex: "#84cc16"),
-        SupermuxProjectColor(name: "Green", hex: "#22c55e"),
-        SupermuxProjectColor(name: "Teal", hex: "#14b8a6"),
-        SupermuxProjectColor(name: "Cyan", hex: "#06b6d4"),
-        SupermuxProjectColor(name: "Blue", hex: "#3b82f6"),
-        SupermuxProjectColor(name: "Indigo", hex: "#6366f1"),
-        SupermuxProjectColor(name: "Purple", hex: "#a855f7"),
-        SupermuxProjectColor(name: "Pink", hex: "#ec4899"),
-        SupermuxProjectColor(name: "Slate", hex: "#64748b"),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.red", defaultValue: "Red"),
+            hex: "#ef4444"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.orange", defaultValue: "Orange"),
+            hex: "#f97316"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.yellow", defaultValue: "Yellow"),
+            hex: "#eab308"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.lime", defaultValue: "Lime"),
+            hex: "#84cc16"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.green", defaultValue: "Green"),
+            hex: "#22c55e"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.teal", defaultValue: "Teal"),
+            hex: "#14b8a6"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.cyan", defaultValue: "Cyan"),
+            hex: "#06b6d4"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.blue", defaultValue: "Blue"),
+            hex: "#3b82f6"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.indigo", defaultValue: "Indigo"),
+            hex: "#6366f1"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.purple", defaultValue: "Purple"),
+            hex: "#a855f7"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.pink", defaultValue: "Pink"),
+            hex: "#ec4899"
+        ),
+        SupermuxProjectColor(
+            name: String(localized: "supermux.projectColor.slate", defaultValue: "Slate"),
+            hex: "#64748b"
+        ),
     ]
 
     /// Parses `#RRGGBB` into a SwiftUI color; `nil` for malformed input.

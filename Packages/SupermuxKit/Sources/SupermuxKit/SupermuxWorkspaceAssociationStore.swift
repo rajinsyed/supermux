@@ -26,8 +26,18 @@ public import Observation
 @MainActor
 @Observable
 public final class SupermuxWorkspaceAssociationStore {
+    /// Monotonic revision of the association state, bumped by every effective
+    /// mutation (session links, standalone markings, pruning, and durable
+    /// directory writes routed through ``associate``). SwiftUI bodies that
+    /// cache resolution results (the flat-list filter) read this once per pass
+    /// so they re-render when associations change *without* a paired
+    /// `TabManager` publish — e.g. opening the already-selected workspace from
+    /// a project row, which associates but no-ops the selection.
+    public private(set) var revision = 0
     /// workspace id → owning project id, for workspaces opened from a project
-    /// during this app session.
+    /// during this app session. Stays observation-tracked (alongside
+    /// ``revision``) so bodies that resolve `projectId` directly — the Projects
+    /// section grouping — keep their own dependency on the maps.
     private var associations: [UUID: UUID] = [:]
     /// Workspaces explicitly created via cmux's normal new-workspace flow
     /// (the `+` button / ⌘T / surface tab bar), which must stay standalone in
@@ -44,6 +54,23 @@ public final class SupermuxWorkspaceAssociationStore {
     /// Durable directory→project backend, consulted across restarts. Weak: the
     /// backend (the projects model) outlives this store and owns persistence.
     @ObservationIgnored private weak var persistence: (any SupermuxDirectoryAssociationPersisting)?
+
+    /// The durable directory→project map, forwarded verbatim from the
+    /// persistence backend (`[:]` when none is wired).
+    ///
+    /// The sidebar's project-resolution cache compares this map *by value* on
+    /// every pass: the backend can replace it without routing through this
+    /// store — a sibling-build `adopt()` fold-in or `performLoad`'s actor-hop
+    /// completion — so ``revision`` alone cannot signal those changes. Reading
+    /// it inside a SwiftUI body also registers an Observation dependency on
+    /// the backend's `directoryAssociations` (the projects model is
+    /// `@Observable`), so the sidebar re-renders on such direct mutations even
+    /// without a paired `TabManager` publish. Steady-state comparison cost is
+    /// the identical-COW-buffer `==` fast path — the backend only reassigns
+    /// the map when its contents actually change.
+    public var durableDirectoryAssociations: [String: UUID] {
+        persistence?.directoryAssociations ?? [:]
+    }
 
     /// Creates a store.
     /// - Parameter persistence: Durable directory-link backend. `nil` keeps the
@@ -68,6 +95,9 @@ public final class SupermuxWorkspaceAssociationStore {
         if let directory {
             persistence?.associateDirectory(directory, with: projectId)
         }
+        // Unconditional: a durable directory write can change *another*
+        // workspace's resolution even when this workspace's link is unchanged.
+        revision &+= 1
     }
 
     /// Marks a workspace as explicitly standalone, so it never nests under a
@@ -76,7 +106,9 @@ public final class SupermuxWorkspaceAssociationStore {
     /// clears it via ``associate`` for project-originated opens.
     /// - Parameter workspaceId: The workspace to keep standalone.
     public func markStandalone(workspaceId: UUID) {
-        standaloneIds.insert(workspaceId)
+        if standaloneIds.insert(workspaceId).inserted {
+            revision &+= 1
+        }
     }
 
     /// Forgets a workspace's session association (e.g. when it closes). The
@@ -85,8 +117,33 @@ public final class SupermuxWorkspaceAssociationStore {
     /// the workspace was never associated.
     /// - Parameter workspaceId: The workspace to forget.
     public func forget(workspaceId: UUID) {
-        associations.removeValue(forKey: workspaceId)
-        standaloneIds.remove(workspaceId)
+        let removedAssociation = associations.removeValue(forKey: workspaceId) != nil
+        let removedStandalone = standaloneIds.remove(workspaceId) != nil
+        if removedAssociation || removedStandalone {
+            revision &+= 1
+        }
+    }
+
+    /// Drops session entries for workspaces that are no longer alive anywhere
+    /// in the app. Covers wholesale teardown paths — window close, session
+    /// restore releasing pre-restore workspaces — where the per-workspace
+    /// close path (and its ``forget(workspaceId:)``) never runs, so entries
+    /// would otherwise accumulate for the process lifetime in this app-global
+    /// store. Durable directory links are untouched.
+    ///
+    /// Callers MUST pass the union of workspace ids across *all* windows,
+    /// including any closed-but-recoverable windows whose workspaces can be
+    /// revived with the same ids — pruning against a single window's tab list
+    /// would strip other windows' associations and standalone markings.
+    /// - Parameter liveWorkspaceIds: Every workspace id still alive (or
+    ///   revivable) in the app.
+    public func prune(retainingWorkspaceIds liveWorkspaceIds: Set<UUID>) {
+        let countsBefore = (associations.count, standaloneIds.count)
+        associations = associations.filter { liveWorkspaceIds.contains($0.key) }
+        standaloneIds.formIntersection(liveWorkspaceIds)
+        if countsBefore != (associations.count, standaloneIds.count) {
+            revision &+= 1
+        }
     }
 
     /// Resolves which project a workspace should nest under, or `nil` to keep
@@ -111,11 +168,14 @@ public final class SupermuxWorkspaceAssociationStore {
         if let projectId = associations[id], projects.contains(where: { $0.id == projectId }) {
             return projectId
         }
-        if let directory,
-           let projectId = persistence?.directoryAssociations[SupermuxProjectMatcher.normalizedDirectory(directory)],
+        guard let directory else { return nil }
+        // Normalize once and share it between the durable-link lookup and the
+        // worktree match — both key off the same canonical form.
+        let normalized = SupermuxProjectMatcher.normalizedDirectory(directory)
+        if let projectId = persistence?.directoryAssociations[normalized],
            projects.contains(where: { $0.id == projectId }) {
             return projectId
         }
-        return worktreeMatcher.projectOwningWorktree(for: directory, in: projects)?.id
+        return worktreeMatcher.projectOwningWorktree(forNormalizedDirectory: normalized, in: projects)?.id
     }
 }

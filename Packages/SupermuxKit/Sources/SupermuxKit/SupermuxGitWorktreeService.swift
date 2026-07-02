@@ -17,9 +17,23 @@ public actor SupermuxGitWorktreeService {
     private let runner: any CommandRunning
     private let naming: SupermuxBranchName
     private static let gitTimeout: TimeInterval = 30
+    /// Deadline for checkout-weight commands (`worktree add`/`worktree remove`):
+    /// they populate or delete a full working tree — LFS smudge filters included —
+    /// so the blanket 30s would kill them mid-flight on large repositories.
+    private static let checkoutTimeout: TimeInterval = 600
     /// Upper bound for a worktree teardown script; cleanup that runs longer is
     /// terminated so a hung script can never wedge worktree deletion.
     private static let teardownTimeout: TimeInterval = 120
+    /// `PATH` for the one `env`-launched git call (the `worktree add`):
+    /// `/usr/bin/env` bypasses ``CommandRunner``'s own executable resolution,
+    /// so `git` is re-resolved against the inherited `PATH` plus the runner's
+    /// fallback dirs (mirrors `SupermuxGitChangesService.gitSearchPath`).
+    private static let gitSearchPath: String = {
+        let inherited = ProcessInfo.processInfo.environment["PATH"]
+        let fallbacks = CommandRunner.defaultFallbackSearchDirectories
+            + ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        return ([inherited].compactMap { $0 } + fallbacks).filter { !$0.isEmpty }.joined(separator: ":")
+    }()
     private static let logger = Logger(subsystem: "com.cmuxterm.app", category: "supermux.worktree")
 
     /// Creates a service.
@@ -88,13 +102,15 @@ public actor SupermuxGitWorktreeService {
                 message: Self.failureMessage(result)
             )
         }
-        let rootPath = Self.normalizedPath(project.rootPath)
-        let worktreesDir = Self.normalizedPath(project.worktreesDirPath)
-        // Only treat worktrees under a worktrees dir that is genuinely inside
-        // the project as "managed". If a corrupt config escaped the root, fall
-        // back to a sentinel that matches nothing so no sibling worktree is
-        // ever reported deletable.
-        let managedPrefix = worktreesDir.hasPrefix(rootPath + "/") ? worktreesDir + "/" : "\u{0}"
+        let rootPath = SupermuxWorktreePath.canonical(project.rootPath)
+        let worktreesDir = SupermuxWorktreePath.worktreesDir(canonicalRoot: rootPath, project: project)
+        // Only treat worktrees under a worktrees dir whose configured name is
+        // genuinely inside the project as "managed" (the escape test is lexical;
+        // see `SupermuxWorktreePath.lexicalWorktreesDir`). If a corrupt config
+        // (e.g. "..") escaped the root, fall back to a sentinel that matches
+        // nothing so no sibling worktree is ever reported deletable.
+        let lexicalWorktreesDir = SupermuxWorktreePath.lexicalWorktreesDir(canonicalRoot: rootPath, project: project)
+        let managedPrefix = lexicalWorktreesDir.hasPrefix(rootPath + "/") ? worktreesDir + "/" : "\u{0}"
         var worktrees: [SupermuxProjectWorktree] = []
         var path: String?
         var branch: String?
@@ -106,7 +122,7 @@ public actor SupermuxGitWorktreeService {
             } else if line.hasPrefix("branch refs/heads/") {
                 branch = String(line.dropFirst("branch refs/heads/".count))
             } else if line.isEmpty, let entryPath = path {
-                let normalized = Self.normalizedPath(entryPath)
+                let normalized = SupermuxWorktreePath.canonical(entryPath)
                 if normalized != rootPath {
                     worktrees.append(SupermuxProjectWorktree(
                         path: normalized,
@@ -119,7 +135,7 @@ public actor SupermuxGitWorktreeService {
             }
         }
         if let entryPath = path {
-            let normalized = Self.normalizedPath(entryPath)
+            let normalized = SupermuxWorktreePath.canonical(entryPath)
             if normalized != rootPath {
                 worktrees.append(SupermuxProjectWorktree(
                     path: normalized,
@@ -154,50 +170,144 @@ public actor SupermuxGitWorktreeService {
         // name instead of erroring, so worktree creation is never blocked on
         // naming — matching piggycode's "leave it empty" affordance.
         let sanitized = naming.sanitize(requestedBranch) ?? naming.randomName()
-        let branch = naming.deduplicate(sanitized, existing: await localBranches(repoRoot: project.rootPath))
 
-        let rootPath = Self.normalizedPath(project.rootPath)
-        let worktreesDir = Self.normalizedPath(project.worktreesDirPath)
-        // The worktrees container must stay strictly inside the project root —
-        // a corrupt/hand-edited `worktreesDirName` like ".." would otherwise
-        // resolve to the parent directory and let worktrees (and deletions)
-        // escape into sibling repositories.
-        guard worktreesDir.hasPrefix(rootPath + "/") else {
-            throw SupermuxGitError.unsafeWorktreePath(path: worktreesDir)
+        let rootPath = SupermuxWorktreePath.canonical(project.rootPath)
+        // The worktrees container must stay strictly inside the project root:
+        // an escaping config is a hard error here (the guard is lexical; see
+        // `SupermuxWorktreePath.lexicalWorktreesDir`).
+        let lexicalWorktreesDir = SupermuxWorktreePath.lexicalWorktreesDir(canonicalRoot: rootPath, project: project)
+        guard lexicalWorktreesDir.hasPrefix(rootPath + "/") else {
+            throw SupermuxGitError.unsafeWorktreePath(path: lexicalWorktreesDir)
         }
-        let directoryName = naming.directoryComponent(for: branch)
-        let worktreePath = Self.normalizedPath((worktreesDir as NSString).appendingPathComponent(directoryName))
-        guard worktreePath.hasPrefix(worktreesDir + "/") else {
-            throw SupermuxGitError.unsafeWorktreePath(path: worktreePath)
-        }
+        // Canonical (symlink-resolved) container for everything compared
+        // against `git worktree list` realpath output.
+        let worktreesDir = SupermuxWorktreePath.worktreesDir(canonicalRoot: rootPath, project: project)
 
         let base = try await resolveBase(
-            repoRoot: project.rootPath,
+            repoRoot: rootPath,
             requested: baseBranch ?? project.defaultBranch
         )
 
         try FileManager.default.createDirectory(atPath: worktreesDir, withIntermediateDirectories: true)
         await ensureWorktreesDirIgnored(project: project)
 
-        try await runGit(
-            in: project.rootPath,
-            ["worktree", "add", "--no-track", "-b", branch, worktreePath, base.startPoint],
-            commandLabel: "worktree add"
-        )
-        // Make the first `git push` in the worktree create origin/<branch>.
-        _ = try? await runGit(
-            in: worktreePath,
-            ["config", "--local", "push.autoSetupRemote", "true"],
-            commandLabel: "config push.autoSetupRemote"
-        )
-        if let baseName = base.recordedName {
-            _ = try? await runGit(
-                in: project.rootPath,
-                ["config", "branch.\(branch).base", baseName],
-                commandLabel: "config branch base"
+        // Two attempts: the actor is reentrant, so a concurrent creation can
+        // claim the deduplicated name between our branch snapshot and the add;
+        // a fresh dedup on the retry resolves that race. The retry fires ONLY
+        // on git's name/path/ref-claim rejection: an add can create the
+        // branch AND register the worktree yet still exit non-zero (a failing
+        // post-checkout hook), and a bare ref-exists check would then retry
+        // `<name>-2` next to the half-created worktree. Other failures surface.
+        var attemptsRemaining = 2
+        while true {
+            attemptsRemaining -= 1
+            let branch = await deduplicatedBranch(for: sanitized, project: project, rootPath: rootPath, worktreesDir: worktreesDir)
+            let directoryName = naming.directoryComponent(for: branch)
+            let worktreePath = SupermuxWorktreePath.normalized((worktreesDir as NSString).appendingPathComponent(directoryName))
+            guard worktreePath.hasPrefix(worktreesDir + "/") else {
+                throw SupermuxGitError.unsafeWorktreePath(path: worktreePath)
+            }
+
+            // The retry gate string-matches the add's stderr, so `LC_ALL=C`
+            // keeps it locale-stable (gettext git localizes it); `env`
+            // re-resolves `git` itself, so `PATH` must be passed too.
+            let add = await runner.run(
+                directory: rootPath,
+                executable: "/usr/bin/env",
+                arguments: [
+                    "PATH=\(Self.gitSearchPath)", "LC_ALL=C",
+                    "git", "worktree", "add", "--no-track", "-b", branch, worktreePath, base.startPoint,
+                ],
+                timeout: Self.checkoutTimeout
             )
+            if add.exitStatus == 0 {
+                // Make the first `git push` in the worktree create origin/<branch>.
+                _ = try? await runGit(
+                    in: worktreePath,
+                    ["config", "--local", "push.autoSetupRemote", "true"],
+                    commandLabel: "config push.autoSetupRemote"
+                )
+                if let baseName = base.recordedName {
+                    _ = try? await runGit(
+                        in: rootPath,
+                        ["config", "branch.\(branch).base", baseName],
+                        commandLabel: "config branch base"
+                    )
+                }
+                return SupermuxProjectWorktree(path: worktreePath, branch: branch, isSupermuxManaged: true)
+            }
+            if add.timedOut {
+                await cleanUpTimedOutAdd(branch: branch, worktreePath: worktreePath, rootPath: rootPath)
+            } else if attemptsRemaining > 0,
+                      Self.isNameClaimRejection(add.stderr, branch: branch, worktreePath: worktreePath),
+                      await refExists(repoRoot: rootPath, ref: "refs/heads/\(branch)") {
+                continue
+            }
+            throw SupermuxGitError.gitFailed(command: "worktree add", message: Self.failureMessage(add))
         }
-        return SupermuxProjectWorktree(path: worktreePath, branch: branch, isSupermuxManaged: true)
+    }
+
+    /// Whether a failed `worktree add`'s stderr is git rejecting the specific
+    /// branch or checkout path we tried to claim ("fatal: a branch named
+    /// '<branch>' already exists" / "fatal: '<path>' already exists"), or the
+    /// ref-lock collision the same race produces when two adds hit the ref
+    /// near-simultaneously ("cannot lock ref 'refs/heads/<branch>'") — the
+    /// failure shapes the reentrancy race produces. The interpolated
+    /// branch/path keeps unrelated hook output that happens to say "already
+    /// exists" from triggering a retry; git wording drift degrades to not
+    /// retrying rather than to retrying after a partial add. The caller
+    /// conjoins this with a ref-exists check (two factors: the message shape
+    /// AND the branch genuinely taken).
+    private static func isNameClaimRejection(
+        _ stderr: String?, branch: String, worktreePath: String
+    ) -> Bool {
+        guard let stderr = stderr?.lowercased() else { return false }
+        return stderr.contains("branch named '\(branch.lowercased())' already exists")
+            || stderr.contains("'\(worktreePath.lowercased())' already exists")
+            || stderr.contains("cannot lock ref 'refs/heads/\(branch.lowercased())'")
+    }
+
+    /// Deduplicates `sanitized` against local branches *and* the worktree
+    /// directory names already claimed — on disk or still registered with git
+    /// (a manually deleted checkout keeps its registration and would make
+    /// `git worktree add` fail at the same path).
+    private func deduplicatedBranch(
+        for sanitized: String,
+        project: SupermuxProject,
+        rootPath: String,
+        worktreesDir: String
+    ) async -> String {
+        let branches = await localBranches(repoRoot: rootPath)
+        var takenDirectories = Set(
+            (try? FileManager.default.contentsOfDirectory(atPath: worktreesDir)) ?? []
+        )
+        if let registered = try? await listWorktrees(for: project) {
+            for worktree in registered
+            where (worktree.path as NSString).deletingLastPathComponent == worktreesDir {
+                takenDirectories.insert((worktree.path as NSString).lastPathComponent)
+            }
+        }
+        return naming.deduplicate(sanitized, existing: branches, takenDirectories: takenDirectories)
+    }
+
+    /// Best-effort teardown after a timed-out `worktree add`. The SIGKILL that
+    /// follows the deadline can interrupt git's own junk cleanup, and the
+    /// freshly created branch always survives it — left in place it would make
+    /// a same-name retry silently become `<name>-2`. Deleting the branch is
+    /// safe: had it pre-existed, the add would have failed up-front instead of
+    /// timing out mid-checkout.
+    private func cleanUpTimedOutAdd(branch: String, worktreePath: String, rootPath: String) async {
+        _ = try? await runGit(
+            in: rootPath,
+            ["worktree", "remove", "--force", worktreePath],
+            commandLabel: "worktree remove",
+            timeout: Self.checkoutTimeout
+        )
+        if FileManager.default.fileExists(atPath: worktreePath) {
+            try? FileManager.default.removeItem(atPath: worktreePath)
+        }
+        _ = try? await runGit(in: rootPath, ["worktree", "prune"], commandLabel: "worktree prune")
+        _ = try? await runGit(in: rootPath, ["branch", "-D", branch], commandLabel: "branch -D")
     }
 
     /// Removes a supermux-managed worktree.
@@ -216,7 +326,12 @@ public actor SupermuxGitWorktreeService {
         guard worktree.isSupermuxManaged else {
             throw SupermuxGitError.unmanagedWorktree(path: worktree.path)
         }
-        if !force {
+        // A checkout whose directory is already gone (deleted in Finder or a
+        // terminal) has no uncommitted work to lose, and the status probe
+        // cannot even launch there — skip straight to git-native removal,
+        // which handles the stale registration. Otherwise a status failure
+        // stays fail-closed as dirty: the guard protects real work.
+        if !force, FileManager.default.fileExists(atPath: worktree.path) {
             let status = await runner.run(
                 directory: worktree.path,
                 executable: "git",
@@ -246,7 +361,8 @@ public actor SupermuxGitWorktreeService {
         try await runGit(
             in: project.rootPath,
             ["worktree", "remove", "--force", worktree.path],
-            commandLabel: "worktree remove"
+            commandLabel: "worktree remove",
+            timeout: Self.checkoutTimeout
         )
         if deleteBranch, let branch = worktree.branch {
             _ = try? await runGit(in: project.rootPath, ["branch", "-D", branch], commandLabel: "branch -D")
@@ -337,7 +453,16 @@ public actor SupermuxGitWorktreeService {
         let infoDir = (gitDir as NSString).appendingPathComponent("info")
         let excludePath = (infoDir as NSString).appendingPathComponent("exclude")
         let pattern = "/\(project.worktreesDirName)/"
-        let existing = (try? String(contentsOfFile: excludePath, encoding: .utf8)) ?? ""
+        let existing: String
+        if FileManager.default.fileExists(atPath: excludePath) {
+            // git imposes no encoding on exclude files. Never rewrite one we
+            // cannot decode losslessly — the exclusion is best-effort, the
+            // user's existing patterns are not.
+            guard let decoded = try? String(contentsOfFile: excludePath, encoding: .utf8) else { return }
+            existing = decoded
+        } else {
+            existing = ""
+        }
         guard !existing.components(separatedBy: .newlines).contains(pattern) else { return }
         try? FileManager.default.createDirectory(atPath: infoDir, withIntermediateDirectories: true)
         let updated = existing.isEmpty ? pattern + "\n" : existing.trimmingCharacters(in: .newlines) + "\n" + pattern + "\n"
@@ -345,12 +470,17 @@ public actor SupermuxGitWorktreeService {
     }
 
     @discardableResult
-    private func runGit(in directory: String, _ arguments: [String], commandLabel: String) async throws -> CommandResult {
+    private func runGit(
+        in directory: String,
+        _ arguments: [String],
+        commandLabel: String,
+        timeout: TimeInterval = SupermuxGitWorktreeService.gitTimeout
+    ) async throws -> CommandResult {
         let result = await runner.run(
             directory: directory,
             executable: "git",
             arguments: arguments,
-            timeout: Self.gitTimeout
+            timeout: timeout
         )
         guard result.exitStatus == 0 else {
             throw SupermuxGitError.gitFailed(command: commandLabel, message: Self.failureMessage(result))
@@ -366,10 +496,4 @@ public actor SupermuxGitWorktreeService {
         return "exit status \(result.exitStatus.map(String.init) ?? "unknown")"
     }
 
-    private static func normalizedPath(_ path: String) -> String {
-        let standardized = (path as NSString).standardizingPath
-        return standardized.count > 1 && standardized.hasSuffix("/")
-            ? String(standardized.dropLast())
-            : standardized
-    }
 }

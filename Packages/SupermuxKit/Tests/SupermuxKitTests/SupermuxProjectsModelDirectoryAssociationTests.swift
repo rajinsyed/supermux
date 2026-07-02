@@ -111,6 +111,42 @@ struct SupermuxProjectsModelDirectoryAssociationTests {
         #expect(model.directoryAssociations == [rootKey: project.id])
     }
 
+    @Test func associateDirectoryAlsoKeysTheSymlinkResolvedPath() async throws {
+        let url = freshFileURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        // base/physical/repo on disk, registered through base/link → base/physical.
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        try FileManager.default.createDirectory(
+            at: base.appendingPathComponent("physical/repo"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: base.appendingPathComponent("link"),
+            withDestinationURL: base.appendingPathComponent("physical")
+        )
+        let logicalRoot = base.appendingPathComponent("link/repo").path
+        let project = SupermuxProject(name: "a", rootPath: logicalRoot)
+        let store = SupermuxProjectStore(fileURL: url)
+        try await store.save(SupermuxProjectsFile(version: 3, projects: [project]))
+        let model = makeModel(store: store)
+        await model.loadIfNeeded()
+
+        model.associateDirectory(logicalRoot, with: project.id)
+
+        // Both spellings are keyed so a lookup by the physical path (live PWD
+        // reports may carry it) still finds the durable link.
+        let logicalKey = SupermuxProjectMatcher.normalizedDirectory(logicalRoot)
+        let resolvedKey = SupermuxProjectMatcher.resolvedDirectory(logicalRoot)
+        #expect(resolvedKey != logicalKey)
+        #expect(model.directoryAssociations[logicalKey] == project.id)
+        #expect(model.directoryAssociations[resolvedKey] == project.id)
+
+        let associations = SupermuxWorkspaceAssociationStore(persistence: model)
+        let physicalRoot = base.appendingPathComponent("physical/repo").path
+        #expect(associations.projectId(forWorkspace: UUID(), directory: physicalRoot, in: [project]) == project.id)
+    }
+
     @Test func removingProjectPrunesItsLinks() async throws {
         let url = freshFileURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

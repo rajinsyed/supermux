@@ -218,10 +218,16 @@ public struct SupermuxProjectEditorSheet: View {
 
     private var actionsRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(edited.actions.indices, id: \.self) { i in
+            // Keyed by the action's stable id (never the array index): index
+            // identity dangles bindings past a removal — a focused TextField
+            // committing through a stale `$edited.actions[i]` after a delete
+            // traps out of range — and shifts row focus onto the wrong action.
+            ForEach($edited.actions) { $action in
                 SupermuxProjectActionEditorRow(
-                    action: $edited.actions[i],
-                    onDelete: { edited.actions.remove(at: i) }
+                    action: $action,
+                    onDelete: { [id = action.id] in
+                        edited.actions.removeAll { $0.id == id }
+                    }
                 )
             }
             Button {

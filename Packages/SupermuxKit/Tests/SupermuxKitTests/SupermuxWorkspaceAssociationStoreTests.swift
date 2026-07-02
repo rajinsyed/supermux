@@ -154,6 +154,31 @@ struct SupermuxWorkspaceAssociationStoreTests {
         #expect(store.projectId(forWorkspace: ws, directory: "/repos/a", in: [p]) == p.id)
     }
 
+    @Test func pruneDropsSessionEntriesForDeadWorkspacesOnly() {
+        // Wholesale teardown paths (window close, session-restore release)
+        // never run the per-workspace forget, so prune reclaims their entries
+        // while leaving every live workspace's state intact.
+        let store = SupermuxWorkspaceAssociationStore()
+        let p = project(name: "a", root: "/repos/a")
+        let liveAssociated = UUID()
+        let deadAssociated = UUID()
+        let liveStandalone = UUID()
+        let deadStandalone = UUID()
+        store.associate(workspaceId: liveAssociated, projectId: p.id)
+        store.associate(workspaceId: deadAssociated, projectId: p.id)
+        store.markStandalone(workspaceId: liveStandalone)
+        store.markStandalone(workspaceId: deadStandalone)
+
+        store.prune(retainingWorkspaceIds: [liveAssociated, liveStandalone])
+
+        #expect(store.projectId(forWorkspace: liveAssociated, directory: "/elsewhere", in: [p]) == p.id)
+        #expect(store.projectId(forWorkspace: deadAssociated, directory: "/elsewhere", in: [p]) == nil)
+        // The live standalone marking still blocks worktree-directory nesting…
+        #expect(store.projectId(forWorkspace: liveStandalone, directory: "/repos/a/.worktrees/f", in: [p]) == nil)
+        // …while the dead one is gone, so directory-based nesting applies again.
+        #expect(store.projectId(forWorkspace: deadStandalone, directory: "/repos/a/.worktrees/f", in: [p]) == p.id)
+    }
+
     @Test func forgetClearsStandaloneMarking() {
         // A reused/closed workspace id must not stay pinned standalone forever.
         let store = SupermuxWorkspaceAssociationStore()
@@ -164,5 +189,72 @@ struct SupermuxWorkspaceAssociationStoreTests {
         // With the standalone marking cleared, directory-based nesting applies
         // again (here: the worktree matcher).
         #expect(store.projectId(forWorkspace: ws, directory: "/repos/a/.worktrees/feature", in: [p]) == p.id)
+    }
+
+    @Test func durableDirectoryAssociationsForwardsBackendMapByValue() {
+        // The resolution cache value-compares this accessor every pass to
+        // catch backend writes that bypass the store (no revision bump), so it
+        // must mirror the backend map exactly — and stay empty without one.
+        let persistence = StubDirectoryAssociationStore()
+        let store = SupermuxWorkspaceAssociationStore(persistence: persistence)
+        #expect(store.durableDirectoryAssociations.isEmpty)
+
+        let projectId = UUID()
+        persistence.directoryAssociations["/repos/a"] = projectId
+        #expect(store.durableDirectoryAssociations == ["/repos/a": projectId])
+
+        #expect(SupermuxWorkspaceAssociationStore().durableDirectoryAssociations.isEmpty)
+    }
+
+    // MARK: - Revision
+
+    /// Every effective mutation must bump `revision`: the flat-list filter
+    /// cache reads it once per sidebar body pass as its only re-render /
+    /// flush signal for association changes (there is not always a paired
+    /// `TabManager` publish — e.g. opening the already-selected workspace
+    /// from a project row).
+    @Test func effectiveMutationsBumpRevision() {
+        let store = SupermuxWorkspaceAssociationStore()
+        let p = project(name: "a", root: "/repos/a")
+        let ws = UUID()
+        var last = store.revision
+
+        store.associate(workspaceId: ws, projectId: p.id)
+        #expect(store.revision != last); last = store.revision
+
+        store.markStandalone(workspaceId: ws)
+        #expect(store.revision != last); last = store.revision
+
+        store.forget(workspaceId: ws)
+        #expect(store.revision != last); last = store.revision
+
+        store.associate(workspaceId: ws, projectId: p.id)
+        last = store.revision
+        store.prune(retainingWorkspaceIds: [])
+        #expect(store.revision != last)
+    }
+
+    /// No-op mutations must NOT bump `revision`, so steady-state sidebar
+    /// passes (and the workspace-close forget of a never-associated
+    /// workspace) never invalidate the body for nothing.
+    @Test func noOpMutationsDoNotBumpRevision() {
+        let store = SupermuxWorkspaceAssociationStore()
+        let ws = UUID()
+        store.markStandalone(workspaceId: ws)
+        var last = store.revision
+
+        store.markStandalone(workspaceId: ws)          // already standalone
+        #expect(store.revision == last)
+
+        store.forget(workspaceId: UUID())              // never tracked
+        #expect(store.revision == last)
+
+        store.prune(retainingWorkspaceIds: [ws])       // retains everything
+        #expect(store.revision == last)
+
+        store.forget(workspaceId: ws)                  // effective again
+        #expect(store.revision != last); last = store.revision
+        store.prune(retainingWorkspaceIds: [])         // nothing left to drop
+        #expect(store.revision == last)
     }
 }
