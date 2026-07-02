@@ -58,155 +58,13 @@ enum SupermuxComposition {
     /// projects model so the link survives a restart by directory (a project's
     /// main workspace sits at the root and has no worktree-dir signal).
     static let workspaceAssociations = SupermuxWorkspaceAssociationStore(persistence: projectsModel)
-}
 
-/// Filters which workspaces cmux's flat sidebar list should render.
-///
-/// Workspaces that belong to a registered project are shown nested under that
-/// project in the Projects section (piggycode-style), so they are hidden from
-/// the flat list to avoid duplication. A workspace belongs to a project only
-/// when it was explicitly opened from it (``SupermuxWorkspaceAssociationStore``)
-/// or physically lives in the project's worktrees dir — never merely because
-/// its directory sits inside a project root. This is what lets the user create
-/// standalone workspaces (cmux's ⌘T/+) without them being swallowed by a
-/// project whose directory they happened to inherit.
-///
-/// This is purely a display filter — `TabManager.tabs` is untouched, so
-/// selection, ⌘-number navigation, and workspace lifecycle still operate on the
-/// full set. Workspaces that already belong to a cmux workspace group, or any
-/// workspace when no projects are registered, are never filtered.
-@MainActor
-enum SupermuxMainListFilter {
-    /// Returns the workspaces to render in cmux's flat list, with
-    /// project-owned (ungrouped) workspaces removed.
-    /// - Parameter tabs: All workspaces from `TabManager.tabs`.
-    static func tabsForMainList(_ tabs: [Workspace]) -> [Workspace] {
-        let projects = SupermuxComposition.projectsModel.projects
-        guard !projects.isEmpty else { return tabs }
-        let associations = SupermuxComposition.workspaceAssociations
-        return tabs.filter { workspace in
-            // Leave cmux-grouped workspaces alone; only hide loose workspaces
-            // that a project owns (explicit association or a worktree dir).
-            if workspace.groupId != nil { return true }
-            return associations.projectId(
-                forWorkspace: workspace.id,
-                directory: workspace.currentDirectory,
-                in: projects
-            ) == nil
-        }
-    }
-}
-
-/// Opens supermux workspace requests through a window's `TabManager`:
-/// focuses an existing workspace whose directory already matches, otherwise
-/// creates a new one at the requested directory.
-@MainActor
-final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
-    private weak var tabManager: TabManager?
-
-    /// Creates an opener bound to one window's tab manager.
-    /// - Parameter tabManager: The window's workspace manager.
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
-    }
-
-    func openWorkspace(_ request: SupermuxOpenWorkspaceRequest) {
-        guard let tabManager else { return }
-        let directory = (request.directory as NSString).expandingTildeInPath
-        // A command- or setup-carrying request always opens a fresh workspace so
-        // the work runs in a clean terminal; plain "open" requests reuse a
-        // matching workspace when one already exists.
-        if request.initialCommand == nil,
-           request.setupScript == nil,
-           let existing = tabManager.tabs.first(where: { workspace in
-               (workspace.currentDirectory as NSString).expandingTildeInPath == directory
-           }) {
-            tabManager.selectWorkspace(existing)
-            associate(workspaceId: existing.id, directory: directory, with: request)
-            return
-        }
-        // Run the action's command through the new workspace's interactive
-        // shell (see SupermuxCommandLaunch): resolves shell aliases/functions
-        // (e.g. `cc` → `claude …`) and keeps the workspace open after the
-        // command exits instead of collapsing it. Plain "open" requests carry
-        // no command and just get a clean terminal.
-        let workspace = tabManager.addWorkspace(
-            title: request.title,
-            workingDirectory: directory,
-            initialTerminalInput: request.initialCommand.map(SupermuxCommandLaunch.shellInput),
-            inheritWorkingDirectory: false,
-            select: true
-        )
-        workspace.customTitle = request.title
-        if let colorHex = request.colorHex {
-            workspace.customColor = colorHex
-        }
-        associate(workspaceId: workspace.id, directory: directory, with: request)
-        runSetupScriptIfNeeded(in: workspace, directory: directory, request: request)
-    }
-
-    /// Spawns a dedicated, focused setup terminal in `workspace` that runs the
-    /// request's setup script with its environment exported, leaving the
-    /// workspace's clean main terminal untouched. Used right after a worktree is
-    /// created. No-op when the request carries no setup script.
-    private func runSetupScriptIfNeeded(in workspace: Workspace, directory: String, request: SupermuxOpenWorkspaceRequest) {
-        guard let setupScript = request.setupScript,
-              let paneId = workspace.bonsplitController.focusedPaneId
-                ?? workspace.bonsplitController.allPaneIds.first else { return }
-        // Run as interactive-shell input (see SupermuxCommandLaunch) so aliases
-        // resolve and the surface survives the command's exit; the worktree
-        // environment is delivered through the PTY's startup environment so the
-        // script (e.g. `cp "$SUPERSET_ROOT_PATH/.env" .env`) sees it directly.
-        _ = workspace.newTerminalSurface(
-            inPane: paneId,
-            focus: true,
-            workingDirectory: directory,
-            initialInput: SupermuxCommandLaunch.shellInput(for: setupScript),
-            startupEnvironment: request.setupEnvironment
-        )
-    }
-
-    /// Runs a project action's command as a new terminal tab in the focused
-    /// workspace (the presets-bar behavior), not as a separate workspace. The
-    /// command runs through the workspace's interactive shell (see
-    /// ``SupermuxCommandLaunch``). With no focused workspace, falls back to
-    /// opening a fresh workspace.
-    func runAction(_ request: SupermuxOpenWorkspaceRequest) {
-        guard let tabManager,
-              let command = request.initialCommand,
-              let workspace = tabManager.selectedWorkspace,
-              let paneId = workspace.bonsplitController.focusedPaneId
-                ?? workspace.bonsplitController.allPaneIds.first else {
-            openWorkspace(request)
-            return
-        }
-        // Run where the user is looking: the focused workspace's directory (e.g.
-        // a worktree), not the action's project root — matching ⌘G/presets.
-        let resolved = SupermuxCommandLaunch.workingDirectory(
-            focusedWorkspaceDirectory: workspace.currentDirectory, fallback: request.directory)
-        let directory = (resolved as NSString).expandingTildeInPath
-        guard let panel = workspace.newTerminalSurface(
-            inPane: paneId,
-            focus: true,
-            workingDirectory: directory,
-            initialInput: SupermuxCommandLaunch.shellInput(for: command)
-        ) else { return }
-        // Open the action's tab as the first tab, matching the ⌘G run action.
-        // The action runs in the foreground, so the new surface keeps focus.
-        workspace.supermuxMoveSurfaceToFront(panelId: panel.id, keepFocus: true)
-    }
-
-    /// Records the workspace→project association for project-originated opens,
-    /// so the resulting workspace nests under that project in the sidebar — and
-    /// re-nests after a restart, since the link is persisted by `directory`.
-    private func associate(workspaceId: UUID, directory: String, with request: SupermuxOpenWorkspaceRequest) {
-        guard let projectId = request.projectId else { return }
-        SupermuxComposition.workspaceAssociations.associate(
-            workspaceId: workspaceId,
-            projectId: projectId,
-            directory: directory
-        )
-    }
+    /// App-wide PR model for *unopened* worktree badges, injected into every
+    /// window's Projects section so one poll pass and one repo cache serve all
+    /// sidebars (the model is multi-window-safe: client-scoped union tracking
+    /// plus a generation guard). Must be a stable instance — the section seeds
+    /// its `@State` from it on first mount.
+    static let worktreePullRequestModel = SupermuxWorktreePullRequestModel()
 }
 
 /// The view mounted inside the cmux sidebar (see the `sidebar-projects-section`
@@ -221,11 +79,18 @@ struct SupermuxProjectsMount: View {
     @StateObject private var fontScaleStore = SupermuxSidebarFontScaleStore()
 
     /// Owns the per-workspace observation subscription (git branch, working
-    /// directory, status, in-place title renames) so a late field change
-    /// re-reads the nested snapshots. Its lifetime is kept out of `body` to avoid
-    /// a render→resubscribe→replay→invalidate spin — see
+    /// directory, status, agent lifecycle, in-place title renames) so a late
+    /// field change re-reads the nested snapshots. Its lifetime is kept out of
+    /// `body` to avoid a render→resubscribe→replay→invalidate spin — see
     /// ``SupermuxWorkspaceObservation``.
     @StateObject private var observation = SupermuxWorkspaceObservation()
+
+    // cmux's PR-probe gates (Settings → sidebar), read via @AppStorage so a
+    // toggle re-renders the mount and restarts/stops the section's probe loop.
+    // Missing keys default to true, matching `SidebarWorkspaceDetailDefaults`'s
+    // `boolValue` semantics; the AND mirrors its `pullRequestPollingEnabled`.
+    @AppStorage(SidebarWorkspaceDetailDefaults.showPullRequestsKey) private var showPullRequests = true
+    @AppStorage(SidebarWorkspaceDetailDefaults.watchGitStatusKey) private var watchGitStatus = true
 
     var body: some View {
         // Make the body's dependency on the observation token explicit (cmux
@@ -237,16 +102,33 @@ struct SupermuxProjectsMount: View {
         // a project's live workspaces stay nested and in sync underneath it.
         let projects = SupermuxComposition.projectsModel.projects
         let associations = SupermuxComposition.workspaceAssociations
-        let openWorkspaces = tabManager.tabs.map { workspace in
-            SupermuxWorkspaceRow.snapshot(
+        // This window's memoized project resolution — the same cache instance
+        // the flat-list filter uses, so per-workspace NSString path
+        // normalization runs once per invalidation, not once per consumer.
+        // Its validity preamble reads the store's observable `revision` and
+        // durable directory map on every call (cache hits included), which is
+        // what re-renders this body on association changes now that the raw
+        // `associations.projectId` reads no longer happen here.
+        let resolutionCache = SupermuxMainListFilter.resolutionCache(for: tabManager)
+        let pullRequestsEnabled = watchGitStatus && showPullRequests
+        let openWorkspaces = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
+            let isSelected = workspace.id == tabManager.selectedTabId
+            // Full snapshots (branch/PR/activity, each walking the bonsplit
+            // pane tree) only for project-nested rows; the section consumes
+            // just the directory of everything else.
+            guard let projectId = resolutionCache.projectId(
+                forWorkspace: workspace,
+                projects: projects,
+                associations: associations
+            ) else {
+                return SupermuxWorkspaceRow.standaloneSnapshot(for: workspace, isSelected: isSelected)
+            }
+            return SupermuxWorkspaceRow.snapshot(
                 for: workspace,
-                isSelected: workspace.id == tabManager.selectedTabId,
-                projectId: associations.projectId(
-                    forWorkspace: workspace.id,
-                    directory: workspace.currentDirectory,
-                    in: projects
-                ),
-                isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id)
+                isSelected: isSelected,
+                projectId: projectId,
+                isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id),
+                includePullRequest: pullRequestsEnabled
             )
         }
         SupermuxProjectsSectionView(
@@ -281,22 +163,39 @@ struct SupermuxProjectsMount: View {
                     _ = tabManager.reorderWorkspace(tabId: draggedId, before: targetId, isDragOperation: true)
                 }
             },
-            onOpenPullRequest: { [weak tabManager] url in
-                // Honor cmux's PR-link routing: open in the cmux browser when the
-                // setting is on and a workspace is active, else the default browser.
+            onOpenPullRequest: { [weak tabManager] url, workspaceId in
+                // Honor cmux's PR-link routing: open in the cmux browser when
+                // the setting is on, else the default browser. A badge on an
+                // open workspace's row opens in *that* workspace (selecting it
+                // first, mirroring cmux's own sidebar rows); a worktree badge
+                // has no workspace and uses the selected one.
                 if BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowser(),
-                   let tabManager,
-                   let tabId = tabManager.selectedTabId,
-                   tabManager.openBrowser(
-                       inWorkspace: tabId,
-                       url: url,
-                       preferSplitRight: true,
-                       insertAtEnd: true
-                   ) != nil {
-                    return
+                   let tabManager {
+                    if let workspaceId,
+                       let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) {
+                        tabManager.selectWorkspace(workspace)
+                    }
+                    let targetId = workspaceId ?? tabManager.selectedTabId
+                    if let targetId,
+                       tabManager.openBrowser(
+                           inWorkspace: targetId,
+                           url: url,
+                           preferSplitRight: true,
+                           insertAtEnd: true
+                       ) != nil {
+                        return
+                    }
                 }
                 _ = NSWorkspace.shared.open(url)
-            }
+            },
+            // Honor cmux's own PR-probe gates: with polling off, the section
+            // clears worktree badges and never touches GitHub.
+            pullRequestPolling: SupermuxPullRequestPollingPolicy(isEnabled: pullRequestsEnabled),
+            // One app-wide PR model: every window's sidebar shares one poll
+            // pass and one repo cache instead of probing per window.
+            pullRequestModel: SupermuxComposition.worktreePullRequestModel,
+            // One app-wide logo cache, shared with the workspace switcher.
+            iconStore: SupermuxComposition.projectIconStore
         )
         // Subscribe once on appear and re-subscribe only when the set of open
         // workspaces changes; `register` eagerly seeds the switcher's MRU order.
@@ -318,14 +217,22 @@ struct SupermuxProjectsMount: View {
 /// Owns the merged Combine subscription that drives ``SupermuxProjectsMount``'s
 /// per-workspace re-reads, keeping the subscription's lifetime out of `body`.
 ///
-/// Each workspace contributes its `$title` publisher — so renaming a nested
-/// workspace via `setCustomTitle` (which mutates `title` in place on the
-/// `Workspace`, firing no `TabManager` `@Published`) re-titles its row at once,
-/// matching cmux's own sidebar — plus its `sidebarObservationPublisher`
-/// (`gitBranch`, `currentDirectory`, status — the late-detected branch update).
-/// We observe `$title` alone rather than the full
-/// `sidebarImmediateObservationPublisher` so this eager section is not rebuilt by
-/// the conversation/activity fields that publisher also carries.
+/// Three publisher families per workspace:
+/// - `$title`, delivered immediately — so renaming a nested workspace via
+///   `setCustomTitle` (which mutates `title` in place on the `Workspace`,
+///   firing no `TabManager` `@Published`) re-titles its row at once, matching
+///   cmux's own sidebar.
+/// - `sidebarObservationPublisher` (`gitBranch`, `currentDirectory`, status,
+///   logs, progress, ports — the late-detected branch update), debounced per
+///   workspace by upstream's 40ms coalesce interval: this stream bursts at
+///   telemetry rate during agent runs, and undebounced each event re-ran the
+///   mount body and rebuilt every snapshot. `TabItemView` debounces the very
+///   same publisher per row (`workspaceObservationCoalesceInterval`); per-leg
+///   (not post-merge) so one busy workspace cannot starve the others' updates.
+/// - ``SupermuxWorkspaceLifecycleRelay``, debounced the same way — agent
+///   lifecycle mutations fire no cmux sidebar publisher at all, so without it
+///   the nested rows' activity indicator went stale on lifecycle-only changes
+///   (socket `set_agent_lifecycle`, hibernation, feed attention).
 ///
 /// Rebuilding this merge inside `body` and feeding it to `.onReceive` resubscribed
 /// every render, and on each new subscription the `@Published` inputs behind
@@ -340,33 +247,62 @@ final class SupermuxWorkspaceObservation: ObservableObject {
     /// `body` to re-read the nested workspace snapshots.
     @Published private(set) var token = 0
 
+    /// Upstream's `workspaceObservationCoalesceInterval` (`TabItemView`),
+    /// mirrored so nested rows and flat rows coalesce telemetry bursts alike.
+    private static let coalesceInterval: RunLoop.SchedulerTimeType.Stride = .milliseconds(40)
+
     private var observedIds: Set<UUID> = []
     private var cancellable: AnyCancellable?
 
     /// (Re)subscribes to the workspaces' sidebar-observation streams, but only
     /// when the set of open workspaces actually changes — so steady-state renders
     /// (and pure reorders, which keep the same set) never rebuild the
-    /// subscription. `.receive(on:)` defers delivery past `@Published`'s `willSet`
-    /// so the next body re-read sees the committed value.
+    /// subscription. Delivery is always deferred past `@Published`'s `willSet`
+    /// (via `.receive(on:)` on the immediate leg and the `RunLoop.main`
+    /// debounce scheduler on the coalesced legs) so the next body re-read sees
+    /// the committed value.
     func observe(tabs: [Workspace]) {
         let ids = Set(tabs.map(\.id))
         guard ids != observedIds else { return }
         observedIds = ids
-
-        let publishers: [AnyPublisher<Void, Never>] = tabs.flatMap { workspace in
-            [
-                workspace.$title.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
-                workspace.sidebarObservationPublisher,
-            ]
-        }
-        guard !publishers.isEmpty else {
+        guard !tabs.isEmpty else {
             cancellable = nil
             return
         }
-        cancellable = Publishers.MergeMany(publishers)
-            .receive(on: RunLoop.main)
+
+        let titleLegs = tabs.map { workspace in
+            workspace.$title.removeDuplicates().map { _ in () }
+                .receive(on: RunLoop.main)
+                .eraseToAnyPublisher()
+        }
+        let observationLegs = tabs.map { workspace in
+            workspace.sidebarObservationPublisher
+                .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
+                .eraseToAnyPublisher()
+        }
+        let lifecycleLeg = SupermuxWorkspaceLifecycleRelay.lifecycleDidChange
+            .filter { ids.contains($0) }
+            .map { _ in () }
+            .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
+            .eraseToAnyPublisher()
+
+        cancellable = Publishers.MergeMany(titleLegs + observationLegs + [lifecycleLeg])
             .sink { [weak self] in self?.token &+= 1 }
     }
+}
+
+/// Lazily builds ``SupermuxChangesMount``'s model exactly once per mount
+/// lifetime. An `@State` default expression is evaluated on every parent
+/// render (SwiftUI discards the result after first install), which allocated a
+/// throwaway `@Observable` model + git-service actor + `CommandRunner` per
+/// frame during sidebar resize drags; `@StateObject`'s autoclosure runs only
+/// at install. The box publishes nothing, so it never invalidates the mount.
+@MainActor
+private final class SupermuxChangesModelBox: ObservableObject {
+    let model = SupermuxChangesModel(
+        service: SupermuxGitChangesService(runner: CommandRunner()),
+        commitGenerator: SupermuxComposition.aiCommitMessenger
+    )
 }
 
 /// The git Changes panel mounted as the right sidebar's `changes` mode (see
@@ -375,23 +311,21 @@ final class SupermuxWorkspaceObservation: ObservableObject {
 struct SupermuxChangesMount: View {
     let workspaceDirectory: String?
     /// Whether the right sidebar is on-screen. Forwarded to the panel so its
-    /// background auto-fetch and commit key equivalents pause while hidden (the
-    /// sidebar keeps this content mounted after its first show).
+    /// FS-watcher-driven git observation, background auto-fetch, and commit key
+    /// equivalents all pause while hidden (the sidebar keeps this content
+    /// mounted after its first show).
     var isVisible: Bool = true
 
     @EnvironmentObject private var tabManager: TabManager
     // Re-render when the user rebinds a shortcut (the configured commit chords
     // are read from `KeyboardShortcutSettings`, which is not itself observable).
     @ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
-    @State private var model = SupermuxChangesModel(
-        service: SupermuxGitChangesService(runner: CommandRunner()),
-        commitGenerator: SupermuxComposition.aiCommitMessenger
-    )
+    @StateObject private var box = SupermuxChangesModelBox()
 
     var body: some View {
         let _ = shortcutObserver.revision
         SupermuxChangesPanelView(
-            model: model,
+            model: box.model,
             isVisible: isVisible,
             commitShortcut: Self.keyboardShortcut(for: .supermuxCommit),
             commitAcceleratorShortcut: Self.keyboardShortcut(for: .supermuxCommitAccelerator),
@@ -402,9 +336,9 @@ struct SupermuxChangesMount: View {
                 _ = appDelegate.openDiffViewerForFocusedWorkspace(for: tabManager)
             }
         )
-        .onAppear { model.setDirectory(workspaceDirectory) }
+        .onAppear { box.model.setDirectory(workspaceDirectory) }
         .onChange(of: workspaceDirectory) { _, newDirectory in
-            model.setDirectory(newDirectory)
+            box.model.setDirectory(newDirectory)
         }
     }
 
@@ -424,7 +358,14 @@ struct SupermuxChangesMount: View {
 /// opens its command in a fresh terminal tab in the focused pane, and the Run
 /// button toggles this workspace's project run command (the ⌘G action).
 struct SupermuxPresetsBarMount: View {
-    @ObservedObject var workspace: Workspace
+    /// Deliberately *not* `@ObservedObject`: `body` reads only the immutable
+    /// `workspace.id`, and the closures capture the workspace weakly and read
+    /// its state at click time — observing it re-rendered the bar on every
+    /// unrelated `@Published` churn (panel titles, directories, ports…).
+    /// Run ↔ Stop stays live via the `@Observable` run coordinator read in
+    /// `body`; shortcut rebinds via `shortcutObserver.revision`. If a future
+    /// edit needs mutable workspace state in `body`, pass it in as a value.
+    let workspace: Workspace
     @ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
 
     var body: some View {
@@ -435,7 +376,9 @@ struct SupermuxPresetsBarMount: View {
         SupermuxPresetsBarView(
             model: SupermuxComposition.projectsModel,
             isRunning: runCoordinator.isRunning(workspaceId: workspace.id),
-            runShortcutHint: KeyboardShortcutSettings.shortcut(for: .supermuxToggleRun).displayString,
+            // Unbound yields the empty string, which hides the hint pill (the
+            // bar's documented contract) instead of rendering "Run None".
+            runShortcutHint: KeyboardShortcutSettings.shortcutIfBound(for: .supermuxToggleRun)?.displayString ?? "",
             onLaunch: { [weak workspace] preset in
                 guard let workspace, preset.isLaunchable else { return }
                 guard let paneId = workspace.bonsplitController.focusedPaneId
@@ -455,66 +398,19 @@ struct SupermuxPresetsBarMount: View {
                 _ = SupermuxComposition.runCoordinator.toggleRun(workspace: workspace)
             }
         )
-    }
-}
-
-/// Builds the immutable ``SupermuxOpenWorkspace`` snapshot that a project-nested
-/// sidebar row renders from a live ``Workspace``.
-///
-/// Extracted from ``SupermuxProjectsMount`` so the row's field mapping — most
-/// importantly which source feeds the branch subtitle — is unit-testable
-/// without a SwiftUI host. `projectId`/`isRunning` are passed in because they
-/// depend on app-wide composition the caller already holds.
-@MainActor
-enum SupermuxWorkspaceRow {
-    static func snapshot(
-        for workspace: Workspace,
-        isSelected: Bool,
-        projectId: UUID?,
-        isRunning: Bool
-    ) -> SupermuxOpenWorkspace {
-        // Reuse cmux's own per-workspace PR probe for opened worktrees: the first
-        // display-ordered PR is the representative one (cmux prioritizes
-        // open > merged > closed and freshness). No supermux probe runs here.
-        let pullRequest = workspace.sidebarPullRequestsInDisplayOrder().first
-            .flatMap(SupermuxPullRequest.init(sidebarState:))
-        return SupermuxOpenWorkspace(
-            id: workspace.id,
-            title: workspace.customTitle ?? workspace.title,
-            directory: workspace.currentDirectory,
-            isSelected: isSelected,
-            branch: workspace.supermuxSidebarBranch,
-            projectId: projectId,
-            activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
-            isRunning: isRunning,
-            pullRequest: pullRequest
-        )
-    }
-}
-
-extension SupermuxPullRequest {
-    /// Bridges cmux's per-workspace ``SidebarPullRequestState`` into the supermux
-    /// badge value, so opened worktrees reuse cmux's own PR probe. Returns `nil`
-    /// only if the status string is unrecognized.
-    init?(sidebarState state: SidebarPullRequestState) {
-        guard let status = Status(rawValue: state.status.rawValue) else { return nil }
-        self.init(number: state.number, status: status, url: state.url, isStale: state.isStale)
-    }
-}
-
-extension Workspace {
-    /// The git branch shown on a supermux project-nested workspace row.
-    ///
-    /// Resolves from the per-panel, display-ordered branches
-    /// (``sidebarGitBranchesInDisplayOrder()``) — the same source cmux's own
-    /// sidebar rows use — rather than the workspace-level `gitBranch` mirror.
-    /// `gitBranch` only ever reflects the *focused* panel's branch, so focusing
-    /// a branchless surface (e.g. opening a browser tab) clears it and the row's
-    /// branch subtitle would vanish even though a terminal in the workspace is
-    /// still on a branch. The per-panel branches persist across focus changes,
-    /// so this stays stable; it falls back to `gitBranch` only when no panel
-    /// reports a branch.
-    var supermuxSidebarBranch: String? {
-        sidebarGitBranchesInDisplayOrder().first?.branch
+        // The bar deliberately does not observe the workspace, so a closed run
+        // surface would leave the Stop button stale: reconcile from the panel
+        // membership stream instead (fires on add/remove only, never typing).
+        // The handler mutates run state only when the run surface is actually
+        // gone, which then invalidates the bar via the @Observable coordinator.
+        // `panelsPublisher` emits at `willSet` timing; `.receive(on:)` defers
+        // delivery past the commit (this file's SupermuxWorkspaceObservation
+        // idiom) so reconcile reads the committed panels — synchronous
+        // delivery both mutated observable state mid-view-update and saw the
+        // pre-close dictionary, no-oping on the exact event it exists for.
+        .onReceive(workspace.panelsPublisher.receive(on: RunLoop.main)) { [weak workspace] _ in
+            guard let workspace else { return }
+            SupermuxComposition.runCoordinator.reconcile(workspace: workspace)
+        }
     }
 }

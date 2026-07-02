@@ -14,14 +14,33 @@ import SupermuxKit
 /// `@Observable` so the presets bar's Run / Stop button reflects live run state:
 /// reading ``isRunning(workspaceId:)`` in a view body subscribes it to the
 /// `handlesByWorkspaceId` mutations that `toggleRun` performs.
+///
+/// Run state is reconciled against the run surface's *existence* (a closed
+/// surface reads as not running), but is otherwise optimistic: the command
+/// runs inside an interactive shell that survives its exit, so there is no
+/// authoritative liveness signal for the command itself (Ghostty's
+/// needs-confirm-quit heuristic is shell-integration- and config-dependent).
+/// A dev server that exits on its own therefore still reads as running until
+/// the next toggle or until its surface goes away.
 @MainActor
 @Observable
 final class SupermuxRunCoordinator {
     private struct RunHandle {
         let workspaceId: UUID
+        /// Weak so a closed workspace's handle reads as not running instead of
+        /// keeping the workspace alive; also guards against a session-restored
+        /// workspace reusing the persisted id of a stale handle.
+        weak var workspace: Workspace?
         let panelId: UUID
         let command: String
         var isRunning: Bool
+
+        /// `true` while the launched run surface still exists in its workspace.
+        /// `@MainActor` because the nested struct does not inherit the
+        /// coordinator's isolation and `Workspace.panels` is main-actor state.
+        @MainActor var isRunningInLivePanel: Bool {
+            isRunning && workspace?.panels[panelId] is TerminalPanel
+        }
     }
 
     private var handlesByWorkspaceId: [UUID: RunHandle] = [:]
@@ -34,19 +53,49 @@ final class SupermuxRunCoordinator {
         self.projectsModel = projectsModel
     }
 
-    /// Whether the workspace's run command is currently running.
+    /// Whether the workspace's run command is currently running, validated
+    /// against the run surface's existence: a handle whose run surface (or
+    /// whole workspace) has been closed reads as not running even before
+    /// ``toggleRun`` or ``reconcile(workspace:)`` prunes it.
+    /// Read-only, safe in view bodies.
     /// - Parameter workspaceId: Workspace to inspect.
-    /// - Returns: `true` while a launched run surface is considered active.
+    /// - Returns: `true` while the launched run surface exists and is active.
     func isRunning(workspaceId: UUID) -> Bool {
-        handlesByWorkspaceId[workspaceId]?.isRunning ?? false
+        handlesByWorkspaceId[workspaceId]?.isRunningInLivePanel ?? false
     }
 
-    /// Toggles the run command for the selected workspace.
+    /// Drops the workspace's run handle when its run surface no longer exists,
+    /// so closed-surface staleness is pruned eagerly instead of on the next
+    /// ``toggleRun``. Mutates observable state — call from event-driven paths
+    /// (e.g. a mount's `onAppear`), never from a view body.
+    /// - Parameter workspace: Workspace whose handle to validate.
+    func reconcile(workspace: Workspace) {
+        guard let handle = handlesByWorkspaceId[workspace.id],
+              !(workspace.panels[handle.panelId] is TerminalPanel) else { return }
+        handlesByWorkspaceId[workspace.id] = nil
+    }
+
+    /// Whether a run-toggle key event may reach ``toggleRun(tabManager:)``.
+    /// Auto-repeat events are rejected: repeat semantics suit the shared Find
+    /// Next chord (hold ⌘G to step matches) but flap a start/stop toggle
+    /// (start → Ctrl+C → restart …). A rejected event must fall through to
+    /// the Find Next dispatch.
+    /// - Parameter event: The key-down event that matched the run shortcut.
+    /// - Returns: `true` when the event is an initial (non-repeat) key press.
+    static func shouldDispatchRunToggle(for event: NSEvent) -> Bool {
+        !event.isARepeat
+    }
+
+    /// Toggles the run command for the selected workspace (the ⌘G path).
     /// - Parameter tabManager: The active window's workspace manager.
     /// - Returns: `true` when the event was consumed (even to show an alert).
     @discardableResult
     func toggleRun(tabManager: TabManager?) -> Bool {
         guard let workspace = tabManager?.selectedWorkspace else { return false }
+        // ⌘G shares its chord with Find Next, so with no matching project the
+        // event must fall through unconsumed — no feedback here (the
+        // presets-bar path presents an alert instead).
+        guard matchedProject(for: workspace) != nil else { return false }
         return toggleRun(workspace: workspace)
     }
 
@@ -55,8 +104,9 @@ final class SupermuxRunCoordinator {
     /// - Returns: `true` when the event was consumed (even to show an alert).
     @discardableResult
     func toggleRun(workspace: Workspace) -> Bool {
-        guard let project = matcher.project(for: workspace.currentDirectory, in: projectsModel.projects) else {
-            return false
+        guard let project = matchedProject(for: workspace) else {
+            presentMissingProject(directory: workspace.currentDirectory)
+            return true
         }
         let command = project.runCommands
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -70,11 +120,21 @@ final class SupermuxRunCoordinator {
                 // wrapper so a hibernated run surface is resumed first.
                 // sendText() would route through ghostty_surface_text and get
                 // wrapped in bracketed paste, turning the interrupt into literal
-                // input. Either way the run is no longer considered running; if
-                // the surface was already gone there is nothing left to stop.
-                _ = panel.sendNamedKey("ctrl+c")
-                handle.isRunning = false
-                handlesByWorkspaceId[workspace.id] = handle
+                // input.
+                switch panel.sendNamedKeyResult("ctrl+c") {
+                case .sent, .queued:
+                    handle.isRunning = false
+                    handlesByWorkspaceId[workspace.id] = handle
+                case .surfaceUnavailable, .processExited:
+                    // Nothing left to stop; drop the handle so the next toggle
+                    // starts fresh instead of pasting into a dead surface.
+                    handlesByWorkspaceId[workspace.id] = nil
+                case .unknownKey, .inputQueueFull:
+                    // The interrupt never reached the PTY: keep the run marked
+                    // running so the next toggle retries the stop instead of
+                    // pasting the command into the still-live server.
+                    break
+                }
                 return true
             } else {
                 guard !command.isEmpty else {
@@ -133,12 +193,31 @@ final class SupermuxRunCoordinator {
         )
         handlesByWorkspaceId[workspace.id] = RunHandle(
             workspaceId: workspace.id,
+            workspace: workspace,
             panelId: panel.id,
             command: command,
             isRunning: true
         )
         panel.triggerFlash(reason: .navigation)
         return true
+    }
+
+    private func matchedProject(for workspace: Workspace) -> SupermuxProject? {
+        matcher.project(for: workspace.currentDirectory, in: projectsModel.projects)
+    }
+
+    private func presentMissingProject(directory: String) {
+        let alert = NSAlert()
+        alert.messageText = String(
+            localized: "supermux.run.noProject.title",
+            defaultValue: "No project for this folder"
+        )
+        alert.informativeText = String(
+            localized: "supermux.run.noProject.message",
+            defaultValue: "“\(directory)” is not part of any registered project. Add the folder in the Projects sidebar section to configure its run commands."
+        )
+        alert.alertStyle = .informational
+        alert.runModal()
     }
 
     private func presentMissingRunCommand(project: SupermuxProject) {

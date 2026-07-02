@@ -2552,9 +2552,16 @@ struct ContentView: View {
                 // open as an empty home with the Projects sidebar. The startup
                 // safety net must NOT re-add a workspace here, or it would refill
                 // a window the user intentionally emptied (e.g. closed the last
-                // tab within ~0.5s of the window appearing). The selection/mount
-                // recovery below still runs and is a no-op when tabs is empty.
+                // tab within ~0.5s of the window appearing). Skip the selection/
+                // mount recovery too: with zero tabs it would always flag
+                // didRecover and pollute the startup.recovery breadcrumb (#399)
+                // even though the empty state is intentional and healthy.
                 // (upstream: `if tabManager.tabs.isEmpty { addWorkspace(); didRecover = true }`)
+                guard !tabManager.tabs.isEmpty else {
+                    syncSidebarSelectedWorkspaceIds()
+                    applyUITestSidebarSelectionIfNeeded(tabs: tabManager.tabs)
+                    return
+                }
                 // SUPERMUX:end empty-home
 
                 // Ensure selectedTabId points to an existing workspace.
@@ -10426,6 +10433,11 @@ struct VerticalTabsSidebar: View {
         let workspaceGroupMenuSnapshot: WorkspaceGroupMenuSnapshot
         let workspaceRenderItems: [SidebarWorkspaceRenderItem]
         let visibleWorkspaceRowIds: [UUID]
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        /// Workspaces hidden from the flat list because a project owns them
+        /// (they render nested in the Projects section instead).
+        let projectHiddenWorkspaceIds: Set<UUID>
+        // SUPERMUX:end sidebar-hide-project-workspaces
 
         var workspaceIds: [UUID] { tabIds }
     }
@@ -10463,9 +10475,14 @@ struct VerticalTabsSidebar: View {
         )
         // SUPERMUX:begin sidebar-hide-project-workspaces
         // Project-owned workspaces render nested under their project in the
-        // supermux Projects section, so hide them from the flat list (tabs
-        // itself is unchanged, so selection/nav/lifecycle are unaffected).
-        let mainListTabs = SupermuxMainListFilter.tabsForMainList(tabs)
+        // supermux Projects section, so hide them from the flat list. `tabs`
+        // itself is unchanged; the hidden ids are threaded through the render
+        // context so multi-select range/batch paths (which index the full
+        // list) can exclude rows the user can't see here.
+        let mainListTabs = SupermuxMainListFilter.tabsForMainList(tabs, tabManager: tabManager)
+        let projectHiddenWorkspaceIds = SupermuxMainListFilter.projectHiddenWorkspaceIds(
+            tabs, mainListTabs: mainListTabs
+        )
         // SUPERMUX:end sidebar-hide-project-workspaces
         let workspaceRenderItems = SidebarWorkspaceRenderItem.renderItems(
             tabs: mainListTabs,
@@ -10499,7 +10516,10 @@ struct VerticalTabsSidebar: View {
             workspaceGroupById: workspaceGroupById,
             workspaceGroupMenuSnapshot: workspaceGroupMenuSnapshot,
             workspaceRenderItems: workspaceRenderItems,
-            visibleWorkspaceRowIds: visibleWorkspaceRowIds
+            visibleWorkspaceRowIds: visibleWorkspaceRowIds,
+            // SUPERMUX:begin sidebar-hide-project-workspaces
+            projectHiddenWorkspaceIds: projectHiddenWorkspaceIds
+            // SUPERMUX:end sidebar-hide-project-workspaces
         )
 
         ZStack(alignment: .bottomLeading) {
@@ -10765,6 +10785,17 @@ struct VerticalTabsSidebar: View {
                         selectedTabIds = next
                     }
                 }
+                // SUPERMUX:begin sidebar-hide-project-workspaces
+                .onChange(of: renderContext.projectHiddenWorkspaceIds) { _, hiddenIds in
+                    // Mirror the group-collapse handling above: a workspace that
+                    // becomes project-hidden mid-session (e.g. an already-open
+                    // workspace gets associated with a project) must not linger
+                    // invisibly in the multi-selection where batch actions
+                    // would still target it.
+                    guard !hiddenIds.isDisjoint(with: selectedTabIds) else { return }
+                    selectedTabIds.subtract(hiddenIds)
+                }
+                // SUPERMUX:end sidebar-hide-project-workspaces
                 .onReceive(NotificationCenter.default.publisher(for: SidebarMultiSelectionShouldCollapseEvent.notificationName)) { notification in
                     // Keyboard nav (selectNextTab/selectPreviousTab) posts
                     // this so any stale Shift-click range in the sidebar's
@@ -14205,15 +14236,38 @@ struct TabItemView: View, Equatable {
 
         Divider()
 
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // Enablement must mirror the hidden-row-aware stepping/close scoping
+        // (`moveBy`, `closeTabsBelow/Above`, `closeOtherTabs`): with only
+        // project-hidden rows in a direction those actions no-op, so the raw
+        // full-list index tests would leave enabled items that do nothing.
+        // Menu content builds on demand (menu open), so — like the existing
+        // `tabManager.tabs` reads in this builder — this never runs on the
+        // typing path. Non-trapping prefix/dropFirst tolerate a stale index.
+        let menuProjectHiddenIds = projectHiddenWorkspaceIds()
+        let hasVisibleAbove = tabManager.tabs.prefix(index)
+            .contains { !menuProjectHiddenIds.contains($0.id) }
+        let hasVisibleBelow = tabManager.tabs.dropFirst(index + 1)
+            .contains { !menuProjectHiddenIds.contains($0.id) }
+        let menuTargetIds = Set(targetIds)
+        let hasOtherVisibleWorkspaces = tabManager.tabs.contains {
+            !menuTargetIds.contains($0.id) && !menuProjectHiddenIds.contains($0.id)
+        }
+        // SUPERMUX:end sidebar-hide-project-workspaces
+
         Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
             moveBy(-1)
         }
-        .disabled(index == 0)
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        .disabled(!hasVisibleAbove)
+        // SUPERMUX:end sidebar-hide-project-workspaces
 
         Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
             moveBy(1)
         }
-        .disabled(index >= tabManager.tabs.count - 1)
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        .disabled(!hasVisibleBelow)
+        // SUPERMUX:end sidebar-hide-project-workspaces
 
         Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {
             tabManager.moveTabsToTop(Set(targetIds))
@@ -14263,17 +14317,23 @@ struct TabItemView: View, Equatable {
         Button(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")) {
             closeOtherTabs(targetIds)
         }
-        .disabled(tabManager.tabs.count <= 1 || targetIds.count == tabManager.tabs.count)
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        .disabled(!hasOtherVisibleWorkspaces)
+        // SUPERMUX:end sidebar-hide-project-workspaces
 
         Button(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")) {
             closeTabsBelow(tabId: tab.id)
         }
-        .disabled(index >= tabManager.tabs.count - 1)
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        .disabled(!hasVisibleBelow)
+        // SUPERMUX:end sidebar-hide-project-workspaces
 
         Button(String(localized: "contextMenu.closeWorkspacesAbove", defaultValue: "Close Workspaces Above")) {
             closeTabsAbove(tabId: tab.id)
         }
-        .disabled(index == 0)
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        .disabled(!hasVisibleAbove)
+        // SUPERMUX:end sidebar-hide-project-workspaces
 
         Divider()
 
@@ -14318,9 +14378,15 @@ struct TabItemView: View, Equatable {
         // SUPERMUX:begin sidebar-selection-faint
         // Unify the selection highlight with the nested project-workspace rows
         // (`SupermuxOpenWorkspaceRowView`): a faint accent tint instead of the loud
-        // solid selection card. Only the active (selected) row is overridden; the
+        // solid selection card. A user-configured "Selection Highlight" color
+        // (workspaceColors.selectionColor / sidebarSelectionColorHex) still
+        // supplies the hue, rendered at the same faint opacity, so the setting
+        // keeps working. Only the active (selected) row is overridden; the
         // multi-select / custom-color tints below stay as upstream.
         if isActive {
+            if let hex = sidebarSelectionColorHex, let nsColor = NSColor(hex: hex) {
+                return Color(nsColor: nsColor).opacity(0.16)
+            }
             return Color.accentColor.opacity(0.16)
         }
         // SUPERMUX:end sidebar-selection-faint
@@ -14363,8 +14429,29 @@ struct TabItemView: View, Equatable {
         String(localized: "accessibility.workspacePosition", defaultValue: "\(workspaceSnapshot.title), workspace \(index + 1) of \(accessibilityWorkspaceCount)")
     }
 
+    // SUPERMUX:begin sidebar-hide-project-workspaces
+    /// Ids of workspaces hidden from the flat list because a project owns them
+    /// (they render nested in the Projects section). Recomputed on demand in
+    /// event handlers only — never stored or read from `body`, so TabItemView's
+    /// Equatable typing-latency contract is untouched.
+    private func projectHiddenWorkspaceIds() -> Set<UUID> {
+        SupermuxMainListFilter.projectHiddenWorkspaceIds(tabManager.tabs, tabManager: tabManager)
+    }
+    // SUPERMUX:end sidebar-hide-project-workspaces
+
     private func moveBy(_ delta: Int) {
-        let targetIndex = index + delta
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // Step over project-hidden workspaces so Move Up/Down swaps with the
+        // nearest *visible* flat-list neighbor instead of invisibly reordering
+        // around rows the user can't see.
+        // (upstream: `let targetIndex = index + delta`)
+        let hiddenIds = projectHiddenWorkspaceIds()
+        var targetIndex = index + delta
+        while targetIndex >= 0, targetIndex < tabManager.tabs.count,
+              hiddenIds.contains(tabManager.tabs[targetIndex].id) {
+            targetIndex += delta
+        }
+        // SUPERMUX:end sidebar-hide-project-workspaces
         guard targetIndex >= 0, targetIndex < tabManager.tabs.count else { return }
         guard tabManager.reorderWorkspace(tabId: tab.id, toIndex: targetIndex) else { return }
         selectedTabIds = [tab.id]
@@ -14413,7 +14500,20 @@ struct TabItemView: View, Equatable {
             let anchorIdsByGroup: [UUID: UUID] = Dictionary(
                 uniqueKeysWithValues: tabManager.workspaceGroups.map { ($0.id, $0.anchorWorkspaceId) }
             )
+            // SUPERMUX:begin sidebar-hide-project-workspaces
+            // Project-owned workspaces are hidden from the flat list (they
+            // render nested under their project), so exclude them from the
+            // range exactly like the collapsed-group members below — otherwise
+            // a Shift-click sweeps invisible rows into the selection and batch
+            // actions (including Close) hit workspaces the user never saw.
+            let projectHiddenIds = projectHiddenWorkspaceIds()
+            // SUPERMUX:end sidebar-hide-project-workspaces
             let rangeIds = tabManager.tabs[lower...upper].compactMap { tab -> UUID? in
+                // SUPERMUX:begin sidebar-hide-project-workspaces
+                if projectHiddenIds.contains(tab.id) {
+                    return nil
+                }
+                // SUPERMUX:end sidebar-hide-project-workspaces
                 if let gid = tab.groupId,
                    collapsedGroupIds.contains(gid),
                    anchorIdsByGroup[gid] != tab.id {
@@ -14458,19 +14558,44 @@ struct TabItemView: View, Equatable {
 
     private func closeOtherTabs(_ targetIds: [UUID]) {
         let keepIds = Set(targetIds)
-        let idsToClose = tabManager.tabs.compactMap { keepIds.contains($0.id) ? nil : $0.id }
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // Same visible-rows-only scoping as closeTabsBelow/Above: "other"
+        // means the other rows the user can see in the flat list, never the
+        // project-hidden workspaces rendered nested in the Projects section.
+        let projectHiddenIds = projectHiddenWorkspaceIds()
+        let idsToClose = tabManager.tabs.compactMap { workspace in
+            keepIds.contains(workspace.id) || projectHiddenIds.contains(workspace.id)
+                ? nil : workspace.id
+        }
+        // SUPERMUX:end sidebar-hide-project-workspaces
         closeTabs(idsToClose, allowPinned: true)
     }
 
     private func closeTabsBelow(tabId: UUID) {
         guard let anchorIndex = tabManager.tabs.firstIndex(where: { $0.id == tabId }) else { return }
-        let idsToClose = tabManager.tabs.suffix(from: anchorIndex + 1).map { $0.id }
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // Close only rows visible in the flat list below the anchor:
+        // project-hidden workspaces render nested in the Projects section, so
+        // sweeping them here would destroy workspaces the user can't see.
+        // Collapsed-group members deliberately stay included (upstream
+        // semantics: their anchor row represents them).
+        let projectHiddenIds = projectHiddenWorkspaceIds()
+        let idsToClose = tabManager.tabs.suffix(from: anchorIndex + 1)
+            .map(\.id)
+            .filter { !projectHiddenIds.contains($0) }
+        // SUPERMUX:end sidebar-hide-project-workspaces
         closeTabs(idsToClose, allowPinned: true)
     }
 
     private func closeTabsAbove(tabId: UUID) {
         guard let anchorIndex = tabManager.tabs.firstIndex(where: { $0.id == tabId }) else { return }
-        let idsToClose = tabManager.tabs.prefix(upTo: anchorIndex).map { $0.id }
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // Same visible-rows-only scoping as closeTabsBelow.
+        let projectHiddenIds = projectHiddenWorkspaceIds()
+        let idsToClose = tabManager.tabs.prefix(upTo: anchorIndex)
+            .map(\.id)
+            .filter { !projectHiddenIds.contains($0) }
+        // SUPERMUX:end sidebar-hide-project-workspaces
         closeTabs(idsToClose, allowPinned: true)
     }
 
