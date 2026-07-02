@@ -55,7 +55,9 @@ enum SettingsSearchAliasIndex {
         "app:new-workspace-placement": localized("settings.search.alias.setting.app.new-workspace-placement", defaultValue: "app.newWorkspacePlacement new tab insert position order top bottom end"),
         "app:workspace-group-new-workspace-placement": localized("settings.search.alias.setting.app.workspace-group-new-workspace-placement", defaultValue: "workspaceGroups.newWorkspacePlacement group new workspace command n cmd-n plus insert position after current top end"),
         "app:fork-conversation-default": localized("settings.search.alias.setting.app.fork-conversation-default", defaultValue: "app.forkConversationDefaultDestination fork conversation right left top bottom split tab workspace default"),
-        "app:workspace-inherit-working-directory": localized("settings.search.alias.setting.app.workspace-inherit-working-directory", defaultValue: "app.workspaceInheritWorkingDirectory workspace cwd directory inherit current focused ghostty working-directory"),
+        // SUPERMUX:begin new-workspace-home-dir
+        "app:workspace-inherit-working-directory": localized("settings.search.alias.setting.app.workspace-inherit-working-directory", defaultValue: "app.workspaceInheritWorkingDirectory workspace cwd directory inherit current focused home working-directory"),
+        // SUPERMUX:end new-workspace-home-dir
         "app:minimal-mode": localized("settings.search.alias.setting.app.minimal-mode", defaultValue: "app.minimalMode minimal layout simple chrome compact titlebar controls"),
         "app:keep-workspace-open": localized("settings.search.alias.setting.app.keep-workspace-open", defaultValue: "app.keepWorkspaceOpenWhenClosingLastSurface close last pane surface keep tab workspace"),
         "app:focus-pane-first-click": localized("settings.search.alias.setting.app.focus-pane-first-click", defaultValue: "app.focusPaneOnFirstClick click to focus focus follows mouse first click mouse activation"),

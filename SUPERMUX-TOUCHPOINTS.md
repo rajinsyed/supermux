@@ -18,7 +18,7 @@ Rules for adding a touchpoint:
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges, Close Tabs Below/Above/Other, and Move Up/Down exclude project-hidden workspaces (via a fenced `TabItemView.projectHiddenWorkspaceIds()` helper computed only in event handlers and the on-demand context-menu builder), the four Move/Close menu items disable on visible-neighbor availability instead of raw full-list indices (so they are never enabled no-ops when only hidden rows lie in that direction), and a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`; renders the agent-activity indicator on flat-list workspace rows; gives the flat-list selection the faint accent tint used by nested project rows (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17) |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
-| 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys) |
+| 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width), with a third fallback putting the icon-only row in a horizontal `ScrollView` so mode buttons scroll instead of clipping at extreme narrowness; `right-sidebar-changes-mode-focushost` mounts `SupermuxChangesFocusHostBridge`/`SupermuxChangesFocusHostView` as the changes panel's background, registering a geometry-based focus host with the window's `MainWindowFocusController` |
 | 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
 | 7 | `Sources/RightSidebarToolPanel.swift` | `right-sidebar-changes-mode-*` | `.changes` joins the `.feed, .dock` no-op groups (sync/focus/intent/anchor, ×4) |
@@ -28,7 +28,7 @@ Rules for adding a touchpoint:
 | 11 | `Sources/KeyboardShortcutSettings.swift` | `run-toggle-shortcut-*` | `supermuxToggleRun` action (case/label/default ⌘G, shared with Find Next) |
 | 12 | `Sources/AppDelegate.swift` | `run-toggle-shortcut-*` | ⌘G dispatch: Find Next while find overlay is open, run toggle otherwise; auto-repeat key events are excluded from the run toggle |
 | 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit` to the SPM package-test allowlist so its tests gate CI |
-| 14 | `web/data/cmux.schema.json` | `unfenced` | Adds all five supermux ids — `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, `supermuxWorkspaceSwitcherPrevious`, `supermuxCommit`, and `supermuxCommitAccelerator` — to the shortcut-action enum so cmux.json validation accepts rebinding them |
+| 14 | `web/data/cmux.schema.json` | `unfenced` | Adds all five supermux ids — `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, `supermuxWorkspaceSwitcherPrevious`, `supermuxCommit`, and `supermuxCommitAccelerator` — to the shortcut-action enum so cmux.json validation accepts rebinding them; also rewrites the `workspaceInheritWorkingDirectory` description for the #80 fork behavior (off = always home directory) and gives it a `descriptionKey` (`schemaDescriptions.app.workspaceInheritWorkingDirectory`, messages under #86/#87) so the docs page localizes it |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only) inside a single `VStack` wrapper that keeps upstream's dynamic `ignoresSafeArea` edges — one structural identity, so minimal-mode toggles never rebuild the workspace subtree |
 | 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + byte-identical `AppIcon-Debug.icon` + `AppIcon-Nightly.icon` (no DEV/NIGHTLY bands — all three channels share one mark); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered icon. Wiring lives in touchpoint #3. |
@@ -93,7 +93,15 @@ Rules for adding a touchpoint:
 | 77 | `Sources/BrowserPaneDropTargetView.swift` | `browser-hover-drag-guard` | Same stale-drag-pasteboard fix one layer down: the slot's invisible pane drop target no longer captures hover-kind hit tests while no left button is held, so a stale tab-transfer/file payload can't misroute post-drag cursor updates and tooltips inside the slot (and can't defeat #74's topmost check, which hit-tests the slot) |
 | 78 | `cmuxTests/BrowserPanelTests.swift` | `browser-hover-drag-guard` | Updates upstream's two hover pass-through tests to the fork contract (hover-kind pass-through requires the left button held; the sidebar-reorder test is renamed accordingly); upstream's originals asserted exactly the stale-hover behavior #73 removes and would fail deterministically on CI |
 | 79 | `cmuxTests/BrowserPaneDropRoutingTests.swift` | `browser-hover-drag-guard` | Updates upstream's capture test to inject the pressed-button state and adds stale-hover regression coverage for #77 |
+| 80 | `Sources/TabManager.swift` | `new-workspace-home-dir` | With "Inherit Workspace Working Directory" OFF, `implicitWorkingDirectoryForNewWorkspace` returns the home directory explicitly instead of nil. A nil cwd reaches `ghostty_surface_new` unset, and Ghostty's own `tab-inherit-working-directory` (default on) then reuses the focused surface's pwd — so the sidebar empty-area double-click and the `+` button still opened new workspaces in the focused workspace's directory despite the setting. Regression test: `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` (wired via #3) |
 | 81 | `cmuxTests/WorkspaceUnitTests.swift` | `new-workspace-home-dir` | Upstream's `testDisabledInheritanceLeavesNewWorkspaceCwdUnsetForGhosttyConfigFallback` asserted the nil-cwd contract #80 replaces; renamed to `testDisabledInheritancePinsNewWorkspaceCwdToHomeDirectory` and asserts the explicit home directory |
+| 82 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` | `new-workspace-home-dir` | The Inherit Working Directory toggle's OFF subtitle now says new workspaces always start in the home directory (upstream promised a Ghostty working-directory fallback that #80 removes); matching en/ja catalog values updated under #4b, schema description under #14 |
+| 83 | `cmuxUITests/SettingsAppBehaviorUITests.swift` | `new-workspace-home-dir` | `Subtitle.inheritOff` now matches the fork's OFF subtitle; upstream's constant held the removed Ghostty-fallback wording, so `testInheritWorkingDirectoryToggleSwapsSubtitle` (which polls for that exact static text after clicking the toggle) failed deterministically against #82's reworded row |
+| 84 | `Sources/SettingsSearchAliases.swift` | `new-workspace-home-dir` | The toggle's settings-search alias swaps the stale `ghostty` keyword for `home` (the OFF behavior no longer involves Ghostty's working-directory setting); en/ja catalog values under #4b |
+| 85 | `Sources/SettingsNavigation.swift` | `new-workspace-home-dir` | Same `ghostty` → `home` keyword swap in the settings-navigation entry's search keywords |
+| 86 | `web/messages/en.json` | `unfenced` | Adds `schemaDescriptions.app.workspaceInheritWorkingDirectory` so the localized docs configuration page renders the reworded #14 schema description through `descriptionKey` (the sibling mechanism 32 other schema properties use) instead of the English-only `description` fallback |
+| 87 | `web/messages/ja.json` | `unfenced` | Japanese translation for the #86 message key |
+| 88 | `skills/cmux-settings/references/all-keys.md` | `unfenced` | Regenerated the `app.workspaceInheritWorkingDirectory` description row to match the #14 schema description (the file is auto-generated from `web/data/cmux.schema.json` and had the removed Ghostty-fallback wording) |
 
 ## How to re-apply
 
@@ -269,9 +277,11 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | Row | Δ | Reason |
 |-----|---|--------|
 | `Sources/ContentView.swift` | +9, +14, +28, +26, +19 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). `empty-home` (+26: `SupermuxEmptyHomeView` mount in `terminalContent`, the startup-recovery auto-add suppression, and clearing the titlebar title on empty, 16751→16777); `sidebar-hide-scrollbar` (+19: replaces the one-line `applySidebarOverlayScrollerConfiguration()` call in `configureSidebarScrollView` with the inlined hidden-scroller config and folds the now-stale upstream overlay-scroller doc comment into the fence; plus `.scrollIndicators(.hidden)` on both sidebar `ScrollView`s — workspace list and extension-provider list — so SwiftUI does not re-assert the scroller, 16236→16255); +86: `sidebar-hide-project-workspaces` render-context threading + selection pruning, `sidebar-selection-faint` user-hue tint, and the `empty-home` startup-recovery early-return (16255→16341); +38: `sidebar-hide-project-workspaces` closeOtherTabs visible-rows scoping + the context-menu visible-neighbor enablement block for Move Up/Down and Close Below/Above/Other (16341→16379) |
-| `Sources/TabManager.swift` | +25, +28, +24, +6 | `new-workspace-standalone` (+25: `markStandalone` call in `addWorkspace`, the central close-path `forget` cleanup, and the `forget` clear in `restoreClosedWorkspace` so reopened project workspaces re-nest); `keep-window-on-last-close` (+28: `allowEmptyingWindow` param/guard, selection-to-`nil`, the three last-workspace close sites + bulk short-circuit/plan, the child-exit path, close-confirmation metadata cleanup, and failed closed-workspace restore cleanup, 6116→6169); `keep-window-on-last-close` (+24: `detachWorkspace` empty-source handling, zero-workspace snapshot restore, orphaned-helper comment, 6228→6252); `new-workspace-standalone` (+6: `forget` in `releaseRestoredAwayWorkspace`, 6252→6258) |
+| `Sources/TabManager.swift` | +25, +28, +24, +6 | `new-workspace-standalone` (+25: `markStandalone` call in `addWorkspace`, the central close-path `forget` cleanup, and the `forget` clear in `restoreClosedWorkspace` so reopened project workspaces re-nest); `keep-window-on-last-close` (+28: `allowEmptyingWindow` param/guard, selection-to-`nil`, the three last-workspace close sites + bulk short-circuit/plan, the child-exit path, close-confirmation metadata cleanup, and failed closed-workspace restore cleanup, 6116→6169); `keep-window-on-last-close` (+24: `detachWorkspace` empty-source handling, zero-workspace snapshot restore, orphaned-helper comment, 6228→6252); `new-workspace-standalone` (+6: `forget` in `releaseRestoredAwayWorkspace`, 6252→6258); `new-workspace-home-dir` (+6: fenced home-directory return in `implicitWorkingDirectoryForNewWorkspace`, 6258→6264) |
 | `cmuxTests/TabManagerUnitTests.swift` | +69, +21 | `keep-window-on-last-close` (repurposed `testChildExitOnLastWorkspaceKeepsWindowOpenAsEmptyHome`, updated all-workspaces confirmation copy expectations, two new empty-home close tests, and failed restore cleanup coverage, 3926→3995); +21: `testDetachingLastWorkspaceLeavesEmptyHome` + `testRestoreSessionSnapshotKeepsPersistedEmptyHomeEmpty` (3995→4016) |
 | `cmuxTests/WorkspaceUnitTests.swift` | +10 | `new-workspace-home-dir` (repurposed the disabled-inheritance test to assert the explicit home directory, 7366→7376) |
+| `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` | +2 | `new-workspace-home-dir` (fence around the rewritten OFF subtitle, 928→930) |
+| `Sources/SettingsNavigation.swift` | +2 | `new-workspace-home-dir` (fence around the toggle's search-keyword swap, 606→608) |
 | `Sources/WorkspaceContentView.swift` | +12, −8 | `presets-bar` mount above the splits; reshaped from the if/else branch to the single-identity `VStack` wrapper (816→820, net +4 over upstream) |
 | `Sources/RightSidebarPanelView.swift` | +18, +35, +3, +71 | `right-sidebar-changes-mode-*` (case/label/symbol/shortcut/rootsync/content, +18); `right-sidebar-compact-mode-bar` (+35: `ViewThatFits` wrapper with pinned trailing controls + `modeButtonsRow(showsLabels:)` helper + `showsLabel` pill param/conditional, 743→778); `right-sidebar-changes-mode-content` (+3: `SupermuxChangesMount` now also passes `isVisible: fileExplorerState.isVisible`, 778→781); +71: third icon-only-scroll `ViewThatFits` fallback + `right-sidebar-changes-mode-focushost` mount (624→695) |
 | `Sources/RightSidebarToolPanel.swift` | (within budget) | `.changes` added to 4 existing case groups |
@@ -1328,3 +1338,82 @@ The #73 policy change ripples into three sibling surfaces; all four edits share 
 If upstream fixes the drag-pasteboard staleness at the source (clearing it when a drag ends),
 drop all `browser-hover-drag-guard` fences and take upstream's fix; the #75/#78/#79 tests tell
 you whether the symptom is truly gone.
+
+### 80. `Sources/TabManager.swift` — `new-workspace-home-dir`
+
+In `implicitWorkingDirectoryForNewWorkspace(from:)`, the `guard` on the
+`app.workspaceInheritWorkingDirectory` setting used to `return nil` when the setting is off.
+Replace that `return nil` with a fenced explicit home-directory return:
+
+```swift
+guard settings.value(for: settingsCatalog.app.workspaceInheritWorkingDirectory) else {
+    // SUPERMUX:begin new-workspace-home-dir
+    // Returning nil here still inherits: the surface spawns with no
+    // explicit cwd and Ghostty's own tab-inherit-working-directory
+    // (default on) reuses the focused surface's pwd. Pin the home
+    // directory explicitly so turning the setting off takes effect.
+    return FileManager.default.homeDirectoryForCurrentUser.path
+    // SUPERMUX:end new-workspace-home-dir
+}
+```
+
+Why: every plain new-workspace entrypoint (sidebar empty-area double-click, sidebar `+`,
+⌘N, palette) funnels into `addWorkspace`, which passes this value down to the initial
+`TerminalPanel` → `ghostty_surface_new`. When it is nil, `apprt.surface.newConfig` in the
+ghostty submodule copies the previously focused surface's pwd into the new surface's config
+(`tab-inherit-working-directory` defaults to true), so the cmux-level setting appeared to do
+nothing. Regression coverage: `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift`
+(pbxproj IDs `50BE0001…00D1`/`…00D2`, see #3).
+
+Second consumer, on purpose: `addWorkspace(fromDetachedSurface:)`
+(`Sources/TabManager+DetachedWorkspace.swift:38`) also calls
+`implicitWorkingDirectoryForNewWorkspace` as the fallback behind `detached.directory`, so
+with the setting off a detach-drop without a transfer directory now gets the explicit home
+pin instead of nil. That is observationally identical today — `Workspace.init` already
+displayed home as `currentDirectory` when `workingDirectory` was nil — which is why
+upstream's unfenced tests `testDisabledInheritanceLeavesDetachedWorkspaceFallbackCwdUnset…`
+and `testDetachedWorkspaceTransferDirectoryWinsWhenInheritanceIsDisabled`
+(`cmuxTests/WorkspaceUnitTests.swift` ~3084/3105) keep passing unmodified; if an upstream
+merge changes those tests or the nil-cwd display fallback, re-check this path.
+
+The behavior change ripples into these sibling surfaces (fenced ones share the
+`new-workspace-home-dir` id):
+
+- **`cmuxTests/WorkspaceUnitTests.swift` (#81):** upstream's
+  `testDisabledInheritanceLeavesNewWorkspaceCwdUnsetForGhosttyConfigFallback` asserted
+  `requestedWorkingDirectory == nil` — exactly the contract #80 replaces. It is fenced,
+  renamed `testDisabledInheritancePinsNewWorkspaceCwdToHomeDirectory`, and asserts
+  `FileManager.default.homeDirectoryForCurrentUser.path`. The plain-path sibling tests
+  (inherit-on, explicit per-call `inheritWorkingDirectory: false`, explicit-override) are
+  untouched; the two detached-path disabled-inheritance tests are also untouched but their
+  mechanism changed (see the second-consumer note above).
+- **`Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` (#82):**
+  the toggle's OFF subtitle `defaultValue` becomes "New workspaces always start in your home
+  directory." (fenced around the `:` branch of the subtitle ternary).
+- **`cmuxUITests/SettingsAppBehaviorUITests.swift` (#83):** `Subtitle.inheritOff` must match
+  the #82 `defaultValue` verbatim or `testInheritWorkingDirectoryToggleSwapsSubtitle` fails.
+- **`Resources/Localizable.xcstrings` (#4b, unfenced):** the en+ja values of
+  `settings.app.workspaceInheritWorkingDirectory.subtitleOff` are rewritten to match
+  (en: "New workspaces always start in your home directory."; ja:
+  "新規ワークスペースは常にホームディレクトリで開始します。"), and the en+ja values of
+  `settings.search.alias.setting.app.workspace-inherit-working-directory` swap
+  `ghostty`/`Ghostty` for `home`/`ホーム` (#84).
+- **`Sources/SettingsSearchAliases.swift` (#84) and `Sources/SettingsNavigation.swift`
+  (#85):** the settings-search keywords for the toggle drop the stale `ghostty` term for
+  `home`.
+- **`web/data/cmux.schema.json` (#14, unfenced):** the `workspaceInheritWorkingDirectory`
+  description's "when false" clause becomes "new workspaces always start in the home
+  directory.", plus a `descriptionKey` pointing at
+  `schemaDescriptions.app.workspaceInheritWorkingDirectory` in `web/messages/en.json` (#86)
+  and `web/messages/ja.json` (#87) so the docs configuration page localizes it.
+- **`skills/cmux-settings/references/all-keys.md` (#88, unfenced):** the generated
+  description row is refreshed from the schema.
+
+Deliberate trade-off: with the setting off, a user-configured Ghostty `working-directory`
+config value is now overridden by the home pin even at first launch (the one case upstream's
+nil fallback genuinely honored it). "Off = always home" is the fork's product decision.
+
+If upstream ever fixes the inheritance leak itself (e.g. passing an explicit cwd or a
+no-inherit flag to `ghostty_surface_new` when the setting is off), drop all
+`new-workspace-home-dir` fences and take upstream's fix; the #81 test and
+`SupermuxNewWorkspaceHomeDirectoryTests` tell you whether the symptom is truly gone.

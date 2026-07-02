@@ -301,7 +301,8 @@
         "workspaceInheritWorkingDirectory": {
           "type": "boolean",
           "default": true,
-          "description": "When true, new workspaces inherit the current workspace working directory. When false, new workspaces leave the working directory unset so Ghostty's working-directory setting can provide the default."
+          "descriptionKey": "schemaDescriptions.app.workspaceInheritWorkingDirectory",
+          "description": "When true, new workspaces inherit the current workspace working directory. When false, new workspaces always start in the home directory."
         },
         "minimalMode": {
           "type": "boolean",
