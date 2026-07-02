@@ -1539,7 +1539,13 @@ class TabManager: ObservableObject {
 
     func implicitWorkingDirectoryForNewWorkspace(from sourceWorkspace: Workspace?) -> String? {
         guard settings.value(for: settingsCatalog.app.workspaceInheritWorkingDirectory) else {
-            return nil
+            // SUPERMUX:begin new-workspace-home-dir
+            // Returning nil here still inherits: the surface spawns with no
+            // explicit cwd and Ghostty's own tab-inherit-working-directory
+            // (default on) reuses the focused surface's pwd. Pin the home
+            // directory explicitly so turning the setting off takes effect.
+            return FileManager.default.homeDirectoryForCurrentUser.path
+            // SUPERMUX:end new-workspace-home-dir
         }
         return preferredWorkingDirectoryForNewTab(workspace: sourceWorkspace)
     }

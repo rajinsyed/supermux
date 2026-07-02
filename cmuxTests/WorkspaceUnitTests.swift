@@ -2999,7 +2999,13 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
         }
     }
 
-    func testDisabledInheritanceLeavesNewWorkspaceCwdUnsetForGhosttyConfigFallback() throws {
+    // SUPERMUX:begin new-workspace-home-dir
+    // Fork contract: disabled inheritance pins the new workspace cwd to the
+    // home directory explicitly. Upstream left it unset for a Ghostty
+    // working-directory config fallback, but Ghostty's own
+    // tab-inherit-working-directory (default on) overrode that with the
+    // focused surface's pwd — so the setting appeared to do nothing.
+    func testDisabledInheritancePinsNewWorkspaceCwdToHomeDirectory() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(false) {
             let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
             let manager = TabManager(
@@ -3009,10 +3015,14 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
             let inserted = manager.addWorkspace(autoWelcomeIfNeeded: false)
 
-            XCTAssertNil(inserted.focusedTerminalPanel?.requestedWorkingDirectory)
+            XCTAssertEqual(
+                inserted.focusedTerminalPanel?.requestedWorkingDirectory,
+                FileManager.default.homeDirectoryForCurrentUser.path
+            )
             XCTAssertNotEqual(inserted.currentDirectory, sourceCwd)
         }
     }
+    // SUPERMUX:end new-workspace-home-dir
 
     func testExplicitNoInheritanceLeavesNewWorkspaceCwdUnsetWhenGlobalInheritanceEnabled() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(nil) {
