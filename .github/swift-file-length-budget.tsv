@@ -10,8 +10,8 @@
 12241	cmuxTests/AppDelegateShortcutRoutingTests.swift
 11920	Sources/Panels/BrowserPanel.swift
 9497	cmuxTests/CLINotifyProcessIntegrationRegressionTests.swift
+8034	Sources/Panels/BrowserPanelView.swift
 8009	CLI/cmux_open.swift
-7986	Sources/Panels/BrowserPanelView.swift
 7366	cmuxTests/WorkspaceUnitTests.swift
 7218	cmuxTests/WorkspaceRemoteConnectionTests.swift
 6901	Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift
@@ -132,6 +132,7 @@
 722	Packages/Shared/CmuxAgentChat/Sources/CmuxAgentChat/Store/ChatConversationStore.swift
 718	Packages/Shared/CmuxAuthRuntime/Sources/CmuxAuthRuntime/Coordinator/AuthCoordinator.swift
 716	Sources/TaskManagerSnapshot.swift
+714	cmuxTests/PortalTabDragRoutingTests.swift
 710	Sources/TerminalSSHSessionDetector.swift
 706	CLI/CMUXCLI+Config.swift
 705	Sources/AppleScriptSupport.swift
@@ -173,7 +174,6 @@
 599	Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/AgentLaunchSanitizer.swift
 596	cmuxTests/CmuxEventBusTests.swift
 594	Sources/SessionIndexModels.swift
-594	cmuxTests/PortalTabDragRoutingTests.swift
 590	Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalSurface.swift
 588	cmuxTests/CommandPaletteShortcutCustomizationTests.swift
 587	Packages/SupermuxKit/Tests/SupermuxKitTests/SupermuxGitChangesServiceTests.swift
