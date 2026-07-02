@@ -128,23 +128,31 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         )
     }
 
+    // SUPERMUX:begin browser-hover-drag-guard
+    // Hover-kind capture now additionally requires the left mouse button to be
+    // physically held (an in-flight drag): the `.drag` pasteboard keeps its
+    // declared types after a drag ends, and a stale payload must not let this
+    // invisible overlay capture ordinary post-drag hover over the pane.
     func testHitTestingCapturesOnlyForRelevantDragEvents() {
         XCTAssertTrue(
             BrowserPaneDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
-                eventType: .cursorUpdate
+                eventType: .cursorUpdate,
+                pressedMouseButtons: 1
             )
         )
         XCTAssertFalse(
             BrowserPaneDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
-                eventType: .leftMouseDown
+                eventType: .leftMouseDown,
+                pressedMouseButtons: 1
             )
         )
         XCTAssertTrue(
             BrowserPaneDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [.fileURL],
-                eventType: .cursorUpdate
+                eventType: .cursorUpdate,
+                pressedMouseButtons: 1
             )
         )
 
@@ -160,7 +168,8 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
             XCTAssertFalse(
                 BrowserPaneDropTargetView.shouldCaptureHitTesting(
                     pasteboardTypes: pasteboardTypes,
-                    eventType: .cursorUpdate
+                    eventType: .cursorUpdate,
+                    pressedMouseButtons: 1
                 ),
                 "Browser pane drop target should not capture external drag payload: \(pasteboardTypes)"
             )
@@ -169,10 +178,51 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         XCTAssertTrue(
             BrowserPaneDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [.fileURL, .png],
-                eventType: .cursorUpdate
+                eventType: .cursorUpdate,
+                pressedMouseButtons: 1
             )
         )
     }
+
+    func testHitTestingDoesNotCaptureStaleHoverWithoutPressedMouseButton() {
+        let stalePayloads: [[NSPasteboard.PasteboardType]] = [
+            [DragOverlayRoutingPolicy.bonsplitTabTransferType],
+            [DragOverlayRoutingPolicy.filePreviewTransferType],
+            [.fileURL],
+        ]
+        let hoverEvents: [NSEvent.EventType] = [.mouseMoved, .cursorUpdate, .mouseEntered, .mouseExited]
+
+        for stale in stalePayloads {
+            for event in hoverEvents {
+                XCTAssertFalse(
+                    BrowserPaneDropTargetView.shouldCaptureHitTesting(
+                        pasteboardTypes: stale,
+                        eventType: event,
+                        pressedMouseButtons: 0
+                    ),
+                    "Stale payload \(stale) must not capture hover (\(event)) with no mouse button held"
+                )
+            }
+        }
+
+        // Drop delivery (mouseUp) and in-flight drag events are unaffected by the
+        // pressed-button snapshot.
+        XCTAssertTrue(
+            BrowserPaneDropTargetView.shouldCaptureHitTesting(
+                pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
+                eventType: .leftMouseUp,
+                pressedMouseButtons: 0
+            )
+        )
+        XCTAssertTrue(
+            BrowserPaneDropTargetView.shouldCaptureHitTesting(
+                pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
+                eventType: .leftMouseDragged,
+                pressedMouseButtons: 0
+            )
+        )
+    }
+    // SUPERMUX:end browser-hover-drag-guard
 
     func testCenterDropOnSamePaneIsNoOp() {
         let paneId = PaneID(id: UUID())

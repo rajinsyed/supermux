@@ -6509,28 +6509,50 @@ struct WebViewRepresentable: NSViewRepresentable {
         /// portal-hosted web view makes WebKit's topmost gate pass. Only hover-kind
         /// events are delegated: real event routing (clicks, drags, scroll) is
         /// handled by the portal host above the contentView and never consults
-        /// this anchor.
+        /// this anchor. Set only in window-portal hosting mode; an inline-hosted
+        /// web view (canvas or docked-DevTools hosting) already lives in this
+        /// anchor's subtree, where `super.hitTest` resolves it naturally.
         weak var portalHoverHitTestWebView: WKWebView?
+
+        /// Test seam: `hitTest(_:)` cannot receive a routing context, so it reads
+        /// `NSApp.currentEvent` unless a test injects a hover context here.
+        var portalHoverRoutingContextOverride: WindowInputRoutingContext?
 
         func portalHoverDelegationTarget(
             at point: NSPoint,
-            routingContext: WindowInputRoutingContext = WindowInputRoutingContext(event: NSApp.currentEvent)
+            routingContext: WindowInputRoutingContext,
+            pressedMouseButtons: Int = NSEvent.pressedMouseButtons,
+            dragPasteboardTypes: @autoclosure () -> [NSPasteboard.PasteboardType]? = NSPasteboard(name: .drag).types
         ) -> NSView? {
             guard routingContext.eventKind == .pointerHover else {
                 return nil
             }
             guard let window else { return nil }
-            for candidate in [hostedInspectorFrontendWebView, portalHoverHitTestWebView] {
-                guard let webView = candidate,
-                      webView.window === window,
-                      webView.superview != nil,
-                      !webView.isHiddenOrHasHiddenAncestor else { continue }
-                let pointInWebView = webView.convert(point, from: self)
-                if webView.bounds.contains(pointInWebView) {
-                    return webView
-                }
+            guard let webView = portalHoverHitTestWebView,
+                  webView.window === window,
+                  !webView.isHiddenOrHasHiddenAncestor,
+                  let slot = webView.superview,
+                  let slotContainer = slot.superview else { return nil }
+            // An in-flight tab drag (left button held + tab-transfer payload on the
+            // drag pasteboard) surfaces as hover-kind hit tests and must keep
+            // resolving to the Bonsplit/sidebar drop targets behind the portal,
+            // mirroring shouldPassThroughPortalHitTesting. The pasteboard is only
+            // consulted while the button is held, so plain hover stays cheap.
+            if (pressedMouseButtons & 1) != 0,
+               DragOverlayRoutingPolicy.shouldPassThroughPortalHitTesting(
+                   pasteboardTypes: dragPasteboardTypes(),
+                   eventType: routingContext.eventType,
+                   pressedMouseButtons: pressedMouseButtons
+               ) {
+                return nil
             }
-            return nil
+            // Claim hover only when the web view is actually topmost within its
+            // slot at this point: the find-bar and omnibar-suggestion overlays are
+            // slot siblings layered above the web view, and WebKit's gate exists
+            // exactly to suppress page hover beneath an occluding view.
+            let slotHit = slot.hitTest(slotContainer.convert(point, from: self))
+            guard let slotHit, slotHit.isDescendant(of: webView) else { return nil }
+            return webView
         }
         // SUPERMUX:end browser-hover-webkit-topmost-gate
 
@@ -6565,10 +6587,11 @@ struct WebViewRepresentable: NSViewRepresentable {
                 return self
             }
             // SUPERMUX:begin browser-hover-webkit-topmost-gate
-            if let delegated = portalHoverDelegationTarget(at: point) {
-#if DEBUG
-                debugLogHitTest(stage: "hitTest.portalHoverDelegate", point: point, passThrough: false, hitView: delegated)
-#endif
+            if let delegated = portalHoverDelegationTarget(
+                at: point,
+                routingContext: portalHoverRoutingContextOverride
+                    ?? WindowInputRoutingContext(event: NSApp.currentEvent)
+            ) {
                 return delegated
             }
             // SUPERMUX:end browser-hover-webkit-topmost-gate
@@ -7856,7 +7879,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         coordinator.panel = panel
         coordinator.webView = webView
         // SUPERMUX:begin browser-hover-webkit-topmost-gate
-        (nsView as? HostContainerView)?.portalHoverHitTestWebView = webView
+        (nsView as? HostContainerView)?.portalHoverHitTestWebView = useLocalInlineHosting ? nil : webView
         // SUPERMUX:end browser-hover-webkit-topmost-gate
 
         Self.clearPortalCallbacks(for: nsView)

@@ -656,7 +656,10 @@ final class PortalTabDragRoutingTests: XCTestCase {
     // SwiftUI-side anchor instead and WebKit silently drops every hover event
     // (no CSS :hover, no cursor changes, no tooltips), while clicks and scrolling
     // keep working. The anchor must delegate hover-time hit tests to the
-    // portal-hosted web view so WebKit's topmost gate passes.
+    // portal-hosted web view so WebKit's topmost gate passes — but only when the
+    // web view is actually topmost in its slot (find-bar/omnibar overlays sit
+    // above it) and never while a tab drag is in flight (those hit tests must
+    // keep resolving to the Bonsplit/sidebar drop targets behind the portal).
     func testBrowserAnchorDelegatesHoverHitTestToPortalHostedWebView() throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -669,18 +672,25 @@ final class PortalTabDragRoutingTests: XCTestCase {
         let contentView = try XCTUnwrap(window.contentView)
         let themeFrame = try XCTUnwrap(contentView.superview)
 
+        // Mirror SwiftUI's representable hosting: the anchor sits origin-aligned
+        // inside a positioned wrapper. HostContainerView's hit-test logic — like
+        // its pre-existing divider helpers — treats the hitTest point as
+        // bounds-local, which holds because SwiftUI hosts platform views
+        // origin-aligned in their direct superview.
+        let wrapper = NSView(frame: NSRect(x: 400, y: 0, width: 400, height: 600))
+        contentView.addSubview(wrapper)
         let anchor = WebViewRepresentable.HostContainerView(
-            frame: NSRect(x: 400, y: 0, width: 400, height: 600)
+            frame: NSRect(x: 0, y: 0, width: 400, height: 600)
         )
-        contentView.addSubview(anchor)
+        wrapper.addSubview(anchor)
 
         // Portal-style hosting: the web view lives OUTSIDE the contentView subtree,
-        // in an overlay attached above it on the theme frame — mirroring how
+        // in a slot attached above it on the theme frame — mirroring how
         // WindowBrowserHostView installs its slots.
-        let overlay = NSView(frame: themeFrame.bounds)
-        themeFrame.addSubview(overlay, positioned: .above, relativeTo: contentView)
+        let slot = NSView(frame: themeFrame.bounds)
+        themeFrame.addSubview(slot, positioned: .above, relativeTo: contentView)
         let webView = WKWebView(frame: NSRect(x: 400, y: 0, width: 400, height: 600))
-        overlay.addSubview(webView)
+        slot.addSubview(webView)
 
         anchor.portalHoverHitTestWebView = webView
 
@@ -688,25 +698,96 @@ final class PortalTabDragRoutingTests: XCTestCase {
         let pointOverWebView = NSPoint(x: 50, y: 50) // anchor-local; maps into the web view
 
         XCTAssertIdentical(
-            anchor.portalHoverDelegationTarget(at: pointOverWebView, routingContext: hover),
+            anchor.portalHoverDelegationTarget(
+                at: pointOverWebView,
+                routingContext: hover,
+                pressedMouseButtons: 0,
+                dragPasteboardTypes: nil
+            ),
             webView,
             "Hover hit tests over the page area must resolve to the portal-hosted web view so WebKit's topmost-at-mouse-location gate passes"
         )
         XCTAssertNil(
             anchor.portalHoverDelegationTarget(
                 at: pointOverWebView,
-                routingContext: WindowInputRoutingContext(eventType: .keyDown)
+                routingContext: WindowInputRoutingContext(eventType: .keyDown),
+                pressedMouseButtons: 0,
+                dragPasteboardTypes: nil
             ),
             "Non-hover hit tests must not be delegated; real event routing is owned by the portal host"
         )
         XCTAssertNil(
-            anchor.portalHoverDelegationTarget(at: NSPoint(x: -10, y: 50), routingContext: hover),
+            anchor.portalHoverDelegationTarget(
+                at: NSPoint(x: -10, y: 50),
+                routingContext: hover,
+                pressedMouseButtons: 0,
+                dragPasteboardTypes: nil
+            ),
             "Points outside the web view's bounds must not be claimed for it"
         )
 
+        // End-to-end through the anchor's hitTest override — the hook WebKit's
+        // contentView-rooted hit test actually reaches.
+        anchor.portalHoverRoutingContextOverride = hover
+        XCTAssertIdentical(
+            anchor.hitTest(pointOverWebView),
+            webView,
+            "hitTest must delegate hover-kind hit tests to the portal-hosted web view"
+        )
+        anchor.portalHoverRoutingContextOverride = WindowInputRoutingContext(eventType: .keyDown)
+        XCTAssertIdentical(
+            anchor.hitTest(pointOverWebView),
+            anchor,
+            "hitTest must not delegate non-hover hit tests"
+        )
+        anchor.portalHoverRoutingContextOverride = nil
+
+        // An in-flight tab drag (left button held + tab-transfer payload on the
+        // drag pasteboard) must keep resolving to the drop targets behind the
+        // portal, not to the web view.
+        XCTAssertNil(
+            anchor.portalHoverDelegationTarget(
+                at: pointOverWebView,
+                routingContext: hover,
+                pressedMouseButtons: 1,
+                dragPasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType]
+            ),
+            "Hover-kind hit tests during an active tab drag must not be claimed for the web view"
+        )
+        XCTAssertIdentical(
+            anchor.portalHoverDelegationTarget(
+                at: pointOverWebView,
+                routingContext: hover,
+                pressedMouseButtons: 1,
+                dragPasteboardTypes: nil
+            ),
+            webView,
+            "A held button without a tab-drag payload is ordinary hover and must still be delegated"
+        )
+
+        // A slot sibling layered above the web view (find bar, omnibar
+        // suggestions) occludes it: the gate must not claim hover there.
+        let occludingOverlay = NSView(frame: webView.frame)
+        slot.addSubview(occludingOverlay, positioned: .above, relativeTo: webView)
+        XCTAssertNil(
+            anchor.portalHoverDelegationTarget(
+                at: pointOverWebView,
+                routingContext: hover,
+                pressedMouseButtons: 0,
+                dragPasteboardTypes: nil
+            ),
+            "Points covered by a slot overlay above the web view must not be claimed for it"
+        )
+        occludingOverlay.removeFromSuperview()
+
         webView.removeFromSuperview()
         XCTAssertNil(
-            anchor.portalHoverDelegationTarget(at: pointOverWebView, routingContext: hover),
+            anchor.portalHoverDelegationTarget(
+                at: pointOverWebView,
+                routingContext: hover,
+                pressedMouseButtons: 0,
+                dragPasteboardTypes: nil
+            ),
             "A web view not hosted in this window (e.g. parked in the background preload window) must not be claimed"
         )
     }

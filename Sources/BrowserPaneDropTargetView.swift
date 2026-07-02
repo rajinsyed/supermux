@@ -34,9 +34,24 @@ final class BrowserPaneDropTargetView: NSView {
     @MainActor
     static func shouldCaptureHitTesting(
         pasteboardTypes: [NSPasteboard.PasteboardType]?,
-        eventType: NSEvent.EventType?
+        eventType: NSEvent.EventType?,
+        // SUPERMUX:begin browser-hover-drag-guard
+        pressedMouseButtons: Int = NSEvent.pressedMouseButtons
+        // SUPERMUX:end browser-hover-drag-guard
     ) -> Bool {
         guard WindowInputRoutingContext.allowsPaneDropHitTesting(eventType: eventType) else { return false }
+        // SUPERMUX:begin browser-hover-drag-guard
+        // Hover-kind events only signal an in-flight drag while the left mouse
+        // button is actually held. The `.drag` pasteboard keeps its declared types
+        // after a drag ends, so without this guard a stale payload would make this
+        // invisible overlay capture every post-drag hover over the pane, misrouting
+        // cursor updates and tooltips away from the hosted web view and find bar
+        // (same fix family as shouldPassThroughPortalHitTesting's hover guard).
+        if WindowInputRoutingContext(eventType: eventType).eventKind == .pointerHover,
+           (pressedMouseButtons & 1) == 0 {
+            return false
+        }
+        // SUPERMUX:end browser-hover-drag-guard
 
         let hasFileURL = DragOverlayRoutingPolicy.hasFileURL(pasteboardTypes)
         let fileDropBehavior = DragOverlayRoutingPolicy.resolvedFileDropBehavior(

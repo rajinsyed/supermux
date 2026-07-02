@@ -87,8 +87,12 @@ Rules for adding a touchpoint:
 | 71 | `Sources/TerminalController+MobileWorkspaceList.swift` | `keep-window-on-last-close` | The mobile `v2MobileWorkspaceClose` API drops upstream's `tabs.count > 1` last-workspace rejection, closes via `closeWorkspace(workspace, allowEmptyingWindow: true)`, and replies ok only when the workspace actually left `tabs`; the doc comment is updated in a fence to match |
 | 72 | `cmuxTests/FileExplorerStoreTests.swift` | `file-explorer-operations-reveal` | Four regression tests for pending-reveal invalidation: selecting a different path or multi-selecting away cancels a pending supermux reveal, re-selecting the reveal path keeps it, and supermuxClearSelection resets reveal state |
 | 73 | `Sources/DragOverlayRoutingPolicy.swift` | `browser-hover-drag-guard` | Bug fix (re-land of fcb443d8df, dropped in the undo/re-land cycle around 544bdc1d5d): gates the browser-portal hover→drag pass-through on the left mouse button actually being held, so a stale `.drag` pasteboard (Bonsplit/sidebar tab-transfer types persist after a drag ends) can no longer misroute ordinary hover past the WKWebView. Regression test in `cmuxTests/PortalTabDragRoutingTests.swift` (#75) |
-| 74 | `Sources/Panels/BrowserPanelView.swift` | `browser-hover-webkit-topmost-gate` | Bug fix: WebKit only processes hover (mouseMoved → CSS `:hover`, cursor updates, tooltips) when `window.contentView.hitTest(...)` resolves to the WKWebView or a descendant (`updateViewIsTopmostAtMouseLocation:` in WebKit's WebViewImpl.mm). cmux's browser portal hosts the web view on the theme frame — outside the contentView subtree — so that gate always failed and hover was dead in every embedded browser pane while clicks/scroll kept working. The SwiftUI-side anchor (`WebViewRepresentable.HostContainerView`) now delegates hover-time hit tests to the portal-hosted web view (page + docked DevTools frontend). Two fences: the anchor property/helper/`hitTest` hook, and the `updateNSView` wiring. Regression test in #75 |
-| 75 | `cmuxTests/PortalTabDragRoutingTests.swift` | `browser-hover-drag-guard`, `browser-hover-webkit-topmost-gate` | Regression tests for #73 (hover with no held button must not pass through the portal; active drags still do) and #74 (the anchor delegates hover hit tests to the portal-hosted web view; non-hover contexts, out-of-bounds points, and other-window web views are not claimed) |
+| 74 | `Sources/Panels/BrowserPanelView.swift` | `browser-hover-webkit-topmost-gate` | Bug fix: WebKit only processes hover (mouseMoved → CSS `:hover`, cursor updates, tooltips) when `window.contentView.hitTest(...)` resolves to the WKWebView or a descendant (`updateViewIsTopmostAtMouseLocation:` in WebKit's WebViewImpl.mm). cmux's browser portal hosts the web view on the theme frame — outside the contentView subtree — so that gate always failed and hover was dead in every embedded browser pane while clicks/scroll kept working. The SwiftUI-side anchor (`WebViewRepresentable.HostContainerView`) now delegates hover-time hit tests to the portal-hosted web view — but only while no tab drag is in flight (those hit tests must keep resolving to the Bonsplit/sidebar drop targets behind the portal) and only when the web view is actually topmost in its slot (find-bar/omnibar-suggestion overlays are slot siblings layered above it). Wired only in window-portal hosting mode; an inline-hosted web view already sits in the anchor's subtree. Two fences: the anchor property/test-seam/helper/`hitTest` hook, and the `updateNSView` wiring. Regression test in #75 |
+| 75 | `cmuxTests/PortalTabDragRoutingTests.swift` | `browser-hover-drag-guard`, `browser-hover-webkit-topmost-gate` | Regression tests for #73 (hover with no held button must not pass through the portal; active drags still do) and #74 (the anchor delegates hover hit tests to the portal-hosted web view — including end-to-end through `hitTest` via the routing-context test seam; non-hover contexts, in-flight tab drags, occluding slot overlays, out-of-bounds points, and other-window web views are not claimed) |
+| 76 | `Sources/BrowserWindowPortal.swift` | `browser-hover-drag-guard` | Injectable `pressedMouseButtons` parameter on `WindowBrowserHostView.shouldPassThroughToDragTargets` (forwards to the #73 policy; keeps the #78 tests deterministic) plus a comment at the pass-through call site noting the fork's pressed-button gate |
+| 77 | `Sources/BrowserPaneDropTargetView.swift` | `browser-hover-drag-guard` | Same stale-drag-pasteboard fix one layer down: the slot's invisible pane drop target no longer captures hover-kind hit tests while no left button is held, so a stale tab-transfer/file payload can't misroute post-drag cursor updates and tooltips inside the slot (and can't defeat #74's topmost check, which hit-tests the slot) |
+| 78 | `cmuxTests/BrowserPanelTests.swift` | `browser-hover-drag-guard` | Updates upstream's two hover pass-through tests to the fork contract (hover-kind pass-through requires the left button held; the sidebar-reorder test is renamed accordingly); upstream's originals asserted exactly the stale-hover behavior #73 removes and would fail deterministically on CI |
+| 79 | `cmuxTests/BrowserPaneDropRoutingTests.swift` | `browser-hover-drag-guard` | Updates upstream's capture test to inject the pressed-button state and adds stale-hover regression coverage for #77 |
 
 ## How to re-apply
 
@@ -285,8 +289,12 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | `Sources/RemoteTmuxController.swift` | −4 | `keep-window-on-last-close` (11 fenced lines replacing upstream's add-a-replacement-workspace workaround in the dead-mirror `.closeWorkspace` action, 1093→1089) |
 | `Sources/AppleScriptSupport.swift` | −10 | `keep-window-on-last-close` replaces the scripted `tabs.count > 1` close forks with `closeWorkspace(allowEmptyingWindow: true)` (715→705) |
 | `Sources/DragOverlayRoutingPolicy.swift` | (no tsv row — under the 500-line floor) | `browser-hover-drag-guard` (+14: injectable `pressedMouseButtons` parameter + pointerHover pressed-button guard, 385→399) |
-| `Sources/Panels/BrowserPanelView.swift` | +48 | `browser-hover-webkit-topmost-gate` (anchor `portalHoverHitTestWebView` + `portalHoverDelegationTarget(at:routingContext:)` + `hitTest` delegation hook, and the `updateNSView` wiring, 7986→8034) |
-| `cmuxTests/PortalTabDragRoutingTests.swift` | +120 | `browser-hover-drag-guard` + `browser-hover-webkit-topmost-gate` regression tests (594→714) |
+| `Sources/Panels/BrowserPanelView.swift` | +71 | `browser-hover-webkit-topmost-gate` (anchor `portalHoverHitTestWebView` + `portalHoverRoutingContextOverride` test seam + `portalHoverDelegationTarget(at:routingContext:pressedMouseButtons:dragPasteboardTypes:)` with in-flight-drag exclusion and slot-topmost check + `hitTest` delegation hook, and the `updateNSView` wiring gated on window-portal hosting, 7986→8057) |
+| `cmuxTests/PortalTabDragRoutingTests.swift` | +201 | `browser-hover-drag-guard` + `browser-hover-webkit-topmost-gate` regression tests (594→795) |
+| `Sources/BrowserWindowPortal.swift` | +13 | `browser-hover-drag-guard` (injectable `pressedMouseButtons` on `shouldPassThroughToDragTargets` + pass-through call-site comment, 4187→4200) |
+| `cmuxTests/BrowserPanelTests.swift` | +23 | `browser-hover-drag-guard` (hover pass-through tests updated to the fork contract, 4367→4390; still under the pre-existing 4401 budget) |
+| `Sources/BrowserPaneDropTargetView.swift` | (no tsv row — under the 500-line floor) | `browser-hover-drag-guard` (+15: injectable `pressedMouseButtons` parameter + pointerHover pressed-button guard in `shouldCaptureHitTesting`, 414→429) |
+| `cmuxTests/BrowserPaneDropRoutingTests.swift` | (no tsv row — under the 500-line floor) | `browser-hover-drag-guard` (+50: capture test updated + stale-hover regression test, 428→478) |
 
 After a merge, re-run and re-bump only by the measured fenced delta:
 
@@ -1254,19 +1262,65 @@ of the web view, the gate never passes, and WebKit silently drops every hover ev
 **Fix.** The anchor delegates hover-time hit tests to the portal-hosted web view. Two fences in
 `Sources/Panels/BrowserPanelView.swift`:
 
-1. In `WebViewRepresentable.HostContainerView`: a `weak var portalHoverHitTestWebView: WKWebView?`
-   plus `portalHoverDelegationTarget(at:routingContext:)`, which returns the hosted page web view
-   (or the docked DevTools frontend, `hostedInspectorFrontendWebView`) when the routing context is
-   `.pointerHover`, the web view is hosted in the same window, and the point maps inside its
-   bounds; `hitTest` consults it after the sidebar-resizer and hosted-inspector-divider branches,
-   before `super.hitTest`. Only hover-kind events are delegated — real event routing (clicks,
-   drags, scroll) is handled by the portal host above the contentView and never consults the
-   anchor. The `routingContext` parameter defaults to `WindowInputRoutingContext(event:
-   NSApp.currentEvent)` and exists so tests can inject a hover context.
+1. In `WebViewRepresentable.HostContainerView`: a `weak var portalHoverHitTestWebView: WKWebView?`,
+   a `portalHoverRoutingContextOverride` test seam (`hitTest` cannot receive a routing context, so
+   it reads `NSApp.currentEvent` unless a test injects one), and
+   `portalHoverDelegationTarget(at:routingContext:pressedMouseButtons:dragPasteboardTypes:)`.
+   The helper returns the hosted page web view only when ALL of these hold, in order:
+   - the routing context is `.pointerHover` (real event routing — clicks, drags, scroll — is
+     handled by the portal host above the contentView and never consults the anchor);
+   - the web view is hosted in this window (not hidden, has a superview);
+   - no tab drag is in flight: if the left button is held AND
+     `DragOverlayRoutingPolicy.shouldPassThroughPortalHitTesting` says the drag pasteboard
+     carries a tab-transfer payload, the hit test must keep resolving to the Bonsplit/sidebar
+     drop targets behind the portal (which the portal host deliberately passes through to), so
+     the anchor returns nil. The pasteboard is only read while the button is held, keeping
+     plain hover cheap;
+   - the web view is actually topmost within its slot at the point: the helper hit-tests the
+     slot (`webView.superview`), which resolves the find-bar / omnibar-suggestion overlays
+     layered above the web view via each overlay's own hit-test gating. Requires #77 so a stale
+     drag payload can't make the slot's invisible drop target swallow this check.
+   `hitTest` consults the helper after the sidebar-resizer and hosted-inspector-divider
+   branches, before `super.hitTest`. The docked-DevTools frontend needs no delegation: DevTools
+   docking forces local inline hosting, where both web views sit inside the anchor's subtree.
 2. In `WebViewRepresentable.updateNSView`: one line keeping `portalHoverHitTestWebView` pointed
-   at the panel's current web view.
+   at the panel's current web view in window-portal hosting mode, and `nil` in local inline
+   hosting (where `super.hitTest` already resolves the web view naturally).
 
 If upstream restructures the anchor or the portal, the requirement is: a hit test rooted at
 `window.contentView` over visible browser page area must resolve to the hosted `WKWebView` (or a
-descendant) for hover-kind events. Regression test: `cmuxTests/PortalTabDragRoutingTests.swift` →
+descendant) for hover-kind events — and must NOT do so while a tab drag is in flight or where a
+slot overlay occludes the page. Regression test: `cmuxTests/PortalTabDragRoutingTests.swift` →
 `testBrowserAnchorDelegatesHoverHitTestToPortalHostedWebView` (fenced, see #75).
+
+### 76–79. Sibling guards + fork-contract test updates — `browser-hover-drag-guard`
+
+The #73 policy change ripples into three sibling surfaces; all four edits share the
+`browser-hover-drag-guard` fence id:
+
+- **`Sources/BrowserWindowPortal.swift` (#76):** `WindowBrowserHostView.shouldPassThroughToDragTargets`
+  gains a defaulted injectable `pressedMouseButtons` forwarded to the policy, mirroring #73's
+  seam so the wrapper-level tests in #78 are deterministic. A fenced comment at the hover
+  pass-through call site records that the policy now gates hover-kind pass-through on the
+  physically held button (upstream's comment alone reads as if button state is ignored).
+- **`Sources/BrowserPaneDropTargetView.swift` (#77):** `shouldCaptureHitTesting` gains the same
+  defaulted `pressedMouseButtons` plus a guard: hover-kind events with no left button held never
+  capture. Without it, a stale tab-transfer/file payload makes the slot's invisible, frontmost
+  drop target claim every post-drag hover-time hit test inside the slot (misrouting cursor
+  updates/tooltips away from the web view and find bar) and would defeat #74's slot-topmost
+  check. Drop delivery (`pointerUp`) and in-flight drag events are unaffected.
+- **`cmuxTests/BrowserPanelTests.swift` (#78):** upstream's
+  `testDragHoverEventsPassThroughForTabTransferOnBrowserHoverEvents` and
+  `testDragHoverEventsPassThroughForSidebarReorderWithoutMouseButtonState` asserted exactly the
+  stale-hover pass-through #73 removes (they fail deterministically on CI where
+  `NSEvent.pressedMouseButtons == 0`). Both are fenced and updated to the fork contract
+  (pass-through with button held, no pass-through without); the second is renamed
+  `testDragHoverEventsPassThroughForSidebarReorderOnlyWhileMouseButtonHeld`.
+- **`cmuxTests/BrowserPaneDropRoutingTests.swift` (#79):**
+  `testHitTestingCapturesOnlyForRelevantDragEvents` injects `pressedMouseButtons: 1` so it keeps
+  testing payload filtering, and the new
+  `testHitTestingDoesNotCaptureStaleHoverWithoutPressedMouseButton` pins #77.
+
+If upstream fixes the drag-pasteboard staleness at the source (clearing it when a drag ends),
+drop all `browser-hover-drag-guard` fences and take upstream's fix; the #75/#78/#79 tests tell
+you whether the symptom is truly gone.
