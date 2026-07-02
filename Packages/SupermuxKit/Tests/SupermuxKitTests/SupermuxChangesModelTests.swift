@@ -16,6 +16,11 @@ import SupermuxKit
 @MainActor
 @Suite struct SupermuxChangesModelTests {
 
+    /// Joins porcelain-v2 records the way `git status -z` emits them.
+    private nonisolated func zJoined(_ records: [String]) -> String {
+        records.map { $0 + "\u{0}" }.joined()
+    }
+
     // MARK: - Tests
 
     /// A status read whose directory was switched away mid-flight must be
@@ -129,15 +134,51 @@ import SupermuxKit
         #expect(calls >= 2)
     }
 
+    // MARK: - Batch staging
+
+    /// The Untracked section's Stage All must issue ONE `git add` carrying
+    /// every path plus one status refresh — never a per-file add+refresh cycle.
+    @Test func batchStageIssuesOneAddForAllPaths() async {
+        let untracked = ["a.txt", "b.txt", "c.txt"].map {
+            SupermuxGitFileChange(path: $0, oldPath: nil, kind: .untracked)
+        }
+        let runner = RecordingMutationRunner()
+        let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
+        model.setDirectory("/repo")
+        await pollUntil { model.snapshot.isRepository }
+        let statusCallsBefore = await runner.statusCallCount()
+
+        await model.stage(changes: untracked)
+
+        let addCalls = await runner.addCalls()
+        #expect(addCalls == [["add", "--", "a.txt", "b.txt", "c.txt"]])
+        // Exactly one follow-up refresh for the whole batch.
+        #expect(await runner.statusCallCount() == statusCallsBefore + 1)
+    }
+
+    /// An empty batch is a pure no-op: no mutation, no refresh.
+    @Test func emptyBatchStageDoesNothing() async {
+        let runner = RecordingMutationRunner()
+        let model = SupermuxChangesModel(service: SupermuxGitChangesService(runner: runner))
+        model.setDirectory("/repo")
+        await pollUntil { model.snapshot.isRepository }
+        let statusCallsBefore = await runner.statusCallCount()
+
+        await model.stage(changes: [])
+
+        #expect(await runner.addCalls().isEmpty)
+        #expect(await runner.statusCallCount() == statusCallsBefore)
+    }
+
     // MARK: - Stash enablement
 
     /// Tracked edit plus a stash: every stash action applies.
     @Test func trackedChangeWithStashEnablesEveryStashAction() async {
-        let model = await makeModel(forStatus: """
-        # branch.head main
-        1 .M N... 100644 100644 100644 0000000 0000000 edit.txt
-        # stash 1
-        """)
+        let model = await makeModel(forStatus: zJoined([
+            "# branch.head main",
+            "1 .M N... 100644 100644 100644 0000000 0000000 edit.txt",
+            "# stash 1",
+        ]))
         #expect(model.isStashMenuAvailable)
         #expect(model.canStashTracked)
         #expect(model.canStashIncludingUntracked)
@@ -147,7 +188,7 @@ import SupermuxKit
     /// Untracked files only: plain stash is a no-op (disabled); include-untracked
     /// applies; nothing to pop.
     @Test func untrackedOnlyEnablesIncludeUntrackedButNotPlainStash() async {
-        let model = await makeModel(forStatus: "# branch.head main\n? new.txt")
+        let model = await makeModel(forStatus: zJoined(["# branch.head main", "? new.txt"]))
         #expect(model.isStashMenuAvailable)
         #expect(!model.canStashTracked)
         #expect(model.canStashIncludingUntracked)
@@ -156,7 +197,7 @@ import SupermuxKit
 
     /// Clean tree with a stash: only Pop applies, and the menu still appears.
     @Test func cleanRepoWithStashEnablesOnlyPop() async {
-        let model = await makeModel(forStatus: "# branch.head main\n# stash 2")
+        let model = await makeModel(forStatus: zJoined(["# branch.head main", "# stash 2"]))
         #expect(model.isStashMenuAvailable)
         #expect(!model.canStashTracked)
         #expect(!model.canStashIncludingUntracked)
@@ -166,11 +207,11 @@ import SupermuxKit
     /// Unmerged paths: `git stash` refuses, so every stash action is disabled
     /// even with a stash present.
     @Test func conflictDisablesAllStashActions() async {
-        let model = await makeModel(forStatus: """
-        # branch.head main
-        u UU N... 100644 100644 100644 100644 0 0 0 merge.txt
-        # stash 1
-        """)
+        let model = await makeModel(forStatus: zJoined([
+            "# branch.head main",
+            "u UU N... 100644 100644 100644 100644 0 0 0 merge.txt",
+            "# stash 1",
+        ]))
         #expect(model.snapshot.hasConflicts)
         #expect(!model.canStashTracked)
         #expect(!model.canStashIncludingUntracked)
@@ -179,7 +220,7 @@ import SupermuxKit
 
     /// Clean tree with no stash: there is nothing to do, so the menu is hidden.
     @Test func cleanRepoWithoutStashHidesMenu() async {
-        let model = await makeModel(forStatus: "# branch.head main")
+        let model = await makeModel(forStatus: "# branch.head main\u{0}")
         #expect(!model.isStashMenuAvailable)
     }
 
@@ -201,13 +242,47 @@ import SupermuxKit
         func run(
             directory: String, executable: String, arguments: [String], timeout: TimeInterval?
         ) async -> CommandResult {
-            let isStatus = executable == "git" && arguments.first == "status"
+            let isStatus = executable == "git"
+                && subcommand(of: arguments) == "status"
             return CommandResult(
                 stdout: isStatus ? statusStdout : "",
                 stderr: nil,
                 exitStatus: 0,
                 timedOut: false,
                 executionError: nil
+            )
+        }
+    }
+
+    /// A `CommandRunning` fake recording `git add` invocations and answering
+    /// `status` with a plain repository, to pin the batch-staging contract
+    /// (one add + one refresh per batch).
+    private actor RecordingMutationRunner: CommandRunning {
+        private var recordedAddCalls: [[String]] = []
+        private var statusCalls = 0
+
+        func addCalls() -> [[String]] { recordedAddCalls }
+        func statusCallCount() -> Int { statusCalls }
+
+        nonisolated func run(
+            directory: String, executable: String, arguments: [String], timeout: TimeInterval?
+        ) async -> CommandResult {
+            await handle(arguments: arguments)
+        }
+
+        private func handle(arguments: [String]) -> CommandResult {
+            var stdout = ""
+            switch subcommand(of: arguments) {
+            case "add":
+                recordedAddCalls.append(arguments)
+            case "status":
+                statusCalls += 1
+                stdout = "# branch.head main\u{0}"
+            default:
+                break
+            }
+            return CommandResult(
+                stdout: stdout, stderr: nil, exitStatus: 0, timedOut: false, executionError: nil
             )
         }
     }
@@ -262,7 +337,9 @@ import SupermuxKit
             timeout: TimeInterval?
         ) async -> CommandResult {
             let isStatus = executable == "git"
-                && arguments == ["status", "--porcelain=v2", "--branch", "--show-stash"]
+                && arguments == [
+                    "--no-optional-locks", "status", "--porcelain=v2", "-z", "--branch", "--show-stash",
+                ]
             guard isStatus else {
                 return CommandResult(
                     stdout: "",
@@ -324,7 +401,7 @@ import SupermuxKit
                 branch = branchesByDirectory[directory] ?? "unknown"
             }
             return CommandResult(
-                stdout: "# branch.head \(branch)\n",
+                stdout: "# branch.head \(branch)\u{0}",
                 stderr: nil,
                 exitStatus: 0,
                 timedOut: false,
@@ -346,6 +423,66 @@ import SupermuxKit
         return nil
     }
 
+    /// A slow mutation finishing after a workspace switch must not apply its
+    /// outcome to the new directory's panel: the commit's success side effect
+    /// (clearing the message box) and its error reporting are generation-
+    /// guarded, so a draft typed for the switched-to directory survives.
+    @Test func slowCommitOutcomeDoesNotBleedOntoSwitchedDirectory() async {
+        let runner = GatedCommitRunner()
+        let service = SupermuxGitChangesService(runner: runner)
+        let model = SupermuxChangesModel(service: service)
+        model.setDirectory("/repoA")
+        await pollUntil { model.snapshot.isRepository }
+
+        model.commitMessage = "message for A"
+        let commitTask = Task { await model.commit() }
+        await pollUntil { model.isWorking }
+
+        // Switch away mid-commit (clears the box for /repoB), then draft a new
+        // message; A's commit completing must not wipe it or surface an error.
+        model.setDirectory("/repoB")
+        model.commitMessage = "draft for B"
+        await runner.releaseCommit()
+        await commitTask.value
+
+        #expect(model.commitMessage == "draft for B")
+        #expect(model.lastError == nil)
+    }
+
+    /// A `CommandRunning` whose `git commit` suspends until released, so a
+    /// workspace switch can be interleaved mid-mutation deterministically.
+    private actor GatedCommitRunner: CommandRunning {
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        private var released = false
+
+        func releaseCommit() {
+            released = true
+            for waiter in waiters { waiter.resume() }
+            waiters.removeAll()
+        }
+
+        nonisolated func run(
+            directory: String, executable: String, arguments: [String], timeout: TimeInterval?
+        ) async -> CommandResult {
+            let sub = subcommand(of: arguments)
+            if sub == "commit" {
+                await waitForRelease()
+            }
+            return CommandResult(
+                stdout: sub == "status" ? "# branch.head main\u{0}" : "",
+                stderr: nil,
+                exitStatus: 0,
+                timedOut: false,
+                executionError: nil
+            )
+        }
+
+        private func waitForRelease() async {
+            if released { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+    }
+
     /// Polls a synchronous main-actor `condition`, yielding between checks,
     /// until it is true or a bounded number of iterations elapse. Avoids real
     /// sleeps; the bound only guards against a hang on regression.
@@ -365,4 +502,10 @@ import SupermuxKit
             await Task.yield()
         }
     }
+}
+
+/// The git subcommand of an argument vector, skipping global flags such as
+/// `--no-optional-locks` that the service prepends to read-only invocations.
+private func subcommand(of arguments: [String]) -> String? {
+    arguments.first { !$0.hasPrefix("-") }
 }

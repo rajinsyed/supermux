@@ -33,12 +33,17 @@ public final class SupermuxRepositoryWatcher: Sendable {
     /// An `AsyncStream` that yields once per coalesced batch of file-system
     /// changes under the watched path.
     ///
-    /// The stream starts the FSEvents stream on first iteration and tears it
+    /// The FSEvents stream starts eagerly when this method returns (callers
+    /// rely on that: creating the stream *before* an initial refresh means a
+    /// change landing during the refresh is buffered, not dropped) and tears
     /// down when the consumer's task is cancelled or the stream is finished.
+    /// `bufferingNewest(1)` keeps exactly one pending signal while the consumer
+    /// is busy refreshing, so a burst of batches drains as a single catch-up
+    /// instead of a queue of redundant back-to-back refreshes.
     public func changes() -> AsyncStream<Void> {
         let path = self.path
         let latency = self.latency
-        return AsyncStream { continuation in
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let session = WatchSession(path: path, latency: latency) {
                 continuation.yield(())
             }
@@ -50,6 +55,31 @@ public final class SupermuxRepositoryWatcher: Sendable {
                 session.stop()
             }
         }
+    }
+
+    /// Whether a coalesced FSEvents batch warrants a refresh: batches made up
+    /// entirely of git's own bookkeeping noise are dropped, because the
+    /// spawned `git status`/`fetch` behind every refresh writes exactly that
+    /// noise and would otherwise re-trigger the watcher forever
+    /// (`kFSEventStreamCreateFlagIgnoreSelf` cannot help — the writes come
+    /// from child git processes, not this process). Real state changes —
+    /// index, `HEAD`, refs, `packed-refs` — always pass through so external
+    /// git commands still refresh the panel. An empty batch (defensive) is
+    /// delivered.
+    static func shouldDeliver(eventPaths: [String]) -> Bool {
+        guard !eventPaths.isEmpty else { return true }
+        return !eventPaths.allSatisfy(isGitNoise(path:))
+    }
+
+    /// Git bookkeeping noise: lock files, loose/packed object writes, reflogs,
+    /// and `FETCH_HEAD` under `.git`. None of them change what the status
+    /// snapshot or the ahead/behind counts show.
+    static func isGitNoise(path: String) -> Bool {
+        guard path.contains("/.git/") else { return false }
+        return path.hasSuffix(".lock")
+            || path.contains("/objects/")
+            || path.hasSuffix("FETCH_HEAD")
+            || path.contains("/logs/")
     }
 }
 
@@ -82,10 +112,18 @@ private final class WatchSession: @unchecked Sendable {
             release: nil,
             copyDescription: nil
         )
+        // UseCFTypes makes the callback's eventPaths a CFArray of CFString,
+        // so the .git-noise filter can inspect the batch's paths.
+        // Deliberately NO kFSEventStreamCreateFlagIgnoreSelf: the app itself
+        // mutates the worktree in-process (file-explorer create/rename/
+        // duplicate/trash via FileManager), and those changes must refresh the
+        // Changes panel too. The refresh loop that flag appeared to prevent
+        // comes from child git processes it never covered anyway — the
+        // .git-noise filter plus `--no-optional-locks` handles that.
         let flags = UInt32(
             kFSEventStreamCreateFlagFileEvents
                 | kFSEventStreamCreateFlagNoDefer
-                | kFSEventStreamCreateFlagIgnoreSelf
+                | kFSEventStreamCreateFlagUseCFTypes
         )
         guard let stream = FSEventStreamCreate(
             kCFAllocatorDefault,
@@ -119,9 +157,13 @@ private final class WatchSession: @unchecked Sendable {
         }
     }
 
-    private static let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+    private static let callback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
         guard let info else { return }
         let session = Unmanaged<WatchSession>.fromOpaque(info).takeUnretainedValue()
+        // With kFSEventStreamCreateFlagUseCFTypes, eventPaths is a CFArray of
+        // CFString (unretained here; the stream owns it for the callback).
+        let paths = (unsafeBitCast(eventPaths, to: NSArray.self) as? [String]) ?? []
+        guard SupermuxRepositoryWatcher.shouldDeliver(eventPaths: paths) else { return }
         session.onChange()
     }
 }

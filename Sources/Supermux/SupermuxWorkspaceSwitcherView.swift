@@ -14,10 +14,11 @@ import SwiftUI
 struct SupermuxWorkspaceSwitcherView: View {
     let state: SupermuxWorkspaceSwitcherViewState
 
-    /// Resolves project avatar logos (custom/auto-detected) above the card row, so
-    /// only immutable `NSImage` values flow down to cards — mirroring the sidebar's
-    /// `SupermuxProjectsSectionView` pattern and honoring the snapshot-boundary rule.
-    @State private var iconStore = SupermuxProjectIconStore()
+    /// The shared, composition-owned project-logo cache, read above the card row
+    /// so only immutable `NSImage` values flow down to cards (snapshot-boundary
+    /// rule). The switcher controller warms it at session begin, so presenting
+    /// the overlay does no icon probing or image decoding of its own.
+    let iconStore: SupermuxProjectIconStore
 
     /// Exact width of the card row including its inset padding.
     private var contentWidth: CGFloat {
@@ -48,28 +49,6 @@ struct SupermuxWorkspaceSwitcherView: View {
                 .padding(.horizontal, 24)
         }
         .transition(.opacity)
-        .task(id: shownProjectsToken) {
-            await iconStore.refresh(projects: shownProjects)
-        }
-    }
-
-    /// The distinct owning projects of the shown workspaces, so the icon store only
-    /// probes what the strip actually displays (deduped by project id).
-    private var shownProjects: [SupermuxProject] {
-        var seen = Set<UUID>()
-        var result: [SupermuxProject] = []
-        for item in state.items {
-            if let project = item.project, seen.insert(project.id).inserted {
-                result.append(project)
-            }
-        }
-        return result
-    }
-
-    /// Identity token (id + root + custom icon path) so the refresh re-runs when a
-    /// shown project's icon source changes, not only when the project set changes.
-    private var shownProjectsToken: [String] {
-        shownProjects.map { "\($0.id.uuidString)|\($0.rootPath)|\($0.customIconPath ?? "")" }
     }
 
     private var panel: some View {

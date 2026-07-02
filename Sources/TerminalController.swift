@@ -12129,8 +12129,15 @@ class TerminalController {
                     result = "ERROR: \(workspaceCloseProtectedMessage())"
                     return
                 }
-                tabManager.closeTab(tab)
-                result = "OK"
+                // SUPERMUX:begin keep-window-on-last-close
+                // Plain closeTab refuses the window's last workspace, silently
+                // no-op'ing while this replied OK. Route through the
+                // empty-home path and report OK only if it actually closed.
+                tabManager.closeWorkspace(tab, allowEmptyingWindow: true)
+                result = tabManager.tabs.contains(where: { $0.id == uuid })
+                    ? "ERROR: \(String(localized: "supermux.workspace.closeFailed.message", defaultValue: "Workspace could not be closed"))"
+                    : "OK"
+                // SUPERMUX:end keep-window-on-last-close
             }
         }
         return result

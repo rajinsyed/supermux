@@ -54,6 +54,33 @@ struct SupermuxBranchNameTests {
         #expect(naming.sanitize("feature/foo") == "feature/foo")
     }
 
+    // git rejects components ending in ".lock" or beginning with "." even
+    // though every character is individually legal (`git check-ref-format`).
+    @Test func sanitizeEnforcesGitRefComponentRules() {
+        #expect(naming.sanitize("fix.lock") == "fix")
+        #expect(naming.sanitize("a.lock.lock") == "a")
+        #expect(naming.sanitize("a.lock/b") == "a/b")
+        #expect(naming.sanitize(".lock") == "lock")
+        #expect(naming.sanitize("a/.b") == "a/b")
+        #expect(naming.sanitize("fix/.env cleanup") == "fix/env-cleanup")
+    }
+
+    @Test func sanitizeRejectsReservedHead() {
+        // Exact match only: git rejects "HEAD" but accepts "head" and "HEAD/x".
+        #expect(naming.sanitize("HEAD") == nil)
+        #expect(naming.sanitize(".HEAD") == nil)
+        #expect(naming.sanitize("head") == "head")
+        #expect(naming.sanitize("HEAD/x") == "HEAD/x")
+    }
+
+    @Test func sanitizeReappliesComponentRulesAfterTruncation() {
+        // The length cap slices exactly at a ".lock" boundary; the suffix must
+        // still be stripped afterwards.
+        let head = String(repeating: "a", count: SupermuxBranchName.maxLength - ".lock".count)
+        let input = head + ".lock" + "-tail-beyond-the-cap"
+        #expect(naming.sanitize(input) == head)
+    }
+
     // MARK: - deduplicate
 
     @Test func deduplicateReturnsCandidateWhenFree() {
@@ -69,6 +96,16 @@ struct SupermuxBranchNameTests {
     @Test func deduplicateComparesCaseInsensitively() {
         #expect(naming.deduplicate("Foo", existing: ["foo"]) == "Foo-2")
         #expect(naming.deduplicate("foo", existing: ["FOO", "Foo-2"]) == "foo-3")
+    }
+
+    @Test func deduplicateAvoidsTakenDirectoryNames() {
+        // "a/b" and "a-b" flatten to the same worktree directory, so a taken
+        // directory must push the branch to a suffixed variant even when the
+        // branch name itself is free.
+        #expect(naming.deduplicate("a/b", existing: [], takenDirectories: ["a-b"]) == "a/b-2")
+        #expect(naming.deduplicate("a-b", existing: [], takenDirectories: ["A-B"]) == "a-b-2")
+        #expect(naming.deduplicate("foo", existing: ["foo"], takenDirectories: ["foo-2"]) == "foo-3")
+        #expect(naming.deduplicate("a/b", existing: [], takenDirectories: []) == "a/b")
     }
 
     @Test func deduplicateKeepsSuffixedNamesWithinMaxLength() {

@@ -1,3 +1,4 @@
+import CmuxFoundation
 import Foundation
 import Testing
 
@@ -14,26 +15,12 @@ import SupermuxKit
 @Suite(.serialized) struct SupermuxGitWorktreeServiceTests {
     private let service = SupermuxGitWorktreeService()
 
-    // MARK: - Fixture helpers
+    // MARK: - Fixture helpers (shared implementation in `GitFixture`)
 
     /// A throwaway git repository plus the project record pointing at it.
     private struct Fixture {
         var root: String
         var project: SupermuxProject
-    }
-
-    /// A git invocation made by the fixture helper failed.
-    private enum FixtureError: Error {
-        case gitFailed(arguments: [String], message: String)
-    }
-
-    /// Creates a unique temporary directory and returns its path,
-    /// standardized the same way the service normalizes paths.
-    private func makeTempDirectory() throws -> String {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("supermux-worktree-tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return (url.path as NSString).standardizingPath
     }
 
     /// A fixture repository that carries an initialized git submodule, plus the
@@ -44,17 +31,16 @@ import SupermuxKit
         var project: SupermuxProject
     }
 
+    /// This suite's temp-directory prefix, kept distinct per file so parallel
+    /// test runs stay distinguishable.
+    private func makeTempDirectory() throws -> String {
+        try GitFixture.makeTempDirectory(prefix: "supermux-worktree-tests")
+    }
+
     /// Creates a temp git repository on `main` with one commit, plus a
     /// `SupermuxProject` pointing at it.
     private func makeFixtureRepo() throws -> Fixture {
-        let root = try makeTempDirectory()
-        try runGit(["init", "-b", "main"], in: root)
-        try runGit(["config", "--local", "user.email", "tests@supermux.invalid"], in: root)
-        try runGit(["config", "--local", "user.name", "Supermux Tests"], in: root)
-        let readmePath = (root as NSString).appendingPathComponent("README.md")
-        try "fixture\n".write(toFile: readmePath, atomically: true, encoding: .utf8)
-        try runGit(["add", "."], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Initial commit"], in: root)
+        let root = try GitFixture.makeFixtureRepo(prefix: "supermux-worktree-tests")
         return Fixture(root: root, project: SupermuxProject(name: "Fixture", rootPath: root))
     }
 
@@ -66,21 +52,19 @@ import SupermuxKit
     private func makeFixtureRepoWithSubmodule() throws -> SubmoduleFixture {
         // A standalone repo to serve as the submodule's source.
         let submoduleSource = try makeTempDirectory()
-        try runGit(["init", "-b", "main"], in: submoduleSource)
-        try runGit(["config", "--local", "user.email", "tests@supermux.invalid"], in: submoduleSource)
-        try runGit(["config", "--local", "user.name", "Supermux Tests"], in: submoduleSource)
-        let libReadme = (submoduleSource as NSString).appendingPathComponent("LIB.md")
-        try "library\n".write(toFile: libReadme, atomically: true, encoding: .utf8)
-        try runGit(["add", "."], in: submoduleSource)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Submodule init"], in: submoduleSource)
+        try GitFixture.runGit(["init", "-b", "main"], in: submoduleSource)
+        try GitFixture.configureIdentity(in: submoduleSource)
+        try GitFixture.write("library\n", to: "LIB.md", in: submoduleSource)
+        try GitFixture.runGit(["add", "."], in: submoduleSource)
+        try GitFixture.commit("Submodule init", in: submoduleSource)
 
         // The main fixture repo, with the source wired in as a submodule.
         let fixture = try makeFixtureRepo()
-        try runGit(
+        try GitFixture.runGit(
             ["-c", "protocol.file.allow=always", "submodule", "add", submoduleSource, "vendored"],
             in: fixture.root
         )
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Add submodule"], in: fixture.root)
+        try GitFixture.commit("Add submodule", in: fixture.root)
         return SubmoduleFixture(
             root: fixture.root,
             submoduleSource: submoduleSource,
@@ -88,44 +72,13 @@ import SupermuxKit
         )
     }
 
-    /// Runs git synchronously via `Process` (test-only helper) and returns
-    /// its standard output; throws on a non-zero exit.
-    @discardableResult
-    private func runGit(_ arguments: [String], in directory: String) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: directory)
-        process.standardInput = FileHandle.nullDevice
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        try process.run()
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw FixtureError.gitFailed(
-                arguments: arguments,
-                message: String(data: stderrData, encoding: .utf8) ?? ""
-            )
-        }
-        return String(data: stdoutData, encoding: .utf8) ?? ""
-    }
-
-    /// Best-effort removal of a fixture directory.
-    private func cleanUp(_ path: String) {
-        try? FileManager.default.removeItem(atPath: path)
-    }
-
     // MARK: - Repository probes
 
     @Test func isGitRepositoryDetectsReposAndPlainDirectories() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
         let emptyDir = try makeTempDirectory()
-        defer { cleanUp(emptyDir) }
+        defer { GitFixture.cleanUp(emptyDir) }
 
         #expect(await service.isGitRepository(at: fixture.root))
         #expect(await service.isGitRepository(at: emptyDir) == false)
@@ -133,7 +86,7 @@ import SupermuxKit
 
     @Test func currentBranchReturnsMain() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
 
         #expect(await service.currentBranch(repoRoot: fixture.root) == "main")
     }
@@ -142,7 +95,7 @@ import SupermuxKit
 
     @Test func createWorktreeSanitizesBranchAndConfiguresCheckout() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
 
         let worktree = try await service.createWorktree(
             project: fixture.project,
@@ -168,7 +121,7 @@ import SupermuxKit
         let exclude = try String(contentsOfFile: excludePath, encoding: .utf8)
         #expect(exclude.contains("/.worktrees/"))
 
-        let autoSetupRemote = try runGit(
+        let autoSetupRemote = try GitFixture.runGit(
             ["-C", worktree.path, "config", "--local", "push.autoSetupRemote"],
             in: fixture.root
         )
@@ -177,7 +130,7 @@ import SupermuxKit
 
     @Test func createWorktreeGeneratesFriendlyNameWhenBranchBlank() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
 
         // A blank branch field must not error — it generates a friendly,
         // git-safe two-word branch and a real worktree on disk.
@@ -201,7 +154,7 @@ import SupermuxKit
 
     @Test func createWorktreeDeduplicatesBranchNames() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
 
         let first = try await service.createWorktree(
             project: fixture.project,
@@ -216,9 +169,179 @@ import SupermuxKit
         #expect(second.branch == "my-feature-2")
     }
 
+    @Test func createWorktreeAvoidsDirectoryCollisionBetweenSlashAndDashBranches() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        let first = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature-foo"
+        )
+        #expect(first.branch == "feature-foo")
+
+        // "feature/foo" is a free branch name but flattens to the directory
+        // "feature-foo" already in use; creation must dedup to a free
+        // directory instead of failing on git's "'<path>' already exists".
+        let second = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature/foo"
+        )
+        #expect(second.branch == "feature/foo-2")
+        #expect((second.path as NSString).lastPathComponent == "feature-foo-2")
+        #expect(FileManager.default.fileExists(atPath: second.path))
+    }
+
+    @Test func createWorktreeAvoidsRegisteredButDeletedWorktreeDirectory() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        let original = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "alpha"
+        )
+        // Free the branch name but keep the worktree registration, then delete
+        // the directory: `git worktree add` at the same path would fail with
+        // "missing but already registered worktree".
+        try GitFixture.runGit(["branch", "-m", "alpha", "beta"], in: fixture.root)
+        try FileManager.default.removeItem(atPath: original.path)
+
+        let recreated = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "alpha"
+        )
+        #expect(recreated.branch == "alpha-2")
+        #expect(FileManager.default.fileExists(atPath: recreated.path))
+    }
+
+    @Test func createWorktreeRetriesWhenDedupedBranchRacesIntoExistence() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        // The actor is reentrant: a concurrent creation can claim the deduped
+        // name between the branch snapshot and the add. The injecting runner
+        // simulates exactly that; the service must retry with a fresh dedup
+        // instead of surfacing "a branch named 'feature' already exists".
+        let racing = SupermuxGitWorktreeService(runner: BranchRaceInjectingRunner())
+
+        let worktree = try await racing.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature"
+        )
+
+        #expect(worktree.branch == "feature-2")
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+    }
+
+    @Test func timedOutWorktreeAddGetsCheckoutDeadlineAndCleansUp() async throws {
+        let root = try makeTempDirectory()
+        defer { GitFixture.cleanUp(root) }
+        let runner = TimedOutAddRunner()
+        let scripted = SupermuxGitWorktreeService(runner: runner)
+        let project = SupermuxProject(name: "Slow", rootPath: root)
+
+        do {
+            _ = try await scripted.createWorktree(project: project, requestedBranch: "feature")
+            Issue.record("Expected the timed-out add to throw")
+        } catch let error as SupermuxGitError {
+            #expect(error == .gitFailed(command: "worktree add", message: "timed out"))
+        }
+
+        // `worktree add` checks out a full tree (LFS smudge included) and must
+        // get a checkout-weight deadline, not the blanket 30s git timeout.
+        let add = try #require(await runner.first(withPrefix: ["worktree", "add"]))
+        #expect((add.timeout ?? 0) >= 600)
+        // Best-effort cleanup so a same-name retry succeeds: force-remove the
+        // partial checkout, prune the admin entry, delete the orphan branch.
+        #expect(await runner.first(withPrefix: ["worktree", "remove", "--force"]) != nil)
+        #expect(await runner.first(withPrefix: ["worktree", "prune"]) != nil)
+        #expect(await runner.first(withPrefix: ["branch", "-D", "feature"]) != nil)
+    }
+
+    @Test func worktreeCreatedThroughSymlinkedProjectRootStaysManaged() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        let linkParent = try makeTempDirectory()
+        defer { GitFixture.cleanUp(linkParent) }
+        let linkPath = (linkParent as NSString).appendingPathComponent("linked-root")
+        try FileManager.default.createSymbolicLink(atPath: linkPath, withDestinationPath: fixture.root)
+        // `git worktree list` prints symlink-resolved paths, so a project
+        // registered via a symlinked root must still match its own worktrees.
+        let project = SupermuxProject(name: "Linked", rootPath: linkPath)
+
+        let worktree = try await service.createWorktree(project: project, requestedBranch: "feature")
+        #expect(worktree.isSupermuxManaged)
+
+        let listed = try await service.listWorktrees(for: project)
+        // No bogus extra row for the primary checkout, and the created
+        // worktree still resolves as supermux-managed.
+        #expect(listed.count == 1)
+        let entry = try #require(listed.first)
+        #expect(entry.branch == "feature")
+        #expect(entry.isSupermuxManaged)
+
+        try await service.removeWorktree(entry, project: project)
+        #expect(FileManager.default.fileExists(atPath: entry.path) == false)
+    }
+
+    @Test func createWorktreeAllowsSymlinkedWorktreesContainer() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        let external = try makeTempDirectory()
+        defer { GitFixture.cleanUp(external) }
+        // Keeping checkouts on "another volume": <root>/.worktrees is a symlink
+        // pointing outside the repo root — a legitimate setup the (lexical)
+        // `..`-escape guard must not reject even though the container's
+        // canonical form escapes the root.
+        try FileManager.default.createSymbolicLink(
+            atPath: (fixture.root as NSString).appendingPathComponent(".worktrees"),
+            withDestinationPath: external
+        )
+
+        let worktree = try await service.createWorktree(
+            project: fixture.project, requestedBranch: "feature"
+        )
+
+        #expect(worktree.branch == "feature")
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+        // The checkout physically lives in the symlink's target… (the target
+        // exists, so a plain symlink resolve yields the canonical form)
+        #expect(worktree.path.hasPrefix((external as NSString).resolvingSymlinksInPath + "/"))
+        // …and still round-trips as supermux-managed through `git worktree list`.
+        let listed = try await service.listWorktrees(for: fixture.project)
+        let entry = try #require(listed.first { $0.branch == "feature" })
+        #expect(entry.isSupermuxManaged)
+    }
+
+    @Test func failingAddAfterBranchCreationSurfacesWithoutRetryJunk() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        // A post-checkout hook that always fails: `git worktree add` creates
+        // the branch AND registers the worktree, then exits non-zero. A bare
+        // ref-exists retry gate would blame the reentrancy race and silently
+        // pile `feature-2` junk next to the half-created worktree.
+        let hooksDir = (fixture.root as NSString).appendingPathComponent(".git/hooks")
+        try FileManager.default.createDirectory(atPath: hooksDir, withIntermediateDirectories: true)
+        let hookPath = (hooksDir as NSString).appendingPathComponent("post-checkout")
+        try "#!/bin/sh\nexit 1\n".write(toFile: hookPath, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookPath)
+
+        do {
+            _ = try await service.createWorktree(project: fixture.project, requestedBranch: "feature")
+            Issue.record("Expected the failing post-checkout hook to surface")
+        } catch let error as SupermuxGitError {
+            guard case .gitFailed = error else {
+                Issue.record("Expected .gitFailed, got \(error)")
+                return
+            }
+        }
+
+        // Exactly one attempt: no silently-created `feature-2` branch.
+        let branches = try GitFixture.runGit(["branch", "--list", "--format=%(refname:short)"], in: fixture.root)
+            .split(separator: "\n").map(String.init)
+        #expect(branches.contains("feature"))
+        #expect(!branches.contains("feature-2"))
+    }
+
     @Test func createWorktreeRecordsBaseBranch() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
 
         let worktree = try await service.createWorktree(
             project: fixture.project,
@@ -227,7 +350,7 @@ import SupermuxKit
         )
 
         let branch = try #require(worktree.branch)
-        let recordedBase = try runGit(["config", "branch.\(branch).base"], in: fixture.root)
+        let recordedBase = try GitFixture.runGit(["config", "branch.\(branch).base"], in: fixture.root)
         #expect(recordedBase.trimmingCharacters(in: .whitespacesAndNewlines) == "main")
     }
 
@@ -235,7 +358,7 @@ import SupermuxKit
 
     @Test func removeWorktreeRemovesCleanCheckout() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
         let worktree = try await service.createWorktree(
             project: fixture.project,
             requestedBranch: "feature"
@@ -246,9 +369,31 @@ import SupermuxKit
         #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
     }
 
+    @Test func removeWorktreeSucceedsWhenCheckoutDirectoryDeletedExternally() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature"
+        )
+        // Deleted in Finder/terminal: git keeps the registration, so the entry
+        // still lists — and must stay recognizably supermux-managed.
+        try FileManager.default.removeItem(atPath: worktree.path)
+        let listed = try await service.listWorktrees(for: fixture.project)
+        let stale = try #require(listed.first { $0.branch == "feature" })
+        #expect(stale.isSupermuxManaged)
+
+        // A deleted checkout has no uncommitted work to lose: non-force
+        // removal must succeed instead of misreporting "uncommitted changes".
+        try await service.removeWorktree(stale, project: fixture.project)
+
+        let after = try await service.listWorktrees(for: fixture.project)
+        #expect(after.contains { $0.branch == "feature" } == false)
+    }
+
     @Test func removeWorktreeRefusesDirtyCheckoutUnlessForced() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
         let worktree = try await service.createWorktree(
             project: fixture.project,
             requestedBranch: "feature"
@@ -267,8 +412,8 @@ import SupermuxKit
 
     @Test func removeWorktreeWithInitializedSubmodule() async throws {
         let fixture = try makeFixtureRepoWithSubmodule()
-        defer { cleanUp(fixture.root) }
-        defer { cleanUp(fixture.submoduleSource) }
+        defer { GitFixture.cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.submoduleSource) }
         let worktree = try await service.createWorktree(
             project: fixture.project,
             requestedBranch: "feature"
@@ -277,7 +422,7 @@ import SupermuxKit
         // `validate_no_submodules` makes a plain `git worktree remove` abort with
         // "working trees containing submodules cannot be moved or removed". This
         // is the exact state of a real worktree of a submodule-bearing repo.
-        try runGit(
+        try GitFixture.runGit(
             ["-c", "protocol.file.allow=always", "-C", worktree.path, "submodule", "update", "--init"],
             in: fixture.root
         )
@@ -296,13 +441,13 @@ import SupermuxKit
 
     @Test func removeWorktreeRefusesDirtySubmoduleUnlessForced() async throws {
         let fixture = try makeFixtureRepoWithSubmodule()
-        defer { cleanUp(fixture.root) }
-        defer { cleanUp(fixture.submoduleSource) }
+        defer { GitFixture.cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.submoduleSource) }
         let worktree = try await service.createWorktree(
             project: fixture.project,
             requestedBranch: "feature"
         )
-        try runGit(
+        try GitFixture.runGit(
             ["-c", "protocol.file.allow=always", "-C", worktree.path, "submodule", "update", "--init"],
             in: fixture.root
         )
@@ -325,7 +470,7 @@ import SupermuxKit
 
     @Test func removeWorktreeCanDeleteBranch() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
         let worktree = try await service.createWorktree(
             project: fixture.project,
             requestedBranch: "feature"
@@ -335,13 +480,13 @@ import SupermuxKit
         try await service.removeWorktree(worktree, project: fixture.project, deleteBranch: true)
 
         #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
-        let listing = try runGit(["branch", "--list", branch], in: fixture.root)
+        let listing = try GitFixture.runGit(["branch", "--list", branch], in: fixture.root)
         #expect(listing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     @Test func removeWorktreeRunsTeardownScriptWithEnvironment() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
         var project = fixture.project
         // Teardown writes the exported worktree path into the main checkout, so
         // we can assert it ran, with the environment set, before removal.
@@ -360,7 +505,7 @@ import SupermuxKit
 
     @Test func teardownThatDirtiesTheWorktreeStillRemoves() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
         var project = fixture.project
         // Teardown drops an untracked file into the worktree, dirtying a checkout
         // we already verified clean. The (non-force) removal must still succeed —
@@ -374,7 +519,7 @@ import SupermuxKit
 
     @Test func failingTeardownDoesNotBlockRemoval() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
         var project = fixture.project
         project.teardownCommands = ["exit 7"]
         let worktree = try await service.createWorktree(project: project, requestedBranch: "feature")
@@ -387,11 +532,11 @@ import SupermuxKit
 
     @Test func removeWorktreeRefusesUnmanagedWorktrees() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
         let sibling = try makeTempDirectory()
-        defer { cleanUp(sibling) }
+        defer { GitFixture.cleanUp(sibling) }
         let outsidePath = (sibling as NSString).appendingPathComponent("manual-worktree")
-        try runGit(["worktree", "add", "-b", "manual-branch", outsidePath], in: fixture.root)
+        try GitFixture.runGit(["worktree", "add", "-b", "manual-branch", outsidePath], in: fixture.root)
 
         let listed = try await service.listWorktrees(for: fixture.project)
         let manual = try #require(listed.first { $0.branch == "manual-branch" })
@@ -412,16 +557,14 @@ import SupermuxKit
         // Nest the repo inside a controlled parent we own so we can assert on the
         // parent's contents without racing the shared system temp directory.
         let parent = try makeTempDirectory()
-        defer { cleanUp(parent) }
+        defer { GitFixture.cleanUp(parent) }
         let root = (parent as NSString).appendingPathComponent("repo")
         try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
-        try runGit(["init", "-b", "main"], in: root)
-        try runGit(["config", "--local", "user.email", "tests@supermux.invalid"], in: root)
-        try runGit(["config", "--local", "user.name", "Supermux Tests"], in: root)
-        let readmePath = (root as NSString).appendingPathComponent("README.md")
-        try "fixture\n".write(toFile: readmePath, atomically: true, encoding: .utf8)
-        try runGit(["add", "."], in: root)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Initial commit"], in: root)
+        try GitFixture.runGit(["init", "-b", "main"], in: root)
+        try GitFixture.configureIdentity(in: root)
+        try GitFixture.write("fixture\n", to: "README.md", in: root)
+        try GitFixture.runGit(["add", "."], in: root)
+        try GitFixture.commit("Initial commit", in: root)
 
         let escaped = SupermuxProject(
             name: "Escaped",
@@ -460,7 +603,7 @@ import SupermuxKit
     /// service must fall back to a match-nothing sentinel instead.
     @Test func listWorktreesNeverFlagsSiblingsManagedForEscapingConfig() async throws {
         let fixture = try makeFixtureRepo()
-        defer { cleanUp(fixture.root) }
+        defer { GitFixture.cleanUp(fixture.root) }
 
         // A second, independent git repo living as a sibling of the fixture,
         // with its own real worktree (also a sibling of the fixture). It must
@@ -469,18 +612,16 @@ import SupermuxKit
         let siblingRoot = (parent as NSString)
             .appendingPathComponent("supermux-sibling-\(UUID().uuidString)")
         try FileManager.default.createDirectory(atPath: siblingRoot, withIntermediateDirectories: true)
-        defer { cleanUp(siblingRoot) }
-        try runGit(["init", "-b", "main"], in: siblingRoot)
-        try runGit(["config", "--local", "user.email", "tests@supermux.invalid"], in: siblingRoot)
-        try runGit(["config", "--local", "user.name", "Supermux Tests"], in: siblingRoot)
-        let siblingReadme = (siblingRoot as NSString).appendingPathComponent("README.md")
-        try "sibling\n".write(toFile: siblingReadme, atomically: true, encoding: .utf8)
-        try runGit(["add", "."], in: siblingRoot)
-        try runGit(["-c", "commit.gpgsign=false", "commit", "-m", "Sibling commit"], in: siblingRoot)
+        defer { GitFixture.cleanUp(siblingRoot) }
+        try GitFixture.runGit(["init", "-b", "main"], in: siblingRoot)
+        try GitFixture.configureIdentity(in: siblingRoot)
+        try GitFixture.write("sibling\n", to: "README.md", in: siblingRoot)
+        try GitFixture.runGit(["add", "."], in: siblingRoot)
+        try GitFixture.commit("Sibling commit", in: siblingRoot)
         let siblingWorktree = (parent as NSString)
             .appendingPathComponent("supermux-sibling-wt-\(UUID().uuidString)")
-        defer { cleanUp(siblingWorktree) }
-        try runGit(["worktree", "add", "-b", "sibling-branch", siblingWorktree], in: siblingRoot)
+        defer { GitFixture.cleanUp(siblingWorktree) }
+        try GitFixture.runGit(["worktree", "add", "-b", "sibling-branch", siblingWorktree], in: siblingRoot)
 
         // `git worktree list` in the fixture repo only enumerates the fixture's
         // own worktrees, so to exercise the managed-flagging path we give the
@@ -489,8 +630,8 @@ import SupermuxKit
         // to. Under the bug this fixture-owned sibling would be flagged managed.
         let escapingWorktree = (parent as NSString)
             .appendingPathComponent("supermux-escaped-wt-\(UUID().uuidString)")
-        defer { cleanUp(escapingWorktree) }
-        try runGit(["worktree", "add", "-b", "escaped-branch", escapingWorktree], in: fixture.root)
+        defer { GitFixture.cleanUp(escapingWorktree) }
+        try GitFixture.runGit(["worktree", "add", "-b", "escaped-branch", escapingWorktree], in: fixture.root)
 
         // The fixture project, but mis-configured to escape into the parent.
         let escaped = SupermuxProject(
@@ -532,5 +673,86 @@ import SupermuxKit
         // The resolved container is NOT inside the root — exactly the unsafe case
         // the service rejects with `.unsafeWorktreePath`.
         #expect(resolved.hasPrefix(root + "/") == false)
+    }
+}
+
+/// Strips the `/usr/bin/env VAR=… git` wrapper the service uses for its
+/// locale-pinned `worktree add`, returning the plain git argv. Every other
+/// service call passes `executable: "git"` and comes back unchanged.
+private func unwrappedGitArguments(executable: String, arguments: [String]) -> [String] {
+    guard executable == "/usr/bin/env" else { return arguments }
+    let command = arguments.drop { $0.contains("=") }
+    guard command.first == "git" else { return arguments }
+    return Array(command.dropFirst())
+}
+
+/// Delegates to the real `CommandRunner`, but creates the branch the first
+/// `worktree add` is about to claim just before running it — simulating a
+/// concurrent creation racing through the reentrant actor.
+private actor BranchRaceInjectingRunner: CommandRunning {
+    private let wrapped = CommandRunner()
+    private var injected = false
+
+    func run(
+        directory: String,
+        executable: String,
+        arguments: [String],
+        timeout: TimeInterval?
+    ) async -> CommandResult {
+        let gitArguments = unwrappedGitArguments(executable: executable, arguments: arguments)
+        if !injected, gitArguments.count > 4, gitArguments[0] == "worktree", gitArguments[1] == "add" {
+            injected = true
+            _ = await wrapped.run(
+                directory: directory,
+                executable: "git",
+                arguments: ["branch", gitArguments[4]],
+                timeout: timeout
+            )
+        }
+        return await wrapped.run(
+            directory: directory,
+            executable: executable,
+            arguments: arguments,
+            timeout: timeout
+        )
+    }
+}
+
+/// Scripted runner whose `worktree add` always times out; everything else
+/// reports success. Records every invocation so tests can assert on the
+/// deadlines and cleanup commands the service issues.
+private actor TimedOutAddRunner: CommandRunning {
+    struct Invocation: Sendable {
+        var arguments: [String]
+        var timeout: TimeInterval?
+    }
+
+    private(set) var invocations: [Invocation] = []
+
+    func first(withPrefix prefix: [String]) -> Invocation? {
+        invocations.first { $0.arguments.starts(with: prefix) }
+    }
+
+    func run(
+        directory: String,
+        executable: String,
+        arguments: [String],
+        timeout: TimeInterval?
+    ) async -> CommandResult {
+        // Record the plain git argv (env wrapper stripped) so assertions match
+        // the service's logical git invocations regardless of routing.
+        let gitArguments = unwrappedGitArguments(executable: executable, arguments: arguments)
+        invocations.append(Invocation(arguments: gitArguments, timeout: timeout))
+        if gitArguments.starts(with: ["worktree", "add"]) {
+            return CommandResult(stdout: nil, stderr: nil, exitStatus: nil, timedOut: true, executionError: nil)
+        }
+        let stdout: String
+        switch gitArguments.first {
+        case "rev-parse":
+            stdout = gitArguments.contains("--is-inside-work-tree") ? "true\n" : ".git\n"
+        default:
+            stdout = ""
+        }
+        return CommandResult(stdout: stdout, stderr: nil, exitStatus: 0, timedOut: false, executionError: nil)
     }
 }

@@ -16,7 +16,8 @@
 # WHAT THIS DOES
 #   - Deregisters stale "cmux DEV" bundles from LaunchServices (lsregister -u).
 #   - Removes the redundant base "cmux DEV.app" + ".reload-*.app" staging copies
-#     (always safe: they are never the app you run).
+#     (never the app you run — but a reload may still be building/copying them,
+#     so live ones are skipped; see SAFETY below).
 #   - With --prune-derived, also deletes DerivedData + sockets/logs for prunable
 #     tags by delegating the disk sweep to cleanup-dev-builds.sh.
 #   - With --rebuild-lsdb, rebuilds the LaunchServices database afterwards so
@@ -25,8 +26,12 @@
 # SAFETY (always on)
 #   Never deregisters or deletes the *tagged* app for the active tag
 #   (/tmp/cmux-last-cli-path) or a running "cmux DEV <tag>". Use --keep <tag>
-#   to protect more. Redundant base/staging bundles are pruned regardless,
-#   since they are never launched.
+#   to protect more. Redundant base/staging bundles are never launched, so
+#   they are pruned regardless of tag protection — but a concurrent reload.sh
+#   uses them while it runs (xcodebuild assembles the base bundle, then cp -R
+#   copies it into a ".reload-<pid>.app" staging bundle that lives until the
+#   final mv), so a staging bundle whose reload pid is alive, and a base
+#   bundle whose build appears in flight, are skipped and swept next run.
 #
 # Defaults to dry-run. Pass --apply to act.
 #
@@ -40,8 +45,9 @@
 #   --reload-leftover PATH  Internal mode for reload.sh: deregister + remove the
 #                           sibling base "cmux DEV.app" and dead ".reload-*.app"
 #                           staging bundles next to the given final app PATH.
-#                           Always applies (no dry-run), keeps PATH itself and
-#                           any staging whose reload pid is still running.
+#                           Always applies (no dry-run), keeps PATH itself, any
+#                           staging whose reload pid is still running, and the
+#                           base bundle while another build is in flight.
 #   -h, --help
 #
 # Examples:
@@ -90,10 +96,67 @@ deregister() {
     "$LSREGISTER" -u "$path" >/dev/null 2>&1 || true
 }
 
+# ---- liveness guards ---------------------------------------------------------
+# Redundant bundles are never launched, but a running reload.sh still uses
+# them: xcodebuild assembles the base "cmux DEV.app", then cp -R copies it into
+# ".<app>.reload-<pid>.app" which stays live (plist edits, zig builds,
+# codesign) until the final mv. Deleting either mid-flight fails the reload
+# after a full multi-minute build, so every deletion path checks these first.
+
+# ".reload-<pid>.app" staging bundle whose reload.sh pid is still alive?
+staging_live() {
+    [[ "$1" =~ \.reload-([0-9]+)\.app$ ]] && kill -0 "${BASH_REMATCH[1]}" 2>/dev/null
+}
+
+# A build appears in flight for this products dir: a staging sibling with a
+# live reload pid (covers cp -R through mv), or a live xcodebuild whose
+# command line references the "cmux-<slug>" DerivedData dir (covers the
+# earlier phase that assembles the base bundle, before staging exists). The
+# "xcodebuild" prefix keeps the pattern from matching this script, its
+# reload.sh parent in hook mode, or a running "cmux DEV <tag>" app.
+build_in_flight() {
+    local products_dir="$1" bundle dd_base
+    for bundle in "$products_dir"/.*.reload-*.app; do
+        [[ -d "$bundle" ]] || continue
+        staging_live "$(basename "$bundle")" && return 0
+    done
+    dd_base="$(basename "${products_dir%/Build/Products/Debug}")"
+    [[ "$dd_base" =~ ^[A-Za-z0-9._-]+$ ]] || return 0  # unparseable: assume live
+    pgrep -f "xcodebuild.*${dd_base}([^A-Za-z0-9._-]|\$)" >/dev/null 2>&1 && return 0
+    return 1
+}
+
+# Anything inside the bundle written in the last few minutes? Covers the short
+# xcodebuild -> cp -R handoff where neither guard above fires. Not used by the
+# --reload-leftover hook, which always runs seconds after a build.
+recently_built() {
+    [[ -n "$(find "$1" -mmin -5 -print -quit 2>/dev/null)" ]]
+}
+
+# Main-path rule for base/staging bundles; used at discovery (so dry-run
+# matches what --apply would do) and re-checked right before each rm -rf.
+redundant_prunable() {
+    local bundle="$1" name
+    name="$(basename "$bundle")"
+    staging_live "$name" && return 1
+    if [[ "$name" == "$BASE_APP_NAME.app" ]]; then
+        build_in_flight "$(dirname "$bundle")" && return 1
+        recently_built "$bundle" && return 1
+    fi
+    return 0
+}
+
 # ---- internal reload.sh hook ------------------------------------------------
 # Remove the redundant base + staging bundles left next to a freshly built
 # tagged app. Kept deliberately tiny so it adds no meaningful time to a reload.
 if [[ -n "$reload_leftover" ]]; then
+    # reload.sh always passes the absolute path of the final tagged .app;
+    # refuse anything else so the rm -rf below can only ever see bundles
+    # inside a real products directory.
+    if [[ "$reload_leftover" != /*.app ]]; then
+        echo "error: --reload-leftover expects an absolute .app bundle path" >&2
+        exit 2
+    fi
     products_dir="$(dirname "$reload_leftover")"
     final_app="$(basename "$reload_leftover")"
     shopt -s nullglob
@@ -106,7 +169,11 @@ if [[ -n "$reload_leftover" ]]; then
         # whose reload is still running so a concurrent same-tag reload's
         # in-progress staging is never deleted out from under it. Crashed/dead
         # staging copies fall through and are swept here.
-        if [[ "$name" =~ \.reload-([0-9]+)\.app$ ]] && kill -0 "${BASH_REMATCH[1]}" 2>/dev/null; then
+        staging_live "$name" && continue
+        # The base bundle is the cp -R source of any concurrent same-tag
+        # reload and the output of a live xcodebuild; skip it while either
+        # is in flight (the next reload's hook sweeps it).
+        if [[ "$name" == "$BASE_APP_NAME.app" ]] && build_in_flight "$products_dir"; then
             continue
         fi
         deregister "$bundle"
@@ -173,6 +240,7 @@ discover_bundles() {
             [[ -d "$bundle" ]] || continue
             name="$(basename "$bundle")"
             if [[ "$name" == "$BASE_APP_NAME.app" || "$name" == .*reload-*.app ]]; then
+                redundant_prunable "$bundle" || continue
                 printf 'redundant\t%s\t%s\n' "$tag" "$bundle"
             else
                 printf 'tagged\t%s\t%s\n' "$tag" "$bundle"
@@ -233,6 +301,9 @@ if ((${#keep_tagged[@]})); then
 fi
 
 printf 'deregister + remove (redundant leftovers): %d\n' "${#prune_redundant[@]}"
+if ((${#prune_redundant[@]})); then
+    for e in "${prune_redundant[@]}"; do printf '  %s\n' "$e"; done
+fi
 printf 'deregister (tagged builds): %d\n' "${#prune_tagged[@]}"
 if ((${#prune_tagged[@]})); then
     for e in "${prune_tagged[@]}"; do printf '  %s\n' "${e#*|}"; done
@@ -278,11 +349,15 @@ fi
 # ---- apply ------------------------------------------------------------------
 
 echo 'applying...'
+removed_redundant=0
 for bundle in ${prune_redundant[@]+"${prune_redundant[@]}"}; do
+    # Re-check right before deletion: a reload may have started since discovery.
+    redundant_prunable "$bundle" || continue
     deregister "$bundle"
     rm -rf -- "$bundle"
+    removed_redundant=$((removed_redundant + 1))
 done
-((${#prune_redundant[@]})) && printf '  removed %d redundant leftover bundle(s)\n' "${#prune_redundant[@]}"
+((removed_redundant)) && printf '  removed %d redundant leftover bundle(s)\n' "$removed_redundant"
 
 for e in ${prune_tagged[@]+"${prune_tagged[@]}"}; do
     deregister "${e#*|}"

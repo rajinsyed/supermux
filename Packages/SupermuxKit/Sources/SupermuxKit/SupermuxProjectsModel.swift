@@ -7,6 +7,13 @@ public import Observation
 /// ``SupermuxProjectStore``, and orchestrates worktree operations through
 /// ``SupermuxGitWorktreeService``. Views observe this model; it performs no
 /// I/O on the main thread beyond dispatching to the underlying actors.
+///
+/// Persistence contract: every mutation queues a *semantic* closure that edits
+/// the freshly re-read on-disk document (append/replace/remove by id) — never
+/// a wholesale snapshot assignment — because the projects file is shared with
+/// concurrently running stable/nightly/DEV builds whose edits a stale snapshot
+/// would clobber. After the last queued persist, in-memory state converges
+/// with the document returned by the store.
 @MainActor
 @Observable
 public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting {
@@ -16,24 +23,32 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     public private(set) var worktreesByProjectId: [UUID: [SupermuxProjectWorktree]] = [:]
     /// Global terminal-presets-bar entries in bar order. Seeded with
     /// ``SupermuxTerminalPreset/defaults`` the first time the model loads a
-    /// document that has never carried presets.
-    public private(set) var presets: [SupermuxTerminalPreset] = []
+    /// document that has never carried presets. Setter is internal for the
+    /// presets extension (`SupermuxProjectsModel+Presets.swift`).
+    public internal(set) var presets: [SupermuxTerminalPreset] = []
     /// Durable directory→project links (see
     /// ``SupermuxDirectoryAssociationPersisting``), keyed by normalized path.
     /// Reloaded from disk on launch so a project's main workspace nests again.
-    public private(set) var directoryAssociations: [String: UUID] = [:]
+    public internal(set) var directoryAssociations: [String: UUID] = [:]
     /// Projects whose worktree rows are expanded in the sidebar.
     public var expandedProjectIds: Set<UUID> = []
     /// Whether the whole Projects section is collapsed.
     public var isSectionCollapsed: Bool = false {
         didSet {
-            guard oldValue != isSectionCollapsed, hasLoaded else { return }
+            guard oldValue != isSectionCollapsed, hasLoaded, !isAdoptingPersistedState else { return }
             let collapsed = isSectionCollapsed
             persist { $0.isSectionCollapsed = collapsed }
         }
     }
-    /// The most recent persistence or git error, for UI display.
+    /// The most recent persistence error, for UI display. Cleared by the next
+    /// successful persist.
     public private(set) var lastError: String?
+    /// Set when the launch load fell back to an empty document (corrupt file
+    /// quarantined to a backup, or an unreadable file), for UI display. Sticky
+    /// for the session — unlike ``lastError`` it is not cleared by a later
+    /// successful persist, so the "your list was reset, backup at …" notice
+    /// survives the persists that routinely follow a load.
+    public private(set) var loadFailureNotice: String?
 
     private let store: SupermuxProjectStore
     private let worktreeService: SupermuxGitWorktreeService
@@ -41,14 +56,27 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     /// back to the worktree service's random-name behavior.
     @ObservationIgnored private let branchNamer: (any SupermuxAIBranchNaming)?
     private var hasLoaded = false
+    /// The in-flight (or completed) load; concurrent ``loadIfNeeded()`` callers
+    /// await this single task instead of re-running the load body.
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    /// How many times the full load body has run. Test hook pinning that
+    /// concurrent ``loadIfNeeded()`` callers share one load.
+    @ObservationIgnored private(set) var loadRunCount = 0
     /// Matches a directory against a project's worktrees dir; used to skip
     /// durable links for worktree paths (they already nest structurally).
-    @ObservationIgnored private let worktreeMatcher = SupermuxProjectMatcher()
+    /// Internal for the presets/associations extension.
+    @ObservationIgnored let worktreeMatcher = SupermuxProjectMatcher()
     /// Reads a project's `.supermux`/`.superset` `config.json`; applied on add
     /// and on load so a repo-shipped config drives setup/teardown/run/actions.
     @ObservationIgnored private let configLoader = SupermuxProjectConfigLoader()
     /// Serializes persistence so rapid mutations are written in call order.
     @ObservationIgnored private var persistTask: Task<Void, Never>?
+    /// Monotonic id of the newest queued persist; the matching task is the
+    /// chain tail and the only one allowed to fold disk state back in.
+    @ObservationIgnored private var persistGeneration = 0
+    /// Suppresses the `isSectionCollapsed` didSet persist while ``adopt(_:)``
+    /// assigns the already-persisted value.
+    @ObservationIgnored private var isAdoptingPersistedState = false
 
     /// Creates the model.
     /// - Parameters:
@@ -81,13 +109,29 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         return await branchNamer.suggestBranchName(forWorkspaceName: name)
     }
 
-    /// Loads persisted projects once; later calls are no-ops.
+    /// Loads persisted projects once. Concurrent and later callers (the
+    /// Projects section mounts once per window) await the same single load.
     public func loadIfNeeded() async {
-        guard !hasLoaded else { return }
+        if let loadTask {
+            await loadTask.value
+            return
+        }
+        let task = Task { await performLoad() }
+        loadTask = task
+        await task.value
+    }
+
+    private func performLoad() async {
+        loadRunCount += 1
         let file = await store.load()
         projects = file.projects
         isSectionCollapsed = file.isSectionCollapsed
         hasLoaded = true
+        // Tell the user when the list was reset because the file was corrupt
+        // (with the quarantine backup path) instead of failing silently.
+        if let failure = await store.lastLoadFailure {
+            loadFailureNotice = Self.message(for: failure)
+        }
         // Restore durable directory→project links, dropping any whose project no
         // longer exists so the map can't accumulate dead entries across launches.
         let validProjectIds = Set(projects.map(\.id))
@@ -95,7 +139,14 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         let prunedAssociations = storedAssociations.filter { validProjectIds.contains($0.value) }
         directoryAssociations = prunedAssociations
         if prunedAssociations.count != storedAssociations.count {
-            persistDirectoryAssociations()
+            // Semantic prune: validity is judged against the projects in the
+            // freshly-read document, not this instance's launch snapshot.
+            persist { file in
+                guard let associations = file.directoryAssociations else { return }
+                let valid = Set(file.projects.map(\.id))
+                let pruned = associations.filter { valid.contains($0.value) }
+                file.directoryAssociations = pruned.isEmpty ? nil : pruned
+            }
         }
         // Seed default presets the first time a document without them loads, and
         // write them back so the seed is stable. An explicitly empty array means
@@ -105,14 +156,20 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         } else {
             presets = SupermuxTerminalPreset.defaults
             let seeded = presets
-            persist { $0.presets = seeded }
+            persist { $0.presets = $0.presets ?? seeded }
         }
-        for project in projects {
-            // Re-import each project's shipped config.json (when present) so a
-            // repo's setup/teardown/run/actions stay in sync across launches,
-            // then refresh its worktrees.
-            await importConfig(into: project.id)
-            await refreshWorktrees(for: project.id)
+        // Re-import each project's shipped config.json (when present) so a
+        // repo's setup/teardown/run/actions stay in sync across launches, then
+        // refresh its worktrees — in parallel, so launch time is bounded by the
+        // slowest project instead of the sum of one git spawn per project.
+        await withTaskGroup(of: Void.self) { group in
+            for project in projects {
+                let id = project.id
+                group.addTask { [weak self] in
+                    await self?.importConfig(into: id)
+                    await self?.refreshWorktrees(for: id)
+                }
+            }
         }
     }
 
@@ -126,7 +183,7 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     @discardableResult
     public func addProject(rootPath: String) async -> SupermuxProject {
         let normalized = (rootPath as NSString).standardizingPath
-        if let existing = projects.first(where: { $0.rootPath == normalized }) {
+        if let existing = registeredProject(at: normalized) {
             return existing
         }
         var project = SupermuxProject(
@@ -136,14 +193,31 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         if await worktreeService.isGitRepository(at: normalized) {
             project.defaultBranch = await worktreeService.currentBranch(repoRoot: normalized)
         }
+        // Re-check after the awaits: the model is main-actor reentrant there,
+        // so a concurrent add of the same folder may have registered it.
+        if let existing = registeredProject(at: normalized) {
+            return existing
+        }
         projects.append(project)
-        let snapshot = projects
-        persist { $0.projects = snapshot }
+        let record = project
+        persist { file in
+            guard !file.projects.contains(where: { $0.id == record.id || $0.rootPath == record.rootPath }) else { return }
+            file.projects.append(record)
+        }
         // Pull in a repo-shipped config.json, if any, before opening anything so
         // the project's setup/teardown/run/actions are populated from the start.
         await importConfig(into: project.id)
         await refreshWorktrees(for: project.id)
         return projects.first(where: { $0.id == project.id }) ?? project
+    }
+
+    /// The registered project at `normalized`, matched by the exact logical
+    /// path or by symlink-resolved form, so the logical and physical spellings
+    /// of one folder never register as two projects.
+    private func registeredProject(at normalized: String) -> SupermuxProject? {
+        if let exact = projects.first(where: { $0.rootPath == normalized }) { return exact }
+        let resolved = SupermuxProjectMatcher.resolvedDirectory(normalized)
+        return projects.first { SupermuxProjectMatcher.resolvedDirectory($0.rootPath) == resolved }
     }
 
     /// Imports the project's `config.json` (when present), overwriting its
@@ -165,8 +239,7 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         let updated = projects[currentIndex].applying(config)
         guard updated != projects[currentIndex] else { return }
         projects[currentIndex] = updated
-        let snapshot = projects
-        persist { $0.projects = snapshot }
+        persistReplacingProject(updated)
     }
 
     /// Replaces a project record (rename, recolor, settings edit).
@@ -174,8 +247,14 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     public func updateProject(_ project: SupermuxProject) {
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
         projects[index] = project
-        let snapshot = projects
-        persist { $0.projects = snapshot }
+        persistReplacingProject(project)
+    }
+
+    private func persistReplacingProject(_ project: SupermuxProject) {
+        persist { file in
+            guard let i = file.projects.firstIndex(where: { $0.id == project.id }) else { return }
+            file.projects[i] = project
+        }
     }
 
     /// Reorders `draggedId` so it sits next to `targetId` in sidebar order,
@@ -189,18 +268,25 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     ///   - draggedId: Project being moved.
     ///   - targetId: Project the dragged row is hovering over.
     public func moveProject(_ draggedId: UUID, over targetId: UUID) {
+        guard Self.applyMove(draggedId, over: targetId, in: &projects) else { return }
+        // The same relative move re-applies to the freshly-read document, so
+        // projects unknown to this instance keep their on-disk positions.
+        persist { Self.applyMove(draggedId, over: targetId, in: &$0.projects) }
+    }
+
+    /// Applies the relative move in place; returns `false` (untouched array)
+    /// when either id is unknown or `draggedId == targetId`.
+    @discardableResult
+    nonisolated private static func applyMove(_ draggedId: UUID, over targetId: UUID, in projects: inout [SupermuxProject]) -> Bool {
         guard draggedId != targetId,
               let from = projects.firstIndex(where: { $0.id == draggedId }),
-              let to = projects.firstIndex(where: { $0.id == targetId }) else { return }
-        var reordered = projects
-        let moved = reordered.remove(at: from)
+              let to = projects.firstIndex(where: { $0.id == targetId }) else { return false }
+        let moved = projects.remove(at: from)
         // After removal the target may have shifted; locate it again and insert
         // after it when dragging downward, before it when dragging upward.
-        let targetIndex = reordered.firstIndex(where: { $0.id == targetId }) ?? reordered.endIndex
-        reordered.insert(moved, at: to > from ? targetIndex + 1 : targetIndex)
-        projects = reordered
-        let snapshot = projects
-        persist { $0.projects = snapshot }
+        let targetIndex = projects.firstIndex(where: { $0.id == targetId }) ?? projects.endIndex
+        projects.insert(moved, at: to > from ? targetIndex + 1 : targetIndex)
+        return true
     }
 
     /// Unregisters a project. Worktrees and the repository are left on disk.
@@ -212,11 +298,12 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         // Drop durable links pointing at the removed project so they can't
         // re-nest a stale workspace under a project that no longer exists.
         directoryAssociations = directoryAssociations.filter { $0.value != id }
-        let projectsSnapshot = projects
-        let associationsSnapshot = directoryAssociations
-        persist {
-            $0.projects = projectsSnapshot
-            $0.directoryAssociations = associationsSnapshot.isEmpty ? nil : associationsSnapshot
+        persist { file in
+            file.projects.removeAll { $0.id == id }
+            if let associations = file.directoryAssociations {
+                let remaining = associations.filter { $0.value != id }
+                file.directoryAssociations = remaining.isEmpty ? nil : remaining
+            }
         }
     }
 
@@ -224,21 +311,30 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     /// - Parameter id: Project that was opened.
     public func noteOpened(id: UUID) {
         guard let index = projects.firstIndex(where: { $0.id == id }) else { return }
-        projects[index].lastOpenedAt = Date()
-        let snapshot = projects
-        persist { $0.projects = snapshot }
+        // Capture the date once so the queued persist writes exactly the
+        // timestamp memory shows.
+        let openedAt = Date()
+        projects[index].lastOpenedAt = openedAt
+        persist { file in
+            guard let i = file.projects.firstIndex(where: { $0.id == id }) else { return }
+            file.projects[i].lastOpenedAt = openedAt
+        }
     }
 
     /// Re-reads the project's worktrees from git.
     /// - Parameter projectId: Project to refresh.
     public func refreshWorktrees(for projectId: UUID) async {
         guard let project = projects.first(where: { $0.id == projectId }) else { return }
+        let list: [SupermuxProjectWorktree]
         do {
-            worktreesByProjectId[projectId] = try await worktreeService.listWorktrees(for: project)
+            list = try await worktreeService.listWorktrees(for: project)
         } catch {
             // Non-git projects simply have no worktrees; real git failures
             // surface when the user performs an explicit worktree action.
-            worktreesByProjectId[projectId] = []
+            list = []
+        }
+        if worktreesByProjectId[projectId] != list {
+            worktreesByProjectId[projectId] = list
         }
     }
 
@@ -303,84 +399,88 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         return await worktreeService.localBranches(repoRoot: project.rootPath)
     }
 
-    // MARK: - Terminal presets
+    // MARK: - Persistence
 
-    /// Appends a new launchable preset to the bar.
-    /// - Parameter preset: The preset to add (kept even if not yet launchable
-    ///   so the editor can fill it in).
-    public func addPreset(_ preset: SupermuxTerminalPreset) {
-        presets.append(preset)
-        persistPresets()
-    }
-
-    /// Replaces a preset by ``SupermuxTerminalPreset/id``; no-op when unknown.
-    /// - Parameter preset: Updated record.
-    public func updatePreset(_ preset: SupermuxTerminalPreset) {
-        guard let index = presets.firstIndex(where: { $0.id == preset.id }) else { return }
-        presets[index] = preset
-        persistPresets()
-    }
-
-    /// Removes a preset from the bar.
-    /// - Parameter id: Preset to remove.
-    public func removePreset(id: UUID) {
-        presets.removeAll { $0.id == id }
-        persistPresets()
-    }
-
-    /// Replaces the entire ordered preset list (used by the editor sheet on
-    /// save, which owns reordering and field edits in local state).
-    /// - Parameter presets: The new ordered list.
-    public func setPresets(_ presets: [SupermuxTerminalPreset]) {
-        self.presets = presets
-        persistPresets()
-    }
-
-    /// Restores the bar to ``SupermuxTerminalPreset/defaults``.
-    public func resetPresetsToDefaults() {
-        presets = SupermuxTerminalPreset.defaults
-        persistPresets()
-    }
-
-    private func persistPresets() {
-        let snapshot = presets
-        persist { $0.presets = snapshot }
-    }
-
-    // MARK: - Directory associations (SupermuxDirectoryAssociationPersisting)
-
-    public func associateDirectory(_ directory: String, with projectId: UUID) {
-        let key = SupermuxProjectMatcher.normalizedDirectory(directory)
-        guard !key.isEmpty, directoryAssociations[key] != projectId else { return }
-        // Worktree directories nest structurally (``SupermuxProjectMatcher``
-        // matches the worktrees dir), so a durable link for them is redundant —
-        // and would linger as a stale entry after the worktree is deleted, since
-        // links are only cleared on project removal. Persist only links we need:
-        // the project's main/root workspace, which has no structural signal.
-        guard worktreeMatcher.projectOwningWorktree(for: key, in: projects) == nil else { return }
-        directoryAssociations[key] = projectId
-        persistDirectoryAssociations()
-    }
-
-    private func persistDirectoryAssociations() {
-        let snapshot = directoryAssociations
-        persist { $0.directoryAssociations = snapshot.isEmpty ? nil : snapshot }
-    }
-
-    private func persist(_ mutate: @escaping @Sendable (inout SupermuxProjectsFile) -> Void) {
+    /// Queues a semantic mutation of the on-disk document. Internal so the
+    /// split-file extension (presets, directory associations) shares this one
+    /// persistence path.
+    ///
+    /// Closures must edit the freshly-read file (append/replace/remove by id),
+    /// never assign whole snapshots — the file is shared with concurrently
+    /// running builds whose edits a stale snapshot would clobber. Closures
+    /// capture value snapshots only (ids, dates, records).
+    func persist(_ mutate: @escaping @Sendable (inout SupermuxProjectsFile) -> Void) {
         let store = self.store
-        // Chain persists so two rapid mutations apply in call order (each passes
-        // a whole snapshot, so out-of-order writes would resurrect stale state).
-        // This is a @MainActor method, so the Task body and the catch run on the
+        persistGeneration &+= 1
+        let generation = persistGeneration
+        // Chain persists so rapid mutations apply to the document in call
+        // order. This is a @MainActor method, so the Task body runs on the
         // main actor — no extra MainActor.run hop is needed.
         let previous = persistTask
         persistTask = Task { [weak self] in
             await previous?.value
             do {
-                try await store.update(mutate)
+                let persisted = try await store.update(mutate)
+                guard let self else { return }
+                if self.lastError != nil { self.lastError = nil }
+                // Fold disk truth back in only from the tail of the chain: a
+                // mid-chain adopt would transiently revert newer local
+                // mutations whose persists are still queued behind this one.
+                if generation == self.persistGeneration {
+                    self.adopt(persisted)
+                }
             } catch {
-                self?.lastError = error.localizedDescription
+                self?.lastError = String(
+                    format: String(localized: "supermux.projects.saveFailed", defaultValue: "Couldn't save projects: %@"),
+                    error.localizedDescription
+                )
             }
+        }
+    }
+
+    /// Converges in-memory state with the post-write on-disk document, folding
+    /// in concurrent instances' edits. Worktree lists for projects added by
+    /// another instance populate on their next explicit refresh.
+    private func adopt(_ file: SupermuxProjectsFile) {
+        if projects != file.projects { projects = file.projects }
+        if let adoptedPresets = file.presets, adoptedPresets != presets { presets = adoptedPresets }
+        let associations = file.directoryAssociations ?? [:]
+        if directoryAssociations != associations { directoryAssociations = associations }
+        let ids = Set(file.projects.map(\.id))
+        let prunedWorktrees = worktreesByProjectId.filter { ids.contains($0.key) }
+        if prunedWorktrees.count != worktreesByProjectId.count { worktreesByProjectId = prunedWorktrees }
+        if !expandedProjectIds.isSubset(of: ids) { expandedProjectIds.formIntersection(ids) }
+        if isSectionCollapsed != file.isSectionCollapsed {
+            // Bypass the didSet persist: this value is the persisted one.
+            isAdoptingPersistedState = true
+            isSectionCollapsed = file.isSectionCollapsed
+            isAdoptingPersistedState = false
+        }
+    }
+
+    private static func message(for failure: SupermuxProjectStore.LoadFailure) -> String {
+        switch failure {
+        case .corrupted(.some(let backupURL)):
+            String(
+                format: String(
+                    localized: "supermux.projects.corruptReset",
+                    defaultValue: "The projects file couldn't be read and was reset. A backup was saved to %@."
+                ),
+                backupURL.path
+            )
+        case .corrupted(nil):
+            String(
+                localized: "supermux.projects.corruptResetNoBackup",
+                defaultValue: "The projects file couldn't be read and was reset."
+            )
+        case .unreadable(let message):
+            String(
+                format: String(
+                    localized: "supermux.projects.loadFailed",
+                    defaultValue: "Projects couldn't be loaded: %@"
+                ),
+                message
+            )
         }
     }
 }

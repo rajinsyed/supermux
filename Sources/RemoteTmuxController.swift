@@ -885,21 +885,17 @@ final class RemoteTmuxController {
             // this session were already removed above.
             AppDelegate.shared?.discardMainWindowWithoutClosedHistory(windowId: windowId)
         case .closeWorkspace:
-            // Close just the dead workspace. `closeWorkspace` refuses to remove a
-            // window's last workspace (it would leave a windowless state), so if the
-            // dead mirror is the only workspace in its window, add a fresh local
-            // workspace first — that leaves a usable window instead of stranding a
-            // frozen, connection-less remote tab. `inheritWorkingDirectory: false`
-            // avoids inheriting the mirror's remote path; `select: false` keeps the
-            // disconnect from stealing focus (closeWorkspace reselects after the
-            // dead one is removed).
+            // SUPERMUX:begin keep-window-on-last-close
+            // Close just the dead workspace. Supermux keeps the window open as
+            // an empty home when the last workspace closes, so the upstream
+            // workaround (adding a fresh local workspace first, because plain
+            // closeWorkspace refuses a window's last workspace) is gone —
+            // closing the dead mirror simply leaves the empty home.
             if let manager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
                let workspace = manager.tabs.first(where: { $0.id == workspaceId }) {
-                if manager.tabs.count == 1 {
-                    _ = manager.addWorkspace(inheritWorkingDirectory: false, select: false)
-                }
-                manager.closeWorkspace(workspace)
+                manager.closeWorkspace(workspace, allowEmptyingWindow: true)
             }
+            // SUPERMUX:end keep-window-on-last-close
         }
     }
 

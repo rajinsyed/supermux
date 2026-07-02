@@ -1308,16 +1308,21 @@ class GhosttyApp {
             logLabel: "cmux-owned keybind overrides"
         )
         // SUPERMUX:begin ghostty-unbind-split-zoom-return
-        // supermux rebinds Toggle Pane Zoom off ⇧⌘↩ to ⌃⌘Z and frees ⇧⌘↩ for the
-        // Changes-panel commit accelerator (SupermuxChangesPanelView). Ghostty's
-        // built-in `super+shift+enter = toggle_split_zoom` (ghostty Config.zig)
-        // would otherwise still consume ⇧⌘↩ in a focused terminal before the
-        // SwiftUI accelerator can fire, leaving the chord un-freed — the same
-        // "rebind looks hardcoded because Ghostty keeps its fallback" failure as
-        // the numbered-workspace unbinds above (cf. issue #5189). The default
-        // binds the physical Enter key, which `super+shift+enter` matches.
+        // supermux owns both Changes-panel commit chords (SupermuxChangesPanelView):
+        // ⌘↩ (supermuxCommit) and ⇧⌘↩ (the accelerator, freed by rebinding Toggle
+        // Pane Zoom to ⌃⌘Z). Ghostty's built-in defaults would otherwise consume
+        // both in a focused terminal before the SwiftUI buttons can fire — the
+        // same "rebind looks hardcoded because Ghostty keeps its fallback"
+        // failure as the numbered-workspace unbinds above (cf. issue #5189):
+        // `super+shift+enter = toggle_split_zoom` eats ⇧⌘↩, and
+        // `super+enter = toggle_fullscreen` eats ⌘↩ (a dead no-op here: cmux has
+        // no GHOSTTY_ACTION_TOGGLE_FULLSCREEN handler and binds fullscreen to
+        // ⌃⌘F). Both defaults bind the physical Enter key, which these match.
         loadInlineGhosttyConfig(
-            "keybind = super+shift+enter=unbind",
+            """
+            keybind = super+shift+enter=unbind
+            keybind = super+enter=unbind
+            """,
             into: config,
             prefix: "supermux-owned-keybind-overrides",
             logLabel: "supermux-owned keybind overrides"

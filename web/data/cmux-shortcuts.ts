@@ -100,6 +100,10 @@ export const shortcutCategories: ShortcutCategory[] = [
       },
       { id: "nextSidebarTab", combos: [["⌃", "⌘", "]"]], description: { en: "Next workspace", ja: "次のワークスペース" } },
       { id: "prevSidebarTab", combos: [["⌃", "⌘", "["]], description: { en: "Previous workspace", ja: "前のワークスペース" } },
+      // SUPERMUX:begin workspace-switcher-shortcut-doc
+      { id: "supermuxWorkspaceSwitcherNext", combos: [["⌘", "`"]], description: { en: "Workspace switcher: hold ⌘ and tap ` to cycle workspaces, release ⌘ to switch", ja: "ワークスペース切り替え: ⌘ を押しながら ` で切り替え、⌘ を離すと確定" } },
+      { id: "supermuxWorkspaceSwitcherPrevious", combos: [["⇧", "⌘", "`"]], description: { en: "Workspace switcher (reverse): cycle backward through workspaces", ja: "ワークスペース切り替え（逆順）: ワークスペースを逆方向に切り替え" } },
+      // SUPERMUX:end workspace-switcher-shortcut-doc
       {
         id: "focusHistoryBack",
         combos: [["⌘", "["]],
@@ -439,6 +443,20 @@ export const shortcutCategories: ShortcutCategory[] = [
         description: { en: "Open diff file search", ja: "差分ファイル検索を開く" },
         note: { en: "focused diff viewer", ja: "フォーカス中の差分ビューア" },
       },
+      // SUPERMUX:begin supermux-commit-shortcut-doc
+      {
+        id: "supermuxCommit",
+        combos: [["⌘", "↩"]],
+        description: { en: "Commit changes", ja: "変更をコミット" },
+        note: { en: "Changes panel", ja: "変更パネル" },
+      },
+      {
+        id: "supermuxCommitAccelerator",
+        combos: [["⇧", "⌘", "↩"]],
+        description: { en: "Commit changes (accelerator)", ja: "変更をコミット（アクセラレータ）" },
+        note: { en: "Changes panel", ja: "変更パネル" },
+      },
+      // SUPERMUX:end supermux-commit-shortcut-doc
     ],
   },
   {
@@ -451,10 +469,6 @@ export const shortcutCategories: ShortcutCategory[] = [
       // SUPERMUX:begin run-toggle-shortcut-doc
       { id: "supermuxToggleRun", combos: [["⌘", "G"]], description: { en: "Run / stop project command (when find is closed)", ja: "プロジェクトコマンドを実行 / 停止（検索が閉じているとき）" } },
       // SUPERMUX:end run-toggle-shortcut-doc
-      // SUPERMUX:begin workspace-switcher-shortcut-doc
-      { id: "supermuxWorkspaceSwitcherNext", combos: [["⌘", "`"]], description: { en: "Workspace switcher: hold ⌘ and tap ` to cycle workspaces, release ⌘ to switch", ja: "ワークスペース切り替え: ⌘ を押しながら ` で切り替え、⌘ を離すと確定" } },
-      { id: "supermuxWorkspaceSwitcherPrevious", combos: [["⇧", "⌘", "`"]], description: { en: "Workspace switcher (reverse): cycle backward through workspaces", ja: "ワークスペース切り替え（逆順）: ワークスペースを逆方向に切り替え" } },
-      // SUPERMUX:end workspace-switcher-shortcut-doc
       { id: "findPrevious", combos: [["⌥", "⌘", "G"]], description: { en: "Find previous", ja: "前を検索" } },
       { id: "hideFind", combos: [["⌥", "⌘", "⇧", "F"]], description: { en: "Hide find bar", ja: "検索バーを隠す" } },
       { id: "useSelectionForFind", combos: [["⌘", "E"]], description: { en: "Use selection for find", ja: "選択範囲で検索" } },

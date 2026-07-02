@@ -48,9 +48,6 @@ public enum SupermuxFileExplorerSelection {
         case apply(FileOpReveal)
         /// Failure: surface the error, then refresh the tree.
         case presentError
-
-        /// Whether the tree must be reloaded for this action (everything but `ignore`).
-        public var refreshesTree: Bool { self != .ignore }
     }
 
     /// Reconciles an async file op's result against a possible mid-op workspace
@@ -69,5 +66,39 @@ public enum SupermuxFileExplorerSelection {
     public static func revealAfterTrash(firstParentPath: String?, rootPath: String) -> FileOpReveal {
         guard let firstParentPath, firstParentPath != rootPath else { return .clearSelection }
         return .reveal(firstParentPath)
+    }
+
+    /// Post-op selection for a just-created item: reveal it, unless it has a
+    /// hidden name while hidden files are off — then it will never appear in
+    /// the tree, and a pending reveal to it would dangle.
+    public static func revealForCreatedItem(path: String, showHiddenFiles: Bool) -> FileOpReveal {
+        isRevealableName(path: path, showHiddenFiles: showHiddenFiles) ? .reveal(path) : .none
+    }
+
+    /// Post-op selection for a just-renamed item. Unlike create, a rename to a
+    /// hidden name that won't show clears the selection: the old path is gone,
+    /// so leaving it selected would dead-end the next ⌘⌫/Return (mirrors trash).
+    public static func revealForRenamedItem(path: String, showHiddenFiles: Bool) -> FileOpReveal {
+        isRevealableName(path: path, showHiddenFiles: showHiddenFiles) ? .reveal(path) : .clearSelection
+    }
+
+    private static func isRevealableName(path: String, showHiddenFiles: Bool) -> Bool {
+        showHiddenFiles || !(path.split(separator: "/").last ?? Substring(path)).hasPrefix(".")
+    }
+
+    /// Whether the explicit post-file-op tree/git refresh is redundant because
+    /// the explorer's root directory watcher (local provider, non-recursive)
+    /// will observe the same mutation and run the identical reload + git-status
+    /// refresh itself. True only when *every* mutated parent directory is the
+    /// watched root — a mutation inside a subdirectory is invisible to the
+    /// non-recursive watcher and always needs the explicit refresh. Any path
+    /// normalization mismatch fails safe (refresh runs).
+    public static func explicitRefreshIsRedundant(
+        mutatedParentPaths: [String],
+        rootPath: String,
+        rootIsWatched: Bool
+    ) -> Bool {
+        guard rootIsWatched, !rootPath.isEmpty, !mutatedParentPaths.isEmpty else { return false }
+        return mutatedParentPaths.allSatisfy { $0 == rootPath }
     }
 }

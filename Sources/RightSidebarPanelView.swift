@@ -257,6 +257,9 @@ struct RightSidebarPanelView: View {
             // SUPERMUX:begin right-sidebar-compact-mode-bar
             // The mode buttons show labels when they fit and collapse to
             // icon-only (via ViewThatFits) when the sidebar is too narrow.
+            // When even the icon-only row overflows (all beta modes enabled at
+            // the lowered 200pt minimum width), the row becomes horizontally
+            // scrollable instead of clipping the trailing mode buttons away.
             // The open-as-pane and close controls live OUTSIDE the collapsing
             // region and are pinned at the trailing edge, so the close (X)
             // button is never clipped no matter how narrow the sidebar is
@@ -267,6 +270,9 @@ struct RightSidebarPanelView: View {
                 ViewThatFits(in: .horizontal) {
                     modeButtonsRow(showsLabels: true)
                     modeButtonsRow(showsLabels: false)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        modeButtonsRow(showsLabels: false)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .clipped()
@@ -468,6 +474,11 @@ struct RightSidebarPanelView: View {
                     workspaceDirectory: tabManager.selectedWorkspace?.currentDirectory,
                     isVisible: fileExplorerState.isVisible
                 )
+                // The background is sized to the panel, so the focus host can
+                // attribute responders inside the changes area (the commit
+                // field's field editor) to the right sidebar; see
+                // SupermuxChangesFocusHostView below.
+                .background(SupermuxChangesFocusHostBridge())
             // SUPERMUX:end right-sidebar-changes-mode-content
             case .customSidebar:
                 EmptyView()
@@ -541,6 +552,66 @@ private struct RightSidebarKeyboardFocusBridge: NSViewRepresentable {
         nsView.registerWithKeyboardFocusCoordinatorIfNeeded()
     }
 }
+
+// SUPERMUX:begin right-sidebar-changes-mode-focushost
+/// Mounted as the changes panel's background, so SwiftUI sizes it to the
+/// panel's bounds. The changes panel is plain SwiftUI inside the window-root
+/// hosting view — there is no container NSView whose descendants the focus
+/// controller could walk — so this host attributes responders by frame
+/// containment instead: any responder view laid out inside the panel's region
+/// (the commit-message field and its field editor) belongs to changes mode.
+/// Without it, hiding the sidebar while the commit field is focused strands
+/// keyboard focus in the invisible field.
+private struct SupermuxChangesFocusHostBridge: NSViewRepresentable {
+    func makeNSView(context: Context) -> SupermuxChangesFocusHostView {
+        SupermuxChangesFocusHostView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: SupermuxChangesFocusHostView, context: Context) {
+        nsView.registerWithKeyboardFocusCoordinatorIfNeeded()
+    }
+}
+
+final class SupermuxChangesFocusHostView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        registerWithKeyboardFocusCoordinatorIfNeeded()
+    }
+
+    override func layout() {
+        super.layout()
+        registerWithKeyboardFocusCoordinatorIfNeeded()
+    }
+
+    /// Never intercept clicks; the host only exists for geometry.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func registerWithKeyboardFocusCoordinatorIfNeeded() {
+        guard let window else { return }
+        AppDelegate.shared?.keyboardFocusCoordinator(for: window)?.registerChangesHost(self)
+    }
+
+    /// True when `responder` is a view — or a field editor editing a view —
+    /// laid out inside the changes panel's bounds. The zero-size guard makes
+    /// ownership lapse naturally once the hidden sidebar has re-laid-out to
+    /// width 0 (the hide path checks ownership before that layout pass runs).
+    func ownsKeyboardFocus(_ responder: NSResponder) -> Bool {
+        guard let window, bounds.width > 0.5, bounds.height > 0.5 else { return false }
+        guard let view = Self.editedView(for: responder), view.window === window else { return false }
+        let center = NSPoint(x: view.bounds.midX, y: view.bounds.midY)
+        return bounds.contains(convert(center, from: view))
+    }
+
+    private static func editedView(for responder: NSResponder) -> NSView? {
+        if let textView = responder as? NSTextView,
+           textView.isFieldEditor,
+           let delegateView = textView.delegate as? NSView {
+            return delegateView
+        }
+        return responder as? NSView
+    }
+}
+// SUPERMUX:end right-sidebar-changes-mode-focushost
 
 final class RightSidebarKeyboardFocusView: NSView {
     override var acceptsFirstResponder: Bool { true }

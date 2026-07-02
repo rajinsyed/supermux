@@ -90,7 +90,7 @@ struct SupermuxPullRequestTests {
         ]
         let updated = SupermuxWorktreePullRequestModel.applying(
             resolutions, to: existing, trackedPaths: ["/a", "/b"]
-        )
+        ).badges
         #expect(updated["/a"] == nil)          // absent cleared it
         #expect(updated["/b"]?.number == 2)    // resolved added it
     }
@@ -101,7 +101,7 @@ struct SupermuxPullRequestTests {
             [.init(path: "/a", resolution: .keepExisting)],
             to: existing,
             trackedPaths: ["/a"]
-        )
+        ).badges
         #expect(updated["/a"]?.number == 9)    // transient failure preserves the badge
     }
 
@@ -114,8 +114,54 @@ struct SupermuxPullRequestTests {
         ]
         let updated = SupermuxWorktreePullRequestModel.applying(
             [], to: existing, trackedPaths: ["/keep"]
-        )
+        ).badges
         #expect(updated["/keep"]?.number == 1)
         #expect(updated["/gone"] == nil)
+    }
+
+    // MARK: Stale escalation on repeated transient failures
+
+    @Test func consecutiveTransientFailuresMarkBadgeStale() {
+        var badges = ["/a": pullRequest(9, .open)]
+        var counts: [String: Int] = [:]
+        let keep: [SupermuxPullRequestProbe.PathResolution] = [
+            .init(path: "/a", resolution: .keepExisting)
+        ]
+        for pass in 1...SupermuxWorktreePullRequestModel.staleFailureThreshold {
+            let applied = SupermuxWorktreePullRequestModel.applying(
+                keep, to: badges, trackedPaths: ["/a"], failureCounts: counts
+            )
+            badges = applied.badges
+            counts = applied.failureCounts
+            let expectStale = pass >= SupermuxWorktreePullRequestModel.staleFailureThreshold
+            #expect(badges["/a"]?.isStale == expectStale, "pass \(pass)")
+            #expect(badges["/a"]?.number == 9)
+        }
+    }
+
+    @Test func successfulResolutionResetsFailureCount() {
+        let badges = ["/a": pullRequest(9, .open)]
+        let almostStale = ["/a": SupermuxWorktreePullRequestModel.staleFailureThreshold - 1]
+        // A success resets the count (and refreshes the badge un-stale)...
+        let recovered = SupermuxWorktreePullRequestModel.applying(
+            [.init(path: "/a", resolution: .pullRequest(pullRequest(9, .open)))],
+            to: badges, trackedPaths: ["/a"], failureCounts: almostStale
+        )
+        #expect(recovered.failureCounts["/a"] == nil)
+        #expect(recovered.badges["/a"]?.isStale == false)
+        // ...so the next transient failure starts counting from one again.
+        let afterFailure = SupermuxWorktreePullRequestModel.applying(
+            [.init(path: "/a", resolution: .keepExisting)],
+            to: recovered.badges, trackedPaths: ["/a"], failureCounts: recovered.failureCounts
+        )
+        #expect(afterFailure.badges["/a"]?.isStale == false)
+        #expect(afterFailure.failureCounts["/a"] == 1)
+    }
+
+    @Test func failureCountsPruneWithUntrackedPaths() {
+        let applied = SupermuxWorktreePullRequestModel.applying(
+            [], to: [:], trackedPaths: ["/keep"], failureCounts: ["/keep": 1, "/gone": 2]
+        )
+        #expect(applied.failureCounts == ["/keep": 1])
     }
 }

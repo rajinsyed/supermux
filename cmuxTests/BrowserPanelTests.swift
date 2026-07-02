@@ -1480,29 +1480,52 @@ final class WindowBrowserHostViewTests: XCTestCase {
         )
     }
 
+    // SUPERMUX:begin browser-hover-drag-guard
+    // Hover-kind pass-through now additionally requires the left mouse button to
+    // be physically held (an in-flight tab drag). A stale tab-transfer payload
+    // left on the `.drag` pasteboard after a drag ends must NOT pass ordinary
+    // hover through the portal — that killed web hover in embedded browser panes.
     func testDragHoverEventsPassThroughForTabTransferOnBrowserHoverEvents() {
         XCTAssertTrue(
             WindowBrowserHostView.shouldPassThroughToDragTargets(
                 pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
-                eventType: .cursorUpdate
+                eventType: .cursorUpdate,
+                pressedMouseButtons: 1
             )
         )
         XCTAssertTrue(
             WindowBrowserHostView.shouldPassThroughToDragTargets(
                 pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
-                eventType: .mouseEntered
+                eventType: .mouseEntered,
+                pressedMouseButtons: 1
+            )
+        )
+        XCTAssertFalse(
+            WindowBrowserHostView.shouldPassThroughToDragTargets(
+                pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
+                eventType: .cursorUpdate,
+                pressedMouseButtons: 0
             )
         )
     }
 
-    func testDragHoverEventsPassThroughForSidebarReorderWithoutMouseButtonState() {
+    func testDragHoverEventsPassThroughForSidebarReorderOnlyWhileMouseButtonHeld() {
         XCTAssertTrue(
             WindowBrowserHostView.shouldPassThroughToDragTargets(
                 pasteboardTypes: [DragOverlayRoutingPolicy.sidebarTabReorderType],
-                eventType: .cursorUpdate
+                eventType: .cursorUpdate,
+                pressedMouseButtons: 1
+            )
+        )
+        XCTAssertFalse(
+            WindowBrowserHostView.shouldPassThroughToDragTargets(
+                pasteboardTypes: [DragOverlayRoutingPolicy.sidebarTabReorderType],
+                eventType: .cursorUpdate,
+                pressedMouseButtons: 0
             )
         )
     }
+    // SUPERMUX:end browser-hover-drag-guard
 
     func testDragHoverEventsDoNotPassThroughForUnrelatedPasteboardTypes() {
         let externalPayloads: [[NSPasteboard.PasteboardType]] = [

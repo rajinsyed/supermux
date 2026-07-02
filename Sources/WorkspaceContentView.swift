@@ -338,9 +338,15 @@ struct WorkspaceContentView: View {
 
         // SUPERMUX:begin presets-bar
         // Render the piggycode-style terminal presets bar above the splits in
-        // normal mode. Minimal mode stays chrome-free and keeps the original
-        // top-safe-area-ignoring layout untouched. The content is upstream's
-        // canvas-vs-bonsplit Group; supermux only wraps it with the presets bar.
+        // normal mode. Minimal mode stays chrome-free and keeps upstream's
+        // top-safe-area-ignoring layout via the dynamic-edges modifier below.
+        // The content is upstream's canvas-vs-bonsplit Group; supermux only
+        // wraps it with the presets bar. One structural branch on purpose: the
+        // bar alone appears/disappears while the workspace content keeps a
+        // stable identity, so toggling minimal mode never tears down the
+        // canvas/bonsplit subtree (upstream:
+        // `bonsplitView.ignoresSafeArea(.container, edges: (isMinimalMode &&
+        // !isFullScreen) ? .top : [])`).
         let workspaceContent = Group {
             if workspace.layoutMode == .canvas {
                 WorkspaceCanvasHostView(
@@ -354,15 +360,13 @@ struct WorkspaceContentView: View {
                 bonsplitView
             }
         }
-        if isMinimalMode {
-            workspaceContent
-                .ignoresSafeArea(.container, edges: isFullScreen ? [] : .top)
-        } else {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
+            if !isMinimalMode {
                 SupermuxPresetsBarMount(workspace: workspace)
-                workspaceContent
             }
+            workspaceContent
         }
+        .ignoresSafeArea(.container, edges: (isMinimalMode && !isFullScreen) ? .top : [])
         // SUPERMUX:end presets-bar
     }
 

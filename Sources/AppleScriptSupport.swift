@@ -470,19 +470,15 @@ final class ScriptTab: NSObject {
             return nil
         }
 
-        if state.tabManager.tabs.count > 1 {
-            state.tabManager.closeWorkspace(workspace)
-            return nil
-        }
-
-        guard let window = state.window else {
-            command.scriptErrorNumber = errAEEventFailed
-            command.scriptErrorString = AppleScriptStrings.windowUnavailable
-            return nil
-        }
-
-        window.performClose(nil)
+        // SUPERMUX:begin keep-window-on-last-close
+        // Shared last-workspace close path: closing the last workspace leaves
+        // the window open as the supermux empty home, matching Cmd-W. The flag
+        // is inert while other workspaces remain.
+        // (upstream: `if tabs.count > 1 { closeWorkspace(workspace) }` else
+        // `window.performClose(nil)`, which ran the window-close/quit flow.)
+        state.tabManager.closeWorkspace(workspace, allowEmptyingWindow: true)
         return nil
+        // SUPERMUX:end keep-window-on-last-close
     }
 
     override var objectSpecifier: NSScriptObjectSpecifier? {
@@ -621,19 +617,13 @@ final class ScriptTerminal: NSObject {
         }
 
         if workspace.panels.count == 1 {
-            if state.tabManager.tabs.count > 1 {
-                state.tabManager.closeWorkspace(workspace)
-                return nil
-            }
-
-            guard let window = state.window else {
-                command.scriptErrorNumber = errAEEventFailed
-                command.scriptErrorString = AppleScriptStrings.windowUnavailable
-                return nil
-            }
-
-            window.performClose(nil)
+            // SUPERMUX:begin keep-window-on-last-close
+            // Shared last-workspace close path (see handleCloseTab): closing
+            // the last terminal of the last workspace leaves the window open
+            // as the supermux empty home instead of window.performClose(nil).
+            state.tabManager.closeWorkspace(workspace, allowEmptyingWindow: true)
             return nil
+            // SUPERMUX:end keep-window-on-last-close
         }
 
         guard workspace.closePanel(terminalId, force: true) else {

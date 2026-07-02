@@ -244,10 +244,14 @@ import SupermuxKit
 
         func fetchCallCount() -> Int { calls.filter { $0.contains("fetch") }.count }
 
-        func revListCallCount() -> Int { calls.filter { $0.first == "rev-list" }.count }
+        func revListCallCount() -> Int {
+            calls.filter { $0.first(where: { !$0.hasPrefix("-") }) == "rev-list" }.count
+        }
 
         func incomingLogCallCount() -> Int {
-            calls.filter { $0.first == "log" && $0.contains("HEAD..@{upstream}") }.count
+            calls.filter {
+                $0.first(where: { !$0.hasPrefix("-") }) == "log" && $0.contains("HEAD..@{upstream}")
+            }.count
         }
 
         nonisolated func run(
@@ -265,12 +269,13 @@ import SupermuxKit
                 didFetch = true
                 return result(stdout: "")
             }
-            switch arguments.first {
+            // Skip global flags (`--no-optional-locks`) to find the subcommand.
+            switch arguments.first(where: { !$0.hasPrefix("-") }) {
             case "status":
-                var stdout = "# branch.head main\n"
+                var stdout = "# branch.head main\u{0}"
                 if hasUpstream {
                     let value = didFetch ? (behindAfterFetch ?? behind) : behind
-                    stdout += "# branch.upstream origin/main\n# branch.ab +\(ahead) -\(value)\n"
+                    stdout += "# branch.upstream origin/main\u{0}# branch.ab +\(ahead) -\(value)\u{0}"
                 }
                 return result(stdout: stdout)
             case "rev-list":
@@ -345,8 +350,10 @@ import SupermuxKit
                 }
                 return ok("")
             }
-            if arguments.first == "status" {
-                return ok("# branch.head main\n# branch.upstream origin/main\n# branch.ab +1 -0\n")
+            if arguments.first(where: { !$0.hasPrefix("-") }) == "status" {
+                return ok(
+                    "# branch.head main\u{0}# branch.upstream origin/main\u{0}# branch.ab +1 -0\u{0}"
+                )
             }
             return ok("")
         }
@@ -409,8 +416,10 @@ import SupermuxKit
                 pushRanWhileFetchHeld = !fetchReleased
                 return ok("")
             }
-            if arguments.first == "status" {
-                return ok("# branch.head main\n# branch.upstream origin/main\n# branch.ab +1 -0\n")
+            if arguments.first(where: { !$0.hasPrefix("-") }) == "status" {
+                return ok(
+                    "# branch.head main\u{0}# branch.upstream origin/main\u{0}# branch.ab +1 -0\u{0}"
+                )
             }
             return ok("")
         }

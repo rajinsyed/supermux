@@ -122,6 +122,19 @@ extension ShortcutAction {
         case .markdownZoomReset: return ShortcutStroke(key: "0", command: true)
         case .find: return ShortcutStroke(key: "f", command: true)
         case .findInDirectory: return ShortcutStroke(key: "f", command: true, shift: true)
+        // SUPERMUX:begin supermux-shortcut-defaults
+        // Mirrors Sources/KeyboardShortcutSettings.swift. supermuxToggleRun
+        // shares ⌘G with Find Next on purpose: the AppDelegate dispatch gives
+        // Find Next priority while the find overlay is visible and routes to
+        // the run toggle otherwise, so the factory defaults coexist (recording
+        // ⌘G onto either row still reports the collision, matching the
+        // app-target check).
+        case .supermuxToggleRun: return ShortcutStroke(key: "g", command: true)
+        case .supermuxWorkspaceSwitcherNext: return ShortcutStroke(key: "`", command: true)
+        case .supermuxWorkspaceSwitcherPrevious: return ShortcutStroke(key: "`", command: true, shift: true)
+        case .supermuxCommit: return ShortcutStroke(key: "\r", command: true)
+        case .supermuxCommitAccelerator: return ShortcutStroke(key: "\r", command: true, shift: true)
+        // SUPERMUX:end supermux-shortcut-defaults
         case .findNext: return ShortcutStroke(key: "g", command: true)
         case .findPrevious: return ShortcutStroke(key: "g", command: true, option: true)
         case .hideFind: return ShortcutStroke(key: "f", command: true, shift: true, option: true)

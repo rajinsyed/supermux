@@ -57,6 +57,9 @@ final class MainWindowFocusController {
     private weak var fileSearchHost: FileExplorerContainerView?
     private weak var feedHost: FeedKeyboardFocusView?
     private weak var dockHost: DockKeyboardFocusView?
+    // SUPERMUX:begin right-sidebar-changes-mode-focushost
+    private weak var changesHost: SupermuxChangesFocusHostView?
+    // SUPERMUX:end right-sidebar-changes-mode-focushost
 
     private(set) var intent: MainWindowKeyboardFocusIntent? {
         didSet {
@@ -136,6 +139,16 @@ final class MainWindowFocusController {
         focusRegisteredRightSidebarEndpointIfNeeded(mode: .dock)
     }
 
+    // SUPERMUX:begin right-sidebar-changes-mode-focushost
+    /// Registers the changes panel's geometry host so responders inside the
+    /// panel (the commit field's field editor) are attributed to the sidebar
+    /// like every other mode — the hide path then restores terminal focus
+    /// instead of stranding keystrokes in the invisible commit field.
+    func registerChangesHost(_ host: SupermuxChangesFocusHostView) {
+        changesHost = host
+    }
+    // SUPERMUX:end right-sidebar-changes-mode-focushost
+
     func noteRightSidebarInteraction(mode: RightSidebarMode) {
         rememberedRightSidebarMode = mode
         rightSidebarFocusState = .focused(mode: mode, target: .host)
@@ -206,6 +219,11 @@ final class MainWindowFocusController {
         if dockHost?.ownsKeyboardFocus(responder) == true {
             return true
         }
+        // SUPERMUX:begin right-sidebar-changes-mode-focushost
+        if changesHost?.ownsKeyboardFocus(responder) == true {
+            return true
+        }
+        // SUPERMUX:end right-sidebar-changes-mode-focushost
         return false
     }
 
@@ -812,6 +830,11 @@ final class MainWindowFocusController {
         if dockHost?.ownsKeyboardFocus(responder) == true {
             return .dock
         }
+        // SUPERMUX:begin right-sidebar-changes-mode-focushost
+        if changesHost?.ownsKeyboardFocus(responder) == true {
+            return .changes
+        }
+        // SUPERMUX:end right-sidebar-changes-mode-focushost
         return nil
     }
 

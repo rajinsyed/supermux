@@ -1,5 +1,6 @@
 import AppKit
 import CmuxAppKitSupportUI
+import SupermuxKit
 import SwiftUI
 
 /// Installs and tears down the workspace switcher's SwiftUI overlay inside a
@@ -18,11 +19,21 @@ final class SupermuxWorkspaceSwitcherOverlayController {
     /// The observable state the controller mutates while the switcher is up.
     let viewState = SupermuxWorkspaceSwitcherViewState()
 
+    /// The shared project-logo cache the hosted view renders card badges from.
+    private let iconStore: SupermuxProjectIconStore
+
     private let containerView = ContainerView()
     private var hostingView: NSHostingView<SupermuxWorkspaceSwitcherView>?
     private weak var installedContainer: NSView?
     private weak var installedReference: NSView?
     private var installConstraints: [NSLayoutConstraint] = []
+
+    /// Creates the overlay controller.
+    /// - Parameter iconStore: Shared, pre-warmed project-logo cache (owned by
+    ///   the composition root) handed to the hosted SwiftUI view.
+    init(iconStore: SupermuxProjectIconStore) {
+        self.iconStore = iconStore
+    }
 
     /// Whether the overlay is currently mounted in a window.
     var isShown: Bool { containerView.superview != nil }
@@ -54,14 +65,23 @@ final class SupermuxWorkspaceSwitcherOverlayController {
         }
     }
 
-    /// Removes the overlay from the window (state is retained for reuse).
+    /// Removes the overlay from the window (view state is retained for reuse).
+    /// The install pins are torn down: an active constraint holds strong
+    /// references to its anchor items, which would otherwise keep a closed
+    /// window's content hierarchy alive until the next show.
     func hide() {
         containerView.removeFromSuperview()
+        NSLayoutConstraint.deactivate(installConstraints)
+        installConstraints.removeAll()
+        installedContainer = nil
+        installedReference = nil
     }
 
     private func ensureHostingInstalled() {
         guard hostingView == nil else { return }
-        let hosting = NSHostingView(rootView: SupermuxWorkspaceSwitcherView(state: viewState))
+        let hosting = NSHostingView(
+            rootView: SupermuxWorkspaceSwitcherView(state: viewState, iconStore: iconStore)
+        )
         hosting.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(hosting)
         NSLayoutConstraint.activate([

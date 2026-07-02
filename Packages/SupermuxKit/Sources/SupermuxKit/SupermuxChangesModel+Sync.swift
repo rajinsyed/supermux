@@ -34,8 +34,10 @@ extension SupermuxChangesModel {
             outgoing = 0
         }
         guard generation == directoryGeneration else { return }
-        incomingCount = incoming
-        outgoingCount = outgoing
+        // Write-only-when-changed: `@Observable` fires on every assignment, so
+        // unconditional writes would invalidate the whole panel each refresh.
+        if incomingCount != incoming { incomingCount = incoming }
+        if outgoingCount != outgoing { outgoingCount = outgoing }
     }
 
     // MARK: - Outgoing (Unpushed)
@@ -88,11 +90,14 @@ extension SupermuxChangesModel {
         }
         let hasUpstream = status.upstreamBranch != nil
         if hasUpstream, status.ahead == 0 {
+            // Same guard as the loaded path below: a stale generation must not
+            // touch the new directory's list or spinner, and the equality-gated
+            // clear helper keeps the steady-state empty refresh write-free.
+            // (`commitsRequested` cannot have flipped since the entry guard —
+            // no suspension point in between — but mirror the loaded path.)
             if generation == directoryGeneration, commitsRequested {
-                commits = []
-                hasMoreCommits = false
+                clearOutgoingCommits()
             }
-            isLoadingCommits = false
             return
         }
         isLoadingCommits = true
@@ -112,10 +117,12 @@ extension SupermuxChangesModel {
     }
 
     /// Clears the loaded outgoing commits and their loading/paging flags.
+    /// Write-only-when-changed so the steady-state refresh of an empty section
+    /// never invalidates observers.
     func clearOutgoingCommits() {
-        commits = []
-        hasMoreCommits = false
-        isLoadingCommits = false
+        if !commits.isEmpty { commits = [] }
+        if hasMoreCommits { hasMoreCommits = false }
+        if isLoadingCommits { isLoadingCommits = false }
     }
 
     // MARK: - Incoming
@@ -155,11 +162,12 @@ extension SupermuxChangesModel {
     ) async {
         guard incomingRequested else { return }
         guard status.isRepository, status.upstreamBranch != nil, status.behind > 0 else {
+            // See loadOutgoingCommits' early-exit: generation-guarded so a
+            // stale result cannot clear the new directory's spinner, with the
+            // equality-gated clear helper avoiding steady-state writes.
             if generation == directoryGeneration, incomingRequested {
-                incomingCommits = []
-                hasMoreIncoming = false
+                clearIncomingCommits()
             }
-            isLoadingIncoming = false
             return
         }
         isLoadingIncoming = true
@@ -177,10 +185,11 @@ extension SupermuxChangesModel {
     }
 
     /// Clears the loaded incoming commits and their loading/paging flags.
+    /// Write-only-when-changed, mirroring ``clearOutgoingCommits()``.
     func clearIncomingCommits() {
-        incomingCommits = []
-        hasMoreIncoming = false
-        isLoadingIncoming = false
+        if !incomingCommits.isEmpty { incomingCommits = [] }
+        if hasMoreIncoming { hasMoreIncoming = false }
+        if isLoadingIncoming { isLoadingIncoming = false }
     }
 
     // MARK: - Auto-fetch
@@ -216,11 +225,9 @@ extension SupermuxChangesModel {
         guard directory != nil, snapshot.isRepository, !isWorking else { return }
         // Drain any in-flight fetch (rather than skip ours) so a workspace
         // switch still fetches the new directory promptly instead of waiting out
-        // the timer. We deliberately do not bail if another fetch then starts:
-        // two fetches racing only risk one losing a benign remote-ref lock (it
-        // retries next tick), whereas the serious case — a fetch racing a user
-        // push/pull — is handled by the mutation side draining us first.
-        _ = await activeFetchTask?.value
+        // the timer. `drainActiveFetch` also catches a fetch that replaces the
+        // handle mid-drain, so two fetches never overlap on the same remote.
+        await drainActiveFetch()
         // Re-check after the await: a mutation may have begun or the workspace
         // may have become a non-repository while we waited.
         guard let directory, snapshot.isRepository, !isWorking else { return }

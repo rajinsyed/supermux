@@ -27,7 +27,11 @@ final class FileExplorerNSOutlineView: NSOutlineView {
         // before upstream's open-selection handler, so Return renames the selected
         // item. Opening the selection stays on ⌘↓ (upstream's Finder alias), which
         // this handler ignores and lets fall through to handleOpenSelectionShortcut.
-        if fileExplorerCoordinator?.handleSupermuxFileOperationKey(event, in: self) == true {
+        // Never during an active '/' quick-search: there Return must keep its
+        // upstream meaning (end quick-search, open the selection) — otherwise the
+        // rename sheet would open over a zombie query that keeps eating keystrokes.
+        if !quickSearchActive,
+           fileExplorerCoordinator?.handleSupermuxFileOperationKey(event, in: self) == true {
             return
         }
         // SUPERMUX:end file-explorer-operations-keys

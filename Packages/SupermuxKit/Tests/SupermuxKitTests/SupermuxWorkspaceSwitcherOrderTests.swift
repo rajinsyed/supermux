@@ -123,6 +123,53 @@ struct SupermuxWorkspaceSwitcherOrderTests {
         #expect(SupermuxWorkspaceSwitcherOrder.advance(0, count: 0, backward: false) == 0)
     }
 
+    // MARK: - remappedSelection
+
+    @Test func remappedSelectionFollowsSelectedWorkspaceWhenEarlierEntryCloses() {
+        // Order [a, b, c, d], highlight on b (index 1); a closes before the
+        // overlay shows. The highlight must stay on b, not shift onto c.
+        let index = SupermuxWorkspaceSwitcherOrder.remappedSelection(
+            previousIndex: 1, previousOrder: [a, b, c, d], newOrder: [b, c, d]
+        )
+        #expect(index == 0)
+    }
+
+    @Test func remappedSelectionKeepsIdentityWhenLaterEntryCloses() {
+        let index = SupermuxWorkspaceSwitcherOrder.remappedSelection(
+            previousIndex: 1, previousOrder: [a, b, c, d], newOrder: [a, b, d]
+        )
+        #expect(index == 1)
+    }
+
+    @Test func remappedSelectionClampsWhenSelectedWorkspaceClosed() {
+        // The highlighted workspace itself died: fall back to the clamped index.
+        let index = SupermuxWorkspaceSwitcherOrder.remappedSelection(
+            previousIndex: 3, previousOrder: [a, b, c, d], newOrder: [a, b, c]
+        )
+        #expect(index == 2)
+    }
+
+    @Test func remappedSelectionIsUnchangedWhenOrderIsUnchanged() {
+        let index = SupermuxWorkspaceSwitcherOrder.remappedSelection(
+            previousIndex: 2, previousOrder: [a, b, c], newOrder: [a, b, c]
+        )
+        #expect(index == 2)
+    }
+
+    @Test func remappedSelectionHandlesOutOfRangePreviousIndex() {
+        let index = SupermuxWorkspaceSwitcherOrder.remappedSelection(
+            previousIndex: 9, previousOrder: [a, b], newOrder: [a, b]
+        )
+        #expect(index == 1)
+    }
+
+    @Test func remappedSelectionEmptyNewOrderIsZero() {
+        let index = SupermuxWorkspaceSwitcherOrder.remappedSelection(
+            previousIndex: 1, previousOrder: [a, b], newOrder: []
+        )
+        #expect(index == 0)
+    }
+
     // MARK: - quick-toggle behavior (the defining app-switcher feel)
 
     @Test func quickToggleReturnsToPreviousThenBack() {

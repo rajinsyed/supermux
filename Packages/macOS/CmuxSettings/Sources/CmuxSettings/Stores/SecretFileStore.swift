@@ -87,7 +87,30 @@ public actor SecretFileStore {
             attributes: [.posixPermissions: 0o700]
         )
         let url = fileURL(for: key)
-        try Data(normalized.utf8).write(to: url, options: .atomic)
+        // SUPERMUX:begin secret-file-0600-write
+        // Never let secret bytes sit on disk outside 0600: `.atomic` write +
+        // chmod-after briefly exposed the file with default permissions at its
+        // final path (CWE-378). Create an empty temp file already at 0600,
+        // write the secret into it, then rename(2) over the destination —
+        // rename preserves the temp file's owner-only mode.
+        let tempURL = baseDirectory.appendingPathComponent(
+            ".\(key.fileName).tmp-\(UUID().uuidString)", isDirectory: false
+        )
+        guard FileManager.default.createFile(
+            atPath: tempURL.path, contents: nil, attributes: [.posixPermissions: 0o600]
+        ) else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: tempURL.path])
+        }
+        do {
+            try Data(normalized.utf8).write(to: tempURL)
+            guard rename(tempURL.path, url.path) == 0 else {
+                throw POSIXError(POSIXError.Code(rawValue: errno) ?? .EIO)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            throw error
+        }
+        // SUPERMUX:end secret-file-0600-write
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         postChange(for: key)
     }

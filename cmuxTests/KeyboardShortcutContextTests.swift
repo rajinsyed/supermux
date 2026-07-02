@@ -258,10 +258,45 @@ final class KeyboardShortcutContextTests: XCTestCase {
         XCTAssertEqual(settingsAction.displayName, KeyboardShortcutSettings.Action.newBrowserWorkspace.label)
     }
 
+    // SUPERMUX:begin settings-package-shortcut-action-drift
+    func testSupermuxSettingsPackageActionsStayAligned() {
+        // The five supermux actions must exist in the CmuxSettings enum with
+        // the app-target defaults and labels, and be visible in the Settings
+        // shortcuts pane — otherwise they can be neither rebound nor seen by
+        // the package's conflict detection.
+        let expected: [(KeyboardShortcutSettings.Action, ShortcutStroke)] = [
+            (.supermuxToggleRun, ShortcutStroke(key: "g", command: true)),
+            (.supermuxWorkspaceSwitcherNext, ShortcutStroke(key: "`", command: true)),
+            (.supermuxWorkspaceSwitcherPrevious, ShortcutStroke(key: "`", command: true, shift: true)),
+            (.supermuxCommit, ShortcutStroke(key: "\r", command: true)),
+            (.supermuxCommitAccelerator, ShortcutStroke(key: "\r", command: true, shift: true)),
+        ]
+        let visible = Set(ShortcutAction.settingsVisibleActions)
+        for (action, stroke) in expected {
+            guard let settingsAction = ShortcutAction(rawValue: action.rawValue) else {
+                XCTFail("Expected CmuxSettings.ShortcutAction for \(action.rawValue)")
+                continue
+            }
+            XCTAssertEqual(settingsAction.defaultStroke, stroke, action.rawValue)
+            XCTAssertEqual(settingsAction.displayName, action.label, action.rawValue)
+            XCTAssertTrue(visible.contains(settingsAction), "\(action.rawValue) must appear in Settings → Keyboard Shortcuts")
+        }
+    }
+    // SUPERMUX:end settings-package-shortcut-action-drift
+
     func testSettingsPackageDefaultWhenClausesMatchRuntimeShortcutContexts() {
         for action in KeyboardShortcutSettings.Action.allCases {
             guard let settingsAction = ShortcutAction(rawValue: action.rawValue) else {
+                // SUPERMUX:begin settings-package-shortcut-action-drift
+                // Every app-target action must have a CmuxSettings counterpart:
+                // the Settings window renders and conflict-checks the package
+                // enum only, so an unmapped action is invisible/un-rebindable
+                // there. The silent `continue` this replaces hid exactly that
+                // gap for the five supermux actions. If a gap ever becomes
+                // intentional, whitelist the raw value here explicitly.
+                XCTFail("\(action.rawValue) has no CmuxSettings.ShortcutAction counterpart, so it cannot be shown, rebound, or conflict-checked in Settings")
                 continue
+                // SUPERMUX:end settings-package-shortcut-action-drift
             }
             XCTAssertEqual(
                 settingsAction.defaultFocusWhenClause,

@@ -143,40 +143,68 @@ public struct SupermuxGitStatusSnapshot: Sendable, Hashable {
     }
 }
 
-/// Parses the output of `git status --porcelain=v2 --branch --show-stash`
+/// Parses the output of `git status --porcelain=v2 -z --branch --show-stash`
 /// into a ``SupermuxGitStatusSnapshot``.
 ///
-/// Malformed lines are skipped rather than treated as errors, so partially
+/// The `-z` invocation is load-bearing: without it git C-quotes any path
+/// containing bytes >0x7F (every non-ASCII filename), quotes, backslashes, or
+/// control characters, which mangles display and breaks every mutation built
+/// from the parsed path. With `-z` records are NUL-terminated (headers and
+/// entries alike), paths are printed verbatim, and a rename/copy record's
+/// source path arrives as the *next* NUL-separated record instead of a
+/// tab-joined suffix.
+///
+/// Malformed records are skipped rather than treated as errors, so partially
 /// unexpected output still yields a usable snapshot.
 public struct SupermuxGitStatusParser: Sendable {
     /// Creates a parser.
     public init() {}
 
-    /// Parses `git status --porcelain=v2 --branch --show-stash` stdout into a snapshot.
+    /// Parses `git status --porcelain=v2 -z --branch --show-stash` stdout into
+    /// a snapshot.
     ///
     /// The returned snapshot always has `isRepository == true`; callers decide
     /// separately whether git ran successfully.
-    /// - Parameter output: Raw stdout from git.
+    /// - Parameter output: Raw stdout from git (NUL-separated records).
     public func parse(_ output: String) -> SupermuxGitStatusSnapshot {
         var state = ParseState()
-        for rawLine in output.split(separator: "\n", omittingEmptySubsequences: true) {
-            let line = String(rawLine)
-            if line.hasPrefix("# ") {
-                parseHeader(line, into: &state)
-            } else if line.hasPrefix("1 ") {
-                parseOrdinaryEntry(line, into: &state)
-            } else if line.hasPrefix("2 ") {
-                parseRenameEntry(line, into: &state)
-            } else if line.hasPrefix("u ") {
-                parseUnmergedEntry(line, into: &state)
-            } else if line.hasPrefix("? ") {
+        let records = output.split(separator: "\u{0}", omittingEmptySubsequences: true)
+        var index = records.startIndex
+        while index < records.endIndex {
+            let record = String(records[index])
+            index = records.index(after: index)
+            if record.hasPrefix("# ") {
+                parseHeader(record, into: &state)
+            } else if record.hasPrefix("1 ") {
+                parseOrdinaryEntry(record, into: &state)
+            } else if record.hasPrefix("2 ") {
+                // In -z mode the rename/copy source path is the next record.
+                // Consume it only after the rename header parses, so a
+                // malformed record is skipped without swallowing the record
+                // that follows it.
+                if let header = parseRenameHeader(record) {
+                    var origPath: String?
+                    if index < records.endIndex {
+                        origPath = String(records[index])
+                        index = records.index(after: index)
+                    }
+                    appendChanges(
+                        statusPair: header.statusPair,
+                        path: header.path,
+                        oldPath: (origPath?.isEmpty ?? true) ? nil : origPath,
+                        into: &state
+                    )
+                }
+            } else if record.hasPrefix("u ") {
+                parseUnmergedEntry(record, into: &state)
+            } else if record.hasPrefix("? ") {
                 state.untracked.append(SupermuxGitFileChange(
-                    path: String(line.dropFirst(2)),
+                    path: String(record.dropFirst(2)),
                     oldPath: nil,
                     kind: .untracked
                 ))
             }
-            // "! " (ignored) and unrecognized lines are skipped.
+            // "! " (ignored) and unrecognized records are skipped.
         }
         return SupermuxGitStatusSnapshot(
             isRepository: true,
@@ -233,21 +261,19 @@ public struct SupermuxGitStatusParser: Sendable {
         appendChanges(statusPair: fields[1], path: path, oldPath: nil, into: &state)
     }
 
-    /// Parses `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>\t<origPath>`.
-    private func parseRenameEntry(_ line: String, into state: inout ParseState) {
-        let fields = line.split(separator: " ", maxSplits: 9, omittingEmptySubsequences: false)
-        guard fields.count == 10 else { return }
-        let pathField = fields[9]
-        guard let tab = pathField.firstIndex(of: "\t") else { return }
-        let newPath = String(pathField[..<tab])
-        let origPath = String(pathField[pathField.index(after: tab)...])
-        guard !newPath.isEmpty else { return }
-        appendChanges(
-            statusPair: fields[1],
-            path: newPath,
-            oldPath: origPath.isEmpty ? nil : origPath,
-            into: &state
-        )
+    /// Parses `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>` into its
+    /// status pair and new path, or `nil` when the record is malformed. In
+    /// `-z` mode the source path is a separate record that the caller consumes
+    /// only after this header parses, so a malformed record cannot swallow the
+    /// record that follows it.
+    private func parseRenameHeader(
+        _ record: String
+    ) -> (statusPair: Substring, path: String)? {
+        let fields = record.split(separator: " ", maxSplits: 9, omittingEmptySubsequences: false)
+        guard fields.count == 10 else { return nil }
+        let newPath = String(fields[9])
+        guard !newPath.isEmpty else { return nil }
+        return (fields[1], newPath)
     }
 
     /// Parses `u <XY> ...`, pragmatically taking the last whitespace field as

@@ -416,6 +416,90 @@ import Testing
             }
         }
     }
+
+    // MARK: - Dangling symlinks (lstat semantics)
+    //
+    // `fileExists(atPath:)` follows symlinks, so a symlink whose target vanished
+    // reports as absent even though the entry is on disk. Every operation must
+    // act on the entry itself: trash must not silently skip it, rename/duplicate
+    // must not throw .notFound, and a dangling link occupying a destination name
+    // is a real collision.
+
+    /// Creates a symlink named `name` in `directory` pointing at a path that
+    /// does not exist, and sanity-checks that it is indeed dangling.
+    private func makeDanglingSymlink(named name: String, in directory: URL) throws -> URL {
+        let link = directory.appendingPathComponent(name)
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path, withDestinationPath: directory.appendingPathComponent("vanished-target").path)
+        #expect(!FileManager.default.fileExists(atPath: link.path))  // follows the link → absent
+        #expect(entryExists(link))                                   // but the entry is on disk
+        return link
+    }
+
+    /// lstat-style existence: whether a directory entry exists at `url` itself.
+    private func entryExists(_ url: URL) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
+    }
+
+    @Test func moveToTrashTrashesDanglingSymlinkInsteadOfSkippingIt() throws {
+        try withTemporaryDirectory { root in
+            let link = try makeDanglingSymlink(named: "dead-link", in: root)
+            let fm = RecordingTrashFileManager()
+            try SupermuxFileSystemOperations.moveToTrash([link], fileManager: fm)
+            #expect(fm.trashedPaths == [link.standardizedFileURL.path])  // not silently skipped
+            #expect(!entryExists(link))
+        }
+    }
+
+    @Test func renameRenamesDanglingSymlink() throws {
+        try withTemporaryDirectory { root in
+            let link = try makeDanglingSymlink(named: "dead-link", in: root)
+            let renamed = try SupermuxFileSystemOperations.rename(link, to: "renamed-link")
+            #expect(renamed.lastPathComponent == "renamed-link")
+            #expect(entryExists(renamed))
+            #expect(!entryExists(link))
+        }
+    }
+
+    @Test func duplicateDuplicatesDanglingSymlink() throws {
+        try withTemporaryDirectory { root in
+            let link = try makeDanglingSymlink(named: "dead-link", in: root)
+            let copy = try SupermuxFileSystemOperations.duplicate(link)
+            #expect(copy.lastPathComponent == "dead-link copy")
+            #expect(entryExists(copy))
+            #expect(entryExists(link))
+        }
+    }
+
+    @Test func createFileThrowsWhenDanglingSymlinkOccupiesName() throws {
+        try withTemporaryDirectory { root in
+            _ = try makeDanglingSymlink(named: "taken.txt", in: root)
+            #expect(throws: SupermuxFileSystemOperationError.alreadyExists(name: "taken.txt")) {
+                try SupermuxFileSystemOperations.createFile(named: "taken.txt", in: root)
+            }
+        }
+    }
+
+    @Test func renameThrowsAlreadyExistsWhenDanglingSymlinkOccupiesDestination() throws {
+        try withTemporaryDirectory { root in
+            let file = try SupermuxFileSystemOperations.createFile(named: "a.txt", in: root)
+            _ = try makeDanglingSymlink(named: "taken.txt", in: root)
+            #expect(throws: SupermuxFileSystemOperationError.alreadyExists(name: "taken.txt")) {
+                try SupermuxFileSystemOperations.rename(file, to: "taken.txt")
+            }
+        }
+    }
+
+    @Test func duplicateSkipsCopySlotOccupiedByDanglingSymlink() throws {
+        try withTemporaryDirectory { root in
+            let original = try SupermuxFileSystemOperations.createFile(named: "report.md", in: root)
+            _ = try makeDanglingSymlink(named: "report copy.md", in: root)
+            // The " copy" slot is occupied by an on-disk entry (a dangling link);
+            // picking it anyway would make copyItem fail with a generic error.
+            let copy = try SupermuxFileSystemOperations.duplicate(original)
+            #expect(copy.lastPathComponent == "report copy 2.md")
+        }
+    }
 }
 
 /// A `FileManager` that fails to trash exactly one URL (delegating everything

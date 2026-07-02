@@ -24,6 +24,18 @@ struct SupermuxAIBranchNamerTests {
         #expect(await namer.suggestBranchName(forWorkspaceName: "x") == "fix-login")
     }
 
+    /// Regression: a fenced reply used to yield "```" as the first line, which
+    /// sanitized to `nil` and silently discarded the AI suggestion. The fence
+    /// must be stripped first — with or without a language tag, and even for a
+    /// single-line fenced reply.
+    @Test func stripsCodeFenceBeforeTakingFirstLine() async {
+        for reply in ["```\nfix-login\n```", "```text\nfix-login\n```", "```fix-login```"] {
+            let fake = FakeAICompleting(response: .success(reply))
+            let namer = SupermuxAIBranchNamer(client: fake)
+            #expect(await namer.suggestBranchName(forWorkspaceName: "x") == "fix-login")
+        }
+    }
+
     @Test func forwardsResolvedModel() async {
         let fake = FakeAICompleting(response: .success("branch"))
         let namer = SupermuxAIBranchNamer(client: fake, modelProvider: { "anthropic/claude-haiku" })

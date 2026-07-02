@@ -21,8 +21,14 @@ final class SupermuxSidebarFontScaleStore: ObservableObject {
     private var configObserver: NSObjectProtocol?
 
     init() {
-        fontScale = SidebarTabItemFontScale.scale(for: GhosttyConfig.defaultSidebarFontSize)
-        refresh()
+        // Seed synchronously from the loaded config — exactly like the
+        // enclosing sidebar's `SidebarTabItemSettingsStore` (`GhosttyConfig.load()`
+        // is cached, so this adds no new I/O class). Seeding the *default* size
+        // and loading async rendered the section's first frames at the wrong
+        // scale on every mount, then visibly re-laid it out (and republished
+        // the section height) when the load landed. The async `refresh()` path
+        // remains for config reloads only.
+        fontScale = SidebarTabItemFontScale.scale(for: GhosttyConfig.load().sidebarFontSize)
         configObserver = NotificationCenter.default.addObserver(
             forName: .ghosttyConfigDidReload,
             object: nil,

@@ -148,7 +148,9 @@ import SupermuxKit
         /// Changes the ahead count, as a push or fetch would, without moving HEAD.
         func setAhead(_ ahead: Int) { self.ahead = ahead }
 
-        func logCalls() -> [[String]] { calls.filter { $0.first == "log" } }
+        func logCalls() -> [[String]] {
+            calls.filter { $0.first(where: { !$0.hasPrefix("-") }) == "log" }
+        }
         func logCallCount() -> Int { logCalls().count }
 
         nonisolated func run(
@@ -162,11 +164,12 @@ import SupermuxKit
 
         private func handle(arguments: [String]) -> CommandResult {
             calls.append(arguments)
-            switch arguments.first {
+            // Skip global flags (`--no-optional-locks`) to find the subcommand.
+            switch arguments.first(where: { !$0.hasPrefix("-") }) {
             case "status":
-                var stdout = "# branch.head main\n"
+                var stdout = "# branch.head main\u{0}"
                 if hasUpstream {
-                    stdout += "# branch.upstream origin/main\n# branch.ab +\(ahead) -0\n"
+                    stdout += "# branch.upstream origin/main\u{0}# branch.ab +\(ahead) -0\u{0}"
                 }
                 return result(stdout: stdout)
             case "log":

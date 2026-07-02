@@ -174,7 +174,7 @@ struct SupermuxProjectStoreTests {
         #expect(loaded.projects[0].rootPath == projectX.rootPath)
     }
 
-    @Test func corruptFileLoadsEmptyAndIsPreservedAsCorruptSibling() async throws {
+    @Test func corruptFileLoadsEmptyAndIsQuarantinedToATimestampedBackup() async throws {
         let tempDir = freshTempDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -187,10 +187,80 @@ struct SupermuxProjectStoreTests {
         let loaded = await store.load()
 
         #expect(loaded == .empty)
-        let backupURL = fileURL.appendingPathExtension("corrupt")
-        #expect(FileManager.default.fileExists(atPath: backupURL.path))
-        let preserved = try Data(contentsOf: backupURL)
-        #expect(preserved == corruptBytes)
+        let failure = try #require(await store.lastLoadFailure)
+        guard case .corrupted(.some(let backupURL)) = failure else {
+            Issue.record("expected .corrupted with a backup, got \(failure)")
+            return
+        }
+        #expect(backupURL.lastPathComponent.hasPrefix("projects.json.corrupt-"))
+        #expect(try Data(contentsOf: backupURL) == corruptBytes)
+
+        // A later corruption must land in a NEW backup, never overwrite the
+        // earlier one — each quarantined document stays recoverable.
+        let secondCorruptBytes = Data("also definitely not json".utf8)
+        try secondCorruptBytes.write(to: fileURL)
+        let secondStore = SupermuxProjectStore(fileURL: fileURL)
+        _ = await secondStore.load()
+        let secondFailure = try #require(await secondStore.lastLoadFailure)
+        guard case .corrupted(.some(let secondBackupURL)) = secondFailure else {
+            Issue.record("expected .corrupted with a backup, got \(secondFailure)")
+            return
+        }
+        #expect(secondBackupURL != backupURL)
+        #expect(try Data(contentsOf: backupURL) == corruptBytes)
+        #expect(try Data(contentsOf: secondBackupURL) == secondCorruptBytes)
+    }
+
+    @Test func unreadableFileAbortsUpdateInsteadOfWipingIt() async throws {
+        // Root reads through 0o000 permissions, so the failure cannot be staged.
+        guard getuid() != 0 else { return }
+        let tempDir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let fileURL = tempDir.appendingPathComponent("projects.json")
+
+        let project = fullyPopulatedProject()
+        let writer = SupermuxProjectStore(fileURL: fileURL)
+        try await writer.update { $0.projects.append(project) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fileURL.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fileURL.path) }
+
+        // A transient read failure must abort the mutation, not apply it to an
+        // empty document and atomically destroy the user's registered projects.
+        let store = SupermuxProjectStore(fileURL: fileURL)
+        await #expect(throws: (any Error).self) {
+            try await store.update { $0.isSectionCollapsed = true }
+        }
+        let failure = try #require(await store.lastLoadFailure)
+        guard case .unreadable = failure else {
+            Issue.record("expected .unreadable, got \(failure)")
+            return
+        }
+        // load() falls back to .empty but must not pin it: once the file is
+        // readable again the same store recovers the real document.
+        #expect(await store.load() == .empty)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fileURL.path)
+        let recovered = await store.load()
+        #expect(recovered.projects.map(\.id) == [project.id])
+        #expect(recovered.isSectionCollapsed == false)
+    }
+
+    @Test func updatePreservesANewerSchemaVersionInsteadOfDowngrading() async throws {
+        let tempDir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let fileURL = tempDir.appendingPathComponent("projects.json")
+        // Simulates a document written by a newer build with a higher schema.
+        let newerDocument = #"{"version": 99, "projects": [], "isSectionCollapsed": false}"#
+        try Data(newerDocument.utf8).write(to: fileURL)
+
+        let store = SupermuxProjectStore(fileURL: fileURL)
+        let updated = try await store.update { $0.isSectionCollapsed = true }
+        #expect(updated.version == 99)
+
+        let reader = SupermuxProjectStore(fileURL: fileURL)
+        let loaded = await reader.load()
+        #expect(loaded.version == 99)
+        #expect(loaded.isSectionCollapsed == true)
     }
 
     @Test func saveCreatesIntermediateDirectories() async throws {

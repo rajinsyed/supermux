@@ -42,13 +42,22 @@ public enum SupermuxFileSystemOperations {
         return trimmed
     }
 
+    /// Whether a directory entry exists at `path` itself, without traversing a
+    /// final symlink. `fileExists(atPath:)` follows symlinks, so it reports a
+    /// dangling symlink as absent even though the entry is on disk and can be
+    /// renamed, duplicated, or trashed — all existence checks here must operate
+    /// on the entry, not its target.
+    private static func itemExists(atPath path: String, fileManager: FileManager = .default) -> Bool {
+        (try? fileManager.attributesOfItem(atPath: path)) != nil
+    }
+
     /// Creates an empty file named `rawName` inside `directory`.
     /// - Returns: the URL of the created file.
     @discardableResult
     public static func createFile(named rawName: String, in directory: URL) throws -> URL {
         let name = try validatedName(rawName)
         let destination = directory.appendingPathComponent(name, isDirectory: false)
-        guard !FileManager.default.fileExists(atPath: destination.path) else {
+        guard !itemExists(atPath: destination.path) else {
             throw SupermuxFileSystemOperationError.alreadyExists(name: name)
         }
         do {
@@ -65,7 +74,7 @@ public enum SupermuxFileSystemOperations {
     public static func createDirectory(named rawName: String, in directory: URL) throws -> URL {
         let name = try validatedName(rawName)
         let destination = directory.appendingPathComponent(name, isDirectory: true)
-        guard !FileManager.default.fileExists(atPath: destination.path) else {
+        guard !itemExists(atPath: destination.path) else {
             throw SupermuxFileSystemOperationError.alreadyExists(name: name)
         }
         do {
@@ -86,20 +95,20 @@ public enum SupermuxFileSystemOperations {
     public static func rename(_ url: URL, to rawName: String) throws -> URL {
         let name = try validatedName(rawName)
         let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: url.path) else {
+        guard itemExists(atPath: url.path, fileManager: fileManager) else {
             throw SupermuxFileSystemOperationError.notFound(path: url.path)
         }
         let destination = url.deletingLastPathComponent().appendingPathComponent(name)
         if destination.standardizedFileURL == url.standardizedFileURL {
             return url
         }
-        if fileManager.fileExists(atPath: destination.path) {
+        if itemExists(atPath: destination.path, fileManager: fileManager) {
             // A case-only rename (Foo → foo) on a case-insensitive volume resolves
             // to the *same* on-disk item and must be allowed; a genuine collision
             // with a different item (e.g. two distinct items on a case-sensitive
             // volume) still throws .alreadyExists.
             let isCaseOnlyRename = destination.path.lowercased() == url.path.lowercased()
-            if !(isCaseOnlyRename && sameOnDiskItem(url, destination)) {
+            if !(isCaseOnlyRename && sameOnDiskItem(url, destination, fileManager: fileManager)) {
                 throw SupermuxFileSystemOperationError.alreadyExists(name: name)
             }
         }
@@ -116,7 +125,7 @@ public enum SupermuxFileSystemOperations {
     @discardableResult
     public static func duplicate(_ url: URL) throws -> URL {
         let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: url.path) else {
+        guard itemExists(atPath: url.path, fileManager: fileManager) else {
             throw SupermuxFileSystemOperationError.notFound(path: url.path)
         }
         let destination = uniqueCopyDestination(for: url, fileManager: fileManager)
@@ -135,7 +144,7 @@ public enum SupermuxFileSystemOperations {
     public static func moveToTrash(_ urls: [URL], fileManager: FileManager = .default) throws {
         var failures: [String] = []
         for url in urls {
-            guard fileManager.fileExists(atPath: url.path) else { continue }
+            guard itemExists(atPath: url.path, fileManager: fileManager) else { continue }
             do {
                 try fileManager.trashItem(at: url, resultingItemURL: nil)
             } catch {
@@ -172,7 +181,7 @@ public enum SupermuxFileSystemOperations {
 
         var destination = candidate(" copy")
         var counter = 2
-        while fileManager.fileExists(atPath: destination.path) {
+        while itemExists(atPath: destination.path, fileManager: fileManager) {
             destination = candidate(" copy \(counter)")
             counter += 1
         }
@@ -189,13 +198,20 @@ public enum SupermuxFileSystemOperations {
         return String(base[..<range.lowerBound])
     }
 
-    /// Whether two URLs refer to the same on-disk item (same file id). Used to
-    /// distinguish a legitimate case-only rename from a real collision.
-    private static func sameOnDiskItem(_ a: URL, _ b: URL) -> Bool {
-        let idA = (try? a.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
-        let idB = (try? b.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
-        guard let idA, let idB else { return false }
-        return idA.isEqual(idB)
+    /// Whether two URLs refer to the same on-disk entry (same device + inode),
+    /// compared without traversing a final symlink so the check also holds for
+    /// symlinks themselves (including dangling ones). Used to distinguish a
+    /// legitimate case-only rename from a real collision.
+    private static func sameOnDiskItem(_ a: URL, _ b: URL, fileManager: FileManager = .default) -> Bool {
+        func identity(_ url: URL) -> (device: UInt64, inode: UInt64)? {
+            guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+                  let device = (attributes[.systemNumber] as? NSNumber)?.uint64Value,
+                  let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+            else { return nil }
+            return (device, inode)
+        }
+        guard let idA = identity(a), let idB = identity(b) else { return false }
+        return idA == idB
     }
 
     /// Returns only the paths that are not descendants of another path in the

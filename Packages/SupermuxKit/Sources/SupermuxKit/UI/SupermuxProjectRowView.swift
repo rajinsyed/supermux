@@ -34,8 +34,11 @@ public struct SupermuxProjectRowActions {
     public var moveDown: () -> Void
     /// Reorders a nested workspace `(draggedId, targetId)` within this project.
     public var reorderWorkspace: (UUID, UUID) -> Void
-    /// Opens a pull request's URL (from a worktree or workspace PR badge).
-    public var openPullRequest: (URL) -> Void
+    /// Opens a pull request's URL. The second argument is the open workspace
+    /// the badge belongs to (`nil` for an unopened worktree's badge), so the
+    /// host can open the PR *in that workspace* rather than whichever one is
+    /// currently selected.
+    public var openPullRequest: (URL, UUID?) -> Void
 
     /// Memberwise initializer (all callbacks required).
     public init(
@@ -54,7 +57,7 @@ public struct SupermuxProjectRowActions {
         moveUp: @escaping () -> Void = {},
         moveDown: @escaping () -> Void = {},
         reorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in },
-        openPullRequest: @escaping (URL) -> Void = { _ in }
+        openPullRequest: @escaping (URL, UUID?) -> Void = { _, _ in }
     ) {
         self.openLocal = openLocal
         self.newWorktree = newWorktree
@@ -76,29 +79,43 @@ public struct SupermuxProjectRowActions {
 }
 
 /// Live drag-reorder for project rows. As the dragged row hovers over another
-/// project, `move` shuffles the model so the list previews the new order; the
-/// drop simply clears the dragging marker. Holds only a binding to the host's
-/// drag state plus a value closure, so it respects the sidebar snapshot rule.
+/// project, `move` shuffles the previewed order so the list follows the cursor;
+/// the drop ends the drag via `end` (which commits the previewed order once and
+/// clears the markers). Holds only a binding to the host's drag state plus
+/// value closures, so it respects the sidebar snapshot rule.
 public struct SupermuxProjectDropDelegate: DropDelegate {
     let targetProjectId: UUID
     @Binding var draggingProjectId: UUID?
-    /// `(draggedId, targetId)` — reorders the dragged project over the target.
+    /// `(draggedId, targetId)` — previews the dragged project over the target.
     let move: (UUID, UUID) -> Void
+    /// Ends the drag (commit + clear); falls back to clearing the marker.
+    let end: (() -> Void)?
 
     /// Creates the reorder drop delegate for one target row.
     /// - Parameters:
     ///   - targetProjectId: The project this row represents.
     ///   - draggingProjectId: Shared binding to the in-flight drag, if any.
-    ///   - move: Reorders `(draggedId, targetId)` in the model.
+    ///   - move: Previews `(draggedId, targetId)` in the host's drag state.
+    ///   - end: Ends the drag, committing the previewed order and clearing the
+    ///     markers; when omitted the delegate just clears the binding.
     public init(
         targetProjectId: UUID,
         draggingProjectId: Binding<UUID?>,
-        move: @escaping (UUID, UUID) -> Void
+        move: @escaping (UUID, UUID) -> Void,
+        end: (() -> Void)? = nil
     ) {
         self.targetProjectId = targetProjectId
         self._draggingProjectId = draggingProjectId
         self.move = move
+        self.end = end
     }
+
+    /// Whether the in-flight drag is a project reorder. Any project drag
+    /// qualifies — after a live preview the dragged row usually sits under the
+    /// cursor, so dropping "on itself" is the normal way a reorder ends.
+    /// Foreign drags (terminal text, paths, workspace rows) are refused so
+    /// they fall through instead of being silently swallowed.
+    private var acceptsDrop: Bool { draggingProjectId != nil }
 
     public func dropEntered(info: DropInfo) {
         guard let dragged = draggingProjectId, dragged != targetProjectId else { return }
@@ -106,11 +123,16 @@ public struct SupermuxProjectDropDelegate: DropDelegate {
     }
 
     public func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        DropProposal(operation: acceptsDrop ? .move : .forbidden)
     }
 
     public func performDrop(info: DropInfo) -> Bool {
-        draggingProjectId = nil
+        guard acceptsDrop else { return false }
+        if let end {
+            end()
+        } else {
+            draggingProjectId = nil
+        }
         return true
     }
 }
@@ -204,6 +226,13 @@ public struct SupermuxProjectRowView: View {
         self.worktrees = worktrees
         self.worktreePullRequests = worktreePullRequests
         self.openWorkspaces = openWorkspaces
+        // Computed once per row value (both inputs are immutable): body reads
+        // this three times per pass, and hover/drag re-renders re-run body but
+        // not init, so the path standardization never repeats. Shares the
+        // open-vs-unopened rule with the PR-probe target computation via
+        // SupermuxUnopenedWorktrees.
+        let openDirs = SupermuxUnopenedWorktrees.openDirectories(openWorkspaces)
+        self.unopenedWorktrees = SupermuxUnopenedWorktrees.filter(worktrees, openDirectories: openDirs)
         self.isExpanded = isExpanded
         self.actions = actions
         self.canMoveUp = canMoveUp
@@ -238,7 +267,7 @@ public struct SupermuxProjectRowView: View {
                         reorder: actions.reorderWorkspace
                     ),
                     draggingWorkspaceId: $draggingWorkspaceId,
-                    openPullRequest: actions.openPullRequest
+                    openPullRequest: { url in actions.openPullRequest(url, workspace.id) }
                 )
             }
             // The disclosure reveals worktrees that exist on disk but have no
@@ -252,11 +281,8 @@ public struct SupermuxProjectRowView: View {
     }
 
     /// Worktrees on disk that do not already have an open workspace, so the
-    /// disclosure never duplicates a nested workspace row.
-    private var unopenedWorktrees: [SupermuxProjectWorktree] {
-        let openDirs = Set(openWorkspaces.map { ($0.directory as NSString).standardizingPath })
-        return worktrees.filter { !openDirs.contains(($0.path as NSString).standardizingPath) }
-    }
+    /// disclosure never duplicates a nested workspace row. Precomputed in init.
+    private let unopenedWorktrees: [SupermuxProjectWorktree]
 
     private var projectRow: some View {
         HStack(spacing: 7) {
@@ -357,7 +383,7 @@ public struct SupermuxProjectRowView: View {
             pullRequest: worktreePullRequests[worktree.path],
             open: { actions.openWorktree(worktree) },
             delete: { deleteBranch in actions.deleteWorktree(worktree, deleteBranch) },
-            openPullRequest: actions.openPullRequest
+            openPullRequest: { url in actions.openPullRequest(url, nil) }
         )
     }
 }
@@ -424,171 +450,3 @@ struct SupermuxWorktreeRowView: View {
     }
 }
 
-/// An indented live-workspace row nested under its project: selectable, with a
-/// selection highlight and a hover close button.
-struct SupermuxOpenWorkspaceRowView: View {
-    let workspace: SupermuxOpenWorkspace
-    let select: () -> Void
-    let close: () -> Void
-    /// Renames the workspace (sets its custom title) via the host.
-    var rename: () -> Void = {}
-    /// Starts a drag session, returning the reorder payload.
-    var beginDrag: () -> NSItemProvider = { NSItemProvider() }
-    /// Accepts reorder drops from sibling workspace rows, if wired.
-    var dropDelegate: SupermuxWorkspaceDropDelegate?
-    /// Shared marker for the workspace being dragged. Read here (a leaf) so a
-    /// drag-start write dims only this row in place; reading it in the parent
-    /// `ForEach` would recreate the row and cancel the drag.
-    @Binding var draggingWorkspaceId: UUID?
-    /// Opens the workspace's PR badge URL (cmux's per-workspace PR state).
-    var openPullRequest: (URL) -> Void = { _ in }
-
-    @Environment(\.supermuxSidebarFontScale) private var fontScale
-    @State private var isHovered = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            // Empty leading placeholder matching the project avatar's width so
-            // the title aligns under the project name (activity moved to the right).
-            Color.clear
-                .frame(width: 20 * fontScale, height: 12 * fontScale)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(workspace.title)
-                    .font(.system(size: 11.5 * fontScale, weight: workspace.isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let branch = workspace.branch, !branch.isEmpty {
-                    Text(branch)
-                        .font(.system(size: 9.5 * fontScale, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            Spacer(minLength: 2)
-            // Agent activity (spinner / pulsing / ready dot) sits on the trailing
-            // edge alongside the PR and run status, so it reads as a status
-            // indicator rather than an avatar; idle workspaces show nothing.
-            if workspace.activity.isVisible {
-                SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
-            }
-            if let pullRequest = workspace.pullRequest {
-                SupermuxPullRequestBadge(
-                    pullRequest: pullRequest,
-                    fontScale: fontScale,
-                    onOpen: openPullRequest
-                )
-            }
-            if workspace.isRunning {
-                SupermuxRunIndicator()
-            }
-            if isHovered {
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"))
-            }
-        }
-        // 7 + slot(20·s) + 6 == project row's 6 + avatar(20·s) + 7 → title aligns under the project name.
-        .padding(.leading, 7)
-        .padding(.trailing, 6)
-        .padding(.vertical, 3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(workspace.isSelected
-                    ? Color.accentColor.opacity(0.16)
-                    : Color.primary.opacity(isHovered ? 0.06 : 0))
-        )
-        .onHover { isHovered = $0 }
-        .onTapGesture(perform: select)
-        .contextMenu {
-            Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
-            Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
-            Divider()
-            Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
-        }
-        .opacity(draggingWorkspaceId == workspace.id ? 0.4 : 1)
-        .onDrag(beginDrag)
-        .modifier(SupermuxWorkspaceReorderDrop(delegate: dropDelegate))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(workspace.title)
-        .accessibilityAddTraits(workspace.isSelected ? [.isButton, .isSelected] : .isButton)
-    }
-}
-
-/// Drop delegate for reordering live workspace rows within one project.
-///
-/// Reorders **live** as the dragged row hovers over a sibling (like the project
-/// rows), so the list animates smoothly under the cursor instead of snapping
-/// only on release. Because the nested `ForEach` is keyed by stable workspace
-/// ids, each live reorder animates as a move and the in-flight drag survives.
-/// Drops are accepted only from sibling workspaces in the same project so a row
-/// never jumps projects. Holds only ids, a binding to the host's drag state,
-/// and a value closure, so it respects the sidebar snapshot rule.
-public struct SupermuxWorkspaceDropDelegate: DropDelegate {
-    let targetWorkspaceId: UUID
-    let siblingWorkspaceIds: Set<UUID>
-    @Binding var draggingWorkspaceId: UUID?
-    /// `(draggedId, targetId)` — reorders the dragged workspace over the target.
-    let reorder: (UUID, UUID) -> Void
-
-    /// Creates the reorder drop delegate for one target workspace row.
-    /// - Parameters:
-    ///   - targetWorkspaceId: The workspace this row represents.
-    ///   - siblingWorkspaceIds: Workspaces nested under the same project.
-    ///   - draggingWorkspaceId: Shared binding to the in-flight drag, if any.
-    ///   - reorder: Reorders `(draggedId, targetId)` in the host's tab order.
-    public init(
-        targetWorkspaceId: UUID,
-        siblingWorkspaceIds: Set<UUID>,
-        draggingWorkspaceId: Binding<UUID?>,
-        reorder: @escaping (UUID, UUID) -> Void
-    ) {
-        self.targetWorkspaceId = targetWorkspaceId
-        self.siblingWorkspaceIds = siblingWorkspaceIds
-        self._draggingWorkspaceId = draggingWorkspaceId
-        self.reorder = reorder
-    }
-
-    /// Whether the in-flight drag is a reorderable sibling (not this row).
-    private var acceptsDrop: Bool {
-        guard let dragged = draggingWorkspaceId else { return false }
-        return dragged != targetWorkspaceId && siblingWorkspaceIds.contains(dragged)
-    }
-
-    public func dropEntered(info: DropInfo) {
-        guard let dragged = draggingWorkspaceId, acceptsDrop else { return }
-        withAnimation(.easeInOut(duration: 0.18)) {
-            reorder(dragged, targetWorkspaceId)
-        }
-    }
-
-    public func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: acceptsDrop ? .move : .forbidden)
-    }
-
-    public func performDrop(info: DropInfo) -> Bool {
-        let accepted = acceptsDrop
-        draggingWorkspaceId = nil
-        return accepted
-    }
-}
-
-/// Applies the workspace reorder drop target only when a delegate is supplied,
-/// so rows rendered without drag wiring (previews, tests) stay inert.
-private struct SupermuxWorkspaceReorderDrop: ViewModifier {
-    let delegate: SupermuxWorkspaceDropDelegate?
-
-    func body(content: Content) -> some View {
-        if let delegate {
-            content.onDrop(of: [.plainText, .text], delegate: delegate)
-        } else {
-            content
-        }
-    }
-}

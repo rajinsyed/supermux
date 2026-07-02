@@ -8,6 +8,12 @@ extension SupermuxComposition {
     /// Receives every app-local event through one fenced hook in `AppDelegate`'s
     /// shortcut monitor; owns the overlay and per-window MRU order.
     static let workspaceSwitcher = SupermuxWorkspaceSwitcherController()
+
+    /// Shared project-logo cache backing the switcher's cards. Owned at the
+    /// composition root so resolved images survive across presentations (and can
+    /// back other surfaces later); the switcher controller warms it at session
+    /// begin so the overlay never decodes images while animating in.
+    static let projectIconStore = SupermuxProjectIconStore()
 }
 
 /// Drives the supermux workspace switcher: the macOS app-switcher / Arc-style
@@ -28,12 +34,30 @@ final class SupermuxWorkspaceSwitcherController {
     /// tap+release switches with no overlay (macOS Cmd-Tab quick-switch feel).
     private static let overlayShowDelay: Duration = .milliseconds(150)
 
-    @ObservationIgnored let overlay = SupermuxWorkspaceSwitcherOverlayController()
+    @ObservationIgnored let overlay: SupermuxWorkspaceSwitcherOverlayController
+
+    /// One tracked window's `TabManager` and its Combine subscriptions. The
+    /// manager is held weakly so a closed window's entry is recognizably dead:
+    /// a bare `ObjectIdentifier` key would leak the entry forever and could
+    /// collide with a later manager allocated at the recycled address.
+    private struct ManagerEntry {
+        weak var manager: TabManager?
+        var cancellables: Set<AnyCancellable>
+    }
 
     /// MRU workspace ids per window's `TabManager`.
     @ObservationIgnored private var mruByManager: [ObjectIdentifier: [UUID]] = [:]
     /// Persistent selection/tabs subscriptions per `TabManager`.
-    @ObservationIgnored private var subscriptions: [ObjectIdentifier: Set<AnyCancellable>] = [:]
+    @ObservationIgnored private var subscriptions: [ObjectIdentifier: ManagerEntry] = [:]
+
+    // The configured switcher chords, cached: resolving through
+    // KeyboardShortcutSettings reads UserDefaults (and may JSON-decode) per
+    // call — too heavy for a monitor consulted on every modified keyDown
+    // app-wide. Any settings mutation (Settings UI or cmux.json reload) posts
+    // `didChangeNotification`, which drops the cache.
+    @ObservationIgnored private var cachedNextShortcut: StoredShortcut?
+    @ObservationIgnored private var cachedPreviousShortcut: StoredShortcut?
+    @ObservationIgnored private var shortcutsChangedObserver: NSObjectProtocol?
 
     // Active hold-session state.
     @ObservationIgnored private weak var sessionManager: TabManager?
@@ -52,6 +76,20 @@ final class SupermuxWorkspaceSwitcherController {
     /// The overlay UI is actually on screen.
     private(set) var isOverlayVisible = false
 
+    init() {
+        overlay = SupermuxWorkspaceSwitcherOverlayController(iconStore: SupermuxComposition.projectIconStore)
+        shortcutsChangedObserver = NotificationCenter.default.addObserver(
+            forName: KeyboardShortcutSettings.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.cachedNextShortcut = nil
+                self?.cachedPreviousShortcut = nil
+            }
+        }
+    }
+
     /// Eagerly tracks a window's `TabManager` so most-recently-used order and
     /// preview warming are populated before the first Cmd+`. Safe to call
     /// repeatedly; subscribes at most once per manager. Call from a per-window
@@ -69,20 +107,36 @@ final class SupermuxWorkspaceSwitcherController {
             return handleSessionEvent(event)
         }
         // Idle hot path: only a modified keyDown can open the switcher. The cheap
-        // modifier gate keeps normal typing (and ⇧-only keys) free before the
-        // configured-chord match runs.
+        // modifier gate keeps normal typing (and ⇧-only keys) free, and the cached
+        // chord match runs before the AppKit modal/sheet probes so non-matching
+        // modified keyDowns exit on pure bit/keycode comparisons.
         guard event.type == .keyDown,
               !event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return false }
-        guard !isPresentationBlocked() else { return false }
-        let next = KeyboardShortcutSettings.shortcut(for: .supermuxWorkspaceSwitcherNext)
+        let next = nextShortcut()
         if next.matches(event: event) {
+            guard !isPresentationBlocked() else { return false }
             return beginSession(backward: false, openingShortcut: next, event: event, appDelegate: appDelegate)
         }
-        let previous = KeyboardShortcutSettings.shortcut(for: .supermuxWorkspaceSwitcherPrevious)
+        let previous = previousShortcut()
         if previous.matches(event: event) {
+            guard !isPresentationBlocked() else { return false }
             return beginSession(backward: true, openingShortcut: previous, event: event, appDelegate: appDelegate)
         }
         return false
+    }
+
+    private func nextShortcut() -> StoredShortcut {
+        if let cachedNextShortcut { return cachedNextShortcut }
+        let shortcut = KeyboardShortcutSettings.shortcut(for: .supermuxWorkspaceSwitcherNext)
+        cachedNextShortcut = shortcut
+        return shortcut
+    }
+
+    private func previousShortcut() -> StoredShortcut {
+        if let cachedPreviousShortcut { return cachedPreviousShortcut }
+        let shortcut = KeyboardShortcutSettings.shortcut(for: .supermuxWorkspaceSwitcherPrevious)
+        cachedPreviousShortcut = shortcut
+        return shortcut
     }
 
     private func handleSessionEvent(_ event: NSEvent) -> Bool {
@@ -92,14 +146,22 @@ final class SupermuxWorkspaceSwitcherController {
                 commit()
             }
             return false
-        case .keyUp:
-            return true
-        case .keyDown:
-            if KeyboardShortcutSettings.shortcut(for: .supermuxWorkspaceSwitcherPrevious).matches(event: event) {
+        case .keyUp, .keyDown:
+            // Safety valve: if the modifier's release never reached the monitor
+            // (a system overlay like Mission Control or the screenshot HUD can
+            // swallow the flagsChanged), a stale session must not keep eating the
+            // keyboard. Commit — matching release-to-commit semantics — and let
+            // the key pass through to the app.
+            guard event.modifierFlags.contains(holdModifier) else {
+                commit()
+                return false
+            }
+            guard event.type == .keyDown else { return true }
+            if previousShortcut().matches(event: event) {
                 advance(backward: true)
                 return true
             }
-            if KeyboardShortcutSettings.shortcut(for: .supermuxWorkspaceSwitcherNext).matches(event: event) {
+            if nextShortcut().matches(event: event) {
                 advance(backward: false)
                 return true
             }
@@ -171,13 +233,24 @@ final class SupermuxWorkspaceSwitcherController {
 
     private func showOverlayIfNeeded() {
         guard isSessionActive, !isOverlayVisible, let manager = sessionManager, let window = hostWindow else { return }
+        // Warm the shared logo cache only when the overlay is actually going to
+        // show (covers both the hold-delay timer and advance()'s early show), so
+        // a quick tap+release toggle never pays for it. The overlay reads icons
+        // live from the observable store, and the store skips projects whose
+        // icon identity is unchanged, so repeat sessions are no-ops.
+        let projects = SupermuxComposition.projectsModel.projects
+        Task { await SupermuxComposition.projectIconStore.refresh(projects: projects) }
         let items = buildItems(order: sessionOrder, manager: manager)
         // Keep the commit source (`sessionOrder`) 1:1 with what's actually shown: a
         // workspace closed between begin and show would otherwise desync the visual
-        // index from the id committed on release / click.
-        sessionOrder = items.map(\.id)
-        guard sessionOrder.count > 1 else { cancel(); return }
-        selectedIndex = min(selectedIndex, sessionOrder.count - 1)
+        // index from the id committed on release / click. The highlight follows the
+        // previously selected workspace by identity, not by raw index.
+        let rebuiltOrder = items.map(\.id)
+        guard rebuiltOrder.count > 1 else { cancel(); return }
+        selectedIndex = SupermuxWorkspaceSwitcherOrder.remappedSelection(
+            previousIndex: selectedIndex, previousOrder: sessionOrder, newOrder: rebuiltOrder
+        )
+        sessionOrder = rebuiltOrder
         showOverlayTask?.cancel()
         showOverlayTask = nil
         overlay.viewState.items = items
@@ -187,6 +260,7 @@ final class SupermuxWorkspaceSwitcherController {
         overlay.viewState.onCancel = { [weak self] in self?.cancel() }
         overlay.show(in: window)
         isOverlayVisible = true
+        fillSelectedPreviewIfNeeded()
     }
 
     private func advance(backward: Bool) {
@@ -198,9 +272,23 @@ final class SupermuxWorkspaceSwitcherController {
         // now (cancels the hold timer) instead of waiting out the delay.
         if isOverlayVisible {
             overlay.viewState.selectedIndex = selectedIndex
+            fillSelectedPreviewIfNeeded()
         } else {
             showOverlayIfNeeded()
         }
+    }
+
+    /// Cards past the eager preview cap start with the metadata fallback; read
+    /// the live viewport on demand when the highlight lands on one, so large
+    /// workspace counts don't pay every read up front at presentation time.
+    private func fillSelectedPreviewIfNeeded() {
+        guard isOverlayVisible, overlay.viewState.items.indices.contains(selectedIndex) else { return }
+        let item = overlay.viewState.items[selectedIndex]
+        guard item.previewLines.isEmpty,
+              let workspace = sessionManager?.tabs.first(where: { $0.id == item.id }) else { return }
+        let lines = terminalPreviewLines(for: workspace)
+        guard !lines.isEmpty else { return }
+        overlay.viewState.items[selectedIndex] = item.withPreviewLines(lines)
     }
 
     private func selectAndCommit(index: Int) {
@@ -218,7 +306,10 @@ final class SupermuxWorkspaceSwitcherController {
     private func pointerSelect(index: Int) {
         guard isSessionActive, sessionOrder.indices.contains(index), selectedIndex != index else { return }
         selectedIndex = index
-        if isOverlayVisible { overlay.viewState.selectedIndex = index }
+        if isOverlayVisible {
+            overlay.viewState.selectedIndex = index
+            fillSelectedPreviewIfNeeded()
+        }
     }
 
     private func commit() {
@@ -254,6 +345,7 @@ final class SupermuxWorkspaceSwitcherController {
     // MARK: - MRU tracking
 
     private func subscribeIfNeeded(to manager: TabManager) {
+        pruneDeadManagerEntries()
         let key = ObjectIdentifier(manager)
         guard subscriptions[key] == nil else { return }
         var cancellables = Set<AnyCancellable>()
@@ -272,7 +364,20 @@ final class SupermuxWorkspaceSwitcherController {
                 )
             }
             .store(in: &cancellables)
-        subscriptions[key] = cancellables
+        subscriptions[key] = ManagerEntry(manager: manager, cancellables: cancellables)
+    }
+
+    /// Drops subscriptions and MRU lists whose `TabManager` deallocated (its
+    /// window closed). Beyond bounding growth across window open/close cycles,
+    /// this guarantees a manager allocated at a recycled address is treated as
+    /// fresh: a dead entry's weak reference is always `nil` (two live objects
+    /// can't share an address), so the sweep clears any colliding key before
+    /// the already-subscribed guard runs.
+    private func pruneDeadManagerEntries() {
+        for (key, entry) in subscriptions where entry.manager == nil {
+            subscriptions.removeValue(forKey: key)
+            mruByManager.removeValue(forKey: key)
+        }
     }
 
     private func handleSelectionChange(_ selectedId: UUID?, manager: TabManager) {

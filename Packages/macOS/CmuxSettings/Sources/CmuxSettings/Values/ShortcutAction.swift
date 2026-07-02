@@ -125,6 +125,20 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Hashable, SettingCod
     case markdownZoomReset
     case find
     case findInDirectory
+    // SUPERMUX:begin run-toggle-shortcut-case
+    case supermuxToggleRun
+    // SUPERMUX:end run-toggle-shortcut-case
+    // SUPERMUX:begin workspace-switcher-shortcut-case
+    case supermuxWorkspaceSwitcherNext
+    case supermuxWorkspaceSwitcherPrevious
+    // SUPERMUX:end workspace-switcher-shortcut-case
+    // SUPERMUX:begin supermux-commit-shortcut-case
+    // Mirrors Sources/KeyboardShortcutSettings.swift so the Settings UI can
+    // show, rebind, and conflict-check the supermux shortcuts (the pane
+    // iterates this enum's settingsVisibleActions, not the app-target enum).
+    case supermuxCommit
+    case supermuxCommitAccelerator
+    // SUPERMUX:end supermux-commit-shortcut-case
     case findNext
     case findPrevious
     case hideFind
@@ -187,6 +201,12 @@ extension ShortcutAction {
              .focusTextBoxInput, .attachTextBoxFile, .sendCtrlFToTerminal,
              .clearScreenKeepScrollback:
             return .navigation
+        // SUPERMUX:begin supermux-shortcut-groups
+        case .supermuxToggleRun, .supermuxCommit, .supermuxCommitAccelerator:
+            return .workspace
+        case .supermuxWorkspaceSwitcherNext, .supermuxWorkspaceSwitcherPrevious:
+            return .navigation
+        // SUPERMUX:end supermux-shortcut-groups
         case .focusLeft, .focusRight, .focusUp, .focusDown, .splitRight, .splitDown,
              .toggleSplitZoom, .equalizeSplits, .splitBrowserRight, .splitBrowserDown,
              .toggleRightSidebar, .fileExplorerOpenSelection, .fileExplorerOpenSelectionFinderAlias,
@@ -425,6 +445,21 @@ extension ShortcutAction {
         case .markdownZoomReset: return "Markdown Viewer: Actual Size"
         case .find: return "Find…"
         case .findInDirectory: return "Find in Directory…"
+        // SUPERMUX:begin supermux-shortcut-display-names
+        // Same supermux.shortcut.* keys as the app-target labels; the package's
+        // String(localized:) resolves against Bundle.main, so the app catalog
+        // (en + ja) serves both.
+        case .supermuxToggleRun:
+            return String(localized: "supermux.shortcut.toggleRun.label", defaultValue: "Run / Stop Project Command")
+        case .supermuxWorkspaceSwitcherNext:
+            return String(localized: "supermux.shortcut.workspaceSwitcherNext.label", defaultValue: "Workspace Switcher")
+        case .supermuxWorkspaceSwitcherPrevious:
+            return String(localized: "supermux.shortcut.workspaceSwitcherPrevious.label", defaultValue: "Workspace Switcher (Reverse)")
+        case .supermuxCommit:
+            return String(localized: "supermux.shortcut.commit.label", defaultValue: "Commit Changes")
+        case .supermuxCommitAccelerator:
+            return String(localized: "supermux.shortcut.commitAccelerator.label", defaultValue: "Commit Changes (Accelerator)")
+        // SUPERMUX:end supermux-shortcut-display-names
         case .findNext: return "Find Next"
         case .findPrevious: return "Find Previous"
         case .hideFind: return "Hide Find Bar"

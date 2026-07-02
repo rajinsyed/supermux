@@ -354,7 +354,10 @@ enum DragOverlayRoutingPolicy {
 
     static func shouldPassThroughPortalHitTesting(
         pasteboardTypes: [NSPasteboard.PasteboardType]?,
-        eventType: NSEvent.EventType?
+        eventType: NSEvent.EventType?,
+        // SUPERMUX:begin browser-hover-drag-guard
+        pressedMouseButtons: Int = NSEvent.pressedMouseButtons
+        // SUPERMUX:end browser-hover-drag-guard
     ) -> Bool {
         let routingContext = WindowInputRoutingContext(eventType: eventType)
         guard routingContext.allowsBrowserPortalDragRouting else { return false }
@@ -366,6 +369,17 @@ enum DragOverlayRoutingPolicy {
                 || hasFilePreviewTransfer(pasteboardTypes)
                 || hasSidebarReorder
         case .pointerHover:
+            // SUPERMUX:begin browser-hover-drag-guard
+            // Hover-type events (mouseMoved/cursorUpdate/mouseEntered/mouseExited) only
+            // signal an in-flight tab drag while the left mouse button is held. The
+            // `.drag` pasteboard keeps its declared types after a drag ends (nothing
+            // clears it in production), so without this guard a *stale* tab-transfer
+            // payload makes every later hover pass through the browser portal — routing
+            // mouse-moved past the WKWebView and killing web hover (CSS :hover, hover
+            // menus, tooltips). A real drag holds the button, so this still passes
+            // through during the actual drag.
+            guard (pressedMouseButtons & 1) != 0 else { return false }
+            // SUPERMUX:end browser-hover-drag-guard
             return hasTabTransfer || hasSidebarReorder
         case .noEvent, .keyboard, .pointerDown, .pointerUp, .scroll, .appKitRouting, .other:
             return false

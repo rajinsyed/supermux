@@ -64,15 +64,11 @@ public struct SupermuxAICommitMessenger: SupermuxAICommitMessaging {
         return String(diff.prefix(maxDiffCharacters)) + "\n\n[diff truncated]"
     }
 
-    /// Removes a wrapping ```code fence``` the model may add around the message.
+    /// Removes a wrapping ```code fence``` the model may add around the
+    /// message, preserving the content even when it shares a line with the
+    /// fence (e.g. a single-line ```` ```fix: x``` ```` reply).
     static func cleanup(_ raw: String) -> String {
-        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.hasPrefix("```") else { return text }
-        var lines = text.components(separatedBy: "\n")
-        if lines.first?.hasPrefix("```") == true { lines.removeFirst() }
-        if lines.last?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true { lines.removeLast() }
-        text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        return text
+        SupermuxAIReplyCleanup.strippingCodeFence(raw)
     }
 
     private static let systemPrompt = """

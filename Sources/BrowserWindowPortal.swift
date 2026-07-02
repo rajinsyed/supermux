@@ -554,6 +554,13 @@ final class WindowBrowserHostView: NSView {
         // pass through to SwiftUI drop targets behind the portal host.
         // Browser hover routing also arrives as cursor/enter events and may not
         // report a pressed-button state, so include that path here.
+        // SUPERMUX:begin browser-hover-drag-guard
+        // (supermux) The event itself carries no pressed-button state, but the
+        // policy additionally requires the left button to be physically held
+        // (NSEvent.pressedMouseButtons) for hover-kind pass-through, so a stale
+        // drag pasteboard cannot hijack ordinary hover after a drag ends — see
+        // DragOverlayRoutingPolicy.shouldPassThroughPortalHitTesting.
+        // SUPERMUX:end browser-hover-drag-guard
         if routingContext.allowsBrowserPortalDragRouting,
            Self.shouldPassThroughToDragTargets(
             pasteboardTypes: NSPasteboard(name: .drag).types,
@@ -893,11 +900,17 @@ final class WindowBrowserHostView: NSView {
 
     static func shouldPassThroughToDragTargets(
         pasteboardTypes: [NSPasteboard.PasteboardType]?,
-        eventType: NSEvent.EventType?
+        eventType: NSEvent.EventType?,
+        // SUPERMUX:begin browser-hover-drag-guard
+        pressedMouseButtons: Int = NSEvent.pressedMouseButtons
+        // SUPERMUX:end browser-hover-drag-guard
     ) -> Bool {
         DragOverlayRoutingPolicy.shouldPassThroughPortalHitTesting(
             pasteboardTypes: pasteboardTypes,
-            eventType: eventType
+            eventType: eventType,
+            // SUPERMUX:begin browser-hover-drag-guard
+            pressedMouseButtons: pressedMouseButtons
+            // SUPERMUX:end browser-hover-drag-guard
         )
     }
 

@@ -37,7 +37,7 @@ public struct SupermuxWorkspaceSwitcherItem: Identifiable, Hashable, Sendable {
     /// a blank/cold terminal, in which case the card shows a metadata fallback.
     /// Text (not a pixel screenshot) because background workspaces stop rendering —
     /// their GPU surface is stale, but libghostty keeps the text grid current.
-    public let previewLines: [String]
+    public private(set) var previewLines: [String]
     /// The owning project, when the workspace resolves to one — used to render the
     /// project's avatar badge on the card (matching the sidebar via
     /// ``SupermuxProjectAvatarView``). `nil` for a standalone workspace.
@@ -74,6 +74,15 @@ public struct SupermuxWorkspaceSwitcherItem: Identifiable, Hashable, Sendable {
         self.previewLines = previewLines
         self.project = project
         self.activity = activity
+    }
+
+    /// A copy of this item with `previewLines` replaced — used to lazily fill a
+    /// card's preview when the highlight lands on it past the eager read cap,
+    /// without thawing the rest of the frozen snapshot.
+    public func withPreviewLines(_ lines: [String]) -> SupermuxWorkspaceSwitcherItem {
+        var copy = self
+        copy.previewLines = lines
+        return copy
     }
 
     /// Cleans raw terminal viewport text into the last few display lines for the

@@ -19,6 +19,20 @@ public struct SupermuxPullRequestTarget: Hashable, Sendable {
     }
 }
 
+/// Abstraction over ``SupermuxPullRequestProbe`` so
+/// ``SupermuxWorktreePullRequestModel`` can be unit-tested with a scripted
+/// resolver instead of the network pipeline.
+public protocol SupermuxPullRequestResolving: Sendable {
+    /// Looks up the pull request for each target, reusing/refreshing the cache.
+    /// See ``SupermuxPullRequestProbe/resolve(targets:cache:allowCache:now:)``.
+    func resolve(
+        targets: [SupermuxPullRequestTarget],
+        cache: [String: WorkspacePullRequestRepoCacheEntry],
+        allowCache: Bool,
+        now: Date
+    ) async -> SupermuxPullRequestProbe.Outcome
+}
+
 /// Resolves pull requests for unopened worktrees by reusing cmux's
 /// ``CmuxGit/PullRequestProbeService`` pipeline.
 ///
@@ -165,6 +179,8 @@ public struct SupermuxPullRequestProbe: Sendable {
         return Outcome(resolutions: resolutions, updatedCache: updatedCache)
     }
 }
+
+extension SupermuxPullRequestProbe: SupermuxPullRequestResolving {}
 
 extension SupermuxPullRequest {
     /// Bridges a `CmuxGit` probe result into a badge value, or `nil` when the URL
