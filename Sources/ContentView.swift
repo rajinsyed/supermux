@@ -13252,7 +13252,11 @@ struct TabItemView: View, Equatable {
     }
 
     private var titleFontWeight: Font.Weight {
-        .semibold
+        // SUPERMUX:begin sidebar-unified-row-style
+        // Match the nested project-workspace rows (`SupermuxOpenWorkspaceRowView`):
+        // semibold only while selected, regular otherwise. (upstream: always `.semibold`)
+        isActive ? .semibold : .regular
+        // SUPERMUX:end sidebar-unified-row-style
     }
 
     private var fontScale: CGFloat {
@@ -13539,7 +13543,11 @@ struct TabItemView: View, Equatable {
             scaledCloseButtonHitSize
         )
 
-        VStack(alignment: .leading, spacing: 4) {
+        // SUPERMUX:begin sidebar-unified-row-style
+        // Tighter line spacing so title + subtitle read as one compact unit like
+        // the nested project-workspace rows. (upstream: spacing 4)
+        VStack(alignment: .leading, spacing: 2) {
+        // SUPERMUX:end sidebar-unified-row-style
             HStack(alignment: .top, spacing: 8) {
                 if unreadCount > 0 {
                     ZStack {
@@ -13600,7 +13608,11 @@ struct TabItemView: View, Equatable {
                 }
 
                 Text(displayedTitle)
-                    .font(magnifiedFont(scaledFontSize(12.5), weight: titleFontWeight))
+                    // SUPERMUX:begin sidebar-unified-row-style
+                    // Title size matches the nested project-workspace rows (11.5·scale;
+                    // upstream: 12.5).
+                    .font(magnifiedFont(scaledFontSize(11.5), weight: titleFontWeight))
+                    // SUPERMUX:end sidebar-unified-row-style
                     .foregroundColor(activePrimaryTextColor)
                     .lineLimit(titleLineLimit)
                     .truncationMode(.tail)
@@ -13886,14 +13898,18 @@ struct TabItemView: View, Equatable {
         // refresh rate (#5764 / #5845). Lazy rows must be height-stable after
         // they appear; content changes now apply in one discrete layout pass.
         .padding(.horizontal, SidebarWorkspaceListMetrics.rowContentHorizontalPadding)
-        .padding(.vertical, 8)
+        // SUPERMUX:begin sidebar-unified-row-style
+        // Compact row chrome matching the nested project-workspace rows:
+        // vertical padding 4 (upstream: 8) and corner radius 5 (upstream: 6, ×2).
+        .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 5)
                 .fill(backgroundColor)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: 5)
                         .strokeBorder(activeBorderColor, lineWidth: activeBorderLineWidth)
                 }
+        // SUPERMUX:end sidebar-unified-row-style
                 .overlay(alignment: .leading) {
                     if showsLeadingRail {
                         Capsule(style: .continuous)
@@ -14398,7 +14414,16 @@ struct TabItemView: View, Equatable {
             colorScheme: colorScheme,
             sidebarSelectionColorHex: sidebarSelectionColorHex
         )
-        guard let color = style.color else { return .clear }
+        // SUPERMUX:begin sidebar-unified-row-style
+        // Hover tint matching the nested project-workspace rows (primary at 0.06);
+        // never overrides the multi-select / custom-color tints above.
+        // (upstream: `guard let color = style.color else { return .clear }`)
+        guard let color = style.color else {
+            return rowInteractionState.isPointerHovering
+                ? Color.primary.opacity(0.06)
+                : .clear
+        }
+        // SUPERMUX:end sidebar-unified-row-style
         return Color(nsColor: color).opacity(style.opacity)
     }
 
