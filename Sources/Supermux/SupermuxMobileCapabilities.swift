@@ -1,0 +1,19 @@
+import Foundation
+import SupermuxMobileCore
+
+/// The `supermux.*` capabilities this host advertises to mobile clients,
+/// appended to `MobileHostService.mobileHostCapabilities` through the
+/// `mobile-supermux-capabilities` fence.
+///
+/// The phone hides every supermux entry point unless the matching capability
+/// is advertised, so a fork phone paired with upstream cmux renders exactly
+/// today's UI. Entries are added here only once their methods are actually
+/// served by `TerminalController.v2MobileSupermuxDispatch`.
+enum SupermuxMobileCapabilities {
+    /// Capabilities whose backing RPC methods are implemented on this host.
+    nonisolated static var advertised: [String] {
+        [
+            SupermuxMobileCapability.projectsV1.rawValue,
+        ]
+    }
+}

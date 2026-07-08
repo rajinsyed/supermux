@@ -1375,6 +1375,11 @@ final class MobileHostService {
         if containsIgnoredAliasParameters(request.params) {
             return scopedTicketError
         }
+        // SUPERMUX:begin mobile-supermux-authz (fail-closed ticket scoping for the whole mobile.supermux.* namespace; table lives in Sources/Supermux/SupermuxMobileAuthorization.swift)
+        if request.method.hasPrefix(SupermuxMobileAuthorization.namespacePrefix) {
+            return SupermuxMobileAuthorization.ticketError(method: request.method, params: request.params, ticket: authorization.ticket)
+        }
+        // SUPERMUX:end mobile-supermux-authz
 
         switch request.method {
         case "mobile.workspace.list", "workspace.list":

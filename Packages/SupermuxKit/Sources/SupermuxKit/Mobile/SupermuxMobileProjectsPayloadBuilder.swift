@@ -1,0 +1,55 @@
+public import Foundation
+internal import SupermuxMobileCore
+
+/// Builds the `mobile.supermux.projects.list` result payload
+/// (`{projects: [SupermuxProjectDTO], section_collapsed}`).
+///
+/// Lives in SupermuxKit (not the app target) so the wire shape is
+/// package-unit-testable against a seeded ``SupermuxProjectsModel``; the app
+/// handler stays a thin pass-through reading `SupermuxComposition`.
+///
+/// ```swift
+/// let payload = try SupermuxMobileProjectsPayloadBuilder().projectsList(
+///     projects: model.projects,
+///     isSectionCollapsed: model.isSectionCollapsed
+/// )
+/// ```
+public struct SupermuxMobileProjectsPayloadBuilder: Sendable {
+    private let iconResolver: SupermuxProjectIconResolver
+
+    /// Creates a builder.
+    /// - Parameter iconResolver: Resolves whether each project has a fetchable
+    ///   icon image (custom file or auto-detected repository logo), which
+    ///   drives the DTO's `has_custom_icon` flag.
+    public init(iconResolver: SupermuxProjectIconResolver = SupermuxProjectIconResolver()) {
+        self.iconResolver = iconResolver
+    }
+
+    /// Encodes the projects-list result payload.
+    ///
+    /// - Parameters:
+    ///   - projects: Registered projects in sidebar order.
+    ///   - isSectionCollapsed: Whether the Mac sidebar's Projects section is
+    ///     collapsed.
+    /// - Returns: The RPC result object (`projects` + `section_collapsed`).
+    /// - Throws: Any encoding failure from the shared wire bridge.
+    public func projectsList(
+        projects: [SupermuxProject],
+        isSectionCollapsed: Bool
+    ) throws -> [String: Any] {
+        let wire = SupermuxWireJSON()
+        let encoded = try projects.map { project in
+            try wire.dictionary(from: SupermuxProjectDTO(
+                project: project,
+                hasCustomIcon: iconResolver.resolveAvatar(
+                    rootPath: project.rootPath,
+                    customIconPath: project.customIconPath
+                ) != nil
+            ))
+        }
+        return [
+            "projects": encoded,
+            "section_collapsed": isSectionCollapsed,
+        ]
+    }
+}

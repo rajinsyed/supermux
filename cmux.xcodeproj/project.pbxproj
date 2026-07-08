@@ -864,6 +864,13 @@
 		50BE000100000000000000F4 /* SupermuxFileExplorerPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F2 /* SupermuxFileExplorerPrompt.swift */; };
 		50BE000100000000000000A3 /* SupermuxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 50BE000100000000000000A2 /* SupermuxKit */; };
 		50BE000100000000000000A5 /* SupermuxMainListFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000A4 /* SupermuxMainListFilter.swift */; };
+		50BE000200000000000000B6 /* SupermuxMobileAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B5 /* SupermuxMobileAuthorization.swift */; };
+		50BE000200000000000000C1 /* SupermuxMobileAuthorizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C2 /* SupermuxMobileAuthorizationTests.swift */; };
+		50BE000200000000000000B8 /* SupermuxMobileCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B7 /* SupermuxMobileCapabilities.swift */; };
+		50BE000200000000000000A3 /* SupermuxMobileCore in Frameworks */ = {isa = PBXBuildFile; productRef = 50BE000200000000000000A2 /* SupermuxMobileCore */; };
+		50BE000200000000000000A4 /* SupermuxMobileCore in Frameworks */ = {isa = PBXBuildFile; productRef = 50BE000200000000000000A2 /* SupermuxMobileCore */; };
+		50BE000200000000000000B4 /* SupermuxMobileHost+Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */; };
+		50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B9 /* SupermuxMobileObservers.swift */; };
 		50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */; };
 		50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */; };
 		50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B4 /* SupermuxRunSupport.swift */; };
@@ -933,6 +940,7 @@
 		C7A50B000000000000000012 /* TerminalController+MobileWorkspaceList.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A50B000000000000000011 /* TerminalController+MobileWorkspaceList.swift */; };
 		D7AB0000000000000000000B /* TerminalController+MoveTabToNewWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7AB0000000000000000000C /* TerminalController+MoveTabToNewWorkspace.swift */; };
 		A31B24551C6E01E86D76B07E /* TerminalController+RemoteTmux.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B11974CF8937E165A3FAEE /* TerminalController+RemoteTmux.swift */; };
+		50BE000200000000000000B2 /* TerminalController+SupermuxMobile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B1 /* TerminalController+SupermuxMobile.swift */; };
 		C0DE00000000000000000C84 /* TerminalController+WorkspaceCreate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000C83 /* TerminalController+WorkspaceCreate.swift */; };
 		A5001007 /* TerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001019 /* TerminalController.swift */; };
 		C0DE00000000000000000C32 /* TerminalControllerControlCommandContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000C31 /* TerminalControllerControlCommandContext.swift */; };
@@ -1948,6 +1956,11 @@
 		50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxFileExplorerCommands.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F2 /* SupermuxFileExplorerPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxFileExplorerPrompt.swift; sourceTree = "<group>"; };
 		50BE000100000000000000A4 /* SupermuxMainListFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMainListFilter.swift; sourceTree = "<group>"; };
+		50BE000200000000000000B5 /* SupermuxMobileAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileAuthorization.swift; sourceTree = "<group>"; };
+		50BE000200000000000000C2 /* SupermuxMobileAuthorizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileAuthorizationTests.swift; sourceTree = "<group>"; };
+		50BE000200000000000000B7 /* SupermuxMobileCapabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileCapabilities.swift; sourceTree = "<group>"; };
+		50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Projects.swift"; sourceTree = "<group>"; };
+		50BE000200000000000000B9 /* SupermuxMobileObservers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObservers.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNewWorkspaceHomeDirectoryTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxProjectsSectionHeightPreferenceKey.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B4 /* SupermuxRunSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRunSupport.swift; sourceTree = "<group>"; };
@@ -2017,6 +2030,7 @@
 		C7A50B000000000000000011 /* TerminalController+MobileWorkspaceList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalController+MobileWorkspaceList.swift"; sourceTree = "<group>"; };
 		D7AB0000000000000000000C /* TerminalController+MoveTabToNewWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalController+MoveTabToNewWorkspace.swift"; sourceTree = "<group>"; };
 		95B11974CF8937E165A3FAEE /* TerminalController+RemoteTmux.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalController+RemoteTmux.swift"; sourceTree = "<group>"; };
+		50BE000200000000000000B1 /* TerminalController+SupermuxMobile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalController+SupermuxMobile.swift"; sourceTree = "<group>"; };
 		C0DE00000000000000000C83 /* TerminalController+WorkspaceCreate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalController+WorkspaceCreate.swift"; sourceTree = "<group>"; };
 		A5001019 /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
 		C0DE00000000000000000C31 /* TerminalControllerControlCommandContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalControllerControlCommandContext.swift; sourceTree = "<group>"; };
@@ -2224,6 +2238,7 @@
 				A5001230 /* Sparkle in Frameworks */,
 				F20F85FC5900550685FA33AD /* StackAuth in Frameworks */,
 				50BE000100000000000000A3 /* SupermuxKit in Frameworks */,
+				50BE000200000000000000A3 /* SupermuxMobileCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2269,6 +2284,7 @@
 				EFB18E3C0000000000000001 /* CMUXMobileCore in Frameworks */,
 				C0DE4A000000000000000005 /* CmuxSidebarProviderKit in Frameworks */,
 				5E2701040000000000000003 /* Sentry in Frameworks */,
+				50BE000200000000000000A4 /* SupermuxMobileCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2301,6 +2317,11 @@
 			isa = PBXGroup;
 			children = (
 				50BE000100000000000000B1 /* SupermuxAppGlue.swift */,
+				50BE000200000000000000B1 /* TerminalController+SupermuxMobile.swift */,
+				50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */,
+				50BE000200000000000000B5 /* SupermuxMobileAuthorization.swift */,
+				50BE000200000000000000B7 /* SupermuxMobileCapabilities.swift */,
+				50BE000200000000000000B9 /* SupermuxMobileObservers.swift */,
 				50BE000100000000000000A4 /* SupermuxMainListFilter.swift */,
 				50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */,
 				50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */,
@@ -3329,6 +3350,7 @@
 				F1C3F1DBF6BF5D7223C4A30C /* SidebarMarkdownRendererTests.swift */,
 				50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */,
 				50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */,
+				50BE000200000000000000C2 /* SupermuxMobileAuthorizationTests.swift */,
 				14A7DC53B9CA33BE2A421711 /* WorkspacePullRequestSidebarTests.swift */,
 				5659A0045659A0045659A004 /* WorkspaceSidebarObservationTests.swift */,
 				FEEDC0DEC0DEC0DEC0DE0002 /* FeedCoordinatorTests.swift */,
@@ -3444,6 +3466,7 @@
 				A5C0DE0000000000000000A2 /* CMUXProjectModel */,
 				A5B00002A1B2C3D4E5F60718 /* CMUXAgentLaunch */,
 				50BE000100000000000000A2 /* SupermuxKit */,
+				50BE000200000000000000A2 /* SupermuxMobileCore */,
 				CA52A005CA52A005CA52A005 /* CmuxCanvas */,
 				CA53A005CA53A005CA53A005 /* CmuxCanvasUI */,
 				C5A1FED000000000000000C3 /* CmuxSwiftRender */,
@@ -3554,6 +3577,7 @@
 			packageProductDependencies = (
 				A5B00002A1B2C3D4E5F60718 /* CMUXAgentLaunch */,
 				EFB18E3B3099DFE2ECA3C263 /* CMUXMobileCore */,
+				50BE000200000000000000A2 /* SupermuxMobileCore */,
 				CA52A005CA52A005CA52A005 /* CmuxCanvas */,
 				5E2701040000000000000001 /* Sentry */,
 				5E2701040000000000000002 /* CmuxFoundation */,
@@ -3621,6 +3645,7 @@
 				A5B00001A1B2C3D4E5F60718 /* XCLocalSwiftPackageReference "CMUXAgentLaunch" */,
 				A500D012A1B2C3D4E5F60718 /* XCLocalSwiftPackageReference "CMUXDebugLog" */,
 				50BE000100000000000000A1 /* XCLocalSwiftPackageReference "SupermuxKit" */,
+				50BE000200000000000000A1 /* XCLocalSwiftPackageReference "SupermuxMobileCore" */,
 				CA52A004CA52A004CA52A004 /* XCLocalSwiftPackageReference "CmuxCanvas" */,
 				CA53A004CA53A004CA53A004 /* XCLocalSwiftPackageReference "CmuxCanvasUI" */,
 				C5A1FED000000000000000C4 /* XCLocalSwiftPackageReference "CmuxSwiftRender" */,
@@ -4287,6 +4312,10 @@
 				50BE000100000000000000F3 /* SupermuxFileExplorerCommands.swift in Sources */,
 				50BE000100000000000000F4 /* SupermuxFileExplorerPrompt.swift in Sources */,
 				50BE000100000000000000A5 /* SupermuxMainListFilter.swift in Sources */,
+				50BE000200000000000000B6 /* SupermuxMobileAuthorization.swift in Sources */,
+				50BE000200000000000000B8 /* SupermuxMobileCapabilities.swift in Sources */,
+				50BE000200000000000000B4 /* SupermuxMobileHost+Projects.swift in Sources */,
+				50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */,
 				50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */,
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
@@ -4343,6 +4372,7 @@
 				C7A50B000000000000000012 /* TerminalController+MobileWorkspaceList.swift in Sources */,
 				D7AB0000000000000000000B /* TerminalController+MoveTabToNewWorkspace.swift in Sources */,
 				A31B24551C6E01E86D76B07E /* TerminalController+RemoteTmux.swift in Sources */,
+				50BE000200000000000000B2 /* TerminalController+SupermuxMobile.swift in Sources */,
 				C0DE00000000000000000C84 /* TerminalController+WorkspaceCreate.swift in Sources */,
 				A5001007 /* TerminalController.swift in Sources */,
 				C0DE00000000000000000C32 /* TerminalControllerControlCommandContext.swift in Sources */,
@@ -4788,6 +4818,7 @@
 						E60610300000000000000003 /* SSHPTYAttachReconnectInputFilterState.swift in Sources */,
 						B6285B71BA6F82AF8F945E00 /* SSHPTYAttachReconnectInputFilterTests.swift in Sources */,
 				F6355600A1B2C3D4E5F60718 /* SSHStartupSignalLifecycleTests.swift in Sources */,
+				50BE000200000000000000C1 /* SupermuxMobileAuthorizationTests.swift in Sources */,
 				50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */,
 				50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */,
 				FBE660ABA1854983B84368C6 /* SystemWideHotkeyShortcutPolicyTests.swift in Sources */,
@@ -5271,6 +5302,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/SupermuxKit;
 		};
+		50BE000200000000000000A1 /* XCLocalSwiftPackageReference "SupermuxMobileCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Shared/SupermuxMobileCore;
+		};
 		CA52A004CA52A004CA52A004 /* XCLocalSwiftPackageReference "CmuxCanvas" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/macOS/CmuxCanvas;
@@ -5717,6 +5752,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0C69E6A5FA9B0513E68DF443 /* XCLocalSwiftPackageReference "CMUXMobileCore" */;
 			productName = CMUXMobileCore;
+		};
+		50BE000200000000000000A2 /* SupermuxMobileCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 50BE000200000000000000A1 /* XCLocalSwiftPackageReference "SupermuxMobileCore" */;
+			productName = SupermuxMobileCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

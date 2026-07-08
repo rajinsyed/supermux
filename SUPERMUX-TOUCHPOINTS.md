@@ -104,6 +104,11 @@ Rules for adding a touchpoint:
 | 88 | `skills/cmux-settings/references/all-keys.md` | `unfenced` | Regenerated the `app.workspaceInheritWorkingDirectory` description row to match the #14 schema description (the file is auto-generated from `web/data/cmux.schema.json` and had the removed Ghostty-fallback wording) |
 | 89 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-ticket-compat-version` | Adds `macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion` to the mock-host attach-ticket fixture in `attachURL(port:)`, matching what every real Mac-minted ticket carries (`MobileHostService`). Without it the ticket decodes to compat 0 ("unknown compatibility"), `MobileShellComposite.versionWarning` blocks pairing behind a "Continue anyway" sheet, and every connection-dependent cmuxUITest times out. Upstream-latent bug (upstream CI runs `-skip-testing:cmuxUITests` on PRs, so it never sees it) |
 | 90 | `cmux.xcworkspace/contents.xcworkspacedata` | `unfenced` | Adds the supermux-owned `Packages/Shared/SupermuxMobileCore` package FileRef to the workspace's Shared group. Generated file — regenerate with `python3 scripts/check-workspace-package-groups.py --write` (the `Packages/` folder layout is the source of truth), never hand-edit |
+| 91 | `Sources/TerminalController.swift` | `mobile-supermux-dispatch` | One case in the `mobileHostHandleRPC` switch routes the whole `mobile.supermux.*` namespace to `v2MobileSupermuxDispatch` (fork-owned `Sources/Supermux/TerminalController+SupermuxMobile.swift`), mirroring the adjacent `mobile.chat.*` prefix case |
+| 92 | `Sources/Mobile/MobileHostService.swift` | `mobile-supermux-authz` | In `ticketAuthorizationError(authorization:request:)`, after the alias/conflict guards and before the upstream method switch, delegates every `mobile.supermux.*` method to the fail-closed `SupermuxMobileAuthorization.ticketError` table (fork-owned `Sources/Supermux/SupermuxMobileAuthorization.swift`); reachable in tests via the existing `debugTicketAuthorizationError` seam |
+| 93 | `Sources/Mobile/MobileHostService+Capabilities.swift` | `mobile-supermux-capabilities` | Appends `SupermuxMobileCapabilities.advertised` (fork-owned `Sources/Supermux/SupermuxMobileCapabilities.swift`) to `mobileHostCapabilities` so the phone can gate supermux screens on `supermux.*.v1` entries |
+| 94 | `Sources/AppDelegate.swift` | `mobile-supermux-observers` | One line at the top of `ensureMobileWorkspaceListObserver(for:)` calls `SupermuxMobileHostGlue.activateIfNeeded()` (fork-owned `Sources/Supermux/SupermuxMobileObservers.swift`) so fork mobile observers activate exactly where upstream constructs `MobileWorkspaceListObserver` |
+| 95 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the `SupermuxMobileCore` package (local package reference + product dependency on the `cmux` and `cmuxTests` targets), the five `Sources/Supermux/` mobile files (`TerminalController+SupermuxMobile.swift`, `SupermuxMobileHost+Projects.swift`, `SupermuxMobileAuthorization.swift`, `SupermuxMobileCapabilities.swift`, `SupermuxMobileObservers.swift`) into the cmux target, and `cmuxTests/SupermuxMobileAuthorizationTests.swift` into the cmuxTests target (all ids prefixed `50BE0002…`) |
 
 ## How to re-apply
 
@@ -1497,3 +1502,43 @@ the `SupermuxWireJSON` Codable↔`[String: Any]` bridge). Two upstream files reg
 The package itself is fork-owned (no fences inside it). It intentionally has zero dependencies and
 no `Package.resolved` (SwiftPM only writes one when dependencies exist); if it ever gains a
 dependency, track the generated package-local `Package.resolved` per repo policy.
+
+### 91–95. Mac host plumbing for `mobile.supermux.*` (dispatch, authz, capabilities, observers, wiring)
+
+The Mac side of the iOS supermux parity plane. All logic lives in fork-owned files
+(`Sources/Supermux/TerminalController+SupermuxMobile.swift`, `SupermuxMobileHost+Projects.swift`,
+`SupermuxMobileAuthorization.swift`, `SupermuxMobileCapabilities.swift`,
+`SupermuxMobileObservers.swift`, and `Packages/SupermuxKit/Sources/SupermuxKit/Mobile/`); four
+1–3-line fences hook it into upstream:
+
+- **`Sources/TerminalController.swift` (#91, `mobile-supermux-dispatch`):** one
+  `case let method where method.hasPrefix("mobile.supermux."):` in the `mobileHostHandleRPC`
+  switch, placed right after the `mobile.chat.` prefix case. Re-apply: keep it anywhere in that
+  switch before `default:`; the router body is fork-owned.
+- **`Sources/Mobile/MobileHostService.swift` (#92, `mobile-supermux-authz`):** a 3-line guard in
+  `ticketAuthorizationError(authorization:request:)` — AFTER the workspace/terminal alias and
+  conflict guards (they must keep applying to supermux methods) and BEFORE upstream's method
+  switch — returning `SupermuxMobileAuthorization.ticketError(method:params:ticket:)` for the
+  whole prefix. The fork table fails closed (`default:` = scoped-ticket `forbidden`), so a merge
+  that drops this fence makes every supermux method hit upstream's own fail-closed `default:` —
+  safe, but the phone loses scoped-ticket access; `cmuxTests/SupermuxMobileAuthorizationTests`
+  goes red either way.
+- **`Sources/Mobile/MobileHostService+Capabilities.swift` (#93, `mobile-supermux-capabilities`):**
+  `+ SupermuxMobileCapabilities.advertised` appended to upstream's array literal in
+  `mobileHostCapabilities`. Re-apply: any composition that folds the fork list into the returned
+  array works; never inline `supermux.*` strings into upstream's literal.
+- **`Sources/AppDelegate.swift` (#94, `mobile-supermux-observers`):**
+  `SupermuxMobileHostGlue.activateIfNeeded()` at the top of
+  `ensureMobileWorkspaceListObserver(for:)`. Re-apply: the call must run wherever upstream
+  constructs `MobileWorkspaceListObserver`, so fork observers exist exactly when the mobile event
+  plane is live. Idempotent — safe to call from several sites.
+- **`cmux.xcodeproj/project.pbxproj` (#95, unfenced):** `SupermuxMobileCore` local package
+  reference + product dependency (cmux + cmuxTests targets), the five `Sources/Supermux/` mobile
+  files in the cmux target, `cmuxTests/SupermuxMobileAuthorizationTests.swift` in the cmuxTests
+  target. Ids prefixed `50BE0002…`; re-add via Xcode or by copying any `50BE0001…` sibling's
+  four-entry shape, then run `python3 scripts/normalize-pbxproj.py`.
+- **`.github/swift-file-length-budget.tsv` (#4):** rows for `TerminalController.swift` (+4),
+  `MobileHostService.swift` (+5), and `AppDelegate.swift` (+3) raised by exactly the fenced growth.
+
+`Packages/SupermuxKit/Package.swift` (fork-owned, no fence) gains a path dependency on
+`../Shared/SupermuxMobileCore`; both stay path-only, so still no `Package.resolved` is generated.
