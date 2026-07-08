@@ -557,6 +557,9 @@ final class cmuxUITests: XCTestCase {
             terminalID: nil,
             macDeviceID: "ui-test-mac",
             macDisplayName: "UI Test Mac",
+            // SUPERMUX:begin uitest-ticket-compat-version (fixture must carry the compat level like real Mac-minted tickets)
+            macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion,
+            // SUPERMUX:end uitest-ticket-compat-version
             routes: [route],
             expiresAt: Date(timeIntervalSinceNow: 60 * 60),
             authToken: "ui-test-ticket"

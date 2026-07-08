@@ -102,6 +102,7 @@ Rules for adding a touchpoint:
 | 86 | `web/messages/en.json` | `unfenced` | Adds `schemaDescriptions.app.workspaceInheritWorkingDirectory` so the localized docs configuration page renders the reworded #14 schema description through `descriptionKey` (the sibling mechanism 32 other schema properties use) instead of the English-only `description` fallback |
 | 87 | `web/messages/ja.json` | `unfenced` | Japanese translation for the #86 message key |
 | 88 | `skills/cmux-settings/references/all-keys.md` | `unfenced` | Regenerated the `app.workspaceInheritWorkingDirectory` description row to match the #14 schema description (the file is auto-generated from `web/data/cmux.schema.json` and had the removed Ghostty-fallback wording) |
+| 89 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-ticket-compat-version` | Adds `macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion` to the mock-host attach-ticket fixture in `attachURL(port:)`, matching what every real Mac-minted ticket carries (`MobileHostService`). Without it the ticket decodes to compat 0 ("unknown compatibility"), `MobileShellComposite.versionWarning` blocks pairing behind a "Continue anyway" sheet, and every connection-dependent cmuxUITest times out. Upstream-latent bug (upstream CI runs `-skip-testing:cmuxUITests` on PRs, so it never sees it) |
 
 ## How to re-apply
 
@@ -1435,3 +1436,43 @@ If upstream ever fixes the inheritance leak itself (e.g. passing an explicit cwd
 no-inherit flag to `ghostty_surface_new` when the setting is off), drop all
 `new-workspace-home-dir` fences and take upstream's fix; the #81 test and
 `SupermuxNewWorkspaceHomeDirectoryTests` tell you whether the symptom is truly gone.
+
+## iOS / mobile sync
+
+### 89. `ios/cmuxUITests/cmuxUITests.swift` — `uitest-ticket-compat-version`
+
+The XCUITest mock-host harness (`launchConnectedApp` → `attachURL(port:)`) builds a
+`CmxAttachTicket` fixture for the in-runner `MobileSyncMockHostServer` and injects it via
+`CMUX_UITEST_ATTACH_URL`. Upstream's fixture omits `macPairingCompatibilityVersion`, but
+`CmxAttachTicketInput.decode` normalizes a missing compat version to `0`
+(`withUnknownCompatibilityVersionForPairingURL`), and
+`MobileShellComposite.versionWarning(for:)` treats `0 != CmxMobileDefaults.pairingCompatibilityVersion`
+as a cross-compatibility pairing → `connectPairingURLResult` returns `.needsUserApproval` and the
+app parks behind a `MobilePairingVersionWarning` sheet ("Continue anyway") that no test ever taps.
+Every connection-dependent cmuxUITest (9 of 12) then times out waiting for
+`MobileWorkspaceRow-workspace-main` / `MobileTerminalSurface`.
+
+This is an upstream-latent test-fixture bug, not app misbehavior: every real Mac-minted ticket
+carries the compat level (`MobileHostService` passes
+`macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion`), and upstream CI
+never notices because `.github/workflows/test-ios.yml` runs `-skip-testing:cmuxUITests` on pull
+requests ("Full UI tests currently exceed the pull-request simulator budget on macos-26").
+
+The fence adds the one missing argument to the fixture initializer:
+
+```swift
+let ticket = try CmxAttachTicket(
+    ...
+    macDisplayName: "UI Test Mac",
+    // SUPERMUX:begin uitest-ticket-compat-version (fixture must carry the compat level like real Mac-minted tickets)
+    macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion,
+    // SUPERMUX:end uitest-ticket-compat-version
+    routes: [route],
+    ...
+```
+
+Re-apply note: if upstream adds the compat version to the fixture itself (or removes the
+`versionWarning` gate for compat 0), drop this fence and take upstream. If upstream rewrites
+`attachURL(port:)`, the requirement is: the UITest fixture ticket must decode with
+`macPairingCompatibilityVersion == CmxMobileDefaults.pairingCompatibilityVersion` so the pairing
+version warning does not fire under the mock harness.
