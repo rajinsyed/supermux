@@ -22,6 +22,10 @@ let package = Package(
         // shell's `(rpcClient: MobileCoreRPCClient, …)` connection seam can be
         // named in the driver API.
         .package(path: "../CmuxMobileRPC"),
+        // Already in the graph via CmuxMobileRPC; declared directly so the
+        // hide-filter and the nested-workspace mapping can name
+        // `MobileWorkspacePreview` in their public APIs.
+        .package(path: "../CmuxMobileShellModel"),
     ],
     targets: [
         .target(
@@ -30,6 +34,7 @@ let package = Package(
                 "SupermuxMobileCore",
                 "SupermuxMobileKit",
                 "CmuxMobileRPC",
+                "CmuxMobileShellModel",
             ],
             resources: [.process("Resources")],
             swiftSettings: [
@@ -44,6 +49,7 @@ let package = Package(
                 "SupermuxMobileUI",
                 "SupermuxMobileKit",
                 "SupermuxMobileCore",
+                "CmuxMobileShellModel",
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

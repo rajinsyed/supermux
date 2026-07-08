@@ -50,16 +50,22 @@ public struct SupermuxProjectsSectionActions {
     /// Fetches a project's custom icon PNG through the model's etag cache;
     /// `nil` when the project is unknown or has no custom icon.
     public let iconPNGData: @Sendable (_ projectID: String) async -> Data?
+    /// Opens a nested workspace by its UI row id — the same navigation the
+    /// flat list's workspace rows use.
+    public let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
 
     /// Memberwise initializer.
     /// - Parameters:
     ///   - toggleCollapsed: Toggles the section's local collapse state.
     ///   - iconPNGData: Fetches a project's custom icon PNG by project id.
+    ///   - selectWorkspace: Opens a nested workspace by its UI row id.
     public init(
         toggleCollapsed: @escaping @MainActor () -> Void,
-        iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?
+        iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
+        selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in }
     ) {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
+        self.selectWorkspace = selectWorkspace
     }
 }

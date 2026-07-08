@@ -90,10 +90,15 @@ final class SupermuxMobileProjectsObserver {
 @MainActor
 enum SupermuxMobileHostGlue {
     private static var projectsObserver: SupermuxMobileProjectsObserver?
+    private static var activityObserver: SupermuxMobileActivityObserver?
 
     /// Constructs the fork observers once; later calls are no-ops.
     static func activateIfNeeded() {
         guard projectsObserver == nil else { return }
         projectsObserver = SupermuxMobileProjectsObserver(model: SupermuxComposition.projectsModel)
+        activityObserver = SupermuxMobileActivityObserver(
+            projectsModel: SupermuxComposition.projectsModel,
+            associations: SupermuxComposition.workspaceAssociations
+        )
     }
 }

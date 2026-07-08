@@ -108,10 +108,15 @@ Rules for adding a touchpoint:
 | 92 | `Sources/Mobile/MobileHostService.swift` | `mobile-supermux-authz` | In `ticketAuthorizationError(authorization:request:)`, after the alias/conflict guards and before the upstream method switch, delegates every `mobile.supermux.*` method to the fail-closed `SupermuxMobileAuthorization.ticketError` table (fork-owned `Sources/Supermux/SupermuxMobileAuthorization.swift`); reachable in tests via the existing `debugTicketAuthorizationError` seam |
 | 93 | `Sources/Mobile/MobileHostService+Capabilities.swift` | `mobile-supermux-capabilities` | Appends `SupermuxMobileCapabilities.advertised` (fork-owned `Sources/Supermux/SupermuxMobileCapabilities.swift`) to `mobileHostCapabilities` so the phone can gate supermux screens on `supermux.*.v1` entries |
 | 94 | `Sources/AppDelegate.swift` | `mobile-supermux-observers` | One line at the top of `ensureMobileWorkspaceListObserver(for:)` calls `SupermuxMobileHostGlue.activateIfNeeded()` (fork-owned `Sources/Supermux/SupermuxMobileObservers.swift`) so fork mobile observers activate exactly where upstream constructs `MobileWorkspaceListObserver` |
-| 95 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the `SupermuxMobileCore` package (local package reference + product dependency on the `cmux` and `cmuxTests` targets), the five `Sources/Supermux/` mobile files (`TerminalController+SupermuxMobile.swift`, `SupermuxMobileHost+Projects.swift`, `SupermuxMobileAuthorization.swift`, `SupermuxMobileCapabilities.swift`, `SupermuxMobileObservers.swift`) into the cmux target, and `cmuxTests/SupermuxMobileAuthorizationTests.swift` into the cmuxTests target (all ids prefixed `50BE0002…`) |
+| 95 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the `SupermuxMobileCore` package (local package reference + product dependency on the `cmux` and `cmuxTests` targets), the seven `Sources/Supermux/` mobile files (`TerminalController+SupermuxMobile.swift`, `SupermuxMobileHost+Projects.swift`, `SupermuxMobileAuthorization.swift`, `SupermuxMobileCapabilities.swift`, `SupermuxMobileObservers.swift`, `SupermuxMobileActivityObserver.swift`, `SupermuxMobileWorkspaceListAugmenter.swift`) into the cmux target, and `cmuxTests/SupermuxMobileAuthorizationTests.swift` into the cmuxTests target (all ids prefixed `50BE0002…`) |
 | 96 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `supermux-mobile-client-mount` | One computed property `supermuxConnectionSeam` (next to `remoteClientForAgentChat`) exposes the live `MobileCoreRPCClient` + `supportedHostCapabilities` snapshot to the fork's supermux phone stores; `nil` unless connected. All tracked `@Observable` reads, so the fork's section driver re-runs (and rebuilds `SupermuxMacClient` + stores) on every (re)connect and on capability arrival |
-| 97 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-projects-section` | Four 1-line fences: `import SupermuxMobileUI`; a `@State` `SupermuxProjectsSectionModel`; the `SupermuxProjectsMobileSection(section:actions:)` mount inside the `List` above the workspace/group section; the `.supermuxProjectsSectionDriver(model:connection:)` session driver on the `List` (fed by the #96 seam). Section renders nothing without `supermux.projects.v1` |
+| 97 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-projects-section` | Four 1-line fences: `import SupermuxMobileUI`; a `@State` `SupermuxProjectsSectionModel`; the `SupermuxProjectsMobileSection(section:actions:)` mount inside the `List` above the workspace/group section; the `.supermuxProjectsSectionDriver(model:connection:workspaces:selectWorkspace:)` session driver on the `List` (fed by the #96 seam; `workspaces` + `selectWorkspace` feed the §6 open-workspace join and nested-row navigation). Section renders nothing without `supermux.projects.v1` |
 | 98 | `Packages/iOS/CmuxMobileShellUI/Package.swift` | `supermux-mobile-shellui-deps` | Two fenced 1-line additions: `.package(path: "../SupermuxMobileUI")` in `dependencies` and `"SupermuxMobileUI"` in the `CmuxMobileShellUI` target dependencies (fork-owned Projects section package) |
+| 99 | `Sources/TerminalController+MobileWorkspaceList.swift` | `mobile-supermux-workspace-fields` | Two fence blocks in `mobileWorkspacePayload`: the upstream `return [` becomes `let payload: [String: Any] = [`, and after the literal a fenced `return SupermuxMobileWorkspaceListAugmenter.augment(payload, workspace: workspace)` merges the additive §6 fields (`supermux_project_id` / `supermux_activity`; fork-owned `Sources/Supermux/SupermuxMobileWorkspaceListAugmenter.swift` → package-tested `SupermuxMobileWorkspaceFields` in SupermuxKit) |
+| 100 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileSyncWorkspaceListResponse.swift` | `supermux-mobile-workspace-fields` | Two fence blocks in `Workspace`: the OPTIONAL `supermuxProjectID` / `supermuxActivity` stored lets and their snake_case `CodingKeys` (`supermux_project_id` / `supermux_activity`). Synthesized decoding, so pre-mission payloads (keys absent) decode unchanged — regression-tested by `SupermuxWorkspaceListFieldsDecodeTests` |
+| 101 | `Packages/iOS/CmuxMobileShellModel/Sources/CmuxMobileShellModel/MobileWorkspacePreview.swift` | `supermux-mobile-workspace-fields` | One fence block: defaulted `public var supermuxProjectID/supermuxActivity: String? = nil` following the `machineColorIndex` pattern, so upstream initializers and call sites need no change |
+| 102 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileWorkspacePreview+RemoteMapping.swift` | `supermux-mobile-workspace-fields` | One fence block after `self.init(...)` in `init(remote:)`: copies the two decoded fields onto the preview (aggregation's `var stamped = workspace` copies then carry them everywhere) |
+| 103 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-project-workspaces`, `supermux-mobile-row-activity` | Hide filter: a fenced `supermuxFlatWorkspaces` helper (delegates to the `supermuxFlatRows(hidingProjectAssociated:)` array extension, active only while the Projects section is visible AND no search/filter) plus two fenced one-line swaps where upstream read `workspaces` (`filteredWorkspaces`, `groupedListItems`). Row dot: one fenced `.supermuxWorkspaceActivityDot(rawActivity:)` modifier on `WorkspaceNavigationRow` in `workspaceRow` |
 
 ## How to re-apply
 
@@ -1607,3 +1612,49 @@ avatar tinted by `color_hex`), the read-only `SupermuxProjectDetailScreen`, and 
 
 Same `lint-ios-package-conventions.sh` SCOPES caveat as SupermuxMobileKit above; the package is
 written to those rules anyway.
+
+### 99–103. Workspace-list augmentation (§6: `supermux_project_id` / `supermux_activity`)
+
+The Mac merges two ADDITIVE, optional fields into every `workspace.list` workspace payload and the
+phone folds project-owned rows under the Projects section, shows agent-activity dots, and lists a
+project's open workspaces inside `SupermuxProjectDetailScreen`. Field computation is fork-owned and
+package-tested (`SupermuxMobileWorkspaceFields` in `Packages/SupermuxKit/Sources/SupermuxKit/Mobile/`,
+RPC-WSL-01 suite `SupermuxMobileWorkspaceFieldsTests`); the app-target adapter
+`Sources/Supermux/SupermuxMobileWorkspaceListAugmenter.swift` feeds it the ONE shared activity
+resolution (`SupermuxWorkspaceActivityResolver`) and the sidebar's association resolution
+(`SupermuxWorkspaceAssociationStore.projectId(forWorkspace:directory:in:)`), so the phone and the
+Mac sidebar can never disagree. Both fields travel only for project-associated workspaces; an
+idle associated workspace carries the project id alone. `Sources/Supermux/SupermuxMobileActivityObserver.swift`
+re-emits the EXISTING `workspace.updated` topic (payload `[:]`, trailing 80 ms throttle) on agent
+lifecycle changes (`SupermuxWorkspaceLifecycleRelay`) and association/projects changes
+(Observation-tracked summary hash) — upstream's `MobileWorkspaceListObserver.summaryHash` is
+deliberately untouched. The host now also advertises `supermux.activity.v1`.
+
+- **`Sources/TerminalController+MobileWorkspaceList.swift` (#99, `mobile-supermux-workspace-fields`):**
+  re-apply by rebinding upstream's returned literal (`return [` → `let payload: [String: Any] = [`)
+  inside the first fence block and returning `SupermuxMobileWorkspaceListAugmenter.augment(payload,
+  workspace: workspace)` in the second. If upstream restructures `mobileWorkspacePayload`, the
+  requirement is: the augmenter wraps the final per-workspace dictionary on every payload path.
+- **`MobileSyncWorkspaceListResponse.swift` (#100) / `MobileWorkspacePreview.swift` (#101) /
+  `MobileWorkspacePreview+RemoteMapping.swift` (#102, all `supermux-mobile-workspace-fields`):** the
+  decode → preview plumbing. All three additions are optional/defaulted so upstream inits, tests,
+  and old payloads are untouched; `PROTO-03` regression suite
+  `SupermuxWorkspaceListFieldsDecodeTests` (CmuxMobileRPCTests) locks the wire shape both ways.
+  The aggregated multi-Mac path needs no fence: `derivedWorkspaces` mutates copies
+  (`var stamped = workspace`), which carries the new fields automatically.
+- **`WorkspaceListView.swift` (#103, `supermux-mobile-hide-project-workspaces` +
+  `supermux-mobile-row-activity`):** the hide filter must stay gated on
+  `supermuxProjects.snapshot.isVisible && trimmedQuery.isEmpty && !filter.isActive` so rows never
+  become unreachable while disconnected/upstream-paired and never unsearchable; only LOOSE
+  (ungrouped) project-owned rows hide, mirroring the Mac's `SupermuxProjectResolutionCache.filter`.
+  The dot modifier attaches to `WorkspaceNavigationRow` before the row insets. The #97 driver fence
+  gained `workspaces:` + `selectWorkspace:` arguments (pass the shell's closure as a literal —
+  `{ selectWorkspace($0) }` — because `@MainActor` function types are implicitly `@Sendable` and a
+  stored plain closure won't convert).
+
+`Packages/iOS/SupermuxMobileUI` additions are fork-owned (no fences): the `supermuxFlatRows` array extension (SupermuxWorkspaceListPartition.swift),
+`SupermuxProjectWorkspaceRowSnapshot`, `SupermuxWorkspaceActivityDot` (palette mirrors the Mac's
+`SupermuxActivityPalette`), the section model's open-workspace join, and the detail screen's real
+Workspaces section. Its `Package.swift` gained a path dep on `../CmuxMobileShellModel` (target +
+test target) so the partition/mapping can name `MobileWorkspacePreview`. New localization keys
+`supermux.activity.working/needsInput/ready` exist in BOTH en and ja in the package catalog.

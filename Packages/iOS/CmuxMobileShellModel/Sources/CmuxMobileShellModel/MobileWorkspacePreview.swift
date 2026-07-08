@@ -91,6 +91,12 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
     public var macConnectionStatus: MobileMacConnectionStatus? = nil
     /// Workspace actions supported by the Mac that owns this row.
     public var actionCapabilities: MobileWorkspaceActionCapabilities = .none
+    // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields, defaulted so upstream inits stay untouched — see SUPERMUX-TOUCHPOINTS.md)
+    /// The supermux project owning this workspace (UUID string); `nil` when unassociated or from upstream cmux.
+    public var supermuxProjectID: String? = nil
+    /// Agent-activity raw value (`working`/`needs_input`/`ready`); `nil` when idle, unassociated, or from upstream cmux.
+    public var supermuxActivity: String? = nil
+    // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// The workspace id to use in RPC params.
     public var rpcWorkspaceID: ID {

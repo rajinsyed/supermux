@@ -14,6 +14,10 @@ enum SupermuxMobileCapabilities {
     nonisolated static var advertised: [String] {
         [
             SupermuxMobileCapability.projectsV1.rawValue,
+            // Workspace-list payloads carry the additive supermux_activity
+            // field (and the activity observer re-emits workspace.updated on
+            // agent lifecycle changes).
+            SupermuxMobileCapability.activityV1.rawValue,
         ]
     }
 }

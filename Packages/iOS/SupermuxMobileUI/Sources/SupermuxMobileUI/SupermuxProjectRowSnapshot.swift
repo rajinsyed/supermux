@@ -53,13 +53,20 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     /// Worktree count badge. Reserved: stays `nil` (badge hidden) until the
     /// worktrees milestone supplies real values.
     public let worktreeCount: Int?
-    /// Open-workspace count badge. Reserved: stays `nil` (badge hidden) until
-    /// the workspace-list `supermux_project_id` augmentation lands.
+    /// Open-workspace count badge: the number of ``openWorkspaces``, or `nil`
+    /// when there are none (badge hidden, never a zero badge).
     public let openWorkspaceCount: Int?
+    /// The open workspaces nested under this project (§6
+    /// `supermux_project_id` join), in the shell's row order. Rendered by the
+    /// project detail's Workspaces section.
+    public let openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot]
 
     /// Projects a wire DTO into the row snapshot.
-    /// - Parameter project: The project as fetched from the Mac.
-    public init(project: SupermuxProjectDTO) {
+    /// - Parameters:
+    ///   - project: The project as fetched from the Mac.
+    ///   - openWorkspaces: The open workspaces whose `supermux_project_id`
+    ///     matches this project. Defaults to none.
+    public init(project: SupermuxProjectDTO, openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot] = []) {
         self.id = project.id
         self.name = project.name
         self.rootPath = project.rootPath
@@ -70,6 +77,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         let trimmed = project.name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.avatarLetter = trimmed.first.map { String($0).uppercased() } ?? "?"
         self.worktreeCount = nil
-        self.openWorkspaceCount = nil
+        self.openWorkspaceCount = openWorkspaces.isEmpty ? nil : openWorkspaces.count
+        self.openWorkspaces = openWorkspaces
     }
 }

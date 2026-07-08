@@ -41,6 +41,12 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         public let hasUnread: Bool?
         /// Terminals belonging to this workspace.
         public let terminals: [Terminal]
+        // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields; absent on upstream Macs — see SUPERMUX-TOUCHPOINTS.md)
+        /// The supermux project owning this workspace (UUID string); `nil` when unassociated or from upstream cmux.
+        public let supermuxProjectID: String?
+        /// Agent-activity raw value (`working`/`needs_input`/`ready`); `nil` when idle, unassociated, or from upstream cmux.
+        public let supermuxActivity: String?
+        // SUPERMUX:end supermux-mobile-workspace-fields
 
         private enum CodingKeys: String, CodingKey {
             case id
@@ -55,6 +61,10 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case lastActivityAt = "last_activity_at"
             case hasUnread = "has_unread"
             case terminals
+            // SUPERMUX:begin supermux-mobile-workspace-fields
+            case supermuxProjectID = "supermux_project_id"
+            case supermuxActivity = "supermux_activity"
+            // SUPERMUX:end supermux-mobile-workspace-fields
         }
     }
 

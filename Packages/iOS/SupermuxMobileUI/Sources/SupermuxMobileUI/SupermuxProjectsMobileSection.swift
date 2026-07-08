@@ -70,9 +70,13 @@ public struct SupermuxProjectsMobileSection: View {
             .listRowSeparator(.hidden)
         } else {
             ForEach(section.rows) { row in
-                SupermuxProjectMobileRow(row: row, iconPNGData: actions.iconPNGData)
-                    .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
-                    .listRowSeparator(.hidden)
+                SupermuxProjectMobileRow(
+                    row: row,
+                    iconPNGData: actions.iconPNGData,
+                    selectWorkspace: actions.selectWorkspace
+                )
+                .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
+                .listRowSeparator(.hidden)
             }
         }
     }
@@ -111,15 +115,16 @@ struct SupermuxProjectsSectionHeader: View {
     }
 }
 
-/// One project row: avatar, name, root path, and (future) count badges.
-/// Pushes the read-only detail screen via the stack's standard link.
+/// One project row: avatar, name, root path, and count badges. Pushes the
+/// read-only detail screen via the stack's standard link.
 struct SupermuxProjectMobileRow: View {
     let row: SupermuxProjectRowSnapshot
     let iconPNGData: @Sendable (_ projectID: String) async -> Data?
+    var selectWorkspace: @MainActor (_ workspaceID: String) -> Void = { _ in }
 
     var body: some View {
         NavigationLink {
-            SupermuxProjectDetailScreen(row: row, iconPNGData: iconPNGData)
+            SupermuxProjectDetailScreen(row: row, iconPNGData: iconPNGData, selectWorkspace: selectWorkspace)
         } label: {
             HStack(spacing: 10) {
                 SupermuxProjectMobileAvatar(row: row, size: 32, iconPNGData: iconPNGData)

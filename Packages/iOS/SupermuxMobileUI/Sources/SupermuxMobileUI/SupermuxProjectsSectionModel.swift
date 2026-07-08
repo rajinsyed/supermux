@@ -30,6 +30,16 @@ public final class SupermuxProjectsSectionModel {
     /// re-download (the etag round-trip answers `not_modified`).
     @ObservationIgnored private let iconCache = SupermuxProjectIconCache()
 
+    /// The open workspaces the shell last reported (project-associated only),
+    /// joined onto project rows in ``snapshot``. Observable so a workspace
+    /// change re-projects the section.
+    private var workspaceRows: [SupermuxProjectWorkspaceRowSnapshot] = []
+
+    /// The shell's workspace-open closure, refreshed with every
+    /// ``updateWorkspaces(_:selectWorkspace:)`` so it always targets the live
+    /// shell. Ignored by observation: closures carry no render state.
+    @ObservationIgnored private var selectWorkspaceAction: @MainActor (_ workspaceID: String) -> Void = { _ in }
+
     /// Creates an empty (hidden-section) model.
     public init() {}
 
@@ -41,7 +51,12 @@ public final class SupermuxProjectsSectionModel {
             isVisible: true,
             isCollapsed: collapsedOverride ?? store.isSectionCollapsed,
             hasLoaded: store.hasLoaded,
-            rows: store.projects.map { SupermuxProjectRowSnapshot(project: $0) }
+            rows: store.projects.map { project in
+                SupermuxProjectRowSnapshot(
+                    project: project,
+                    openWorkspaces: workspaceRows.filter { $0.projectID == project.id }
+                )
+            }
         )
     }
 
@@ -51,8 +66,30 @@ public final class SupermuxProjectsSectionModel {
             toggleCollapsed: { [weak self] in self?.toggleCollapsed() },
             iconPNGData: { [weak self] projectID in
                 await self?.iconPNGData(forProjectID: projectID) ?? nil
+            },
+            selectWorkspace: { [weak self] workspaceID in
+                self?.selectWorkspaceAction(workspaceID)
             }
         )
+    }
+
+    /// Feeds the shell's current workspace list (already mapped to
+    /// project-associated row snapshots) and its open-workspace closure into
+    /// the section. Called from the driver's `.task(id:)` whenever the shell's
+    /// workspace previews change — never from a view body.
+    ///
+    /// - Parameters:
+    ///   - rows: The project-associated workspace rows, in shell order.
+    ///   - selectWorkspace: Opens a workspace by its UI row id (the same
+    ///     navigation the flat list's rows use).
+    public func updateWorkspaces(
+        _ rows: [SupermuxProjectWorkspaceRowSnapshot],
+        selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void
+    ) {
+        selectWorkspaceAction = selectWorkspace
+        if workspaceRows != rows {
+            workspaceRows = rows
+        }
     }
 
     /// Toggles the section's collapse state locally.

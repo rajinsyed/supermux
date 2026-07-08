@@ -132,12 +132,23 @@ struct WorkspaceListView: View {
             || workspace.terminals.contains { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
+    // SUPERMUX:begin supermux-mobile-hide-project-workspaces (fold loose project-owned rows under the Projects section; inert while hidden/searching/filtering — see SUPERMUX-TOUCHPOINTS.md)
+    private var supermuxFlatWorkspaces: [MobileWorkspacePreview] {
+        workspaces.supermuxFlatRows(
+            hidingProjectAssociated: supermuxProjects.snapshot.isVisible && trimmedQuery.isEmpty && !filter.isActive
+        )
+    }
+    // SUPERMUX:end supermux-mobile-hide-project-workspaces
+
     /// Workspaces after the row filter (Unread) and search filtering, pinned
     /// ones first (stable within each group so the Mac's order is otherwise
     /// preserved). Used for the flat (ungrouped, filtering, or searching)
     /// presentation.
     private var filteredWorkspaces: [MobileWorkspacePreview] {
         let query = trimmedQuery
+        // SUPERMUX:begin supermux-mobile-hide-project-workspaces (upstream reads `workspaces` directly)
+        let workspaces = supermuxFlatWorkspaces
+        // SUPERMUX:end supermux-mobile-hide-project-workspaces
         let matches = workspaces.filter { workspace in
             filter.matches(workspace)
                 && (query.isEmpty || matchesQuery(workspace, query: query))
@@ -156,7 +167,9 @@ struct WorkspaceListView: View {
     /// member order and contiguity (no pinned-first flattening, which would
     /// scatter group members).
     private var groupedListItems: [MobileWorkspaceListItem] {
-        MobileWorkspaceListItem.items(workspaces: workspaces, groups: groups)
+        // SUPERMUX:begin supermux-mobile-hide-project-workspaces (upstream passes `workspaces` directly)
+        MobileWorkspaceListItem.items(workspaces: supermuxFlatWorkspaces, groups: groups)
+        // SUPERMUX:end supermux-mobile-hide-project-workspaces
     }
 
     var body: some View {
@@ -218,8 +231,8 @@ struct WorkspaceListView: View {
             }
         }
         .listStyle(.plain)
-        // SUPERMUX:begin supermux-mobile-projects-section (session driver: rebuilds the fork stores per (re)connect/capability change)
-        .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam)
+        // SUPERMUX:begin supermux-mobile-projects-section (session driver: rebuilds the fork stores per (re)connect/capability change; feeds the §6 workspace join + open-workspace navigation)
+        .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) })
         // SUPERMUX:end supermux-mobile-projects-section
         .workspaceListRefreshable(refresh)
         .onChange(of: MobileWorkspaceListFilter.machineIDs(in: workspaces)) { _, present in
@@ -363,6 +376,9 @@ struct WorkspaceListView: View {
                 confirmCloseWorkspace()
             } : nil
         )
+        // SUPERMUX:begin supermux-mobile-row-activity (agent-activity dot mirroring the Mac sidebar indicator — see SUPERMUX-TOUCHPOINTS.md)
+        .supermuxWorkspaceActivityDot(rawActivity: workspace.supermuxActivity)
+        // SUPERMUX:end supermux-mobile-row-activity
         .listRowInsets(EdgeInsets(top: 4, leading: indented ? 32 : 12, bottom: 4, trailing: 12))
         .listRowSeparator(.hidden)
     }
