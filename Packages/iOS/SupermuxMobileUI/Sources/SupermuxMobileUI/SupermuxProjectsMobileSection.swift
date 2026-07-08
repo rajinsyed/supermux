@@ -1,4 +1,5 @@
 public import Foundation
+import SupermuxMobileKit
 public import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -73,7 +74,8 @@ public struct SupermuxProjectsMobileSection: View {
                 SupermuxProjectMobileRow(
                     row: row,
                     iconPNGData: actions.iconPNGData,
-                    selectWorkspace: actions.selectWorkspace
+                    selectWorkspace: actions.selectWorkspace,
+                    makeWorktreesStore: actions.makeWorktreesStore
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
@@ -121,10 +123,16 @@ struct SupermuxProjectMobileRow: View {
     let row: SupermuxProjectRowSnapshot
     let iconPNGData: @Sendable (_ projectID: String) async -> Data?
     var selectWorkspace: @MainActor (_ workspaceID: String) -> Void = { _ in }
+    var makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil }
 
     var body: some View {
         NavigationLink {
-            SupermuxProjectDetailScreen(row: row, iconPNGData: iconPNGData, selectWorkspace: selectWorkspace)
+            SupermuxProjectDetailScreen(
+                row: row,
+                iconPNGData: iconPNGData,
+                selectWorkspace: selectWorkspace,
+                makeWorktreesStore: makeWorktreesStore
+            )
         } label: {
             HStack(spacing: 10) {
                 SupermuxProjectMobileAvatar(row: row, size: 32, iconPNGData: iconPNGData)
@@ -146,8 +154,9 @@ struct SupermuxProjectMobileRow: View {
         .accessibilityIdentifier("SupermuxProjectRow-\(row.id)")
     }
 
-    /// Count badges render only when a later milestone supplies real counts
-    /// (`nil` = hidden, never a zero badge).
+    /// Count badges render only when real data exists (`nil` = hidden, never
+    /// a made-up zero badge): the worktree count arrives once a worktrees
+    /// fetch has run for the project, the workspace count from the §6 join.
     @ViewBuilder
     private var countBadges: some View {
         if let count = row.worktreeCount {

@@ -50,8 +50,9 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     public let defaultBranch: String?
     /// First grapheme of the name, uppercased, for the letter avatar.
     public let avatarLetter: String
-    /// Worktree count badge. Reserved: stays `nil` (badge hidden) until the
-    /// worktrees milestone supplies real values.
+    /// Worktree count badge: the store-derived count once a worktrees fetch
+    /// has run for this project, or `nil` (badge hidden) before real data
+    /// exists — never a made-up zero badge.
     public let worktreeCount: Int?
     /// Open-workspace count badge: the number of ``openWorkspaces``, or `nil`
     /// when there are none (badge hidden, never a zero badge).
@@ -66,7 +67,13 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     ///   - project: The project as fetched from the Mac.
     ///   - openWorkspaces: The open workspaces whose `supermux_project_id`
     ///     matches this project. Defaults to none.
-    public init(project: SupermuxProjectDTO, openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot] = []) {
+    ///   - worktreeCount: The store-derived worktree count, or `nil` before a
+    ///     worktrees fetch has run (badge hidden). Defaults to `nil`.
+    public init(
+        project: SupermuxProjectDTO,
+        openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot] = [],
+        worktreeCount: Int? = nil
+    ) {
         self.id = project.id
         self.name = project.name
         self.rootPath = project.rootPath
@@ -76,7 +83,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         self.defaultBranch = project.defaultBranch
         let trimmed = project.name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.avatarLetter = trimmed.first.map { String($0).uppercased() } ?? "?"
-        self.worktreeCount = nil
+        self.worktreeCount = worktreeCount
         self.openWorkspaceCount = openWorkspaces.isEmpty ? nil : openWorkspaces.count
         self.openWorkspaces = openWorkspaces
     }

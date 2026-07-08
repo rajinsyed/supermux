@@ -32,12 +32,37 @@ public struct SupermuxMacClient: SupermuxMacCalling {
         if let etag {
             params["etag"] = etag
         }
-        let request = try MobileCoreRPCClient.requestData(
-            method: SupermuxMobileMethod.projectIcon.rawValue,
-            params: params
-        )
+        return try await send(method: SupermuxMobileMethod.projectIcon.rawValue, params: params)
+    }
+
+    public func worktreesList(_ request: SupermuxWorktreesListRequest) async throws -> SupermuxWorktreesListResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func worktreeSuggestBranch(
+        _ request: SupermuxWorktreeSuggestBranchRequest
+    ) async throws -> SupermuxBranchSuggestionResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func worktreeCreate(_ request: SupermuxWorktreeCreateRequest) async throws -> SupermuxWorktreeCreateResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func worktreeOpen(_ request: SupermuxWorktreeOpenRequest) async throws -> SupermuxWorktreeOpenResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func worktreeRemove(_ request: SupermuxWorktreeRemoveRequest) async throws -> SupermuxWorktreeRemoveResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    /// Sends one request and decodes the result frame into the typed
+    /// response — the single wire path every typed method funnels through.
+    private func send<Response: Decodable>(method: String, params: [String: Any]) async throws -> Response {
+        let request = try MobileCoreRPCClient.requestData(method: method, params: params)
         let result = try await client.sendRequest(request)
-        return try JSONDecoder().decode(SupermuxProjectIconResponse.self, from: result)
+        return try JSONDecoder().decode(Response.self, from: result)
     }
 
     /// Opens the live event stream for the given `supermux.*` topics.

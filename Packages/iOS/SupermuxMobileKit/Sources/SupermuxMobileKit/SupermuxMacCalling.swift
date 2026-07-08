@@ -22,6 +22,33 @@ public protocol SupermuxMacCalling: Sendable {
     ///   - etag: The caller's cached etag, if any.
     func projectIcon(projectID: String, etag: String?) async throws -> SupermuxProjectIconResponse
 
+    /// `mobile.supermux.worktrees.list`: one project's worktrees (with
+    /// open-workspace state and PR data when available).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func worktreesList(_ request: SupermuxWorktreesListRequest) async throws -> SupermuxWorktreesListResponse
+
+    /// `mobile.supermux.worktree.suggest_branch`: a mac-side branch-name
+    /// suggestion (AI when configured, friendly-random otherwise).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func worktreeSuggestBranch(
+        _ request: SupermuxWorktreeSuggestBranchRequest
+    ) async throws -> SupermuxBranchSuggestionResponse
+
+    /// `mobile.supermux.worktree.create`: creates a worktree and optionally
+    /// opens a workspace in it.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func worktreeCreate(_ request: SupermuxWorktreeCreateRequest) async throws -> SupermuxWorktreeCreateResponse
+
+    /// `mobile.supermux.worktree.open`: opens (or focuses) a workspace in an
+    /// existing worktree.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func worktreeOpen(_ request: SupermuxWorktreeOpenRequest) async throws -> SupermuxWorktreeOpenResponse
+
+    /// `mobile.supermux.worktree.remove`: removes a worktree. A dirty
+    /// worktree without `force` fails with the `dirty_worktree` code.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func worktreeRemove(_ request: SupermuxWorktreeRemoveRequest) async throws -> SupermuxWorktreeRemoveResponse
+
     /// Subscribes to `supermux.*` event topics. Events are payload-light
     /// pokes; consumers refetch through the matching request method. The
     /// stream finishes when the underlying connection drops; consumers

@@ -163,6 +163,57 @@ import Testing
         #expect(model.snapshot.isCollapsed == true)
     }
 
+    // MARK: Worktrees factory + count badge
+
+    @Test func worktreesStoreFactoryIsNilWithoutTheWorktreesCapability() async throws {
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(projects: [fixtureProject()])
+        let model = SupermuxProjectsSectionModel()
+        let session = Task {
+            await model.runSession(client: client, hostCapabilities: [Self.projectsCapability])
+        }
+        defer { session.cancel() }
+        try await wait.until { model.snapshot.hasLoaded }
+
+        #expect(model.actions.makeWorktreesStore(fixtureProject().id) == nil)
+    }
+
+    @Test func worktreesStoreFactoryIsNilWithoutALiveSession() {
+        let model = SupermuxProjectsSectionModel()
+        #expect(model.actions.makeWorktreesStore(fixtureProject().id) == nil)
+    }
+
+    @Test func worktreesStoreFeedsTheProjectRowsWorktreeCount() async throws {
+        let project = fixtureProject()
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(projects: [project])
+        client.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: [
+            SupermuxWorktreeDTO(path: "/w/one", branch: "one"),
+            SupermuxWorktreeDTO(path: "/w/two", branch: "two"),
+        ])
+        let model = SupermuxProjectsSectionModel()
+        let session = Task {
+            await model.runSession(
+                client: client,
+                hostCapabilities: [
+                    Self.projectsCapability,
+                    SupermuxMobileCapability.worktreesV1.rawValue,
+                ]
+            )
+        }
+        defer { session.cancel() }
+        try await wait.until { model.snapshot.hasLoaded }
+        // Reserved until real data exists: no badge before a fetch.
+        #expect(model.snapshot.rows.first?.worktreeCount == nil)
+
+        let store = try #require(model.actions.makeWorktreesStore(project.id))
+        #expect(store.projectID == project.id)
+        let runner = Task { await store.run() }
+        defer { runner.cancel() }
+
+        try await wait.until { model.snapshot.rows.first?.worktreeCount == 2 }
+    }
+
     // MARK: Icon action
 
     @Test func iconActionFetchesBytesForAKnownProjectAndNilForUnknown() async throws {

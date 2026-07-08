@@ -1,4 +1,5 @@
 public import Foundation
+public import SupermuxMobileKit
 
 /// Immutable value snapshot of the whole Projects section, computed by
 /// ``SupermuxProjectsSectionModel`` and passed across the shell's `List`
@@ -53,19 +54,26 @@ public struct SupermuxProjectsSectionActions {
     /// Opens a nested workspace by its UI row id — the same navigation the
     /// flat list's workspace rows use.
     public let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
+    /// Builds a worktrees store for one project against the LIVE session's
+    /// client, or `nil` while disconnected or when the host lacks
+    /// `supermux.worktrees.v1` (the detail screen's Worktrees section hides).
+    public let makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore?
 
     /// Memberwise initializer.
     /// - Parameters:
     ///   - toggleCollapsed: Toggles the section's local collapse state.
     ///   - iconPNGData: Fetches a project's custom icon PNG by project id.
     ///   - selectWorkspace: Opens a nested workspace by its UI row id.
+    ///   - makeWorktreesStore: Builds a worktrees store for one project.
     public init(
         toggleCollapsed: @escaping @MainActor () -> Void,
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
-        selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in }
+        selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
+        makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil }
     ) {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
         self.selectWorkspace = selectWorkspace
+        self.makeWorktreesStore = makeWorktreesStore
     }
 }

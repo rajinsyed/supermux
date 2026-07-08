@@ -30,6 +30,19 @@ public final class SupermuxProjectsSectionModel {
     /// re-download (the etag round-trip answers `not_modified`).
     @ObservationIgnored private let iconCache = SupermuxProjectIconCache()
 
+    /// The live session's client + capability snapshot, retained so worktrees
+    /// stores can be minted against the SAME connection the projects store
+    /// uses. Cleared with the session. Ignored by observation: connection
+    /// identity carries no render state.
+    @ObservationIgnored private var sessionClient: (any SupermuxMacCalling)?
+    @ObservationIgnored private var sessionCapabilities: SupermuxMobileCapabilities?
+
+    /// Worktree counts per project id, fed back by worktrees stores after
+    /// each successful fetch (the "derive from the store" count badge).
+    /// Observable so a fresh count re-projects the section rows. Reset per
+    /// session — counts never leak across Macs.
+    private var worktreeCounts: [String: Int] = [:]
+
     /// The open workspaces the shell last reported (project-associated only),
     /// joined onto project rows in ``snapshot``. Observable so a workspace
     /// change re-projects the section.
@@ -54,7 +67,8 @@ public final class SupermuxProjectsSectionModel {
             rows: store.projects.map { project in
                 SupermuxProjectRowSnapshot(
                     project: project,
-                    openWorkspaces: workspaceRows.filter { $0.projectID == project.id }
+                    openWorkspaces: workspaceRows.filter { $0.projectID == project.id },
+                    worktreeCount: worktreeCounts[project.id]
                 )
             }
         )
@@ -69,8 +83,38 @@ public final class SupermuxProjectsSectionModel {
             },
             selectWorkspace: { [weak self] workspaceID in
                 self?.selectWorkspaceAction(workspaceID)
+            },
+            makeWorktreesStore: { [weak self] projectID in
+                self?.makeWorktreesStore(forProjectID: projectID)
             }
         )
+    }
+
+    /// Builds a worktrees store for one project against the live session's
+    /// client and capability snapshot. `nil` while disconnected or when the
+    /// host lacks `supermux.worktrees.v1` (the capability gate — a fork phone
+    /// against an upstream Mac shows no worktree UI). The store feeds the
+    /// project row's worktree-count badge after each successful fetch.
+    /// - Parameter projectID: The project's UUID string.
+    public func makeWorktreesStore(forProjectID projectID: String) -> SupermuxMobileWorktreesStore? {
+        guard let sessionClient, let sessionCapabilities,
+              sessionCapabilities.supportsWorktrees else {
+            return nil
+        }
+        return SupermuxMobileWorktreesStore(
+            client: sessionClient,
+            capabilities: sessionCapabilities,
+            projectID: projectID,
+            onWorktreesChanged: { [weak self] projectID, count in
+                self?.recordWorktreeCount(count, forProjectID: projectID)
+            }
+        )
+    }
+
+    private func recordWorktreeCount(_ count: Int, forProjectID projectID: String) {
+        if worktreeCounts[projectID] != count {
+            worktreeCounts[projectID] = count
+        }
     }
 
     /// Feeds the shell's current workspace list (already mapped to
@@ -123,18 +167,24 @@ public final class SupermuxProjectsSectionModel {
         hostCapabilities: Set<String>
     ) async {
         collapsedOverride = nil
+        let capabilities = SupermuxMobileCapabilities(hostCapabilities: hostCapabilities)
         let store = SupermuxMobileProjectsStore(
             client: client,
-            capabilities: SupermuxMobileCapabilities(hostCapabilities: hostCapabilities),
+            capabilities: capabilities,
             iconCache: iconCache
         )
         self.store = store
+        sessionClient = client
+        sessionCapabilities = capabilities
+        worktreeCounts = [:]
         defer {
             // Only the still-current session clears itself; a replacement
             // session that already installed its store must not be torn down
             // by the old session's exit.
             if self.store === store {
                 self.store = nil
+                sessionClient = nil
+                sessionCapabilities = nil
             }
         }
         await store.run()
@@ -143,6 +193,9 @@ public final class SupermuxProjectsSectionModel {
     /// Drops the session immediately (connection went away).
     public func endSession() {
         store = nil
+        sessionClient = nil
+        sessionCapabilities = nil
+        worktreeCounts = [:]
         collapsedOverride = nil
     }
 }
