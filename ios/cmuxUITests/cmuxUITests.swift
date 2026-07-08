@@ -242,7 +242,10 @@ final class cmuxUITests: XCTestCase {
         let app = try launchConnectedApp(port: port)
         try openSelectedWorkspaceIfNeeded(app)
 
-        tap(app.buttons["MobileTerminalNewWorkspaceButton"], in: app)
+        // SUPERMUX:begin uitest-new-workspace-menu-item (this snapshot's iOS mounts New Workspace in the terminal dropdown, not a nav-bar MobileTerminalNewWorkspaceButton)
+        tap(app.buttons["MobileTerminalDropdown"], in: app)
+        tapMenuItem(app.buttons["MobileNewWorkspaceMenuItem"], in: app)
+        // SUPERMUX:end uitest-new-workspace-menu-item
         await assertHostSelection(
             workspaceID: "workspace-3",
             terminalID: "workspace-3-terminal-1",
@@ -596,6 +599,9 @@ final class cmuxUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["CMUX_UITEST_MOCK_DATA"] = mockData ? "1" : "0"
+        // SUPERMUX:begin uitest-clear-paired-mac-launch (pairing persists across launches since #89; every harness launch starts unpaired)
+        app.launchEnvironment["CMUX_UITEST_CLEAR_PAIRED_MACS"] = "1"
+        // SUPERMUX:end uitest-clear-paired-mac-launch
         for (key, value) in environment {
             app.launchEnvironment[key] = value
         }

@@ -117,6 +117,9 @@ Rules for adding a touchpoint:
 | 101 | `Packages/iOS/CmuxMobileShellModel/Sources/CmuxMobileShellModel/MobileWorkspacePreview.swift` | `supermux-mobile-workspace-fields` | One fence block: defaulted `public var supermuxProjectID/supermuxActivity: String? = nil` following the `machineColorIndex` pattern, so upstream initializers and call sites need no change |
 | 102 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileWorkspacePreview+RemoteMapping.swift` | `supermux-mobile-workspace-fields` | One fence block after `self.init(...)` in `init(remote:)`: copies the two decoded fields onto the preview (aggregation's `var stamped = workspace` copies then carry them everywhere) |
 | 103 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-project-workspaces`, `supermux-mobile-row-activity` | Hide filter: a fenced `supermuxFlatWorkspaces` helper (delegates to the `supermuxFlatRows(hidingProjectAssociated:)` array extension, active only while the Projects section is visible AND no search/filter) plus two fenced one-line swaps where upstream read `workspaces` (`filteredWorkspaces`, `groupedListItems`). Row dot: one fenced `.supermuxWorkspaceActivityDot(rawActivity:)` modifier on `WorkspaceNavigationRow` in `workspaceRow` |
+| 104 | `ios/cmux/AppCompositionRoot.swift` | `uitest-clear-paired-mac-state` | When `UITestConfig.mockDataEnabled` and the harness sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1`, deletes `Application Support/cmux/` (the `MobilePairedMacStore` sqlite + WAL/SHM) once at composition-root init, before `CMUXMobileRootScene` opens the store. Fixes cross-test pairing-state leakage on the shared simulator: since #89 made pairing actually complete, a persisted paired Mac from a prior test/run auto-navigated past `MobileAddDeviceForm` and its dead-host reconnect churn broke 3 cmuxUITests (cmuxUITests.swift:245/:586). No-op for real installs: the mock gate is DEBUG-only and the env var is only set by the XCUITest harness (#105) |
+| 105 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-clear-paired-mac-launch` | `launchApp` sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1` on every harness launch so each test starts from an unpaired slate (consumed by #104) |
+| 106 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-new-workspace-menu-item` | `testWorkspaceToolbarCreatesWorkspaceAndTerminal` creates the workspace via the terminal dropdown's `MobileNewWorkspaceMenuItem` instead of tapping a nav-bar `MobileTerminalNewWorkspaceButton`, because this upstream snapshot's iOS `WorkspaceDetailView` only mounts `newWorkspaceToolbarButton` in the non-iOS `#else` toolbar branch — on iOS the identifier does not exist and the tap times out deterministically (cmuxUITests.swift:245). Upstream never noticed (PR CI runs `-skip-testing:cmuxUITests`) and a newer upstream restores a nav-bar button; all behavioral assertions (host `workspace.create`, `workspace-3`/`workspace-3-terminal-1` selection, menu-item existence) are unchanged |
 
 ## How to re-apply
 
@@ -1658,3 +1661,65 @@ deliberately untouched. The host now also advertises `supermux.activity.v1`.
 Workspaces section. Its `Package.swift` gained a path dep on `../CmuxMobileShellModel` (target +
 test target) so the partition/mapping can name `MobileWorkspacePreview`. New localization keys
 `supermux.activity.working/needsInput/ready` exist in BOTH en and ja in the package catalog.
+
+### 104–105. XCUITest paired-Mac state hygiene (`uitest-clear-paired-mac-state` / `-launch`)
+
+Since #89 fixed the mock-host connect flow, XCUITest pairings actually complete and the app
+persists the paired mock Mac in `Application Support/cmux/paired-macs.sqlite3` inside the shared
+simulator app container (`/tmp/cmux-ios-readiness` runs reuse the same "iPhone 17" device). That
+state leaked across tests and runs: `testAddDeviceManualHostValidationUsesStableIdentifiers` and
+`testAddDevicePairButtonStaysVisibleWhenKeyboardOpens` launched onto `MobileWorkspaceShell` with a
+dead-host reconnect error instead of the `MobileAddDeviceForm` they expect (cmuxUITests.swift:586),
+and `testWorkspaceToolbarCreatesWorkspaceAndTerminal` had its navigation disrupted by stale-pairing
+reconnect churn (cmuxUITests.swift:245, then a runner crash + 600s diagnostics timeout).
+
+Two fences make every harness launch start from an unpaired slate, siblings of the existing
+`CMUX_UITEST_CLEAR_AUTH` reset path:
+
+- **`ios/cmux/AppCompositionRoot.swift` (#104, `uitest-clear-paired-mac-state`):** at the top of
+  `AppCompositionRoot.init` (runs exactly once per process, before `CMUXMobileRootScene` opens
+  `MobilePairedMacStore`), when `UITestConfig.mockDataEnabled` AND
+  `CMUX_UITEST_CLEAR_PAIRED_MACS=1`, remove the `Application Support/cmux` directory (`try?`, so a
+  missing directory is a no-op). Do NOT move this into `CMUXMobileRootScene.init` — that view is
+  re-initialized on body re-evaluation and would delete a freshly persisted pairing mid-session.
+- **`ios/cmuxUITests/cmuxUITests.swift` (#105, `uitest-clear-paired-mac-launch`):** one line in
+  `launchApp` right after the `CMUX_UITEST_MOCK_DATA` assignment sets
+  `CMUX_UITEST_CLEAR_PAIRED_MACS=1` for every harness launch.
+
+Re-apply note: if upstream adds its own persisted-pairing reset hook (or erases the simulator per
+run in CI), drop both fences and take upstream. Otherwise the requirement is: every mock-harness
+launch must start with no persisted paired Mac, the clear must run before the paired-Mac store is
+opened, exactly once per process, and must never fire outside the DEBUG mock harness
+(`UITestConfig.mockDataEnabled` gates it; real installs never see the env var). Tests must NOT be
+weakened to tolerate leaked pairing state instead.
+
+### 106. `ios/cmuxUITests/cmuxUITests.swift` — `uitest-new-workspace-menu-item`
+
+`testWorkspaceToolbarCreatesWorkspaceAndTerminal` tapped `app.buttons["MobileTerminalNewWorkspaceButton"]`,
+but in this upstream snapshot the iOS `WorkspaceDetailView.toolbar` mounts only
+`glassTitle` + `chatToggleButton` + `terminalPickerToolbarButton` in `topBarTrailing`;
+`newWorkspaceToolbarButton` (which carries that identifier) sits solely in the non-iOS `#else`
+branch. On iOS the New Workspace action lives in the terminal dropdown menu as
+`MobileNewWorkspaceMenuItem` (`terminalPickerMenuContent`). The test therefore failed
+deterministically at cmuxUITests.swift:245 even from a clean pairing slate — this is test/UI
+drift, not the #104/#105 state leakage (upstream PR CI skips cmuxUITests, so upstream never saw
+it; a NEWER upstream restores a nav-bar new-workspace button alongside `MobileWorkspaceBackButton`
+/ `MobileWorkspaceTitleMenu`).
+
+The fence swaps the single tap for the same two-step pattern the test already uses for New
+Terminal (`MobileTerminalDropdown` → `tapMenuItem`), leaving every behavioral assertion
+(`assertHostSelection` for `workspace-3`/`workspace-3-terminal-1`, terminal menu-item existence,
+new-terminal flow) untouched:
+
+```swift
+// SUPERMUX:begin uitest-new-workspace-menu-item (this snapshot's iOS mounts New Workspace in the terminal dropdown, not a nav-bar MobileTerminalNewWorkspaceButton)
+tap(app.buttons["MobileTerminalDropdown"], in: app)
+tapMenuItem(app.buttons["MobileNewWorkspaceMenuItem"], in: app)
+// SUPERMUX:end uitest-new-workspace-menu-item
+```
+
+Re-apply note: on the next upstream merge, take upstream's version of this test wholesale and
+drop this fence — upstream's newer UI re-adds a nav-bar create button and rewrites the test
+around `MobileWorkspaceBackButton`/`MobileWorkspaceTitleMenu`. The requirement while this
+snapshot's UI stands: the test must drive New Workspace through a control that actually exists on
+iOS, without weakening the mock-host `workspace.create`/selection assertions.
