@@ -30,6 +30,37 @@ extension TerminalController {
         }
     }
 
+    /// `mobile.supermux.project.open`: opens (or focuses) a workspace at the
+    /// project root through the same ``SupermuxTabManagerOpener`` path the
+    /// desktop uses — which records the workspace→project association via
+    /// ``SupermuxWorkspaceAssociationStore`` so the workspace nests under the
+    /// project in the Mac sidebar. Result: `{workspace_id, project_id}`.
+    @MainActor
+    func v2SupermuxProjectOpen(params: [String: Any]) async -> V2CallResult {
+        let project: SupermuxProject
+        switch await supermuxResolveProject(params: params) {
+        case let .failure(error): return error
+        case let .success(resolved): project = resolved
+        }
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
+        }
+        SupermuxComposition.projectsModel.noteOpened(id: project.id)
+        guard let workspaceID = SupermuxTabManagerOpener(tabManager: tabManager)
+            .openWorkspaceReturningWorkspaceId(SupermuxOpenWorkspaceRequest(
+                title: project.name,
+                directory: project.rootPath,
+                colorHex: project.colorHex,
+                projectId: project.id
+            )) else {
+            return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
+        }
+        return .ok([
+            "workspace_id": workspaceID.uuidString,
+            "project_id": project.id.uuidString,
+        ])
+    }
+
     /// `mobile.supermux.project.icon`: the project's icon as etag'd base64
     /// PNG. With a matching `etag` param the result is
     /// `{not_modified: true, etag}` and carries no image data.

@@ -18,6 +18,9 @@ enum SupermuxMobileCapabilities {
             // field (and the activity observer re-emits workspace.updated on
             // agent lifecycle changes).
             SupermuxMobileCapability.activityV1.rawValue,
+            // worktrees.list / worktree.suggest_branch / worktree.create /
+            // worktree.open / worktree.remove (and project.open) are served.
+            SupermuxMobileCapability.worktreesV1.rawValue,
         ]
     }
 }

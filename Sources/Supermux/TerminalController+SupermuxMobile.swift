@@ -25,6 +25,18 @@ extension TerminalController {
             return await v2SupermuxProjectsList(params: params)
         case .projectIcon:
             return await v2SupermuxProjectIcon(params: params)
+        case .projectOpen:
+            return await v2SupermuxProjectOpen(params: params)
+        case .worktreesList:
+            return await v2SupermuxWorktreesList(params: params)
+        case .worktreeSuggestBranch:
+            return await v2SupermuxWorktreeSuggestBranch(params: params)
+        case .worktreeCreate:
+            return await v2SupermuxWorktreeCreate(params: params)
+        case .worktreeOpen:
+            return await v2SupermuxWorktreeOpen(params: params)
+        case .worktreeRemove:
+            return await v2SupermuxWorktreeRemove(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method

@@ -33,6 +33,14 @@ public struct SupermuxPullRequest: Hashable, Sendable {
     public let status: Status
     /// The PR's web URL, opened when the badge is clicked.
     public let url: URL
+    /// The PR's title, when the source that produced this value carries one.
+    ///
+    /// The sidebar badge never renders it, but the mobile wire DTO
+    /// (`SupermuxPullRequestDTO`) forwards it to the phone. cmux's probe
+    /// pipeline (`CmuxGit.WorkspacePullRequestResolvedItem`) does not surface
+    /// titles today, so production values are `nil` until it does; the field
+    /// exists so title-carrying sources (and test stubs) flow through intact.
+    public let title: String?
     /// Whether the badge is stale (kept after repeated probe failures); rendered
     /// dimmed, mirroring cmux's own stale-PR treatment.
     public let isStale: Bool
@@ -42,11 +50,13 @@ public struct SupermuxPullRequest: Hashable, Sendable {
     ///   - number: The PR number.
     ///   - status: The PR's lifecycle state.
     ///   - url: The PR's web URL.
+    ///   - title: The PR's title, when known; defaults to `nil`.
     ///   - isStale: Whether the badge should render dimmed; defaults to `false`.
-    public init(number: Int, status: Status, url: URL, isStale: Bool = false) {
+    public init(number: Int, status: Status, url: URL, title: String? = nil, isStale: Bool = false) {
         self.number = number
         self.status = status
         self.url = url
+        self.title = title
         self.isStale = isStale
     }
 }
