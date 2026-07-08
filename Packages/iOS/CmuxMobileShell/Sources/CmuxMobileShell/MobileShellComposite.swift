@@ -585,6 +585,11 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     }
     /// `remoteClient` narrowed for `MobileShellComposite+AgentChat.swift`.
     var remoteClientForAgentChat: MobileCoreRPCClient? { remoteClient }
+    // SUPERMUX:begin supermux-mobile-client-mount (live RPC client + host-capability snapshot for the fork's supermux phone stores; nil unless connected, re-read per (re)connect — see SUPERMUX-TOUCHPOINTS.md)
+    public var supermuxConnectionSeam: (rpcClient: MobileCoreRPCClient, hostCapabilities: Set<String>)? {
+        connectionState == .connected ? remoteClient.map { ($0, supportedHostCapabilities) } : nil
+    }
+    // SUPERMUX:end supermux-mobile-client-mount
     private var terminalEventListenerTask: Task<Void, Never>?
     private var terminalEventListenerID: UUID?
     /// Recovers the Mac's identity post-handshake for tickets that arrived

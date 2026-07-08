@@ -1,6 +1,9 @@
 import CmuxMobileShell
 import CmuxMobileShellModel
 import CmuxMobileSupport
+// SUPERMUX:begin supermux-mobile-projects-section (fork Projects section — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-projects-section
 import SwiftUI
 #if os(iOS)
 @preconcurrency import UIKit
@@ -101,6 +104,9 @@ struct WorkspaceListView: View {
     /// Stored at list scope so reusable rows do not own transient presentation
     /// state while `List` is recycling swipe-action rows.
     @State private var workspacePendingCloseID: MobileWorkspacePreview.ID?
+    // SUPERMUX:begin supermux-mobile-projects-section (fork-owned section model; rows below the List get value snapshots + closures only)
+    @State private var supermuxProjects = SupermuxProjectsSectionModel()
+    // SUPERMUX:end supermux-mobile-projects-section
 
     private var trimmedQuery: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -193,6 +199,9 @@ struct WorkspaceListView: View {
                         .listRowSeparator(.hidden)
                 }
             }
+            // SUPERMUX:begin supermux-mobile-projects-section (collapsible Projects section above the group sections; hidden without supermux.projects.v1)
+            SupermuxProjectsMobileSection(section: supermuxProjects.snapshot, actions: supermuxProjects.actions)
+            // SUPERMUX:end supermux-mobile-projects-section
             Section {
                 if rendersGroupedSections {
                     groupedRows
@@ -209,6 +218,9 @@ struct WorkspaceListView: View {
             }
         }
         .listStyle(.plain)
+        // SUPERMUX:begin supermux-mobile-projects-section (session driver: rebuilds the fork stores per (re)connect/capability change)
+        .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam)
+        // SUPERMUX:end supermux-mobile-projects-section
         .workspaceListRefreshable(refresh)
         .onChange(of: MobileWorkspaceListFilter.machineIDs(in: workspaces)) { _, present in
             // Drop machine filters whose Mac left the aggregated list (a secondary

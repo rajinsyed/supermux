@@ -83,6 +83,9 @@
       <FileRef
          location = "group:SupermuxMobileKit">
       </FileRef>
+      <FileRef
+         location = "group:SupermuxMobileUI">
+      </FileRef>
    </Group>
    <Group
       location = "container:Packages/macOS"

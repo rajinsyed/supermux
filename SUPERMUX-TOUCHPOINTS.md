@@ -109,6 +109,9 @@ Rules for adding a touchpoint:
 | 93 | `Sources/Mobile/MobileHostService+Capabilities.swift` | `mobile-supermux-capabilities` | Appends `SupermuxMobileCapabilities.advertised` (fork-owned `Sources/Supermux/SupermuxMobileCapabilities.swift`) to `mobileHostCapabilities` so the phone can gate supermux screens on `supermux.*.v1` entries |
 | 94 | `Sources/AppDelegate.swift` | `mobile-supermux-observers` | One line at the top of `ensureMobileWorkspaceListObserver(for:)` calls `SupermuxMobileHostGlue.activateIfNeeded()` (fork-owned `Sources/Supermux/SupermuxMobileObservers.swift`) so fork mobile observers activate exactly where upstream constructs `MobileWorkspaceListObserver` |
 | 95 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the `SupermuxMobileCore` package (local package reference + product dependency on the `cmux` and `cmuxTests` targets), the five `Sources/Supermux/` mobile files (`TerminalController+SupermuxMobile.swift`, `SupermuxMobileHost+Projects.swift`, `SupermuxMobileAuthorization.swift`, `SupermuxMobileCapabilities.swift`, `SupermuxMobileObservers.swift`) into the cmux target, and `cmuxTests/SupermuxMobileAuthorizationTests.swift` into the cmuxTests target (all ids prefixed `50BE0002…`) |
+| 96 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `supermux-mobile-client-mount` | One computed property `supermuxConnectionSeam` (next to `remoteClientForAgentChat`) exposes the live `MobileCoreRPCClient` + `supportedHostCapabilities` snapshot to the fork's supermux phone stores; `nil` unless connected. All tracked `@Observable` reads, so the fork's section driver re-runs (and rebuilds `SupermuxMacClient` + stores) on every (re)connect and on capability arrival |
+| 97 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-projects-section` | Four 1-line fences: `import SupermuxMobileUI`; a `@State` `SupermuxProjectsSectionModel`; the `SupermuxProjectsMobileSection(section:actions:)` mount inside the `List` above the workspace/group section; the `.supermuxProjectsSectionDriver(model:connection:)` session driver on the `List` (fed by the #96 seam). Section renders nothing without `supermux.projects.v1` |
+| 98 | `Packages/iOS/CmuxMobileShellUI/Package.swift` | `supermux-mobile-shellui-deps` | Two fenced 1-line additions: `.package(path: "../SupermuxMobileUI")` in `dependencies` and `"SupermuxMobileUI"` in the `CmuxMobileShellUI` target dependencies (fork-owned Projects section package) |
 
 ## How to re-apply
 
@@ -1566,3 +1569,41 @@ The package itself is fork-owned (no fences inside it). Note: upstream's
 `Packages/iOS/SupermuxMobile*`, so its per-line rules are not mechanically enforced on this
 package (the repo-wide namespace-type rule still is); the package is written to those rules
 anyway (no singletons, no Combine, no locks, no free functions, no namespace enums).
+
+### 96–98 (+ 13/90 cont.). iOS Projects section (`Packages/iOS/SupermuxMobileUI` + shell mount)
+
+`Packages/iOS/SupermuxMobileUI` is the supermux-owned iOS screens package for the companion app
+(deps, all path-only: `SupermuxMobileKit`, `SupermuxMobileCore`, and `CmuxMobileRPC` — the latter
+declared directly so the shell's typed `(rpcClient: MobileCoreRPCClient, …)` seam can be named in
+the driver API; no `Package.resolved` is generated). It owns its `Resources/Localizable.xcstrings`
+(every `supermux.*` key localized in BOTH `en` and `ja`; a package test parses the catalog and
+fails on any missing/empty translation) and contains `SupermuxProjectsSectionModel` (one
+`SupermuxMobileProjectsStore` per connection session), the value-snapshot types
+(`SupermuxProjectsSectionSnapshot` / `SupermuxProjectRowSnapshot` / `SupermuxProjectsSectionActions`),
+`SupermuxProjectsMobileSection` (collapsible section; rows = custom icon → SF symbol → letter
+avatar tinted by `color_hex`), the read-only `SupermuxProjectDetailScreen`, and the
+`supermuxProjectsSectionDriver` view extension. Upstream touchpoints:
+
+- **`MobileShellComposite.swift` (#96, `supermux-mobile-client-mount`):** the 3-line computed
+  `supermuxConnectionSeam` next to `remoteClientForAgentChat`. Re-apply: any placement inside the
+  class works; it must read `connectionState`, `remoteClient`, and `supportedHostCapabilities`
+  (all observation-tracked) and return `nil` unless `.connected`. Raise the
+  `.github/swift-file-length-budget.tsv` row by the fenced growth (+5).
+- **`WorkspaceListView.swift` (#97, `supermux-mobile-projects-section`, four 1-line fences):**
+  the import; `@State private var supermuxProjects = SupermuxProjectsSectionModel()`;
+  `SupermuxProjectsMobileSection(section: supermuxProjects.snapshot, actions: supermuxProjects.actions)`
+  as the first section-level entry before the workspaces `Section` (below the connection-status
+  rows); `.supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam)`
+  directly on the `List` (NOT inside it — the driver's `.task(id:)` must live on a stable view).
+  Re-apply: keep the mount above the workspace/group sections and the driver on the `List`.
+- **`Packages/iOS/CmuxMobileShellUI/Package.swift` (#98, `supermux-mobile-shellui-deps`):** the
+  package + target dependency lines. Re-apply: both lines, same fence id.
+- **`.github/workflows/ci.yml` (#13, inside the existing `ci-package-tests` fence):**
+  `swift test --package-path Packages/iOS/SupermuxMobileUI` appended after the SupermuxMobileKit
+  entry (same pattern; restore the fenced block, keep every fork package listed).
+- **`cmux.xcworkspace/contents.xcworkspacedata` (#90, unfenced — generated XML):** the package's
+  FileRef in the iOS group. Re-apply with `python3 scripts/check-workspace-package-groups.py --write`;
+  never hand-edit.
+
+Same `lint-ios-package-conventions.sh` SCOPES caveat as SupermuxMobileKit above; the package is
+written to those rules anyway.
