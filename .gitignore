@@ -67,3 +67,4 @@ tmux-*.log
 
 # Local-only phone-build backup (patch + LocalConfig backup + restore notes).
 .phone-build/
+mission/
