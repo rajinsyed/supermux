@@ -1,0 +1,97 @@
+public import CmuxMobileRPC
+import Foundation
+public import SupermuxMobileCore
+
+/// The production ``SupermuxMacCalling``: a thin adapter over the paired
+/// Mac's multiplexed RPC connection.
+///
+/// Requests go through `MobileCoreRPCClient.sendRequest` (which owns auth,
+/// timeouts, and reconnect policy) and decode the result frame into the
+/// typed responses; events ride the shared `mobile.events.subscribe`
+/// pub/sub plane exactly like `MobileChatEventSource`. No state lives here
+/// — everything above this seam tests against a fake.
+public struct SupermuxMacClient: SupermuxMacCalling {
+    private let client: MobileCoreRPCClient
+
+    /// Creates the adapter.
+    /// - Parameter client: The connected RPC client for the paired Mac.
+    public init(client: MobileCoreRPCClient) {
+        self.client = client
+    }
+
+    public func projectsList() async throws -> SupermuxProjectsListResponse {
+        let request = try MobileCoreRPCClient.requestData(
+            method: SupermuxMobileMethod.projectsList.rawValue
+        )
+        let result = try await client.sendRequest(request)
+        return try JSONDecoder().decode(SupermuxProjectsListResponse.self, from: result)
+    }
+
+    public func projectIcon(projectID: String, etag: String?) async throws -> SupermuxProjectIconResponse {
+        var params: [String: Any] = ["project_id": projectID]
+        if let etag {
+            params["etag"] = etag
+        }
+        let request = try MobileCoreRPCClient.requestData(
+            method: SupermuxMobileMethod.projectIcon.rawValue,
+            params: params
+        )
+        let result = try await client.sendRequest(request)
+        return try JSONDecoder().decode(SupermuxProjectIconResponse.self, from: result)
+    }
+
+    /// Opens the live event stream for the given `supermux.*` topics.
+    ///
+    /// Registers server-side AFTER the local listener exists so no event
+    /// falls between subscribe and handshake; a failed handshake finishes
+    /// the stream (the server never feeds an unregistered connection). The
+    /// stream also finishes when the connection drops; store run loops
+    /// resubscribe. Consumer cancellation withdraws the server-side
+    /// registration.
+    public func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {
+        let topicStrings = topics.map(\.rawValue).sorted()
+        let envelopes = await client.subscribe(to: Set(topicStrings))
+        let client = self.client
+        let streamID = UUID().uuidString
+        return AsyncStream { continuation in
+            let pump = Task {
+                do {
+                    let subscribe = try MobileCoreRPCClient.requestData(
+                        method: "mobile.events.subscribe",
+                        params: [
+                            "topics": topicStrings,
+                            "stream_id": streamID,
+                        ]
+                    )
+                    _ = try await client.sendRequest(subscribe)
+                } catch {
+                    continuation.finish()
+                    return
+                }
+                for await envelope in envelopes {
+                    guard let event = SupermuxMobileEvent(
+                        topic: envelope.topic,
+                        payloadJSON: envelope.payloadJSON
+                    ) else { continue }
+                    continuation.yield(event)
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { reason in
+                pump.cancel()
+                // Withdraw the server-side registration only on consumer
+                // cancellation; a `.finished` means the connection died and
+                // an unsubscribe would reopen a torn-down transport.
+                guard case .cancelled = reason else { return }
+                Task {
+                    if let unsubscribe = try? MobileCoreRPCClient.requestData(
+                        method: "mobile.events.unsubscribe",
+                        params: ["stream_id": streamID]
+                    ) {
+                        _ = try? await client.sendRequest(unsubscribe)
+                    }
+                }
+            }
+        }
+    }
+}

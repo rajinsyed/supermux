@@ -878,6 +878,12 @@ jobs:
           echo "::group::swift test Packages/Shared/SupermuxMobileCore"
           swift test --package-path Packages/Shared/SupermuxMobileCore
           echo "::endgroup::"
+          # SupermuxMobileKit is supermux-owned and absent from upstream's
+          # PACKAGES allowlist above; test it explicitly so its store/
+          # capability-gating suite (UI-01/UI-02) gates CI.
+          echo "::group::swift test Packages/iOS/SupermuxMobileKit"
+          swift test --package-path Packages/iOS/SupermuxMobileKit
+          echo "::endgroup::"
           # SUPERMUX:end ci-package-tests
 
   agent-session-web-resources:

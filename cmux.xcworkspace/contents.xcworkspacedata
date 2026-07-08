@@ -80,6 +80,9 @@
       <FileRef
          location = "group:CmuxMobileWorkspace">
       </FileRef>
+      <FileRef
+         location = "group:SupermuxMobileKit">
+      </FileRef>
    </Group>
    <Group
       location = "container:Packages/macOS"
