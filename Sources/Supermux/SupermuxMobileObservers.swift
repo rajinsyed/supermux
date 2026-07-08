@@ -4,9 +4,13 @@ import SupermuxMobileCore
 
 /// Watches ``SupermuxProjectsModel`` and emits `supermux.projects.updated` to
 /// subscribed mobile clients whenever the iOS-facing shape of the projects
-/// list materially changes (same pattern as `MobileWorkspaceListObserver`:
-/// observe the source of truth, hash-diff, throttle, emit a payload-light
-/// poke; the phone refetches via `mobile.supermux.projects.list`).
+/// document materially changes — the project records, the terminal presets
+/// (same file, same topic), or the section collapse state (same pattern as
+/// `MobileWorkspaceListObserver`: observe the source of truth, hash-diff,
+/// throttle, emit a payload-light poke; the phone refetches via
+/// `mobile.supermux.projects.list`). Because every write handler mutates the
+/// model, this is the single emission path for mobile AND desktop edits —
+/// handlers never emit ad hoc, so double-pokes are impossible.
 ///
 /// The model is `@Observable`, so instead of Combine publishers this observer
 /// re-arms `withObservationTracking` around one summary-hash read. A mutation
@@ -60,7 +64,11 @@ final class SupermuxMobileProjectsObserver {
     /// read), emits when it changed, and stores the new value.
     private func emitIfNeededAndRearm(force: Bool) {
         let hash = withObservationTracking {
-            Self.summaryHash(projects: model.projects, isSectionCollapsed: model.isSectionCollapsed)
+            Self.summaryHash(
+                projects: model.projects,
+                presets: model.presets,
+                isSectionCollapsed: model.isSectionCollapsed
+            )
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.modelDidChange()
@@ -74,10 +82,17 @@ final class SupermuxMobileProjectsObserver {
     }
 
     /// Stable hash of the iOS-facing projection: the full project records (the
-    /// DTO derives from every stored field) plus the section collapse state.
-    private static func summaryHash(projects: [SupermuxProject], isSectionCollapsed: Bool) -> Int {
+    /// DTO derives from every stored field), the terminal presets (they
+    /// persist in the same projects file and ride the same topic), and the
+    /// section collapse state.
+    private static func summaryHash(
+        projects: [SupermuxProject],
+        presets: [SupermuxTerminalPreset],
+        isSectionCollapsed: Bool
+    ) -> Int {
         var hasher = Hasher()
         hasher.combine(projects)
+        hasher.combine(presets)
         hasher.combine(isSectionCollapsed)
         return hasher.finalize()
     }

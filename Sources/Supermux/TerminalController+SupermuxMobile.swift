@@ -23,10 +23,24 @@ extension TerminalController {
         switch SupermuxMobileMethod(rawValue: method) {
         case .projectsList:
             return await v2SupermuxProjectsList(params: params)
+        case .projectCreate:
+            return await v2SupermuxProjectCreate(params: params)
+        case .projectUpdate:
+            return await v2SupermuxProjectUpdate(params: params)
+        case .projectDelete:
+            return await v2SupermuxProjectDelete(params: params)
+        case .projectsSetSectionCollapsed:
+            return await v2SupermuxProjectsSetSectionCollapsed(params: params)
         case .projectIcon:
             return await v2SupermuxProjectIcon(params: params)
         case .projectOpen:
             return await v2SupermuxProjectOpen(params: params)
+        case .presetCreate:
+            return await v2SupermuxPresetCreate(params: params)
+        case .presetUpdate:
+            return await v2SupermuxPresetUpdate(params: params)
+        case .presetDelete:
+            return await v2SupermuxPresetDelete(params: params)
         case .worktreesList:
             return await v2SupermuxWorktreesList(params: params)
         case .worktreeSuggestBranch:

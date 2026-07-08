@@ -29,7 +29,8 @@ import Testing
                 ),
             ],
             createdAt: 1_900_000_000,
-            lastOpenedAt: 1_900_000_100
+            lastOpenedAt: 1_900_000_100,
+            configPath: ".supermux/config.json"
         )
     }
 
@@ -44,7 +45,7 @@ import Testing
             "id", "name", "root_path", "color_hex", "icon_symbol",
             "has_custom_icon", "default_branch", "worktrees_dir_name",
             "run_commands", "setup_commands", "teardown_commands", "actions",
-            "created_at", "last_opened_at",
+            "created_at", "last_opened_at", "config_path",
         ])
     }
 
@@ -59,6 +60,7 @@ import Testing
         #expect(project.colorHex == nil)
         #expect(project.actions == nil)
         #expect(project.createdAt == nil)
+        #expect(project.configPath == nil)
     }
 
     @Test func projectUnknownFieldTolerance() throws {

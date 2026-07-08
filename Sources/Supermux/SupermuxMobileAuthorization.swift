@@ -45,7 +45,7 @@ enum SupermuxMobileAuthorization {
              .filesTrash:
             return .workspaceScopedPermitted
         case .projectsList, .projectCreate, .projectUpdate, .projectDelete,
-             .projectOpen, .projectIcon,
+             .projectOpen, .projectIcon, .projectsSetSectionCollapsed,
              .worktreesList, .worktreeSuggestBranch, .worktreeCreate,
              .worktreeOpen, .worktreeRemove,
              .runState, .runStart, .runStop,

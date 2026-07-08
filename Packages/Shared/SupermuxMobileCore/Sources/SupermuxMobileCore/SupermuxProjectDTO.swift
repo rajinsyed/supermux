@@ -34,6 +34,12 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
     public var createdAt: Double?
     /// Last time a workspace was opened from the project, Unix seconds.
     public var lastOpenedAt: Double?
+    /// Path (relative to ``rootPath``) of the repo-shipped `config.json`
+    /// managing the run/setup/teardown/actions fields, e.g.
+    /// `".supermux/config.json"` — the read-only marker: when present those
+    /// fields are config-owned and `project.update` rejects patches to them,
+    /// exactly like the desktop editor disables them. `nil` when user-owned.
+    public var configPath: String?
 
     /// Creates a project DTO.
     /// - Parameters:
@@ -51,6 +57,8 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
     ///   - actions: Optional named custom actions.
     ///   - createdAt: Optional registration time, Unix seconds.
     ///   - lastOpenedAt: Optional last-opened time, Unix seconds.
+    ///   - configPath: Optional relative path of the managing `config.json`
+    ///     (the read-only marker for the config-owned fields).
     public init(
         id: String,
         name: String,
@@ -65,7 +73,8 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         teardownCommands: [String]? = nil,
         actions: [SupermuxProjectActionDTO]? = nil,
         createdAt: Double? = nil,
-        lastOpenedAt: Double? = nil
+        lastOpenedAt: Double? = nil,
+        configPath: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -81,6 +90,7 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         self.actions = actions
         self.createdAt = createdAt
         self.lastOpenedAt = lastOpenedAt
+        self.configPath = configPath
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -98,5 +108,6 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         case actions
         case createdAt = "created_at"
         case lastOpenedAt = "last_opened_at"
+        case configPath = "config_path"
     }
 }

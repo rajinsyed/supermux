@@ -21,6 +21,10 @@ enum SupermuxMobileCapabilities {
             // worktrees.list / worktree.suggest_branch / worktree.create /
             // worktree.open / worktree.remove (and project.open) are served.
             SupermuxMobileCapability.worktreesV1.rawValue,
+            // preset.create / preset.update / preset.delete are served.
+            // preset.launch stays method_not_found until the launch feature
+            // ships (m4); the phone must tolerate that error meanwhile.
+            SupermuxMobileCapability.presetsV1.rawValue,
         ]
     }
 }

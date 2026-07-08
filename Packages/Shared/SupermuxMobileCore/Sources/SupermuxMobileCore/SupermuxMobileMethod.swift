@@ -19,6 +19,8 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     case projectOpen = "mobile.supermux.project.open"
     /// Fetches the project's custom icon (base64 PNG, etag-cached).
     case projectIcon = "mobile.supermux.project.icon"
+    /// Persists the sidebar Projects section's collapse state.
+    case projectsSetSectionCollapsed = "mobile.supermux.projects.set_section_collapsed"
 
     // MARK: Worktrees
 

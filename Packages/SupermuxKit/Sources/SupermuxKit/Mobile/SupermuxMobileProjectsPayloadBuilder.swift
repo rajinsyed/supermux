@@ -37,19 +37,35 @@ public struct SupermuxMobileProjectsPayloadBuilder: Sendable {
         projects: [SupermuxProject],
         isSectionCollapsed: Bool
     ) throws -> [String: Any] {
-        let wire = SupermuxWireJSON()
-        let encoded = try projects.map { project in
-            try wire.dictionary(from: SupermuxProjectDTO(
-                project: project,
-                hasCustomIcon: iconResolver.resolveAvatar(
-                    rootPath: project.rootPath,
-                    customIconPath: project.customIconPath
-                ) != nil
-            ))
-        }
+        let encoded = try projects.map(encodedProject(_:))
         return [
             "projects": encoded,
             "section_collapsed": isSectionCollapsed,
         ]
+    }
+
+    /// Encodes the single-project result payload the `project.create` and
+    /// `project.update` write handlers return (`{project: SupermuxProjectDTO}`).
+    /// - Parameter project: The created/updated record.
+    /// - Returns: The RPC result object.
+    /// - Throws: Any encoding failure from the shared wire bridge.
+    public func projectPayload(project: SupermuxProject) throws -> [String: Any] {
+        ["project": try encodedProject(project)]
+    }
+
+    /// One project's wire dictionary, with the fetchable-icon flag and the
+    /// config-managed read-only marker resolved (both are file probes — run
+    /// this off the main actor).
+    private func encodedProject(_ project: SupermuxProject) throws -> [String: Any] {
+        try SupermuxWireJSON().dictionary(from: SupermuxProjectDTO(
+            project: project,
+            hasCustomIcon: iconResolver.resolveAvatar(
+                rootPath: project.rootPath,
+                customIconPath: project.customIconPath
+            ) != nil,
+            configPath: SupermuxMobileProjectConfigMarker.managedRelativePath(
+                projectRoot: project.rootPath
+            )
+        ))
     }
 }

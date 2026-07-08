@@ -14,7 +14,12 @@ extension SupermuxProjectDTO {
     ///     (the caller resolves it, e.g. via
     ///     ``SupermuxProjectIconResolver/resolveAvatar(rootPath:customIconPath:)``,
     ///     so this mapping stays pure).
-    public init(project: SupermuxProject, hasCustomIcon: Bool) {
+    ///   - configPath: Relative path of the repo-shipped `config.json`
+    ///     managing the run/setup/teardown/actions fields (the read-only
+    ///     marker; the caller resolves it via
+    ///     ``SupermuxMobileProjectConfigMarker/managedRelativePath(projectRoot:)``),
+    ///     or `nil` when those fields are user-owned.
+    public init(project: SupermuxProject, hasCustomIcon: Bool, configPath: String? = nil) {
         self.init(
             id: project.id.uuidString,
             name: project.name,
@@ -29,7 +34,8 @@ extension SupermuxProjectDTO {
             teardownCommands: project.teardownCommands,
             actions: project.actions.map(SupermuxProjectActionDTO.init(action:)),
             createdAt: project.createdAt.timeIntervalSince1970,
-            lastOpenedAt: project.lastOpenedAt?.timeIntervalSince1970
+            lastOpenedAt: project.lastOpenedAt?.timeIntervalSince1970,
+            configPath: configPath
         )
     }
 }

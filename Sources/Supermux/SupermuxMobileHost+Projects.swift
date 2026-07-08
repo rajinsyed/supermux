@@ -2,10 +2,14 @@ import Foundation
 import SupermuxKit
 import SupermuxMobileCore
 
-/// `mobile.supermux.projects.*` read handlers: the Mac side of the iOS
-/// Projects section. All state is read through ``SupermuxComposition`` (the
-/// same projects model every Mac sidebar shares); the wire payloads are built
-/// by package-tested SupermuxKit types.
+/// `mobile.supermux.projects.*` / `mobile.supermux.project.*` handlers: the
+/// Mac side of the iOS Projects section, reads and writes. All state flows
+/// through ``SupermuxComposition`` (the same projects model every Mac sidebar
+/// shares — create runs the model's own `config.json` import, exactly like
+/// the desktop add path); the wire payloads and patch semantics are
+/// package-tested SupermuxKit types. `supermux.projects.updated` is emitted
+/// by ``SupermuxMobileProjectsObserver`` watching the model, so every write
+/// path (mobile or desktop) pokes the phone exactly once.
 extension TerminalController {
     /// `mobile.supermux.projects.list`: the registered projects plus the
     /// sidebar section's collapse state, as
@@ -27,6 +31,120 @@ extension TerminalController {
             return .ok(payload)
         } catch {
             return .err(code: "unavailable", message: "Failed to encode projects list", data: nil)
+        }
+    }
+
+    /// `mobile.supermux.project.create`: registers the folder at `root_path`
+    /// as a project through the exact desktop add path —
+    /// ``SupermuxProjectsModel/addProject(rootPath:)`` — which imports a
+    /// repo-shipped `.supermux/config.json` / `.superset/config.json` (setup,
+    /// teardown, run, actions) before returning. Registering an
+    /// already-registered folder returns the existing record (same as
+    /// desktop). Result: `{project: SupermuxProjectDTO}` with the imported
+    /// fields and the `config_path` read-only marker.
+    @MainActor
+    func v2SupermuxProjectCreate(params: [String: Any]) async -> V2CallResult {
+        guard let raw = params["root_path"] as? String else {
+            return .err(code: "invalid_params", message: "root_path is required", data: nil)
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        guard !trimmed.isEmpty, expanded.hasPrefix("/") else {
+            return .err(code: "invalid_params", message: "root_path must be an absolute folder path", data: nil)
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return .err(code: "invalid_params", message: "root_path is not an existing folder", data: [
+                "root_path": expanded,
+            ])
+        }
+        let model = SupermuxComposition.projectsModel
+        await model.loadIfNeeded()
+        let project = await model.addProject(rootPath: expanded)
+        return await supermuxProjectResult(project)
+    }
+
+    /// `mobile.supermux.project.update`: applies `patch` to the project
+    /// (RPC-PROJ-02 patch semantics: only present keys applied; arrays like
+    /// `run_commands`/`actions` replaced whole; explicit `null` clears a
+    /// nullable field; immutable/unknown keys rejected). Fields owned by a
+    /// repo-shipped `config.json` are rejected with `invalid_params`, exactly
+    /// like the desktop editor renders them read-only. Result:
+    /// `{project: SupermuxProjectDTO}`.
+    @MainActor
+    func v2SupermuxProjectUpdate(params: [String: Any]) async -> V2CallResult {
+        let project: SupermuxProject
+        switch await supermuxResolveProject(params: params) {
+        case let .failure(error): return error
+        case let .success(resolved): project = resolved
+        }
+        guard let patchObject = params["patch"] as? [String: Any] else {
+            return .err(code: "invalid_params", message: "patch must be an object", data: nil)
+        }
+        // The read-only marker probes the filesystem; keep it off the main actor.
+        let rootPath = project.rootPath
+        let isConfigManaged = await Task.detached(priority: .userInitiated) {
+            SupermuxMobileProjectConfigMarker.managedRelativePath(projectRoot: rootPath) != nil
+        }.value
+        let updated: SupermuxProject
+        do {
+            let patch = try SupermuxMobileProjectPatch(wire: patchObject)
+            updated = try patch.applied(to: project, isConfigManaged: isConfigManaged)
+        } catch let error as SupermuxMobilePatchError {
+            return .err(code: "invalid_params", message: error.message, data: nil)
+        } catch {
+            return .err(code: "invalid_params", message: "Malformed patch", data: nil)
+        }
+        SupermuxComposition.projectsModel.updateProject(updated)
+        return await supermuxProjectResult(updated)
+    }
+
+    /// `mobile.supermux.project.delete`: unregisters the project through the
+    /// same model path as the desktop (worktrees and the repository stay on
+    /// disk; durable directory associations pointing at the project are
+    /// dropped). The confirmation dialog lives on the phone. Result:
+    /// `{removed: true, project_id}`.
+    @MainActor
+    func v2SupermuxProjectDelete(params: [String: Any]) async -> V2CallResult {
+        let project: SupermuxProject
+        switch await supermuxResolveProject(params: params) {
+        case let .failure(error): return error
+        case let .success(resolved): project = resolved
+        }
+        SupermuxComposition.projectsModel.removeProject(id: project.id)
+        return .ok([
+            "removed": true,
+            "project_id": project.id.uuidString,
+        ])
+    }
+
+    /// `mobile.supermux.projects.set_section_collapsed`: persists the sidebar
+    /// Projects section's collapse state (the write path for the
+    /// `section_collapsed` field `projects.list` returns; the model's own
+    /// `didSet` persist is the single shared mutation path with the desktop
+    /// header). Result: `{section_collapsed}`.
+    @MainActor
+    func v2SupermuxProjectsSetSectionCollapsed(params: [String: Any]) async -> V2CallResult {
+        guard let collapsed = params["collapsed"] as? Bool else {
+            return .err(code: "invalid_params", message: "collapsed must be a boolean", data: nil)
+        }
+        let model = SupermuxComposition.projectsModel
+        await model.loadIfNeeded()
+        model.isSectionCollapsed = collapsed
+        return .ok(["section_collapsed": collapsed])
+    }
+
+    /// The `{project: SupermuxProjectDTO}` result for one record, built off
+    /// the main actor (icon and config probes are file I/O).
+    private func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {
+        do {
+            let payload = try await Task.detached(priority: .userInitiated) {
+                try SupermuxMobileProjectsPayloadBuilder().projectPayload(project: project)
+            }.value
+            return .ok(payload)
+        } catch {
+            return .err(code: "unavailable", message: "Failed to encode project", data: nil)
         }
     }
 
