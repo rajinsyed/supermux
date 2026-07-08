@@ -872,6 +872,12 @@ jobs:
           echo "::group::swift test Packages/SupermuxKit"
           swift test --package-path Packages/SupermuxKit
           echo "::endgroup::"
+          # SupermuxMobileCore is supermux-owned and absent from upstream's
+          # PACKAGES allowlist above; test it explicitly so its wire-contract
+          # suite (DTO round-trips, unknown-field tolerance) gates CI.
+          echo "::group::swift test Packages/Shared/SupermuxMobileCore"
+          swift test --package-path Packages/Shared/SupermuxMobileCore
+          echo "::endgroup::"
           # SUPERMUX:end ci-package-tests
 
   agent-session-web-resources:

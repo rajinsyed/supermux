@@ -27,7 +27,7 @@ Rules for adding a touchpoint:
 | 10 | `CLI/cmux.swift` | `right-sidebar-changes-mode-*` | CLI accepts `cmux right-sidebar set changes` (and the `changes` alias) |
 | 11 | `Sources/KeyboardShortcutSettings.swift` | `run-toggle-shortcut-*` | `supermuxToggleRun` action (case/label/default ⌘G, shared with Find Next) |
 | 12 | `Sources/AppDelegate.swift` | `run-toggle-shortcut-*` | ⌘G dispatch: Find Next while find overlay is open, run toggle otherwise; auto-repeat key events are excluded from the run toggle |
-| 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit` to the SPM package-test allowlist so its tests gate CI |
+| 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit` and `Packages/Shared/SupermuxMobileCore` to the SPM package-test allowlist so their tests gate CI |
 | 14 | `web/data/cmux.schema.json` | `unfenced` | Adds all five supermux ids — `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, `supermuxWorkspaceSwitcherPrevious`, `supermuxCommit`, and `supermuxCommitAccelerator` — to the shortcut-action enum so cmux.json validation accepts rebinding them; also rewrites the `workspaceInheritWorkingDirectory` description for the #80 fork behavior (off = always home directory) and gives it a `descriptionKey` (`schemaDescriptions.app.workspaceInheritWorkingDirectory`, messages under #86/#87) so the docs page localizes it |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only) inside a single `VStack` wrapper that keeps upstream's dynamic `ignoresSafeArea` edges — one structural identity, so minimal-mode toggles never rebuild the workspace subtree |
@@ -103,6 +103,7 @@ Rules for adding a touchpoint:
 | 87 | `web/messages/ja.json` | `unfenced` | Japanese translation for the #86 message key |
 | 88 | `skills/cmux-settings/references/all-keys.md` | `unfenced` | Regenerated the `app.workspaceInheritWorkingDirectory` description row to match the #14 schema description (the file is auto-generated from `web/data/cmux.schema.json` and had the removed Ghostty-fallback wording) |
 | 89 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-ticket-compat-version` | Adds `macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion` to the mock-host attach-ticket fixture in `attachURL(port:)`, matching what every real Mac-minted ticket carries (`MobileHostService`). Without it the ticket decodes to compat 0 ("unknown compatibility"), `MobileShellComposite.versionWarning` blocks pairing behind a "Continue anyway" sheet, and every connection-dependent cmuxUITest times out. Upstream-latent bug (upstream CI runs `-skip-testing:cmuxUITests` on PRs, so it never sees it) |
+| 90 | `cmux.xcworkspace/contents.xcworkspacedata` | `unfenced` | Adds the supermux-owned `Packages/Shared/SupermuxMobileCore` package FileRef to the workspace's Shared group. Generated file — regenerate with `python3 scripts/check-workspace-package-groups.py --write` (the `Packages/` folder layout is the source of truth), never hand-edit |
 
 ## How to re-apply
 
@@ -1476,3 +1477,23 @@ Re-apply note: if upstream adds the compat version to the fixture itself (or rem
 `attachURL(port:)`, the requirement is: the UITest fixture ticket must decode with
 `macPairingCompatibilityVersion == CmxMobileDefaults.pairingCompatibilityVersion` so the pairing
 version warning does not fire under the mock harness.
+
+### 13 (cont.) + 90. `Packages/Shared/SupermuxMobileCore` registration (ci.yml allowlist + workspace group)
+
+`Packages/Shared/SupermuxMobileCore` is the supermux-owned zero-dependency wire-contract package
+for the iOS companion app (`mobile.supermux.*` method/topic/capability constants + Codable DTOs +
+the `SupermuxWireJSON` Codable↔`[String: Any]` bridge). Two upstream files register it:
+
+- **`.github/workflows/ci.yml` (#13, inside the existing `ci-package-tests` fence):** upstream's
+  `PACKAGES=(...)` allowlist in the package-tests job never lists fork packages, so the fence runs
+  `swift test --package-path Packages/Shared/SupermuxMobileCore` explicitly (same pattern as
+  `Packages/SupermuxKit`). Re-apply: restore the fenced block after the group-agnostic loop; keep
+  every fork package the fence tests listed there.
+- **`cmux.xcworkspace/contents.xcworkspacedata` (#90, unfenced — generated XML):** the package's
+  FileRef in the Shared group. Re-apply after any merge by running
+  `python3 scripts/check-workspace-package-groups.py --write` (the `Packages/` directory layout is
+  the source of truth); CI's `--check` fails on drift. Never hand-edit the workspace file.
+
+The package itself is fork-owned (no fences inside it). It intentionally has zero dependencies and
+no `Package.resolved` (SwiftPM only writes one when dependencies exist); if it ever gains a
+dependency, track the generated package-local `Package.resolved` per repo policy.
