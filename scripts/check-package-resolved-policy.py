@@ -109,6 +109,25 @@ def dependency_calls_include_url(calls: list[str]) -> bool:
     return any(PACKAGE_URL_ARGUMENT_RE.search(call) for call in calls)
 
 
+# SUPERMUX:begin fix-resolved-policy-path-deps
+def lockfile_recorded_dependency_calls(calls: list[str]) -> list[str]:
+    """Dependency calls that SwiftPM records in Package.resolved.
+
+    `.package(path:)` dependencies are resolved by location and never written
+    to any lockfile, so manifest changes limited to path-based dependencies
+    cannot produce a legitimate Package.resolved diff (`swift package resolve`
+    rewrites nothing). Only url/registry (version/branch/revision-pinned)
+    dependency changes must come with lockfile churn.
+    """
+    return [
+        call
+        for call in calls
+        if PACKAGE_URL_ARGUMENT_RE.search(call)
+        or PACKAGE_PATH_ARGUMENT_RE.search(call) is None
+    ]
+# SUPERMUX:end fix-resolved-policy-path-deps
+
+
 def has_remote_dependency(
     root: str,
     graph: dict[str, tuple[bool, list[str]]],
@@ -196,10 +215,21 @@ def changed_files_since(merge_base: str | None) -> set[str]:
 
 
 def file_text_at(ref: str, path: str) -> str:
-    try:
-        return git_stdout("show", f"{ref}:{path}")
-    except subprocess.CalledProcessError:
+    # SUPERMUX:begin fix-resolved-policy-path-deps
+    # A manifest new since the merge-base has no blob at `ref`; that is
+    # expected (it reads as ""), so silence git's `fatal: path … exists on
+    # disk, but not in <ref>` stderr noise instead of letting it leak
+    # into the check output.
+    result = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    if result.returncode != 0:
         return ""
+    return result.stdout
+    # SUPERMUX:end fix-resolved-policy-path-deps
 
 
 def xcode_package_reference_changed(
@@ -278,6 +308,16 @@ def main() -> int:
             )
             if current_calls == previous_calls:
                 continue
+            # SUPERMUX:begin fix-resolved-policy-path-deps
+            # Changes limited to path-based dependencies (including brand-new
+            # path-referenced manifests) never appear in Package.resolved, so
+            # requiring a lockfile diff for them is unsatisfiable. Pinned
+            # (url) dependency changes below still demand lockfile churn.
+            if lockfile_recorded_dependency_calls(
+                current_calls
+            ) == lockfile_recorded_dependency_calls(previous_calls):
+                continue
+            # SUPERMUX:end fix-resolved-policy-path-deps
             if (
                 root in cmux_manifests
                 or dependency_calls_include_url(current_calls + previous_calls)

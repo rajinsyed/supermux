@@ -120,6 +120,7 @@ Rules for adding a touchpoint:
 | 104 | `ios/cmux/AppCompositionRoot.swift` | `uitest-clear-paired-mac-state` | When `UITestConfig.mockDataEnabled` and the harness sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1`, deletes `Application Support/cmux/` (the `MobilePairedMacStore` sqlite + WAL/SHM) once at composition-root init, before `CMUXMobileRootScene` opens the store. Fixes cross-test pairing-state leakage on the shared simulator: since #89 made pairing actually complete, a persisted paired Mac from a prior test/run auto-navigated past `MobileAddDeviceForm` and its dead-host reconnect churn broke 3 cmuxUITests (cmuxUITests.swift:245/:586). No-op for real installs: the mock gate is DEBUG-only and the env var is only set by the XCUITest harness (#105) |
 | 105 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-clear-paired-mac-launch` | `launchApp` sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1` on every harness launch so each test starts from an unpaired slate (consumed by #104) |
 | 106 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-new-workspace-menu-item` | `testWorkspaceToolbarCreatesWorkspaceAndTerminal` creates the workspace via the terminal dropdown's `MobileNewWorkspaceMenuItem` instead of tapping a nav-bar `MobileTerminalNewWorkspaceButton`, because this upstream snapshot's iOS `WorkspaceDetailView` only mounts `newWorkspaceToolbarButton` in the non-iOS `#else` toolbar branch — on iOS the identifier does not exist and the tap times out deterministically (cmuxUITests.swift:245). Upstream never noticed (PR CI runs `-skip-testing:cmuxUITests`) and a newer upstream restores a nav-bar button; all behavioral assertions (host `workspace.create`, `workspace-3`/`workspace-3-terminal-1` selection, menu-item existence) are unchanged |
+| 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base (three fence blocks: helper `lockfile_recorded_dependency_calls`, the changed-roots skip in `main`, and `file_text_at`) |
 
 ## How to re-apply
 
@@ -1723,3 +1724,35 @@ drop this fence — upstream's newer UI re-adds a nav-bar create button and rewr
 around `MobileWorkspaceBackButton`/`MobileWorkspaceTitleMenu`. The requirement while this
 snapshot's UI stands: the test must drive New Workspace through a control that actually exists on
 iOS, without weakening the mock-host `workspace.create`/selection assertions.
+
+### 107. `scripts/check-package-resolved-policy.py` — `fix-resolved-policy-path-deps`
+
+Upstream's POL-03 gate diffs `merge-base(origin/main, HEAD)..HEAD` and, whenever a manifest in a
+tracked lockfile's dependency closure changed its `.package(…)` calls, demands a diff in that
+`Package.resolved`. That demand is unsatisfiable for PATH-ONLY dependency changes: SwiftPM never
+records `.package(path:)` dependencies in any lockfile, so `swift package resolve` rewrites
+nothing and no legitimate lockfile diff can exist. The fork's new path-only packages
+(`SupermuxMobileCore/Kit/UI` + the fenced `CmuxMobileShellUI` path dep) made the script exit 1 at
+HEAD with no possible fix on the lockfile side.
+
+Three fence blocks, all sharing the `fix-resolved-policy-path-deps` id:
+
+- **`lockfile_recorded_dependency_calls(calls)`** (module-level helper): filters dependency calls
+  down to those SwiftPM records in a lockfile — a call counts as recorded when it has a `url:`
+  argument or has no `path:` argument (registry/url pins), so path-only calls are excluded.
+- **`main`'s changed-roots loop:** after the existing `current_calls == previous_calls`
+  short-circuit, also `continue` when the *lockfile-recorded* calls are unchanged between
+  merge-base and HEAD. A brand-new path-only manifest reads as `previous_calls == []` with zero
+  recorded calls on both sides, so it passes; any added/removed/edited `url:` pin still differs
+  and still requires lockfile churn (verified: a scratch commit adding
+  `.package(url: …, from: …)` to `CmuxMobileShellUI/Package.swift` without lockfile churn exits
+  1 naming both affected lockfiles, and exits 0 once the lockfiles are touched in the same range).
+- **`file_text_at`:** runs `git show` with stderr suppressed and returns `""` on failure, because
+  a manifest new since the merge-base has no blob at that ref — expected, previously leaked
+  `fatal: path … exists on disk, but not in <merge-base>` noise into the check output.
+
+Re-apply note: if upstream rewrites the script, re-apply by keeping the invariant "a manifest
+dependency change requires a lockfile diff only if the change is visible to Package.resolved
+(url/registry pins)". If upstream ships its own path-dep exemption, drop all three fences and
+take upstream. Do NOT weaken the pinned-dependency protection: url-pin changes without lockfile
+churn must keep failing (re-run the scratch-worktree red/green check above after any merge).
