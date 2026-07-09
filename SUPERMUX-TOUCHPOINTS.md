@@ -122,6 +122,7 @@ Rules for adding a touchpoint:
 | 106 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-new-workspace-menu-item` | `testWorkspaceToolbarCreatesWorkspaceAndTerminal` creates the workspace via the terminal dropdown's `MobileNewWorkspaceMenuItem` instead of tapping a nav-bar `MobileTerminalNewWorkspaceButton`, because this upstream snapshot's iOS `WorkspaceDetailView` only mounts `newWorkspaceToolbarButton` in the non-iOS `#else` toolbar branch — on iOS the identifier does not exist and the tap times out deterministically (cmuxUITests.swift:245). Upstream never noticed (PR CI runs `-skip-testing:cmuxUITests`) and a newer upstream restores a nav-bar button; all behavioral assertions (host `workspace.create`, `workspace-3`/`workspace-3-terminal-1` selection, menu-item existence) are unchanged |
 | 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base (three fence blocks: helper `lockfile_recorded_dependency_calls`, the changed-roots skip in `main`, and `file_text_at`) |
 | 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two 1-line fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:)` modifier on the detail `body`'s outer `Group`. Mounts the fork's capability-gated Changes and Files toolbar entries (fork-owned `SupermuxMobileUI/SupermuxWorkspaceTools.swift`) which present `SupermuxChangesScreen` / `SupermuxFileBrowserScreen` as sheets; fed by the #96 `supermuxConnectionSeam`. Each entry hides without its capability (`supermux.changes.v1` / `supermux.files.v1`) |
+| 109 | `scripts/lint-ios-package-conventions.sh` | `lint-ios-conventions-fork-scopes` | Adds the fork mobile packages (`Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobile*`) to the lint's SCOPES so the iOS conventions lint (CI job `package-conventions-lint` in `.github/workflows/test-ios.yml`) mechanically enforces its per-line rules on them; deliberate constant/text namespace holders in the fork packages carry inline `lint:allow` justifications |
 
 ## How to re-apply
 
@@ -1578,11 +1579,10 @@ Dependencies are path-only (`../../Shared/SupermuxMobileCore`, `../CmuxMobileRPC
   FileRef in the iOS group. Re-apply after any merge by running
   `python3 scripts/check-workspace-package-groups.py --write`; never hand-edit.
 
-The package itself is fork-owned (no fences inside it). Note: upstream's
-`scripts/lint-ios-package-conventions.sh` SCOPES glob (`Packages/iOS/CmuxMobile*`) does not match
-`Packages/iOS/SupermuxMobile*`, so its per-line rules are not mechanically enforced on this
-package (the repo-wide namespace-type rule still is); the package is written to those rules
-anyway (no singletons, no Combine, no locks, no free functions, no namespace enums).
+The package itself is fork-owned (no fences inside it). Note: the fork packages are included in
+`scripts/lint-ios-package-conventions.sh`'s SCOPES via the `lint-ios-conventions-fork-scopes`
+fence (#109), so the lint's per-line rules ARE mechanically enforced here; the deliberate
+constant/text namespace holders carry inline `/// lint:allow …` justifications.
 
 ### 96–98 (+ 13/90 cont.). iOS Projects section (`Packages/iOS/SupermuxMobileUI` + shell mount)
 
@@ -1619,8 +1619,8 @@ avatar tinted by `color_hex`), the read-only `SupermuxProjectDetailScreen`, and 
   FileRef in the iOS group. Re-apply with `python3 scripts/check-workspace-package-groups.py --write`;
   never hand-edit.
 
-Same `lint-ios-package-conventions.sh` SCOPES caveat as SupermuxMobileKit above; the package is
-written to those rules anyway.
+Same `lint-ios-package-conventions.sh` coverage as SupermuxMobileKit above (the #109
+`lint-ios-conventions-fork-scopes` fence adds the fork packages to SCOPES).
 
 ### 99–103. Workspace-list augmentation (§6: `supermux_project_id` / `supermux_activity`)
 
@@ -1761,6 +1761,9 @@ dependency change requires a lockfile diff only if the change is visible to Pack
 (url/registry pins)". If upstream ships its own path-dep exemption, drop all three fences and
 take upstream. Do NOT weaken the pinned-dependency protection: url-pin changes without lockfile
 churn must keep failing (re-run the scratch-worktree red/green check above after any merge).
+Note: the policy script has NO automated tests in-repo — the scratch-worktree red/green check
+described above is the only verification of this fence's behavior, so it must be repeated by
+hand after any merge that touches the script.
 
 ### 108. `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` — `supermux-mobile-workspace-tools`
 
@@ -1792,3 +1795,28 @@ sit on a view that (a) is inside the detail's `NavigationStack` context so the t
 in the nav bar, and (b) has `store` + `workspace` in scope, with `store.supermuxConnectionSeam`
 read inside `body` so Observation re-evaluates on (re)connect/capability arrival. Any placement
 satisfying that works; keep both fence lines and the budget row in sync.
+
+### 109. `scripts/lint-ios-package-conventions.sh` — `lint-ios-conventions-fork-scopes`
+
+Upstream's iOS conventions lint (run by the `package-conventions-lint` job in
+`.github/workflows/test-ios.yml` whenever `ios/` or `Packages/` files change) builds its SCOPES
+from globs that never match the fork's mobile packages (`Packages/iOS/CmuxMobile*` misses
+`Packages/iOS/SupermuxMobile*`). One fenced 3-line loop after upstream's SCOPES loop appends
+`Packages/Shared/SupermuxMobileCore` and `Packages/iOS/SupermuxMobile*`, so the per-line rules
+(singleton/Combine/lock/timer/KVO/free-function/namespace-enum) are mechanically enforced on the
+fork packages too. The repo-wide namespace-type rule already scanned them regardless of SCOPES.
+
+The fork packages' deliberate constant/text namespace holders (`SupermuxWireErrorCode`,
+`SupermuxChangesSyncDeadline`, `SupermuxFileName`, `SupermuxFileOpErrorText`,
+`SupermuxProjectStyle`, `SupermuxWorkspaceTools`, `SupermuxMobileActivityPalette`,
+`SupermuxEditorErrorText`, `SupermuxFolderPickerPath`) carry inline `/// lint:allow …`
+justifications following the lint's own sanctioned-exception mechanism (precedent:
+`CmxPairingURLScheme`, `AutoNamingAgentCatalog`).
+
+Re-apply note: re-add the fenced loop directly after upstream's `SCOPES=()` construction — any
+placement that appends the fork package directories to `SCOPES` before the first `scan` call
+works. If upstream generalizes its globs to cover fork packages (or switches to scanning all of
+`Packages/`), drop the fence and take upstream. After re-applying, run
+`./scripts/lint-ios-package-conventions.sh` and expect exit 0; new ERROR findings in fork
+packages must be fixed or carry a reviewed inline `lint:allow` justification — never grow
+`scripts/lint-namespace-types-baseline.txt` (that list may only shrink).

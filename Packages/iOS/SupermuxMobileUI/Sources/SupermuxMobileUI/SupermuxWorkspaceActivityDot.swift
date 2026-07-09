@@ -75,6 +75,7 @@ extension View {
 
 /// Shared activity colors, matched to the Mac's `SupermuxActivityPalette`
 /// (superset's amber/red/green status palette).
+/// lint:allow namespace-enum — color-constant table mirroring the Mac's SupermuxActivityPalette; stateless, nothing to instantiate.
 enum SupermuxMobileActivityPalette {
     /// amber-500 — agent working.
     static let working = Color(red: 0.96, green: 0.62, blue: 0.04)

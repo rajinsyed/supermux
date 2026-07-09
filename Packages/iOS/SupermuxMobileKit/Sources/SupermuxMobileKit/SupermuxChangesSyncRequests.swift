@@ -15,6 +15,7 @@ public import SupermuxMobileCore
 /// (`CMUXMobileRuntime`), so the phone must extend the deadline to >= 130 s
 /// or it times out while the Mac's push is still legitimately running
 /// (m3-f2 handoff). 180 s leaves generous margin.
+/// lint:allow namespace-type — a single wire-contract deadline constant shared by the push/pull requests; nothing to instantiate.
 public enum SupermuxChangesSyncDeadline {
     /// Per-request deadline override for `changes.push` / `changes.pull`.
     public static let rpcTimeoutNanoseconds: UInt64 = 180_000_000_000

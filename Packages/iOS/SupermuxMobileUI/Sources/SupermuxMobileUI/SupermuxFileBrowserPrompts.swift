@@ -15,6 +15,7 @@ enum SupermuxFileNamePrompt: Equatable {
 /// validation gets dedicated copy; wire errors surface the Mac's message
 /// under the shared alert title — mirroring the desktop
 /// `SupermuxFileExplorerPrompt` error semantics.
+/// lint:allow namespace-enum — stateless issue→localized-text mapping kept off the views for package unit tests.
 enum SupermuxFileOpErrorText {
     /// The message for a client-side name-validation failure.
     /// - Parameters:

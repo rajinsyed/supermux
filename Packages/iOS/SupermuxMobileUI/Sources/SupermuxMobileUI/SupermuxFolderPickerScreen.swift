@@ -52,6 +52,7 @@ public struct SupermuxProjectRootPathPicking {
 
 /// Path arithmetic for the picker's result, kept off the views for unit
 /// testing.
+/// lint:allow namespace-enum — pure path arithmetic kept off the views for unit testing.
 enum SupermuxFolderPickerPath {
     /// The picked folder's absolute Mac path: the root's absolute path joined
     /// with the browsed root-relative subpath.

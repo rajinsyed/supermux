@@ -15,6 +15,7 @@ public enum SupermuxFileNameIssue: Equatable, Sendable {
 /// Client-side validation for a single-component file/folder name, shared by
 /// the file-browser store (wire guard) and the prompt UI (pre-flight),
 /// mirroring the desktop `SupermuxFileSystemOperations` naming rules.
+/// lint:allow namespace-type — stateless, dependency-free name-validation transforms shared by the store (wire guard) and prompt UI; a public String extension would leak fork API onto every String in consumers.
 public enum SupermuxFileName {
     /// The name with surrounding whitespace trimmed — the exact form that
     /// travels on the wire.

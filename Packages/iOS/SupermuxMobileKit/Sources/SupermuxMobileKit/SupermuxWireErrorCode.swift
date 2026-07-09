@@ -7,6 +7,7 @@ import CmuxMobileRPC
 /// reserved codes (architecture §3) — e.g. `dirty_worktree` drives the
 /// confirm-force removal flow. Fakes throw the same error type so tests
 /// exercise the exact production decode path.
+/// lint:allow namespace-type — wire-constant namespace for the architecture §3 reserved error codes plus a pure extractor; stateless and dependency-free, nothing to instantiate.
 public enum SupermuxWireErrorCode {
     /// `worktree.remove` without `force` on a worktree with uncommitted
     /// changes.

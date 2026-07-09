@@ -15,6 +15,7 @@ public struct SupermuxProjectStyleColor: Identifiable, Equatable, Sendable {
 /// 12-color palette as `SupermuxProjectColor.palette` (SupermuxKit is a
 /// Mac-only package, so the values are mirrored here and pinned by a test)
 /// and a curated SF Symbol grid.
+/// lint:allow namespace-type — stateless data table mirroring the desktop palette/symbol pickers (SupermuxKit is Mac-only), pinned by tests; nothing to instantiate.
 public enum SupermuxProjectStyle {
     /// The 12-color accent palette, in the desktop's order.
     public static var colorPalette: [SupermuxProjectStyleColor] {

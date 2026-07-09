@@ -6,6 +6,7 @@ public import SwiftUI
 /// `SupermuxMacUnavailableError` gets a localized message (it carries none of
 /// its own), everything else surfaces the Mac's reported message verbatim
 /// (e.g. `invalid_params` details like "root_path is not an existing folder").
+/// lint:allow namespace-enum — stateless error→localized-text mapping shared by the editor sheets.
 enum SupermuxEditorErrorText {
     static func message(for error: any Error) -> String {
         if error is SupermuxMacUnavailableError {

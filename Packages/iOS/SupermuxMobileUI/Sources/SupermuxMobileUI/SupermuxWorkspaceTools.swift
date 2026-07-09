@@ -36,6 +36,7 @@ extension View {
 
 /// Pure visibility logic for the workspace-tools entries, kept off the view
 /// so the capability gates are package-unit-testable (UI-02 for this mount).
+/// lint:allow namespace-enum — stateless capability-gate predicates kept off the view so the mount's visibility rules are package-unit-testable.
 enum SupermuxWorkspaceTools {
     /// Whether the Changes toolbar entry shows: a live connection whose host
     /// advertises `supermux.changes.v1`.
