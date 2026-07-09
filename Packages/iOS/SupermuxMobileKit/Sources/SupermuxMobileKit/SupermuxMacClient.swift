@@ -111,11 +111,60 @@ public struct SupermuxMacClient: SupermuxMacCalling {
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func changesCommit(_ request: SupermuxChangesCommitRequest) async throws -> SupermuxChangesCommitResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesGenerateCommitMessage(
+        _ request: SupermuxChangesGenerateCommitMessageRequest
+    ) async throws -> SupermuxChangesGeneratedMessageResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesPush(_ request: SupermuxChangesPushRequest) async throws -> SupermuxChangesSyncResponse {
+        try await send(
+            method: request.wireMethod,
+            params: request.wireParams,
+            timeoutNanoseconds: request.rpcTimeoutNanoseconds
+        )
+    }
+
+    public func changesPull(_ request: SupermuxChangesPullRequest) async throws -> SupermuxChangesSyncResponse {
+        try await send(
+            method: request.wireMethod,
+            params: request.wireParams,
+            timeoutNanoseconds: request.rpcTimeoutNanoseconds
+        )
+    }
+
+    public func changesStash(_ request: SupermuxChangesStashRequest) async throws -> SupermuxChangesSyncResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesStashPop(_ request: SupermuxChangesStashPopRequest) async throws -> SupermuxChangesSyncResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesHistory(_ request: SupermuxChangesHistoryRequest) async throws -> SupermuxChangesHistoryResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
     /// Sends one request and decodes the result frame into the typed
     /// response — the single wire path every typed method funnels through.
-    private func send<Response: Decodable>(method: String, params: [String: Any]) async throws -> Response {
+    ///
+    /// - Parameters:
+    ///   - method: The wire method string.
+    ///   - params: The wire params.
+    ///   - timeoutNanoseconds: Optional per-request RPC deadline override
+    ///     (additive: `nil` keeps the runtime default, so pre-existing calls
+    ///     are unchanged). Push/pull pass their extended deadline here.
+    private func send<Response: Decodable>(
+        method: String,
+        params: [String: Any],
+        timeoutNanoseconds: UInt64? = nil
+    ) async throws -> Response {
         let request = try MobileCoreRPCClient.requestData(method: method, params: params)
-        let result = try await client.sendRequest(request)
+        let result = try await client.sendRequest(request, timeoutNanoseconds: timeoutNanoseconds)
         return try JSONDecoder().decode(Response.self, from: result)
     }
 

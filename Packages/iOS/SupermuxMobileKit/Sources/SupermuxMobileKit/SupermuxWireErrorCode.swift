@@ -12,6 +12,11 @@ public enum SupermuxWireErrorCode {
     /// changes.
     public static let dirtyWorktree = "dirty_worktree"
 
+    /// AI-backed methods (`changes.generate_commit_message`,
+    /// `worktree.suggest_branch`) when no AI key is configured OR generation
+    /// failed — the two cases carry distinct messages worth surfacing.
+    public static let aiUnavailable = "ai_unavailable"
+
     /// The server-reported error code carried by `error`, or `nil` when the
     /// error is not an RPC error (or carried no code).
     /// - Parameter error: The error a seam call threw.
@@ -21,5 +26,16 @@ public enum SupermuxWireErrorCode {
             return nil
         }
         return code
+    }
+
+    /// The server-reported error message carried by `error`, or `nil` when
+    /// the error is not an RPC error.
+    /// - Parameter error: The error a seam call threw.
+    public static func message(from error: any Error) -> String? {
+        guard let connectionError = error as? MobileShellConnectionError,
+              case let .rpcError(_, message) = connectionError else {
+            return nil
+        }
+        return message
     }
 }

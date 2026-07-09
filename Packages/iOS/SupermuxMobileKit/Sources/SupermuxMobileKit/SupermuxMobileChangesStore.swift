@@ -34,16 +34,63 @@ public final class SupermuxMobileChangesStore {
 
     /// Human-readable description of the most recent fetch/mutation failure,
     /// for a non-blocking error surface. Cleared on the next success.
-    public private(set) var lastErrorDescription: String?
+    public internal(set) var lastErrorDescription: String?
 
-    /// Whether a stage/unstage/discard round-trip is on the wire (rows
-    /// disable their actions while `true`; mutations are serialized).
-    public private(set) var isMutating = false
+    /// Whether a stage/unstage/discard/commit/sync round-trip is on the wire
+    /// (rows disable their actions while `true`; mutations are serialized).
+    public internal(set) var isMutating = false
+
+    // MARK: Commit / sync / history state (actions in …Store+Sync.swift)
+
+    /// The commit-composer draft. Screen-bindable; cleared on a successful
+    /// commit and populated by `generateAndCommit()`.
+    public var commitMessage = ""
+
+    /// The last successful commit's abbreviated sha, for a brief inline
+    /// confirmation. Reset when the next commit starts.
+    public internal(set) var lastCommitShortSha: String?
+
+    /// The Mac's `ai_unavailable` message (no key configured, or generation
+    /// failed — distinct messages). The screen wraps it in a friendly
+    /// localized headline. Cleared when the next generation attempt starts.
+    public internal(set) var aiUnavailableNotice: String?
+
+    /// Whether a `generate_commit_message` round-trip is on the wire.
+    public internal(set) var isGeneratingMessage = false
+
+    /// The network-bound sync operation currently on the wire (drives the
+    /// push/pull button spinners), or `nil` when idle.
+    public internal(set) var activeSyncOperation: SupermuxChangesSyncOperation?
+
+    /// The loaded local history pages, newest first.
+    public internal(set) var historyCommits: [SupermuxCommitDTO] = []
+
+    /// Upstream commits not yet pulled (first history page only).
+    public internal(set) var incomingCommits: [SupermuxCommitDTO] = []
+
+    /// Pass-back cursor for the next history page; `nil` = no more pages.
+    public internal(set) var historyNextCursor: String?
+
+    /// Whether a history page fetch is on the wire.
+    public internal(set) var isLoadingHistory = false
+
+    /// Whether the current history pages are fresh (false before the first
+    /// load and after ``invalidateHistory()``).
+    public internal(set) var hasLoadedHistory = false
+
+    /// Human-readable description of the most recent history-fetch failure.
+    /// Cleared on the next successful page.
+    public internal(set) var historyErrorDescription: String?
+
+    /// Bumped by ``invalidateHistory()``; the screen keys its history
+    /// `.task(id:)` on it so a visible History segment reloads itself.
+    public internal(set) var historyEpoch = 0
 
     /// The workspace whose repository this store follows (UUID string).
     public let workspaceID: String
 
-    @ObservationIgnored private let client: any SupermuxMacCalling
+    /// The Mac RPC seam. Internal so the sync extension file reaches it.
+    @ObservationIgnored let client: any SupermuxMacCalling
     @ObservationIgnored private let capabilities: SupermuxMobileCapabilities
     @ObservationIgnored private let now: @Sendable () -> Date
     /// Cancellable reconnect-backoff sleep; injectable for deterministic tests.
@@ -173,8 +220,9 @@ public final class SupermuxMobileChangesStore {
 
     /// One mutation at a time: send, then refetch so the sections move
     /// without waiting for the Mac's poke. Failures surface in
-    /// ``lastErrorDescription`` — never a silent no-op.
-    private func mutate(_ operation: @MainActor () async throws -> Void) async {
+    /// ``lastErrorDescription`` — never a silent no-op. Internal so the
+    /// commit/sync actions in `…Store+Sync.swift` share the same gate.
+    func mutate(_ operation: @MainActor () async throws -> Void) async {
         guard !isMutating else { return }
         isMutating = true
         defer { isMutating = false }
@@ -226,7 +274,8 @@ public final class SupermuxMobileChangesStore {
         }
     }
 
-    private func refetchStatus() async {
+    /// Internal so the sync extension refetches after commit/push/pull.
+    func refetchStatus() async {
         do {
             status = try await client.changesStatus(
                 SupermuxChangesStatusRequest(workspaceID: workspaceID)

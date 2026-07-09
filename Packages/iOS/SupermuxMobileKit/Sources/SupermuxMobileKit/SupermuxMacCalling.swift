@@ -114,6 +114,44 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func changesDiscard(_ request: SupermuxChangesDiscardRequest) async throws -> SupermuxChangesAckResponse
 
+    /// `mobile.supermux.changes.commit`: commits the staged files (or
+    /// everything with `stage_all`) with the given message; answers the new
+    /// HEAD sha.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesCommit(_ request: SupermuxChangesCommitRequest) async throws -> SupermuxChangesCommitResponse
+
+    /// `mobile.supermux.changes.generate_commit_message`: a Mac-side AI
+    /// commit message for the uncommitted diff. Fails with `ai_unavailable`
+    /// when no key is configured or generation fails (distinct messages).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesGenerateCommitMessage(
+        _ request: SupermuxChangesGenerateCommitMessageRequest
+    ) async throws -> SupermuxChangesGeneratedMessageResponse
+
+    /// `mobile.supermux.changes.push`: pushes the current branch (first push
+    /// sets the upstream). Sent with the request's extended RPC deadline —
+    /// the Mac's git network timeout (120 s) exceeds the phone default.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesPush(_ request: SupermuxChangesPushRequest) async throws -> SupermuxChangesSyncResponse
+
+    /// `mobile.supermux.changes.pull`: pulls from the upstream. Sent with
+    /// the request's extended RPC deadline, like push.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesPull(_ request: SupermuxChangesPullRequest) async throws -> SupermuxChangesSyncResponse
+
+    /// `mobile.supermux.changes.stash`: stashes the working tree.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesStash(_ request: SupermuxChangesStashRequest) async throws -> SupermuxChangesSyncResponse
+
+    /// `mobile.supermux.changes.stash_pop`: pops the latest stash entry.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesStashPop(_ request: SupermuxChangesStashPopRequest) async throws -> SupermuxChangesSyncResponse
+
+    /// `mobile.supermux.changes.history`: one page of the commit history
+    /// (plus incoming commits on the first page).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesHistory(_ request: SupermuxChangesHistoryRequest) async throws -> SupermuxChangesHistoryResponse
+
     /// Subscribes to `supermux.*` event topics. Events are payload-light
     /// pokes; consumers refetch through the matching request method. The
     /// stream finishes when the underlying connection drops; consumers

@@ -73,6 +73,35 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var changesUnstageError: (any Error)?
     /// When set, `changesDiscard` throws instead of returning.
     var changesDiscardError: (any Error)?
+    /// The response the next `changesCommit` call returns.
+    var changesCommitResponse = SupermuxChangesCommitResponse(
+        sha: "aabbccddeeff00112233445566778899aabbccdd"
+    )
+    /// When set, `changesCommit` throws instead of returning.
+    var changesCommitError: (any Error)?
+    /// The response the next `changesGenerateCommitMessage` call returns.
+    var generateCommitMessageResponse = SupermuxChangesGeneratedMessageResponse(
+        message: "feat: generated message"
+    )
+    /// When set, `changesGenerateCommitMessage` throws instead of returning.
+    var generateCommitMessageError: (any Error)?
+    /// The response the next `changesPush` call returns.
+    var changesPushResponse = SupermuxChangesSyncResponse(ok: true, logLines: [])
+    /// When set, `changesPush` throws instead of returning.
+    var changesPushError: (any Error)?
+    /// The response the next `changesPull` call returns.
+    var changesPullResponse = SupermuxChangesSyncResponse(ok: true, logLines: [])
+    /// When set, `changesPull` throws instead of returning.
+    var changesPullError: (any Error)?
+    /// When set, `changesStash` throws instead of returning.
+    var changesStashError: (any Error)?
+    /// When set, `changesStashPop` throws instead of returning.
+    var changesStashPopError: (any Error)?
+    /// Scripted `changesHistory` responses consumed in FIFO order (an empty
+    /// queue answers an empty page).
+    var changesHistoryResponses: [SupermuxChangesHistoryResponse] = []
+    /// When set, `changesHistory` throws instead of returning.
+    var changesHistoryError: (any Error)?
 
     /// Ordered log of every seam call, for ordering assertions
     /// (e.g. subscribe-before-fetch).
@@ -85,6 +114,9 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     /// Exact wire method + params of every worktree request, in call order —
     /// the UI-03 "recorded calls match §2 exactly" evidence.
     private(set) var recordedWireCalls: [(method: String, params: NSDictionary)] = []
+    /// Per-request RPC deadline overrides observed at the seam, in call order
+    /// — the m3-f2 "push/pull need >= 130 s" evidence.
+    private(set) var recordedSyncTimeouts: [(method: String, timeoutNanoseconds: UInt64?)] = []
 
     private var eventContinuations: [AsyncStream<SupermuxMobileEvent>.Continuation] = []
 
@@ -235,6 +267,62 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
         if let changesDiscardError { throw changesDiscardError }
         return SupermuxChangesAckResponse(ok: true)
+    }
+
+    func changesCommit(_ request: SupermuxChangesCommitRequest) async throws -> SupermuxChangesCommitResponse {
+        callLog.append("changesCommit")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesCommitError { throw changesCommitError }
+        return changesCommitResponse
+    }
+
+    func changesGenerateCommitMessage(
+        _ request: SupermuxChangesGenerateCommitMessageRequest
+    ) async throws -> SupermuxChangesGeneratedMessageResponse {
+        callLog.append("changesGenerateCommitMessage")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let generateCommitMessageError { throw generateCommitMessageError }
+        return generateCommitMessageResponse
+    }
+
+    func changesPush(_ request: SupermuxChangesPushRequest) async throws -> SupermuxChangesSyncResponse {
+        callLog.append("changesPush")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        recordedSyncTimeouts.append((request.wireMethod, request.rpcTimeoutNanoseconds))
+        if let changesPushError { throw changesPushError }
+        return changesPushResponse
+    }
+
+    func changesPull(_ request: SupermuxChangesPullRequest) async throws -> SupermuxChangesSyncResponse {
+        callLog.append("changesPull")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        recordedSyncTimeouts.append((request.wireMethod, request.rpcTimeoutNanoseconds))
+        if let changesPullError { throw changesPullError }
+        return changesPullResponse
+    }
+
+    func changesStash(_ request: SupermuxChangesStashRequest) async throws -> SupermuxChangesSyncResponse {
+        callLog.append("changesStash")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesStashError { throw changesStashError }
+        return SupermuxChangesSyncResponse(ok: true, logLines: [])
+    }
+
+    func changesStashPop(_ request: SupermuxChangesStashPopRequest) async throws -> SupermuxChangesSyncResponse {
+        callLog.append("changesStashPop")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesStashPopError { throw changesStashPopError }
+        return SupermuxChangesSyncResponse(ok: true, logLines: [])
+    }
+
+    func changesHistory(_ request: SupermuxChangesHistoryRequest) async throws -> SupermuxChangesHistoryResponse {
+        callLog.append("changesHistory")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesHistoryError { throw changesHistoryError }
+        guard !changesHistoryResponses.isEmpty else {
+            return SupermuxChangesHistoryResponse(commits: [])
+        }
+        return changesHistoryResponses.removeFirst()
     }
 
     func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {

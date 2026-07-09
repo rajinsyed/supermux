@@ -1,9 +1,13 @@
 public import SupermuxMobileKit
 public import SwiftUI
 
-/// The workspace changes screen: branch summary, staged / unstaged /
-/// untracked sections with swipe stage/unstage actions, a destructive
-/// discard confirm, and per-file navigation into ``SupermuxDiffScreen``.
+/// The workspace changes screen, in two segments. Changes: branch summary,
+/// commit composer (with the one-tap Generate & Commit flow while the draft
+/// is empty), staged / unstaged / untracked sections with swipe stage/unstage
+/// actions, a destructive discard confirm, per-file navigation into
+/// ``SupermuxDiffScreen``, and a push/pull/stash toolbar whose push/pull
+/// results present as a log sheet. History: the paginated commit list with
+/// incoming and unpushed markers.
 ///
 /// Owns one ``SupermuxMobileChangesStore`` session per presentation, run
 /// inside a `.task` keyed on the scene phase — so the Mac-side watch is
@@ -17,6 +21,10 @@ public struct SupermuxChangesScreen: View {
     @State private var store: SupermuxMobileChangesStore?
     /// The row awaiting the (always-shown) destructive discard confirm.
     @State private var discardCandidate: SupermuxChangedFileRowSnapshot?
+    /// Which segment is showing (Changes | History).
+    @State private var segment: SupermuxChangesSegment = .changes
+    /// The completed push/pull whose log is presenting as a sheet.
+    @State private var presentedSyncLog: SupermuxChangesSyncLogEntry?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
@@ -53,6 +61,27 @@ public struct SupermuxChangesScreen: View {
                             ))
                         }
                         .accessibilityIdentifier("SupermuxChangesDoneButton")
+                    }
+                    if let store, store.hasLoaded, store.status?.isRepository != false {
+                        SupermuxChangesSyncToolbar(
+                            ahead: store.status?.ahead ?? 0,
+                            behind: store.status?.behind ?? 0,
+                            stashCount: store.status?.stashCount ?? 0,
+                            isBusy: store.isMutating,
+                            activeOperation: store.activeSyncOperation,
+                            pull: {
+                                Task {
+                                    if let entry = await store.pull() { presentedSyncLog = entry }
+                                }
+                            },
+                            push: {
+                                Task {
+                                    if let entry = await store.push() { presentedSyncLog = entry }
+                                }
+                            },
+                            stash: { Task { await store.stash() } },
+                            stashPop: { Task { await store.stashPop() } }
+                        )
                     }
                 }
                 .navigationDestination(for: SupermuxChangedFileRowSnapshot.self) { row in
@@ -114,6 +143,9 @@ public struct SupermuxChangesScreen: View {
                 ))
             }
         }
+        .sheet(item: $presentedSyncLog) { entry in
+            SupermuxSyncLogSheet(entry: entry)
+        }
     }
 
     // MARK: - Content
@@ -129,7 +161,7 @@ public struct SupermuxChangesScreen: View {
                         bundle: .module
                     ))
                 } else {
-                    changesList(store)
+                    loadedBody(store)
                 }
             } else {
                 loadingPlaceholder
@@ -166,6 +198,73 @@ public struct SupermuxChangesScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The loaded-repository body: the Changes | History segmented control
+    /// over the selected segment's list. The history `.task` is keyed on
+    /// segment + ``SupermuxMobileChangesStore/historyEpoch`` so switching to
+    /// History loads it lazily and a commit/push/pull-invalidated page
+    /// reloads while visible.
+    private func loadedBody(_ store: SupermuxMobileChangesStore) -> some View {
+        VStack(spacing: 0) {
+            segmentPicker
+            switch segment {
+            case .changes:
+                changesList(store)
+            case .history:
+                historyList(store)
+            }
+        }
+        .task(id: historyTaskKey(store)) {
+            guard segment == .history else { return }
+            await store.loadHistoryIfNeeded()
+        }
+    }
+
+    /// `-1` off the History segment; the store's history epoch on it — any
+    /// change re-fires the load task.
+    private func historyTaskKey(_ store: SupermuxMobileChangesStore) -> Int {
+        segment == .history ? store.historyEpoch : -1
+    }
+
+    private var segmentPicker: some View {
+        Picker(selection: $segment) {
+            Text(String(
+                localized: "supermux.changes.segment.changes",
+                defaultValue: "Changes",
+                bundle: .module
+            ))
+            .tag(SupermuxChangesSegment.changes)
+            Text(String(
+                localized: "supermux.changes.segment.history",
+                defaultValue: "History",
+                bundle: .module
+            ))
+            .tag(SupermuxChangesSegment.history)
+        } label: {
+            Text(String(
+                localized: "supermux.changes.segment.label",
+                defaultValue: "Section",
+                bundle: .module
+            ))
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .accessibilityIdentifier("SupermuxChangesSegmentPicker")
+    }
+
+    private func historyList(_ store: SupermuxMobileChangesStore) -> some View {
+        SupermuxChangesHistoryList(
+            incoming: SupermuxCommitRowSnapshot.rows(from: store.incomingCommits),
+            commits: SupermuxCommitRowSnapshot.rows(from: store.historyCommits),
+            hasLoaded: store.hasLoadedHistory,
+            isLoading: store.isLoadingHistory,
+            hasMore: store.historyNextCursor != nil,
+            errorDescription: store.historyErrorDescription,
+            loadMore: { let store = store; Task { await store.loadMoreHistory() } }
+        )
+    }
+
     private func changesList(_ store: SupermuxMobileChangesStore) -> some View {
         let status = store.status
         let staged = SupermuxChangedFileRowSnapshot.rows(from: status?.staged, area: .staged)
@@ -178,6 +277,19 @@ public struct SupermuxChangesScreen: View {
                 ahead: status?.ahead ?? 0,
                 behind: status?.behind ?? 0,
                 errorDescription: store.lastErrorDescription
+            )
+            SupermuxCommitComposerSection(
+                message: Binding(
+                    get: { store.commitMessage },
+                    set: { store.commitMessage = $0 }
+                ),
+                hasStagedFiles: !staged.isEmpty,
+                isBusy: store.isMutating || store.isGeneratingMessage,
+                isGenerating: store.isGeneratingMessage,
+                committedShortSha: store.lastCommitShortSha,
+                aiUnavailableNotice: store.aiUnavailableNotice,
+                commit: { let store = store; Task { await store.commit() } },
+                generateAndCommit: { let store = store; Task { await store.generateAndCommit() } }
             )
             if staged.isEmpty, unstaged.isEmpty, untracked.isEmpty {
                 Section {
@@ -265,210 +377,10 @@ private enum SupermuxChangesScreenError: Error {
     case notConnected
 }
 
-/// The branch summary header: branch name, ahead/behind counts, and the
-/// store's non-blocking error surface. Values only — no store reference.
-struct SupermuxChangesSummarySection: View {
-    let branch: String?
-    let ahead: Int
-    let behind: Int
-    let errorDescription: String?
-
-    var body: some View {
-        Section {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(String(
-                        localized: "supermux.changes.branchLabel",
-                        defaultValue: "Branch",
-                        bundle: .module
-                    ))
-                Text(branch ?? String(
-                    localized: "supermux.changes.detachedHead",
-                    defaultValue: "Detached HEAD",
-                    bundle: .module
-                ))
-                .font(.body.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                Spacer(minLength: 4)
-                if ahead > 0 {
-                    Text(verbatim: "↑\(ahead)")
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(String(
-                            localized: "supermux.changes.ahead",
-                            defaultValue: "\(ahead) commits ahead",
-                            bundle: .module
-                        ))
-                }
-                if behind > 0 {
-                    Text(verbatim: "↓\(behind)")
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(String(
-                            localized: "supermux.changes.behind",
-                            defaultValue: "\(behind) commits behind",
-                            bundle: .module
-                        ))
-                }
-            }
-            if let errorDescription {
-                Text(errorDescription)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("SupermuxChangesError")
-            }
-        }
-    }
-}
-
-/// A closure bundle for a section header's trailing action (Stage All /
-/// Unstage All).
-struct SupermuxChangesSectionHeaderAction {
-    let title: String
-    let identifier: String
-    let perform: @MainActor () -> Void
-}
-
-/// One bucket of changed files: header (+ optional bulk action) and rows.
-/// Rows receive immutable snapshots plus closures only.
-struct SupermuxChangedFilesSection: View {
-    let title: String
-    let rows: [SupermuxChangedFileRowSnapshot]
-    let actionsDisabled: Bool
-    var headerAction: SupermuxChangesSectionHeaderAction?
-    var stage: (@MainActor (_ row: SupermuxChangedFileRowSnapshot) -> Void)?
-    var unstage: (@MainActor (_ row: SupermuxChangedFileRowSnapshot) -> Void)?
-    var requestDiscard: (@MainActor (_ row: SupermuxChangedFileRowSnapshot) -> Void)?
-
-    var body: some View {
-        Section {
-            ForEach(rows) { row in
-                SupermuxChangedFileMobileRow(
-                    row: row,
-                    actionsDisabled: actionsDisabled,
-                    stage: stage,
-                    unstage: unstage,
-                    requestDiscard: requestDiscard
-                )
-            }
-        } header: {
-            HStack(spacing: 6) {
-                Text(title)
-                Spacer(minLength: 0)
-                if let headerAction {
-                    Button(action: headerAction.perform) {
-                        Text(headerAction.title)
-                            .font(.footnote)
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(actionsDisabled)
-                    .accessibilityIdentifier(headerAction.identifier)
-                }
-            }
-        }
-    }
-}
-
-/// One changed-file row: status letter, emphasized filename over its
-/// de-emphasized directory, swipe actions, and navigation into the diff.
-struct SupermuxChangedFileMobileRow: View {
-    let row: SupermuxChangedFileRowSnapshot
-    let actionsDisabled: Bool
-    var stage: (@MainActor (_ row: SupermuxChangedFileRowSnapshot) -> Void)?
-    var unstage: (@MainActor (_ row: SupermuxChangedFileRowSnapshot) -> Void)?
-    var requestDiscard: (@MainActor (_ row: SupermuxChangedFileRowSnapshot) -> Void)?
-
-    var body: some View {
-        NavigationLink(value: row) {
-            HStack(spacing: 10) {
-                Text(verbatim: row.kindBadge)
-                    .font(.caption.weight(.bold).monospaced())
-                    .foregroundStyle(badgeTint)
-                    .frame(width: 16)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.fileName)
-                        .font(.body)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    if let directory = row.directory {
-                        Text(directory)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.head)
-                    }
-                }
-            }
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if let requestDiscard {
-                Button(role: .destructive) {
-                    requestDiscard(row)
-                } label: {
-                    Label {
-                        Text(String(
-                            localized: "supermux.changes.action.discard",
-                            defaultValue: "Discard",
-                            bundle: .module
-                        ))
-                    } icon: {
-                        Image(systemName: "arrow.uturn.backward")
-                    }
-                }
-                .disabled(actionsDisabled)
-            }
-            if let stage {
-                Button {
-                    stage(row)
-                } label: {
-                    Label {
-                        Text(String(
-                            localized: "supermux.changes.action.stage",
-                            defaultValue: "Stage",
-                            bundle: .module
-                        ))
-                    } icon: {
-                        Image(systemName: "plus.circle")
-                    }
-                }
-                .tint(.green)
-                .disabled(actionsDisabled)
-            }
-            if let unstage {
-                Button {
-                    unstage(row)
-                } label: {
-                    Label {
-                        Text(String(
-                            localized: "supermux.changes.action.unstage",
-                            defaultValue: "Unstage",
-                            bundle: .module
-                        ))
-                    } icon: {
-                        Image(systemName: "minus.circle")
-                    }
-                }
-                .tint(.orange)
-                .disabled(actionsDisabled)
-            }
-        }
-        .accessibilityLabel(row.fileName)
-        .accessibilityValue(row.directory ?? "")
-        .accessibilityIdentifier("SupermuxChangedFileRow-\(row.id)")
-    }
-
-    /// Status tint following the desktop's changes-list convention:
-    /// additions/untracked green, deletions red, everything else neutral.
-    private var badgeTint: Color {
-        switch row.kind {
-        case "added", "untracked": .green
-        case "deleted": .red
-        case "conflicted": .orange
-        default: .secondary
-        }
-    }
+/// The changes screen's two segments.
+enum SupermuxChangesSegment: Hashable {
+    /// Working-tree changes + commit composer.
+    case changes
+    /// Paginated commit history.
+    case history
 }
