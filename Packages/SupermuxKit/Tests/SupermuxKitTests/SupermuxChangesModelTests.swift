@@ -267,7 +267,9 @@ import SupermuxKit
         nonisolated func run(
             directory: String, executable: String, arguments: [String], timeout: TimeInterval?
         ) async -> CommandResult {
-            await handle(arguments: arguments)
+            await handle(
+                arguments: unwrappedGitArguments(executable: executable, arguments: arguments)
+            )
         }
 
         private func handle(arguments: [String]) -> CommandResult {
@@ -464,7 +466,9 @@ import SupermuxKit
         nonisolated func run(
             directory: String, executable: String, arguments: [String], timeout: TimeInterval?
         ) async -> CommandResult {
-            let sub = subcommand(of: arguments)
+            let sub = subcommand(
+                of: unwrappedGitArguments(executable: executable, arguments: arguments)
+            )
             if sub == "commit" {
                 await waitForRelease()
             }
