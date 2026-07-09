@@ -11,13 +11,16 @@ import SupermuxMobileCore
 /// by ``SupermuxMobileProjectsObserver`` watching the model, so every write
 /// path (mobile or desktop) pokes the phone exactly once.
 extension TerminalController {
-    /// `mobile.supermux.projects.list`: the registered projects plus the
-    /// sidebar section's collapse state, as
-    /// `{projects: [SupermuxProjectDTO], section_collapsed}`.
+    /// `mobile.supermux.projects.list`: the registered projects, the global
+    /// terminal presets (the same set the desktop bar shows above every
+    /// workspace), and the sidebar section's collapse state, as
+    /// `{projects: [SupermuxProjectDTO], presets: [SupermuxTerminalPresetDTO],
+    /// section_collapsed}`.
     func v2SupermuxProjectsList(params: [String: Any]) async -> V2CallResult {
         let model = SupermuxComposition.projectsModel
         await model.loadIfNeeded()
         let projects = model.projects
+        let presets = model.presets
         let isSectionCollapsed = model.isSectionCollapsed
         do {
             // has_custom_icon stats candidate icon paths per project; keep
@@ -25,6 +28,7 @@ extension TerminalController {
             let payload = try await Task.detached(priority: .userInitiated) {
                 try SupermuxMobileProjectsPayloadBuilder().projectsList(
                     projects: projects,
+                    presets: presets,
                     isSectionCollapsed: isSectionCollapsed
                 )
             }.value

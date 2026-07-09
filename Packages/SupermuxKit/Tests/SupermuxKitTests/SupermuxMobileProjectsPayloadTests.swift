@@ -108,10 +108,18 @@ struct SupermuxMobileProjectsPayloadTests {
 
         let payload = try SupermuxMobileProjectsPayloadBuilder().projectsList(
             projects: model.projects,
+            presets: model.presets,
             isSectionCollapsed: model.isSectionCollapsed
         )
 
         #expect(payload["section_collapsed"] as? Bool == true)
+        // The presets key always travels; a document that never carried
+        // presets loads the model's seeded defaults, and that is what the
+        // phone sees (the same list the desktop bar shows).
+        #expect(
+            (payload["presets"] as? [[String: Any]])?.count
+                == SupermuxTerminalPreset.defaults.count
+        )
         let encoded = try #require(payload["projects"] as? [[String: Any]])
         let wire = SupermuxWireJSON()
         let decoded = try encoded.map { try wire.decode(SupermuxProjectDTO.self, from: $0) }
@@ -146,6 +154,7 @@ struct SupermuxMobileProjectsPayloadTests {
 
         let payload = try SupermuxMobileProjectsPayloadBuilder().projectsList(
             projects: [project],
+            presets: [],
             isSectionCollapsed: false
         )
 
@@ -153,5 +162,54 @@ struct SupermuxMobileProjectsPayloadTests {
         let dto = try SupermuxWireJSON().decode(SupermuxProjectDTO.self, from: try #require(encoded.first))
         #expect(dto.hasCustomIcon == true)
         #expect(payload["section_collapsed"] as? Bool == false)
+    }
+
+    // MARK: - m2-f5: global presets travel on projects.list
+
+    @Test func projectsListPayloadIncludesGlobalPresetsFromSeededModel() async throws {
+        let dir = freshTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fixtures = [
+            SupermuxTerminalPreset(
+                name: "claude",
+                command: "claude --resume",
+                iconSymbol: "sparkle",
+                colorHex: "#f97316"
+            ),
+            SupermuxTerminalPreset(name: "codex", command: "codex"),
+        ]
+        let store = SupermuxProjectStore(fileURL: dir.appendingPathComponent("projects.json"))
+        try await store.save(SupermuxProjectsFile(
+            version: SupermuxProjectsFile.currentVersion,
+            projects: [fullyPopulatedProject()],
+            isSectionCollapsed: false,
+            presets: fixtures
+        ))
+        let model = SupermuxProjectsModel(
+            store: store,
+            worktreeService: SupermuxGitWorktreeService()
+        )
+        await model.loadIfNeeded()
+
+        let payload = try SupermuxMobileProjectsPayloadBuilder().projectsList(
+            projects: model.projects,
+            presets: model.presets,
+            isSectionCollapsed: model.isSectionCollapsed
+        )
+
+        let encoded = try #require(payload["presets"] as? [[String: Any]])
+        let wire = SupermuxWireJSON()
+        let decoded = try encoded.map { try wire.decode(SupermuxTerminalPresetDTO.self, from: $0) }
+        #expect(decoded.count == fixtures.count)
+        for (dto, fixture) in zip(decoded, fixtures) {
+            #expect(dto.id == fixture.id.uuidString)
+            #expect(dto.name == fixture.name)
+            #expect(dto.command == fixture.command)
+            #expect(dto.iconSymbol == fixture.iconSymbol)
+            #expect(dto.colorHex == fixture.colorHex)
+        }
+        // The wire keys are the DTO's exact snake_case contract.
+        let first = encoded.first ?? [:]
+        #expect(Set(first.keys) == ["id", "name", "command", "icon_symbol", "color_hex"])
     }
 }

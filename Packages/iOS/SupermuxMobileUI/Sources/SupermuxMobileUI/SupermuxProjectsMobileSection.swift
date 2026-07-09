@@ -1,4 +1,5 @@
 public import Foundation
+import SupermuxMobileCore
 import SupermuxMobileKit
 public import SwiftUI
 #if canImport(UIKit)
@@ -34,6 +35,15 @@ public struct SupermuxProjectsMobileSection: View {
             Section {
                 if !section.isCollapsed {
                     sectionRows
+                    // Presets are GLOBAL (the desktop shows the same bar above
+                    // every workspace's terminal), so their entry point lives
+                    // at the section's level, not under any one project —
+                    // reachable even with zero registered projects.
+                    if section.showsPresets, let editing = actions.editing {
+                        SupermuxPresetsMobileRow(presets: section.presets, editing: editing)
+                            .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
+                            .listRowSeparator(.hidden)
+                    }
                 }
             } header: {
                 SupermuxProjectsSectionHeader(
@@ -143,6 +153,48 @@ struct SupermuxProjectsSectionHeader: View {
                 }
             }
         }
+    }
+}
+
+/// The global Presets entry at the section's tail: pushes the presets
+/// manager screen (list + create/edit/delete). Rendered only when the host
+/// advertises `supermux.presets.v1` and the editing seam is live.
+struct SupermuxPresetsMobileRow: View {
+    let presets: [SupermuxTerminalPresetDTO]
+    let editing: SupermuxProjectEditingActions
+
+    var body: some View {
+        NavigationLink {
+            SupermuxPresetsListScreen(presets: presets, editing: editing)
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.secondary.opacity(0.12))
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 32, height: 32)
+                .accessibilityHidden(true)
+                Text(String(
+                    localized: "supermux.presets.title",
+                    defaultValue: "Presets",
+                    bundle: .module
+                ))
+                .font(.body.weight(.medium))
+                Spacer(minLength: 4)
+                if !presets.isEmpty {
+                    Text(verbatim: "\(presets.count)")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                }
+            }
+        }
+        .accessibilityIdentifier("SupermuxPresetsRow")
     }
 }
 

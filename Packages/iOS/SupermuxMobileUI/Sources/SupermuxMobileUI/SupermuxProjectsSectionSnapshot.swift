@@ -15,6 +15,14 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     public let hasLoaded: Bool
     /// The project rows, in the Mac sidebar's order.
     public let rows: [SupermuxProjectRowSnapshot]
+    /// Whether the global Presets entry renders. `false` unless the host
+    /// advertises `supermux.presets.v1` (an upstream or older fork Mac shows
+    /// no presets UI at all).
+    public let showsPresets: Bool
+    /// The global terminal presets, in the Mac bar's order. Presets are NOT
+    /// scoped per project — the desktop shows the same set above every
+    /// workspace's terminal.
+    public let presets: [SupermuxTerminalPresetDTO]
 
     /// The snapshot of a hidden section (no session, or capability absent).
     public static let hidden = SupermuxProjectsSectionSnapshot(
@@ -30,16 +38,22 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     ///   - isCollapsed: Whether the rows are folded away.
     ///   - hasLoaded: Whether at least one fetch succeeded.
     ///   - rows: The project rows, in the Mac sidebar's order.
+    ///   - showsPresets: Whether the global Presets entry renders.
+    ///   - presets: The global terminal presets, in the Mac bar's order.
     public init(
         isVisible: Bool,
         isCollapsed: Bool,
         hasLoaded: Bool,
-        rows: [SupermuxProjectRowSnapshot]
+        rows: [SupermuxProjectRowSnapshot],
+        showsPresets: Bool = false,
+        presets: [SupermuxTerminalPresetDTO] = []
     ) {
         self.isVisible = isVisible
         self.isCollapsed = isCollapsed
         self.hasLoaded = hasLoaded
         self.rows = rows
+        self.showsPresets = showsPresets
+        self.presets = presets
     }
 }
 

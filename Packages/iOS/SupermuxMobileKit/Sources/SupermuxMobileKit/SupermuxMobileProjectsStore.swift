@@ -20,6 +20,18 @@ public final class SupermuxMobileProjectsStore {
     /// The registered projects, in the Mac sidebar's order.
     public private(set) var projects: [SupermuxProjectDTO] = []
 
+    /// The global terminal presets, in the Mac bar's order (the desktop shows
+    /// the same set above every workspace's terminal — presets are NOT scoped
+    /// per project). Synced from `projects.list`, which carries them since
+    /// m2-f5; against an older host this stays empty.
+    public private(set) var presets: [SupermuxTerminalPresetDTO] = []
+
+    /// Whether the last successful list actually carried the `presets` field.
+    /// A pre-m2-f5 host omits it even while advertising `supermux.presets.v1`
+    /// (the CRUD capability predates the read shape); the presets UI must
+    /// hide then, or the bar would look permanently — and wrongly — empty.
+    private var listCarriesPresets = false
+
     /// Whether the Mac sidebar's Projects section is collapsed. Seeded from
     /// the Mac; `false` until the first successful fetch.
     public private(set) var isSectionCollapsed = false
@@ -45,6 +57,12 @@ public final class SupermuxMobileProjectsStore {
     /// Whether the phone shows the Projects section at all (UI-02): gated on
     /// the host advertising `supermux.projects.v1`.
     public var showsProjectsSection: Bool { capabilities.supportsProjects }
+
+    /// Whether the phone shows the global Presets area: the host must
+    /// advertise `supermux.presets.v1` AND have proven the m2-f5 read shape
+    /// by carrying `presets` on `projects.list` (an upstream Mac, an older
+    /// fork Mac, or a not-yet-loaded session renders no presets UI at all).
+    public var showsPresets: Bool { capabilities.supportsPresets && listCarriesPresets }
 
     /// Creates a projects store.
     ///
@@ -204,39 +222,48 @@ public final class SupermuxMobileProjectsStore {
     /// `mobile.supermux.preset.create`: appends a launchable terminal preset
     /// (the Mac assigns the identity and requires non-empty name + command —
     /// build the request via ``SupermuxPresetDraft/createRequest()``).
+    /// Refetches the list on success (presets travel on `projects.list`).
     /// - Parameter request: The typed create request.
     /// - Returns: The created record.
     public func createPreset(_ request: SupermuxPresetCreateRequest) async throws -> SupermuxTerminalPresetDTO {
         guard capabilities.supportsPresets else { throw SupermuxMacUnavailableError() }
-        return try await client.presetCreate(request).preset
+        let preset = try await client.presetCreate(request).preset
+        await refetch()
+        return preset
     }
 
     /// `mobile.supermux.preset.update`: applies a present-key patch built by
-    /// ``SupermuxPresetDraft/patch(from:)``.
+    /// ``SupermuxPresetDraft/patch(from:)``. Refetches the list on success.
     /// - Parameters:
     ///   - presetID: The preset's UUID string.
     ///   - patch: The present-key patch (only changed fields).
     /// - Returns: The updated record.
     public func updatePreset(presetID: String, patch: SupermuxPresetPatch) async throws -> SupermuxTerminalPresetDTO {
         guard capabilities.supportsPresets else { throw SupermuxMacUnavailableError() }
-        return try await client.presetUpdate(SupermuxPresetUpdateRequest(
+        let preset = try await client.presetUpdate(SupermuxPresetUpdateRequest(
             presetID: presetID,
             patch: patch
         )).preset
+        await refetch()
+        return preset
     }
 
     /// `mobile.supermux.preset.delete`: removes a preset from the Mac's bar
-    /// (the confirmation dialog lives on the phone).
+    /// (the confirmation dialog lives on the phone). Refetches the list on
+    /// success.
     /// - Parameter presetID: The preset's UUID string.
     public func deletePreset(presetID: String) async throws {
         guard capabilities.supportsPresets else { throw SupermuxMacUnavailableError() }
         _ = try await client.presetDelete(SupermuxPresetDeleteRequest(presetID: presetID))
+        await refetch()
     }
 
     private func refetch() async {
         do {
             let response = try await client.projectsList()
             projects = response.projects
+            presets = response.presets ?? []
+            listCarriesPresets = response.presets != nil
             if let sectionCollapsed = response.sectionCollapsed {
                 isSectionCollapsed = sectionCollapsed
             }

@@ -139,6 +139,65 @@ import Testing
         #expect(secondClient.projectsListCallCount == 1)
     }
 
+    // MARK: Presets area (m2-f5)
+
+    @Test func snapshotCarriesGlobalPresetsWhenTheHostAdvertisesPresets() async throws {
+        let presets = [
+            SupermuxTerminalPresetDTO(
+                id: "44444444-4444-4444-4444-444444444444",
+                name: "claude",
+                command: "claude",
+                iconSymbol: "sparkle",
+                colorHex: "#f97316"
+            ),
+        ]
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(
+            projects: [fixtureProject()],
+            presets: presets
+        )
+        let model = SupermuxProjectsSectionModel()
+        let session = Task {
+            await model.runSession(
+                client: client,
+                hostCapabilities: [
+                    Self.projectsCapability,
+                    SupermuxMobileCapability.presetsV1.rawValue,
+                ]
+            )
+        }
+        defer { session.cancel() }
+
+        try await wait.until { model.snapshot.hasLoaded }
+        #expect(model.snapshot.showsPresets)
+        #expect(model.snapshot.presets == presets)
+    }
+
+    @Test func snapshotHidesThePresetsAreaWithoutThePresetsCapability() async throws {
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(
+            projects: [fixtureProject()],
+            presets: [
+                SupermuxTerminalPresetDTO(
+                    id: "44444444-4444-4444-4444-444444444444",
+                    name: "claude",
+                    command: "claude"
+                ),
+            ]
+        )
+        let model = SupermuxProjectsSectionModel()
+        // projects.v1 only — an older fork Mac must render no presets UI even
+        // if the payload were to carry them.
+        let session = Task {
+            await model.runSession(client: client, hostCapabilities: [Self.projectsCapability])
+        }
+        defer { session.cancel() }
+
+        try await wait.until { model.snapshot.hasLoaded }
+        #expect(model.snapshot.showsPresets == false)
+        #expect(model.snapshot.presets.isEmpty)
+    }
+
     // MARK: Collapse
 
     @Test func collapseSeedsFromTheMacAndTogglesLocally() async throws {

@@ -79,6 +79,45 @@ import Testing
         #expect(fake.projectsListCallCount == 2)
     }
 
+    @Test func syncsGlobalPresetsFromTheListResponseAndRefetchesOnEvent() async throws {
+        let presetsA = [
+            SupermuxTerminalPresetDTO(
+                id: "44444444-4444-4444-4444-444444444444",
+                name: "claude",
+                command: "claude",
+                iconSymbol: "sparkle",
+                colorHex: "#f97316"
+            ),
+        ]
+        let presetsB = presetsA + [
+            SupermuxTerminalPresetDTO(
+                id: "55555555-5555-5555-5555-555555555555",
+                name: "codex",
+                command: "codex"
+            ),
+        ]
+        let fake = FakeSupermuxMacClient()
+        fake.listResponse = SupermuxProjectsListResponse(
+            projects: Self.fixturesA,
+            presets: presetsA
+        )
+        let store = makeStore(fake: fake)
+        let runner = Task { await store.run() }
+        defer { runner.cancel() }
+
+        try await TestWait().until { store.hasLoaded }
+        #expect(store.presets == presetsA)
+
+        // A preset mutation on the Mac pokes the SAME projects.updated topic
+        // (the observer hashes model.presets); the refetch carries the new bar.
+        fake.listResponse = SupermuxProjectsListResponse(
+            projects: Self.fixturesA,
+            presets: presetsB
+        )
+        fake.emit(SupermuxMobileEvent(topic: .projectsUpdated))
+        try await TestWait().until { store.presets == presetsB }
+    }
+
     @Test func resubscribesAndRefetchesAfterTheStreamEnds() async throws {
         let fake = FakeSupermuxMacClient()
         fake.listResponse = SupermuxProjectsListResponse(projects: Self.fixturesA)
@@ -205,5 +244,62 @@ import Testing
         let store = makeStore(fake: fake, iconCache: cache)
         let data = await store.iconPNGData(for: project)
         #expect(data == cachedBytes)
+    }
+
+    // MARK: Presets visibility gate
+
+    private static let projectsAndPresets = SupermuxMobileCapabilities(hostCapabilities: [
+        SupermuxMobileCapability.projectsV1.rawValue,
+        SupermuxMobileCapability.presetsV1.rawValue,
+    ])
+
+    @Test func showsPresetsRequiresTheCapabilityAndAListThatCarriesPresets() async throws {
+        let fake = FakeSupermuxMacClient()
+        // An EMPTY bar still proves the read shape: the field travels.
+        fake.listResponse = SupermuxProjectsListResponse(projects: [], presets: [])
+        let store = makeStore(fake: fake, capabilities: Self.projectsAndPresets)
+
+        // Before the first fetch nothing is proven yet.
+        #expect(!store.showsPresets)
+
+        let runner = Task { await store.run() }
+        defer { runner.cancel() }
+        try await TestWait().until { store.hasLoaded }
+        #expect(store.showsPresets)
+    }
+
+    @Test func showsPresetsStaysHiddenWhenTheHostOmitsThePresetsField() async throws {
+        let fake = FakeSupermuxMacClient()
+        // An m2-f3-era fork Mac: advertises supermux.presets.v1 (CRUD works)
+        // but its projects.list predates the presets read shape. Showing a
+        // permanently-empty presets manager would look like data loss, so
+        // the area hides until the host proves the read path.
+        fake.listResponse = SupermuxProjectsListResponse(projects: Self.fixturesA, presets: nil)
+        let store = makeStore(fake: fake, capabilities: Self.projectsAndPresets)
+        let runner = Task { await store.run() }
+        defer { runner.cancel() }
+        try await TestWait().until { store.hasLoaded }
+        #expect(!store.showsPresets)
+        #expect(store.presets.isEmpty)
+    }
+
+    @Test func showsPresetsStaysHiddenWithoutThePresetsCapability() async throws {
+        let fake = FakeSupermuxMacClient()
+        fake.listResponse = SupermuxProjectsListResponse(
+            projects: Self.fixturesA,
+            presets: [
+                SupermuxTerminalPresetDTO(
+                    id: "44444444-4444-4444-4444-444444444444",
+                    name: "claude",
+                    command: "claude"
+                ),
+            ]
+        )
+        // projects.v1 alone: no preset CRUD on the Mac, so no presets UI.
+        let store = makeStore(fake: fake)
+        let runner = Task { await store.run() }
+        defer { runner.cancel() }
+        try await TestWait().until { store.hasLoaded }
+        #expect(!store.showsPresets)
     }
 }

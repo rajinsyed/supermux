@@ -70,7 +70,9 @@ public final class SupermuxProjectsSectionModel {
                     openWorkspaces: workspaceRows.filter { $0.projectID == project.id },
                     worktreeCount: worktreeCounts[project.id]
                 )
-            }
+            },
+            showsPresets: store.showsPresets,
+            presets: store.showsPresets ? store.presets : []
         )
     }
 

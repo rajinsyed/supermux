@@ -874,6 +874,7 @@
 		50BE000200000000000000B4 /* SupermuxMobileHost+Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */; };
 		50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */; };
 		50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B9 /* SupermuxMobileObservers.swift */; };
+		50BE000200000000000000CB /* SupermuxMobileObserversTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */; };
 		50BE000200000000000000C6 /* SupermuxMobileWorkspaceListAugmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C5 /* SupermuxMobileWorkspaceListAugmenter.swift */; };
 		50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */; };
 		50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */; };
@@ -1968,6 +1969,7 @@
 		50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Projects.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Worktrees.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000B9 /* SupermuxMobileObservers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObservers.swift; sourceTree = "<group>"; };
+		50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObserversTests.swift; sourceTree = "<group>"; };
 		50BE000200000000000000C5 /* SupermuxMobileWorkspaceListAugmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileWorkspaceListAugmenter.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNewWorkspaceHomeDirectoryTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxProjectsSectionHeightPreferenceKey.swift; sourceTree = "<group>"; };
@@ -3363,6 +3365,7 @@
 				50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */,
 				50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */,
 				50BE000200000000000000C2 /* SupermuxMobileAuthorizationTests.swift */,
+				50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */,
 				14A7DC53B9CA33BE2A421711 /* WorkspacePullRequestSidebarTests.swift */,
 				5659A0045659A0045659A004 /* WorkspaceSidebarObservationTests.swift */,
 				FEEDC0DEC0DEC0DEC0DE0002 /* FeedCoordinatorTests.swift */,
@@ -4835,6 +4838,7 @@
 						B6285B71BA6F82AF8F945E00 /* SSHPTYAttachReconnectInputFilterTests.swift in Sources */,
 				F6355600A1B2C3D4E5F60718 /* SSHStartupSignalLifecycleTests.swift in Sources */,
 				50BE000200000000000000C1 /* SupermuxMobileAuthorizationTests.swift in Sources */,
+				50BE000200000000000000CB /* SupermuxMobileObserversTests.swift in Sources */,
 				50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */,
 				50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */,
 				FBE660ABA1854983B84368C6 /* SystemWideHotkeyShortcutPolicyTests.swift in Sources */,

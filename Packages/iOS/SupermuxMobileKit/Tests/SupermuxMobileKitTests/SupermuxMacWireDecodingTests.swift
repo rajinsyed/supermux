@@ -36,7 +36,55 @@ import Testing
         let json = Data(#"{"future_field": {"x": 1}}"#.utf8)
         let response = try JSONDecoder().decode(SupermuxProjectsListResponse.self, from: json)
         #expect(response.projects.isEmpty)
+        // Missing `presets` is NOT the same as an empty bar: it means the
+        // host predates the m2-f5 read shape, and the phone must hide the
+        // presets UI rather than show a bar that looks wrongly empty.
+        #expect(response.presets == nil)
         #expect(response.sectionCollapsed == nil)
+    }
+
+    @Test func projectsListResponseDistinguishesAnEmptyPresetsBarFromNoPresetsField() throws {
+        let json = Data(#"{"projects": [], "presets": []}"#.utf8)
+        let response = try JSONDecoder().decode(SupermuxProjectsListResponse.self, from: json)
+        #expect(response.presets == [])
+    }
+
+    @Test func projectsListResponseDecodesGlobalPresets() throws {
+        let json = Data("""
+        {
+          "projects": [],
+          "presets": [
+            {
+              "id": "44444444-4444-4444-4444-444444444444",
+              "name": "claude",
+              "command": "claude --resume",
+              "icon_symbol": "sparkle",
+              "color_hex": "#f97316"
+            },
+            {
+              "id": "55555555-5555-5555-5555-555555555555",
+              "name": "codex",
+              "command": "codex"
+            }
+          ],
+          "section_collapsed": false
+        }
+        """.utf8)
+        let response = try JSONDecoder().decode(SupermuxProjectsListResponse.self, from: json)
+        #expect(response.presets == [
+            SupermuxTerminalPresetDTO(
+                id: "44444444-4444-4444-4444-444444444444",
+                name: "claude",
+                command: "claude --resume",
+                iconSymbol: "sparkle",
+                colorHex: "#f97316"
+            ),
+            SupermuxTerminalPresetDTO(
+                id: "55555555-5555-5555-5555-555555555555",
+                name: "codex",
+                command: "codex"
+            ),
+        ])
     }
 
     @Test func iconResponseDecodesFullIconResult() throws {

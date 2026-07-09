@@ -2,7 +2,8 @@ public import Foundation
 internal import SupermuxMobileCore
 
 /// Builds the `mobile.supermux.projects.list` result payload
-/// (`{projects: [SupermuxProjectDTO], section_collapsed}`).
+/// (`{projects: [SupermuxProjectDTO], presets: [SupermuxTerminalPresetDTO],
+/// section_collapsed}`).
 ///
 /// Lives in SupermuxKit (not the app target) so the wire shape is
 /// package-unit-testable against a seeded ``SupermuxProjectsModel``; the app
@@ -11,6 +12,7 @@ internal import SupermuxMobileCore
 /// ```swift
 /// let payload = try SupermuxMobileProjectsPayloadBuilder().projectsList(
 ///     projects: model.projects,
+///     presets: model.presets,
 ///     isSectionCollapsed: model.isSectionCollapsed
 /// )
 /// ```
@@ -29,17 +31,27 @@ public struct SupermuxMobileProjectsPayloadBuilder: Sendable {
     ///
     /// - Parameters:
     ///   - projects: Registered projects in sidebar order.
+    ///   - presets: Global terminal presets in bar order (the desktop shows
+    ///     the same set above every workspace's terminal; the phone gets the
+    ///     whole list — additive `presets` key, ignored by old phones).
     ///   - isSectionCollapsed: Whether the Mac sidebar's Projects section is
     ///     collapsed.
-    /// - Returns: The RPC result object (`projects` + `section_collapsed`).
+    /// - Returns: The RPC result object (`projects` + `presets` +
+    ///   `section_collapsed`).
     /// - Throws: Any encoding failure from the shared wire bridge.
     public func projectsList(
         projects: [SupermuxProject],
+        presets: [SupermuxTerminalPreset],
         isSectionCollapsed: Bool
     ) throws -> [String: Any] {
         let encoded = try projects.map(encodedProject(_:))
+        let wire = SupermuxWireJSON()
+        let encodedPresets = try presets.map { preset in
+            try wire.dictionary(from: SupermuxTerminalPresetDTO(preset: preset))
+        }
         return [
             "projects": encoded,
+            "presets": encodedPresets,
             "section_collapsed": isSectionCollapsed,
         ]
     }

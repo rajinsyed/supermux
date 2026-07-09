@@ -172,6 +172,22 @@ import Testing
             "name": "Claude",
             "command": "claude",
         ] as NSDictionary)
+        // Presets travel on projects.list (m2-f5), so preset writes refetch
+        // exactly like project writes.
+        #expect(fake.projectsListCallCount == 1)
+    }
+
+    @Test func presetCreateErrorRethrowsWithoutRefetch() async {
+        let fake = FakeSupermuxMacClient()
+        fake.presetWriteError = Boom()
+        let store = makeStore(fake: fake)
+        var draft = SupermuxPresetDraft()
+        draft.name = "Claude"
+        draft.command = "claude"
+        await #expect(throws: Boom.self) {
+            _ = try await store.createPreset(try #require(draft.createRequest()))
+        }
+        #expect(fake.projectsListCallCount == 0)
     }
 
     @Test func presetUpdateSendsPresetIDPlusPatchObject() async throws {
@@ -195,6 +211,7 @@ import Testing
                 "color_hex": NSNull(),
             ],
         ] as NSDictionary)
+        #expect(fake.projectsListCallCount == 1)
     }
 
     @Test func presetDeleteSendsPresetID() async throws {
@@ -207,6 +224,7 @@ import Testing
         #expect(fake.recordedWireCalls.first?.params == [
             "preset_id": Self.presetID,
         ] as NSDictionary)
+        #expect(fake.projectsListCallCount == 1)
     }
 
     @Test func presetWritesWithoutTheCapabilityThrowUnavailable() async {
