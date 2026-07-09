@@ -1,6 +1,8 @@
 import Foundation
 
-/// The Unpushed/Incoming commit-log queries for ``SupermuxGitChangesService``.
+/// The commit-log queries for ``SupermuxGitChangesService``: the desktop
+/// panel's Unpushed/Incoming feeds plus the mobile `changes.history` page
+/// reader and the post-commit `HEAD` sha probe.
 ///
 /// Split out of `SupermuxGitChangesService.swift` to keep the service file
 /// inside the fork's Swift file-length budget.
@@ -82,6 +84,49 @@ extension SupermuxGitChangesService {
         return await commitLog(
             repoPath: repoPath, revision: ["HEAD..@{upstream}"], limit: limit
         ) ?? []
+    }
+
+    /// Reads one page of the repository's full commit history (newest first)
+    /// for the mobile `changes.history` RPC.
+    ///
+    /// Without a cursor the page starts at `HEAD`. With one, the page resumes
+    /// immediately AFTER the cursor commit (`git log <cursor> --skip=1`), so a
+    /// caller passing the previous page's last sha never sees an overlap —
+    /// and because the cursor names a commit rather than an offset, commits
+    /// added on top of `HEAD` between calls cannot shift later pages.
+    /// - Parameters:
+    ///   - repoPath: Repository directory.
+    ///   - limit: Maximum number of commits to return (callers fetch one
+    ///     extra to detect a further page).
+    ///   - cursor: Full sha of the previous page's last commit, or `nil` for
+    ///     the first page.
+    /// - Returns: The parsed page, or `nil` when git fails — an unknown
+    ///   cursor, an unborn branch, or a non-repository (callers distinguish
+    ///   by whether a cursor was supplied).
+    public func historyCommits(
+        repoPath: String, limit: Int, before cursor: String?
+    ) async -> [SupermuxGitCommit]? {
+        guard limit > 0 else { return [] }
+        if let cursor {
+            return await commitLog(repoPath: repoPath, revision: ["--skip=1", cursor], limit: limit)
+        }
+        return await commitLog(repoPath: repoPath, revision: ["HEAD"], limit: limit)
+    }
+
+    /// The full sha `HEAD` resolves to (`git rev-parse HEAD`), or `nil` on an
+    /// unborn branch or outside a repository. Read by the mobile
+    /// `changes.commit` handler to report the new commit's sha.
+    /// - Parameter repoPath: Repository directory.
+    public func headCommitSha(repoPath: String) async -> String? {
+        let result = await runner.run(
+            directory: repoPath,
+            executable: "git",
+            arguments: [Self.noOptionalLocks, "rev-parse", "HEAD"],
+            timeout: Self.gitTimeout
+        )
+        guard result.exitStatus == 0, let stdout = result.stdout else { return nil }
+        let sha = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return sha.isEmpty ? nil : sha
     }
 
     /// Runs `git log` over `revision` and parses the result; `nil` on git

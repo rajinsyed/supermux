@@ -11,16 +11,18 @@ import SupermuxMobileCore
 /// each window's selected workspace; the phone names its target instead).
 /// Wire payloads are built by package-tested SupermuxKit types.
 ///
-/// Commit/push/pull/stash/history/generate_commit_message arrive with the
-/// next changes feature; until then they return `method_not_found` and the
-/// phone must tolerate that under the already-advertised
-/// `supermux.changes.v1` capability.
+/// The sync/history half of the namespace (commit, generate_commit_message,
+/// push, pull, stash, stash_pop, history) lives in
+/// `SupermuxMobileHost+ChangesSync.swift`, sharing this file's service and
+/// workspace resolution.
 extension TerminalController {
     /// One process-wide git engine for the mobile changes handlers (an actor
     /// wrapping a `CommandRunner`; requests serialize per invocation exactly
-    /// like the desktop panel's per-model service).
+    /// like the desktop panel's per-model service). Internal (not private):
+    /// shared with the sync/history handlers in
+    /// `SupermuxMobileHost+ChangesSync.swift`.
     @MainActor
-    private static let supermuxMobileChangesService = SupermuxGitChangesService()
+    static let supermuxMobileChangesService = SupermuxGitChangesService()
 
     /// `mobile.supermux.changes.watch`: starts, heartbeats, or stops the
     /// per-workspace repository watcher lease (see

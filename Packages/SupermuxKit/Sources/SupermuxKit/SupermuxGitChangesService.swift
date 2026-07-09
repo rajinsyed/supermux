@@ -296,16 +296,24 @@ public actor SupermuxGitChangesService {
     /// - Parameters:
     ///   - repoPath: Repository directory.
     ///   - hasUpstream: Whether the current branch already has an upstream.
+    /// - Returns: git's captured output (stdout/stderr), for callers that
+    ///   surface a transfer log (the mobile `changes.push` `log_lines`).
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
-    public func push(repoPath: String, hasUpstream: Bool) async throws {
+    @discardableResult
+    public func push(repoPath: String, hasUpstream: Bool) async throws -> CommandResult {
         let arguments = hasUpstream ? ["push"] : ["push", "-u", "origin", "HEAD"]
-        try await runGit(in: repoPath, arguments, commandLabel: "push", timeout: Self.networkTimeout)
+        return try await runGit(
+            in: repoPath, arguments, commandLabel: "push", timeout: Self.networkTimeout
+        )
     }
 
     /// Pulls from the configured upstream (`git pull`).
     /// - Parameter repoPath: Repository directory.
+    /// - Returns: git's captured output (stdout/stderr), for callers that
+    ///   surface a transfer log (the mobile `changes.pull` `log_lines`).
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
-    public func pull(repoPath: String) async throws {
+    @discardableResult
+    public func pull(repoPath: String) async throws -> CommandResult {
         try await runGit(in: repoPath, ["pull"], commandLabel: "pull", timeout: Self.networkTimeout)
     }
 

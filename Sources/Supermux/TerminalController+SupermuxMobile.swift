@@ -63,6 +63,20 @@ extension TerminalController {
             return await v2SupermuxChangesUnstage(params: params)
         case .changesDiscard:
             return await v2SupermuxChangesDiscard(params: params)
+        case .changesCommit:
+            return await v2SupermuxChangesCommit(params: params)
+        case .changesGenerateCommitMessage:
+            return await v2SupermuxChangesGenerateCommitMessage(params: params)
+        case .changesPush:
+            return await v2SupermuxChangesPush(params: params)
+        case .changesPull:
+            return await v2SupermuxChangesPull(params: params)
+        case .changesStash:
+            return await v2SupermuxChangesStash(params: params)
+        case .changesStashPop:
+            return await v2SupermuxChangesStashPop(params: params)
+        case .changesHistory:
+            return await v2SupermuxChangesHistory(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method
