@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 public import SupermuxMobileCore
 
 /// Parsed `#RRGGBB` accent color, as normalized RGB components.
@@ -26,6 +26,26 @@ public struct SupermuxAvatarRGB: Equatable, Sendable {
         self.red = Double((value >> 16) & 0xFF) / 255
         self.green = Double((value >> 8) & 0xFF) / 255
         self.blue = Double(value & 0xFF) / 255
+    }
+}
+
+/// Immutable value snapshot of one project's run state, projected from the
+/// run store for the row's indicator and start/stop control. `nil` on the
+/// row means the run UI is hidden entirely (no `supermux.run.v1`, or the
+/// project has no run command configured).
+public struct SupermuxProjectRunState: Equatable, Sendable {
+    /// Whether the project's run command is currently running on the Mac.
+    public let isRunning: Bool
+    /// The running command, when the Mac reported one.
+    public let command: String?
+
+    /// Memberwise initializer.
+    /// - Parameters:
+    ///   - isRunning: Whether the run command is currently running.
+    ///   - command: The running command, if any.
+    public init(isRunning: Bool, command: String? = nil) {
+        self.isRunning = isRunning
+        self.command = command
     }
 }
 
@@ -61,6 +81,16 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     /// `supermux_project_id` join), in the shell's row order. Rendered by the
     /// project detail's Workspaces section.
     public let openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot]
+    /// The project's configured run commands, RAW and in DTO order — the
+    /// start menu's `command_id` is the 0-based index into exactly this
+    /// array (blank entries are skipped for display but never re-indexed).
+    public let runCommands: [String]
+    /// The project's named custom actions, for the detail screen's Actions
+    /// section.
+    public let actions: [SupermuxProjectActionDTO]
+    /// The run-store-derived run state, or `nil` when the run UI is hidden
+    /// (no `supermux.run.v1`, or no run command configured).
+    public let run: SupermuxProjectRunState?
 
     /// Projects a wire DTO into the row snapshot.
     /// - Parameters:
@@ -69,10 +99,13 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     ///     matches this project. Defaults to none.
     ///   - worktreeCount: The store-derived worktree count, or `nil` before a
     ///     worktrees fetch has run (badge hidden). Defaults to `nil`.
+    ///   - run: The run-store-derived run state, or `nil` (run UI hidden).
+    ///     Defaults to `nil`.
     public init(
         project: SupermuxProjectDTO,
         openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot] = [],
-        worktreeCount: Int? = nil
+        worktreeCount: Int? = nil,
+        run: SupermuxProjectRunState? = nil
     ) {
         self.id = project.id
         self.name = project.name
@@ -86,5 +119,8 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         self.worktreeCount = worktreeCount
         self.openWorkspaceCount = openWorkspaces.isEmpty ? nil : openWorkspaces.count
         self.openWorkspaces = openWorkspaces
+        self.runCommands = project.runCommands ?? []
+        self.actions = project.actions ?? []
+        self.run = run
     }
 }

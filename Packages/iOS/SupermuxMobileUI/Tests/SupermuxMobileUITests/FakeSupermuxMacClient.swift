@@ -104,9 +104,33 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     /// When set, `changesHistory` throws instead of returning.
     var changesHistoryError: (any Error)?
 
+    /// The response the next `runState` call returns.
+    var runStateResponse = SupermuxRunStateResponse(runs: [])
+    /// When set, `runState` throws instead of returning.
+    var runStateError: (any Error)?
+    /// The response the next `runStart` call returns; `nil` synthesizes a
+    /// running row for the requested project.
+    var runStartResponse: SupermuxRunWriteResponse?
+    /// When set, `runStart` throws instead of returning.
+    var runStartError: (any Error)?
+    /// The response the next `runStop` call returns; `nil` synthesizes an
+    /// idle row for the requested project.
+    var runStopResponse: SupermuxRunWriteResponse?
+    /// When set, `runStop` throws instead of returning.
+    var runStopError: (any Error)?
+    /// The response the next `presetLaunch` call returns.
+    var presetLaunchResponse = SupermuxPresetLaunchResponse()
+    /// When set, `presetLaunch` throws instead of returning.
+    var presetLaunchError: (any Error)?
+    /// The response the next `actionRun` call returns.
+    var actionRunResponse = SupermuxActionRunResponse(ok: true, kind: "command")
+    /// When set, `actionRun` throws instead of returning.
+    var actionRunError: (any Error)?
+
     /// Ordered log of every seam call, for ordering assertions.
     private(set) var callLog: [String] = []
     private(set) var projectsListCallCount = 0
+    private(set) var runStateCallCount = 0
     private(set) var worktreesListCallCount = 0
     private(set) var iconRequests: [(projectID: String, etag: String?)] = []
     private(set) var subscribedTopicSets: [Set<SupermuxMobileTopic>] = []
@@ -320,6 +344,46 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
             return SupermuxChangesHistoryResponse(commits: [])
         }
         return changesHistoryResponses.removeFirst()
+    }
+
+    func runState(_ request: SupermuxRunStateRequest) async throws -> SupermuxRunStateResponse {
+        callLog.append("runState")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let runStateError { throw runStateError }
+        runStateCallCount += 1
+        return runStateResponse
+    }
+
+    func runStart(_ request: SupermuxRunStartRequest) async throws -> SupermuxRunWriteResponse {
+        callLog.append("runStart")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let runStartError { throw runStartError }
+        return runStartResponse ?? SupermuxRunWriteResponse(
+            run: SupermuxRunStateDTO(projectId: request.projectID, isRunning: true)
+        )
+    }
+
+    func runStop(_ request: SupermuxRunStopRequest) async throws -> SupermuxRunWriteResponse {
+        callLog.append("runStop")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let runStopError { throw runStopError }
+        return runStopResponse ?? SupermuxRunWriteResponse(
+            run: SupermuxRunStateDTO(projectId: request.projectID, isRunning: false)
+        )
+    }
+
+    func presetLaunch(_ request: SupermuxPresetLaunchRequest) async throws -> SupermuxPresetLaunchResponse {
+        callLog.append("presetLaunch")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let presetLaunchError { throw presetLaunchError }
+        return presetLaunchResponse
+    }
+
+    func actionRun(_ request: SupermuxActionRunRequest) async throws -> SupermuxActionRunResponse {
+        callLog.append("actionRun")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let actionRunError { throw actionRunError }
+        return actionRunResponse
     }
 
     func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {

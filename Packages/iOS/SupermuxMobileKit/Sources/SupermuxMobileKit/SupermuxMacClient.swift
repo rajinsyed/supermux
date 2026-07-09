@@ -149,6 +149,26 @@ public struct SupermuxMacClient: SupermuxMacCalling {
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func runState(_ request: SupermuxRunStateRequest) async throws -> SupermuxRunStateResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func runStart(_ request: SupermuxRunStartRequest) async throws -> SupermuxRunWriteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func runStop(_ request: SupermuxRunStopRequest) async throws -> SupermuxRunWriteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func presetLaunch(_ request: SupermuxPresetLaunchRequest) async throws -> SupermuxPresetLaunchResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func actionRun(_ request: SupermuxActionRunRequest) async throws -> SupermuxActionRunResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
     /// Sends one request and decodes the result frame into the typed
     /// response — the single wire path every typed method funnels through.
     ///

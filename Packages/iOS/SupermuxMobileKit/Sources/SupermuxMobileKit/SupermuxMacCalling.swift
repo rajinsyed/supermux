@@ -152,6 +152,32 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func changesHistory(_ request: SupermuxChangesHistoryRequest) async throws -> SupermuxChangesHistoryResponse
 
+    /// `mobile.supermux.run.state`: every registered project's run-action
+    /// state (one row per project, so the phone can paint run dots).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func runState(_ request: SupermuxRunStateRequest) async throws -> SupermuxRunStateResponse
+
+    /// `mobile.supermux.run.start`: starts a project's run command with
+    /// desktop ⌘G semantics (idempotent; `command_id` selects one command by
+    /// its 0-based `run_commands` index).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func runStart(_ request: SupermuxRunStartRequest) async throws -> SupermuxRunWriteResponse
+
+    /// `mobile.supermux.run.stop`: interrupts a project's running command
+    /// (idempotent).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func runStop(_ request: SupermuxRunStopRequest) async throws -> SupermuxRunWriteResponse
+
+    /// `mobile.supermux.preset.launch`: runs a preset in a fresh Mac
+    /// terminal, exactly like clicking the desktop presets-bar chip.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func presetLaunch(_ request: SupermuxPresetLaunchRequest) async throws -> SupermuxPresetLaunchResponse
+
+    /// `mobile.supermux.action.run`: runs one project action Mac-side —
+    /// except `open_url` outcomes, whose URL comes back for LOCAL opening.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func actionRun(_ request: SupermuxActionRunRequest) async throws -> SupermuxActionRunResponse
+
     /// Subscribes to `supermux.*` event topics. Events are payload-light
     /// pokes; consumers refetch through the matching request method. The
     /// stream finishes when the underlying connection drops; consumers

@@ -23,6 +23,9 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     /// scoped per project — the desktop shows the same set above every
     /// workspace's terminal.
     public let presets: [SupermuxTerminalPresetDTO]
+    /// Whether the project detail's Actions section renders. `false` unless
+    /// the host advertises `supermux.actions.v1`.
+    public let showsActions: Bool
 
     /// The snapshot of a hidden section (no session, or capability absent).
     public static let hidden = SupermuxProjectsSectionSnapshot(
@@ -40,13 +43,15 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     ///   - rows: The project rows, in the Mac sidebar's order.
     ///   - showsPresets: Whether the global Presets entry renders.
     ///   - presets: The global terminal presets, in the Mac bar's order.
+    ///   - showsActions: Whether the project detail's Actions section renders.
     public init(
         isVisible: Bool,
         isCollapsed: Bool,
         hasLoaded: Bool,
         rows: [SupermuxProjectRowSnapshot],
         showsPresets: Bool = false,
-        presets: [SupermuxTerminalPresetDTO] = []
+        presets: [SupermuxTerminalPresetDTO] = [],
+        showsActions: Bool = false
     ) {
         self.isVisible = isVisible
         self.isCollapsed = isCollapsed
@@ -54,6 +59,57 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
         self.rows = rows
         self.showsPresets = showsPresets
         self.presets = presets
+        self.showsActions = showsActions
+    }
+}
+
+/// Closure action bundle for the run/launch/action controls — the row-level
+/// run control and the detail screen's Run/Presets/Actions sections reach
+/// the live session's ``SupermuxMobileRunStore`` only through these (no
+/// store reference crosses the `List` boundary). `nil` on the section
+/// actions means no session is live (every run affordance hides).
+public struct SupermuxProjectRunActions {
+    /// `run.start`: starts a project's run command; a non-`nil` command id
+    /// is the chosen command's 0-based `run_commands` index, `nil` starts
+    /// the default (all commands, desktop ⌘G semantics).
+    public let startRun: @MainActor (_ projectID: String, _ commandID: Int?) async throws -> Void
+    /// `run.stop`: interrupts the project's running command.
+    public let stopRun: @MainActor (_ projectID: String) async throws -> Void
+    /// `preset.launch` targeting the project's root; returns the hosting
+    /// workspace + terminal ids for the caller to navigate to.
+    public let launchPreset: @MainActor (
+        _ presetID: String,
+        _ projectID: String
+    ) async throws -> SupermuxPresetLaunchResponse
+    /// `action.run`: runs one project action; `open_url` outcomes return the
+    /// URL for the CALLER to open locally.
+    public let runAction: @MainActor (
+        _ projectID: String,
+        _ actionID: String
+    ) async throws -> SupermuxActionRunResponse
+
+    /// Memberwise initializer.
+    /// - Parameters:
+    ///   - startRun: `run.start` by project id + optional command index.
+    ///   - stopRun: `run.stop` by project id.
+    ///   - launchPreset: `preset.launch` by preset id, targeting a project.
+    ///   - runAction: `action.run` by project id + action id.
+    public init(
+        startRun: @escaping @MainActor (_ projectID: String, _ commandID: Int?) async throws -> Void,
+        stopRun: @escaping @MainActor (_ projectID: String) async throws -> Void,
+        launchPreset: @escaping @MainActor (
+            _ presetID: String,
+            _ projectID: String
+        ) async throws -> SupermuxPresetLaunchResponse,
+        runAction: @escaping @MainActor (
+            _ projectID: String,
+            _ actionID: String
+        ) async throws -> SupermuxActionRunResponse
+    ) {
+        self.startRun = startRun
+        self.stopRun = stopRun
+        self.launchPreset = launchPreset
+        self.runAction = runAction
     }
 }
 
@@ -76,6 +132,9 @@ public struct SupermuxProjectsSectionActions {
     /// The project/preset editor seam, or `nil` when editing is unavailable
     /// (the "+"/Edit affordances hide).
     public let editing: SupermuxProjectEditingActions?
+    /// The run/launch/action seam, or `nil` when no session is live (every
+    /// run affordance hides).
+    public let run: SupermuxProjectRunActions?
 
     /// Memberwise initializer.
     /// - Parameters:
@@ -84,18 +143,21 @@ public struct SupermuxProjectsSectionActions {
     ///   - selectWorkspace: Opens a nested workspace by its UI row id.
     ///   - makeWorktreesStore: Builds a worktrees store for one project.
     ///   - editing: The editor seam, or `nil` to hide editing affordances.
+    ///   - run: The run/launch/action seam, or `nil` to hide run affordances.
     public init(
         toggleCollapsed: @escaping @MainActor () -> Void,
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
         selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
         makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
-        editing: SupermuxProjectEditingActions? = nil
+        editing: SupermuxProjectEditingActions? = nil,
+        run: SupermuxProjectRunActions? = nil
     ) {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
         self.selectWorkspace = selectWorkspace
         self.makeWorktreesStore = makeWorktreesStore
         self.editing = editing
+        self.run = run
     }
 }
 

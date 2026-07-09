@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 import SupermuxMobileCore
 import SupermuxMobileKit
 public import SwiftUI
@@ -87,7 +87,10 @@ public struct SupermuxProjectsMobileSection: View {
                     iconPNGData: actions.iconPNGData,
                     selectWorkspace: actions.selectWorkspace,
                     makeWorktreesStore: actions.makeWorktreesStore,
-                    editing: actions.editing
+                    editing: actions.editing,
+                    presets: section.showsPresets ? section.presets : [],
+                    showsActions: section.showsActions,
+                    runActions: actions.run
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
@@ -206,6 +209,9 @@ struct SupermuxProjectMobileRow: View {
     var selectWorkspace: @MainActor (_ workspaceID: String) -> Void = { _ in }
     var makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil }
     var editing: SupermuxProjectEditingActions?
+    var presets: [SupermuxTerminalPresetDTO] = []
+    var showsActions = false
+    var runActions: SupermuxProjectRunActions?
 
     var body: some View {
         NavigationLink {
@@ -214,7 +220,10 @@ struct SupermuxProjectMobileRow: View {
                 iconPNGData: iconPNGData,
                 selectWorkspace: selectWorkspace,
                 makeWorktreesStore: makeWorktreesStore,
-                editing: editing
+                editing: editing,
+                presets: presets,
+                showsActions: showsActions,
+                runActions: runActions
             )
         } label: {
             HStack(spacing: 10) {
@@ -231,6 +240,19 @@ struct SupermuxProjectMobileRow: View {
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 4)
+                // The run dot + start/stop control (RPC-RUN-01's phone
+                // surface): rendered only when the host serves
+                // `supermux.run.v1` AND the project has a run command
+                // (`row.run` stays nil otherwise).
+                if let run = row.run, let runActions {
+                    SupermuxProjectRunControl(
+                        projectID: row.id,
+                        run: run,
+                        runCommands: row.runCommands,
+                        startRun: runActions.startRun,
+                        stopRun: runActions.stopRun
+                    )
+                }
                 countBadges
             }
         }

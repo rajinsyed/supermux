@@ -1,5 +1,6 @@
 public import Foundation
 import Observation
+import SupermuxMobileCore
 public import SupermuxMobileKit
 
 /// Main-actor owner of the phone's Projects section state.
@@ -20,6 +21,12 @@ public final class SupermuxProjectsSectionModel {
     /// The live session's store; `nil` while disconnected. Exposed for the
     /// shell's own diagnostics/tests; views consume ``snapshot`` instead.
     public private(set) var store: SupermuxMobileProjectsStore?
+
+    /// The live session's run store (run state + start/stop/launch/action
+    /// calls); `nil` while disconnected. Runs alongside ``store`` in the
+    /// same session task; views consume the row snapshots' `run` values and
+    /// the ``actions`` bundle instead.
+    public private(set) var runStore: SupermuxMobileRunStore?
 
     /// Local collapse toggle. `nil` follows the Mac's `section_collapsed`
     /// seed; a tap overrides it for this session (phone-local, read-only
@@ -68,11 +75,31 @@ public final class SupermuxProjectsSectionModel {
                 SupermuxProjectRowSnapshot(
                     project: project,
                     openWorkspaces: workspaceRows.filter { $0.projectID == project.id },
-                    worktreeCount: worktreeCounts[project.id]
+                    worktreeCount: worktreeCounts[project.id],
+                    run: runState(for: project)
                 )
             },
             showsPresets: store.showsPresets,
-            presets: store.showsPresets ? store.presets : []
+            presets: store.showsPresets ? store.presets : [],
+            showsActions: runStore?.showsActions ?? false
+        )
+    }
+
+    /// The run-store projection for one project row: `nil` (run UI hidden)
+    /// without `supermux.run.v1` or when the project has no non-blank run
+    /// command; otherwise the row's dot/control state, running only when
+    /// `run.state` (or an applied start/stop answer) says so.
+    private func runState(for project: SupermuxProjectDTO) -> SupermuxProjectRunState? {
+        guard let runStore, runStore.showsRun else { return nil }
+        let hasRunCommand = (project.runCommands ?? []).contains {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard hasRunCommand else { return nil }
+        let row = runStore.run(forProjectID: project.id)
+        let isRunning = row?.isRunning == true
+        return SupermuxProjectRunState(
+            isRunning: isRunning,
+            command: isRunning ? row?.command : nil
         )
     }
 
@@ -89,8 +116,41 @@ public final class SupermuxProjectsSectionModel {
             makeWorktreesStore: { [weak self] projectID in
                 self?.makeWorktreesStore(forProjectID: projectID)
             },
-            editing: editingActions
+            editing: editingActions,
+            run: runActions
         )
+    }
+
+    /// The run/launch/action seam, routing through the live session's run
+    /// store; `nil` while disconnected (every run affordance hides). The
+    /// closures resolve the store at CALL time (weak self), so a detail
+    /// screen outliving a reconnect reaches the fresh session — or, with no
+    /// session, gets `SupermuxMacUnavailableError` to display.
+    private var runActions: SupermuxProjectRunActions? {
+        guard runStore != nil else { return nil }
+        return SupermuxProjectRunActions(
+            startRun: { [weak self] projectID, commandID in
+                try await Self.requireRunStore(self).startRun(projectID: projectID, commandID: commandID)
+            },
+            stopRun: { [weak self] projectID in
+                try await Self.requireRunStore(self).stopRun(projectID: projectID)
+            },
+            launchPreset: { [weak self] presetID, projectID in
+                try await Self.requireRunStore(self).launchPreset(presetID: presetID, projectID: projectID)
+            },
+            runAction: { [weak self] projectID, actionID in
+                try await Self.requireRunStore(self).runAction(projectID: projectID, actionID: actionID)
+            }
+        )
+    }
+
+    /// The live session's run store, or `SupermuxMacUnavailableError` when
+    /// the session ended (e.g. a screen outlived a disconnect).
+    private static func requireRunStore(
+        _ model: SupermuxProjectsSectionModel?
+    ) throws -> SupermuxMobileRunStore {
+        guard let runStore = model?.runStore else { throw SupermuxMacUnavailableError() }
+        return runStore
     }
 
     /// The editor sheets' seam, routing project/preset CRUD through the live
@@ -222,7 +282,9 @@ public final class SupermuxProjectsSectionModel {
             capabilities: capabilities,
             iconCache: iconCache
         )
+        let runStore = SupermuxMobileRunStore(client: client, capabilities: capabilities)
         self.store = store
+        self.runStore = runStore
         sessionClient = client
         sessionCapabilities = capabilities
         worktreeCounts = [:]
@@ -232,16 +294,23 @@ public final class SupermuxProjectsSectionModel {
             // by the old session's exit.
             if self.store === store {
                 self.store = nil
+                self.runStore = nil
                 sessionClient = nil
                 sessionCapabilities = nil
             }
         }
-        await store.run()
+        // Both loops share the session's structured lifetime: cancelling the
+        // driver's `.task(id:)` cancels the group, which cancels both.
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await store.run() }
+            group.addTask { await runStore.run() }
+        }
     }
 
     /// Drops the session immediately (connection went away).
     public func endSession() {
         store = nil
+        runStore = nil
         sessionClient = nil
         sessionCapabilities = nil
         worktreeCounts = [:]

@@ -9,11 +9,16 @@ public import SwiftUI
 /// nested under this project (§6 join — tapping one opens it through the same
 /// navigation as the flat list's rows).
 public struct SupermuxProjectDetailScreen: View {
-    private let row: SupermuxProjectRowSnapshot
+    // Internal (not private): the run/presets/actions half of the screen
+    // lives in SupermuxProjectDetailScreen+RunSections.swift.
+    let row: SupermuxProjectRowSnapshot
     private let iconPNGData: @Sendable (_ projectID: String) async -> Data?
-    private let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
+    let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
     private let makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore?
     private let editing: SupermuxProjectEditingActions?
+    let presets: [SupermuxTerminalPresetDTO]
+    let showsActions: Bool
+    let runActions: SupermuxProjectRunActions?
 
     /// The screen-owned worktrees session for this project; `nil` while
     /// disconnected or when the host lacks `supermux.worktrees.v1` (the
@@ -31,7 +36,17 @@ public struct SupermuxProjectDetailScreen: View {
     /// Error surface for an Edit tap whose session lookup failed (stale row
     /// after a disconnect) — never a silent no-op.
     @State private var editErrorMessage: String?
+    /// Error surface for a failed preset launch.
+    @State var presetErrorMessage: String?
+    /// Error surface for a failed project action.
+    @State var actionErrorMessage: String?
+    /// The transient "fired on your Mac" confirmation for a command action;
+    /// `nil` hides the toast. Bumping ``actionToastEpoch`` restarts the
+    /// auto-dismiss timer.
+    @State var actionToast: String?
+    @State var actionToastEpoch = 0
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) var openURL
 
     /// Creates the detail screen.
     /// - Parameters:
@@ -42,40 +57,37 @@ public struct SupermuxProjectDetailScreen: View {
     ///   - makeWorktreesStore: Builds this project's worktrees store against
     ///     the live session, or `nil` when unavailable (section hides).
     ///   - editing: The editor seam; `nil` hides the Edit affordance.
+    ///   - presets: The global presets, launchable into this project's root;
+    ///     empty hides the Presets section (host without `supermux.presets.v1`).
+    ///   - showsActions: Whether the Actions section renders (host advertises
+    ///     `supermux.actions.v1`).
+    ///   - runActions: The run/launch/action seam; `nil` hides the Run,
+    ///     Presets, and Actions sections entirely (no live session).
     public init(
         row: SupermuxProjectRowSnapshot,
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
         selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
         makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
-        editing: SupermuxProjectEditingActions? = nil
+        editing: SupermuxProjectEditingActions? = nil,
+        presets: [SupermuxTerminalPresetDTO] = [],
+        showsActions: Bool = false,
+        runActions: SupermuxProjectRunActions? = nil
     ) {
         self.row = row
         self.iconPNGData = iconPNGData
         self.selectWorkspace = selectWorkspace
         self.makeWorktreesStore = makeWorktreesStore
         self.editing = editing
+        self.presets = presets
+        self.showsActions = showsActions
+        self.runActions = runActions
     }
 
     public var body: some View {
-        List {
-            headerSection
-            if let store = worktreesStore, store.showsWorktrees {
-                SupermuxWorktreesSection(
-                    hasLoaded: store.hasLoaded,
-                    rows: SupermuxWorktreeRowSnapshot.rows(from: store.worktrees),
-                    newWorktree: { showingNewWorktreeSheet = true },
-                    openWorktree: { openWorktree($0) },
-                    requestRemoval: { removalCandidate = $0 }
-                )
-            }
-            workspacesSection
-        }
-        .navigationTitle(row.name)
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .accessibilityIdentifier("SupermuxProjectDetail")
-        .toolbar {
+        // Staged sub-expressions (`decoratedList` → here) keep each modifier
+        // chain small enough for the type checker.
+        decoratedList
+            .toolbar {
             if let editing {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -269,6 +281,49 @@ public struct SupermuxProjectDetailScreen: View {
             }
         } message: { message in
             Text(message)
+        }
+    }
+
+    // MARK: - Body stages
+
+    /// The list plus its identity/toast/run-error dressing — split from
+    /// ``body`` so each modifier chain stays type-checkable. The run-flow
+    /// decorations (toast + launch/action alerts) live in
+    /// SupermuxProjectDetailScreen+RunSections.swift.
+    private var decoratedList: some View {
+        runDecorated(
+            listCore
+                .navigationTitle(row.name)
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+            #endif
+                .accessibilityIdentifier("SupermuxProjectDetail")
+        )
+    }
+
+    /// The bare list content.
+    private var listCore: some View {
+        List {
+            headerSection
+            if let run = row.run, let runActions {
+                runSection(run: run, runActions: runActions)
+            }
+            if let store = worktreesStore, store.showsWorktrees {
+                SupermuxWorktreesSection(
+                    hasLoaded: store.hasLoaded,
+                    rows: SupermuxWorktreeRowSnapshot.rows(from: store.worktrees),
+                    newWorktree: { showingNewWorktreeSheet = true },
+                    openWorktree: { openWorktree($0) },
+                    requestRemoval: { removalCandidate = $0 }
+                )
+            }
+            workspacesSection
+            if !presets.isEmpty, runActions != nil {
+                presetsSection
+            }
+            if showsActions, runActions != nil, !row.actions.isEmpty {
+                actionsSection
+            }
         }
     }
 
