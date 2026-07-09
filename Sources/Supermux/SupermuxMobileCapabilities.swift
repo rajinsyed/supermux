@@ -34,6 +34,10 @@ enum SupermuxMobileCapabilities {
             SupermuxMobileCapability.runV1.rawValue,
             // action.run is served.
             SupermuxMobileCapability.actionsV1.rawValue,
+            // The full files namespace is served: files.list / files.create /
+            // files.rename / files.duplicate / files.trash (root-confined,
+            // trash-only deletion).
+            SupermuxMobileCapability.filesV1.rawValue,
         ]
     }
 }

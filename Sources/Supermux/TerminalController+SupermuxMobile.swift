@@ -87,6 +87,16 @@ extension TerminalController {
             return await v2SupermuxPresetLaunch(params: params)
         case .actionRun:
             return await v2SupermuxActionRun(params: params)
+        case .filesList:
+            return await v2SupermuxFilesList(params: params)
+        case .filesCreate:
+            return await v2SupermuxFilesCreate(params: params)
+        case .filesRename:
+            return await v2SupermuxFilesRename(params: params)
+        case .filesDuplicate:
+            return await v2SupermuxFilesDuplicate(params: params)
+        case .filesTrash:
+            return await v2SupermuxFilesTrash(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method
