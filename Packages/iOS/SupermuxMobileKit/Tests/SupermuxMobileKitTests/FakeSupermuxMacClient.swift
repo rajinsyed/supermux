@@ -161,6 +161,48 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
 
     private var eventContinuations: [AsyncStream<SupermuxMobileEvent>.Continuation] = []
 
+    // MARK: Recording seams
+    //
+    // The per-namespace method groups live in FakeSupermuxMacClient+Changes/
+    // +Run/+Files.swift (file-length budget). The recorded storage stays
+    // `private(set)`, so those extension files record through these helpers.
+
+    /// Appends one call to the ordered log.
+    func record(_ call: String) {
+        callLog.append(call)
+    }
+
+    /// Appends one call to the ordered log AND its exact wire method+params
+    /// to the recorded wire calls.
+    func record(_ call: String, method: String, params: [String: Any]) {
+        callLog.append(call)
+        recordedWireCalls.append((method, params as NSDictionary))
+    }
+
+    /// Like ``record(_:method:params:)``, additionally recording the
+    /// request's per-RPC deadline override (the m3-f2 sync-timeout evidence).
+    func record(
+        _ call: String,
+        method: String,
+        params: [String: Any],
+        syncTimeoutNanoseconds: UInt64?
+    ) {
+        record(call, method: method, params: params)
+        recordedSyncTimeouts.append((method, syncTimeoutNanoseconds))
+    }
+
+    /// Bumps the `changes.status` call counter (mutated from +Changes.swift).
+    func countChangesStatusCall() {
+        changesStatusCallCount += 1
+    }
+
+    /// Bumps the `run.state` call counter (mutated from +Run.swift).
+    func countRunStateCall() {
+        runStateCallCount += 1
+    }
+
+    // MARK: Projects / worktrees / presets
+
     func projectsList() async throws -> SupermuxProjectsListResponse {
         callLog.append("projectsList")
         projectsListCallCount += 1
@@ -267,226 +309,7 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         return SupermuxPresetDeleteResponse(removed: true, presetId: request.presetID)
     }
 
-    func changesWatch(_ request: SupermuxChangesWatchRequest) async throws -> SupermuxChangesWatchResponse {
-        callLog.append("changesWatch")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesWatchError { throw changesWatchError }
-        return SupermuxChangesWatchResponse(watching: request.enable, ttlSeconds: 120)
-    }
-
-    func changesStatus(_ request: SupermuxChangesStatusRequest) async throws -> SupermuxChangesStatusDTO {
-        callLog.append("changesStatus")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesStatusError { throw changesStatusError }
-        changesStatusCallCount += 1
-        return changesStatusResponse
-    }
-
-    func changesDiff(_ request: SupermuxChangesDiffRequest) async throws -> SupermuxDiffDTO {
-        callLog.append("changesDiff")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesDiffError { throw changesDiffError }
-        return changesDiffResponse
-    }
-
-    func changesStage(_ request: SupermuxChangesStageRequest) async throws -> SupermuxChangesAckResponse {
-        callLog.append("changesStage")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesStageError { throw changesStageError }
-        return SupermuxChangesAckResponse(ok: true)
-    }
-
-    func changesUnstage(_ request: SupermuxChangesUnstageRequest) async throws -> SupermuxChangesAckResponse {
-        callLog.append("changesUnstage")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesUnstageError { throw changesUnstageError }
-        return SupermuxChangesAckResponse(ok: true)
-    }
-
-    func changesDiscard(_ request: SupermuxChangesDiscardRequest) async throws -> SupermuxChangesAckResponse {
-        callLog.append("changesDiscard")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesDiscardError { throw changesDiscardError }
-        return SupermuxChangesAckResponse(ok: true)
-    }
-
-    func changesCommit(_ request: SupermuxChangesCommitRequest) async throws -> SupermuxChangesCommitResponse {
-        callLog.append("changesCommit")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesCommitError { throw changesCommitError }
-        return changesCommitResponse
-    }
-
-    func changesGenerateCommitMessage(
-        _ request: SupermuxChangesGenerateCommitMessageRequest
-    ) async throws -> SupermuxChangesGeneratedMessageResponse {
-        callLog.append("changesGenerateCommitMessage")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let generateCommitMessageError { throw generateCommitMessageError }
-        return generateCommitMessageResponse
-    }
-
-    func changesPush(_ request: SupermuxChangesPushRequest) async throws -> SupermuxChangesSyncResponse {
-        callLog.append("changesPush")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        recordedSyncTimeouts.append((request.wireMethod, request.rpcTimeoutNanoseconds))
-        if let changesPushError { throw changesPushError }
-        return changesPushResponse
-    }
-
-    func changesPull(_ request: SupermuxChangesPullRequest) async throws -> SupermuxChangesSyncResponse {
-        callLog.append("changesPull")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        recordedSyncTimeouts.append((request.wireMethod, request.rpcTimeoutNanoseconds))
-        if let changesPullError { throw changesPullError }
-        return changesPullResponse
-    }
-
-    func changesStash(_ request: SupermuxChangesStashRequest) async throws -> SupermuxChangesSyncResponse {
-        callLog.append("changesStash")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesStashError { throw changesStashError }
-        return SupermuxChangesSyncResponse(ok: true, logLines: [])
-    }
-
-    func changesStashPop(_ request: SupermuxChangesStashPopRequest) async throws -> SupermuxChangesSyncResponse {
-        callLog.append("changesStashPop")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesStashPopError { throw changesStashPopError }
-        return SupermuxChangesSyncResponse(ok: true, logLines: [])
-    }
-
-    func changesHistory(_ request: SupermuxChangesHistoryRequest) async throws -> SupermuxChangesHistoryResponse {
-        callLog.append("changesHistory")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let changesHistoryError { throw changesHistoryError }
-        guard !changesHistoryResponses.isEmpty else {
-            return SupermuxChangesHistoryResponse(commits: [])
-        }
-        return changesHistoryResponses.removeFirst()
-    }
-
-    func runState(_ request: SupermuxRunStateRequest) async throws -> SupermuxRunStateResponse {
-        callLog.append("runState")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let runStateError { throw runStateError }
-        runStateCallCount += 1
-        return runStateResponse
-    }
-
-    func runStart(_ request: SupermuxRunStartRequest) async throws -> SupermuxRunWriteResponse {
-        callLog.append("runStart")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let runStartError { throw runStartError }
-        return runStartResponse ?? SupermuxRunWriteResponse(
-            run: SupermuxRunStateDTO(projectId: request.projectID, isRunning: true)
-        )
-    }
-
-    func runStop(_ request: SupermuxRunStopRequest) async throws -> SupermuxRunWriteResponse {
-        callLog.append("runStop")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let runStopError { throw runStopError }
-        return runStopResponse ?? SupermuxRunWriteResponse(
-            run: SupermuxRunStateDTO(projectId: request.projectID, isRunning: false)
-        )
-    }
-
-    func presetLaunch(_ request: SupermuxPresetLaunchRequest) async throws -> SupermuxPresetLaunchResponse {
-        callLog.append("presetLaunch")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let presetLaunchError { throw presetLaunchError }
-        return presetLaunchResponse
-    }
-
-    func actionRun(_ request: SupermuxActionRunRequest) async throws -> SupermuxActionRunResponse {
-        callLog.append("actionRun")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let actionRunError { throw actionRunError }
-        return actionRunResponse
-    }
-
-    // MARK: Files (served from the mutable fixture tree)
-
-    func filesList(_ request: SupermuxFilesListRequest) async throws -> SupermuxFilesListResponse {
-        callLog.append("filesList")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let filesListError { throw filesListError }
-        let path = request.path ?? ""
-        guard let entries = filesTree[path] else {
-            throw MobileShellConnectionError.rpcError(
-                "not_found",
-                "No such directory: \(path)"
-            )
-        }
-        return SupermuxFilesListResponse(path: path, entries: entries)
-    }
-
-    func filesCreate(_ request: SupermuxFilesCreateRequest) async throws -> SupermuxFilesMutationResponse {
-        callLog.append("filesCreate")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let filesCreateError { throw filesCreateError }
-        let (parent, name) = splitFilesPath(request.path)
-        let isFolder = request.kind == .folder
-        filesTree[parent, default: []].append(
-            SupermuxFileEntryDTO(name: name, isDir: isFolder, isSymlink: false)
-        )
-        if isFolder {
-            filesTree[request.path] = []
-        }
-        return SupermuxFilesMutationResponse(ok: true, path: request.path)
-    }
-
-    func filesRename(_ request: SupermuxFilesRenameRequest) async throws -> SupermuxFilesMutationResponse {
-        callLog.append("filesRename")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let filesRenameError { throw filesRenameError }
-        let (parent, name) = splitFilesPath(request.path)
-        filesTree[parent] = (filesTree[parent] ?? []).map { entry in
-            guard entry.name == name else { return entry }
-            var renamed = entry
-            renamed.name = request.newName
-            return renamed
-        }
-        let newPath = parent.isEmpty ? request.newName : parent + "/" + request.newName
-        return SupermuxFilesMutationResponse(ok: true, path: newPath)
-    }
-
-    func filesDuplicate(_ request: SupermuxFilesDuplicateRequest) async throws -> SupermuxFilesMutationResponse {
-        callLog.append("filesDuplicate")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let filesDuplicateError { throw filesDuplicateError }
-        let (parent, name) = splitFilesPath(request.path)
-        guard let entry = filesTree[parent]?.first(where: { $0.name == name }) else {
-            throw MobileShellConnectionError.rpcError(
-                "not_found",
-                "No such entry: \(request.path)"
-            )
-        }
-        var copy = entry
-        copy.name = name + " copy"
-        filesTree[parent, default: []].append(copy)
-        let copyPath = parent.isEmpty ? copy.name : parent + "/" + copy.name
-        return SupermuxFilesMutationResponse(ok: true, path: copyPath)
-    }
-
-    func filesTrash(_ request: SupermuxFilesTrashRequest) async throws -> SupermuxFilesMutationResponse {
-        callLog.append("filesTrash")
-        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let filesTrashError { throw filesTrashError }
-        for path in request.paths {
-            let (parent, name) = splitFilesPath(path)
-            filesTree[parent]?.removeAll { $0.name == name }
-        }
-        return SupermuxFilesMutationResponse(ok: true)
-    }
-
-    /// Splits a root-relative path into its parent directory ("" = root) and
-    /// entry name.
-    private func splitFilesPath(_ path: String) -> (parent: String, name: String) {
-        guard let slash = path.lastIndex(of: "/") else { return ("", path) }
-        return (String(path[..<slash]), String(path[path.index(after: slash)...]))
-    }
+    // MARK: Events
 
     func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {
         callLog.append("events")
