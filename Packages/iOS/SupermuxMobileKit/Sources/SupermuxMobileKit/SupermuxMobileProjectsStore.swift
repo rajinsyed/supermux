@@ -134,6 +134,105 @@ public final class SupermuxMobileProjectsStore {
         }
     }
 
+    // MARK: - Write actions (optimistic-free: send, await result, refetch)
+
+    /// `mobile.supermux.project.create`: registers the folder at `rootPath`
+    /// on the Mac (which imports a repo-shipped `config.json` exactly like
+    /// the desktop add path, and returns the existing record for an
+    /// already-registered folder). Refetches the list on success; errors
+    /// rethrow for the editor sheet to display.
+    ///
+    /// - Parameter rootPath: Absolute folder path on the Mac (trimmed here;
+    ///   existence is validated Mac-side and surfaces as `invalid_params`).
+    /// - Returns: The created (or pre-existing) record.
+    public func createProject(rootPath: String) async throws -> SupermuxProjectDTO {
+        guard capabilities.supportsProjects else { throw SupermuxMacUnavailableError() }
+        let response = try await client.projectCreate(SupermuxProjectCreateRequest(
+            rootPath: rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        ))
+        await refetch()
+        return response.project
+    }
+
+    /// `mobile.supermux.project.update`: applies a present-key patch built by
+    /// ``SupermuxProjectEditorDraft/patch(from:)``. Refetches on success;
+    /// errors (e.g. `invalid_params` for a config-managed field) rethrow for
+    /// the editor sheet to display.
+    ///
+    /// - Parameters:
+    ///   - projectID: The project's UUID string.
+    ///   - patch: The present-key patch (only changed fields).
+    /// - Returns: The updated record.
+    public func updateProject(projectID: String, patch: SupermuxProjectPatch) async throws -> SupermuxProjectDTO {
+        guard capabilities.supportsProjects else { throw SupermuxMacUnavailableError() }
+        let response = try await client.projectUpdate(SupermuxProjectUpdateRequest(
+            projectID: projectID,
+            patch: patch
+        ))
+        await refetch()
+        return response.project
+    }
+
+    /// `mobile.supermux.project.delete`: unregisters the project (worktrees
+    /// and the repository stay on the Mac's disk — desktop semantics; the
+    /// confirmation dialog lives on the phone). Refetches on success.
+    /// - Parameter projectID: The project's UUID string.
+    public func deleteProject(projectID: String) async throws {
+        guard capabilities.supportsProjects else { throw SupermuxMacUnavailableError() }
+        _ = try await client.projectDelete(SupermuxProjectDeleteRequest(projectID: projectID))
+        await refetch()
+    }
+
+    /// `mobile.supermux.projects.set_section_collapsed`: persists the
+    /// section's collapse state Mac-side (the same shared mutation path the
+    /// desktop header uses). Adopts the Mac's answer on success; a failure
+    /// surfaces through ``lastErrorDescription`` (the local toggle keeps the
+    /// section responsive either way).
+    /// - Parameter collapsed: The collapse state to persist.
+    public func setSectionCollapsed(_ collapsed: Bool) async {
+        guard capabilities.supportsProjects else { return }
+        do {
+            let response = try await client.projectsSetSectionCollapsed(
+                SupermuxProjectsSetSectionCollapsedRequest(collapsed: collapsed)
+            )
+            isSectionCollapsed = response.sectionCollapsed ?? collapsed
+        } catch {
+            lastErrorDescription = error.localizedDescription
+        }
+    }
+
+    /// `mobile.supermux.preset.create`: appends a launchable terminal preset
+    /// (the Mac assigns the identity and requires non-empty name + command —
+    /// build the request via ``SupermuxPresetDraft/createRequest()``).
+    /// - Parameter request: The typed create request.
+    /// - Returns: The created record.
+    public func createPreset(_ request: SupermuxPresetCreateRequest) async throws -> SupermuxTerminalPresetDTO {
+        guard capabilities.supportsPresets else { throw SupermuxMacUnavailableError() }
+        return try await client.presetCreate(request).preset
+    }
+
+    /// `mobile.supermux.preset.update`: applies a present-key patch built by
+    /// ``SupermuxPresetDraft/patch(from:)``.
+    /// - Parameters:
+    ///   - presetID: The preset's UUID string.
+    ///   - patch: The present-key patch (only changed fields).
+    /// - Returns: The updated record.
+    public func updatePreset(presetID: String, patch: SupermuxPresetPatch) async throws -> SupermuxTerminalPresetDTO {
+        guard capabilities.supportsPresets else { throw SupermuxMacUnavailableError() }
+        return try await client.presetUpdate(SupermuxPresetUpdateRequest(
+            presetID: presetID,
+            patch: patch
+        )).preset
+    }
+
+    /// `mobile.supermux.preset.delete`: removes a preset from the Mac's bar
+    /// (the confirmation dialog lives on the phone).
+    /// - Parameter presetID: The preset's UUID string.
+    public func deletePreset(presetID: String) async throws {
+        guard capabilities.supportsPresets else { throw SupermuxMacUnavailableError() }
+        _ = try await client.presetDelete(SupermuxPresetDeleteRequest(presetID: presetID))
+    }
+
     private func refetch() async {
         do {
             let response = try await client.projectsList()

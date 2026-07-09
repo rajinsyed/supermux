@@ -38,7 +38,8 @@ public struct SupermuxProjectsMobileSection: View {
             } header: {
                 SupermuxProjectsSectionHeader(
                     isCollapsed: section.isCollapsed,
-                    toggleCollapsed: actions.toggleCollapsed
+                    toggleCollapsed: actions.toggleCollapsed,
+                    editing: actions.editing
                 )
             }
         }
@@ -75,7 +76,8 @@ public struct SupermuxProjectsMobileSection: View {
                     row: row,
                     iconPNGData: actions.iconPNGData,
                     selectWorkspace: actions.selectWorkspace,
-                    makeWorktreesStore: actions.makeWorktreesStore
+                    makeWorktreesStore: actions.makeWorktreesStore,
+                    editing: actions.editing
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
@@ -87,33 +89,60 @@ public struct SupermuxProjectsMobileSection: View {
     private static let rowInsets = EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
 }
 
-/// The tappable section header: title plus a collapse chevron.
+/// The tappable section header: title plus a collapse chevron, and — when
+/// the editing seam is live — a trailing "+" that opens the create-project
+/// editor.
 struct SupermuxProjectsSectionHeader: View {
     let isCollapsed: Bool
     let toggleCollapsed: @MainActor () -> Void
+    var editing: SupermuxProjectEditingActions?
+
+    @State private var showingCreateEditor = false
 
     var body: some View {
-        Button(action: toggleCollapsed) {
-            HStack(spacing: 6) {
-                Text(String(
-                    localized: "supermux.projects.sectionTitle",
-                    defaultValue: "Projects",
+        HStack(spacing: 6) {
+            Button(action: toggleCollapsed) {
+                HStack(spacing: 6) {
+                    Text(String(
+                        localized: "supermux.projects.sectionTitle",
+                        defaultValue: "Projects",
+                        bundle: .module
+                    ))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(isCollapsed
+                ? String(localized: "supermux.projects.section.expand", defaultValue: "Expand", bundle: .module)
+                : String(localized: "supermux.projects.section.collapse", defaultValue: "Collapse", bundle: .module))
+            .accessibilityIdentifier("SupermuxProjectsSectionHeader")
+            if let editing {
+                Button {
+                    showingCreateEditor = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(
+                    localized: "supermux.projects.section.add",
+                    defaultValue: "Add Project",
                     bundle: .module
                 ))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
+                .accessibilityIdentifier("SupermuxProjectsSectionAddButton")
+                .sheet(isPresented: $showingCreateEditor) {
+                    SupermuxProjectEditorSheet(mode: .create, editing: editing)
+                }
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityHint(isCollapsed
-            ? String(localized: "supermux.projects.section.expand", defaultValue: "Expand", bundle: .module)
-            : String(localized: "supermux.projects.section.collapse", defaultValue: "Collapse", bundle: .module))
-        .accessibilityIdentifier("SupermuxProjectsSectionHeader")
     }
 }
 
@@ -124,6 +153,7 @@ struct SupermuxProjectMobileRow: View {
     let iconPNGData: @Sendable (_ projectID: String) async -> Data?
     var selectWorkspace: @MainActor (_ workspaceID: String) -> Void = { _ in }
     var makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil }
+    var editing: SupermuxProjectEditingActions?
 
     var body: some View {
         NavigationLink {
@@ -131,7 +161,8 @@ struct SupermuxProjectMobileRow: View {
                 row: row,
                 iconPNGData: iconPNGData,
                 selectWorkspace: selectWorkspace,
-                makeWorktreesStore: makeWorktreesStore
+                makeWorktreesStore: makeWorktreesStore,
+                editing: editing
             )
         } label: {
             HStack(spacing: 10) {

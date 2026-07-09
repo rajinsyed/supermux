@@ -1,4 +1,5 @@
 public import Foundation
+public import SupermuxMobileCore
 public import SupermuxMobileKit
 public import SwiftUI
 
@@ -12,6 +13,7 @@ public struct SupermuxProjectDetailScreen: View {
     private let iconPNGData: @Sendable (_ projectID: String) async -> Data?
     private let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
     private let makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore?
+    private let editing: SupermuxProjectEditingActions?
 
     /// The screen-owned worktrees session for this project; `nil` while
     /// disconnected or when the host lacks `supermux.worktrees.v1` (the
@@ -23,6 +25,13 @@ public struct SupermuxProjectDetailScreen: View {
     @State private var removalCandidate: SupermuxWorktreeRowSnapshot?
     /// Error surface for a failed worktree open.
     @State private var openErrorMessage: String?
+    /// The fresh DTO the tapped Edit button seeded the editor with; `nil`
+    /// while the editor is closed.
+    @State private var editorProject: SupermuxProjectDTO?
+    /// Error surface for an Edit tap whose session lookup failed (stale row
+    /// after a disconnect) — never a silent no-op.
+    @State private var editErrorMessage: String?
+    @Environment(\.dismiss) private var dismiss
 
     /// Creates the detail screen.
     /// - Parameters:
@@ -32,16 +41,19 @@ public struct SupermuxProjectDetailScreen: View {
     ///   - selectWorkspace: Opens a nested workspace by its UI row id.
     ///   - makeWorktreesStore: Builds this project's worktrees store against
     ///     the live session, or `nil` when unavailable (section hides).
+    ///   - editing: The editor seam; `nil` hides the Edit affordance.
     public init(
         row: SupermuxProjectRowSnapshot,
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
         selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
-        makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil }
+        makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
+        editing: SupermuxProjectEditingActions? = nil
     ) {
         self.row = row
         self.iconPNGData = iconPNGData
         self.selectWorkspace = selectWorkspace
         self.makeWorktreesStore = makeWorktreesStore
+        self.editing = editing
     }
 
     public var body: some View {
@@ -63,6 +75,67 @@ public struct SupermuxProjectDetailScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .accessibilityIdentifier("SupermuxProjectDetail")
+        .toolbar {
+            if let editing {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        // Seed from the freshest fetched DTO so the editor
+                        // reflects fields the row snapshot doesn't carry
+                        // (commands, actions, config marker).
+                        if let project = editing.editorProject(row.id) {
+                            editorProject = project
+                        } else {
+                            editErrorMessage = String(
+                                localized: "supermux.editor.error.unavailable",
+                                defaultValue: "Not connected to a Mac.",
+                                bundle: .module
+                            )
+                        }
+                    } label: {
+                        Text(String(
+                            localized: "supermux.projects.detail.edit",
+                            defaultValue: "Edit",
+                            bundle: .module
+                        ))
+                    }
+                    .accessibilityIdentifier("SupermuxProjectDetailEditButton")
+                }
+            }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { editorProject != nil },
+                set: { if !$0 { editorProject = nil } }
+            )
+        ) {
+            if let editorProject, let editing {
+                SupermuxProjectEditorSheet(
+                    mode: .edit(editorProject),
+                    editing: editing,
+                    onDeleted: { dismiss() }
+                )
+            }
+        }
+        .alert(
+            String(
+                localized: "supermux.projects.detail.edit.failed.title",
+                defaultValue: "Couldn’t Edit Project",
+                bundle: .module
+            ),
+            isPresented: Binding(
+                get: { editErrorMessage != nil },
+                set: { if !$0 { editErrorMessage = nil } }
+            ),
+            presenting: editErrorMessage
+        ) { _ in
+            Button(role: .cancel) {
+                editErrorMessage = nil
+            } label: {
+                Text(String(localized: "supermux.common.ok", defaultValue: "OK", bundle: .module))
+            }
+        } message: { message in
+            Text(message)
+        }
         .task(id: row.id) {
             let store = makeWorktreesStore(row.id)
             worktreesStore = store

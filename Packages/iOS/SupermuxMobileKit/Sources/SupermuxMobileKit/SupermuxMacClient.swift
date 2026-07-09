@@ -57,6 +57,36 @@ public struct SupermuxMacClient: SupermuxMacCalling {
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func projectCreate(_ request: SupermuxProjectCreateRequest) async throws -> SupermuxProjectWriteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func projectUpdate(_ request: SupermuxProjectUpdateRequest) async throws -> SupermuxProjectWriteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func projectDelete(_ request: SupermuxProjectDeleteRequest) async throws -> SupermuxProjectDeleteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func projectsSetSectionCollapsed(
+        _ request: SupermuxProjectsSetSectionCollapsedRequest
+    ) async throws -> SupermuxSectionCollapsedResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func presetCreate(_ request: SupermuxPresetCreateRequest) async throws -> SupermuxPresetWriteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func presetUpdate(_ request: SupermuxPresetUpdateRequest) async throws -> SupermuxPresetWriteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func presetDelete(_ request: SupermuxPresetDeleteRequest) async throws -> SupermuxPresetDeleteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
     /// Sends one request and decodes the result frame into the typed
     /// response — the single wire path every typed method funnels through.
     private func send<Response: Decodable>(method: String, params: [String: Any]) async throws -> Response {

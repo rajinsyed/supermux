@@ -86,8 +86,48 @@ public final class SupermuxProjectsSectionModel {
             },
             makeWorktreesStore: { [weak self] projectID in
                 self?.makeWorktreesStore(forProjectID: projectID)
+            },
+            editing: editingActions
+        )
+    }
+
+    /// The editor sheets' seam, routing project/preset CRUD through the live
+    /// session's store. The closures resolve the store at CALL time (weak
+    /// self), so a sheet outliving a reconnect reaches the fresh session —
+    /// or, with no session, gets `SupermuxMacUnavailableError` to display.
+    private var editingActions: SupermuxProjectEditingActions {
+        SupermuxProjectEditingActions(
+            createProject: { [weak self] rootPath in
+                try await Self.requireStore(self).createProject(rootPath: rootPath)
+            },
+            updateProject: { [weak self] projectID, patch in
+                try await Self.requireStore(self).updateProject(projectID: projectID, patch: patch)
+            },
+            deleteProject: { [weak self] projectID in
+                try await Self.requireStore(self).deleteProject(projectID: projectID)
+            },
+            editorProject: { [weak self] projectID in
+                self?.store?.projects.first { $0.id == projectID }
+            },
+            createPreset: { [weak self] request in
+                try await Self.requireStore(self).createPreset(request)
+            },
+            updatePreset: { [weak self] presetID, patch in
+                try await Self.requireStore(self).updatePreset(presetID: presetID, patch: patch)
+            },
+            deletePreset: { [weak self] presetID in
+                try await Self.requireStore(self).deletePreset(presetID: presetID)
             }
         )
+    }
+
+    /// The live session's store, or `SupermuxMacUnavailableError` when the
+    /// session ended (e.g. the sheet outlived a disconnect).
+    private static func requireStore(
+        _ model: SupermuxProjectsSectionModel?
+    ) throws -> SupermuxMobileProjectsStore {
+        guard let store = model?.store else { throw SupermuxMacUnavailableError() }
+        return store
     }
 
     /// Builds a worktrees store for one project against the live session's
@@ -136,10 +176,17 @@ public final class SupermuxProjectsSectionModel {
         }
     }
 
-    /// Toggles the section's collapse state locally.
+    /// Toggles the section's collapse state: the local override flips
+    /// immediately (responsive header), and the new state persists Mac-side
+    /// through `mobile.supermux.projects.set_section_collapsed` — the same
+    /// shared state the desktop header mutates. A failed write leaves the
+    /// session-local override in place (pre-write behavior) and surfaces on
+    /// the store's error state.
     public func toggleCollapsed() {
         guard let store, store.showsProjectsSection else { return }
-        collapsedOverride = !(collapsedOverride ?? store.isSectionCollapsed)
+        let collapsed = !(collapsedOverride ?? store.isSectionCollapsed)
+        collapsedOverride = collapsed
+        Task { await store.setSectionCollapsed(collapsed) }
     }
 
     /// Fetches a project's custom icon PNG through the session store's etag

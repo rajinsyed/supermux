@@ -49,6 +49,42 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func worktreeRemove(_ request: SupermuxWorktreeRemoveRequest) async throws -> SupermuxWorktreeRemoveResponse
 
+    /// `mobile.supermux.project.create`: registers a folder as a project
+    /// (repo-shipped `config.json` is imported Mac-side).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func projectCreate(_ request: SupermuxProjectCreateRequest) async throws -> SupermuxProjectWriteResponse
+
+    /// `mobile.supermux.project.update`: applies a present-key patch to a
+    /// project (arrays replaced whole; explicit `null` clears).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func projectUpdate(_ request: SupermuxProjectUpdateRequest) async throws -> SupermuxProjectWriteResponse
+
+    /// `mobile.supermux.project.delete`: unregisters a project (worktrees and
+    /// the repository stay on the Mac's disk).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func projectDelete(_ request: SupermuxProjectDeleteRequest) async throws -> SupermuxProjectDeleteResponse
+
+    /// `mobile.supermux.projects.set_section_collapsed`: persists the sidebar
+    /// Projects section's collapse state Mac-side.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func projectsSetSectionCollapsed(
+        _ request: SupermuxProjectsSetSectionCollapsedRequest
+    ) async throws -> SupermuxSectionCollapsedResponse
+
+    /// `mobile.supermux.preset.create`: appends a launchable terminal preset
+    /// (the Mac assigns the identity).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func presetCreate(_ request: SupermuxPresetCreateRequest) async throws -> SupermuxPresetWriteResponse
+
+    /// `mobile.supermux.preset.update`: applies a present-key patch to a
+    /// preset.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func presetUpdate(_ request: SupermuxPresetUpdateRequest) async throws -> SupermuxPresetWriteResponse
+
+    /// `mobile.supermux.preset.delete`: removes a preset from the Mac's bar.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func presetDelete(_ request: SupermuxPresetDeleteRequest) async throws -> SupermuxPresetDeleteResponse
+
     /// Subscribes to `supermux.*` event topics. Events are payload-light
     /// pokes; consumers refetch through the matching request method. The
     /// stream finishes when the underlying connection drops; consumers

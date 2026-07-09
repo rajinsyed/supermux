@@ -39,6 +39,25 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     /// When set, `worktreeRemove` throws instead of returning.
     var worktreeRemoveError: (any Error)?
 
+    /// The response the next `projectCreate`/`projectUpdate` call returns.
+    var projectWriteResponse = SupermuxProjectWriteResponse(
+        project: SupermuxProjectDTO(id: "", name: "", rootPath: "")
+    )
+    /// When set, `projectCreate`/`projectUpdate` throws instead of returning.
+    var projectWriteError: (any Error)?
+    /// When set, `projectDelete` throws instead of returning.
+    var projectDeleteError: (any Error)?
+    /// When set, `projectsSetSectionCollapsed` throws instead of returning.
+    var sectionCollapsedError: (any Error)?
+    /// The response the next `presetCreate`/`presetUpdate` call returns.
+    var presetWriteResponse = SupermuxPresetWriteResponse(
+        preset: SupermuxTerminalPresetDTO(id: "", name: "", command: "")
+    )
+    /// When set, `presetCreate`/`presetUpdate` throws instead of returning.
+    var presetWriteError: (any Error)?
+    /// When set, `presetDelete` throws instead of returning.
+    var presetDeleteError: (any Error)?
+
     /// Ordered log of every seam call, for ordering assertions.
     private(set) var callLog: [String] = []
     private(set) var projectsListCallCount = 0
@@ -103,6 +122,57 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
         if let worktreeRemoveError { throw worktreeRemoveError }
         return SupermuxWorktreeRemoveResponse(removed: true, worktreePath: request.worktreePath)
+    }
+
+    func projectCreate(_ request: SupermuxProjectCreateRequest) async throws -> SupermuxProjectWriteResponse {
+        callLog.append("projectCreate")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let projectWriteError { throw projectWriteError }
+        return projectWriteResponse
+    }
+
+    func projectUpdate(_ request: SupermuxProjectUpdateRequest) async throws -> SupermuxProjectWriteResponse {
+        callLog.append("projectUpdate")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let projectWriteError { throw projectWriteError }
+        return projectWriteResponse
+    }
+
+    func projectDelete(_ request: SupermuxProjectDeleteRequest) async throws -> SupermuxProjectDeleteResponse {
+        callLog.append("projectDelete")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let projectDeleteError { throw projectDeleteError }
+        return SupermuxProjectDeleteResponse(removed: true, projectId: request.projectID)
+    }
+
+    func projectsSetSectionCollapsed(
+        _ request: SupermuxProjectsSetSectionCollapsedRequest
+    ) async throws -> SupermuxSectionCollapsedResponse {
+        callLog.append("projectsSetSectionCollapsed")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let sectionCollapsedError { throw sectionCollapsedError }
+        return SupermuxSectionCollapsedResponse(sectionCollapsed: request.collapsed)
+    }
+
+    func presetCreate(_ request: SupermuxPresetCreateRequest) async throws -> SupermuxPresetWriteResponse {
+        callLog.append("presetCreate")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let presetWriteError { throw presetWriteError }
+        return presetWriteResponse
+    }
+
+    func presetUpdate(_ request: SupermuxPresetUpdateRequest) async throws -> SupermuxPresetWriteResponse {
+        callLog.append("presetUpdate")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let presetWriteError { throw presetWriteError }
+        return presetWriteResponse
+    }
+
+    func presetDelete(_ request: SupermuxPresetDeleteRequest) async throws -> SupermuxPresetDeleteResponse {
+        callLog.append("presetDelete")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let presetDeleteError { throw presetDeleteError }
+        return SupermuxPresetDeleteResponse(removed: true, presetId: request.presetID)
     }
 
     func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {
