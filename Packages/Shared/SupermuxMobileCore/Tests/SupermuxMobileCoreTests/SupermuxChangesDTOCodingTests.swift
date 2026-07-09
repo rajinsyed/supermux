@@ -74,11 +74,12 @@ import Testing
         let diff = SupermuxDiffDTO(
             path: "src/x.swift",
             isBinary: false,
-            diffText: "@@ -1 +1 @@\n-old\n+new"
+            diffText: "@@ -1 +1 @@\n-old\n+new",
+            truncated: true
         )
         #expect(try coding.roundTrip(diff) == diff)
         let keys = try coding.encodedKeys(of: diff)
-        #expect(keys == ["path", "is_binary", "diff_text"])
+        #expect(keys == ["path", "is_binary", "diff_text", "truncated"])
     }
 
     @Test func diffUnknownFieldTolerance() throws {
@@ -86,6 +87,15 @@ import Testing
         let diff = try coding.decode(SupermuxDiffDTO.self, from: json)
         #expect(diff.isBinary == true)
         #expect(diff.diffText == nil)
+    }
+
+    /// Payloads from hosts predating the `truncated` field must keep decoding
+    /// (the field is additive and optional).
+    @Test func diffToleratesMissingTruncatedField() throws {
+        let json = #"{"path": "a.swift", "is_binary": false, "diff_text": "@@"}"#
+        let diff = try coding.decode(SupermuxDiffDTO.self, from: json)
+        #expect(diff.truncated == nil)
+        #expect(diff.diffText == "@@")
     }
 
     @Test func commitRoundTrips() throws {

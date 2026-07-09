@@ -196,6 +196,12 @@ enum SupermuxMobileHostGlue {
     private static var activityObserver: SupermuxMobileActivityObserver?
     private static var worktreesObserver: SupermuxMobileWorktreesObserver?
 
+    /// Per-workspace repository watchers behind `mobile.supermux.changes.watch`
+    /// (leased, TTL-swept; see ``SupermuxMobileChangesWatchRegistry``). Lazily
+    /// created on the first watch RPC — unlike the observers above it has no
+    /// model to snapshot at activation time.
+    static let changesWatchRegistry = SupermuxMobileChangesWatchRegistry()
+
     /// Constructs the fork observers once; later calls are no-ops.
     static func activateIfNeeded() {
         guard projectsObserver == nil else { return }

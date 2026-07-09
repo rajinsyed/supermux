@@ -25,6 +25,13 @@ enum SupermuxMobileCapabilities {
             // preset.launch stays method_not_found until the launch feature
             // ships (m4); the phone must tolerate that error meanwhile.
             SupermuxMobileCapability.presetsV1.rawValue,
+            // changes.watch / changes.status / changes.diff / changes.stage /
+            // changes.unstage / changes.discard are served — the minimum
+            // useful read+mutate surface. changes.commit / push / pull /
+            // stash / stash_pop / history / generate_commit_message stay
+            // method_not_found until the next changes feature (m3-f2); the
+            // phone must tolerate that error meanwhile.
+            SupermuxMobileCapability.changesV1.rawValue,
         ]
     }
 }
