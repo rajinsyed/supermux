@@ -113,6 +113,10 @@ import Testing
         #expect(first.supermuxActivity == nil)
         #expect(second.supermuxProjectID == nil)
         #expect(second.supermuxActivity == nil)
+        #expect(first.supermuxBranch == nil)
+        #expect(first.supermuxPullRequest == nil)
+        #expect(second.supermuxBranch == nil)
+        #expect(second.supermuxPullRequest == nil)
     }
 
     @Test func payloadWithSupermuxFieldsPopulatesThem() throws {
@@ -164,5 +168,144 @@ import Testing
         let preview = try #require(response.workspaces.first.map(MobileWorkspacePreview.init(remote:)))
         #expect(preview.supermuxProjectID == "66666666-6666-6666-6666-666666666666")
         #expect(preview.supermuxActivity == "working")
+    }
+
+    // MARK: - m6-f2 sidebar-row parity fields (supermux_branch / supermux_pull_request)
+
+    @Test func payloadWithBranchAndPullRequestPopulatesThem() throws {
+        let payload = #"""
+        {
+          "workspaces": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "alpha main",
+              "is_selected": false,
+              "terminals": [],
+              "supermux_project_id": "66666666-6666-6666-6666-666666666666",
+              "supermux_branch": "feature/parity",
+              "supermux_pull_request": {
+                "number": 4321,
+                "state": "merged",
+                "url": "https://github.com/acme/alpha/pull/4321"
+              }
+            }
+          ]
+        }
+        """#
+        let response = try MobileSyncWorkspaceListResponse.decode(Data(payload.utf8))
+        let workspace = try #require(response.workspaces.first)
+        #expect(workspace.supermuxBranch == "feature/parity")
+        let pullRequest = try #require(workspace.supermuxPullRequest)
+        #expect(pullRequest.number == 4321)
+        #expect(pullRequest.state == "merged")
+        #expect(pullRequest.url == "https://github.com/acme/alpha/pull/4321")
+    }
+
+    @Test func pullRequestToleratesMissingOptionalAndUnknownKeys() throws {
+        // A future Mac may add PR keys or omit state/url; decoding must
+        // tolerate both. `is_stale` rides through for the badge dimming.
+        let payload = #"""
+        {
+          "workspaces": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "alpha main",
+              "is_selected": false,
+              "terminals": [],
+              "supermux_pull_request": {
+                "number": 7,
+                "title": "Add parity",
+                "is_stale": true,
+                "some_future_key": {"nested": 1}
+              }
+            }
+          ]
+        }
+        """#
+        let response = try MobileSyncWorkspaceListResponse.decode(Data(payload.utf8))
+        let pullRequest = try #require(response.workspaces.first?.supermuxPullRequest)
+        #expect(pullRequest.number == 7)
+        #expect(pullRequest.state == nil)
+        #expect(pullRequest.url == nil)
+        #expect(pullRequest.isStale == true)
+    }
+
+    @Test func malformedPullRequestDegradesToNoBadgeWithoutFailingTheList() throws {
+        // Lossy extension decoding (PROTO-03): a PR object with wrong-typed
+        // fields — or one that is not an object at all — must never fail the
+        // whole workspace-list decode; it degrades to nil fields ("no badge").
+        let payload = #"""
+        {
+          "workspaces": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "wrong types",
+              "is_selected": false,
+              "terminals": [],
+              "supermux_pull_request": {"number": "seven", "state": 3, "url": false, "is_stale": "yes"}
+            },
+            {
+              "id": "22222222-2222-2222-2222-222222222222",
+              "title": "not an object",
+              "is_selected": false,
+              "terminals": [],
+              "supermux_pull_request": "garbage"
+            }
+          ]
+        }
+        """#
+        let response = try MobileSyncWorkspaceListResponse.decode(Data(payload.utf8))
+        try #require(response.workspaces.count == 2)
+        let wrongTypes = try #require(response.workspaces[0].supermuxPullRequest)
+        #expect(wrongTypes.number == nil)
+        #expect(wrongTypes.state == nil)
+        #expect(wrongTypes.url == nil)
+        #expect(wrongTypes.isStale == nil)
+        let notAnObject = try #require(response.workspaces[1].supermuxPullRequest)
+        #expect(notAnObject.number == nil)
+
+        // The preview mapping drops the number-less badge entirely.
+        let preview = MobileWorkspacePreview(remote: response.workspaces[0])
+        #expect(preview.supermuxPullRequestNumber == nil)
+    }
+
+    @Test func branchAndPullRequestFlowIntoTheWorkspacePreviewMapping() throws {
+        let payload = #"""
+        {
+          "workspaces": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "alpha main",
+              "is_selected": false,
+              "terminals": [],
+              "supermux_project_id": "66666666-6666-6666-6666-666666666666",
+              "supermux_branch": "fix/row-parity",
+              "supermux_pull_request": {
+                "number": 88,
+                "state": "open",
+                "url": "https://github.com/acme/alpha/pull/88"
+              }
+            },
+            {
+              "id": "55555555-5555-5555-5555-555555555555",
+              "title": "standalone",
+              "is_selected": false,
+              "terminals": []
+            }
+          ]
+        }
+        """#
+        let response = try MobileSyncWorkspaceListResponse.decode(Data(payload.utf8))
+        try #require(response.workspaces.count == 2)
+        let preview = MobileWorkspacePreview(remote: response.workspaces[0])
+        #expect(preview.supermuxBranch == "fix/row-parity")
+        #expect(preview.supermuxPullRequestNumber == 88)
+        #expect(preview.supermuxPullRequestState == "open")
+        #expect(preview.supermuxPullRequestURL == "https://github.com/acme/alpha/pull/88")
+        let bare = MobileWorkspacePreview(remote: response.workspaces[1])
+        #expect(bare.supermuxBranch == nil)
+        #expect(bare.supermuxPullRequestNumber == nil)
+        #expect(bare.supermuxPullRequestState == nil)
+        #expect(bare.supermuxPullRequestURL == nil)
     }
 }

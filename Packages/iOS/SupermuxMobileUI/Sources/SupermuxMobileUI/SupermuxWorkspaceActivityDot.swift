@@ -4,9 +4,9 @@ public import SwiftUI
 /// A compact agent-activity indicator for workspace rows, mirroring the Mac's
 /// `SupermuxAgentActivityIndicator` visual language and palette:
 ///
-/// - ``SupermuxWorkspaceActivityDTO/working``: an amber dot with a gentle
-///   breathing animation (the Mac animates this state too; a phone list keeps
-///   it to a low-cost opacity loop instead of a spinner).
+/// - ``SupermuxWorkspaceActivityDTO/working``: the Mac's amber braille
+///   spinner (`⠋⠙⠹…`), ported frame-for-frame so a working agent reads the
+///   same on the phone as in the sidebar (m6-f2 row parity).
 /// - ``SupermuxWorkspaceActivityDTO/needsInput``: a red dot with a looping
 ///   "ping" halo — the most attention-grabbing state.
 /// - ``SupermuxWorkspaceActivityDTO/ready``: a steady green dot.
@@ -27,7 +27,7 @@ public struct SupermuxWorkspaceActivityDot: View {
     public var body: some View {
         switch activity {
         case .working:
-            SupermuxBreathingDot(color: SupermuxMobileActivityPalette.working, size: size)
+            SupermuxMobileBrailleSpinner(size: size)
                 .accessibilityLabel(Self.label(for: .working))
         case .needsInput:
             SupermuxMobilePulsingDot(color: SupermuxMobileActivityPalette.needsInput, size: size)
@@ -85,51 +85,64 @@ enum SupermuxMobileActivityPalette {
     static let ready = Color(red: 0.13, green: 0.77, blue: 0.37)
 }
 
-/// A dot that gently "breathes" (opacity loop) while an agent works. The
-/// animation is a single render-server-driven `repeatForever`, so it costs
-/// nothing per frame on the main thread.
-struct SupermuxBreathingDot: View {
-    let color: Color
+/// The Mac's amber braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`), ported from
+/// `SupermuxBrailleSpinner` in SupermuxKit so a working agent animates
+/// identically on both devices.
+///
+/// Same CPU-safety posture as the Mac original: the schedule is
+/// `.animation(minimumInterval:paused:)` capped at ~12.5fps, it pauses
+/// entirely while the scene is not active (a backgrounded phone never
+/// redraws), and `TimelineView` confines redraws to this leaf `Text` so a
+/// tick never re-evaluates the row or the list.
+struct SupermuxMobileBrailleSpinner: View {
     let size: CGFloat
 
-    @State private var dimmed = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    private static let frames: [String] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    private static let frameInterval: TimeInterval = 0.08
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .opacity(dimmed ? 0.35 : 1)
-            .onAppear {
-                dimmed = false
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                    dimmed = true
-                }
-            }
-            .onDisappear { dimmed = false }
+        TimelineView(.animation(minimumInterval: Self.frameInterval, paused: scenePhase != .active)) { context in
+            let elapsed = context.date.timeIntervalSinceReferenceDate
+            let index = Int(elapsed / Self.frameInterval) % Self.frames.count
+            Text(Self.frames[(index + Self.frames.count) % Self.frames.count])
+                .font(.system(size: size * 1.7, weight: .semibold, design: .monospaced))
+                .foregroundStyle(SupermuxMobileActivityPalette.working)
+        }
+        // Reserve the dot's footprint so rows don't shift between states.
+        .frame(width: size, height: size)
+        .fixedSize()
     }
 }
 
 /// A solid dot with a looping "ping" halo behind it (Tailwind `animate-ping`),
 /// ported from the Mac's `SupermuxPulsingDot` for the needs-input state.
+/// Like the Mac original, the halo is only mounted while the scene is
+/// active — a backgrounded phone schedules no animation at all; the solid
+/// dot always shows.
 struct SupermuxMobilePulsingDot: View {
     let color: Color
     let size: CGFloat
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var pinging = false
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(color)
-                .opacity(pinging ? 0 : 0.7)
-                .scaleEffect(pinging ? 2.3 : 1)
-                .onAppear {
-                    pinging = false
-                    withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false)) {
-                        pinging = true
+            if scenePhase == .active {
+                Circle()
+                    .fill(color)
+                    .opacity(pinging ? 0 : 0.7)
+                    .scaleEffect(pinging ? 2.3 : 1)
+                    .onAppear {
+                        pinging = false
+                        withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false)) {
+                            pinging = true
+                        }
                     }
-                }
-                .onDisappear { pinging = false }
+                    .onDisappear { pinging = false }
+            }
             Circle()
                 .fill(color)
         }

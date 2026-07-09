@@ -38,7 +38,7 @@ import Testing
     private func makeStore(
         fake: FakeSupermuxMacClient,
         capabilities: SupermuxMobileCapabilities = worktreesOnly,
-        onWorktreesChanged: (@MainActor (String, Int) -> Void)? = nil
+        onWorktreesChanged: (@MainActor (String, [SupermuxWorktreeDTO]) -> Void)? = nil
     ) -> SupermuxMobileWorktreesStore {
         SupermuxMobileWorktreesStore(
             client: fake,
@@ -91,17 +91,17 @@ import Testing
         #expect(store.lastErrorDescription == nil)
     }
 
-    @Test func reportsWorktreeCountAfterEachSuccessfulFetch() async throws {
+    @Test func reportsWorktreesAfterEachSuccessfulFetch() async throws {
         let fake = FakeSupermuxMacClient()
         fake.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: Self.fixturesB)
-        var reported: [(projectID: String, count: Int)] = []
+        var reported: [(projectID: String, worktrees: [SupermuxWorktreeDTO])] = []
         let store = makeStore(fake: fake, onWorktreesChanged: { reported.append(($0, $1)) })
         let runner = Task { await store.run() }
         defer { runner.cancel() }
 
         try await TestWait().until { store.hasLoaded }
         #expect(reported.last?.projectID == Self.projectID)
-        #expect(reported.last?.count == 2)
+        #expect(reported.last?.worktrees == Self.fixturesB)
     }
 
     // MARK: Capability gate

@@ -37,6 +37,9 @@ public struct SupermuxPullRequestBadgeSnapshot: Equatable, Sendable {
     public let state: SupermuxPullRequestBadgeState
     /// The PR's web URL, when present and parseable.
     public let url: URL?
+    /// Whether the badge is stale (kept after repeated mac probe failures);
+    /// rendered dimmed, mirroring the mac badge. `false` when unknown.
+    public let isStale: Bool
 
     /// Projects a wire DTO onto the badge snapshot.
     /// - Parameter dto: The worktree's pull request, if any.
@@ -45,6 +48,23 @@ public struct SupermuxPullRequestBadgeSnapshot: Equatable, Sendable {
         self.number = dto.number
         self.state = SupermuxPullRequestBadgeState(state: dto.state)
         self.url = dto.url.flatMap(URL.init(string:))
+        self.isStale = dto.isStale ?? false
+    }
+
+    /// Projects the flattened `supermux_pull_request` workspace-list fields
+    /// (carried as scalars on `MobileWorkspacePreview`) onto the badge
+    /// snapshot; `nil` without a number (no PR).
+    /// - Parameters:
+    ///   - number: The PR number, if any.
+    ///   - state: The PR state string, if any.
+    ///   - urlString: The PR web URL string, if any.
+    ///   - isStale: Whether the badge is stale; `nil` means fresh.
+    public init?(number: Int?, state: String?, urlString: String?, isStale: Bool? = nil) {
+        guard let number else { return nil }
+        self.number = number
+        self.state = SupermuxPullRequestBadgeState(state: state)
+        self.url = urlString.flatMap(URL.init(string:))
+        self.isStale = isStale ?? false
     }
 }
 

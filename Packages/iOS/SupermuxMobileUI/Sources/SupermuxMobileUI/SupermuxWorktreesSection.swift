@@ -155,12 +155,14 @@ struct SupermuxMobilePullRequestBadge: View {
             }
         } label: {
             HStack(spacing: 2) {
-                Image(systemName: stateSymbol)
-                    .font(.caption2.weight(.semibold))
+                stateIcon
                 Text(verbatim: "#\(pullRequest.number)")
                     .font(.caption.weight(.semibold).monospacedDigit())
             }
             .foregroundStyle(tint)
+            // Stale badges (kept after repeated mac probe failures) dim to
+            // 50% — the mac badge's exact treatment.
+            .opacity(pullRequest.isStale ? 0.5 : 1)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(Capsule(style: .continuous).fill(tint.opacity(0.16)))
@@ -181,12 +183,23 @@ struct SupermuxMobilePullRequestBadge: View {
         }
     }
 
-    private var stateSymbol: String {
+    /// The state icon: the Mac's real git-pull-request glyph for open/merged
+    /// (`SupermuxMobilePullRequestGlyph`, same path geometry as the sidebar
+    /// badge) and the same SF-symbol fallbacks for closed/unknown. Inherits
+    /// the surrounding `foregroundStyle`, so the state tint colors it.
+    @ViewBuilder
+    private var stateIcon: some View {
         switch pullRequest.state {
-        case .open: "arrow.triangle.branch"
-        case .merged: "arrow.triangle.merge"
-        case .closed: "xmark.circle"
-        case .unknown: "questionmark.circle"
+        case .open:
+            SupermuxMobilePullRequestGlyph(kind: .open, size: 12)
+        case .merged:
+            SupermuxMobilePullRequestGlyph(kind: .merged, size: 12)
+        case .closed:
+            Image(systemName: "xmark.circle")
+                .font(.caption2.weight(.semibold))
+        case .unknown:
+            Image(systemName: "questionmark.circle")
+                .font(.caption2.weight(.semibold))
         }
     }
 

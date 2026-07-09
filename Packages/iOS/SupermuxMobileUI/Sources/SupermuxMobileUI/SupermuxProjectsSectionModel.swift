@@ -53,6 +53,14 @@ public final class SupermuxProjectsSectionModel {
     /// binds this to a `navigationDestination`.
     public internal(set) var detailProjectID: String?
 
+    /// The routed project's row as last resolved from a LIVE snapshot —
+    /// captured when the detail route opens. ``detailRow`` falls back to it
+    /// only while the section snapshot is hidden/unloaded (session torn down
+    /// or still reloading), so the pushed detail never flashes the
+    /// "no longer available" placeholder unless the project genuinely
+    /// disappeared from a loaded projects list.
+    var detailFallbackRow: SupermuxProjectRowSnapshot?
+
     /// Error surface for a failed nested-worktree open (UI-03: visible,
     /// never silent). Cleared via ``dismissNestedOpenError()``.
     public internal(set) var nestedOpenErrorMessage: String?
@@ -84,15 +92,24 @@ public final class SupermuxProjectsSectionModel {
     /// The live session's client + capability snapshot, retained so worktrees
     /// stores can be minted against the SAME connection the projects store
     /// uses. Cleared with the session. Ignored by observation: connection
-    /// identity carries no render state.
-    @ObservationIgnored private var sessionClient: (any SupermuxMacCalling)?
-    @ObservationIgnored private var sessionCapabilities: SupermuxMobileCapabilities?
+    /// identity carries no render state. Internal (not private) for the
+    /// `+Nesting.swift` count-seeding extension.
+    @ObservationIgnored var sessionClient: (any SupermuxMacCalling)?
+    @ObservationIgnored var sessionCapabilities: SupermuxMobileCapabilities?
 
-    /// Worktree counts per project id, fed back by worktrees stores after
-    /// each successful fetch (the "derive from the store" count badge).
-    /// Observable so a fresh count re-projects the section rows. Reset per
-    /// session — counts never leak across Macs.
+    /// UNOPENED-worktree counts per project id (the mac capsule's count),
+    /// fed by expanded projects' worktrees stores after each successful
+    /// fetch and seeded once per session for collapsed projects (the mac
+    /// eagerly refreshes every project's worktrees at load, so its capsule
+    /// shows without expanding — the phone mirrors that with one-shot
+    /// fetches). Observable so a fresh count re-projects the section rows.
+    /// Reset per session — counts never leak across Macs.
     private var worktreeCounts: [String: Int] = [:]
+
+    /// Project ids whose one-shot count seed already ran this session, so a
+    /// projects refetch doesn't re-fetch every collapsed project's worktrees.
+    /// Internal (not private) for the `+Nesting.swift` seeding extension.
+    @ObservationIgnored var seededWorktreeCountProjectIDs: Set<String> = []
 
     /// The open workspaces the shell last reported (project-associated only),
     /// joined onto project rows in ``snapshot``. Observable so a workspace
@@ -126,9 +143,15 @@ public final class SupermuxProjectsSectionModel {
             hasLoaded: store.hasLoaded,
             rows: store.projects.map { project in
                 let isExpanded = expandedProjectIDs.contains(project.id)
+                // The mac row's green play indicator: mark the nested
+                // workspace hosting this project's active run command
+                // (run.state's workspace_id), matched by Mac-local id.
+                let runningWorkspaceID = runningWorkspaceID(forProjectID: project.id)
                 return SupermuxProjectRowSnapshot(
                     project: project,
-                    openWorkspaces: workspaceRows.filter { $0.projectID == project.id },
+                    openWorkspaces: workspaceRows
+                        .filter { $0.projectID == project.id }
+                        .map { $0.runningMarked($0.hostsRunningWorkspace(runningWorkspaceID)) },
                     worktreeCount: worktreeCounts[project.id],
                     run: runState(for: project),
                     isExpanded: isExpanded,
@@ -139,6 +162,17 @@ public final class SupermuxProjectsSectionModel {
             presets: store.showsPresets ? store.presets : [],
             showsActions: runStore?.showsActions ?? false
         )
+    }
+
+    /// The Mac-local id of the workspace hosting `projectID`'s active run
+    /// command, or `nil` when nothing runs (or `supermux.run.v1` is absent).
+    private func runningWorkspaceID(forProjectID projectID: String) -> String? {
+        guard let runStore, runStore.showsRun,
+              let row = runStore.run(forProjectID: projectID),
+              row.isRunning == true else {
+            return nil
+        }
+        return row.workspaceId
     }
 
     /// The run-store projection for one project row: `nil` (run UI hidden)
@@ -218,88 +252,6 @@ public final class SupermuxProjectsSectionModel {
         return runStore
     }
 
-    /// The editor sheets' seam, routing project/preset CRUD through the live
-    /// session's store. The closures resolve the store at CALL time (weak
-    /// self), so a sheet outliving a reconnect reaches the fresh session —
-    /// or, with no session, gets `SupermuxMacUnavailableError` to display.
-    private var editingActions: SupermuxProjectEditingActions {
-        SupermuxProjectEditingActions(
-            createProject: { [weak self] rootPath in
-                try await Self.requireStore(self).createProject(rootPath: rootPath)
-            },
-            updateProject: { [weak self] projectID, patch in
-                try await Self.requireStore(self).updateProject(projectID: projectID, patch: patch)
-            },
-            deleteProject: { [weak self] projectID in
-                try await Self.requireStore(self).deleteProject(projectID: projectID)
-            },
-            editorProject: { [weak self] projectID in
-                self?.store?.projects.first { $0.id == projectID }
-            },
-            createPreset: { [weak self] request in
-                try await Self.requireStore(self).createPreset(request)
-            },
-            updatePreset: { [weak self] presetID, patch in
-                try await Self.requireStore(self).updatePreset(presetID: presetID, patch: patch)
-            },
-            deletePreset: { [weak self] presetID in
-                try await Self.requireStore(self).deletePreset(presetID: presetID)
-            },
-            rootPathPicker: rootPathPicking
-        )
-    }
-
-    /// The project editor's Mac folder-picker seam: browsable roots are the
-    /// registered projects (`project_id`-rooted `files.*` browsing — the wire
-    /// confines every request to an existing root, so arbitrary Mac paths
-    /// still go through the editor's text field). `nil` without a live
-    /// session or `supermux.files.v1` (the Browse affordance hides). The
-    /// closures resolve at CALL time (weak self), so a sheet outliving a
-    /// reconnect reaches the fresh session.
-    private var rootPathPicking: SupermuxProjectRootPathPicking? {
-        guard let sessionCapabilities, sessionCapabilities.supportsFiles else { return nil }
-        return SupermuxProjectRootPathPicking(
-            rootOptions: { [weak self] in
-                (self?.store?.projects ?? []).map { project in
-                    SupermuxFolderPickerRootOption(
-                        projectID: project.id,
-                        name: project.name,
-                        rootPath: project.rootPath
-                    )
-                }
-            },
-            makeBrowserStore: { [weak self] projectID in
-                self?.makeFileBrowserStore(root: .project(id: projectID))
-            }
-        )
-    }
-
-    /// Builds a file-browser store for one confined root against the live
-    /// session's client and capability snapshot. `nil` while disconnected or
-    /// when the host lacks `supermux.files.v1` (the capability gate — a fork
-    /// phone against an upstream Mac shows no file-browser UI).
-    /// - Parameter root: The confined root to browse.
-    public func makeFileBrowserStore(root: SupermuxFilesRoot) -> SupermuxMobileFileBrowserStore? {
-        guard let sessionClient, let sessionCapabilities,
-              sessionCapabilities.supportsFiles else {
-            return nil
-        }
-        return SupermuxMobileFileBrowserStore(
-            client: sessionClient,
-            capabilities: sessionCapabilities,
-            root: root
-        )
-    }
-
-    /// The live session's store, or `SupermuxMacUnavailableError` when the
-    /// session ended (e.g. the sheet outlived a disconnect).
-    private static func requireStore(
-        _ model: SupermuxProjectsSectionModel?
-    ) throws -> SupermuxMobileProjectsStore {
-        guard let store = model?.store else { throw SupermuxMacUnavailableError() }
-        return store
-    }
-
     /// Builds a worktrees store for one project against the live session's
     /// client and capability snapshot. `nil` while disconnected or when the
     /// host lacks `supermux.worktrees.v1` (the capability gate — a fork phone
@@ -315,13 +267,18 @@ public final class SupermuxProjectsSectionModel {
             client: sessionClient,
             capabilities: sessionCapabilities,
             projectID: projectID,
-            onWorktreesChanged: { [weak self] projectID, count in
-                self?.recordWorktreeCount(count, forProjectID: projectID)
+            onWorktreesChanged: { [weak self] projectID, worktrees in
+                self?.recordWorktrees(worktrees, forProjectID: projectID)
             }
         )
     }
 
-    private func recordWorktreeCount(_ count: Int, forProjectID projectID: String) {
+    /// Records a project's fresh worktree list as the row badge's UNOPENED
+    /// count (the mac capsule counts only worktrees without an open
+    /// workspace). Internal (not private) for the `+Nesting.swift` seeding
+    /// extension.
+    func recordWorktrees(_ worktrees: [SupermuxWorktreeDTO], forProjectID projectID: String) {
+        let count = SupermuxWorktreeRowSnapshot.unopenedRows(from: worktrees).count
         if worktreeCounts[projectID] != count {
             worktreeCounts[projectID] = count
         }
@@ -405,6 +362,13 @@ public final class SupermuxProjectsSectionModel {
             onProjectsChanged: { [weak self] projects in
                 guard let self, self.sessionGeneration == generation else { return }
                 self.pruneWorktreeSessions(keepingProjectIDs: projects.map(\.id))
+                // Mirror the mac's eager per-project worktree refresh at
+                // load: collapsed projects get a one-shot count fetch so the
+                // worktree capsule shows without expanding.
+                self.seedWorktreeCounts(
+                    forProjectIDs: projects.map(\.id),
+                    generation: generation
+                )
             }
         )
         let runStore = SupermuxMobileRunStore(client: client, capabilities: capabilities)
@@ -413,6 +377,7 @@ public final class SupermuxProjectsSectionModel {
         sessionClient = client
         sessionCapabilities = capabilities
         worktreeCounts = [:]
+        seededWorktreeCountProjectIDs = []
         // Resume the phone-persisted inline disclosures against THIS
         // connection: each expanded project fetches on session start and
         // refetches on `supermux.worktrees.updated` (the store's own loop).
@@ -423,7 +388,18 @@ public final class SupermuxProjectsSectionModel {
             // Only the still-current session clears itself; a replacement
             // session that already installed its store must not be torn down
             // by the old session's exit.
-            if self.store === store {
+            //
+            // With a project DETAIL pushed, the cancellation is (in every
+            // reachable case) the navigationDestination push covering the
+            // list — NavigationStack removes the root from the hierarchy, so
+            // SwiftUI cancels the driver's structured `.task`. Tearing down
+            // here would blank `detailRow` and swap the just-pushed detail
+            // for the "no longer available" placeholder (the m6-f1 field
+            // bug). Instead the session stays installed — the connection is
+            // still alive, so detail actions keep working; only the event
+            // loops pause — and the next `runSession` (the list reappears on
+            // pop, or the connection key changes) replaces it wholesale.
+            if self.store === store, detailProjectID == nil {
                 self.store = nil
                 self.runStore = nil
                 sessionClient = nil
@@ -451,8 +427,12 @@ public final class SupermuxProjectsSectionModel {
         sessionClient = nil
         sessionCapabilities = nil
         worktreeCounts = [:]
+        seededWorktreeCountProjectIDs = []
         collapsedOverride = nil
         endAllWorktreeSessions()
         sessionGeneration += 1
+        // detailProjectID / detailFallbackRow survive on purpose: a pushed
+        // detail outliving a disconnect keeps rendering its last-known row
+        // instead of flashing "no longer available".
     }
 }

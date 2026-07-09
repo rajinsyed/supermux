@@ -3,11 +3,13 @@ import SupermuxMobileCore
 import SwiftUI
 
 /// One project row in the phone's Projects section, mirroring the mac
-/// sidebar's row (m6-f1): tapping the row toggles the INLINE disclosure
-/// (never a navigation push), the trailing info accessory and the long-press
-/// menu route to the project DETAIL screen, and the count badges show
-/// worktrees/open workspaces. Like the mac row, no run control renders here
-/// — run start/stop lives on the detail screen.
+/// sidebar's row (m6-f1/m6-f2): avatar + name only (the mac row shows no
+/// path), with the mac's worktree capsule — branch glyph, UNOPENED-worktree
+/// count, disclosure chevron — on the trailing edge. Tapping the row toggles
+/// the INLINE disclosure (never a navigation push); the trailing info
+/// accessory and the long-press menu route to the project DETAIL screen.
+/// Like the mac row, no run control renders here — run start/stop lives on
+/// the detail screen.
 ///
 /// Receives an immutable ``SupermuxProjectRowSnapshot`` plus closures only,
 /// per the repo's snapshot-boundary rule.
@@ -24,23 +26,19 @@ struct SupermuxProjectMobileRow: View {
             } label: {
                 HStack(spacing: 10) {
                     SupermuxProjectMobileAvatar(row: row, size: 32, iconPNGData: iconPNGData)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(row.name)
-                            .font(.body.weight(.medium))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Text(row.rootPath)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
+                    Text(row.name)
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     Spacer(minLength: 4)
-                    countBadges
-                    Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                        .accessibilityHidden(true)
+                    if let count = row.worktreeCount, count > 0 {
+                        worktreeCapsule(count: count)
+                    } else {
+                        Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -84,38 +82,35 @@ struct SupermuxProjectMobileRow: View {
         }
     }
 
-    /// Count badges render only when real data exists (`nil` = hidden, never
-    /// a made-up zero badge): the worktree count arrives once a worktrees
-    /// fetch has run for the project, the workspace count from the §6 join.
-    @ViewBuilder
-    private var countBadges: some View {
-        if let count = row.worktreeCount {
-            countBadge(systemImage: "arrow.triangle.branch", count: count)
-        }
-        if let count = row.openWorkspaceCount {
-            countBadge(systemImage: "square.on.square", count: count)
-        }
-    }
-
-    private func countBadge(systemImage: String, count: Int) -> some View {
-        HStack(spacing: 2) {
-            Image(systemName: systemImage)
+    /// The mac row's worktree capsule: branch glyph + UNOPENED-worktree count
+    /// + disclosure chevron in one pill. Renders only when real data exists
+    /// and the count is non-zero — exactly when the mac shows it (`nil` =
+    /// no fetch yet, never a made-up zero badge; open workspaces are always
+    /// visible nested rows, so they carry no count).
+    private func worktreeCapsule(count: Int) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.triangle.branch")
                 .font(.caption2.weight(.semibold))
             Text(verbatim: "\(count)")
                 .font(.caption.weight(.semibold).monospacedDigit())
+            Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right")
+                .font(.system(size: 9, weight: .bold))
         }
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
         .background(Capsule().fill(Color.secondary.opacity(0.12)))
+        .accessibilityHidden(true)
     }
 }
 
-/// The nested list rows under one EXPANDED project, in the mac sidebar's
-/// order: the project's open workspaces (activity dots, tap navigates), then
-/// its unopened worktrees (PR badges, tap opens via `worktree.open`). Emits
-/// plain sibling rows for the host `Section` — each an immutable snapshot
-/// plus closures, per the snapshot-boundary rule.
+/// The nested list rows under one project, in the mac sidebar's shape: the
+/// project's open workspaces are ALWAYS visible nested rows (branch
+/// subtitles, trailing activity/PR/run status, tap navigates) exactly like
+/// the mac, while the unopened worktrees (PR badges, tap opens via
+/// `worktree.open`) sit behind the row's disclosure. Emits plain sibling
+/// rows for the host `Section` — each an immutable snapshot plus closures,
+/// per the snapshot-boundary rule.
 struct SupermuxProjectNestedRows: View {
     let row: SupermuxProjectRowSnapshot
     let actions: SupermuxProjectsSectionActions
@@ -130,6 +125,8 @@ struct SupermuxProjectNestedRows: View {
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
         }
+        // `.unavailable` while collapsed (the model gates on isExpanded), so
+        // the worktree slice renders only under an expanded project.
         switch row.nestedWorktrees {
         case .unavailable:
             EmptyView()

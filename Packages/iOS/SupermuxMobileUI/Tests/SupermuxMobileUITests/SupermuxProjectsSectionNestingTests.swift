@@ -79,11 +79,14 @@ import Testing
         try await wait.until { model.snapshot.hasLoaded }
         model.updateWorkspaces([workspaceRow(projectID: project.id)], selectWorkspace: { _ in })
 
-        // Collapsed: no nested rows project (the view renders nothing nested).
+        // Collapsed: no nested worktree rows, but the m6-f2 one-shot count
+        // seed still fetches once so the capsule count shows pre-expansion
+        // (unopened only: the opened worktree is excluded).
         let collapsed = try #require(model.snapshot.rows.first)
         #expect(collapsed.isExpanded == false)
         #expect(collapsed.nestedWorktrees == SupermuxProjectNestedWorktrees.unavailable)
-        #expect(client.worktreesListCallCount == 0)
+        try await wait.until { model.snapshot.rows.first?.worktreeCount == 1 }
+        #expect(client.worktreesListCallCount == 1)
 
         // Expanding fetches the worktrees (fetch on expand) and projects the
         // nested rows: open workspaces (shell order) + UNOPENED worktrees
@@ -100,7 +103,7 @@ import Testing
         let expanded = try #require(model.snapshot.rows.first)
         #expect(expanded.isExpanded)
         #expect(expanded.openWorkspaces.map(\.id) == ["workspace-row-1"])
-        #expect(client.worktreesListCallCount == 1)
+        #expect(client.worktreesListCallCount == 2)
 
         // Collapsing hides the nested rows again and drops the fetch session.
         model.toggleProjectExpanded(project.id)

@@ -248,7 +248,7 @@ extension TerminalController {
             "has_unread": store?.workspaceIsUnread(forTabId: workspace.id) ?? false,
             "terminals": terminals
         ]
-        // SUPERMUX:begin mobile-supermux-workspace-fields (additive supermux_project_id / supermux_activity, §6 — see SUPERMUX-TOUCHPOINTS.md)
+        // SUPERMUX:begin mobile-supermux-workspace-fields (additive supermux_project_id / supermux_activity / supermux_branch / supermux_pull_request, §6 — see SUPERMUX-TOUCHPOINTS.md)
         return SupermuxMobileWorkspaceListAugmenter.augment(payload, workspace: workspace)
         // SUPERMUX:end mobile-supermux-workspace-fields
     }

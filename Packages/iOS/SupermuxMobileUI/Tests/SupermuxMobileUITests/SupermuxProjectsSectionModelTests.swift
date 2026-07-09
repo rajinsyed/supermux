@@ -262,15 +262,27 @@ import Testing
         }
         defer { session.cancel() }
         try await wait.until { model.snapshot.hasLoaded }
-        // Reserved until real data exists: no badge before a fetch.
-        #expect(model.snapshot.rows.first?.worktreeCount == nil)
+        // m6-f2: the session's one-shot seed fetch feeds the badge even for a
+        // collapsed, never-expanded project (the mac eagerly refreshes every
+        // project's worktrees at load, so its capsule shows without
+        // expanding).
+        try await wait.until { model.snapshot.rows.first?.worktreeCount == 2 }
 
+        // A live per-project store keeps the count fresh: its next fetch
+        // (two extra worktrees, one of them OPEN and therefore excluded from
+        // the unopened count) re-projects the badge as 3, not 4.
+        client.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: [
+            SupermuxWorktreeDTO(path: "/w/one", branch: "one"),
+            SupermuxWorktreeDTO(path: "/w/two", branch: "two", isOpen: true, workspaceId: "ws-2"),
+            SupermuxWorktreeDTO(path: "/w/three", branch: "three"),
+            SupermuxWorktreeDTO(path: "/w/four", branch: "four"),
+        ])
         let store = try #require(model.actions.makeWorktreesStore(project.id))
         #expect(store.projectID == project.id)
         let runner = Task { await store.run() }
         defer { runner.cancel() }
 
-        try await wait.until { model.snapshot.rows.first?.worktreeCount == 2 }
+        try await wait.until { model.snapshot.rows.first?.worktreeCount == 3 }
     }
 
     // MARK: Icon action

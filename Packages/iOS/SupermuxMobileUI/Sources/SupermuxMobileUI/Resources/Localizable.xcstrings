@@ -3214,6 +3214,23 @@
         }
       }
     },
+    "supermux.runIndicator.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run command active"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "実行コマンドが実行中"
+          }
+        }
+      }
+    },
     "supermux.worktrees.empty" : {
       "extractionState" : "manual",
       "localizations" : {

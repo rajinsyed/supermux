@@ -96,6 +96,16 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
     public var supermuxProjectID: String? = nil
     /// Agent-activity raw value (`working`/`needs_input`/`ready`); `nil` when idle, unassociated, or from upstream cmux.
     public var supermuxActivity: String? = nil
+    /// The workspace's git branch (mac sidebar row subtitle); `nil` when unknown, unassociated, or from upstream cmux.
+    public var supermuxBranch: String? = nil
+    /// The workspace branch's pull request, flattened to scalars so this model gains no wire-type dependency; all `nil` when absent.
+    public var supermuxPullRequestNumber: Int? = nil
+    /// The pull request's state string (`"open"`/`"merged"`/`"closed"`), when sent.
+    public var supermuxPullRequestState: String? = nil
+    /// The pull request's web URL string, when sent.
+    public var supermuxPullRequestURL: String? = nil
+    /// Whether the pull request is stale (mac dims it), when sent.
+    public var supermuxPullRequestIsStale: Bool? = nil
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// The workspace id to use in RPC params.

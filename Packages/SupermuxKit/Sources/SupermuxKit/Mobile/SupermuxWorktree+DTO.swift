@@ -7,14 +7,16 @@ extension SupermuxPullRequestDTO {
     /// `state` travels as the shared raw string (`"open"`/`"merged"`/`"closed"`);
     /// `title` is forwarded when the source carries one (cmux's probe pipeline
     /// does not surface titles today, so production values may omit it — the
-    /// field is optional on the wire).
+    /// field is optional on the wire). `is_stale` travels only when true, so
+    /// fresh badges keep the pre-m6-f2 wire shape byte-identical.
     /// - Parameter pullRequest: The Mac-side badge value.
     public init(pullRequest: SupermuxPullRequest) {
         self.init(
             number: pullRequest.number,
             state: pullRequest.status.rawValue,
             title: pullRequest.title,
-            url: pullRequest.url.absoluteString
+            url: pullRequest.url.absoluteString,
+            isStale: pullRequest.isStale ? true : nil
         )
     }
 }

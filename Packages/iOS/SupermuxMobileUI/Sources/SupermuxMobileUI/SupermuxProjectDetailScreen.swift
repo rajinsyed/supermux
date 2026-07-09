@@ -441,9 +441,11 @@ public struct SupermuxProjectDetailScreen: View {
     }
 }
 
-/// One open workspace nested under the project: activity dot, name, unread
-/// dot, and a disclosure chevron. Tapping opens the workspace through the
-/// shell's own navigation closure.
+/// One open workspace nested under the project, laid out like the mac
+/// sidebar's `SupermuxOpenWorkspaceRowView`: title with a monospaced branch
+/// subtitle, then the trailing status cluster — agent activity, PR badge,
+/// run indicator — plus the phone's unread dot and navigation chevron.
+/// Tapping opens the workspace through the shell's own navigation closure.
 struct SupermuxProjectWorkspaceRow: View {
     let workspace: SupermuxProjectWorkspaceRowSnapshot
     let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
@@ -453,13 +455,30 @@ struct SupermuxProjectWorkspaceRow: View {
             selectWorkspace(workspace.id)
         } label: {
             HStack(spacing: 8) {
-                SupermuxWorkspaceActivityDot(activity: workspace.activity)
-                Text(workspace.name)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(workspace.name)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let branch = workspace.branch {
+                        Text(branch)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
                 Spacer(minLength: 4)
+                // Status cluster on the trailing edge, mac order: activity,
+                // PR badge, run indicator (idle activity renders nothing).
+                SupermuxWorkspaceActivityDot(activity: workspace.activity)
+                if let pullRequest = workspace.pullRequest {
+                    SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
+                }
+                if workspace.isRunning {
+                    SupermuxMobileRunIndicator()
+                }
                 if workspace.hasUnread {
                     Circle()
                         .fill(Color.accentColor)

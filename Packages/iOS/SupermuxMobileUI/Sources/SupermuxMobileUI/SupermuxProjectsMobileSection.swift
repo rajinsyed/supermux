@@ -11,11 +11,13 @@ import AppKit
 /// The collapsible Projects section mounted above the workspace group
 /// sections in the shell's workspace `List`.
 ///
-/// Mirrors the mac sidebar's Projects section (m6-f1): each project row is
-/// an INLINE disclosure — tapping it expands/collapses the project's nested
-/// rows (open workspaces with activity dots, then unopened worktrees with PR
-/// badges) directly in the list, while the project DETAIL screen stays
-/// reachable through the row's info accessory and long-press menu.
+/// Mirrors the mac sidebar's Projects section (m6-f1/m6-f2): a project's
+/// open workspaces are ALWAYS nested under it (branch subtitles, trailing
+/// activity/PR/run status — exactly like the mac), each project row is an
+/// INLINE disclosure — tapping it expands/collapses the project's unopened
+/// worktrees (PR badges) directly in the list — and the project DETAIL
+/// screen stays reachable through the row's info accessory and long-press
+/// menu.
 ///
 /// Renders exclusively from an immutable ``SupermuxProjectsSectionSnapshot``
 /// plus a closure ``SupermuxProjectsSectionActions`` bundle — no store
@@ -87,9 +89,10 @@ public struct SupermuxProjectsMobileSection: View {
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
-                if row.isExpanded {
-                    SupermuxProjectNestedRows(row: row, actions: actions)
-                }
+                // Mac-sidebar shape: open workspaces are ALWAYS nested under
+                // their project; only the unopened-worktree slice (inside
+                // SupermuxProjectNestedRows) waits for the disclosure.
+                SupermuxProjectNestedRows(row: row, actions: actions)
             }
         }
     }

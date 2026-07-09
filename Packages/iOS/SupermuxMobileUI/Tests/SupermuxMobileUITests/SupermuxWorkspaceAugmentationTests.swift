@@ -122,4 +122,89 @@ import Testing
 
         #expect(selected == ["w42"])
     }
+
+    // MARK: m6-f2 row parity — branch / PR / remote id mapping
+
+    @Test func nestedRowMappingCarriesBranchPullRequestAndRemoteID() throws {
+        var full = preview(id: "mac1:w1", name: "alpha main", supermuxProjectID: Self.projectID)
+        full.remoteWorkspaceID = MobileWorkspacePreview.ID(rawValue: "w1")
+        full.supermuxBranch = "  feature/parity  "
+        full.supermuxPullRequestNumber = 4321
+        full.supermuxPullRequestState = "merged"
+        full.supermuxPullRequestURL = "https://github.com/acme/alpha/pull/4321"
+        full.supermuxPullRequestIsStale = true
+
+        var bare = preview(id: "w2", name: "alpha wt", supermuxProjectID: Self.projectID)
+        bare.supermuxBranch = "   "
+
+        let rows = SupermuxProjectWorkspaceRowSnapshot.rows(from: [full, bare])
+        try #require(rows.count == 2)
+
+        // Full row: trimmed branch, badge snapshot, Mac-local remote id.
+        #expect(rows[0].branch == "feature/parity")
+        #expect(rows[0].remoteID == "w1")
+        let badge = try #require(rows[0].pullRequest)
+        #expect(badge.number == 4321)
+        #expect(badge.state == .merged)
+        #expect(badge.url?.absoluteString == "https://github.com/acme/alpha/pull/4321")
+        #expect(badge.isStale)
+        // rows(from:) never marks running — the section model stamps it.
+        #expect(!rows[0].isRunning)
+
+        // Bare row: blank branch degrades to nil, no badge, remote id falls
+        // back to the UI row id.
+        #expect(rows[1].branch == nil)
+        #expect(rows[1].pullRequest == nil)
+        #expect(rows[1].remoteID == "w2")
+    }
+
+    @Test func runStateMarksTheHostingNestedWorkspaceRow() async throws {
+        let wait = TestWait()
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(projects: [
+            SupermuxProjectDTO(
+                id: Self.projectID,
+                name: "Alpha",
+                rootPath: "/Users/dev/alpha",
+                runCommands: ["pnpm dev"]
+            ),
+        ])
+        // The run.state row points at the hosting workspace by Mac-local id;
+        // a lowercased wire spelling must still match (UUIDs are
+        // case-insensitive).
+        client.runStateResponse = SupermuxRunStateResponse(runs: [
+            SupermuxRunStateDTO(
+                projectId: Self.projectID,
+                isRunning: true,
+                command: "pnpm dev",
+                workspaceId: "aaaa1111-2222-3333-4444-555566667777"
+            ),
+        ])
+        let model = SupermuxProjectsSectionModel()
+        let session = Task {
+            await model.runSession(
+                client: client,
+                hostCapabilities: [
+                    SupermuxMobileCapability.projectsV1.rawValue,
+                    SupermuxMobileCapability.runV1.rawValue,
+                ]
+            )
+        }
+        defer { session.cancel() }
+        try await wait.until { model.snapshot.hasLoaded }
+
+        var host = preview(id: "mac1:AAAA1111-2222-3333-4444-555566667777", name: "alpha run", supermuxProjectID: Self.projectID)
+        host.remoteWorkspaceID = MobileWorkspacePreview.ID(rawValue: "AAAA1111-2222-3333-4444-555566667777")
+        let other = preview(id: "w2", name: "alpha other", supermuxProjectID: Self.projectID)
+        model.updateWorkspaces(
+            SupermuxProjectWorkspaceRowSnapshot.rows(from: [host, other]),
+            selectWorkspace: { _ in }
+        )
+
+        try await wait.until {
+            model.snapshot.rows.first?.openWorkspaces.first?.isRunning == true
+        }
+        let alpha = try #require(model.snapshot.rows.first)
+        #expect(alpha.openWorkspaces.map(\.isRunning) == [true, false])
+    }
 }

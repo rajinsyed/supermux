@@ -84,9 +84,11 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     public let defaultBranch: String?
     /// First grapheme of the name, uppercased, for the letter avatar.
     public let avatarLetter: String
-    /// Worktree count badge: the store-derived count once a worktrees fetch
-    /// has run for this project, or `nil` (badge hidden) before real data
-    /// exists — never a made-up zero badge.
+    /// UNOPENED-worktree count for the row's capsule (the mac capsule counts
+    /// only worktrees without an open workspace): derived from a worktrees
+    /// fetch — an expanded project's live session or the section's one-shot
+    /// per-project seed — or `nil` (capsule hidden) before real data exists,
+    /// never a made-up zero badge.
     public let worktreeCount: Int?
     /// Open-workspace count badge: the number of ``openWorkspaces``, or `nil`
     /// when there are none (badge hidden, never a zero badge).

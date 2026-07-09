@@ -17,7 +17,8 @@ import Testing
             pullRequest: SupermuxPullRequestDTO(
                 number: 41,
                 state: "open",
-                url: "https://github.com/acme/app/pull/41"
+                url: "https://github.com/acme/app/pull/41",
+                isStale: true
             )
         )
         let row = SupermuxWorktreeRowSnapshot(worktree: dto)
@@ -29,6 +30,8 @@ import Testing
         #expect(row.pullRequest?.number == 41)
         #expect(row.pullRequest?.state == .open)
         #expect(row.pullRequest?.url == URL(string: "https://github.com/acme/app/pull/41"))
+        // is_stale rides the same DTO and dims the badge like the mac's.
+        #expect(row.pullRequest?.isStale == true)
     }
 
     @Test func optionalFieldsDegradeToSafeDefaults() {

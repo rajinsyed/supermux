@@ -1,4 +1,6 @@
 import Foundation
+import SupermuxMobileCore
+import SupermuxMobileKit
 
 /// The inline-nesting half of ``SupermuxProjectsSectionModel`` (m6-f1): the
 /// mac-sidebar-style per-project disclosure, its phone-local persistence,
@@ -30,23 +32,44 @@ extension SupermuxProjectsSectionModel {
     }
 
     /// Routes to the project DETAIL screen. Shared by the row's info
-    /// accessory and its long-press menu entry (one action path).
+    /// accessory and its long-press menu entry (one action path). Captures
+    /// the row's current snapshot as ``detailFallbackRow`` so the pushed
+    /// detail survives a session teardown (see ``detailRow``).
     /// - Parameter projectID: The project's UUID string.
     public func openProjectDetail(_ projectID: String) {
+        detailFallbackRow = snapshot.rows.first { $0.id == projectID }
         detailProjectID = projectID
     }
 
     /// Pops the detail route (navigation dismissed).
     public func dismissProjectDetail() {
         detailProjectID = nil
+        detailFallbackRow = nil
     }
 
     /// The freshest row snapshot for the routed detail project, or `nil`
-    /// when nothing is routed (or the project/session went away — the
-    /// destination shows a localized placeholder instead).
+    /// when nothing is routed. Resolution is by STABLE PROJECT ID against
+    /// the live snapshot, in three tiers:
+    ///
+    /// 1. The live row — the normal case; store refetches keep feeding the
+    ///    pushed detail fresh data.
+    /// 2. `nil` (the localized "no longer available" placeholder) ONLY when
+    ///    a live, fully-loaded projects list no longer contains the id —
+    ///    the project was genuinely deleted mac-side.
+    /// 3. The ``detailFallbackRow`` captured at push time while the section
+    ///    snapshot is hidden or still loading (session torn down by a
+    ///    disconnect, or the post-pop reload hasn't landed yet) — never the
+    ///    placeholder for a merely-paused session.
     public var detailRow: SupermuxProjectRowSnapshot? {
         guard let detailProjectID else { return nil }
-        return snapshot.rows.first { $0.id == detailProjectID }
+        let snapshot = snapshot
+        if let live = snapshot.rows.first(where: { $0.id == detailProjectID }) {
+            return live
+        }
+        if snapshot.isVisible, snapshot.hasLoaded {
+            return nil
+        }
+        return detailFallbackRow
     }
 
     /// Navigates to a workspace through the shell's own closure — the ONE
@@ -137,5 +160,31 @@ extension SupermuxProjectsSectionModel {
             session.task.cancel()
         }
         worktreeSessions.removeAll()
+    }
+
+    /// One-shot worktree-count seeding for projects WITHOUT a live worktree
+    /// session, mirroring the mac's eager `refreshWorktrees` for every
+    /// project at load (its capsule count shows without ever expanding).
+    /// Runs at most once per project per session; expanded projects are
+    /// skipped (their session's own fetch feeds the count). A no-op without
+    /// `supermux.worktrees.v1`. Generation-guarded so a reconnect's fresh
+    /// counts are never overwritten by a stale session's late answers.
+    /// - Parameters:
+    ///   - projectIDs: The authoritative fetched project ids.
+    ///   - generation: The calling session's generation stamp.
+    func seedWorktreeCounts(forProjectIDs projectIDs: [String], generation: Int) {
+        guard let client = sessionClient,
+              sessionCapabilities?.supportsWorktrees == true else { return }
+        for projectID in projectIDs
+        where worktreeSessions[projectID] == nil && !seededWorktreeCountProjectIDs.contains(projectID) {
+            seededWorktreeCountProjectIDs.insert(projectID)
+            Task { [weak self] in
+                guard let response = try? await client.worktreesList(
+                    SupermuxWorktreesListRequest(projectID: projectID)
+                ) else { return }
+                guard let self, self.sessionGeneration == generation else { return }
+                self.recordWorktrees(response.worktrees, forProjectID: projectID)
+            }
+        }
     }
 }

@@ -53,7 +53,7 @@ public final class SupermuxMobileWorktreesStore {
 
     @ObservationIgnored private let client: any SupermuxMacCalling
     @ObservationIgnored private let capabilities: SupermuxMobileCapabilities
-    @ObservationIgnored private let onWorktreesChanged: (@MainActor (_ projectID: String, _ count: Int) -> Void)?
+    @ObservationIgnored private let onWorktreesChanged: (@MainActor (_ projectID: String, _ worktrees: [SupermuxWorktreeDTO]) -> Void)?
     @ObservationIgnored private let now: @Sendable () -> Date
     /// Cancellable reconnect-backoff sleep; injectable for deterministic tests.
     @ObservationIgnored private let idleSleep: (Duration) async -> Void
@@ -69,14 +69,15 @@ public final class SupermuxMobileWorktreesStore {
     ///   - capabilities: The connected host's capability snapshot.
     ///   - projectID: The project's UUID string.
     ///   - onWorktreesChanged: Called after every successful fetch with the
-    ///     fresh worktree count (feeds the project row's count badge).
+    ///     fresh worktree list (feeds the project row's count badge and the
+    ///     inline nested rows).
     ///   - now: Clock seam for the reconnect-health check.
     ///   - idleSleep: Backoff sleep seam; defaults to `Task.sleep`.
     public init(
         client: any SupermuxMacCalling,
         capabilities: SupermuxMobileCapabilities,
         projectID: String,
-        onWorktreesChanged: (@MainActor (_ projectID: String, _ count: Int) -> Void)? = nil,
+        onWorktreesChanged: (@MainActor (_ projectID: String, _ worktrees: [SupermuxWorktreeDTO]) -> Void)? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         idleSleep: @escaping (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     ) {
@@ -215,7 +216,7 @@ public final class SupermuxMobileWorktreesStore {
             worktrees = response.worktrees
             hasLoaded = true
             lastErrorDescription = nil
-            onWorktreesChanged?(projectID, worktrees.count)
+            onWorktreesChanged?(projectID, worktrees)
         } catch {
             lastErrorDescription = error.localizedDescription
         }
