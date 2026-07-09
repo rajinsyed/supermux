@@ -192,6 +192,10 @@ public struct SupermuxProjectEditingActions {
     ) async throws -> SupermuxTerminalPresetDTO
     /// `preset.delete` (the confirm dialog lives on the caller).
     public let deletePreset: @MainActor (_ presetID: String) async throws -> Void
+    /// The project editor's Mac folder-picker seam, or `nil` when the host
+    /// lacks `supermux.files.v1` (the Browse affordance hides and the create
+    /// form stays text-only).
+    public let rootPathPicker: SupermuxProjectRootPathPicking?
 
     /// Memberwise initializer.
     /// - Parameters:
@@ -202,6 +206,8 @@ public struct SupermuxProjectEditingActions {
     ///   - createPreset: `preset.create` from a typed request.
     ///   - updatePreset: `preset.update` with a present-key patch.
     ///   - deletePreset: `preset.delete` by preset id.
+    ///   - rootPathPicker: The Mac folder-picker seam, or `nil` to hide the
+    ///     editor's Browse affordance.
     public init(
         createProject: @escaping @MainActor (_ rootPath: String) async throws -> SupermuxProjectDTO,
         updateProject: @escaping @MainActor (
@@ -217,7 +223,8 @@ public struct SupermuxProjectEditingActions {
             _ presetID: String,
             _ patch: SupermuxPresetPatch
         ) async throws -> SupermuxTerminalPresetDTO,
-        deletePreset: @escaping @MainActor (_ presetID: String) async throws -> Void
+        deletePreset: @escaping @MainActor (_ presetID: String) async throws -> Void,
+        rootPathPicker: SupermuxProjectRootPathPicking? = nil
     ) {
         self.createProject = createProject
         self.updateProject = updateProject
@@ -226,5 +233,6 @@ public struct SupermuxProjectEditingActions {
         self.createPreset = createPreset
         self.updatePreset = updatePreset
         self.deletePreset = deletePreset
+        self.rootPathPicker = rootPathPicker
     }
 }

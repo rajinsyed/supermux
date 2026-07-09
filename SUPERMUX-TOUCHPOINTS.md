@@ -121,7 +121,7 @@ Rules for adding a touchpoint:
 | 105 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-clear-paired-mac-launch` | `launchApp` sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1` on every harness launch so each test starts from an unpaired slate (consumed by #104) |
 | 106 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-new-workspace-menu-item` | `testWorkspaceToolbarCreatesWorkspaceAndTerminal` creates the workspace via the terminal dropdown's `MobileNewWorkspaceMenuItem` instead of tapping a nav-bar `MobileTerminalNewWorkspaceButton`, because this upstream snapshot's iOS `WorkspaceDetailView` only mounts `newWorkspaceToolbarButton` in the non-iOS `#else` toolbar branch — on iOS the identifier does not exist and the tap times out deterministically (cmuxUITests.swift:245). Upstream never noticed (PR CI runs `-skip-testing:cmuxUITests`) and a newer upstream restores a nav-bar button; all behavioral assertions (host `workspace.create`, `workspace-3`/`workspace-3-terminal-1` selection, menu-item existence) are unchanged |
 | 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base (three fence blocks: helper `lockfile_recorded_dependency_calls`, the changed-roots skip in `main`, and `file_text_at`) |
-| 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two 1-line fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:)` modifier on the detail `body`'s outer `Group`. Mounts the fork's capability-gated Changes toolbar entry (fork-owned `SupermuxMobileUI/SupermuxWorkspaceTools.swift`) which presents `SupermuxChangesScreen` as a sheet; fed by the #96 `supermuxConnectionSeam`. Renders nothing without `supermux.changes.v1` |
+| 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two 1-line fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:)` modifier on the detail `body`'s outer `Group`. Mounts the fork's capability-gated Changes and Files toolbar entries (fork-owned `SupermuxMobileUI/SupermuxWorkspaceTools.swift`) which present `SupermuxChangesScreen` / `SupermuxFileBrowserScreen` as sheets; fed by the #96 `supermuxConnectionSeam`. Each entry hides without its capability (`supermux.changes.v1` / `supermux.files.v1`) |
 
 ## How to re-apply
 
@@ -1764,10 +1764,11 @@ churn must keep failing (re-run the scratch-worktree red/green check above after
 
 ### 108. `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` — `supermux-mobile-workspace-tools`
 
-The iOS Changes screen's mount point (architecture §7: workspace-detail toolbar entry). All logic
-is fork-owned in `Packages/iOS/SupermuxMobileUI` (`SupermuxWorkspaceTools.swift` — the
-`supermuxWorkspaceTools` view modifier + capability gate — plus `SupermuxChangesScreen` /
-`SupermuxDiffScreen` and their `SupermuxMobileKit` store `SupermuxMobileChangesStore`). Two
+The iOS Changes AND Files screens' mount point (architecture §7: workspace-detail toolbar
+entries). All logic is fork-owned in `Packages/iOS/SupermuxMobileUI`
+(`SupermuxWorkspaceTools.swift` — the `supermuxWorkspaceTools` view modifier + capability gates
+— plus `SupermuxChangesScreen` / `SupermuxDiffScreen` / `SupermuxFileBrowserScreen` and their
+`SupermuxMobileKit` stores `SupermuxMobileChangesStore` / `SupermuxMobileFileBrowserStore`). Two
 1-line fences, same fence id:
 
 - the `import SupermuxMobileUI` in the import block;
@@ -1777,11 +1778,14 @@ is fork-owned in `Packages/iOS/SupermuxMobileUI` (`SupermuxWorkspaceTools.swift`
   branch (terminal / browser / chat) and survives upstream reshuffles of the inner `.toolbar`
   blocks.
 
-The modifier adds a `topBarTrailing` toolbar button (hidden unless the #96 seam is connected AND
-the host advertises `supermux.changes.v1` — an upstream Mac renders exactly today's UI) and a
-`.sheet` presenting `SupermuxChangesScreen`; one changes store is built per presentation from the
-seam's `MobileCoreRPCClient` + capability snapshot. `.github/swift-file-length-budget.tsv` row
-for `WorkspaceDetailView.swift` raised by exactly the fenced growth (878 → 884).
+The modifier adds `topBarTrailing` toolbar buttons (each hidden unless the #96 seam is connected
+AND the host advertises its capability — `supermux.changes.v1` for Changes, `supermux.files.v1`
+for Files; an upstream Mac renders exactly today's UI) and `.sheet`s presenting
+`SupermuxChangesScreen` / `SupermuxFileBrowserScreen`; one store is built per presentation from
+the seam's `MobileCoreRPCClient` + capability snapshot (the file browser rooted
+`.workspace(id:)`). `.github/swift-file-length-budget.tsv` row for `WorkspaceDetailView.swift`
+raised by exactly the fenced growth (878 → 884). The m5-f2 Files entry changed only the
+fork-owned modifier — the upstream fence lines are byte-identical to m3.
 
 Re-apply note: if upstream rewrites `WorkspaceDetailView`, the requirement is: the modifier must
 sit on a view that (a) is inside the detail's `NavigationStack` context so the toolbar item lands

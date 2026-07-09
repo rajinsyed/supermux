@@ -25,15 +25,19 @@ public struct SupermuxProjectEditorSheet: View {
         case edit(SupermuxProjectDTO)
     }
 
-    private let editing: SupermuxProjectEditingActions
+    // Members used by the create-phase split in `+RootPicker.swift` are
+    // internal, not private (same precedent as the detail screen's
+    // `+RunSections.swift` split).
+    let editing: SupermuxProjectEditingActions
     private let onDeleted: @MainActor () -> Void
 
     @Environment(\.dismiss) private var dismiss
     /// The record being edited; `nil` while still in the create phase.
     @State private var original: SupermuxProjectDTO?
     @State private var draft: SupermuxProjectEditorDraft
-    @State private var rootPathInput = ""
-    @State private var isSaving = false
+    @State var rootPathInput = ""
+    @State var isSaving = false
+    @State var showingFolderPicker = false
     @State private var isDeleting = false
     @State private var errorMessage: String?
     @State private var showingDeleteConfirm = false
@@ -118,34 +122,8 @@ public struct SupermuxProjectEditorSheet: View {
         .accessibilityIdentifier("SupermuxProjectEditorSheet")
     }
 
-    // MARK: - Create phase
-
-    @ViewBuilder
-    private var createSections: some View {
-        Section {
-            TextField(
-                String(
-                    localized: "supermux.projectEditor.rootPath",
-                    defaultValue: "Folder path on your Mac",
-                    bundle: .module
-                ),
-                text: $rootPathInput,
-                prompt: Text(verbatim: "/Users/…/project")
-            )
-            .font(.system(.body, design: .monospaced))
-            .autocorrectionDisabled()
-            #if os(iOS)
-            .textInputAutocapitalization(.never)
-            #endif
-            .disabled(isSaving)
-        } footer: {
-            Text(String(
-                localized: "supermux.projectEditor.rootPath.help",
-                defaultValue: "Absolute path to an existing folder on your Mac. A repo-shipped config.json (run, setup, teardown, actions) is imported automatically.",
-                bundle: .module
-            ))
-        }
-    }
+    // The create-phase sections (root-path field + Mac folder picker) live
+    // in `SupermuxProjectEditorSheet+RootPicker.swift`.
 
     // MARK: - Edit phase
 

@@ -127,6 +127,16 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     /// When set, `actionRun` throws instead of returning.
     var actionRunError: (any Error)?
 
+    /// The response the next `filesList` call returns.
+    var filesListResponse = SupermuxFilesListResponse(path: "", entries: [])
+    /// When set, `filesList` throws instead of returning.
+    var filesListError: (any Error)?
+    /// The response every files mutation call returns.
+    var filesMutationResponse = SupermuxFilesMutationResponse(ok: true)
+    /// When set, `filesCreate`/`filesRename`/`filesDuplicate`/`filesTrash`
+    /// throws instead of returning.
+    var filesMutationError: (any Error)?
+
     /// Ordered log of every seam call, for ordering assertions.
     private(set) var callLog: [String] = []
     private(set) var projectsListCallCount = 0
@@ -384,6 +394,41 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
         if let actionRunError { throw actionRunError }
         return actionRunResponse
+    }
+
+    func filesList(_ request: SupermuxFilesListRequest) async throws -> SupermuxFilesListResponse {
+        callLog.append("filesList")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesListError { throw filesListError }
+        return filesListResponse
+    }
+
+    func filesCreate(_ request: SupermuxFilesCreateRequest) async throws -> SupermuxFilesMutationResponse {
+        callLog.append("filesCreate")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesMutationError { throw filesMutationError }
+        return filesMutationResponse
+    }
+
+    func filesRename(_ request: SupermuxFilesRenameRequest) async throws -> SupermuxFilesMutationResponse {
+        callLog.append("filesRename")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesMutationError { throw filesMutationError }
+        return filesMutationResponse
+    }
+
+    func filesDuplicate(_ request: SupermuxFilesDuplicateRequest) async throws -> SupermuxFilesMutationResponse {
+        callLog.append("filesDuplicate")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesMutationError { throw filesMutationError }
+        return filesMutationResponse
+    }
+
+    func filesTrash(_ request: SupermuxFilesTrashRequest) async throws -> SupermuxFilesMutationResponse {
+        callLog.append("filesTrash")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesMutationError { throw filesMutationError }
+        return filesMutationResponse
     }
 
     func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {

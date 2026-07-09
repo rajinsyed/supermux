@@ -1,3 +1,4 @@
+import CmuxMobileRPC
 import Foundation
 import SupermuxMobileCore
 import SupermuxMobileKit
@@ -125,6 +126,22 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var actionRunResponse = SupermuxActionRunResponse(ok: true, kind: "command")
     /// When set, `actionRun` throws instead of returning.
     var actionRunError: (any Error)?
+
+    /// The files fixture tree the fake serves AND mutates: root-relative
+    /// directory path ("" = root) → its listing. Create/rename/duplicate/
+    /// trash edit the tree, so a store's refetch-after-op observes the
+    /// mutation like a real Mac (UI-05).
+    var filesTree: [String: [SupermuxFileEntryDTO]] = [:]
+    /// When set, `filesList` throws instead of returning.
+    var filesListError: (any Error)?
+    /// When set, `filesCreate` throws instead of returning.
+    var filesCreateError: (any Error)?
+    /// When set, `filesRename` throws instead of returning.
+    var filesRenameError: (any Error)?
+    /// When set, `filesDuplicate` throws instead of returning.
+    var filesDuplicateError: (any Error)?
+    /// When set, `filesTrash` throws instead of returning.
+    var filesTrashError: (any Error)?
 
     /// Ordered log of every seam call, for ordering assertions
     /// (e.g. subscribe-before-fetch).
@@ -387,6 +404,88 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
         if let actionRunError { throw actionRunError }
         return actionRunResponse
+    }
+
+    // MARK: Files (served from the mutable fixture tree)
+
+    func filesList(_ request: SupermuxFilesListRequest) async throws -> SupermuxFilesListResponse {
+        callLog.append("filesList")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesListError { throw filesListError }
+        let path = request.path ?? ""
+        guard let entries = filesTree[path] else {
+            throw MobileShellConnectionError.rpcError(
+                "not_found",
+                "No such directory: \(path)"
+            )
+        }
+        return SupermuxFilesListResponse(path: path, entries: entries)
+    }
+
+    func filesCreate(_ request: SupermuxFilesCreateRequest) async throws -> SupermuxFilesMutationResponse {
+        callLog.append("filesCreate")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesCreateError { throw filesCreateError }
+        let (parent, name) = splitFilesPath(request.path)
+        let isFolder = request.kind == .folder
+        filesTree[parent, default: []].append(
+            SupermuxFileEntryDTO(name: name, isDir: isFolder, isSymlink: false)
+        )
+        if isFolder {
+            filesTree[request.path] = []
+        }
+        return SupermuxFilesMutationResponse(ok: true, path: request.path)
+    }
+
+    func filesRename(_ request: SupermuxFilesRenameRequest) async throws -> SupermuxFilesMutationResponse {
+        callLog.append("filesRename")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesRenameError { throw filesRenameError }
+        let (parent, name) = splitFilesPath(request.path)
+        filesTree[parent] = (filesTree[parent] ?? []).map { entry in
+            guard entry.name == name else { return entry }
+            var renamed = entry
+            renamed.name = request.newName
+            return renamed
+        }
+        let newPath = parent.isEmpty ? request.newName : parent + "/" + request.newName
+        return SupermuxFilesMutationResponse(ok: true, path: newPath)
+    }
+
+    func filesDuplicate(_ request: SupermuxFilesDuplicateRequest) async throws -> SupermuxFilesMutationResponse {
+        callLog.append("filesDuplicate")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesDuplicateError { throw filesDuplicateError }
+        let (parent, name) = splitFilesPath(request.path)
+        guard let entry = filesTree[parent]?.first(where: { $0.name == name }) else {
+            throw MobileShellConnectionError.rpcError(
+                "not_found",
+                "No such entry: \(request.path)"
+            )
+        }
+        var copy = entry
+        copy.name = name + " copy"
+        filesTree[parent, default: []].append(copy)
+        let copyPath = parent.isEmpty ? copy.name : parent + "/" + copy.name
+        return SupermuxFilesMutationResponse(ok: true, path: copyPath)
+    }
+
+    func filesTrash(_ request: SupermuxFilesTrashRequest) async throws -> SupermuxFilesMutationResponse {
+        callLog.append("filesTrash")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let filesTrashError { throw filesTrashError }
+        for path in request.paths {
+            let (parent, name) = splitFilesPath(path)
+            filesTree[parent]?.removeAll { $0.name == name }
+        }
+        return SupermuxFilesMutationResponse(ok: true)
+    }
+
+    /// Splits a root-relative path into its parent directory ("" = root) and
+    /// entry name.
+    private func splitFilesPath(_ path: String) -> (parent: String, name: String) {
+        guard let slash = path.lastIndex(of: "/") else { return ("", path) }
+        return (String(path[..<slash]), String(path[path.index(after: slash)...]))
     }
 
     func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {

@@ -179,7 +179,50 @@ public final class SupermuxProjectsSectionModel {
             },
             deletePreset: { [weak self] presetID in
                 try await Self.requireStore(self).deletePreset(presetID: presetID)
+            },
+            rootPathPicker: rootPathPicking
+        )
+    }
+
+    /// The project editor's Mac folder-picker seam: browsable roots are the
+    /// registered projects (`project_id`-rooted `files.*` browsing — the wire
+    /// confines every request to an existing root, so arbitrary Mac paths
+    /// still go through the editor's text field). `nil` without a live
+    /// session or `supermux.files.v1` (the Browse affordance hides). The
+    /// closures resolve at CALL time (weak self), so a sheet outliving a
+    /// reconnect reaches the fresh session.
+    private var rootPathPicking: SupermuxProjectRootPathPicking? {
+        guard let sessionCapabilities, sessionCapabilities.supportsFiles else { return nil }
+        return SupermuxProjectRootPathPicking(
+            rootOptions: { [weak self] in
+                (self?.store?.projects ?? []).map { project in
+                    SupermuxFolderPickerRootOption(
+                        projectID: project.id,
+                        name: project.name,
+                        rootPath: project.rootPath
+                    )
+                }
+            },
+            makeBrowserStore: { [weak self] projectID in
+                self?.makeFileBrowserStore(root: .project(id: projectID))
             }
+        )
+    }
+
+    /// Builds a file-browser store for one confined root against the live
+    /// session's client and capability snapshot. `nil` while disconnected or
+    /// when the host lacks `supermux.files.v1` (the capability gate — a fork
+    /// phone against an upstream Mac shows no file-browser UI).
+    /// - Parameter root: The confined root to browse.
+    public func makeFileBrowserStore(root: SupermuxFilesRoot) -> SupermuxMobileFileBrowserStore? {
+        guard let sessionClient, let sessionCapabilities,
+              sessionCapabilities.supportsFiles else {
+            return nil
+        }
+        return SupermuxMobileFileBrowserStore(
+            client: sessionClient,
+            capabilities: sessionCapabilities,
+            root: root
         )
     }
 

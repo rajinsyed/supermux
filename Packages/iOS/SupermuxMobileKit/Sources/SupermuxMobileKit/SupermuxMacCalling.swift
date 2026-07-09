@@ -178,6 +178,31 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func actionRun(_ request: SupermuxActionRunRequest) async throws -> SupermuxActionRunResponse
 
+    /// `mobile.supermux.files.list`: one confined directory's children
+    /// (dotfiles excluded, directories first — desktop parity).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func filesList(_ request: SupermuxFilesListRequest) async throws -> SupermuxFilesListResponse
+
+    /// `mobile.supermux.files.create`: creates an empty file or a folder at
+    /// a root-relative path.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func filesCreate(_ request: SupermuxFilesCreateRequest) async throws -> SupermuxFilesMutationResponse
+
+    /// `mobile.supermux.files.rename`: renames one entry to a new
+    /// single-component name.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func filesRename(_ request: SupermuxFilesRenameRequest) async throws -> SupermuxFilesMutationResponse
+
+    /// `mobile.supermux.files.duplicate`: duplicates one entry with a
+    /// Finder-style " copy" name chosen Mac-side.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func filesDuplicate(_ request: SupermuxFilesDuplicateRequest) async throws -> SupermuxFilesMutationResponse
+
+    /// `mobile.supermux.files.trash`: moves entries to the Trash (never a
+    /// permanent delete; batch-validated Mac-side before any effect).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func filesTrash(_ request: SupermuxFilesTrashRequest) async throws -> SupermuxFilesMutationResponse
+
     /// Subscribes to `supermux.*` event topics. Events are payload-light
     /// pokes; consumers refetch through the matching request method. The
     /// stream finishes when the underlying connection drops; consumers
