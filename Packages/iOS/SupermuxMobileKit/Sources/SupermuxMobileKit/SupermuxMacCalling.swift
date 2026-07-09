@@ -85,6 +85,35 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func presetDelete(_ request: SupermuxPresetDeleteRequest) async throws -> SupermuxPresetDeleteResponse
 
+    /// `mobile.supermux.changes.watch`: starts, heartbeats, or stops the
+    /// Mac's per-workspace repository watcher (lease TTL 120 s server-side).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesWatch(_ request: SupermuxChangesWatchRequest) async throws -> SupermuxChangesWatchResponse
+
+    /// `mobile.supermux.changes.status`: the workspace repository's status
+    /// snapshot (branch, ahead/behind, staged/unstaged/untracked).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesStatus(_ request: SupermuxChangesStatusRequest) async throws -> SupermuxChangesStatusDTO
+
+    /// `mobile.supermux.changes.diff`: one file's diff (unified text, or a
+    /// binary/truncated marker).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesDiff(_ request: SupermuxChangesDiffRequest) async throws -> SupermuxDiffDTO
+
+    /// `mobile.supermux.changes.stage`: stages the selected paths (or all).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesStage(_ request: SupermuxChangesStageRequest) async throws -> SupermuxChangesAckResponse
+
+    /// `mobile.supermux.changes.unstage`: unstages the selected paths (or all).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesUnstage(_ request: SupermuxChangesUnstageRequest) async throws -> SupermuxChangesAckResponse
+
+    /// `mobile.supermux.changes.discard`: discards working-tree changes for
+    /// the given paths (tracked files restore to HEAD; untracked files are
+    /// deleted — desktop parity). Destructive; the phone confirms first.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func changesDiscard(_ request: SupermuxChangesDiscardRequest) async throws -> SupermuxChangesAckResponse
+
     /// Subscribes to `supermux.*` event topics. Events are payload-light
     /// pokes; consumers refetch through the matching request method. The
     /// stream finishes when the underlying connection drops; consumers

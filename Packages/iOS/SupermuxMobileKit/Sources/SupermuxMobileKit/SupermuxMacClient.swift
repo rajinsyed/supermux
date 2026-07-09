@@ -87,6 +87,30 @@ public struct SupermuxMacClient: SupermuxMacCalling {
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func changesWatch(_ request: SupermuxChangesWatchRequest) async throws -> SupermuxChangesWatchResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesStatus(_ request: SupermuxChangesStatusRequest) async throws -> SupermuxChangesStatusDTO {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesDiff(_ request: SupermuxChangesDiffRequest) async throws -> SupermuxDiffDTO {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesStage(_ request: SupermuxChangesStageRequest) async throws -> SupermuxChangesAckResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesUnstage(_ request: SupermuxChangesUnstageRequest) async throws -> SupermuxChangesAckResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func changesDiscard(_ request: SupermuxChangesDiscardRequest) async throws -> SupermuxChangesAckResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
     /// Sends one request and decodes the result frame into the typed
     /// response — the single wire path every typed method funnels through.
     private func send<Response: Decodable>(method: String, params: [String: Any]) async throws -> Response {

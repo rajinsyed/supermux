@@ -57,11 +57,29 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     /// When set, `presetDelete` throws instead of returning.
     var presetDeleteError: (any Error)?
 
+    /// The response the next `changesStatus` call returns.
+    var changesStatusResponse = SupermuxChangesStatusDTO()
+    /// When set, `changesStatus` throws instead of returning.
+    var changesStatusError: (any Error)?
+    /// The response the next `changesDiff` call returns.
+    var changesDiffResponse = SupermuxDiffDTO(path: "")
+    /// When set, `changesDiff` throws instead of returning.
+    var changesDiffError: (any Error)?
+    /// When set, `changesWatch` throws instead of returning.
+    var changesWatchError: (any Error)?
+    /// When set, `changesStage` throws instead of returning.
+    var changesStageError: (any Error)?
+    /// When set, `changesUnstage` throws instead of returning.
+    var changesUnstageError: (any Error)?
+    /// When set, `changesDiscard` throws instead of returning.
+    var changesDiscardError: (any Error)?
+
     /// Ordered log of every seam call, for ordering assertions
     /// (e.g. subscribe-before-fetch).
     private(set) var callLog: [String] = []
     private(set) var projectsListCallCount = 0
     private(set) var worktreesListCallCount = 0
+    private(set) var changesStatusCallCount = 0
     private(set) var iconRequests: [(projectID: String, etag: String?)] = []
     private(set) var subscribedTopicSets: [Set<SupermuxMobileTopic>] = []
     /// Exact wire method + params of every worktree request, in call order —
@@ -174,6 +192,49 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
         if let presetDeleteError { throw presetDeleteError }
         return SupermuxPresetDeleteResponse(removed: true, presetId: request.presetID)
+    }
+
+    func changesWatch(_ request: SupermuxChangesWatchRequest) async throws -> SupermuxChangesWatchResponse {
+        callLog.append("changesWatch")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesWatchError { throw changesWatchError }
+        return SupermuxChangesWatchResponse(watching: request.enable, ttlSeconds: 120)
+    }
+
+    func changesStatus(_ request: SupermuxChangesStatusRequest) async throws -> SupermuxChangesStatusDTO {
+        callLog.append("changesStatus")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesStatusError { throw changesStatusError }
+        changesStatusCallCount += 1
+        return changesStatusResponse
+    }
+
+    func changesDiff(_ request: SupermuxChangesDiffRequest) async throws -> SupermuxDiffDTO {
+        callLog.append("changesDiff")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesDiffError { throw changesDiffError }
+        return changesDiffResponse
+    }
+
+    func changesStage(_ request: SupermuxChangesStageRequest) async throws -> SupermuxChangesAckResponse {
+        callLog.append("changesStage")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesStageError { throw changesStageError }
+        return SupermuxChangesAckResponse(ok: true)
+    }
+
+    func changesUnstage(_ request: SupermuxChangesUnstageRequest) async throws -> SupermuxChangesAckResponse {
+        callLog.append("changesUnstage")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesUnstageError { throw changesUnstageError }
+        return SupermuxChangesAckResponse(ok: true)
+    }
+
+    func changesDiscard(_ request: SupermuxChangesDiscardRequest) async throws -> SupermuxChangesAckResponse {
+        callLog.append("changesDiscard")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let changesDiscardError { throw changesDiscardError }
+        return SupermuxChangesAckResponse(ok: true)
     }
 
     func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {
