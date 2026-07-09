@@ -33,6 +33,50 @@ public final class SupermuxProjectsSectionModel {
     /// milestone — nothing is written back to the Mac).
     private var collapsedOverride: Bool?
 
+    // The inline-nesting members below are internal (not private) because
+    // the m6-f1 half of this model lives in
+    // `SupermuxProjectsSectionModel+Nesting.swift` (file-length budget).
+
+    /// Per-project inline-disclosure state (m6-f1, mac-sidebar-style
+    /// nesting). Phone-local and UserDefaults-persisted by project id — NOT
+    /// the Mac-shared `section_collapsed`, which stays the whole-section
+    /// toggle above.
+    var expandedProjectIDs: Set<String>
+
+    /// Backing store for ``expandedProjectIDs`` (injectable so tests never
+    /// touch the real defaults).
+    @ObservationIgnored let expansionDefaults: UserDefaults
+    static let expansionDefaultsKey = "supermux.projects.expandedProjectIDs"
+
+    /// The project currently routed to the DETAIL screen (info accessory or
+    /// long-press menu); `nil` while no detail is pushed. The section driver
+    /// binds this to a `navigationDestination`.
+    public internal(set) var detailProjectID: String?
+
+    /// Error surface for a failed nested-worktree open (UI-03: visible,
+    /// never silent). Cleared via ``dismissNestedOpenError()``.
+    public internal(set) var nestedOpenErrorMessage: String?
+
+    /// One expanded project's section-owned worktree session: the store plus
+    /// the task running its event loop (fetch on expand, refetch on
+    /// `supermux.worktrees.updated`).
+    struct WorktreeSession {
+        let store: SupermuxMobileWorktreesStore
+        let task: Task<Void, Never>
+    }
+
+    /// Section-owned worktree sessions for the EXPANDED projects, by project
+    /// id. Ignored by observation: every mutation co-occurs with an
+    /// observable one (``expandedProjectIDs`` or ``store``), and the
+    /// projection reads the stores' own `@Observable` state.
+    @ObservationIgnored var worktreeSessions: [String: WorktreeSession] = [:]
+
+    /// Monotonic session counter (bumped by every ``runSession`` install and
+    /// ``endSession()``). In-flight nested-worktree opens capture it so a
+    /// stale connection's late answer can never navigate the current shell
+    /// or surface an obsolete error.
+    @ObservationIgnored var sessionGeneration = 0
+
     /// Shared across sessions so custom icons survive a reconnect without a
     /// re-download (the etag round-trip answers `not_modified`).
     @ObservationIgnored private let iconCache = SupermuxProjectIconCache()
@@ -58,10 +102,19 @@ public final class SupermuxProjectsSectionModel {
     /// The shell's workspace-open closure, refreshed with every
     /// ``updateWorkspaces(_:selectWorkspace:)`` so it always targets the live
     /// shell. Ignored by observation: closures carry no render state.
-    @ObservationIgnored private var selectWorkspaceAction: @MainActor (_ workspaceID: String) -> Void = { _ in }
+    /// Internal (not private) for the `+Nesting.swift` extension.
+    @ObservationIgnored var selectWorkspaceAction: @MainActor (_ workspaceID: String) -> Void = { _ in }
 
     /// Creates an empty (hidden-section) model.
-    public init() {}
+    /// - Parameter expansionDefaults: Where per-project expansion persists
+    ///   (phone-local UI state). Defaults to the app's standard defaults;
+    ///   tests inject an isolated suite.
+    public init(expansionDefaults: UserDefaults = .standard) {
+        self.expansionDefaults = expansionDefaults
+        self.expandedProjectIDs = Set(
+            expansionDefaults.stringArray(forKey: Self.expansionDefaultsKey) ?? []
+        )
+    }
 
     /// The section's current render value. Hidden unless a session is live
     /// AND the host advertises `supermux.projects.v1` (UI-02).
@@ -72,11 +125,14 @@ public final class SupermuxProjectsSectionModel {
             isCollapsed: collapsedOverride ?? store.isSectionCollapsed,
             hasLoaded: store.hasLoaded,
             rows: store.projects.map { project in
-                SupermuxProjectRowSnapshot(
+                let isExpanded = expandedProjectIDs.contains(project.id)
+                return SupermuxProjectRowSnapshot(
                     project: project,
                     openWorkspaces: workspaceRows.filter { $0.projectID == project.id },
                     worktreeCount: worktreeCounts[project.id],
-                    run: runState(for: project)
+                    run: runState(for: project),
+                    isExpanded: isExpanded,
+                    nestedWorktrees: isExpanded ? nestedWorktrees(forProjectID: project.id) : .unavailable
                 )
             },
             showsPresets: store.showsPresets,
@@ -111,13 +167,22 @@ public final class SupermuxProjectsSectionModel {
                 await self?.iconPNGData(forProjectID: projectID) ?? nil
             },
             selectWorkspace: { [weak self] workspaceID in
-                self?.selectWorkspaceAction(workspaceID)
+                self?.navigateToWorkspace(workspaceID)
             },
             makeWorktreesStore: { [weak self] projectID in
                 self?.makeWorktreesStore(forProjectID: projectID)
             },
             editing: editingActions,
-            run: runActions
+            run: runActions,
+            toggleProjectExpanded: { [weak self] projectID in
+                self?.toggleProjectExpanded(projectID)
+            },
+            openProjectDetail: { [weak self] projectID in
+                self?.openProjectDetail(projectID)
+            },
+            openNestedWorktree: { [weak self] projectID, worktree in
+                self?.openNestedWorktree(projectID: projectID, worktree: worktree)
+            }
         )
     }
 
@@ -319,11 +384,28 @@ public final class SupermuxProjectsSectionModel {
         hostCapabilities: Set<String>
     ) async {
         collapsedOverride = nil
+        // A replacement session must never inherit the old connection's
+        // worktree sessions (stale client) — end them before installing the
+        // new client, then reseed below. The generation bump invalidates the
+        // old session's in-flight work (nested opens, prune callbacks).
+        endAllWorktreeSessions()
+        sessionGeneration += 1
+        let generation = sessionGeneration
         let capabilities = SupermuxMobileCapabilities(hostCapabilities: hostCapabilities)
         let store = SupermuxMobileProjectsStore(
             client: client,
             capabilities: capabilities,
-            iconCache: iconCache
+            iconCache: iconCache,
+            // The authoritative list prunes worktree sessions whose project
+            // was deleted (their rows are gone, so they could never be
+            // collapsed away — without this they would refetch forever).
+            // Generation-guarded: a lingering OLD store (kept alive by an
+            // in-flight write's refetch across a reconnect) must never prune
+            // the NEW session with the old Mac's project ids.
+            onProjectsChanged: { [weak self] projects in
+                guard let self, self.sessionGeneration == generation else { return }
+                self.pruneWorktreeSessions(keepingProjectIDs: projects.map(\.id))
+            }
         )
         let runStore = SupermuxMobileRunStore(client: client, capabilities: capabilities)
         self.store = store
@@ -331,6 +413,12 @@ public final class SupermuxProjectsSectionModel {
         sessionClient = client
         sessionCapabilities = capabilities
         worktreeCounts = [:]
+        // Resume the phone-persisted inline disclosures against THIS
+        // connection: each expanded project fetches on session start and
+        // refetches on `supermux.worktrees.updated` (the store's own loop).
+        for projectID in expandedProjectIDs {
+            startWorktreeSession(forProjectID: projectID)
+        }
         defer {
             // Only the still-current session clears itself; a replacement
             // session that already installed its store must not be torn down
@@ -340,6 +428,11 @@ public final class SupermuxProjectsSectionModel {
                 self.runStore = nil
                 sessionClient = nil
                 sessionCapabilities = nil
+                endAllWorktreeSessions()
+                // Natural teardown (the driver's `.task` was cancelled with
+                // no replacement, e.g. the list left the screen) must also
+                // invalidate in-flight nested opens — nothing else would.
+                sessionGeneration += 1
             }
         }
         // Both loops share the session's structured lifetime: cancelling the
@@ -350,7 +443,8 @@ public final class SupermuxProjectsSectionModel {
         }
     }
 
-    /// Drops the session immediately (connection went away).
+    /// Drops the session immediately (connection went away). Expansion
+    /// state itself persists — a reconnect reseeds the worktree sessions.
     public func endSession() {
         store = nil
         runStore = nil
@@ -358,5 +452,7 @@ public final class SupermuxProjectsSectionModel {
         sessionCapabilities = nil
         worktreeCounts = [:]
         collapsedOverride = nil
+        endAllWorktreeSessions()
+        sessionGeneration += 1
     }
 }

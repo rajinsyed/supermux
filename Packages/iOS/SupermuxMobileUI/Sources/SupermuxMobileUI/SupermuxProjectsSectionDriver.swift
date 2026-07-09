@@ -55,6 +55,9 @@ extension View {
                 }
             )
         }
+        // Detail-route destination + nested-open error alert (m6-f1): lives
+        // on the stable wrapper above the `List`, never inside a lazy row.
+        .modifier(SupermuxProjectsSectionNavigation(model: model))
     }
 }
 

@@ -50,6 +50,7 @@ public final class SupermuxMobileProjectsStore {
     @ObservationIgnored private let client: any SupermuxMacCalling
     @ObservationIgnored private let capabilities: SupermuxMobileCapabilities
     @ObservationIgnored private let iconCache: SupermuxProjectIconCache
+    @ObservationIgnored private let onProjectsChanged: (@MainActor (_ projects: [SupermuxProjectDTO]) -> Void)?
     @ObservationIgnored private let now: @Sendable () -> Date
     /// Cancellable reconnect-backoff sleep; injectable for deterministic tests.
     @ObservationIgnored private let idleSleep: (Duration) async -> Void
@@ -70,6 +71,9 @@ public final class SupermuxMobileProjectsStore {
     ///   - client: The Mac RPC seam.
     ///   - capabilities: The connected host's capability snapshot.
     ///   - iconCache: The etag-keyed icon cache (shareable across stores).
+    ///   - onProjectsChanged: Called after every successful list fetch with
+    ///     the authoritative project set — the owner's hook for pruning
+    ///     per-project state (e.g. worktree sessions of deleted projects).
     ///   - now: Clock seam for the reconnect-health check; defaults to the
     ///     wall clock.
     ///   - idleSleep: Backoff sleep seam; defaults to `Task.sleep`.
@@ -77,12 +81,14 @@ public final class SupermuxMobileProjectsStore {
         client: any SupermuxMacCalling,
         capabilities: SupermuxMobileCapabilities,
         iconCache: SupermuxProjectIconCache = SupermuxProjectIconCache(),
+        onProjectsChanged: (@MainActor (_ projects: [SupermuxProjectDTO]) -> Void)? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         idleSleep: @escaping (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     ) {
         self.client = client
         self.capabilities = capabilities
         self.iconCache = iconCache
+        self.onProjectsChanged = onProjectsChanged
         self.now = now
         self.idleSleep = idleSleep
     }
@@ -269,6 +275,7 @@ public final class SupermuxMobileProjectsStore {
             }
             hasLoaded = true
             lastErrorDescription = nil
+            onProjectsChanged?(projects)
         } catch {
             lastErrorDescription = error.localizedDescription
         }

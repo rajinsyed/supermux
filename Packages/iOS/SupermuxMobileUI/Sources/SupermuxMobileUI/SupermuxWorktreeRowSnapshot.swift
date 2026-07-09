@@ -87,4 +87,15 @@ public struct SupermuxWorktreeRowSnapshot: Equatable, Identifiable, Sendable {
     public static func rows(from worktrees: [SupermuxWorktreeDTO]) -> [SupermuxWorktreeRowSnapshot] {
         worktrees.map(SupermuxWorktreeRowSnapshot.init(worktree:))
     }
+
+    /// The rows for the inline project disclosure: only worktrees WITHOUT an
+    /// open workspace, in the Mac's order — open ones already render as
+    /// nested workspace rows, so the disclosure never duplicates them
+    /// (mirrors the mac sidebar's `SupermuxUnopenedWorktrees.filter`). A
+    /// missing `is_open` (older Mac) degrades to "not open" so the row stays
+    /// reachable.
+    /// - Parameter worktrees: The worktrees as fetched from the Mac.
+    public static func unopenedRows(from worktrees: [SupermuxWorktreeDTO]) -> [SupermuxWorktreeRowSnapshot] {
+        rows(from: worktrees).filter { !$0.isOpen }
+    }
 }

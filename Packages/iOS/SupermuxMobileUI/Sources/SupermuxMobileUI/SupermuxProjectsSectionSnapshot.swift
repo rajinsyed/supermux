@@ -135,6 +135,21 @@ public struct SupermuxProjectsSectionActions {
     /// The run/launch/action seam, or `nil` when no session is live (every
     /// run affordance hides).
     public let run: SupermuxProjectRunActions?
+    /// Toggles one project's inline disclosure (mac-sidebar-style nesting);
+    /// expansion persists phone-locally by project id.
+    public let toggleProjectExpanded: @MainActor (_ projectID: String) -> Void
+    /// Routes to the project DETAIL screen (editor, presets, actions, run
+    /// control, files entry) — the info accessory and the long-press menu
+    /// entry share this one path.
+    public let openProjectDetail: @MainActor (_ projectID: String) -> Void
+    /// Opens a nested worktree row: an already-open worktree navigates to
+    /// its workspace; an unopened one goes through the m2-f2
+    /// `worktree.open` → navigate flow (failure surfaces on the model's
+    /// error state, never silently).
+    public let openNestedWorktree: @MainActor (
+        _ projectID: String,
+        _ worktree: SupermuxWorktreeRowSnapshot
+    ) -> Void
 
     /// Memberwise initializer.
     /// - Parameters:
@@ -144,13 +159,22 @@ public struct SupermuxProjectsSectionActions {
     ///   - makeWorktreesStore: Builds a worktrees store for one project.
     ///   - editing: The editor seam, or `nil` to hide editing affordances.
     ///   - run: The run/launch/action seam, or `nil` to hide run affordances.
+    ///   - toggleProjectExpanded: Toggles one project's inline disclosure.
+    ///   - openProjectDetail: Routes to the project detail screen.
+    ///   - openNestedWorktree: Opens a nested worktree row.
     public init(
         toggleCollapsed: @escaping @MainActor () -> Void,
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
         selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
         makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
         editing: SupermuxProjectEditingActions? = nil,
-        run: SupermuxProjectRunActions? = nil
+        run: SupermuxProjectRunActions? = nil,
+        toggleProjectExpanded: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
+        openProjectDetail: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
+        openNestedWorktree: @escaping @MainActor (
+            _ projectID: String,
+            _ worktree: SupermuxWorktreeRowSnapshot
+        ) -> Void = { _, _ in }
     ) {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
@@ -158,6 +182,9 @@ public struct SupermuxProjectsSectionActions {
         self.makeWorktreesStore = makeWorktreesStore
         self.editing = editing
         self.run = run
+        self.toggleProjectExpanded = toggleProjectExpanded
+        self.openProjectDetail = openProjectDetail
+        self.openNestedWorktree = openNestedWorktree
     }
 }
 

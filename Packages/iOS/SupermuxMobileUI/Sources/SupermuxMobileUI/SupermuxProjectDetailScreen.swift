@@ -15,8 +15,15 @@ public struct SupermuxProjectDetailScreen: View {
     private let iconPNGData: @Sendable (_ projectID: String) async -> Data?
     let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
     private let makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore?
-    private let editing: SupermuxProjectEditingActions?
+    // Internal (not private): the presets manager entry in
+    // SupermuxProjectDetailScreen+RunSections.swift needs the editing seam.
+    let editing: SupermuxProjectEditingActions?
     let presets: [SupermuxTerminalPresetDTO]
+    /// Whether the host serves the presets read shape at all — gates the
+    /// Presets section (launcher + manager entry) so a zero-preset host with
+    /// the capability still reaches the manager, while a host without it
+    /// shows no presets UI.
+    let showsPresets: Bool
     let showsActions: Bool
     let runActions: SupermuxProjectRunActions?
 
@@ -57,8 +64,10 @@ public struct SupermuxProjectDetailScreen: View {
     ///   - makeWorktreesStore: Builds this project's worktrees store against
     ///     the live session, or `nil` when unavailable (section hides).
     ///   - editing: The editor seam; `nil` hides the Edit affordance.
-    ///   - presets: The global presets, launchable into this project's root;
-    ///     empty hides the Presets section (host without `supermux.presets.v1`).
+    ///   - presets: The global presets, launchable into this project's root.
+    ///   - showsPresets: Whether the Presets section (launcher rows + the
+    ///     manager entry) renders at all — `false` for a host without the
+    ///     `supermux.presets.v1` read shape.
     ///   - showsActions: Whether the Actions section renders (host advertises
     ///     `supermux.actions.v1`).
     ///   - runActions: The run/launch/action seam; `nil` hides the Run,
@@ -70,6 +79,7 @@ public struct SupermuxProjectDetailScreen: View {
         makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
         editing: SupermuxProjectEditingActions? = nil,
         presets: [SupermuxTerminalPresetDTO] = [],
+        showsPresets: Bool = false,
         showsActions: Bool = false,
         runActions: SupermuxProjectRunActions? = nil
     ) {
@@ -79,6 +89,7 @@ public struct SupermuxProjectDetailScreen: View {
         self.makeWorktreesStore = makeWorktreesStore
         self.editing = editing
         self.presets = presets
+        self.showsPresets = showsPresets
         self.showsActions = showsActions
         self.runActions = runActions
     }
@@ -318,7 +329,10 @@ public struct SupermuxProjectDetailScreen: View {
                 )
             }
             workspacesSection
-            if !presets.isEmpty, runActions != nil {
+            // Gated on the read shape, not on non-emptiness: a zero-preset
+            // host still shows the manager entry (the section-level presets
+            // row was removed — the detail screen is the presets surface).
+            if showsPresets, runActions != nil {
                 presetsSection
             }
             if showsActions, runActions != nil, !row.actions.isEmpty {

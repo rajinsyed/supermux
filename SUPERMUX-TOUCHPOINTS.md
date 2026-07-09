@@ -123,6 +123,7 @@ Rules for adding a touchpoint:
 | 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base (three fence blocks: helper `lockfile_recorded_dependency_calls`, the changed-roots skip in `main`, and `file_text_at`) |
 | 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two 1-line fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:)` modifier on the detail `body`'s outer `Group`. Mounts the fork's capability-gated Changes and Files toolbar entries (fork-owned `SupermuxMobileUI/SupermuxWorkspaceTools.swift`) which present `SupermuxChangesScreen` / `SupermuxFileBrowserScreen` as sheets; fed by the #96 `supermuxConnectionSeam`. Each entry hides without its capability (`supermux.changes.v1` / `supermux.files.v1`) |
 | 109 | `scripts/lint-ios-package-conventions.sh` | `lint-ios-conventions-fork-scopes` | Adds the fork mobile packages (`Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobile*`) to the lint's SCOPES so the iOS conventions lint (CI job `package-conventions-lint` in `.github/workflows/test-ios.yml`) mechanically enforces its per-line rules on them; deliberate constant/text namespace holders in the fork packages carry inline `lint:allow` justifications |
+| 110 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-search` | One comment-only fence replacing upstream's `.searchable(text: $searchText)` on the workspace `List`: the fork removes the main list's (bottom-placed) search bar per direct user request. `searchText` stays `""` so upstream's query filtering (`trimmedQuery`, `matchesQuery`, search-flattened sections) compiles unchanged but is inert. Trade-off: no free-text workspace search on the phone; the Unread filter and grouping remain |
 
 ## How to re-apply
 
@@ -1820,3 +1821,22 @@ works. If upstream generalizes its globs to cover fork packages (or switches to 
 `./scripts/lint-ios-package-conventions.sh` and expect exit 0; new ERROR findings in fork
 packages must be fixed or carry a reviewed inline `lint:allow` justification — never grow
 `scripts/lint-namespace-types-baseline.txt` (that list may only shrink).
+
+### 110. `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` — `supermux-mobile-hide-search`
+
+Removes the main workspace list's search bar (iOS 26 places `.searchable` in the bottom
+toolbar on iPhone) per direct user feedback on the shipped app. The fence is comment-only: it
+REPLACES upstream's single `.searchable(text: $searchText)` modifier line on the `List` (right
+after `.mobileInlineNavigationTitle()`), leaving nothing between begin/end. All of upstream's
+search plumbing (`@State searchText`, `trimmedQuery`, `matchesQuery`, the search branch of
+`rendersGroupedSections`, and the #103 hide-filter's `trimmedQuery.isEmpty` gate) stays
+untouched and compiles; with `searchText` permanently empty it is simply inert.
+
+Recorded trade-off: the search field was the only free-text way to find a workspace across
+groups on the phone; the Unread filter, machine filter, and group sections remain. If the user
+later wants search back, delete this fence and restore the one upstream line.
+
+Re-apply note: after an upstream merge, find the workspace `List`'s `.searchable(text:
+$searchText)` (or successor search-scope API) in `WorkspaceListView.body` and replace exactly
+that modifier line with this fence. If upstream ever makes other behavior depend on a non-empty
+`searchText` being reachable, re-evaluate with the user before keeping the removal.

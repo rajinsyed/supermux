@@ -57,9 +57,12 @@ extension SupermuxProjectDetailScreen {
         }
     }
 
-    /// The Presets section: every global preset as a tap-to-launch row. A
-    /// launch runs the preset at THIS project's root on the Mac and
-    /// navigates to the returned workspace (same idiom as worktree opens).
+    /// The Presets section: every global preset as a tap-to-launch row, plus
+    /// the presets MANAGER entry (list + create/edit/delete) — the manager's
+    /// only mount now that the main list's section-level presets row is
+    /// removed (m6-f1). A launch runs the preset at THIS project's root on
+    /// the Mac and navigates to the returned workspace (same idiom as
+    /// worktree opens).
     var presetsSection: some View {
         Section {
             ForEach(presets, id: \.id) { preset in
@@ -70,6 +73,24 @@ extension SupermuxProjectDetailScreen {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("SupermuxProjectPresetLaunchRow-\(preset.id)")
+            }
+            if let editing {
+                NavigationLink {
+                    SupermuxPresetsListScreen(presets: presets, editing: editing)
+                } label: {
+                    Label {
+                        Text(String(
+                            localized: "supermux.presets.manage",
+                            defaultValue: "Manage Presets",
+                            bundle: .module
+                        ))
+                        .font(.body)
+                    } icon: {
+                        Image(systemName: "square.grid.2x2")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("SupermuxPresetsManageRow")
             }
         } header: {
             Text(String(

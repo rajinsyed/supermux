@@ -245,7 +245,8 @@ struct WorkspaceListView: View {
         }
         .navigationTitle(L10n.string("mobile.workspaces.title", defaultValue: "Workspaces"))
         .mobileInlineNavigationTitle()
-        .searchable(text: $searchText)
+        // SUPERMUX:begin supermux-mobile-hide-search (upstream: `.searchable(text: $searchText)` — the bottom search bar is removed on the fork per user request; `searchText` stays empty so all query filtering is inert)
+        // SUPERMUX:end supermux-mobile-hide-search
         .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .topBarLeading) {

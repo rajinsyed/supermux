@@ -11,6 +11,12 @@ import AppKit
 /// The collapsible Projects section mounted above the workspace group
 /// sections in the shell's workspace `List`.
 ///
+/// Mirrors the mac sidebar's Projects section (m6-f1): each project row is
+/// an INLINE disclosure — tapping it expands/collapses the project's nested
+/// rows (open workspaces with activity dots, then unopened worktrees with PR
+/// badges) directly in the list, while the project DETAIL screen stays
+/// reachable through the row's info accessory and long-press menu.
+///
 /// Renders exclusively from an immutable ``SupermuxProjectsSectionSnapshot``
 /// plus a closure ``SupermuxProjectsSectionActions`` bundle — no store
 /// reference crosses the `List` boundary. Renders nothing at all while the
@@ -35,15 +41,6 @@ public struct SupermuxProjectsMobileSection: View {
             Section {
                 if !section.isCollapsed {
                     sectionRows
-                    // Presets are GLOBAL (the desktop shows the same bar above
-                    // every workspace's terminal), so their entry point lives
-                    // at the section's level, not under any one project —
-                    // reachable even with zero registered projects.
-                    if section.showsPresets, let editing = actions.editing {
-                        SupermuxPresetsMobileRow(presets: section.presets, editing: editing)
-                            .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
-                            .listRowSeparator(.hidden)
-                    }
                 }
             } header: {
                 SupermuxProjectsSectionHeader(
@@ -85,21 +82,20 @@ public struct SupermuxProjectsMobileSection: View {
                 SupermuxProjectMobileRow(
                     row: row,
                     iconPNGData: actions.iconPNGData,
-                    selectWorkspace: actions.selectWorkspace,
-                    makeWorktreesStore: actions.makeWorktreesStore,
-                    editing: actions.editing,
-                    presets: section.showsPresets ? section.presets : [],
-                    showsActions: section.showsActions,
-                    runActions: actions.run
+                    toggleExpanded: actions.toggleProjectExpanded,
+                    openDetail: actions.openProjectDetail
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
+                if row.isExpanded {
+                    SupermuxProjectNestedRows(row: row, actions: actions)
+                }
             }
         }
     }
 
     /// Matches the shell's workspace-row insets so the sections align.
-    private static let rowInsets = EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
+    static let rowInsets = EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
 }
 
 /// The tappable section header: title plus a collapse chevron, and — when
@@ -156,133 +152,6 @@ struct SupermuxProjectsSectionHeader: View {
                 }
             }
         }
-    }
-}
-
-/// The global Presets entry at the section's tail: pushes the presets
-/// manager screen (list + create/edit/delete). Rendered only when the host
-/// advertises `supermux.presets.v1` and the editing seam is live.
-struct SupermuxPresetsMobileRow: View {
-    let presets: [SupermuxTerminalPresetDTO]
-    let editing: SupermuxProjectEditingActions
-
-    var body: some View {
-        NavigationLink {
-            SupermuxPresetsListScreen(presets: presets, editing: editing)
-        } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.secondary.opacity(0.12))
-                    Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(width: 32, height: 32)
-                .accessibilityHidden(true)
-                Text(String(
-                    localized: "supermux.presets.title",
-                    defaultValue: "Presets",
-                    bundle: .module
-                ))
-                .font(.body.weight(.medium))
-                Spacer(minLength: 4)
-                if !presets.isEmpty {
-                    Text(verbatim: "\(presets.count)")
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.secondary.opacity(0.12)))
-                }
-            }
-        }
-        .accessibilityIdentifier("SupermuxPresetsRow")
-    }
-}
-
-/// One project row: avatar, name, root path, and count badges. Pushes the
-/// read-only detail screen via the stack's standard link.
-struct SupermuxProjectMobileRow: View {
-    let row: SupermuxProjectRowSnapshot
-    let iconPNGData: @Sendable (_ projectID: String) async -> Data?
-    var selectWorkspace: @MainActor (_ workspaceID: String) -> Void = { _ in }
-    var makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil }
-    var editing: SupermuxProjectEditingActions?
-    var presets: [SupermuxTerminalPresetDTO] = []
-    var showsActions = false
-    var runActions: SupermuxProjectRunActions?
-
-    var body: some View {
-        NavigationLink {
-            SupermuxProjectDetailScreen(
-                row: row,
-                iconPNGData: iconPNGData,
-                selectWorkspace: selectWorkspace,
-                makeWorktreesStore: makeWorktreesStore,
-                editing: editing,
-                presets: presets,
-                showsActions: showsActions,
-                runActions: runActions
-            )
-        } label: {
-            HStack(spacing: 10) {
-                SupermuxProjectMobileAvatar(row: row, size: 32, iconPNGData: iconPNGData)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.name)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Text(row.rootPath)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer(minLength: 4)
-                // The run dot + start/stop control (RPC-RUN-01's phone
-                // surface): rendered only when the host serves
-                // `supermux.run.v1` AND the project has a run command
-                // (`row.run` stays nil otherwise).
-                if let run = row.run, let runActions {
-                    SupermuxProjectRunControl(
-                        projectID: row.id,
-                        run: run,
-                        runCommands: row.runCommands,
-                        startRun: runActions.startRun,
-                        stopRun: runActions.stopRun
-                    )
-                }
-                countBadges
-            }
-        }
-        .accessibilityIdentifier("SupermuxProjectRow-\(row.id)")
-    }
-
-    /// Count badges render only when real data exists (`nil` = hidden, never
-    /// a made-up zero badge): the worktree count arrives once a worktrees
-    /// fetch has run for the project, the workspace count from the §6 join.
-    @ViewBuilder
-    private var countBadges: some View {
-        if let count = row.worktreeCount {
-            countBadge(systemImage: "arrow.triangle.branch", count: count)
-        }
-        if let count = row.openWorkspaceCount {
-            countBadge(systemImage: "square.on.square", count: count)
-        }
-    }
-
-    private func countBadge(systemImage: String, count: Int) -> some View {
-        HStack(spacing: 2) {
-            Image(systemName: systemImage)
-                .font(.caption2.weight(.semibold))
-            Text(verbatim: "\(count)")
-                .font(.caption.weight(.semibold).monospacedDigit())
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 2)
-        .background(Capsule().fill(Color.secondary.opacity(0.12)))
     }
 }
 

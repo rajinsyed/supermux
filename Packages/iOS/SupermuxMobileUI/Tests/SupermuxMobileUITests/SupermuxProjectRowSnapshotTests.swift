@@ -72,6 +72,27 @@ import Testing
         #expect(SupermuxAvatarRGB(hex: "#zzzzzz") == nil)
     }
 
+    @Test func rowsAreCollapsedWithNoNestedWorktreesByDefault() {
+        // The inline-nesting fields (m6-f1) default to the collapsed,
+        // no-data state so pre-existing projections stay unchanged.
+        let row = SupermuxProjectRowSnapshot(project: dto())
+        #expect(row.isExpanded == false)
+        #expect(row.nestedWorktrees == SupermuxProjectNestedWorktrees.unavailable)
+    }
+
+    @Test func unopenedNestedWorktreeRowsExcludeOpenWorktrees() {
+        // The mac sidebar's disclosure lists only worktrees WITHOUT an open
+        // workspace (open ones already render as nested workspace rows).
+        let rows = SupermuxWorktreeRowSnapshot.unopenedRows(from: [
+            SupermuxWorktreeDTO(path: "/w/opened", branch: "opened", isOpen: true, workspaceId: "ws-1"),
+            SupermuxWorktreeDTO(path: "/w/loose", branch: "loose", isOpen: false),
+            SupermuxWorktreeDTO(path: "/w/unknown", branch: "unknown"),
+        ])
+        // `is_open` nil (older Mac) degrades to "not open" — the row stays
+        // reachable rather than vanishing.
+        #expect(rows.map(\.path) == ["/w/loose", "/w/unknown"])
+    }
+
     @Test func rowColorComesFromTheDTOHex() {
         let row = SupermuxProjectRowSnapshot(project: dto(colorHex: "#3B82F6"))
         #expect(row.avatarRGB == SupermuxAvatarRGB(hex: "#3B82F6"))

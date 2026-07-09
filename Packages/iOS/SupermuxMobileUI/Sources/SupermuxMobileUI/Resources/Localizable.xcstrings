@@ -1990,6 +1990,23 @@
         }
       }
     },
+    "supermux.presets.manage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage Presets"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プリセットを管理"
+          }
+        }
+      }
+    },
     "supermux.presets.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2789,6 +2806,23 @@
         }
       }
     },
+    "supermux.projects.detail.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This project is no longer available."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロジェクトは利用できなくなりました。"
+          }
+        }
+      }
+    },
     "supermux.projects.detail.workspacesPlaceholder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2870,6 +2904,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "プロジェクトを読み込み中…"
+          }
+        }
+      }
+    },
+    "supermux.projects.nested.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No open workspaces or worktrees yet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開いているワークスペースやワークツリーはまだありません"
+          }
+        }
+      }
+    },
+    "supermux.projects.row.details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Project Details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクトの詳細"
           }
         }
       }
@@ -3193,6 +3261,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新規ワークツリー"
+          }
+        }
+      }
+    },
+    "supermux.worktrees.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Workspace"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークスペースを開く"
           }
         }
       }

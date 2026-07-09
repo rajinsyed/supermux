@@ -49,6 +49,20 @@ public struct SupermuxProjectRunState: Equatable, Sendable {
     }
 }
 
+/// The nested-worktree slice of an expanded project row (m6-f1 inline
+/// nesting, mirroring the mac sidebar's disclosure). An immutable value —
+/// the section-owned worktrees store never crosses the `List` boundary.
+public enum SupermuxProjectNestedWorktrees: Equatable, Sendable {
+    /// No worktree data can exist: project collapsed, no live session, or
+    /// the host lacks `supermux.worktrees.v1` (the rows simply don't render).
+    case unavailable
+    /// Expanded with the fetch-on-expand still in flight.
+    case loading
+    /// Expanded and fetched: the project's UNOPENED worktrees, in the Mac's
+    /// order (open ones are already represented by nested workspace rows).
+    case loaded([SupermuxWorktreeRowSnapshot])
+}
+
 /// Immutable value snapshot of one project row in the phone's Projects
 /// section. Rows below the shell's `List` boundary receive ONLY this (plus
 /// closure action bundles) — never a store reference — per the repo's
@@ -89,8 +103,16 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     /// section.
     public let actions: [SupermuxProjectActionDTO]
     /// The run-store-derived run state, or `nil` when the run UI is hidden
-    /// (no `supermux.run.v1`, or no run command configured).
+    /// (no `supermux.run.v1`, or no run command configured). Feeds the detail
+    /// screen's Run section; the LIST row renders no run control (mac-sidebar
+    /// parity — the mac project row carries no run affordance either).
     public let run: SupermuxProjectRunState?
+    /// Whether this project's inline disclosure is open (phone-local,
+    /// UserDefaults-persisted — NOT the Mac's `section_collapsed`).
+    public let isExpanded: Bool
+    /// The nested unopened-worktree rows for an expanded project; always
+    /// ``SupermuxProjectNestedWorktrees/unavailable`` while collapsed.
+    public let nestedWorktrees: SupermuxProjectNestedWorktrees
 
     /// Projects a wire DTO into the row snapshot.
     /// - Parameters:
@@ -101,11 +123,17 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     ///     worktrees fetch has run (badge hidden). Defaults to `nil`.
     ///   - run: The run-store-derived run state, or `nil` (run UI hidden).
     ///     Defaults to `nil`.
+    ///   - isExpanded: Whether the inline disclosure is open. Defaults to
+    ///     collapsed.
+    ///   - nestedWorktrees: The nested unopened-worktree slice. Defaults to
+    ///     ``SupermuxProjectNestedWorktrees/unavailable``.
     public init(
         project: SupermuxProjectDTO,
         openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot] = [],
         worktreeCount: Int? = nil,
-        run: SupermuxProjectRunState? = nil
+        run: SupermuxProjectRunState? = nil,
+        isExpanded: Bool = false,
+        nestedWorktrees: SupermuxProjectNestedWorktrees = .unavailable
     ) {
         self.id = project.id
         self.name = project.name
@@ -122,5 +150,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         self.runCommands = project.runCommands ?? []
         self.actions = project.actions ?? []
         self.run = run
+        self.isExpanded = isExpanded
+        self.nestedWorktrees = nestedWorktrees
     }
 }
