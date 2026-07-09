@@ -21,15 +21,19 @@ enum SupermuxMobileCapabilities {
             // worktrees.list / worktree.suggest_branch / worktree.create /
             // worktree.open / worktree.remove (and project.open) are served.
             SupermuxMobileCapability.worktreesV1.rawValue,
-            // preset.create / preset.update / preset.delete are served.
-            // preset.launch stays method_not_found until the launch feature
-            // ships (m4); the phone must tolerate that error meanwhile.
+            // The full preset namespace is served: preset.create /
+            // preset.update / preset.delete / preset.launch.
             SupermuxMobileCapability.presetsV1.rawValue,
             // The full changes.* namespace is served: watch / status / diff /
             // stage / unstage / discard plus commit /
             // generate_commit_message / push / pull / stash / stash_pop /
             // history.
             SupermuxMobileCapability.changesV1.rawValue,
+            // run.state / run.start / run.stop are served (and the run
+            // observer emits supermux.run.updated on transitions).
+            SupermuxMobileCapability.runV1.rawValue,
+            // action.run is served.
+            SupermuxMobileCapability.actionsV1.rawValue,
         ]
     }
 }

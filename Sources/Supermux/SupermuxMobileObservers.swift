@@ -195,6 +195,7 @@ enum SupermuxMobileHostGlue {
     private static var projectsObserver: SupermuxMobileProjectsObserver?
     private static var activityObserver: SupermuxMobileActivityObserver?
     private static var worktreesObserver: SupermuxMobileWorktreesObserver?
+    private static var runObserver: SupermuxMobileRunObserver?
 
     /// Per-workspace repository watchers behind `mobile.supermux.changes.watch`
     /// (leased, TTL-swept; see ``SupermuxMobileChangesWatchRegistry``). Lazily
@@ -213,6 +214,9 @@ enum SupermuxMobileHostGlue {
         worktreesObserver = SupermuxMobileWorktreesObserver(
             projectsModel: SupermuxComposition.projectsModel,
             pullRequestModel: SupermuxComposition.worktreePullRequestModel
+        )
+        runObserver = SupermuxMobileRunObserver(
+            readSnapshots: { SupermuxComposition.runCoordinator.mobileRunSnapshots }
         )
     }
 }
