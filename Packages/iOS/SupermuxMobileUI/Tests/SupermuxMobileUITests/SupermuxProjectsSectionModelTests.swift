@@ -106,10 +106,14 @@ import Testing
         }
         try await wait.until { model.snapshot.isVisible }
 
+        // Cancellation alone only PAUSES the session (m6-f3: a navigation
+        // push covering the list must not blank the section)…
         session.cancel()
         client.finishEventStreams()
-        try await wait.until { model.snapshot.isVisible == false }
+        await session.value
+        #expect(model.snapshot.isVisible)
 
+        // …only an explicit end (disconnect) hides it.
         model.endSession()
         #expect(model.snapshot == .hidden)
     }

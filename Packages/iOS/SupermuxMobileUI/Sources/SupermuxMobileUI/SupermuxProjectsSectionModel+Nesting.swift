@@ -138,7 +138,40 @@ extension SupermuxProjectsSectionModel {
     }
 
     func endWorktreeSession(forProjectID projectID: String) {
-        worktreeSessions.removeValue(forKey: projectID)?.task.cancel()
+        worktreeSessions.removeValue(forKey: projectID)?.task?.cancel()
+    }
+
+    /// Pauses every worktree session's event loop WITHOUT dropping its
+    /// store (m6-f3): while a navigation push covers the list, the loaded
+    /// nested rows keep rendering, but nothing polls — or keeps re-dialling
+    /// a dead connection — in the background. The cancelled loop's handle is
+    /// retained as the session's `predecessor` so a pop-resume can chain
+    /// behind its (cooperative) exit via ``resumeWorktreeSessionLoops()``.
+    func pauseWorktreeSessionLoops() {
+        for (projectID, session) in worktreeSessions where session.task != nil {
+            session.task?.cancel()
+            worktreeSessions[projectID]?.predecessor = session.task
+            worktreeSessions[projectID]?.task = nil
+        }
+    }
+
+    /// Restarts the paused worktree sessions' event loops (each resubscribes
+    /// and refetches — the silent revalidation of the retained nested rows),
+    /// chained behind the cancelled predecessor's exit so one store never
+    /// runs two subscriptions concurrently (cancellation is cooperative —
+    /// the old loop may still be finishing a request). Sessions whose loop
+    /// still runs (a rapid pop beat the pause) are left alone.
+    func resumeWorktreeSessionLoops() {
+        for (projectID, session) in worktreeSessions where session.task == nil {
+            let store = session.store
+            let previous = session.predecessor
+            worktreeSessions[projectID]?.predecessor = nil
+            worktreeSessions[projectID]?.task = Task {
+                await previous?.value
+                guard !Task.isCancelled else { return }
+                await store.run()
+            }
+        }
     }
 
     /// Ends orphan worktree sessions whose project is no longer in the
@@ -157,7 +190,7 @@ extension SupermuxProjectsSectionModel {
 
     func endAllWorktreeSessions() {
         for session in worktreeSessions.values {
-            session.task.cancel()
+            session.task?.cancel()
         }
         worktreeSessions.removeAll()
     }

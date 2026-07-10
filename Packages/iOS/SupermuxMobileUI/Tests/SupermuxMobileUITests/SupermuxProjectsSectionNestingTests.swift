@@ -405,11 +405,14 @@ import Testing
         #expect(model.nestedOpenErrorMessage == nil)
     }
 
-    @Test func naturalSessionTeardownInvalidatesInFlightOpensToo() async throws {
-        // The driver's `.task` being cancelled with NO replacement (the list
-        // left the screen) runs only runSession's identity-guarded defer —
-        // it must bump the generation exactly like endSession(), so a late
-        // worktree-open answer is dropped there as well.
+    @Test func pauseKeepsTheGenerationCurrentAndReplacementBumpsIt() async throws {
+        // Cancellation alone no longer bumps the generation (m6-f3: it only
+        // PAUSES the session, which stays current for a pop-resume — the
+        // retained store's generation-captured callbacks must keep
+        // working). The stale-open boundaries are endSession() (pinned by
+        // staleInFlightWorktreeOpenNeverNavigatesOrErrorsAfterSessionEnd,
+        // which exercises the same generation guard) and a REPLACEMENT run,
+        // whose entry bump is pinned here.
         let project = fixtureProject()
         let client = FakeSupermuxMacClient()
         client.listResponse = SupermuxProjectsListResponse(projects: [project])
@@ -423,9 +426,23 @@ import Testing
         try await wait.until { model.snapshot.hasLoaded }
         let liveGeneration = model.sessionGeneration
 
+        // Pause (a navigation push covered the list): still the same
+        // generation — in-flight work of the retained session stays valid.
         session.cancel()
-        client.finishEventStreams()
-        try await wait.until { model.snapshot.isVisible == false }
-        #expect(model.sessionGeneration > liveGeneration)
+        await session.value
+        #expect(model.sessionGeneration == liveGeneration)
+
+        // Replacement (reconnect): the entry bump invalidates the old
+        // connection's in-flight opens/prunes.
+        let client2 = FakeSupermuxMacClient()
+        client2.listResponse = SupermuxProjectsListResponse(projects: [project])
+        let session2 = Task {
+            await model.runSession(
+                client: client2,
+                hostCapabilities: [Self.projectsCapability, Self.worktreesCapability]
+            )
+        }
+        defer { session2.cancel() }
+        try await wait.until { model.sessionGeneration > liveGeneration }
     }
 }

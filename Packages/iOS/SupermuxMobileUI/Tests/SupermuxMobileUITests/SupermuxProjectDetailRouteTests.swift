@@ -121,7 +121,10 @@ import Testing
         #expect(model.snapshot.isVisible)
     }
 
-    @Test func cancellationWithoutAPushedDetailStillTearsDown() async throws {
+    @Test func cancellationWithoutAPushedDetailAlsoKeepsTheSessionPaused() async throws {
+        // m6-f3 widened the m6-f2 retention to EVERY cancellation: a
+        // workspace push (no detail routed) covers the list too, and tearing
+        // down blanked the section — visible reload + scroll reset on pop.
         let project = fixtureProject()
         let client = FakeSupermuxMacClient()
         client.listResponse = SupermuxProjectsListResponse(projects: [project])
@@ -131,8 +134,9 @@ import Testing
         session.cancel()
         await session.value
 
-        #expect(model.store == nil)
-        #expect(!model.snapshot.isVisible)
+        #expect(model.store != nil)
+        #expect(model.snapshot.isVisible)
+        #expect(model.snapshot.hasLoaded)
     }
 
     @Test func replacementSessionAfterAPushSwapsTheStoreWholesale() async throws {

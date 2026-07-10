@@ -15,6 +15,12 @@ extension View {
     /// the old session and builds a fresh ``SupermuxMacClient`` + store, so
     /// capabilities are re-snapshotted per connection instead of mutated.
     ///
+    /// The same key doubles as the model's resume identity (m6-f3): when the
+    /// `.task` re-runs WITHOUT the key changing — a navigation push covered
+    /// the list and was popped — the model resumes its retained session
+    /// (stale-while-revalidate) instead of rebuilding, so the section never
+    /// flashes a loading state and the `List` keeps its scroll position.
+    ///
     /// An `.onChange(of:initial:)` keyed on the projected workspace rows
     /// feeds the §6 join into the model (open-workspace counts, the detail
     /// screen's nested rows, and the shell's open-workspace closure) — state
@@ -37,14 +43,16 @@ extension View {
         workspaces: [MobileWorkspacePreview] = [],
         selectWorkspace: @escaping @MainActor (MobileWorkspacePreview.ID) -> Void = { _ in }
     ) -> some View {
-        task(id: SupermuxProjectsConnectionKey(connection: connection)) {
+        let connectionKey = SupermuxProjectsConnectionKey(connection: connection)
+        return task(id: connectionKey) {
             guard let connection else {
                 model.endSession()
                 return
             }
             await model.runSession(
                 client: SupermuxMacClient(client: connection.rpcClient),
-                hostCapabilities: connection.hostCapabilities
+                hostCapabilities: connection.hostCapabilities,
+                connectionID: connectionKey
             )
         }
         .onChange(of: SupermuxProjectWorkspaceRowSnapshot.rows(from: workspaces), initial: true) { _, rows in
@@ -61,9 +69,10 @@ extension View {
     }
 }
 
-/// Equatable identity for one connection session: the RPC client's object
-/// identity plus the capability snapshot it arrived with.
-struct SupermuxProjectsConnectionKey: Equatable {
+/// Hashable identity for one connection session: the RPC client's object
+/// identity plus the capability snapshot it arrived with. Used both as the
+/// driver's `.task(id:)` key and as the model's resume identity.
+struct SupermuxProjectsConnectionKey: Hashable {
     let clientID: ObjectIdentifier?
     let hostCapabilities: Set<String>?
 

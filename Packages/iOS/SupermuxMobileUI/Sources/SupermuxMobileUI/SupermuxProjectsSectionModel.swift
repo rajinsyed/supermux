@@ -7,10 +7,13 @@ public import SupermuxMobileKit
 ///
 /// Lives at the shell list's scope (one `@State` instance per list) and owns
 /// one ``SupermuxMobileProjectsStore`` per Mac connection: the section driver
-/// (`supermuxProjectsSectionDriver`) calls ``runSession(client:hostCapabilities:)``
-/// whenever the connection identity or capability snapshot changes, so stores
-/// and capabilities are RECREATED per connection rather than mutated — the
-/// capability snapshot inside a store never goes stale.
+/// (`supermuxProjectsSectionDriver`) calls
+/// ``runSession(client:hostCapabilities:connectionID:)`` on every appearance
+/// of the list. A NEW connection identity rebuilds the stores (capabilities
+/// are RECREATED per connection rather than mutated, so the snapshot inside
+/// a store never goes stale); an UNCHANGED identity — a navigation push/pop
+/// — resumes the retained session stale-while-revalidate (m6-f3, see
+/// `SupermuxProjectsSectionModel+Session.swift`).
 ///
 /// The section view renders from the value ``snapshot`` and reaches back only
 /// through the closure ``actions`` bundle, keeping store references out of
@@ -20,18 +23,19 @@ public import SupermuxMobileKit
 public final class SupermuxProjectsSectionModel {
     /// The live session's store; `nil` while disconnected. Exposed for the
     /// shell's own diagnostics/tests; views consume ``snapshot`` instead.
-    public private(set) var store: SupermuxMobileProjectsStore?
+    public internal(set) var store: SupermuxMobileProjectsStore?
 
     /// The live session's run store (run state + start/stop/launch/action
     /// calls); `nil` while disconnected. Runs alongside ``store`` in the
     /// same session task; views consume the row snapshots' `run` values and
     /// the ``actions`` bundle instead.
-    public private(set) var runStore: SupermuxMobileRunStore?
+    public internal(set) var runStore: SupermuxMobileRunStore?
 
     /// Local collapse toggle. `nil` follows the Mac's `section_collapsed`
     /// seed; a tap overrides it for this session (phone-local, read-only
     /// milestone — nothing is written back to the Mac).
-    private var collapsedOverride: Bool?
+    /// Internal (not private) for the `+Session.swift` lifecycle extension.
+    var collapsedOverride: Bool?
 
     // The inline-nesting members below are internal (not private) because
     // the m6-f1 half of this model lives in
@@ -67,10 +71,18 @@ public final class SupermuxProjectsSectionModel {
 
     /// One expanded project's section-owned worktree session: the store plus
     /// the task running its event loop (fetch on expand, refetch on
-    /// `supermux.worktrees.updated`).
+    /// `supermux.worktrees.updated`). The task is `nil` while the session is
+    /// PAUSED (a navigation push covered the list — m6-f3): the store's
+    /// loaded state keeps rendering, and a pop-resume restarts the loop —
+    /// CHAINED behind the cancelled predecessor (cancellation is
+    /// cooperative; the old loop may still be finishing a request), so one
+    /// store never runs two subscriptions concurrently.
     struct WorktreeSession {
         let store: SupermuxMobileWorktreesStore
-        let task: Task<Void, Never>
+        var task: Task<Void, Never>?
+        /// The last cancelled loop, retained until the resumed loop has
+        /// awaited its exit (single-flight, same pattern as `sessionLoops`).
+        var predecessor: Task<Void, Never>?
     }
 
     /// Section-owned worktree sessions for the EXPANDED projects, by project
@@ -87,7 +99,8 @@ public final class SupermuxProjectsSectionModel {
 
     /// Shared across sessions so custom icons survive a reconnect without a
     /// re-download (the etag round-trip answers `not_modified`).
-    @ObservationIgnored private let iconCache = SupermuxProjectIconCache()
+    /// Internal (not private) for the `+Session.swift` lifecycle extension.
+    @ObservationIgnored let iconCache = SupermuxProjectIconCache()
 
     /// The live session's client + capability snapshot, retained so worktrees
     /// stores can be minted against the SAME connection the projects store
@@ -97,6 +110,26 @@ public final class SupermuxProjectsSectionModel {
     @ObservationIgnored var sessionClient: (any SupermuxMacCalling)?
     @ObservationIgnored var sessionCapabilities: SupermuxMobileCapabilities?
 
+    /// Identity of the connection the retained session was built for (the
+    /// driver's task key). A re-run of ``runSession`` with the SAME identity
+    /// resumes the retained stores (stale-while-revalidate across a
+    /// navigation push/pop) instead of replacing them. Ignored by
+    /// observation: identity carries no render state.
+    @ObservationIgnored var sessionConnectionID: AnyHashable?
+
+    /// The unstructured task running the CURRENT projects/run event loops.
+    /// Each ``runSession`` chains its loops behind the previous task's exit
+    /// (single-flight: one store never runs two subscriptions concurrently,
+    /// even when a rapid pop re-enters while the push-cancelled loops are
+    /// still unwinding) and awaits it under a cancellation handler, so the
+    /// loops still pause with the driver's structured `.task`.
+    @ObservationIgnored var sessionLoops: Task<Void, Never>?
+
+    /// Monotonic ``runSession`` entry counter. The pause-on-exit cleanup is
+    /// epoch-guarded: after a rapid pop has already resumed the worktree
+    /// loops, the push-cancelled run's late exit must not pause them again.
+    @ObservationIgnored var loopEpoch = 0
+
     /// UNOPENED-worktree counts per project id (the mac capsule's count),
     /// fed by expanded projects' worktrees stores after each successful
     /// fetch and seeded once per session for collapsed projects (the mac
@@ -104,7 +137,8 @@ public final class SupermuxProjectsSectionModel {
     /// shows without expanding — the phone mirrors that with one-shot
     /// fetches). Observable so a fresh count re-projects the section rows.
     /// Reset per session — counts never leak across Macs.
-    private var worktreeCounts: [String: Int] = [:]
+    /// Internal (not private) for the `+Session.swift` lifecycle extension.
+    var worktreeCounts: [String: Int] = [:]
 
     /// Project ids whose one-shot count seed already ran this session, so a
     /// projects refetch doesn't re-fetch every collapsed project's worktrees.
@@ -256,19 +290,24 @@ public final class SupermuxProjectsSectionModel {
     /// client and capability snapshot. `nil` while disconnected or when the
     /// host lacks `supermux.worktrees.v1` (the capability gate — a fork phone
     /// against an upstream Mac shows no worktree UI). The store feeds the
-    /// project row's worktree-count badge after each successful fetch.
+    /// project row's worktree-count badge after each successful fetch —
+    /// generation-guarded, so a store of an ENDED/REPLACED session (kept
+    /// alive by an in-flight open, or a detail screen outliving a reconnect)
+    /// can never overwrite the new session's counts with stale data.
     /// - Parameter projectID: The project's UUID string.
     public func makeWorktreesStore(forProjectID projectID: String) -> SupermuxMobileWorktreesStore? {
         guard let sessionClient, let sessionCapabilities,
               sessionCapabilities.supportsWorktrees else {
             return nil
         }
+        let generation = sessionGeneration
         return SupermuxMobileWorktreesStore(
             client: sessionClient,
             capabilities: sessionCapabilities,
             projectID: projectID,
             onWorktreesChanged: { [weak self] projectID, worktrees in
-                self?.recordWorktrees(worktrees, forProjectID: projectID)
+                guard let self, self.sessionGeneration == generation else { return }
+                self.recordWorktrees(worktrees, forProjectID: projectID)
             }
         )
     }
@@ -327,112 +366,22 @@ public final class SupermuxProjectsSectionModel {
         return await store.iconPNGData(for: project)
     }
 
-    /// Runs one connection's session: builds a fresh store from the given
-    /// client and capability snapshot, publishes it, and follows the live
-    /// event stream until the caller (the driver's `.task(id:)`) is
-    /// cancelled. Against a host without `supermux.projects.v1` the store is
-    /// inert (no RPC is ever issued) and the section stays hidden.
-    ///
-    /// - Parameters:
-    ///   - client: The Mac RPC seam for THIS connection.
-    ///   - hostCapabilities: The host's raw advertised capability strings.
-    public func runSession(
-        client: any SupermuxMacCalling,
-        hostCapabilities: Set<String>
-    ) async {
-        collapsedOverride = nil
-        // A replacement session must never inherit the old connection's
-        // worktree sessions (stale client) — end them before installing the
-        // new client, then reseed below. The generation bump invalidates the
-        // old session's in-flight work (nested opens, prune callbacks).
-        endAllWorktreeSessions()
-        sessionGeneration += 1
-        let generation = sessionGeneration
-        let capabilities = SupermuxMobileCapabilities(hostCapabilities: hostCapabilities)
-        let store = SupermuxMobileProjectsStore(
-            client: client,
-            capabilities: capabilities,
-            iconCache: iconCache,
-            // The authoritative list prunes worktree sessions whose project
-            // was deleted (their rows are gone, so they could never be
-            // collapsed away — without this they would refetch forever).
-            // Generation-guarded: a lingering OLD store (kept alive by an
-            // in-flight write's refetch across a reconnect) must never prune
-            // the NEW session with the old Mac's project ids.
-            onProjectsChanged: { [weak self] projects in
-                guard let self, self.sessionGeneration == generation else { return }
-                self.pruneWorktreeSessions(keepingProjectIDs: projects.map(\.id))
-                // Mirror the mac's eager per-project worktree refresh at
-                // load: collapsed projects get a one-shot count fetch so the
-                // worktree capsule shows without expanding.
-                self.seedWorktreeCounts(
-                    forProjectIDs: projects.map(\.id),
-                    generation: generation
-                )
-            }
-        )
-        let runStore = SupermuxMobileRunStore(client: client, capabilities: capabilities)
-        self.store = store
-        self.runStore = runStore
-        sessionClient = client
-        sessionCapabilities = capabilities
-        worktreeCounts = [:]
-        seededWorktreeCountProjectIDs = []
-        // Resume the phone-persisted inline disclosures against THIS
-        // connection: each expanded project fetches on session start and
-        // refetches on `supermux.worktrees.updated` (the store's own loop).
-        for projectID in expandedProjectIDs {
-            startWorktreeSession(forProjectID: projectID)
-        }
-        defer {
-            // Only the still-current session clears itself; a replacement
-            // session that already installed its store must not be torn down
-            // by the old session's exit.
-            //
-            // With a project DETAIL pushed, the cancellation is (in every
-            // reachable case) the navigationDestination push covering the
-            // list — NavigationStack removes the root from the hierarchy, so
-            // SwiftUI cancels the driver's structured `.task`. Tearing down
-            // here would blank `detailRow` and swap the just-pushed detail
-            // for the "no longer available" placeholder (the m6-f1 field
-            // bug). Instead the session stays installed — the connection is
-            // still alive, so detail actions keep working; only the event
-            // loops pause — and the next `runSession` (the list reappears on
-            // pop, or the connection key changes) replaces it wholesale.
-            if self.store === store, detailProjectID == nil {
-                self.store = nil
-                self.runStore = nil
-                sessionClient = nil
-                sessionCapabilities = nil
-                endAllWorktreeSessions()
-                // Natural teardown (the driver's `.task` was cancelled with
-                // no replacement, e.g. the list left the screen) must also
-                // invalidate in-flight nested opens — nothing else would.
-                sessionGeneration += 1
-            }
-        }
-        // Both loops share the session's structured lifetime: cancelling the
-        // driver's `.task(id:)` cancels the group, which cancels both.
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await store.run() }
-            group.addTask { await runStore.run() }
-        }
-    }
+    // runSession(client:hostCapabilities:connectionID:) and endSession()
+    // live in `SupermuxProjectsSectionModel+Session.swift` (m6-f3 session
+    // lifecycle: pause on cancellation, resume on pop, replace on a new
+    // connection — split from this file for the per-file length budget).
 
-    /// Drops the session immediately (connection went away). Expansion
-    /// state itself persists — a reconnect reseeds the worktree sessions.
-    public func endSession() {
-        store = nil
-        runStore = nil
-        sessionClient = nil
-        sessionCapabilities = nil
-        worktreeCounts = [:]
-        seededWorktreeCountProjectIDs = []
-        collapsedOverride = nil
-        endAllWorktreeSessions()
-        sessionGeneration += 1
-        // detailProjectID / detailFallbackRow survive on purpose: a pushed
-        // detail outliving a disconnect keeps rendering its last-known row
-        // instead of flashing "no longer available".
+    deinit {
+        // Safety net for the retained-session design: the session's event
+        // loops are unstructured tasks that deliberately survive the driver
+        // task's cancellation (m6-f3 push/pop retention). If the owning view
+        // is destroyed without an ``endSession()`` (the driver's `.task` is
+        // merely cancelled), the model deallocates and must cancel them here
+        // — dropping a `Task` handle does not cancel it, and the loops would
+        // otherwise retain their stores and client forever.
+        sessionLoops?.cancel()
+        for session in worktreeSessions.values {
+            session.task?.cancel()
+        }
     }
 }
