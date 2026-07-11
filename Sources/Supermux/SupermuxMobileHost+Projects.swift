@@ -91,16 +91,25 @@ extension TerminalController {
         let isConfigManaged = await Task.detached(priority: .userInitiated) {
             SupermuxMobileProjectConfigMarker.managedRelativePath(projectRoot: rootPath) != nil
         }.value
+        // Re-read the record AFTER the awaited probe: a desktop or other-client
+        // edit to a DIFFERENT field during that suspension must survive. The
+        // patch replaces only its own keys; writing back the pre-await snapshot
+        // would silently revert the concurrent change (lost update). Everything
+        // from here to `updateProject` is synchronous, so no window reopens.
+        let model = SupermuxComposition.projectsModel
+        guard let current = model.projects.first(where: { $0.id == project.id }) else {
+            return .err(code: "not_found", message: "Unknown project", data: nil)
+        }
         let updated: SupermuxProject
         do {
             let patch = try SupermuxMobileProjectPatch(wire: patchObject)
-            updated = try patch.applied(to: project, isConfigManaged: isConfigManaged)
+            updated = try patch.applied(to: current, isConfigManaged: isConfigManaged)
         } catch let error as SupermuxMobilePatchError {
             return .err(code: "invalid_params", message: error.message, data: nil)
         } catch {
             return .err(code: "invalid_params", message: "Malformed patch", data: nil)
         }
-        SupermuxComposition.projectsModel.updateProject(updated)
+        model.updateProject(updated)
         return await supermuxProjectResult(updated)
     }
 

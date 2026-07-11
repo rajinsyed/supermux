@@ -7,6 +7,10 @@ import SwiftUI
 struct SupermuxCommitComposerSection: View {
     @Binding var message: String
     let hasStagedFiles: Bool
+    /// Whether the repo has any uncommitted change (staged, unstaged, or
+    /// untracked). Generate & Commit stages everything Mac-side, so it is
+    /// enabled whenever anything is uncommitted — not only when pre-staged.
+    let hasChanges: Bool
     let isBusy: Bool
     let isGenerating: Bool
     let committedShortSha: String?
@@ -16,6 +20,12 @@ struct SupermuxCommitComposerSection: View {
 
     private var draftIsEmpty: Bool {
         message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Plain Commit needs staged files; Generate & Commit (empty draft) stages
+    /// everything itself, so it only needs some uncommitted change to exist.
+    private var canCommit: Bool {
+        draftIsEmpty ? hasChanges : hasStagedFiles
     }
 
     var body: some View {
@@ -72,7 +82,7 @@ struct SupermuxCommitComposerSection: View {
                     }
                 }
             }
-            .disabled(isBusy || !hasStagedFiles)
+            .disabled(isBusy || !canCommit)
             .accessibilityIdentifier("SupermuxCommitButton")
 
             if let committedShortSha {

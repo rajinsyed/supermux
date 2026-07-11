@@ -230,6 +230,28 @@ import Testing
         }
     }
 
+    @Test func requestPathsPreserveLeadingAndTrailingWhitespace() throws {
+        // Regression: a name with edge whitespace must resolve to that exact
+        // entry, never a trimmed neighbor. With both " report.txt" (leading
+        // space) and "report.txt" present, trashing " report.txt" must remove
+        // the spaced file and leave the unspaced one — trimming the request
+        // path here would trash the wrong file (data loss).
+        try withBase { base in
+            let root = try makeFixtureRoot(in: base)
+            let spaced = root.appendingPathComponent(" report.txt")
+            let plain = root.appendingPathComponent("report.txt")
+            try Data("spaced".utf8).write(to: spaced)
+            try Data("plain".utf8).write(to: plain)
+            let browser = try SupermuxMobileFileBrowser(rootPath: root.path)
+
+            try browser.trash(paths: [" report.txt"])
+
+            #expect(!exists(spaced))
+            #expect(exists(plain))
+            #expect(try String(decoding: Data(contentsOf: plain), as: UTF8.self) == "plain")
+        }
+    }
+
     @Test func trashSkipsAlreadyMissingEntries() throws {
         try withBase { base in
             let root = try makeFixtureRoot(in: base)

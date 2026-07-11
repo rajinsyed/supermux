@@ -56,33 +56,69 @@ extension SupermuxGitChangesService {
     /// - Returns: The captured diff; never throws — a failing git invocation
     ///   degrades to an empty text diff (callers treat the path as unchanged).
     public func fileDiff(repoPath: String, path: String, staged: Bool) async -> SupermuxGitFileDiff {
-        var noIndex = false
+        // The untracked preview shells out to `git diff --no-index`, which reads
+        // exactly the operand path git is handed — and unlike a real pathspec
+        // diff, git does NOT confine `--no-index` operands to the repository. So
+        // for that branch we hand git the RESOLVED, repo-confined absolute path
+        // (not the caller's string). Reading the same object that passed
+        // confinement removes the interior-symlink-rebind race: a concurrent
+        // `files.rename` that re-points a directory in the caller's path can no
+        // longer make git open a file outside the repo, because git never
+        // re-walks the caller-controlled components.
+        var noIndexResolvedPath: String?
         if !staged {
-            noIndex = await isUntrackedPath(repoPath: repoPath, path: path)
+            noIndexResolvedPath = await untrackedResolvedPath(repoPath: repoPath, path: path)
         }
-        if await isBinaryDiff(repoPath: repoPath, path: path, staged: staged, noIndex: noIndex) {
+        if await isBinaryDiff(
+            repoPath: repoPath, path: path, staged: staged, noIndexResolvedPath: noIndexResolvedPath
+        ) {
             return SupermuxGitFileDiff(isBinary: true, text: nil, truncated: false)
         }
         let (text, truncated) = await diffText(
-            repoPath: repoPath, path: path, staged: staged, noIndex: noIndex
+            repoPath: repoPath, path: path, staged: staged, noIndexResolvedPath: noIndexResolvedPath
         )
         return SupermuxGitFileDiff(isBinary: false, text: text, truncated: truncated)
     }
 
     // MARK: - Internals
 
-    /// Whether `path` is untracked: not in the index (`ls-files
-    /// --error-unmatch` fails) while present on disk.
-    private func isUntrackedPath(repoPath: String, path: String) async -> Bool {
+    /// The resolved, repo-confined absolute path when `path` names an untracked
+    /// file (present on disk, not in the index) — else nil. Returns the
+    /// RESOLVED path (the object that passed confinement) so the caller hands
+    /// git a concrete path rather than re-walking caller-controlled symlink
+    /// components at read time. An absolute, `..`, or symlink-escaping path
+    /// resolves to nil and is never previewed via `--no-index`.
+    private func untrackedResolvedPath(repoPath: String, path: String) async -> String? {
+        guard let resolved = Self.repoConfinedExistingPath(repoPath: repoPath, path: path) else {
+            return nil
+        }
         let result = await runner.run(
             directory: repoPath,
             executable: "git",
             arguments: [Self.noOptionalLocks, "ls-files", "--error-unmatch", "--", path],
             timeout: Self.gitTimeout
         )
-        guard result.exitStatus != 0 else { return false }
-        let fullPath = (repoPath as NSString).appendingPathComponent(path)
-        return FileManager.default.fileExists(atPath: fullPath)
+        return result.exitStatus != 0 ? resolved : nil
+    }
+
+    /// Resolves `path` against the repository root and returns the absolute
+    /// path only when it names an existing file that stays inside the
+    /// repository: relative, no `..` components, and — after resolving
+    /// symlinks on both sides — still prefixed by the canonical repo root.
+    /// `nil` for anything else (absolute paths, traversal, symlink escapes,
+    /// or a missing file).
+    static func repoConfinedExistingPath(repoPath: String, path: String) -> String? {
+        guard !path.hasPrefix("/") else { return nil }
+        let components = (path as NSString).pathComponents
+        guard !components.contains("..") else { return nil }
+        let canonicalRoot = URL(fileURLWithPath: repoPath).resolvingSymlinksInPath().path
+        let fullPath = (canonicalRoot as NSString).appendingPathComponent(path)
+        guard FileManager.default.fileExists(atPath: fullPath) else { return nil }
+        let resolved = URL(fileURLWithPath: fullPath).resolvingSymlinksInPath().path
+        guard resolved == canonicalRoot || resolved.hasPrefix(canonicalRoot + "/") else {
+            return nil
+        }
+        return resolved
     }
 
     /// Whether git reports the path's diff as binary: a `--numstat` record for
@@ -90,11 +126,11 @@ extension SupermuxGitChangesService {
     /// base64-armored pipeline so a non-UTF-8 filename cannot nil the capture
     /// into a false negative.
     private func isBinaryDiff(
-        repoPath: String, path: String, staged: Bool, noIndex: Bool
+        repoPath: String, path: String, staged: Bool, noIndexResolvedPath: String?
     ) async -> Bool {
         let script = "git \(Self.noOptionalLocks) "
-            + diffArguments(staged: staged, noIndex: noIndex, extra: "--numstat -z")
-            + " \(pathspec(path: path, noIndex: noIndex)) | /usr/bin/base64"
+            + diffArguments(staged: staged, noIndex: noIndexResolvedPath != nil, extra: "--numstat -z")
+            + " \(pathspec(path: path, noIndexResolvedPath: noIndexResolvedPath)) | /usr/bin/base64"
         let result = await runShellPipeline(script, in: repoPath, shell: "/bin/bash")
         guard let armored = result.stdout,
               let data = Data(base64Encoded: armored, options: .ignoreUnknownCharacters)
@@ -107,11 +143,11 @@ extension SupermuxGitChangesService {
     /// deliberately ignored (git exits via SIGPIPE when `head` stops early,
     /// and `--no-index` exits 1 whenever the files differ).
     private func diffText(
-        repoPath: String, path: String, staged: Bool, noIndex: Bool
+        repoPath: String, path: String, staged: Bool, noIndexResolvedPath: String?
     ) async -> (text: String, truncated: Bool) {
         let script = "git \(Self.noOptionalLocks) "
-            + diffArguments(staged: staged, noIndex: noIndex, extra: nil)
-            + " \(pathspec(path: path, noIndex: noIndex))"
+            + diffArguments(staged: staged, noIndex: noIndexResolvedPath != nil, extra: nil)
+            + " \(pathspec(path: path, noIndexResolvedPath: noIndexResolvedPath))"
             + " | /usr/bin/head -c \(Self.maxFileDiffBytes + 1) | /usr/bin/base64"
         let result = await runShellPipeline(script, in: repoPath, shell: "/bin/bash")
         guard let armored = result.stdout,
@@ -132,11 +168,15 @@ extension SupermuxGitChangesService {
         return parts.joined(separator: " ")
     }
 
-    /// The quoted pathspec: `-- <path>`, prefixed with `/dev/null` for
-    /// `--no-index` untracked previews (full-addition diff).
-    private func pathspec(path: String, noIndex: Bool) -> String {
-        let quoted = Self.shellQuoted(path)
-        return noIndex ? "-- /dev/null \(quoted)" : "-- \(quoted)"
+    /// The quoted pathspec. For a `--no-index` untracked preview the operand is
+    /// the RESOLVED absolute path (`-- /dev/null <resolved>`), so git opens the
+    /// exact object that passed confinement; otherwise the repo-relative path
+    /// (`-- <path>`), which git itself confines to the repository.
+    private func pathspec(path: String, noIndexResolvedPath: String?) -> String {
+        if let resolved = noIndexResolvedPath {
+            return "-- /dev/null \(Self.shellQuoted(resolved))"
+        }
+        return "-- \(Self.shellQuoted(path))"
     }
 
     /// Single-quotes `value` for safe interpolation into a shell script.

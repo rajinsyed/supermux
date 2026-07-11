@@ -181,12 +181,14 @@ public struct SupermuxMobileFileBrowser: Sendable {
     /// validated by ``SupermuxFileSystemOperations/validatedName(_:)`` inside
     /// the create call (rejecting `..`, separators, and empty names).
     private func resolveForCreate(_ relativePath: String) throws -> (parent: URL, name: String) {
-        let trimmed = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        // Verbatim, like `standardizedAbsolutePath`: a create path is not
+        // whitespace-trimmed, so a name with edge spaces is created (and later
+        // resolved) as typed rather than silently renamed.
+        guard !relativePath.isEmpty else {
             throw SupermuxMobileFileBrowserError.invalidPath(path: relativePath)
         }
-        let name = (trimmed as NSString).lastPathComponent
-        let parentRelative = (trimmed as NSString).deletingLastPathComponent
+        let name = (relativePath as NSString).lastPathComponent
+        let parentRelative = (relativePath as NSString).deletingLastPathComponent
         let parent = try resolveExisting(parentRelative, allowRoot: true)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory),
@@ -198,9 +200,14 @@ public struct SupermuxMobileFileBrowser: Sendable {
 
     /// The standardized absolute path a root-relative request path names
     /// (`..`/`.` collapsed textually; symlink resolution happens separately).
+    ///
+    /// The request path is used VERBATIM — never whitespace-trimmed. `list`
+    /// returns on-disk names exactly, and the phone echoes the chosen name
+    /// back, so a file with leading/trailing spaces (" report.txt") must
+    /// resolve to that entry, not to a differently-named neighbor
+    /// ("report.txt"); trimming here would mutate the wrong file.
     private func standardizedAbsolutePath(for relativePath: String) -> String {
-        let trimmed = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let combined = (rootPath as NSString).appendingPathComponent(trimmed)
+        let combined = (rootPath as NSString).appendingPathComponent(relativePath)
         return (combined as NSString).standardizingPath
     }
 

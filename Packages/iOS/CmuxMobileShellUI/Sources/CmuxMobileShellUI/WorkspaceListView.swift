@@ -133,10 +133,22 @@ struct WorkspaceListView: View {
     }
 
     // SUPERMUX:begin supermux-mobile-hide-project-workspaces (fold loose project-owned rows under the Projects section; inert while hidden/searching/filtering — see SUPERMUX-TOUCHPOINTS.md)
+    /// Project ids actually rendered in the Projects section: only workspaces
+    /// owned by one of these fold out of the flat list (they stay reachable by
+    /// expanding that project). Empty while the section is hidden, not yet
+    /// loaded, or searching/filtering — so `projects.list` failing (or a second
+    /// Mac's workspaces, whose project lives elsewhere) never hides a row with
+    /// no way to reach it.
+    private var supermuxShownProjectIDs: Set<String> {
+        let snapshot = supermuxProjects.snapshot
+        guard snapshot.isVisible, snapshot.hasLoaded, trimmedQuery.isEmpty, !filter.isActive else {
+            return []
+        }
+        return Set(snapshot.rows.map(\.id))
+    }
+
     private var supermuxFlatWorkspaces: [MobileWorkspacePreview] {
-        workspaces.supermuxFlatRows(
-            hidingProjectAssociated: supermuxProjects.snapshot.isVisible && trimmedQuery.isEmpty && !filter.isActive
-        )
+        workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)
     }
     // SUPERMUX:end supermux-mobile-hide-project-workspaces
 

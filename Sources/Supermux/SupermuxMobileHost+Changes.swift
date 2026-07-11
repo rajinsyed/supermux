@@ -96,6 +96,16 @@ extension TerminalController {
         guard let path = params["path"] as? String, !path.isEmpty else {
             return .err(code: "invalid_params", message: "path is required", data: nil)
         }
+        // Repo-relative paths only. Status never emits absolute or `..` paths,
+        // so any such request is malformed (or hostile — the untracked preview
+        // branch shells out to `git diff --no-index`, which git does NOT
+        // confine to the repository, so a path that could resolve outside it
+        // must never reach the service; symlink escapes are confined there).
+        guard !path.hasPrefix("/"), !(path as NSString).pathComponents.contains("..") else {
+            return .err(
+                code: "invalid_params", message: "path must be inside the repository", data: nil
+            )
+        }
         let staged = params["staged"] as? Bool ?? false
         let diff = await Self.supermuxMobileChangesService.fileDiff(
             repoPath: target.directory,

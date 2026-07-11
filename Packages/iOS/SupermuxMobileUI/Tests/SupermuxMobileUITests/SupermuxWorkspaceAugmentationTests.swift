@@ -41,7 +41,7 @@ import Testing
         let groupedAssociated = preview(id: "c", groupID: "g1", supermuxProjectID: Self.projectID)
 
         let rows = [standalone, associated, groupedAssociated]
-            .supermuxFlatRows(hidingProjectAssociated: true)
+            .supermuxFlatRows(hidingProjectIDs: [Self.projectID])
 
         // Mirrors the Mac's flat-list filter: only LOOSE project-owned
         // workspaces fold under their project; cmux-grouped ones stay with
@@ -51,7 +51,21 @@ import Testing
 
     @Test func hideFilterIsInertWhenDisabled() {
         let associated = preview(id: "b", supermuxProjectID: Self.projectID)
-        let rows = [associated].supermuxFlatRows(hidingProjectAssociated: false)
+        let rows = [associated].supermuxFlatRows(hidingProjectIDs: [])
+        #expect(rows.map(\.id.rawValue) == ["b"])
+    }
+
+    @Test func hideFilterKeepsWorkspacesWhoseProjectIsNotShown() {
+        // Regression: a project-associated workspace whose owning project is
+        // NOT a row in the section (a second paired Mac's workspace, or any
+        // workspace before projects.list loads) must stay in the flat list —
+        // hiding it there would make it unreachable, since it has no project
+        // row to expand under. Only ids present in the shown set fold away.
+        let shown = preview(id: "a", supermuxProjectID: Self.projectID)
+        let orphan = preview(id: "b", supermuxProjectID: "99999999-9999-9999-9999-999999999999")
+
+        let rows = [shown, orphan].supermuxFlatRows(hidingProjectIDs: [Self.projectID])
+
         #expect(rows.map(\.id.rawValue) == ["b"])
     }
 

@@ -13,7 +13,8 @@ extension SupermuxMobileChangesStore {
     /// draft clears, the status refetches, and the history invalidates.
     /// - Parameter stageAll: Whether the Mac stages everything first.
     public func commit(stageAll: Bool = false) async {
-        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submittedDraft = commitMessage
+        let message = submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
         lastCommitShortSha = nil
         await mutate {
@@ -23,7 +24,12 @@ extension SupermuxMobileChangesStore {
                 stageAll: stageAll
             ))
             self.lastCommitShortSha = response.sha.map { String($0.prefix(7)) }
-            self.commitMessage = ""
+            // The composer stays editable during the round-trip, so only clear
+            // it if the user hasn't begun a new message meanwhile — otherwise
+            // the in-flight commit would erase their next draft.
+            if self.commitMessage == submittedDraft {
+                self.commitMessage = ""
+            }
             self.invalidateHistory()
         }
     }
@@ -170,6 +176,7 @@ extension SupermuxMobileChangesStore {
     }
 
     private func fetchHistoryPage(cursor: String?) async {
+        let epoch = historyEpoch
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         do {
@@ -177,6 +184,11 @@ extension SupermuxMobileChangesStore {
                 workspaceID: workspaceID,
                 cursor: cursor
             ))
+            // A commit/push/pull during the fetch bumps historyEpoch and marks
+            // the loaded pages stale. A late response from the old epoch must
+            // not commit its now-outdated commits or re-set hasLoadedHistory —
+            // that would permanently suppress the epoch-keyed reload.
+            guard epoch == historyEpoch else { return }
             let page = response.commits ?? []
             if cursor == nil {
                 historyCommits = page
@@ -189,6 +201,7 @@ extension SupermuxMobileChangesStore {
             hasLoadedHistory = true
             historyErrorDescription = nil
         } catch {
+            guard epoch == historyEpoch else { return }
             historyErrorDescription = error.localizedDescription
         }
     }

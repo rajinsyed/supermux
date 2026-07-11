@@ -95,6 +95,81 @@ import Testing
         #expect(text.contains("+hello mobile"))
     }
 
+    // MARK: - Repository confinement (arbitrary-file-read hardening)
+
+    @Test func escapingPathIsNotPreviewedAndLeaksNothing() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        // A secret file OUTSIDE the repository (a sibling of the repo dir).
+        let secretName = "supermux-diff-secret-\(UUID().uuidString).txt"
+        let secretPath = ((root as NSString).deletingLastPathComponent as NSString)
+            .appendingPathComponent(secretName)
+        try "TOPSECRET".write(toFile: secretPath, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: secretPath) }
+
+        // A `..`-escaping path must not be classified untracked and dumped via
+        // `git diff --no-index` (which reads any file the user can read). The
+        // capture must confine to the repo — empty text, no leak.
+        let diff = await service.fileDiff(repoPath: root, path: "../\(secretName)", staged: false)
+
+        #expect(diff.isBinary == false)
+        #expect((diff.text ?? "").contains("TOPSECRET") == false)
+        #expect((diff.text ?? "").isEmpty)
+    }
+
+    @Test func absolutePathIsNotPreviewedAndLeaksNothing() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        let secretPath = "/etc/hosts"
+
+        // An absolute path is likewise never treated as an untracked entry.
+        let diff = await service.fileDiff(repoPath: root, path: secretPath, staged: false)
+
+        #expect(diff.isBinary == false)
+        #expect((diff.text ?? "").isEmpty)
+    }
+
+    @Test func untrackedFileThroughInteriorSymlinkPreviewsResolvedTarget() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        let fm = FileManager.default
+        try fm.createDirectory(
+            atPath: (root as NSString).appendingPathComponent("real"),
+            withIntermediateDirectories: true
+        )
+        try GitFixture.write("inside body\n", to: "real/note.txt", in: root)
+        // `link -> real` stays inside the repo; the preview follows it to the
+        // resolved target and still shows the content (no false rejection).
+        try fm.createSymbolicLink(
+            atPath: (root as NSString).appendingPathComponent("link"),
+            withDestinationPath: (root as NSString).appendingPathComponent("real")
+        )
+
+        let diff = await service.fileDiff(repoPath: root, path: "link/note.txt", staged: false)
+
+        #expect((diff.text ?? "").contains("+inside body"))
+    }
+
+    @Test func untrackedSymlinkEscapingRootLeaksNothing() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        let secret = ((root as NSString).deletingLastPathComponent as NSString)
+            .appendingPathComponent("supermux-diff-outside-\(UUID().uuidString).txt")
+        try "TOPSECRET".write(toFile: secret, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: secret) }
+        // An untracked symlink whose target resolves OUTSIDE the root must not
+        // have that target dumped — it resolves out of the repo, so it is never
+        // previewed via `--no-index`.
+        try FileManager.default.createSymbolicLink(
+            atPath: (root as NSString).appendingPathComponent("escape.txt"),
+            withDestinationPath: secret
+        )
+
+        let diff = await service.fileDiff(repoPath: root, path: "escape.txt", staged: false)
+
+        #expect((diff.text ?? "").contains("TOPSECRET") == false)
+    }
+
     // MARK: - Truncation
 
     @Test func hugeDiffIsByteCappedAndFlaggedTruncated() async throws {

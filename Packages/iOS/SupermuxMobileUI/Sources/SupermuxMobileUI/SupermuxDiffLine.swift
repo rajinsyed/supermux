@@ -46,21 +46,59 @@ public struct SupermuxDiffLine: Identifiable, Equatable, Sendable {
         if raw.last?.isEmpty == true {
             raw.removeLast()
         }
-        return raw.enumerated().map { index, line in
-            SupermuxDiffLine(id: index, text: line, kind: kind(of: line))
+        var lines: [SupermuxDiffLine] = []
+        lines.reserveCapacity(raw.count)
+        // Track whether we are inside a hunk body: there the first character IS
+        // the change marker, so a code line like `+++counter;` or a `-- ` email
+        // signature is a real addition/removal, never file metadata. Classifying
+        // by prefix alone (as `kind(of:)` must, lacking context) mis-tints those
+        // as headers. A `changes.diff` response is a single file's diff, so the
+        // header block always precedes the first `@@`.
+        var insideHunk = false
+        for (index, line) in raw.enumerated() {
+            let kind: Kind
+            if line.hasPrefix("@@") {
+                kind = .hunk
+                insideHunk = true
+            } else if insideHunk {
+                if line.hasPrefix("+") {
+                    kind = .addition
+                } else if line.hasPrefix("-") {
+                    kind = .removal
+                } else if line.hasPrefix("\\") {
+                    // `\ No newline at end of file`
+                    kind = .meta
+                } else {
+                    kind = .context
+                }
+            } else {
+                kind = isFileHeader(line) ? .meta : .context
+            }
+            lines.append(SupermuxDiffLine(id: index, text: line, kind: kind))
         }
+        return lines
     }
 
-    /// Classifies one raw diff line.
-    /// - Parameter line: The raw line text.
-    public static func kind(of line: String) -> Kind {
-        if line.hasPrefix("@@") { return .hunk }
-        let metaPrefixes = [
-            "+++", "---", "diff ", "index ", "new file", "deleted file",
+    /// Whether a pre-hunk line is git file-section metadata (`diff --git`,
+    /// `index`, the `--- `/`+++ ` file headers, mode/rename/binary markers).
+    private static func isFileHeader(_ line: String) -> Bool {
+        let prefixes = [
+            "diff ", "index ", "--- ", "+++ ", "new file", "deleted file",
             "old mode", "new mode", "similarity", "dissimilarity",
             "rename ", "copy ", "Binary files",
         ]
-        if metaPrefixes.contains(where: line.hasPrefix) { return .meta }
+        return prefixes.contains(where: line.hasPrefix)
+    }
+
+    /// Classifies one raw diff line WITHOUT hunk context. Prefer
+    /// ``lines(from:)``, which is hunk-aware and therefore tints hunk-body
+    /// `+++`/`---` code lines as real additions/removals rather than headers.
+    /// - Parameter line: The raw line text.
+    public static func kind(of line: String) -> Kind {
+        if line.hasPrefix("@@") { return .hunk }
+        // Only the "--- "/"+++ " file-header forms (three marker chars + space)
+        // are metadata; a bare "+++x"/"---x" has no space and is content.
+        if isFileHeader(line) { return .meta }
         if line.hasPrefix("+") { return .addition }
         if line.hasPrefix("-") { return .removal }
         return .context

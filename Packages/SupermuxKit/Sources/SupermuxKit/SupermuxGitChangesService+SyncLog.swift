@@ -108,7 +108,14 @@ extension SupermuxGitChangesService {
     ) async -> [SupermuxGitCommit]? {
         guard limit > 0 else { return [] }
         if let cursor {
-            return await commitLog(repoPath: repoPath, revision: ["--skip=1", cursor], limit: limit)
+            // `--end-of-options` guarantees git parses `cursor` as a revision,
+            // never as an option, even if a caller slips a leading-dash value
+            // past the handler's sha validation (defense in depth).
+            return await commitLog(
+                repoPath: repoPath,
+                revision: ["--skip=1", "--end-of-options", cursor],
+                limit: limit
+            )
         }
         return await commitLog(repoPath: repoPath, revision: ["HEAD"], limit: limit)
     }

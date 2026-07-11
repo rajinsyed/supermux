@@ -48,6 +48,11 @@ final class SupermuxRunCoordinator {
 
     private struct RunHandle {
         let workspaceId: UUID
+        /// The project this run was launched for, pinned at launch. Read by
+        /// ``mobileRunSnapshots`` instead of re-matching the (mutable)
+        /// `currentDirectory`, so a workspace that `cd`s into another project
+        /// after launch does not reassign or orphan the running process.
+        let projectId: UUID?
         /// Weak so a closed workspace's handle reads as not running instead of
         /// keeping the workspace alive; also guards against a session-restored
         /// workspace reusing the persisted id of a stale handle.
@@ -164,7 +169,7 @@ final class SupermuxRunCoordinator {
     /// - Returns: The start outcome.
     @discardableResult
     func startRun(workspace: Workspace, commandOverride: String? = nil) -> StartOutcome {
-        guard matchedProject(for: workspace) != nil else { return .missingProject }
+        guard let project = matchedProject(for: workspace) else { return .missingProject }
         guard let command = resolvedRunCommand(for: workspace, override: commandOverride) else {
             return .missingRunCommand
         }
@@ -223,6 +228,7 @@ final class SupermuxRunCoordinator {
         )
         handlesByWorkspaceId[workspace.id] = RunHandle(
             workspaceId: workspace.id,
+            projectId: project.id,
             workspace: workspace,
             panelId: panel.id,
             command: command,
@@ -290,9 +296,9 @@ final class SupermuxRunCoordinator {
     var mobileRunSnapshots: [SupermuxMobileRunSnapshot] {
         handlesByWorkspaceId.values
             .compactMap { handle -> SupermuxMobileRunSnapshot? in
-                guard handle.isRunningInLivePanel, let workspace = handle.workspace else { return nil }
+                guard handle.isRunningInLivePanel, handle.workspace != nil else { return nil }
                 return SupermuxMobileRunSnapshot(
-                    projectId: matchedProject(for: workspace)?.id,
+                    projectId: handle.projectId,
                     workspaceId: handle.workspaceId,
                     command: handle.command,
                     startedAt: handle.startedAt

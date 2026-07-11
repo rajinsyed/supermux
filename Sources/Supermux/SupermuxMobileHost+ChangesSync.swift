@@ -176,6 +176,16 @@ extension TerminalController {
                     code: "invalid_params", message: "cursor must be a commit sha", data: nil
                 )
             }
+            // The cursor is spliced into `git log`'s argv, so it MUST be a bare
+            // hex object name and nothing else — otherwise a value like
+            // `--output=/path` would be parsed by git as an option and could
+            // overwrite an arbitrary user-writable file. `next_cursor` is always
+            // a full sha (40 for sha-1, 64 for sha-256), so require exactly that.
+            guard Self.supermuxIsFullCommitSha(value) else {
+                return .err(
+                    code: "invalid_params", message: "cursor must be a commit sha", data: nil
+                )
+            }
             cursor = value
         }
         let service = Self.supermuxMobileChangesService
@@ -210,6 +220,20 @@ extension TerminalController {
         } catch {
             return .err(code: "unavailable", message: "Failed to encode history", data: nil)
         }
+    }
+
+    /// Whether `value` is a full git commit object name (40 ASCII hex chars for
+    /// sha-1, or 64 for sha-256) and therefore safe to splice into `git log`'s
+    /// argv as a revision. ASCII-only on purpose: `Character.isHexDigit` accepts
+    /// full-width Unicode digits (e.g. `０`/`Ｆ`), which git would reject anyway,
+    /// but the wire contract for a cursor is a bare ASCII object name.
+    private static func supermuxIsFullCommitSha(_ value: String) -> Bool {
+        (value.count == 40 || value.count == 64)
+            && value.utf8.allSatisfy { byte in
+                (byte >= 0x30 && byte <= 0x39)  // 0-9
+                    || (byte >= 0x61 && byte <= 0x66)  // a-f
+                    || (byte >= 0x41 && byte <= 0x46)  // A-F
+            }
     }
 
     // MARK: - Shared pieces

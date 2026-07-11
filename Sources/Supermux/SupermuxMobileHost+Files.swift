@@ -19,8 +19,11 @@ extension TerminalController {
     /// `{path, entries: [SupermuxFileEntryDTO]}`.
     @MainActor
     func v2SupermuxFilesList(params: [String: Any]) async -> V2CallResult {
-        await supermuxFilesOperation(params: params) { browser in
-            .ok(try browser.listPayload(path: params["path"] as? String))
+        // Extract the Sendable input before the off-actor hop: the operation
+        // closure must not capture the non-Sendable `params` dictionary.
+        let path = params["path"] as? String
+        return await supermuxFilesOperation(params: params) { browser in
+            .ok(try browser.listPayload(path: path))
         }
     }
 
@@ -102,22 +105,31 @@ extension TerminalController {
     /// Resolves the request's root, builds the confined browser, runs `work`,
     /// and maps engine failures onto the wire error shape (package-tested
     /// classification: confinement violations → `invalid_params`).
+    ///
+    /// The browser construction and `work` run OFF the main actor: symlink
+    /// resolution of the root (which can stat across the autofs automounter —
+    /// see `SupermuxTabManagerOpener`'s main-actor warning) plus recursive
+    /// duplicate/copy and trash of large trees are unbounded filesystem I/O
+    /// that would otherwise beachball the whole Mac UI. `work` is `@Sendable`
+    /// and captures only Sendable inputs; the browser itself is `Sendable`.
     @MainActor
     private func supermuxFilesOperation(
         params: [String: Any],
-        work: (SupermuxMobileFileBrowser) throws -> V2CallResult
+        work: @escaping @Sendable (SupermuxMobileFileBrowser) throws -> V2CallResult
     ) async -> V2CallResult {
         let root: String
         switch await supermuxResolveFilesRoot(params: params) {
         case let .failure(error): return error
         case let .success(resolved): root = resolved
         }
-        do {
-            return try work(try SupermuxMobileFileBrowser(rootPath: root))
-        } catch {
-            let (code, message) = SupermuxMobileFilesWireFailure.classify(error)
-            return .err(code: code, message: message, data: nil)
-        }
+        return await Task.detached(priority: .userInitiated) {
+            do {
+                return try work(try SupermuxMobileFileBrowser(rootPath: root))
+            } catch {
+                let (code, message) = SupermuxMobileFilesWireFailure.classify(error)
+                return .err(code: code, message: message, data: nil)
+            }
+        }.value
     }
 
     /// Resolves the request's root directory: exactly ONE of `workspace_id`

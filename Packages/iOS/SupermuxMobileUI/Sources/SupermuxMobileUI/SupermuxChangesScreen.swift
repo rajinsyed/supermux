@@ -284,12 +284,15 @@ public struct SupermuxChangesScreen: View {
                     set: { store.commitMessage = $0 }
                 ),
                 hasStagedFiles: !staged.isEmpty,
+                hasChanges: !staged.isEmpty || !unstaged.isEmpty || !untracked.isEmpty,
                 isBusy: store.isMutating || store.isGeneratingMessage,
                 isGenerating: store.isGeneratingMessage,
                 committedShortSha: store.lastCommitShortSha,
                 aiUnavailableNotice: store.aiUnavailableNotice,
                 commit: { let store = store; Task { await store.commit() } },
-                generateAndCommit: { let store = store; Task { await store.generateAndCommit() } }
+                // Empty draft → Generate & Commit stages everything Mac-side
+                // (desktop AI-commit parity), so pass stageAll: true.
+                generateAndCommit: { let store = store; Task { await store.generateAndCommit(stageAll: true) } }
             )
             if staged.isEmpty, unstaged.isEmpty, untracked.isEmpty {
                 Section {

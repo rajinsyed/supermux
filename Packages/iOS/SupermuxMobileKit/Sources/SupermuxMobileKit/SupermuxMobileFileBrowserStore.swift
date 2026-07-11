@@ -45,6 +45,11 @@ public final class SupermuxMobileFileBrowserStore {
     @ObservationIgnored private let client: any SupermuxMacCalling
     @ObservationIgnored private let capabilities: SupermuxMobileCapabilities
 
+    /// Monotonic fetch counter. Each ``fetch(segments:)`` claims the next
+    /// value; only the latest may commit its result, so a slower earlier
+    /// navigation cannot overwrite a directory the user has since opened.
+    @ObservationIgnored private var fetchGeneration = 0
+
     /// Whether the phone shows file-browser UI at all: gated on the host
     /// advertising `supermux.files.v1`.
     public var showsFileBrowser: Bool { capabilities.supportsFiles }
@@ -189,19 +194,27 @@ public final class SupermuxMobileFileBrowserStore {
     /// Fetches one directory's listing and commits it (entries + path) on
     /// success. Returns whether the fetch succeeded.
     private func fetch(segments: [String]) async -> Bool {
+        fetchGeneration += 1
+        let generation = fetchGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer { if generation == fetchGeneration { isLoading = false } }
         do {
             let response = try await client.filesList(SupermuxFilesListRequest(
                 root: root,
                 path: segments.isEmpty ? nil : segments.joined(separator: "/")
             ))
+            // Only the most recent navigation commits: an out-of-order response
+            // for a directory the user already navigated away from must not
+            // replace the current listing/breadcrumb (which later mutations
+            // build their paths from).
+            guard generation == fetchGeneration else { return false }
             entries = response.entries ?? []
             pathSegments = segments
             hasLoaded = true
             lastErrorDescription = nil
             return true
         } catch {
+            guard generation == fetchGeneration else { return false }
             lastErrorDescription = error.localizedDescription
             return false
         }
