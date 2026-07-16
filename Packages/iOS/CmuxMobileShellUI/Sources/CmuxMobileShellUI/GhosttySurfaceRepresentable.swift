@@ -1,17 +1,18 @@
 #if canImport(UIKit)
 import CMUXMobileCore
+import CmuxAgentChat
 import CmuxMobileDiagnostics
 import CmuxMobileShell
+import CmuxMobileShellModel
+import CmuxMobileSupport
 import CmuxMobileTerminal
 import SwiftUI
 import UIKit
 
-/// SwiftUI wrapper that mounts a `GhosttySurfaceView` and routes the
-/// matching surface's PTY bytes (received via `terminal.bytes` events)
-/// into `ghostty_surface_process_output`. The result is that the iPhone
-/// runs the same libghostty terminal core + Metal renderer as the Mac,
-/// fed by the Mac's own read thread byte-for-byte. No Swift VT parser,
-/// no snapshot rehydration, no cell-by-cell SwiftUI tree.
+/// SwiftUI wrapper that mounts a `GhosttySurfaceView` and routes terminal output
+/// chunks into `ghostty_surface_process_output`. Primary-screen output can stay
+/// at the phone's natural height, while alternate-screen render-grid replay can
+/// pin the surface to the Mac's authoritative grid.
 ///
 /// The bottom dock (terminal grid / composer band / accessory toolbar / keyboard)
 /// is owned entirely by the `GhosttySurfaceView` in one coordinate system. The
@@ -23,6 +24,7 @@ import UIKit
 /// field-grow pushes only the terminal up. There is no toolbar handoff and no second
 /// layout system reaching into the surface's bottom math.
 struct GhosttySurfaceRepresentable: UIViewRepresentable {
+    let workspaceID: String
     let surfaceID: String
     let store: CMUXMobileShellStore
     let fontSize: Float32
@@ -36,9 +38,31 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
     /// band and pins first responder so the keyboard hands over in place; when it
     /// flips off, the field is unmounted and the band collapses to zero height.
     var isComposerActive: Bool = false
+    /// The store's terminal-theme generation. The shell writes the synced theme
+    /// into `TerminalThemeStore` directly (it does not link GhosttyKit), so this
+    /// representable — which does — drives the live recolor: when the generation
+    /// advances, it rebuilds the runtime config and refreshes the mounted
+    /// surface's background/colors in place via `GhosttyRuntime.applyLiveThemeIfRunning()`.
+    var themeGeneration: UInt64 = 0
+    var artifactFilesEnabled: Bool = false
+    var sessionArtifactCountEnabled: Bool = false
+    var visibleArtifactCount: Int = 0
+    var onArtifactFilesRequested: @MainActor (_ anchor: UnitPoint) -> Void = { _ in }
+    var onArtifactPathTapped: @MainActor (_ path: String) -> Void = { _ in }
+    var onVisibleArtifactCountChanged: @MainActor (_ count: Int) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(surfaceID: surfaceID, store: store)
+        Coordinator(
+            workspaceID: workspaceID,
+            surfaceID: surfaceID,
+            store: store,
+            artifactFilesEnabled: artifactFilesEnabled,
+            sessionArtifactCountEnabled: sessionArtifactCountEnabled,
+            visibleArtifactCount: visibleArtifactCount,
+            onArtifactFilesRequested: onArtifactFilesRequested,
+            onArtifactPathTapped: onArtifactPathTapped,
+            onVisibleArtifactCountChanged: onVisibleArtifactCountChanged
+        )
     }
 
     func makeUIView(context: Context) -> UIView {
@@ -50,7 +74,10 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
             fallback.numberOfLines = 0
             fallback.textColor = .white
             fallback.backgroundColor = UIColor(red: 0x27/255.0, green: 0x28/255.0, blue: 0x22/255.0, alpha: 1)
-            fallback.text = "Ghostty runtime failed to initialise:\n\(error.localizedDescription)"
+            fallback.text = L10n.string(
+                "mobile.terminal.rendererFailed",
+                defaultValue: "Terminal renderer failed to start."
+            )
             return fallback
         }
         let view = GhosttySurfaceView(
@@ -59,6 +86,7 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
             fontSize: fontSize
         )
         view.autoFocusOnWindowAttach = autoFocusOnWindowAttach
+        view.artifactFilesEnabled = artifactFilesEnabled
         #if DEBUG
         // Hand the surface the structured diagnostic log so the composer-dock
         // probes land in the blob the "Send to agent" feedback pane exports.
@@ -76,6 +104,16 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         // math reads this flag, so it must never depend on that ordering contract.
         view.setComposerActive(isComposerActive)
         context.coordinator.setComposerMounted(isComposerActive)
+        // The shared runtime is a process singleton; its config can carry a stale
+        // theme from before this connect. A freshly built surface reads its local
+        // background from the (current) theme store, but the renderer's default
+        // colors come from the runtime config, so rebuild it to the current theme
+        // when a theme has been applied. Records the generation so updateUIView
+        // does not re-apply the same one.
+        if themeGeneration > 0 {
+            GhosttyRuntime.applyLiveThemeIfRunning()
+        }
+        context.coordinator.lastAppliedThemeGeneration = themeGeneration
         return view
     }
 
@@ -88,8 +126,34 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         // state write, so it is safe in `updateUIView`.
         guard let surfaceView = uiView as? GhosttySurfaceView else { return }
         surfaceView.autoFocusOnWindowAttach = autoFocusOnWindowAttach
+        context.coordinator.onArtifactFilesRequested = onArtifactFilesRequested
+        context.coordinator.onArtifactPathTapped = onArtifactPathTapped
+        context.coordinator.onVisibleArtifactCountChanged = onVisibleArtifactCountChanged
+        let artifactCountModeChanged = context.coordinator.updateArtifactCountMode(
+            artifactFilesEnabled: artifactFilesEnabled,
+            sessionArtifactCountEnabled: sessionArtifactCountEnabled
+        )
+        surfaceView.artifactFilesEnabled = artifactFilesEnabled
+        if artifactCountModeChanged {
+            surfaceView.resetVisibleArtifactCountTracking()
+        }
+        let projectedArtifactCount = context.coordinator.artifactCountNeedsRefresh
+            ? 0
+            : visibleArtifactCount
+        context.coordinator.updateArtifactChip(
+            count: projectedArtifactCount,
+            enabled: artifactFilesEnabled
+        )
         surfaceView.setComposerActive(isComposerActive)
         context.coordinator.setComposerMounted(isComposerActive)
+        // Live theme change: the shell bumped the generation after writing the new
+        // theme into TerminalThemeStore. Rebuild the runtime config and recolor
+        // the mounted surface(s) in place so the background follows the new theme
+        // even when the `.id()` remount reused this same view.
+        if themeGeneration != context.coordinator.lastAppliedThemeGeneration {
+            context.coordinator.lastAppliedThemeGeneration = themeGeneration
+            GhosttyRuntime.applyLiveThemeIfRunning()
+        }
         // A width change (rotation) is not a text change, so the field-content trigger
         // misses it. Re-measure the open composer here so the band height tracks the new
         // width's wrapping. No-op when closed or when the height is unchanged.
@@ -98,21 +162,46 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
         (uiView as? GhosttySurfaceView)?.prepareForDismantle()
+        coordinator.tearDownArtifactChip()
         coordinator.tearDownComposer()
         coordinator.detach()
     }
 
     final class Coordinator: NSObject, GhosttySurfaceViewDelegate {
+        let workspaceID: String
         let surfaceID: String
         weak var store: CMUXMobileShellStore?
         weak var surfaceView: GhosttySurfaceView?
+        var artifactFilesEnabled: Bool
+        var sessionArtifactCountEnabled: Bool
+        var visibleArtifactCount: Int
+        var onArtifactFilesRequested: @MainActor (_ anchor: UnitPoint) -> Void
+        var onArtifactPathTapped: @MainActor (_ path: String) -> Void
+        var onVisibleArtifactCountChanged: @MainActor (_ count: Int) -> Void
         private var outputTask: Task<Void, Never>?
         private var liveFontTask: Task<Void, Never>?
+        var artifactCountTask: Task<Void, Never>?
+        var artifactCountTaskRequest: TerminalArtifactChipCountState.Request?
+        var artifactCountState = TerminalArtifactChipCountState()
+        var artifactCountNeedsRefresh: Bool
         /// Hosts the SwiftUI ``TerminalComposerView`` so it can be installed into the
         /// surface's composer band. Built lazily on first open and torn down on
         /// dismantle; mounted/unmounted by ``setComposerMounted(_:)``.
         private var composerController: UIHostingController<TerminalComposerView>?
+        var artifactChipController: UIHostingController<TerminalArtifactChipView>?
+        var lastArtifactChipRender: (count: Int, enabled: Bool)?
         private var composerMounted = false
+        /// The theme generation already pushed to the live runtime, so a repeated
+        /// `updateUIView` for the same generation does not rebuild the config again.
+        var lastAppliedThemeGeneration: UInt64 = 0
+        private var activeViewportPolicy: MobileTerminalOutputViewportPolicy = .natural
+        /// Serializes the natural-grid viewport reports and their echoes. One
+        /// detached Task per report (the previous shape) let Task scheduling
+        /// scramble the send order AND let the echo of an old keyboard-up
+        /// report resolve after the newer keyboard-down echo, permanently
+        /// re-pinning the phone to the stale smaller grid (empty space above
+        /// the terminal). Built on attach, torn down on detach.
+        var viewportReportScheduler: TerminalViewportReportScheduler?
         /// Bumped on every mount/unmount transition so a deferred close completion
         /// can tell whether it is still the latest transition. Guards the
         /// close-then-quickly-reopen race: an interrupted close animation still runs
@@ -120,25 +209,124 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         /// the meantime.
         private var composerMountGeneration = 0
 
-        init(surfaceID: String, store: CMUXMobileShellStore) {
+        init(
+            workspaceID: String,
+            surfaceID: String,
+            store: CMUXMobileShellStore,
+            artifactFilesEnabled: Bool,
+            sessionArtifactCountEnabled: Bool,
+            visibleArtifactCount: Int,
+            onArtifactFilesRequested: @escaping @MainActor (_ anchor: UnitPoint) -> Void,
+            onArtifactPathTapped: @escaping @MainActor (_ path: String) -> Void,
+            onVisibleArtifactCountChanged: @escaping @MainActor (_ count: Int) -> Void
+        ) {
+            self.workspaceID = workspaceID
             self.surfaceID = surfaceID
             self.store = store
+            self.artifactFilesEnabled = artifactFilesEnabled
+            self.sessionArtifactCountEnabled = sessionArtifactCountEnabled
+            self.visibleArtifactCount = visibleArtifactCount
+            self.artifactCountNeedsRefresh = artifactFilesEnabled
+            self.onArtifactFilesRequested = onArtifactFilesRequested
+            self.onArtifactPathTapped = onArtifactPathTapped
+            self.onVisibleArtifactCountChanged = onVisibleArtifactCountChanged
             super.init()
         }
 
         func attach(surfaceView: GhosttySurfaceView) {
             self.surfaceView = surfaceView
+            surfaceView.artifactFilesEnabled = artifactFilesEnabled
+            updateArtifactChip(
+                count: artifactCountNeedsRefresh ? 0 : visibleArtifactCount,
+                enabled: artifactFilesEnabled
+            )
             guard let store else { return }
             let surfaceID = surfaceID
+            viewportReportScheduler = TerminalViewportReportScheduler(
+                send: { [weak self] report in
+                    guard let self, let store = self.store else { return nil }
+                    return await store.updateTerminalViewport(
+                        surfaceID: self.surfaceID,
+                        columns: report.columns,
+                        rows: report.rows
+                    )
+                },
+                apply: { [weak self, weak surfaceView] report, effectiveGrid in
+                    guard let self, let surfaceView else { return }
+                    guard let effectiveGrid else {
+                        // No effective grid came back (RPC timed out or
+                        // returned nil). Left unhandled, the render stays
+                        // pinned to the prior effective grid and looks like a
+                        // frozen / letterboxed terminal even though the main
+                        // thread is fine. Re-arm the report so a transient
+                        // drop self-heals (bounded inside the surface).
+                        MobileDebugLog.anchormux(
+                            "zoom.viewport.noEffective grid=\(report.columns)x\(report.rows)"
+                        )
+                        surfaceView.retryViewportReport()
+                        return
+                    }
+                    surfaceView.markViewportReportConfirmed()
+                    if case .remoteGrid = self.activeViewportPolicy {
+                        surfaceView.applyConfirmedViewSize(
+                            cols: effectiveGrid.columns,
+                            rows: effectiveGrid.rows,
+                            reportID: report.id
+                        )
+                    }
+                }
+            )
             // Drive every output chunk into the libghostty surface. Ending this
             // task terminates the stream, which unregisters the surface and
             // clears its viewport pin on the Mac (see `terminalOutputStream`).
-            outputTask = Task { @MainActor [weak surfaceView, weak store] in
+            outputTask = Task { @MainActor [weak self, weak surfaceView, weak store] in
                 guard let store else { return }
                 for await chunk in store.terminalOutputStream(surfaceID: surfaceID) {
                     guard !Task.isCancelled else { return }
+                    guard let self else { return }
                     guard let surfaceView else { return }
-                    await surfaceView.processOutputAndWait(chunk.data)
+                    switch chunk.viewportPolicy {
+                    case .natural:
+                        self.activeViewportPolicy = .natural
+                        if chunk.data.isEmpty {
+                            surfaceView.useNaturalViewSize()
+                        } else {
+                            let applied = await surfaceView.useNaturalViewSizeAndWait()
+                            guard applied else {
+                                store.terminalOutputDidReset(
+                                    surfaceID: surfaceID,
+                                    streamToken: chunk.streamToken
+                                )
+                                continue
+                            }
+                        }
+                    case .remoteGrid(let columns, let rows):
+                        self.activeViewportPolicy = .remoteGrid(columns: columns, rows: rows)
+                        if chunk.data.isEmpty {
+                            surfaceView.applyViewSize(cols: columns, rows: rows)
+                        } else {
+                            let applied = await surfaceView.applyViewSizeAndWait(cols: columns, rows: rows)
+                            guard applied else {
+                                store.terminalOutputDidReset(
+                                    surfaceID: surfaceID,
+                                    streamToken: chunk.streamToken
+                                )
+                                continue
+                            }
+                        }
+                    case nil:
+                        break
+                    }
+                    if !chunk.data.isEmpty {
+                        let applied = await surfaceView.processOutputAndWait(chunk.data)
+                        guard applied else {
+                            store.terminalOutputDidReset(
+                                surfaceID: surfaceID,
+                                streamToken: chunk.streamToken
+                            )
+                            continue
+                        }
+                    }
                     store.terminalOutputDidProcess(
                         surfaceID: surfaceID,
                         streamToken: chunk.streamToken
@@ -163,7 +351,14 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
             outputTask = nil
             liveFontTask?.cancel()
             liveFontTask = nil
+            artifactCountTask?.cancel()
+            artifactCountTask = nil
+            artifactCountTaskRequest = nil
+            artifactCountState.reset()
+            viewportReportScheduler?.cancel()
+            viewportReportScheduler = nil
         }
+
 
         // MARK: - Composer band hosting
 
@@ -230,9 +425,29 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         /// The proposed width is the surface width and the proposed height is unbounded
         /// so a multi-line field measures its full desired height (capped to 14 lines by
         /// the field's own `lineLimit`).
+        ///
+        /// `requestHeightRemeasure` fires the instant the field's content changes — a
+        /// `.onChange(of:)` action, or the post-send clear — which is BEFORE SwiftUI has
+        /// committed that change into the hosted controller's view graph. Measuring a
+        /// `UIHostingController` synchronously at that point captures the PRE-change
+        /// (tall) ideal height, so after a send the band stays reserved tall and the
+        /// empty field renders as a tall box that never collapses. It is worst for an
+        /// image-only send: clearing the text fires no `.onChange(of: terminalInputText)`
+        /// (it was already empty), so the stale measurement is never corrected by a
+        /// follow-up. Flush the host's pending SwiftUI update into a concrete layout pass
+        /// BEFORE calling `sizeThatFits` — mirroring the `setNeedsLayout()`/
+        /// `layoutIfNeeded()` the GUI chat composer relies on to keep its hosted-field
+        /// measurement current — so the measurement reflects the new (e.g. collapsed
+        /// one-line) content. `sizeThatFits` re-proposes the surface width itself, so the
+        /// flush only needs to apply the pending content change, not fix the width.
         @MainActor
         private func reportComposerHeight(animated: Bool) {
             guard let controller = composerController, let surfaceView else { return }
+            // The hosting controller is mounted before any remeasure, so its view is
+            // loaded; annotate to force-unwrap the `UIView!` rather than infer `UIView?`.
+            let hostView: UIView = controller.view
+            hostView.setNeedsLayout()
+            hostView.layoutIfNeeded()
             let width = max(1, surfaceView.bounds.width)
             let target = CGSize(width: width, height: .greatestFiniteMagnitude)
             let fitting = controller.sizeThatFits(in: target)
@@ -257,124 +472,6 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
             composerMounted = false
         }
 
-        // MARK: - GhosttySurfaceViewDelegate
-
-        func ghosttySurfaceView(_ surfaceView: GhosttySurfaceView, didProduceInput data: Data) {
-            // Bytes the iPhone wants to send TO the PTY (typing, paste,
-            // mouse reports). Forward to the Mac sync server which
-            // writes them into the Mac's libghostty surface, which in
-            // turn writes them down the PTY.
-            Task { @MainActor [weak store] in
-                await store?.submitTerminalRawInput(data, surfaceID: self.surfaceID)
-            }
-        }
-
-        func ghosttySurfaceView(_ surfaceView: GhosttySurfaceView, didPasteImage data: Data, format: String) {
-            // An image the user pasted on the phone. Upload it to the Mac, which
-            // writes a temp file and injects its path into the terminal so the
-            // running TUI (e.g. Claude Code) attaches it.
-            Task { @MainActor [weak store] in
-                await store?.submitTerminalPasteImage(data, format: format)
-            }
-        }
-
-        func ghosttySurfaceView(_ surfaceView: GhosttySurfaceView, didResize size: TerminalGridSize) {
-            // Report our natural grid to the Mac and pin our render to the
-            // effective grid it returns (the smallest across every attached
-            // device, capped to the Mac pane). This is the tmux-style shared
-            // resize: the smallest viewport wins and each device letterboxes
-            // its render to match, drawing a border around the live area.
-            guard size.columns > 0, size.rows > 0 else { return }
-            Task { @MainActor [weak self, weak surfaceView] in
-                guard let self, let store = self.store else { return }
-                guard let effective = await store.updateTerminalViewport(
-                    surfaceID: self.surfaceID,
-                    columns: size.columns,
-                    rows: size.rows
-                ) else {
-                    // No effective grid came back (RPC timed out or returned
-                    // nil). Left unhandled, the render stays pinned to the prior
-                    // effective grid and looks like a frozen / letterboxed
-                    // terminal even though the main thread is fine. Re-arm the
-                    // report so a transient drop self-heals (bounded inside the
-                    // surface). Logged so the dogfood log still distinguishes
-                    // this from a true main-thread wedge.
-                    MobileDebugLog.anchormux("zoom.viewport.noEffective grid=\(size.columns)x\(size.rows)")
-                    surfaceView?.retryViewportReport()
-                    return
-                }
-                surfaceView?.applyViewSize(cols: effective.columns, rows: effective.rows)
-            }
-        }
-
-        func ghosttySurfaceView(_ surfaceView: GhosttySurfaceView, didScrollLines lines: Double, atCol col: Int, row: Int) {
-            // Forward to the Mac's real surface; libghostty scrolls scrollback
-            // (normal screen) or sends mouse-wheel to the program (alt screen).
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.store?.scrollTerminal(surfaceID: self.surfaceID, lines: lines, col: col, row: row)
-            }
-        }
-
-        func ghosttySurfaceView(_ surfaceView: GhosttySurfaceView, didTapAtCol col: Int, row: Int) {
-            // Forward to the Mac's real surface as a left click; libghostty
-            // reports it to a TUI with mouse mode, or no-ops on a normal screen.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.store?.clickTerminal(surfaceID: self.surfaceID, col: col, row: row)
-            }
-        }
-
-        func ghosttySurfaceViewDidRequestToolbarSettings(_ surfaceView: GhosttySurfaceView) {
-            // The "customize" button on the keyboard toolbar. The editor view
-            // lives in this UI package, so present it here (the terminal package
-            // that owns the bar can't reach up to it) from the surface's owning
-            // view controller.
-            guard let presenter = presentingController(for: surfaceView) else { return }
-            let editor = UIHostingController(rootView: TerminalShortcutsSettingsView())
-            presenter.present(editor, animated: true)
-        }
-
-        func ghosttySurfaceViewDidRequestComposerToggle(_ surfaceView: GhosttySurfaceView) {
-            // The composer button on the docked accessory bar was tapped AND the
-            // surface resolved (from the dock state) that this is a genuine open/close
-            // toggle. Flip the store flag; the terminal screen observes it and
-            // presents/dismisses the iMessage-style composer. The reveal-and-focus
-            // case routes through `...DidRequestComposerFocus` instead, so this never
-            // closes a still-presented-but-suppressed composer.
-            Task { @MainActor [weak store, surfaceID] in
-                store?.toggleComposer(forTerminalID: surfaceID)
-            }
-        }
-
-        func ghosttySurfaceViewDidRequestComposerFocus(_ surfaceView: GhosttySurfaceView) {
-            // The surface needs the composer presented (if not already) and its field
-            // re-focused, without dismissing it — the reveal-after-hide and
-            // present-while-suppressed paths. Ensure-present + bump the focus token the
-            // composer view observes, so the draft and its focus return together.
-            Task { @MainActor [weak store, surfaceID] in
-                store?.presentAndFocusComposer(forTerminalID: surfaceID)
-            }
-        }
-
-        /// Walk up from `view` to the nearest owning `UIViewController`, then to
-        /// its top-most presented controller, so a sheet presents above whatever
-        /// is already on screen.
-        @MainActor
-        private func presentingController(for view: UIView) -> UIViewController? {
-            var responder: UIResponder? = view
-            while let current = responder {
-                if let controller = current as? UIViewController {
-                    var top = controller
-                    while let presented = top.presentedViewController {
-                        top = presented
-                    }
-                    return top
-                }
-                responder = current.next
-            }
-            return view.window?.rootViewController
-        }
     }
 }
 #endif

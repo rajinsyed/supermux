@@ -3,7 +3,6 @@ import CmuxMobileShellModel
 import CmuxMobileSupport
 import SwiftUI
 #if os(iOS)
-@preconcurrency import UIKit
 #elseif os(macOS)
 import AppKit
 #endif
@@ -17,7 +16,11 @@ struct WorkspaceListView: View {
     let selectedWorkspaceID: MobileWorkspacePreview.ID?
     let host: String
     let connectionStatus: MobileMacConnectionStatus
+    var macUpdateHint: MobileMacUpdateHint? = nil
+    var macUpdateHintMacName: String? = nil
+    var dismissMacUpdateHint: (() -> Void)? = nil
     let navigationStyle: WorkspaceNavigationStyle
+    var showsNavigationToolbar = true
     /// Whether workspace-row titles wrap (multi-line) instead of truncating to a
     /// single line. Passed in as a value snapshot so no `@Observable` store
     /// crosses the `List` boundary.
@@ -30,6 +33,18 @@ struct WorkspaceListView: View {
     var profilePictureSize: Double = MobileDisplaySettings.defaultProfilePictureSize
     let selectWorkspace: (MobileWorkspacePreview.ID) -> Void
     let createWorkspace: () -> Void
+    var createWorkspaceInGroup: ((MobileWorkspaceGroupPreview.ID) -> Void)? = nil
+    var createWorkspaceGroup: (() -> Void)? = nil
+    var canCreateWorkspace = true
+    /// Which Mac's workspaces the list is focused on. Owned by the shell so
+    /// every create-workspace entrypoint shares the same selected-Mac gate.
+    @Binding var macSelection: WorkspaceMacSelection
+    /// Switch the foreground Mac before applying a machine-scoped title-picker
+    /// filter. `nil` in previews, where the picker remains a pure local filter.
+    var switchMac: (@MainActor (String) async -> Bool)? = nil
+    /// Cancels a title-picker switch that is still in flight. `nil` in previews,
+    /// where no real foreground connection exists.
+    var cancelMacSwitch: (@MainActor (_ restorePreviousOnCancel: Bool) async -> Void)? = nil
     /// Pull-to-refresh action. Awaits the real workspace-list re-sync from the
     /// paired Mac so the system refresh spinner reflects actual completion (and
     /// ends gracefully, leaving the list intact, when the Mac is offline). Passed
@@ -51,20 +66,6 @@ struct WorkspaceListView: View {
     /// `nil` in previews.
     var store: CMUXMobileShellStore?
 
-    /// Machines present in the (aggregated) workspace list, for the filter's
-    /// machine multi-select. Single-machine yields no machine section. Names
-    /// come from the device tree (registry or paired Macs), falling back to id.
-    private var filterMachines: [WorkspaceFilterMachine] {
-        let ids = MobileWorkspaceListFilter.machineIDs(in: workspaces)
-        guard ids.count > 1 else { return [] }
-        var names: [String: String] = [:]
-        for device in store?.deviceTreeDevices ?? [] {
-            if let name = device.displayName, !name.isEmpty {
-                names[device.deviceId] = name
-            }
-        }
-        return ids.map { WorkspaceFilterMachine(id: $0, name: names[$0] ?? $0) }
-    }
     /// Optional: rename a workspace on the Mac. When present, each row offers a
     /// Rename context-menu action.
     var renameWorkspace: ((MobileWorkspacePreview.ID, String) -> Void)?
@@ -77,17 +78,26 @@ struct WorkspaceListView: View {
     /// Optional: close a workspace on the Mac. When present, each row offers a
     /// destructive Delete context-menu and swipe action.
     var closeWorkspace: ((MobileWorkspacePreview.ID) -> Void)?
+    /// Optional: move a workspace to a new group/order on the Mac; enables native row drag/drop while unfiltered.
+    var moveWorkspace: ((
+        _ id: MobileWorkspacePreview.ID,
+        _ groupID: MobileWorkspaceGroupPreview.ID?, _ beforeWorkspaceID: MobileWorkspacePreview.ID?,
+        _ movesGroup: Bool
+    ) async -> Bool)? = nil
+    /// Optional: rename a workspace group on the Mac.
+    var renameWorkspaceGroup: ((MobileWorkspaceGroupPreview.ID, String) -> Void)? = nil
+    /// Optional: pin or unpin a workspace group on the Mac.
+    var setGroupPinned: ((MobileWorkspaceGroupPreview.ID, Bool) -> Void)? = nil
+    /// Optional: dissolve a workspace group on the Mac, keeping its workspaces.
+    var ungroupWorkspaceGroup: ((MobileWorkspaceGroupPreview.ID) -> Void)? = nil
+    /// Optional: delete a workspace group on the Mac, including its workspaces.
+    var deleteWorkspaceGroup: ((MobileWorkspaceGroupPreview.ID) -> Void)? = nil
     /// Optional: collapse/expand a group on the Mac. When present, group headers
     /// toggle their section; when `nil` the chevron renders as a passive
     /// disclosure indicator. Grouped rendering itself is gated on `groups`, not
     /// on this closure.
     var toggleGroupCollapsed: ((MobileWorkspaceGroupPreview.ID, Bool) -> Void)?
-    /// Whether the root scene is still trying the first stored-Mac reconnect.
-    /// The list stays visible and owns this loading state so startup never gets
-    /// trapped behind a full-screen spinner.
     var isInitialConnectionLoading = false
-    /// Whether the first stored-Mac reconnect exceeded the root-scene deadline.
-    /// The status row then exposes recovery actions instead of staying silent.
     var initialConnectionTimedOut = false
     var retryInitialConnection: (() -> Void)?
     @State private var searchText = ""
@@ -96,28 +106,67 @@ struct WorkspaceListView: View {
     @State private var showingDeviceTree = false
     /// The active row filter (All / Unread), shared-model state behind the
     /// toolbar ``WorkspaceListFilterMenu``. Session-transient like a search.
-    @State private var filter: MobileWorkspaceListFilter = .all
+    @State var filter: MobileWorkspaceListFilter = .all
+    @State private var macTitlePickerSwitchTask: Task<Void, Never>?
+    @State private var macTitlePickerSwitchIsCancellation = false
+    @State private var macTitlePickerSwitchGeneration: UInt64 = 0
+    @State private var macTitlePickerPendingSelection: WorkspaceMacSelection?
+    @State var deferredWorkspaceSelectionGeneration: UInt64 = 0
+    /// Stable machine-menu content. Kept as value state so live workspace or
+    /// device-tree updates that do not change the actual machine set/name
+    /// snapshot do not rebuild an open native Menu. `nil` only before the first
+    /// appearance callback, when the body can still display the live snapshot
+    /// without resetting an already-open menu.
+    @State var machineSnapshots: WorkspaceMachineSnapshots?
     /// The workspace whose destructive close action is awaiting confirmation.
     /// Stored at list scope so reusable rows do not own transient presentation
     /// state while `List` is recycling swipe-action rows.
-    @State private var workspacePendingCloseID: MobileWorkspacePreview.ID?
+    @State var workspacePendingCloseID: MobileWorkspacePreview.ID?
+    @State var optimisticFlatState = MobileWorkspaceOptimisticOrderReconciler()
+    @State var optimisticGroupedState = MobileWorkspaceOptimisticOrderReconciler()
+    /// In-flight move RPC count plus the tail of the send chain. Moves stay
+    /// enabled while pending (disabling mid-gesture cancels the reorder
+    /// interaction), so rapid drags can pipeline; sends are chained so the Mac
+    /// applies them in UI order and the authoritative snapshot converges on
+    /// the predicted optimistic order instead of racing it.
+    @State var pendingWorkspaceMoveCount = 0
+    @State var pendingWorkspaceMoveTask: Task<Bool, Never>?
+    /// Bumped when a supersede or failure invalidates the pending chain, so
+    /// queued moves computed against overruled predictions abort unsent.
+    @State var workspaceMoveEpoch: UInt64 = 0
 
-    private var trimmedQuery: String {
+    var trimmedQuery: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Whether the list renders grouped sections. Groups are honored whenever the
-    /// Mac actually emitted group sections and the user is not searching. The
-    /// gate is the payload itself, not `toggleGroupCollapsed`: a Mac that emits
-    /// groups also handles collapse/expand, but the capability flag arrives via a
-    /// separate `mobile.host.status` call, and a slow or failed status fetch must
-    /// not flatten sections the list already has (it would only lose the chevron
-    /// action). A search flattens to a single matched, pinned-first list so
-    /// members can be found across groups; floating pinned members out of their
-    /// group is acceptable while filtering. An active row filter (Unread)
-    /// flattens the same way, for the same reason.
-    private var rendersGroupedSections: Bool {
-        !groups.isEmpty && trimmedQuery.isEmpty && !filter.isActive
+    private var deferredWorkspaceSelectionIdentity: [String] {
+        var identity = [
+            "host:\(host)",
+            "mac:\(store?.connectedMacDeviceID ?? "")",
+        ]
+        identity.append(contentsOf: workspaces.map {
+            "workspace:\($0.id.rawValue):mac:\($0.macDeviceID ?? "")"
+        })
+        return identity
+    }
+
+    var currentMacTitlePickerSelection: WorkspaceMacSelection {
+        macTitlePickerPendingSelection ?? visibleMacSelection
+    }
+
+    var macTitlePickerShowsProgress: Bool {
+        macTitlePickerPendingSelection != nil
+    }
+
+    /// Groups render from the payload while unfiltered and scoped to the
+    /// foreground Mac. Search, filters, and multi-Mac scopes flatten the list;
+    /// the independently fetched collapse capability does not gate rendering.
+    var rendersGroupedSections: Bool {
+        !groups.isEmpty
+            && trimmedQuery.isEmpty
+            && filter.readState == .all
+            && filter.machines.isEmpty
+            && canRenderGroupsForSelection
     }
 
     private func matchesQuery(_ workspace: MobileWorkspacePreview, query: String) -> Bool {
@@ -126,14 +175,12 @@ struct WorkspaceListView: View {
             || workspace.terminals.contains { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
-    /// Workspaces after the row filter (Unread) and search filtering, pinned
-    /// ones first (stable within each group so the Mac's order is otherwise
-    /// preserved). Used for the flat (ungrouped, filtering, or searching)
-    /// presentation.
-    private var filteredWorkspaces: [MobileWorkspacePreview] {
+    /// Filtered workspaces for flat presentation, pinned first and otherwise stable.
+    var filteredWorkspaces: [MobileWorkspacePreview] {
         let query = trimmedQuery
+        let currentFilter = activeFilter
         let matches = workspaces.filter { workspace in
-            filter.matches(workspace)
+            currentFilter.matches(workspace)
                 && (query.isEmpty || matchesQuery(workspace, query: query))
         }
         return matches.enumerated()
@@ -146,31 +193,61 @@ struct WorkspaceListView: View {
             .map(\.element)
     }
 
-    /// Ordered drawable items for the grouped presentation. Preserves the Mac's
-    /// member order and contiguity (no pinned-first flattening, which would
-    /// scatter group members).
-    private var groupedListItems: [MobileWorkspaceListItem] {
-        MobileWorkspaceListItem.items(workspaces: workspaces, groups: groups)
+    /// Grouped drawable items preserving the Mac's member order and contiguity.
+    var groupedListItems: [MobileWorkspaceListItem] {
+        MobileWorkspaceListItem.items(workspaces: groupedWorkspaces, groups: groups)
+    }
+    var groupsByID: [MobileWorkspaceGroupPreview.ID: MobileWorkspaceGroupPreview] {
+        Dictionary(groups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    var displayedFlatWorkspaces: [MobileWorkspacePreview] {
+        optimisticFlatState.optimisticOrder?
+            .materializedWorkspaces(from: filteredWorkspaces) ?? filteredWorkspaces
+    }
+
+    var displayedGroupedWorkspaces: [MobileWorkspacePreview] {
+        optimisticGroupedState.optimisticOrder?
+            .materializedWorkspaces(from: groupedWorkspaces) ?? groupedWorkspaces
+    }
+
+    var displayedGroupedListItems: [MobileWorkspaceListItem] {
+        MobileWorkspaceListItem.items(workspaces: displayedGroupedWorkspaces, groups: groups)
+    }
+
+    var groupedWorkspaces: [MobileWorkspacePreview] {
+        let currentFilter = activeFilter
+        return workspaces.filter { currentFilter.matches($0) }
     }
 
     var body: some View {
-        List {
-            if let store, showsConnectionRecoveryRow {
-                Section {
-                    MobileConnectionRecoveryBanner(
-                        connectionRequiresReauth: store.connectionRequiresReauth,
-                        connectionRecoveryFailed: store.connectionRecoveryFailed,
-                        isRecoveringConnection: store.isRecoveringConnection,
-                        connectionError: store.connectionError,
-                        retry: { store.retryMobileConnection() },
-                        signOut: signOut,
-                        rendersInline: true
-                    )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-                    .listRowSeparator(.hidden)
+        let currentMachineSnapshots = liveMachineSnapshots
+        let currentVisibleMacSelection = visibleMacSelection
+        let currentFilterMenuPresentMachineIDs = filterMenuPresentMachineIDs
+        let displayedMachineSnapshots = machineSnapshots ?? currentMachineSnapshots
+        let displayedFilterMachines = filterMenuMachines(
+            machineSnapshots: displayedMachineSnapshots,
+            visibleSelection: currentVisibleMacSelection
+        )
+        let list = List {
+            switch connectionChrome {
+            case .recoveryBanner:
+                if let store {
+                    Section {
+                        MobileConnectionRecoveryBanner(
+                            connectionRequiresReauth: store.connectionRequiresReauth,
+                            connectionRecoveryFailed: store.connectionRecoveryFailed,
+                            isRecoveringConnection: store.isRecoveringConnection,
+                            connectionError: store.connectionError,
+                            retry: { store.retryMobileConnection() },
+                            signOut: signOut,
+                            rendersInline: true
+                        )
+                        .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                        .listRowSeparator(.hidden)
+                    }
                 }
-            }
-            if connectionStatus != .connected {
+            case .macStatusRow:
                 Section {
                     MobileMacConnectionStatusRow(
                         host: host,
@@ -182,7 +259,7 @@ struct WorkspaceListView: View {
                         descriptionOverride: initialConnectionTimedOut
                             ? L10n.string(
                                 "mobile.loading.timeout.message",
-                                defaultValue: "cmux could not finish restoring this session. Check that the Mac app is running, then retry or add this Mac again."
+                                defaultValue: "cmux could not finish restoring this session. Check that the selected cmux build is running, then retry or add this computer again."
                             )
                             : nil,
                         retry: initialConnectionTimedOut ? retryInitialConnection : nil,
@@ -192,16 +269,21 @@ struct WorkspaceListView: View {
                         .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                         .listRowSeparator(.hidden)
                 }
+            case .none:
+                EmptyView()
             }
             Section {
                 if rendersGroupedSections {
                     groupedRows
-                } else if filter.isActive && trimmedQuery.isEmpty && filteredWorkspaces.isEmpty && !workspaces.isEmpty {
+                } else if activeFilter.isActive && trimmedQuery.isEmpty && filteredWorkspaces.isEmpty && !workspaces.isEmpty {
                     // The filter alone (not the Mac, and not a search query)
                     // emptied the list; offer the way back. While searching, the
                     // standard empty search result is shown instead, since "Show
                     // All" would not resolve a query that matches nothing.
-                    WorkspaceListFilterEmptyRow(filter: filter) { filter = .all }
+                    WorkspaceListFilterEmptyRow(filter: activeFilter) {
+                        filter = .all
+                        macSelection = .all
+                    }
                         .listRowSeparator(.hidden)
                 } else {
                     flatRows
@@ -209,44 +291,54 @@ struct WorkspaceListView: View {
             }
         }
         .listStyle(.plain)
+        // Let the invisible footer use its 16pt boundary height. Real rows are taller.
+        .environment(\.defaultMinListRowHeight, 16)
         .workspaceListRefreshable(refresh)
-        .onChange(of: MobileWorkspaceListFilter.machineIDs(in: workspaces)) { _, present in
+        .onChange(of: currentFilterMenuPresentMachineIDs) { _, present in
             // Drop machine filters whose Mac left the aggregated list (a secondary
             // Mac disconnected, or the list fell below two machines so the filter
             // menu's machine section hid). Otherwise a stale machine id rejects
             // every row and strands the user on a blank list with no visible
             // control to clear the filter.
-            filter.pruneMachines(notIn: present)
+            filter.pruneMachinesForFilterMenu(presentMachineIDs: present)
         }
         .navigationTitle(L10n.string("mobile.workspaces.title", defaultValue: "Workspaces"))
         .mobileInlineNavigationTitle()
         .searchable(text: $searchText)
-        .toolbar {
-            #if os(iOS)
-            ToolbarItem(placement: .topBarLeading) {
-                settingsMenu
-            }
-            if store != nil {
-                ToolbarItem(placement: .topBarLeading) {
-                    devicesButton
-                }
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                WorkspaceListFilterMenu(filter: $filter, machines: filterMachines)
-                if canCreateWorkspace {
-                    newWorkspaceButton
-                }
-            }
-            #else
-            ToolbarItemGroup {
-                WorkspaceListFilterMenu(filter: $filter, machines: filterMachines)
-                if canCreateWorkspace {
-                    newWorkspaceButton
-                }
-            }
-            #endif
-        }
+
+        workspaceListWithToolbar(
+            list,
+            machineSnapshots: displayedMachineSnapshots,
+            filterMachines: displayedFilterMachines
+        )
         .accessibilityIdentifier("MobileWorkspaceList")
+        .onDisappear {
+            invalidateDeferredWorkspaceSelection()
+            cancelMacTitlePickerSwitch()
+        }
+        .onAppear {
+            syncOptimisticWorkspaceOrder()
+            updateMachineSnapshots(currentMachineSnapshots)
+            filter.pruneMachinesForFilterMenu(visibleMacSelection: currentVisibleMacSelection)
+        }
+        .onChange(of: filteredWorkspaceOrderKey) { _, _ in
+            syncOptimisticWorkspaceOrder()
+        }
+        .onChange(of: groupedWorkspaceOrderKey) { _, _ in
+            syncOptimisticWorkspaceOrder()
+        }
+        .onChange(of: rendersGroupedSections) { _, _ in
+            syncOptimisticWorkspaceOrder()
+        }
+        .onChange(of: currentMachineSnapshots) { _, snapshots in
+            updateMachineSnapshots(snapshots)
+        }
+        .onChange(of: deferredWorkspaceSelectionIdentity) { _, _ in
+            invalidateDeferredWorkspaceSelection()
+        }
+        .onChange(of: currentVisibleMacSelection) { _, selection in
+            filter.pruneMachinesForFilterMenu(visibleMacSelection: selection)
+        }
         #if os(iOS)
         .sheet(isPresented: $showingShortcutsSettings) {
             TerminalShortcutsSettingsView()
@@ -265,25 +357,150 @@ struct WorkspaceListView: View {
         // leaving a parent sheet covering it.
         .sheet(isPresented: $showingDeviceTree) {
             if let store {
-                DeviceTreeView(store: store, selectWorkspace: selectWorkspace, showAddDevice: showAddDevice)
+                DeviceTreeView(
+                    store: store,
+                    selectWorkspace: { id in _ = selectWorkspaceFromList(id) },
+                    showAddDevice: showAddDevice
+                )
             }
         }
         #endif
     }
 
-    private var showsConnectionRecoveryRow: Bool {
-        guard let store else { return false }
-        return store.connectionRequiresReauth
-            || store.connectionRecoveryFailed
-            || store.isRecoveringConnection
+    #if os(iOS)
+    @discardableResult
+    func handleMacTitlePickerSelection(_ selection: WorkspaceMacSelection) -> Task<Void, Never>? {
+        let startsMachineSwitch: Bool
+        if case .machine(let id) = selection {
+            startsMachineSwitch = shouldSwitchForMacTitlePickerMachine(id)
+        } else {
+            startsMachineSwitch = false
+        }
+        let cancelTask = cancelMacTitlePickerSwitch(
+            restorePreviousOnCancel: true,
+            cancelStoreSwitch: !startsMachineSwitch
+        )
+        guard startsMachineSwitch else {
+            macTitlePickerPendingSelection = nil
+            macSelection = selection
+            return nil
+        }
+        macTitlePickerSwitchGeneration &+= 1
+        let generation = macTitlePickerSwitchGeneration
+        macTitlePickerPendingSelection = selection
+        let task = Task { @MainActor in
+            defer {
+                if macTitlePickerSwitchGeneration == generation {
+                    macTitlePickerSwitchTask = nil
+                    macTitlePickerSwitchIsCancellation = false
+                }
+            }
+            await cancelTask?.value
+            await applyMacTitlePickerSelection(selection, switchGeneration: generation)
+        }
+        macTitlePickerSwitchTask = task
+        macTitlePickerSwitchIsCancellation = false
+        return task
     }
 
-    private var canCreateWorkspace: Bool {
-        connectionStatus == .connected
+    private func shouldSwitchForMacTitlePickerMachine(_ id: String) -> Bool {
+        guard switchMac != nil, let store else { return false }
+        let scope = macSelectionScope
+        let targetIDs = scope.aliasIndex.filterMachineIDs(for: id)
+        if !scope.foregroundMachineIDs.isDisjoint(with: targetIDs) {
+            return false
+        }
+        return store.displayPairedMacs.contains { mac in
+            let pairedMacIDs = scope.aliasIndex.filterMachineIDs(for: mac.macDeviceID)
+            return !pairedMacIDs.isDisjoint(with: targetIDs)
+        }
+    }
+
+    @discardableResult
+    func cancelMacTitlePickerSwitch(
+        restorePreviousOnCancel: Bool = true,
+        cancelStoreSwitch: Bool = true
+    ) -> Task<Void, Never>? {
+        let pendingSwitchTask = macTitlePickerSwitchTask
+        let pendingSwitchIsCancellation = pendingSwitchTask != nil && macTitlePickerSwitchIsCancellation
+        if pendingSwitchIsCancellation {
+            return pendingSwitchTask
+        }
+        if pendingSwitchTask != nil {
+            pendingSwitchTask?.cancel()
+        }
+        macTitlePickerSwitchTask = nil
+        macTitlePickerSwitchIsCancellation = false
+        macTitlePickerPendingSelection = nil
+        macTitlePickerSwitchGeneration &+= 1
+        let generation = macTitlePickerSwitchGeneration
+        guard pendingSwitchTask != nil else { return nil }
+        guard cancelStoreSwitch else { return nil }
+        let cancelMacSwitch = cancelMacSwitch
+        let task = Task { @MainActor in
+            defer {
+                if macTitlePickerSwitchGeneration == generation {
+                    macTitlePickerSwitchTask = nil
+                    macTitlePickerSwitchIsCancellation = false
+                }
+            }
+            await cancelMacSwitch?(restorePreviousOnCancel)
+        }
+        macTitlePickerSwitchTask = task
+        macTitlePickerSwitchIsCancellation = true
+        return task
+    }
+
+    @MainActor
+    func applyMacTitlePickerSelection(
+        _ selection: WorkspaceMacSelection,
+        switchGeneration: UInt64? = nil
+    ) async {
+        func isCurrentSwitchRequest() -> Bool {
+            guard !Task.isCancelled else { return false }
+            guard let switchGeneration else { return true }
+            return macTitlePickerSwitchGeneration == switchGeneration
+        }
+
+        switch selection {
+        case .all, .automatic:
+            guard isCurrentSwitchRequest() else { return }
+            macTitlePickerPendingSelection = nil
+            macSelection = selection
+        case .machine(let id):
+            guard isCurrentSwitchRequest() else { return }
+            guard shouldSwitchForMacTitlePickerMachine(id), let switchMac else {
+                macTitlePickerPendingSelection = nil
+                macSelection = selection
+                return
+            }
+            let switched = await switchMac(id)
+            guard isCurrentSwitchRequest() else { return }
+            macTitlePickerPendingSelection = nil
+            guard switched else { return }
+            macSelection = .machine(id)
+        }
+    }
+    #endif
+
+    var connectionChrome: WorkspaceListConnectionChrome {
+        WorkspaceListConnectionChrome(
+            hasStore: store != nil,
+            connectionRequiresReauth: store?.connectionRequiresReauth ?? false,
+            connectionRecoveryFailed: store?.connectionRecoveryFailed ?? false,
+            isRecoveringConnection: store?.isRecoveringConnection ?? false,
+            connectionStatus: connectionStatus
+        )
+    }
+
+    private func updateMachineSnapshots(_ snapshots: WorkspaceMachineSnapshots) {
+        if machineSnapshots != snapshots {
+            machineSnapshots = snapshots
+        }
     }
 
     #if os(iOS)
-    private var devicesButton: some View {
+    var devicesButton: some View {
         Button {
             showingDeviceTree = true
         } label: {
@@ -294,42 +511,60 @@ struct WorkspaceListView: View {
     }
     #endif
 
-    /// Flat presentation: a pinned-first list with no group headers. Used when the
-    /// Mac has no groups (or lacks the capability) or while searching.
+    /// Flat presentation: pinned-first rows when groups are unavailable or while searching.
     @ViewBuilder
     private var flatRows: some View {
-        ForEach(filteredWorkspaces) { workspace in
-            workspaceRow(workspace, indented: false)
+        let enablesReorder = enablesWorkspaceReorder
+        ForEach(displayedFlatWorkspaces) { workspace in
+            workspaceRow(workspace, indented: false, enablesReorder: enablesReorder)
         }
+        .onMove(perform: moveFlatRows)
     }
 
-    /// Grouped presentation: collapsible group headers with their members nested
-    /// underneath, mirroring the Mac sidebar. Order and contiguity follow the Mac.
+    /// Grouped presentation: collapsible Mac-ordered group headers and nested members.
     @ViewBuilder
     private var groupedRows: some View {
-        ForEach(groupedListItems) { item in
+        let enablesReorder = enablesWorkspaceReorder
+        ForEach(displayedGroupedListItems, id: \.id) { item in
             switch item {
             case .groupHeader(let group, let hasUnread):
+                let anchorCapabilities = workspaces.first(where: { $0.id == group.anchorWorkspaceID })?.actionCapabilities ?? .none
                 WorkspaceGroupHeaderRow(
                     group: group,
                     hasUnread: hasUnread,
                     navigationStyle: navigationStyle,
                     isAnchorSelected: navigationStyle == .sidebar
                         && selectedWorkspaceID == group.anchorWorkspaceID,
-                    selectWorkspace: selectWorkspace,
+                    selectWorkspace: { id in _ = selectWorkspaceFromList(id) },
+                    createWorkspaceInGroup: canCreateWorkspaceInGroups ? createWorkspaceInGroup : nil,
+                    renameGroup: anchorCapabilities.supportsGroupActions ? renameWorkspaceGroup : nil,
+                    setGroupPinned: anchorCapabilities.supportsGroupActions ? setGroupPinned : nil,
+                    ungroupWorkspaceGroup: anchorCapabilities.supportsGroupActions ? ungroupWorkspaceGroup : nil,
+                    deleteWorkspaceGroup: anchorCapabilities.supportsGroupActions ? deleteWorkspaceGroup : nil,
                     toggleCollapsed: toggleGroupCollapsed,
                     unreadIndicatorLeftShift: unreadIndicatorLeftShift
                 )
+                // The list-wide minimum row height is lowered for the
+                // invisible end-of-group spacer; interactive rows keep the
+                // 44pt tap target (32 content + 6/6 insets) explicitly.
+                .frame(minHeight: 32)
+                .moveDisabled(!(enablesReorder && anchorCapabilities.supportsMoveActions))
                 .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
                 .listRowSeparator(.hidden)
+            case .groupFooter(let groupID):
+                WorkspaceGroupFooterRow(groupName: groupsByID[groupID]?.name)
+                    .moveDisabled(true)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 32, bottom: 0, trailing: 12))
+                    .listRowSeparator(.hidden)
             case .workspace(let workspace, let indented):
-                workspaceRow(workspace, indented: indented)
+                workspaceRow(workspace, indented: indented, enablesReorder: enablesReorder)
             }
         }
+        .onMove(perform: moveGroupedRows)
     }
 
     @ViewBuilder
-    private func workspaceRow(_ workspace: MobileWorkspacePreview, indented: Bool) -> some View {
+    private func workspaceRow(_ workspace: MobileWorkspacePreview, indented: Bool, enablesReorder: Bool) -> some View {
         let capabilities = workspace.actionCapabilities
         WorkspaceNavigationRow(
             workspace: workspace,
@@ -341,7 +576,7 @@ struct WorkspaceListView: View {
             unreadIndicatorLeftShift: unreadIndicatorLeftShift,
             profilePictureLeftShift: profilePictureLeftShift,
             profilePictureSize: profilePictureSize,
-            selectWorkspace: selectWorkspace,
+            selectWorkspace: { id in _ = selectWorkspaceFromList(id) },
             renameWorkspace: capabilities.supportsWorkspaceActions ? renameWorkspace : nil,
             setPinned: capabilities.supportsWorkspaceActions ? setPinned : nil,
             setUnread: capabilities.supportsReadStateActions ? setUnread : nil,
@@ -351,30 +586,27 @@ struct WorkspaceListView: View {
                 confirmCloseWorkspace()
             } : nil
         )
+        .moveDisabled(!(enablesReorder && capabilities.supportsMoveActions))
+        .accessibilityHint(
+            enablesReorder && capabilities.supportsMoveActions
+                ? L10n.string(
+                    "mobile.workspace.drag.a11y",
+                    defaultValue: "Drag to reorder this workspace or move it between groups."
+                )
+                : ""
+        )
         .listRowInsets(EdgeInsets(top: 4, leading: indented ? 32 : 12, bottom: 4, trailing: 12))
         .listRowSeparator(.hidden)
     }
 
-    private var newWorkspaceButton: some View {
-        Button {
-            guard canCreateWorkspace else { return }
-            createWorkspace()
-        } label: {
-            Image(systemName: "plus")
-        }
-        .disabled(!canCreateWorkspace)
-        .accessibilityLabel(L10n.string("mobile.workspace.new", defaultValue: "New Workspace"))
-        .accessibilityIdentifier("MobileNewWorkspaceButton")
-    }
-
-    private var settingsMenu: some View {
+    var settingsMenu: some View {
         #if os(iOS)
         // Open the full Settings page (account, terminal shortcuts,
         // notifications, paired Mac) rather than a transient menu.
         Button {
             showingSettings = true
         } label: {
-            Image(systemName: "ellipsis.circle")
+            MobileWorkspaceSettingsIcon()
         }
         .accessibilityLabel(L10n.string("mobile.workspaces.settings", defaultValue: "Settings"))
         .accessibilityIdentifier("MobileWorkspaceSettingsMenu")
@@ -419,33 +651,4 @@ struct WorkspaceListView: View {
         #endif
     }
 
-    private var requestWorkspaceClose: ((MobileWorkspacePreview.ID) -> Void)? {
-        guard closeWorkspace != nil else {
-            return nil
-        }
-        return { workspaceID in
-            workspacePendingCloseID = workspaceID
-        }
-    }
-
-    private func closeConfirmationBinding(for workspaceID: MobileWorkspacePreview.ID) -> Binding<Bool> {
-        Binding(
-            get: { workspacePendingCloseID == workspaceID },
-            set: { isPresented in
-                if isPresented {
-                    workspacePendingCloseID = workspaceID
-                } else if workspacePendingCloseID == workspaceID {
-                    workspacePendingCloseID = nil
-                }
-            }
-        )
-    }
-
-    private func confirmCloseWorkspace() {
-        guard let workspaceID = workspacePendingCloseID else {
-            return
-        }
-        workspacePendingCloseID = nil
-        closeWorkspace?(workspaceID)
-    }
 }

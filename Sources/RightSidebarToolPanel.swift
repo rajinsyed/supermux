@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class RightSidebarToolPanel: Panel, ObservableObject {
     let id: UUID
+    let stableSurfaceIdentity = PanelStableSurfaceIdentity()
     let panelType: PanelType = .rightSidebarTool
     let mode: RightSidebarMode
 
@@ -175,6 +176,11 @@ final class RightSidebarToolPanel: Panel, ObservableObject {
     private func observeWorkspaceRootChanges(_ workspace: Workspace) {
         workspaceObservationCancellable = Publishers.MergeMany(
             workspace.$currentDirectory.map { _ in () }.eraseToAnyPublisher(),
+            workspace.$panelDirectories.map { _ in () }.eraseToAnyPublisher(),
+            workspace.currentDirectoryChangeRevisionPublisher()
+                .map { _ in () }
+                .eraseToAnyPublisher(),
+            workspace.$activeRemoteTerminalSessionCount.map { _ in () }.eraseToAnyPublisher(),
             workspace.$remoteConfiguration.map { _ in () }.eraseToAnyPublisher(),
             workspace.$remoteConnectionState.map { _ in () }.eraseToAnyPublisher(),
             workspace.$remoteConnectionDetail.map { _ in () }.eraseToAnyPublisher(),
@@ -191,7 +197,7 @@ final class RightSidebarToolPanel: Panel, ObservableObject {
     private func syncFileExplorerRoot(from workspace: Workspace, store: FileExplorerStore) {
         store.showHiddenFiles = true
 
-        if workspace.isRemoteWorkspace {
+        if workspace.usesRemoteDirectoryProvenance {
             guard let configuration = workspace.remoteConfiguration,
                   configuration.transport == .ssh else {
                 store.applyWorkspaceRoot(.none)
@@ -208,7 +214,7 @@ final class RightSidebarToolPanel: Panel, ObservableObject {
                         sshOptions: configuration.sshOptions
                     ),
                     displayTarget: configuration.displayTarget,
-                    rootPath: workspace.currentDirectory,
+                    rootPath: workspace.trustedRemoteCurrentDirectory,
                     isAvailable: workspace.remoteConnectionState == .connected,
                     unavailableDetail: unavailableDetail
                 )
@@ -226,7 +232,7 @@ final class RightSidebarToolPanel: Panel, ObservableObject {
     }
 
     private func syncSessionIndexRoot(from workspace: Workspace, store: SessionIndexStore) {
-        guard !workspace.isRemoteWorkspace else {
+        guard !workspace.usesRemoteDirectoryProvenance else {
             store.setCurrentDirectoryIfChanged(nil)
             return
         }

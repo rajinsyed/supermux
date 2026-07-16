@@ -30,7 +30,7 @@ Rules for adding a touchpoint:
 | 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit` to the SPM package-test allowlist so its tests gate CI |
 | 14 | `web/data/cmux.schema.json` | `unfenced` | Adds all five supermux ids — `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, `supermuxWorkspaceSwitcherPrevious`, `supermuxCommit`, and `supermuxCommitAccelerator` — to the shortcut-action enum so cmux.json validation accepts rebinding them; also rewrites the `workspaceInheritWorkingDirectory` description for the #80 fork behavior (off = always home directory) and gives it a `descriptionKey` (`schemaDescriptions.app.workspaceInheritWorkingDirectory`, messages under #86/#87) so the docs page localizes it |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
-| 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only) inside a single `VStack` wrapper that keeps upstream's dynamic `ignoresSafeArea` edges — one structural identity, so minimal-mode toggles never rebuild the workspace subtree |
+| 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits inside a single `VStack` wrapper that keeps upstream's `WorkspaceContentMinimalModeSafeAreaModifier` — one structural identity. The minimal-mode hide moved INTO the supermux-owned mount (v0.64.19 merge): upstream's `WorkspaceContentViewVisibilityTests` asserts mode toggles re-evaluate neither `ContentView` nor `WorkspaceContentView` bodies, so the fence must not read the presentation mode |
 | 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + byte-identical `AppIcon-Debug.icon` + `AppIcon-Nightly.icon` (no DEV/NIGHTLY bands — all three channels share one mark); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered icon. Wiring lives in touchpoint #3. |
 | 18 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AutomationSection.swift` | `ai-settings` | Renders `SupermuxAISettingsCard` (Vercel AI Gateway API key + model) at the end of the Automation section, and stores the `secretStore` + `errorLog` the card needs. The card itself is a new supermux-owned file, `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` (no conflict on merge; lives in the upstream package only because the section stack is closed to app injection and cannot import `SupermuxKit`). **Upstream relocated this package under `Packages/macOS/`; the new card moved with it (git rename detection placed it at the new path).** |
 | 20 | `Sources/GhosttyTerminalView.swift` | `browser-link-new-tab` | When a cmd-clicked terminal link opens in the embedded browser and there is no existing browser pane to reuse, open it as a new browser tab in the current pane (and switch to it) instead of creating a horizontal split |
@@ -65,11 +65,10 @@ Rules for adding a touchpoint:
 | 49 | `Sources/Sidebar/SidebarWorkspaceSnapshotRefreshPolicy.swift` | `sidebar-flatrow-activity` | Carries `supermuxActivity` through the frozen-snapshot `applyingContextMenuImmediateFields` rebuild (the third construction site of `SidebarWorkspaceSnapshotBuilder.Snapshot`, alongside the two in `ContentView.swift`). Previously an unfenced edit; fenced and registered during the upstream merge that added `finderDirectoryPath`/`mediaActivity` to the same initializer |
 | 50 | `Sources/ContentView.swift` | `sidebar-hide-scrollbar` | Hides the left workspace sidebar's scrollbar. Two layers: (a) `VerticalTabsSidebar.configureSidebarScrollView` (the shared resolver hook for both the default projects+workspaces list and the extension-provider list) no longer calls upstream's `applySidebarOverlayScrollerConfiguration()`; it instead forces `hasHorizontalScroller`/`hasVerticalScroller` to `false` (write-only-when-differs). (b) Both sidebar `ScrollView`s get `.scrollIndicators(.hidden)` so SwiftUI itself keeps the indicator hidden — the AppKit resolver alone loses to SwiftUI, which re-asserts the scroller from its default `.scrollIndicators(.automatic)` after the resolver's deferred apply. Scrolling still works via trackpad/wheel |
 | 51 | `scripts/reload.sh` | `reload-prune-leftover-base-app` | After a tagged build renames the raw `cmux DEV.app` into `cmux DEV <tag>.app`, calls the supermux-owned `scripts/supermux-prune-dev-builds.sh --reload-leftover` to deregister + delete the never-launched leftover base bundle, so macOS stops accumulating one stale "cmux DEV" row per tag in System Settings > Login Items & Extensions. The prune script is supermux-owned (no touchpoint); only this one-line call into it is fenced |
-| 52 | `ios/cmuxPackage/Sources/cmuxFeature/MobileAuthComposition.swift` | `force-production-auth` | Lets the DEBUG iOS build opt into the PRODUCTION Stack project + cmux.dev callback when the bundled `LocalConfig.plist` sets `STACK_ENVIRONMENT=production`, so a personally-signed DEBUG phone build pairs with the installed production Supermux Mac. Without the key, behavior is unchanged (DEBUG → development) |
 | 53 | `ios/Config/cmux.entitlements` | `unfenced` | Strips `com.apple.developer.applesignin`, `aps-environment`, and `com.apple.developer.usernotifications.time-sensitive` so automatic signing can provision a personal Apple team that lacks those capabilities (comments are unsafe to fence around a plist-key removal) |
 | 54 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Wires `LocalConfig.plist` into the iOS app's Copy Bundle Resources phase (build file `FCAB1004…`, file ref `FCAB101B…`) so the app can read it from the bundle |
-| 55 | `ios/cmux/Resources/LocalConfig.plist` | `unfenced` | New supermux-owned resource read by touchpoint #52; sets `STACK_ENVIRONMENT=production`. Not an upstream modification — registered so the check guards its existence (the pbxproj entry in #54 references it) |
-| 56 | `Sources/Workspace.swift` | `workspace-agent-lifecycle-observation` | One fenced line at the top of `recordAgentLifecycleChange(panelId:)` — the single choke point every agent-lifecycle set/clear routes through — calls `SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self)` (relay lives in supermux-owned `Sources/Supermux/SupermuxWorkspaceActivityResolver.swift`), making lifecycle-only mutations observable: cmux's sidebar publishers carry no lifecycle field, so without it the supermux activity indicators went stale on socket `set_agent_lifecycle`, hibernation clears, and feed-attention conclusion. Placed before the `AgentHibernationController` call, whose tracking gate drops events when disabled |
+| 55 | `ios/cmux/Resources/LocalConfig.plist` | `unfenced` | New supermux-owned resource; sets `AuthEnvironment=production`, read by upstream's `MobileAuthComposition.authOverrides` LocalConfig override table (which replaced the retired #52 fence at the v0.64.19 merge). Not an upstream modification — registered so the check guards its existence (the pbxproj entry in #54 references it) |
+| 56 | `Sources/Workspace+AgentLifecycle.swift` | `workspace-agent-lifecycle-observation` | One fenced line at the top of `recordAgentLifecycleChange(panelId:)` — the single choke point every agent-lifecycle set/clear routes through — calls `SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self)` (relay lives in supermux-owned `Sources/Supermux/SupermuxWorkspaceActivityResolver.swift`), making lifecycle-only mutations observable: cmux's sidebar publishers carry no lifecycle field, so without it the supermux activity indicators went stale on socket `set_agent_lifecycle`, hibernation clears, and feed-attention conclusion. Placed before the `AgentHibernationController` call, whose tracking gate drops events when disabled. **Upstream (0.64.x) extracted the lifecycle code out of `Workspace.swift` into `Workspace+AgentLifecycle.swift`; the fence moved with it** |
 | 57 | `Sources/Workspace.swift` | `keep-window-on-last-close` | Remote-tmux close-button fallback: the last workspace of the last window closes into the empty home (`closeWorkspace(self, recordHistory: false, allowEmptyingWindow: true)`) instead of falling through to a replacement local shell in the dead mirror; the multi-window discard branch stays upstream |
 | 58 | `Sources/AppDelegate.swift` | `new-workspace-standalone` | `unregisterMainWindow` prunes the association store against the union of every remaining window's workspace ids on whole-window teardown (which skips the per-workspace close path); durable directory links live in the projects model and survive, so a revived closed window re-nests by directory |
 | 59 | `Sources/TerminalController.swift` | `keep-window-on-last-close` | The socket `close_workspace` command routes through `closeWorkspace(tab, allowEmptyingWindow: true)` and replies OK only when the workspace actually left `tabs` (upstream `closeTab` silently no-ops on a window's last workspace while replying OK) |
@@ -102,6 +101,9 @@ Rules for adding a touchpoint:
 | 86 | `web/messages/en.json` | `unfenced` | Adds `schemaDescriptions.app.workspaceInheritWorkingDirectory` so the localized docs configuration page renders the reworded #14 schema description through `descriptionKey` (the sibling mechanism 32 other schema properties use) instead of the English-only `description` fallback |
 | 87 | `web/messages/ja.json` | `unfenced` | Japanese translation for the #86 message key |
 | 88 | `skills/cmux-settings/references/all-keys.md` | `unfenced` | Regenerated the `app.workspaceInheritWorkingDirectory` description row to match the #14 schema description (the file is auto-generated from `web/data/cmux.schema.json` and had the removed Ghostty-fallback wording) |
+| 89 | `Sources/SidebarWorkspaceSnapshotBuilder.swift` | `sidebar-flatrow-activity` | The fenced `var supermuxActivity: SupermuxWorkspaceActivity = .idle` field (defaulted so non-production construction sites can omit it) + a fenced `import SupermuxKit`. Upstream (0.64.x) extracted `SidebarWorkspaceSnapshotBuilder` out of `ContentView.swift` into this file; the Snapshot-field part of the #2 fence moved with it. The construction sites (`makeWorkspaceSnapshot` in `ContentView.swift`, the frozen-snapshot rebuild in #49) pass it as the LAST parameter (the struct declares it after upstream's checklist fields) |
+| 90 | `Sources/TabItemView+WorkspaceContextMenu.swift` | `sidebar-hide-project-workspaces` | Upstream (0.64.x) extracted `workspaceContextMenu` out of `ContentView.swift` into this file; the context-menu enablement part of the #2 fence moved with it: the fenced `menuProjectHiddenIds`/`hasVisibleAbove`/`hasVisibleBelow`/`hasOtherVisibleWorkspaces` block before Move Up, and the five fenced `.disabled(...)` overrides (Move Up/Down, Close Other/Below/Above). Reads `projectHiddenWorkspaceIds()`, which the #2 fence in `ContentView.swift` made internal (upstream made `moveBy` internal for the same extraction) |
+| 91 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `keep-window-on-last-close` | Repurposes upstream's `testCmdWClosesWindowWhenClosingLastSurfaceInLastWorkspace` (renamed `testCmdWLeavesEmptyHomeWhenClosingLastSurfaceInLastWorkspace`): with the close-workspace-on-last-surface setting on, Cmd+W on the last surface of the last workspace closes the WORKSPACE but keeps the window open as the empty home; upstream asserted the window closes, which is exactly the behavior keep-window-on-last-close removes (same class as #45/#81/#83) |
 
 ## How to re-apply
 
@@ -1101,26 +1103,15 @@ Stack project, so its user id never matches the production Mac and pairing is re
 stock entitlements require capabilities a personal team cannot provision. All four are needed
 together.
 
-**52. `ios/cmuxPackage/Sources/cmuxFeature/MobileAuthComposition.swift` — `force-production-auth`.**
-In `init(...)`, right before `AuthConfig(environment:overrides:)` is built, derive `isDevelopment`
-from the bundled `LocalConfig.plist` instead of the raw `#if DEBUG` flag:
-
-```swift
-// SUPERMUX:begin force-production-auth (LocalConfig STACK_ENVIRONMENT=production)
-// Lets a tagged DEBUG build opt into the PRODUCTION Stack project AND its
-// cmux.dev callback, so it can pair with the installed production Supermux
-// Mac. Without the key, behavior is unchanged (DEBUG -> development).
-let overrides = Self.localConfigStringOverrides(in: bundle)
-let isDevelopment = overrides["STACK_ENVIRONMENT"]?.lowercased() == "production"
-    ? false
-    : Self.isDevelopmentBuild
-// SUPERMUX:end force-production-auth
-```
-
-`localConfigStringOverrides(in:)` already exists upstream and is reused for the `AuthConfig`
-overrides table. If upstream restructures the composition root, the requirement is: when the bundled
-`LocalConfig.plist` says `STACK_ENVIRONMENT=production`, resolve the auth config for `.production`
-even in a DEBUG build.
+**52. RETIRED (v0.64.19 merge).** The `force-production-auth` fence is gone from
+`MobileAuthComposition.swift` — upstream 0.64.x added a first-class LocalConfig override
+(`MobileAuthComposition.authEnvironmentOverrideKey = "AuthEnvironment"`, values
+`production`/`development`, resolved by `resolvedAuthEnvironment(isDevelopmentBuild:overrides:)`)
+that does exactly what the fence did, so the file is back to byte-identical upstream. The fork
+behavior now rides entirely on #55: `LocalConfig.plist` sets `AuthEnvironment=production`. If
+upstream ever removes that override mechanism, re-introduce a fence with the old requirement:
+when the bundled `LocalConfig.plist` opts into production, resolve the auth config for
+`.production` even in a DEBUG build.
 
 **53. `ios/Config/cmux.entitlements` — unfenced.** Remove the three capability keys the personal team
 can't provision: the `com.apple.developer.applesignin` array, the `aps-environment` string, and the
@@ -1137,7 +1128,9 @@ ref listed in the `Resources` group's `children`, and the build file listed in t
 `PBXResourcesBuildPhase` `files`. Verify: `plutil -lint ios/cmux-ios.xcodeproj/project.pbxproj`.
 
 **55. `ios/cmux/Resources/LocalConfig.plist` — new supermux-owned resource.** A one-key plist,
-`STACK_ENVIRONMENT=production`, read by touchpoint #52 and bundled via #54. Contains no secret (the
+`AuthEnvironment=production` (upstream's `authEnvironmentOverrideKey`; was `STACK_ENVIRONMENT`
+before the v0.64.19 merge retired #52), read by upstream's LocalConfig override table and bundled
+via #54. Contains no secret (the
 production Stack project id + publishable key are already in
 `Packages/Shared/CMUXAuthCore/.../CMUXAuthConfig.swift` / `CmuxAuthRuntime/.../AuthConfig.swift`).
 Because a Copy-Bundle-Resources entry points at it, a fresh clone/CI must have the file present or
@@ -1157,10 +1150,11 @@ the Xcode 27 beta toolchain (stable Xcode couldn't see the device). iPhone conne
 trusted. The Mac side must have `mobile.iOSPairingHost.enabled` on; the phone reaches it over
 Tailscale (LAN-speed / direct at home).
 
-### 56. `Sources/Workspace.swift` — `workspace-agent-lifecycle-observation`
+### 56. `Sources/Workspace+AgentLifecycle.swift` — `workspace-agent-lifecycle-observation`
 
-In `Sources/Workspace.swift`, inside `private func recordAgentLifecycleChange(panelId: UUID)`,
-insert as the first statement:
+In `Sources/Workspace+AgentLifecycle.swift` (upstream 0.64.x extracted the agent-lifecycle code
+out of `Workspace.swift` into this extension file; the fence moved with it), inside
+`private func recordAgentLifecycleChange(panelId: UUID)`, insert as the first statement:
 
 ```swift
 // SUPERMUX:begin workspace-agent-lifecycle-observation

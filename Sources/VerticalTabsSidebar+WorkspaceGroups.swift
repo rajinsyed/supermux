@@ -55,41 +55,20 @@ extension VerticalTabsSidebar {
             dropIndicator: dragState.dropIndicator,
             tabIds: renderContext.sidebarReorderIds
         )
+        let bottomDropIndicatorVisible = SidebarTabDropIndicatorPredicate().bottomVisible(
+            forTabId: group.anchorWorkspaceId,
+            draggedTabId: dragState.draggedTabId,
+            dropIndicator: dragState.dropIndicator,
+            tabIds: renderContext.sidebarReorderIds,
+            indicatorScope: dragState.dropIndicatorScope
+        )
         let onDragStart: () -> NSItemProvider = { [anchorId = group.anchorWorkspaceId] in
             #if DEBUG
             cmuxDebugLog("sidebar.onDrag groupAnchor=\(anchorId.uuidString.prefix(5))")
             #endif
             dragState.beginDragging(tabId: anchorId)
-            return SidebarTabDragPayload.provider(for: anchorId)
+            return SidebarTabDragPayload(tabId: anchorId).provider()
         }
-        let tabDropDelegateFactory: (CGFloat) -> SidebarWorkspaceGroupHeaderDropDelegate = { [
-            groupId = group.id,
-            anchorId = group.anchorWorkspaceId,
-            workspaceGroupIdByWorkspaceId = renderContext.workspaceGroupIdByWorkspaceId,
-            selectedTabIds = $selectedTabIds,
-            lastSidebarSelectionIndex = $lastSidebarSelectionIndex
-        ] rowHeight in
-            let reorderDelegate = SidebarTabDropDelegate(
-                targetTabId: anchorId,
-                tabManager: tabManager,
-                workspaceGroupIdByWorkspaceId: workspaceGroupIdByWorkspaceId,
-                dragState: dragState,
-                selectedTabIds: selectedTabIds,
-                lastSidebarSelectionIndex: lastSidebarSelectionIndex,
-                targetRowHeight: rowHeight,
-                dragAutoScrollController: dragAutoScrollController
-            )
-            return SidebarWorkspaceGroupHeaderDropDelegate(
-                targetGroupId: groupId,
-                targetAnchorWorkspaceId: anchorId,
-                tabManager: tabManager,
-                dragState: dragState,
-                targetRowHeight: rowHeight,
-                dragAutoScrollController: dragAutoScrollController,
-                reorderDelegate: reorderDelegate
-            )
-        }
-
         let header = SidebarWorkspaceGroupHeaderView(
             groupId: group.id,
             anchorWorkspaceId: group.anchorWorkspaceId,
@@ -118,8 +97,8 @@ extension VerticalTabsSidebar {
             isFirstRow: renderContext.sidebarReorderIds.first == group.anchorWorkspaceId,
             isBeingDragged: dragState.draggedTabId == group.anchorWorkspaceId,
             topDropIndicatorVisible: topDropIndicatorVisible,
+            bottomDropIndicatorVisible: bottomDropIndicatorVisible,
             onDragStart: onDragStart,
-            tabDropDelegateFactory: tabDropDelegateFactory,
             onToggleCollapsed: { [weak tabManager, groupId = group.id] in
                 tabManager?.toggleWorkspaceGroupCollapsed(groupId: groupId)
             },
@@ -194,11 +173,20 @@ extension VerticalTabsSidebar {
             onUngroup: { [weak tabManager, groupId = group.id] in
                 tabManager?.ungroupWorkspaceGroup(groupId: groupId)
             },
-            onDelete: { [weak tabManager, groupId = group.id, groupName = group.name, memberCount = memberWorkspaceIds.count] in
-                guard let tabManager else { return }
-                let otherMemberCount = max(memberCount - 1, 0)
-                guard confirmDeleteWorkspaceGroup(groupName: groupName, otherMemberCount: otherMemberCount) else { return }
-                tabManager.deleteWorkspaceGroup(groupId: groupId)
+            onDelete: { [weak tabManager, groupId = group.id] in
+                guard let tabManager,
+                      let confirmation = tabManager.workspaceGrouping.deletionConfirmation(
+                        groupId: groupId,
+                        fallbackGroupName: group.name,
+                        fallbackAnchorWorkspaceId: group.anchorWorkspaceId
+                      ) else { return }
+                if confirmation.containedWorkspaceCount > 0 {
+                    guard confirmDeleteWorkspaceGroup(
+                        groupName: confirmation.groupName,
+                        memberCount: confirmation.containedWorkspaceCount
+                    ) else { return }
+                }
+                tabManager.workspaceGrouping.deleteWorkspaceGroup(confirmed: confirmation)
             },
             onEditConfig: {
                 SidebarWorkspaceGroupConfigOpener.openCmuxConfigInEditor()

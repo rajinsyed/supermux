@@ -352,6 +352,7 @@ final class CmuxSettingsFileStore {
 
         var snapshot = ResolvedSettingsSnapshot(path: sourcePath)
 
+        parsePaneChromeSettings(root, sourcePath: sourcePath, snapshot: &snapshot)
         if let appSection = root["app"] as? [String: Any] {
             parseAppSection(appSection, sourcePath: sourcePath, snapshot: &snapshot)
         }
@@ -394,6 +395,24 @@ final class CmuxSettingsFileStore {
 
         return snapshot
     }
+
+    private func parsePaneChromeSettings(
+        _ root: [String: Any],
+        sourcePath: String,
+        snapshot: inout ResolvedSettingsSnapshot
+    ) {
+        let keys = [
+            PaneChromeSettings.paneBorderColorKey,
+            PaneChromeSettings.activePaneBorderColorKey,
+        ]
+        for key in keys where root.keys.contains(key) {
+            guard let value = parseNullableHex(root[key], path: key, sourcePath: sourcePath) else {
+                continue
+            }
+            snapshot.managedUserDefaults[key] = .nullableString(value)
+        }
+    }
+
     private func parseAppSection(
         _ section: [String: Any],
         sourcePath: String,
@@ -498,6 +517,13 @@ final class CmuxSettingsFileStore {
             snapshot.managedUserDefaults[NotificationSoundSettings.key] = .string(raw)
         }
         applyStringSettings(NotificationSettingsFileMapping.stringSettings, from: section, snapshot: &snapshot)
+        if let raw = jsonString(section["agentTurnComplete"]) {
+            if AgentTurnCompleteMode(rawValue: raw) != nil {
+                snapshot.managedUserDefaults[NotificationsCatalogSection().agentTurnComplete.userDefaultsKey] = .string(raw)
+            } else {
+                logInvalid("notifications.agentTurnComplete", sourcePath: sourcePath)
+            }
+        }
     }
 
     private func parseTerminalSection(
@@ -579,6 +605,30 @@ final class CmuxSettingsFileStore {
         } else if section.keys.contains("textBoxMaxLines") {
             logInvalid("terminal.textBoxMaxLines", sourcePath: sourcePath)
         }
+
+        if let value = jsonString(section["textBoxDefaultSubmitAction"]) {
+            let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !normalized.isEmpty {
+                snapshot.managedUserDefaults[TerminalTextBoxInputSettings.defaultSubmitActionKey] = .string(normalized)
+            } else {
+                logInvalid("terminal.textBoxDefaultSubmitAction", sourcePath: sourcePath)
+            }
+        } else if section.keys.contains("textBoxDefaultSubmitAction") {
+            logInvalid("terminal.textBoxDefaultSubmitAction", sourcePath: sourcePath)
+        }
+
+        if section.keys.contains("textBoxSubmitActions") {
+            if let data = try? JSONSerialization.data(
+                withJSONObject: section["textBoxSubmitActions"] as Any,
+                options: [.withoutEscapingSlashes]
+            ),
+               let actions = try? JSONDecoder().decode([TextBoxSubmitAction].self, from: data), actions.allSatisfy(\.isValid),
+               let json = String(data: data, encoding: .utf8) {
+                snapshot.managedUserDefaults[TerminalTextBoxInputSettings.submitActionsKey] = .string(json)
+            } else {
+                logInvalid("terminal.textBoxSubmitActions", sourcePath: sourcePath)
+            }
+        }
     }
 
     private func parseMarkdownSection(
@@ -617,34 +667,6 @@ final class CmuxSettingsFileStore {
         }
     }
 
-    private func parseFileEditorSection(
-        _ section: [String: Any],
-        sourcePath: String,
-        snapshot: inout ResolvedSettingsSnapshot
-    ) {
-        if let value = jsonBool(section["wordWrap"]) {
-            snapshot.managedUserDefaults[FilePreviewWordWrapSettings.key] = .bool(value)
-        } else if section.keys.contains("wordWrap") {
-            logInvalid("fileEditor.wordWrap", sourcePath: sourcePath)
-        }
-    }
-
-    private func parseFileExplorerSection(
-        _ section: [String: Any],
-        sourcePath: String,
-        snapshot: inout ResolvedSettingsSnapshot
-    ) {
-        if let raw = jsonString(section["doubleClickAction"]) {
-            if let action = FileExplorerDoubleClickAction(rawValue: raw) {
-                snapshot.managedUserDefaults[FileExplorerDoubleClickActionSettings.key] = .string(action.rawValue)
-            } else {
-                logInvalid("fileExplorer.doubleClickAction", sourcePath: sourcePath)
-            }
-        } else if section.keys.contains("doubleClickAction") {
-            logInvalid("fileExplorer.doubleClickAction", sourcePath: sourcePath)
-        }
-    }
-
     private func parseSidebarSection(
         _ section: [String: Any],
         sourcePath: String,
@@ -655,17 +677,20 @@ final class CmuxSettingsFileStore {
                 snapshot.managedUserDefaults[setting.defaultsKey] = .bool(value)
             }
         }
-
         if let raw = jsonString(section["branchLayout"]) {
             if let value = SidebarSettingsFileMapping.branchLayoutStoredValue(raw) {
-                snapshot.managedUserDefaults[
-                    SidebarCatalogSection().branchVerticalLayout.userDefaultsKey
-                ] = .bool(value)
+                snapshot.managedUserDefaults[SidebarCatalogSection().branchVerticalLayout.userDefaultsKey] = .bool(value)
             } else {
                 logInvalid("sidebar.branchLayout", sourcePath: sourcePath)
             }
         }
-
+        if let rawBeta = section["beta"], let beta = rawBeta as? [String: Any] {
+            parseSidebarWorkspaceTodosBeta(beta, sourcePath: sourcePath, snapshot: &snapshot)
+        } else if section.keys.contains("beta") { logInvalid("sidebar.beta", sourcePath: sourcePath) }
+        if let value = jsonInt(section["notificationMessageLineLimit"]), SidebarCatalogSection.notificationMessageLineLimitRange.contains(value) {
+            snapshot.managedUserDefaults[SidebarCatalogSection().notificationMessageLineLimit.userDefaultsKey] = .int(value)
+        } else if section.keys.contains("notificationMessageLineLimit") { logInvalid("sidebar.notificationMessageLineLimit", sourcePath: sourcePath) }
+        parseSidebarIndicatorPositionSettings(section, sourcePath: sourcePath, snapshot: &snapshot)
         if let value = jsonDouble(section[RightSidebarWidthSettings.jsonKey]), value > 0 {
             snapshot.managedUserDefaults[RightSidebarWidthSettings.maxWidthKey] = .double(
                 RightSidebarWidthSettings().clampedSettingsEditorMaximumWidth(value)
@@ -1006,14 +1031,12 @@ final class CmuxSettingsFileStore {
                     allowBareFirstStroke: action.allowsBareFirstStroke
                 )
             }
-            // Object form written by the CmuxSettings package recorder (the
-            // in-app Settings UI): { "first": { key, command, ... }, "second": { ... }? }.
-            // The package serializes StoredShortcut as nested stroke objects, so
-            // a rebinding made in Settings only reaches this store in that shape.
-            // Decode it here so every action resolved through this store — most
-            // visibly the system-wide Carbon hotkeys (globalSearch,
-            // showHideAllWindows) — honors the rebinding instead of silently
-            // dropping it and falling back to the built-in default.
+            // Object form written by the CmuxSettings package recorder (in-app
+            // Settings UI): { "first": { key, command, ... }, "second": { ... }? }.
+            // A Settings rebinding only reaches this store in that shape; decode it
+            // so every action resolved here — most visibly the system-wide Carbon
+            // hotkeys (globalSearch, showHideAllWindows) — honors the rebinding
+            // instead of silently falling back to the built-in default.
             if let object = rawValue as? [String: Any] {
                 return parseShortcutObjectForm(object, action: action)
             }
@@ -1031,9 +1054,8 @@ final class CmuxSettingsFileStore {
     /// ``StoredShortcut``. An empty primary key is the package's explicit
     /// "unbound" marker. Returns `nil` when `first` is missing or malformed —
     /// and, to stay consistent with the string parser, when a present `second`
-    /// stroke is malformed (a chord must not silently degrade to a single
-    /// stroke) or when a bare first stroke is used by an action that requires a
-    /// modifier.
+    /// stroke is malformed (a chord must not silently degrade to a single stroke)
+    /// or when a bare first stroke is used by an action that requires a modifier.
     private func parseShortcutObjectForm(
         _ object: [String: Any],
         action: KeyboardShortcutSettings.Action
@@ -1565,9 +1587,15 @@ final class CmuxSettingsFileStore {
             var agentSessionAutoResumeDidChange = false
             var agentHibernationDidChange = false
             var rendererRealizationDidChange = false
+            var paneChromeDidChange = false
             for change in changes {
                 if change.defaultsKey == TerminalScrollBarSettings.showScrollBarKey {
                     TerminalScrollBarSettings.notifyDidChange(notificationCenter: notificationCenter)
+                }
+
+                if change.defaultsKey == PaneChromeSettings.paneBorderColorKey ||
+                    change.defaultsKey == PaneChromeSettings.activePaneBorderColorKey {
+                    paneChromeDidChange = true
                 }
 
                 if change.defaultsKey == TerminalCopyOnSelectSettings.copyOnSelectKey {
@@ -1615,6 +1643,9 @@ final class CmuxSettingsFileStore {
             }
             if rendererRealizationDidChange {
                 RendererRealizationSettings.notifyDidChange(notificationCenter: notificationCenter)
+            }
+            if paneChromeDidChange {
+                PaneChromeSettings.notifyDidChange(notificationCenter: notificationCenter)
             }
         }
         if Thread.isMainThread {
@@ -1724,15 +1755,15 @@ final class CmuxSettingsFileStore {
         }
     }
 
-    private func logInvalid(_ path: String, sourcePath: String) {
+    func logInvalid(_ path: String, sourcePath: String) {
         cmuxSettingsFileStoreLogger.warning("ignoring invalid setting '\(path, privacy: .private(mask: .hash))' in \(sourcePath, privacy: .private(mask: .hash))")
     }
 
-    private func jsonString(_ rawValue: Any?) -> String? {
+    func jsonString(_ rawValue: Any?) -> String? {
         rawValue as? String
     }
 
-    private func jsonBool(_ rawValue: Any?) -> Bool? {
+    func jsonBool(_ rawValue: Any?) -> Bool? {
         guard let number = rawValue as? NSNumber else { return nil }
         guard CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
         return number.boolValue
@@ -1767,7 +1798,7 @@ final class CmuxSettingsFileStore {
 
 typealias KeyboardShortcutSettingsFileStore = CmuxSettingsFileStore
 
-private struct ResolvedSettingsSnapshot {
+struct ResolvedSettingsSnapshot {
     var path: String?
     var shortcuts: [KeyboardShortcutSettings.Action: StoredShortcut] = [:]
     /// Per-action `when`-clause overrides parsed from `shortcuts.when` — gate a
@@ -1838,12 +1869,12 @@ private struct ManagedDefaultBatchSideEffects {
     }
 }
 
-private enum ManagedStringOverride: Equatable {
+enum ManagedStringOverride: Equatable {
     case set(String)
     case clear
 }
 
-private struct ManagedCustomSettings: Equatable {
+struct ManagedCustomSettings: Equatable {
     var socketPassword: ManagedStringOverride?
 
     var isEmpty: Bool {
@@ -1865,7 +1896,7 @@ private struct ManagedCustomSettings: Equatable {
     }
 }
 
-private enum ManagedSettingsValue: Codable, Equatable {
+enum ManagedSettingsValue: Codable, Equatable {
     case bool(Bool)
     case int(Int)
     case double(Double)

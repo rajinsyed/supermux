@@ -56,6 +56,7 @@ public final class TerminalSurface: Identifiable, ObservableObject {
     public typealias NamedKeySendResult = CmuxTerminalCore.NamedKeySendResult
     public typealias InputSendResult = CmuxTerminalCore.InputSendResult
     public typealias ClaudeCommandShim = TerminalSurfaceClaudeCommandShim
+    public typealias CodexCommandShim = TerminalSurfaceCodexCommandShim
     public typealias CmuxContextEnvironment = TerminalSurfaceCmuxContextEnvironment
     /// The live runtime surface pointer, or nil before creation/after teardown.
     public internal(set) var surface: ghostty_surface_t?
@@ -156,8 +157,13 @@ public final class TerminalSurface: Identifiable, ObservableObject {
     /// The working directory requested at construction, if any.
     public var requestedWorkingDirectory: String? { workingDirectory }
 
-    /// Where the surface participates in focus routing.
-    public let focusPlacement: TerminalSurfaceFocusPlacement
+    /// Where the surface participates in focus routing. Mutable so a live
+    /// surface can move between the workspace area and the right-sidebar dock
+    /// without being recreated (preserving its process). Always mutate through
+    /// `setFocusPlacement(_:)` so the surface registry's placement record stays
+    /// in sync. Reads happen on the main actor (UI/focus routing) and once on
+    /// the creating thread at registration.
+    public private(set) var focusPlacement: TerminalSurfaceFocusPlacement
     var additionalEnvironment: [String: String]
 
     /// When true, the surface is created in libghostty MANUAL I/O mode: no
@@ -166,11 +172,10 @@ public final class TerminalSurface: Identifiable, ObservableObject {
     let manualIO: Bool
     let manualInputHandler: (@Sendable (Data) -> Void)?
 
-    /// For MANUAL-I/O remote tmux display surfaces: invoked on the main actor
-    /// whenever the rendered grid changes so the owner can size the remote tmux
-    /// client to match.
-    @MainActor public var onManualGridResize: (@MainActor (_ columns: Int, _ rows: Int) -> Void)?
-    var lastReportedManualGrid: (columns: Int, rows: Int)?
+    /// Remote tmux manual-I/O resize and runtime-readiness hooks.
+    @MainActor public var onManualSizeApplied: (@MainActor (TerminalSurfaceRawSizingSample) -> Void)?
+    @MainActor public var onRuntimeReady: (@MainActor () -> Void)?
+    @MainActor var manualSizeReportPendingWindowAttach = false
     /// For MANUAL-I/O remote tmux display surfaces: whether to suppress
     /// ghostty primary-screen reflow on resize.
     var manualIONoReflow = true
@@ -206,6 +211,10 @@ public final class TerminalSurface: Identifiable, ObservableObject {
     var lastXScale: CGFloat = 0
     var lastYScale: CGFloat = 0
     var mobileViewportCellLimit: (columns: Int, rows: Int)?
+    /// Runtime font size to restore when mobile viewport fitting clears.
+    var mobileFitBaseFontPointSize: Float?
+    /// Last runtime font size applied by mobile viewport fitting.
+    var mobileFittedFontPointSize: Float?
     // Debug metadata is read from debug/CLI paths off the main thread; the
     // lock is the sanctioned carve-out for tiny values shared with
     // synchronous off-isolation readers.
@@ -295,7 +304,7 @@ public final class TerminalSurface: Identifiable, ObservableObject {
 #if DEBUG
                         logDebugEvent("find.needle updated tab=\(self?.tabId.uuidString.prefix(5) ?? "?") surface=\(self?.id.uuidString.prefix(5) ?? "?") chars=\(needle.count)")
 #endif
-                        _ = self?.performBindingAction("search:\(needle)")
+                        _ = self?.performInternalBindingAction("search:\(needle)")
                     }
             } else if let oldValue {
                 lastSearchNeedle = oldValue.needle
@@ -303,7 +312,7 @@ public final class TerminalSurface: Identifiable, ObservableObject {
 #if DEBUG
                 logDebugEvent("find.searchState cleared tab=\(tabId.uuidString.prefix(5)) surface=\(id.uuidString.prefix(5))")
 #endif
-                _ = performBindingAction("end_search")
+                _ = performInternalBindingAction("end_search")
             }
         }
     }
@@ -362,8 +371,11 @@ public final class TerminalSurface: Identifiable, ObservableObject {
     /// hopped through `MainActor.assumeIsolated`; the isolation is now
     /// compiler-enforced).
     ///
-    /// - Parameters mirror the legacy initializer, plus the injected
-    ///   `dependencies` bundle constructed at the composition root.
+    /// Parameters mirror the legacy initializer, plus the injected
+    /// `dependencies` bundle constructed at the composition root.
+    ///
+    /// - Parameter preparePaneHost: Configures the newly-created pane host
+    ///   before it is attached or any startup work can create a runtime.
     @MainActor
     public init(
         id: UUID = UUID(),
@@ -381,6 +393,7 @@ public final class TerminalSurface: Identifiable, ObservableObject {
         manualIO: Bool = false,
         manualInputHandler: (@Sendable (Data) -> Void)? = nil,
         runtimeSpawnPolicy: TerminalSurfaceRuntimeSpawnPolicy = .immediate,
+        preparePaneHost: @Sendable @MainActor (any TerminalSurfacePaneHosting) -> Void = { _ in },
         dependencies: TerminalSurfaceRuntimeDependencies
     ) {
         self.id = id
@@ -422,6 +435,7 @@ public final class TerminalSurface: Identifiable, ObservableObject {
         )
         self.surfaceView = views.surfaceView
         self.paneHost = views.paneHost
+        preparePaneHost(self.paneHost)
         registry.register(self)
         self.paneHost.attachSurface(self)
 
@@ -461,6 +475,17 @@ public final class TerminalSurface: Identifiable, ObservableObject {
         tabId = newTabId
         attachedView?.tabId = newTabId
         surfaceView.tabId = newTabId
+    }
+
+    /// Moves this surface between focus-routing placements (workspace ↔
+    /// right-sidebar dock) and keeps the surface registry's record in sync.
+    /// Used when a live terminal is dragged across containers so it is not
+    /// recreated. No-op when the placement is unchanged.
+    @MainActor
+    public func setFocusPlacement(_ placement: TerminalSurfaceFocusPlacement) {
+        guard focusPlacement != placement else { return }
+        focusPlacement = placement
+        registry.updateFocusPlacement(id: id, placement)
     }
 
     deinit {

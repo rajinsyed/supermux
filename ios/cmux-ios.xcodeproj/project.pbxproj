@@ -14,6 +14,7 @@
 		8B8A10032DF5000000A66F90 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A101A2DF5000000A66F90 /* InfoPlist.xcstrings */; };
 		8B8A10042DF5000000A66F90 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A101B2DF5000000A66F90 /* Localizable.xcstrings */; };
 		FCAB10042DF5000000A66F90 /* LocalConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = FCAB101B2DF5000000A66F90 /* LocalConfig.plist */; };
+		8B8A10062DF5000000A66F90 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A101D2DF5000000A66F90 /* PrivacyInfo.xcprivacy */; };
 		8B8A10052DF5000000A66F90 /* cmuxUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A101C2DF5000000A66F90 /* cmuxUITests.swift */; };
 		8B41F6832DEDD23B001A66F9 /* cmuxFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 8B41F6822DEDD23B001A66F9 /* cmuxFeature */; };
 		8B41F6852DEDD25C001A66F9 /* cmuxFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 8B41F6842DEDD25C001A66F9 /* cmuxFeature */; };
@@ -49,6 +50,7 @@
 		8B8A101A2DF5000000A66F90 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		8B8A101B2DF5000000A66F90 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		FCAB101B2DF5000000A66F90 /* LocalConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = LocalConfig.plist; sourceTree = "<group>"; };
+		8B8A101D2DF5000000A66F90 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		8B8A101C2DF5000000A66F90 /* cmuxUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = cmuxUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -129,6 +131,7 @@
 				8B8A101A2DF5000000A66F90 /* InfoPlist.xcstrings */,
 				8B8A101B2DF5000000A66F90 /* Localizable.xcstrings */,
 				FCAB101B2DF5000000A66F90 /* LocalConfig.plist */,
+				8B8A101D2DF5000000A66F90 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -241,6 +244,7 @@
 				8B8A10032DF5000000A66F90 /* InfoPlist.xcstrings in Resources */,
 				8B8A10042DF5000000A66F90 /* Localizable.xcstrings in Resources */,
 				FCAB10042DF5000000A66F90 /* LocalConfig.plist in Resources */,
+				8B8A10062DF5000000A66F90 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

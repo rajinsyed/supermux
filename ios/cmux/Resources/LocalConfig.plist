@@ -4,11 +4,13 @@
      auth environment so it pairs with the installed production Supermux Mac.
      Selecting production picks the production Stack project, its publishable
      key, AND the cmux.dev callback that project trusts (so email-code sign-in
-     works). Read by MobileAuthComposition via the force-production-auth fence.
+     works). Read by MobileAuthComposition through upstream's LocalConfig
+     override table (authEnvironmentOverrideKey = "AuthEnvironment", added in
+     cmux 0.64.x; it replaced the supermux force-production-auth fence).
      Delete this file (and its pbxproj Resources entry) to revert to development. -->
 <plist version="1.0">
 <dict>
-	<key>STACK_ENVIRONMENT</key>
+	<key>AuthEnvironment</key>
 	<string>production</string>
 </dict>
 </plist>

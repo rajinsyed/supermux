@@ -148,7 +148,7 @@ extension CMUXCLI {
     private enum OpenTarget {
         case directory(String)
         case file(String)
-        case url(String)
+        case url(String, defaultFocus: Bool)
     }
 
     private struct DiffArguments {
@@ -386,7 +386,10 @@ extension CMUXCLI {
             guard filePath.hasPrefix(rootPath + "/") else {
                 throw CLIError(message: "Diff viewer file is outside the viewer directory")
             }
-            let relativePath = String(filePath.dropFirst(rootPath.count + 1))
+            var relativePath = String(filePath.dropFirst(rootPath.count + 1))
+            if relativePath.hasSuffix(".deflate") {
+                relativePath.removeLast(".deflate".count)
+            }
             let components = relativePath.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
             guard !components.isEmpty,
                   components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
@@ -589,33 +592,7 @@ extension CMUXCLI {
         }
     }
 
-    private enum DiffViewerShortcutAction: String, CaseIterable {
-        case scrollDown = "diffViewerScrollDown"
-        case scrollUp = "diffViewerScrollUp"
-        case scrollToBottom = "diffViewerScrollToBottom"
-        case scrollToTop = "diffViewerScrollToTop"
-        case openFileSearch = "diffViewerOpenFileSearch"
-
-        var defaultShortcut: DiffViewerShortcut {
-            switch self {
-            case .scrollDown:
-                return DiffViewerShortcut(first: DiffViewerShortcutStroke(key: "j"))
-            case .scrollUp:
-                return DiffViewerShortcut(first: DiffViewerShortcutStroke(key: "k"))
-            case .scrollToBottom:
-                return DiffViewerShortcut(first: DiffViewerShortcutStroke(key: "g", shift: true))
-            case .scrollToTop:
-                return DiffViewerShortcut(
-                    first: DiffViewerShortcutStroke(key: "g"),
-                    second: DiffViewerShortcutStroke(key: "g")
-                )
-            case .openFileSearch:
-                return DiffViewerShortcut(first: DiffViewerShortcutStroke(key: "/"))
-            }
-        }
-    }
-
-    private struct DiffViewerShortcutStroke: Equatable {
+    struct DiffViewerShortcutStroke: Equatable {
         var key: String
         var command: Bool
         var shift: Bool
@@ -641,7 +618,7 @@ extension CMUXCLI {
         }
     }
 
-    private struct DiffViewerShortcut: Equatable {
+    struct DiffViewerShortcut: Equatable {
         var first: DiffViewerShortcutStroke?
         var second: DiffViewerShortcutStroke?
 
@@ -818,17 +795,18 @@ extension CMUXCLI {
             throw CLIError(message: "open requires at least one path or URL. Usage: cmux open <path-or-url>...")
         }
 
-        let focus: Bool
+        let explicitFocus: Bool?
         if parsedArgs.noFocus {
-            focus = false
+            explicitFocus = false
         } else if let focusOpt = parsedArgs.focus {
             guard let parsed = parseBoolString(focusOpt) else {
                 throw CLIError(message: "--focus must be true|false")
             }
-            focus = parsed
+            explicitFocus = parsed
         } else {
-            focus = true
+            explicitFocus = nil
         }
+        let fileFocus = explicitFocus ?? true
 
         let targets = try parsedArgs.targets.map(resolveOpenTarget)
         var fileCount = 0
@@ -845,7 +823,8 @@ extension CMUXCLI {
         let windowHandle = try normalizeWindowHandle(parsedArgs.window, client: client)
         let workspaceRaw = parsedArgs.workspace ?? (parsedArgs.window == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client, windowHandle: windowHandle)
-        let surfaceRaw = parsedArgs.surface ?? (parsedArgs.window == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+        let shouldInheritCallerSurface = parsedArgs.workspace == nil && parsedArgs.pane == nil && parsedArgs.window == nil
+        let surfaceRaw = parsedArgs.surface ?? (shouldInheritCallerSurface ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
         let surfaceHandle = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: workspaceHandle, windowHandle: windowHandle)
         let paneHandle = try normalizePaneHandle(parsedArgs.pane, client: client, workspaceHandle: workspaceHandle)
 
@@ -857,7 +836,7 @@ extension CMUXCLI {
             let files = pendingFiles
             pendingFiles.removeAll()
 
-            var params: [String: Any] = ["paths": files, "focus": focus]
+            var params: [String: Any] = ["paths": files, "focus": fileFocus]
             if let windowHandle { params["window_id"] = windowHandle }
             if let workspaceHandle { params["workspace_id"] = workspaceHandle }
             if let surfaceHandle { params["surface_id"] = surfaceHandle }
@@ -878,9 +857,9 @@ extension CMUXCLI {
                 let payload = try client.sendV2(method: "workspace.create", params: params)
                 payloads.append(["kind": "workspace", "payload": payload, "path": directory])
                 directoryCount += 1
-            case .url(let url):
+            case .url(let url, let defaultFocus):
                 try flushPendingFiles()
-                var params: [String: Any] = ["url": url, "focus": focus]
+                var params: [String: Any] = ["url": url, "focus": explicitFocus ?? defaultFocus]
                 if let windowHandle { params["window_id"] = windowHandle }
                 if let workspaceHandle { params["workspace_id"] = workspaceHandle }
                 if let surfaceHandle { params["surface_id"] = surfaceHandle }
@@ -1032,8 +1011,8 @@ extension CMUXCLI {
             "transparent_background": true,
             "bypass_remote_proxy": true
         ]
+        params["diff_viewer_token"] = viewer.url.scheme == DiffViewerURLMapper.scheme ? (viewer.url.host ?? "") : (viewer.url.path.split(separator: "/").first.map(String.init) ?? "")
         if viewer.url.scheme == DiffViewerURLMapper.scheme {
-            params["diff_viewer_token"] = viewer.url.host ?? ""
             params["diff_viewer_files"] = viewer.allowedFiles.map(\.jsonObject)
         }
         if let windowHandle { params["window_id"] = windowHandle }
@@ -1463,7 +1442,7 @@ extension CMUXCLI {
         if let url = URL(string: raw),
            let scheme = url.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
-            return .url(url.absoluteString)
+            return .url(url.absoluteString, defaultFocus: true)
         }
 
         let resolved = resolvePath(raw)
@@ -1474,6 +1453,10 @@ extension CMUXCLI {
 
         if isDir.boolValue {
             return .directory(resolved)
+        }
+        let ext = URL(fileURLWithPath: resolved).pathExtension.lowercased()
+        if ext == "html" || ext == "htm" {
+            return .url(URL(fileURLWithPath: resolved).standardizedFileURL.absoluteString, defaultFocus: false)
         }
         return .file(resolved)
     }
@@ -1837,7 +1820,7 @@ extension CMUXCLI {
            !upstream.isEmpty {
             return upstream
         }
-        throw CLIError(message: "Unable to find a branch diff base. Set an upstream branch or create origin/main.")
+        throw CLIError(message: "Couldn't find a branch diff base. Set an upstream branch or create origin/main.")
     }
 
     private func resolvedGitBranchDiffBaseRef(_ rawBaseRef: String?, in repoRoot: String) throws -> String {
@@ -6822,6 +6805,9 @@ extension CMUXCLI {
 
         var headers = diffViewerHTTPBaseHeaders(port: port)
         headers["Content-Type"] = diffViewerHTTPContentType(file.mimeType)
+        if file.filePath.hasSuffix(".deflate") {
+            headers["Content-Encoding"] = "deflate"
+        }
         headers["Content-Length"] = "\(info.st_size)"
         try sendDiffViewerHTTPHeader(
             fileDescriptor: fd,
@@ -7609,16 +7595,16 @@ extension CMUXCLI {
               assetPaths.contains("worker-pool/worker-portable.js") else {
             throw CLIError(message: "Bundled diff viewer entry assets not found")
         }
-        for assetPath in assetPaths {
-            try copyDiffViewerAsset(relativePath: assetPath, from: sourceDirectory, to: targetDirectory)
+        let copiedAssetURLs = try assetPaths.map {
+            try copyDiffViewerAsset(relativePath: $0, from: sourceDirectory, to: targetDirectory)
         }
 
         let appAssetPaths = try diffViewerBundledAssetRelativePaths(in: appAssets.sourceDirectory)
         guard appAssetPaths.contains("main.mjs") else {
             throw CLIError(message: "Bundled cmux diff viewer app entry asset not found")
         }
-        for assetPath in appAssetPaths {
-            try copyDiffViewerAsset(relativePath: assetPath, from: appAssets.sourceDirectory, to: targetAppDirectory)
+        let copiedAppAssetURLs = try appAssetPaths.map {
+            try copyDiffViewerAsset(relativePath: $0, from: appAssets.sourceDirectory, to: targetAppDirectory)
         }
 
         return DiffViewerAssets(
@@ -7627,8 +7613,7 @@ extension CMUXCLI {
             treesModuleURL: "./assets/\(assetDirectoryName)/trees.mjs",
             workerPoolModuleURL: "./assets/\(assetDirectoryName)/worker-pool/worker-pool.mjs",
             workerModuleURL: "./assets/\(assetDirectoryName)/worker-pool/worker-portable.js",
-            files: assetPaths.map { targetDirectory.appendingPathComponent($0, isDirectory: false) }
-                + appAssetPaths.map { targetAppDirectory.appendingPathComponent($0, isDirectory: false) }
+            files: copiedAssetURLs + copiedAppAssetURLs
         )
     }
 
@@ -7644,11 +7629,10 @@ extension CMUXCLI {
             let appDirectory = sourceRoot
                 .appendingPathComponent(candidate.sourceName, isDirectory: true)
                 .standardizedFileURL
-            let entry = appDirectory.appendingPathComponent("main.mjs", isDirectory: false)
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: appDirectory.path, isDirectory: &isDirectory),
                isDirectory.boolValue,
-               FileManager.default.fileExists(atPath: entry.path) {
+               (try? diffViewerBundledAssetFileURL(relativePath: "main.mjs", in: appDirectory)) != nil {
                 // The shared /tmp asset cache is written by every running cmux
                 // build (stable, nightly, each tagged dev app). Content-key the
                 // directory so builds with different webview bundles coexist
@@ -7665,24 +7649,25 @@ extension CMUXCLI {
         var hasher = SHA256()
         for relativePath in try diffViewerBundledAssetRelativePaths(in: directory).sorted() {
             hasher.update(data: Data(relativePath.utf8))
-            let fileURL = directory.appendingPathComponent(relativePath, isDirectory: false)
+            let fileURL = try diffViewerBundledAssetFileURL(relativePath: relativePath, in: directory)
             hasher.update(data: try Data(contentsOf: fileURL, options: .mappedIfSafe))
         }
         let digest = hasher.finalize()
         return String(diffBranchHexEncoded(digest).prefix(12))
     }
 
-    private func copyDiffViewerAsset(relativePath: String, from sourceDirectory: URL, to targetDirectory: URL) throws {
+    private func copyDiffViewerAsset(relativePath: String, from sourceDirectory: URL, to targetDirectory: URL) throws -> URL {
         let fileManager = FileManager.default
-        let sourceURL = sourceDirectory.appendingPathComponent(relativePath, isDirectory: false)
-        let targetURL = targetDirectory.appendingPathComponent(relativePath, isDirectory: false)
+        let sourceURL = try diffViewerBundledAssetFileURL(relativePath: relativePath, in: sourceDirectory)
+        let targetRelativePath = sourceURL.path.hasSuffix(".deflate") ? relativePath + ".deflate" : relativePath
+        let targetURL = targetDirectory.appendingPathComponent(targetRelativePath, isDirectory: false)
         guard fileManager.fileExists(atPath: sourceURL.path) else {
             throw CLIError(message: "Bundled diff viewer asset not found: \(relativePath)")
         }
 
         let sourceValues = try sourceURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         if isCurrentDiffViewerAsset(targetURL: targetURL, sourceValues: sourceValues) {
-            return
+            return targetURL
         }
 
         try fileManager.createDirectory(
@@ -7702,36 +7687,11 @@ extension CMUXCLI {
         } catch {
             try? fileManager.removeItem(at: temporaryURL)
             if isCurrentDiffViewerAsset(targetURL: targetURL, sourceValues: sourceValues) {
-                return
+                return targetURL
             }
             throw error
         }
-    }
-
-    private func diffViewerBundledAssetRelativePaths(in sourceDirectory: URL) throws -> [String] {
-        let rootURL = sourceDirectory.standardizedFileURL.resolvingSymlinksInPath()
-        guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            throw CLIError(message: "Failed to enumerate diff viewer assets")
-        }
-
-        var relativePaths: [String] = []
-        for case let fileURL as URL in enumerator {
-            guard ["js", "mjs"].contains(fileURL.pathExtension),
-                  let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
-                  values.isRegularFile == true else {
-                continue
-            }
-            let standardized = fileURL.standardizedFileURL.resolvingSymlinksInPath()
-            guard standardized.path.hasPrefix(rootURL.path + "/") else {
-                continue
-            }
-            relativePaths.append(String(standardized.path.dropFirst(rootURL.path.count + 1)))
-        }
-        return relativePaths.sorted()
+        return targetURL
     }
 
     private func isCurrentDiffViewerAsset(targetURL: URL, sourceValues: URLResourceValues) -> Bool {
@@ -7767,10 +7727,8 @@ extension CMUXCLI {
                   isDirectory.boolValue else {
                 return
             }
-            let diffsAsset = standardized.appendingPathComponent("diffs.mjs", isDirectory: false)
-            let treesAsset = standardized.appendingPathComponent("trees.mjs", isDirectory: false)
-            guard fileManager.fileExists(atPath: diffsAsset.path),
-                  fileManager.fileExists(atPath: treesAsset.path) else {
+            guard (try? diffViewerBundledAssetFileURL(relativePath: "diffs.mjs", in: standardized)) != nil,
+                  (try? diffViewerBundledAssetFileURL(relativePath: "trees.mjs", in: standardized)) != nil else {
                 return
             }
             candidates.append(standardized)
@@ -7926,6 +7884,7 @@ extension CMUXCLI {
         Usage: cmux open <path-or-url>... [options]
 
         Open files, directories, or URLs in cmux.
+        HTML files open in browser splits without focusing by default.
         Markdown files open in markdown preview tabs; other files open in file preview tabs.
         Multiple files open as tabs in the same target pane.
 

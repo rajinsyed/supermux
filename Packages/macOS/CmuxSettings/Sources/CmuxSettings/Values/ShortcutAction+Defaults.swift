@@ -9,6 +9,16 @@ extension ShortcutAction {
                 first: ShortcutStroke(key: "g"),
                 second: ShortcutStroke(key: "g")
             )
+        case .diffViewerNextFile:
+            return StoredShortcut(
+                first: ShortcutStroke(key: "]"),
+                second: ShortcutStroke(key: "f")
+            )
+        case .diffViewerPreviousFile:
+            return StoredShortcut(
+                first: ShortcutStroke(key: "["),
+                second: ShortcutStroke(key: "f")
+            )
         default:
             return defaultStroke.map { StoredShortcut(first: $0) }
         }
@@ -35,6 +45,7 @@ extension ShortcutAction {
         case .toggleSidebar: return ShortcutStroke(key: "b", command: true)
         case .newTab: return ShortcutStroke(key: "n", command: true)
         case .newBrowserWorkspace: return ShortcutStroke(key: "n", command: true, option: true)
+        case .saveLayoutTemplate: return ShortcutStroke(key: "s", command: true, control: true)
         case .openFolder: return ShortcutStroke(key: "o", command: true)
         case .reopenPreviousSession: return ShortcutStroke(key: "o", command: true, shift: true)
         case .goToWorkspace: return ShortcutStroke(key: "p", command: true)
@@ -60,9 +71,16 @@ extension ShortcutAction {
         case .renameTab: return ShortcutStroke(key: "r", command: true)
         case .renameWorkspace: return ShortcutStroke(key: "r", command: true, shift: true)
         case .editWorkspaceDescription: return ShortcutStroke(key: "e", command: true, option: true)
+        // Cmd+; pins the status to done; the Cmd-"D" family is taken by
+        // split/diff actions and Cmd+Ctrl+D is macOS-reserved. Mirrors the
+        // app-side table.
+        case .markWorkspaceDone: return ShortcutStroke(key: ";", command: true)
+        case .cycleWorkspaceStatus: return ShortcutStroke(key: ";", command: true, shift: true)
+        case .toggleChecklistItemComplete: return ShortcutStroke(key: "\r", command: true)
         case .closeTab: return ShortcutStroke(key: "w", command: true)
         case .closeOtherTabsInPane: return ShortcutStroke(key: "t", command: true, option: true)
         case .closeWorkspace: return ShortcutStroke(key: "w", command: true, shift: true)
+        case .newWorkspaceGroup: return ShortcutStroke(key: "g", command: true, control: true)
         case .groupSelectedWorkspaces: return ShortcutStroke(key: "g", command: true, shift: true)
         case .toggleFocusedWorkspaceGroupCollapsed: return ShortcutStroke(key: ".", command: true, control: true)
         case .reopenClosedBrowserPanel: return ShortcutStroke(key: "t", command: true, shift: true)
@@ -85,7 +103,7 @@ extension ShortcutAction {
         case .canvasOverview: return ShortcutStroke(key: "o", command: true, control: true)
         case .canvasZoomIn: return ShortcutStroke(key: "=", command: true, option: true)
         case .canvasZoomOut: return ShortcutStroke(key: "-", command: true, option: true)
-        case .canvasZoomReset: return ShortcutStroke(key: "0", command: true, option: true)
+        case .canvasZoomReset: return ShortcutStroke(key: "0", command: true)
         case .canvasTidy: return ShortcutStroke(key: "t", command: true, control: true)
         case .canvasAlignLeft, .canvasAlignRight, .canvasAlignTop, .canvasAlignBottom,
              .canvasEqualizeWidths, .canvasEqualizeHeights,
@@ -100,6 +118,7 @@ extension ShortcutAction {
         case .newSurface: return ShortcutStroke(key: "t", command: true)
         case .toggleTerminalCopyMode: return ShortcutStroke(key: "m", command: true, shift: true)
         case .focusTextBoxInput: return ShortcutStroke(key: "a", command: true, shift: true)
+        case .cycleTextBoxSubmitAction: return ShortcutStroke(key: "\t", shift: true)
         case .attachTextBoxFile: return ShortcutStroke(key: "a", command: true, shift: true, option: true)
         case .sendCtrlFToTerminal: return nil
         case .clearScreenKeepScrollback: return ShortcutStroke(key: "k", command: true, shift: true)
@@ -145,9 +164,15 @@ extension ShortcutAction {
         case .toggleReactGrab: return ShortcutStroke(key: "g", command: true, shift: true)
         case .diffViewerScrollDown: return ShortcutStroke(key: "j")
         case .diffViewerScrollUp: return ShortcutStroke(key: "k")
+        case .diffViewerScrollHalfPageDown: return ShortcutStroke(key: "d", control: true)
+        case .diffViewerScrollHalfPageUp: return ShortcutStroke(key: "u", control: true)
+        case .diffViewerScrollDownEmacs: return ShortcutStroke(key: "n", control: true)
+        case .diffViewerScrollUpEmacs: return ShortcutStroke(key: "p", control: true)
         case .diffViewerScrollToBottom: return ShortcutStroke(key: "g", shift: true)
         case .diffViewerScrollToTop: return nil
         case .diffViewerOpenFileSearch: return ShortcutStroke(key: "/")
+        case .diffViewerNextFile: return nil
+        case .diffViewerPreviousFile: return nil
         }
     }
 }

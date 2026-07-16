@@ -19,35 +19,6 @@ import Foundation
 /// `workspace.remote.pty_*` (sessions/close/detach/bridge/resize) methods stay on
 /// the app-side dispatcher.
 extension TerminalController: ControlWorkspaceContext {
-    func controlWorkspaceStrings() -> ControlWorkspaceStrings {
-        ControlWorkspaceStrings(
-            closeProtected: String(
-                localized: "workspace.closeProtected.message",
-                defaultValue: "Pinned workspaces can't be closed while pinned. Unpin the workspace first."
-            ),
-            reorderManyMissingOrder: String(
-                localized: "socket.workspace.reorderMany.missingOrder",
-                defaultValue: "Missing workspace_ids"
-            ),
-            reorderManyDuplicateWorkspace: String(
-                localized: "socket.workspace.reorderMany.duplicateWorkspace",
-                defaultValue: "Duplicate workspace in order"
-            ),
-            reorderManyWorkspaceNotFound: String(
-                localized: "socket.workspace.reorderMany.workspaceNotFound",
-                defaultValue: "Workspace not found"
-            ),
-            reorderManyInvalidWorkspace: String(
-                localized: "socket.workspace.reorderMany.invalidWorkspace",
-                defaultValue: "Invalid workspace id or ref"
-            ),
-            reorderManyTabManagerUnavailable: String(
-                localized: "socket.workspace.reorderMany.tabManagerUnavailable",
-                defaultValue: "TabManager not available"
-            )
-        )
-    }
-
     func controlWorkspaceRoutingResolvesTabManager(routing: ControlRoutingSelectors) -> Bool {
         resolveTabManager(routing: routing) != nil
     }
@@ -64,7 +35,7 @@ extension TerminalController: ControlWorkspaceContext {
             isPinned: workspace.isPinned,
             listeningPorts: workspace.listeningPorts,
             remoteStatus: JSONValue(foundationObject: workspace.remoteStatusPayload()) ?? .object([:]),
-            currentDirectory: workspace.currentDirectory,
+            currentDirectory: workspace.presentedCurrentDirectory ?? "",
             customColor: workspace.customColor,
             latestConversationMessage: workspace.latestConversationMessage,
             latestSubmittedMessage: workspace.latestSubmittedMessage,
@@ -162,12 +133,13 @@ extension TerminalController: ControlWorkspaceContext {
             return .protected(windowID: windowId)
         }
         // SUPERMUX:begin keep-window-on-last-close
-        // Plain closeWorkspace silently refuses a window's last workspace
-        // while this replied `.resolved`. Route through the empty-home path
-        // and report success only if the workspace actually left `tabs`.
+        // Upstream's closeWorkspaceNonInteractively closes the whole WINDOW
+        // for a window's last workspace; supermux keeps the window open as an
+        // empty home. Route through closeWorkspace(allowEmptyingWindow:) and
+        // report failure only if the workspace is still present.
         tabManager.closeWorkspace(ws, allowEmptyingWindow: true)
         guard !tabManager.tabs.contains(where: { $0.id == ws.id }) else {
-            return .protected(windowID: windowId)
+            return .closeFailed(windowID: windowId)
         }
         // SUPERMUX:end keep-window-on-last-close
         return .resolved(windowID: windowId)
@@ -560,6 +532,8 @@ extension TerminalController: ControlWorkspaceContext {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let terminalStartupCommand = v2RawString(params, "terminal_startup_command")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let managedCloudVMID = v2RawString(params, "managed_cloud_vm_id")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         var persistentDaemonSlot = v2RawString(params, "persistent_daemon_slot")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if v2HasNonNullParam(params, "persistent_daemon_slot") {
@@ -670,6 +644,7 @@ extension TerminalController: ControlWorkspaceContext {
             relayID: relayID?.isEmpty == true ? nil : relayID,
             relayToken: relayToken?.isEmpty == true ? nil : relayToken,
             localSocketPath: localSocketPath,
+            managedCloudVMID: managedCloudVMID?.isEmpty == true ? nil : managedCloudVMID,
             terminalStartupCommand: terminalStartupCommand?.isEmpty == true ? nil : terminalStartupCommand,
             foregroundAuthToken: foregroundAuthToken?.isEmpty == true ? nil : foregroundAuthToken,
             agentSocketPath: WorkspaceRemoteConfiguration.resolvedAgentSocketPath(
@@ -696,14 +671,10 @@ extension TerminalController: ControlWorkspaceContext {
     }
 
     func controlWorkspaceRemotePTYAttachEnd(
-        workspaceID workspaceId: UUID,
-        surfaceID surfaceId: UUID,
-        sessionID: String
+        workspaceID workspaceId: UUID, surfaceID surfaceId: UUID, sessionID: String
     ) -> ControlWorkspaceRemotePTYAttachEndResolution {
         let located = AppDelegate.shared?.workspaceContainingPanel(
-            panelId: surfaceId,
-            preferredWorkspaceId: workspaceId
-        )
+            panelId: surfaceId, preferredWorkspaceId: workspaceId)
         let fallbackOwner = AppDelegate.shared?.tabManagerFor(tabId: workspaceId)
         let fallbackWorkspace = fallbackOwner?.tabs.first(where: { $0.id == workspaceId })
         guard let owner = located?.tabManager ?? fallbackOwner,
@@ -713,8 +684,7 @@ extension TerminalController: ControlWorkspaceContext {
         let outcome = workspace.markRemotePTYAttachEnded(surfaceId: surfaceId, sessionID: sessionID)
         let windowId = AppDelegate.shared?.windowId(for: owner)
         return .resolved(
-            windowID: windowId,
-            workspaceID: workspace.id,
+            windowID: windowId, workspaceID: workspace.id,
             clearedRemotePTYSession: outcome.clearedRemotePTYSession,
             untrackedRemoteTerminal: outcome.untrackedRemoteTerminal,
             remoteStatus: JSONValue(foundationObject: workspace.remoteStatusPayload()) ?? .object([:])
@@ -724,13 +694,24 @@ extension TerminalController: ControlWorkspaceContext {
     func controlWorkspaceRemoteTerminalSessionEnd(
         workspaceID workspaceId: UUID,
         surfaceID surfaceId: UUID,
-        relayPort: Int
+        relayPort: Int?,
+        sessionID: String?,
+        lifecycleID: String?,
+        lifecycleOnly: Bool
     ) -> ControlWorkspaceRemoteTerminalSessionEndResolution {
+        let generationIsCurrent = switch (sessionID, lifecycleID) {
+        case let (.some(sessionID), .some(lifecycleID)):
+            remoteProxyBroker.acknowledgePTYLifecycleAfterWrapperEnd(sessionID: sessionID, lifecycleID: lifecycleID)
+        case (nil, nil): true
+        default: false
+        }
         guard let owner = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
               let workspace = owner.tabs.first(where: { $0.id == workspaceId }) else {
             return .notFound
         }
-        workspace.markRemoteTerminalSessionEnded(surfaceId: surfaceId, relayPort: relayPort)
+        if !lifecycleOnly, generationIsCurrent {
+            workspace.markRemoteTerminalSessionEnded(surfaceId: surfaceId, relayPort: relayPort)
+        }
         let windowId = AppDelegate.shared?.windowId(for: owner)
         return .resolved(
             windowID: windowId,

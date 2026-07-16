@@ -10,10 +10,15 @@ import {
   listBackupSnapshot,
   listLiveBackup,
   MAX_BACKUP_OPS,
+  MAX_CLIENT_SCOPE_LENGTH,
+  MAX_PAIRED_MAC_CLIENT_SCOPES_PER_USER,
   MAX_PAIRED_MAC_RECORDS_PER_USER,
   MAX_PAIRED_MACS_PER_USER,
+  normalizeClientScope,
+  PairedMacBackupApplyError,
   pairedMacsCollection,
   PAIRED_MACS_COLLECTION,
+  PAIRED_MACS_COLLECTION_TOMBSTONE_PREFIXES,
   parsePairedMacBackup,
   type PairedMacBackupRecord,
 } from "../src/syncPairedMacs";
@@ -107,9 +112,322 @@ describe("parsePairedMacBackup", () => {
     if (op?.kind !== "upsert") throw new Error("expected an upsert op");
     expect(op.record.routes).toEqual([{ id: "ok" }]);
   });
+
+  it("accepts preserve authority mode and rejects unknown modes", () => {
+    const preserved = parsePairedMacBackup({
+      ops: [{
+        macDeviceID: "mac-a",
+        record: { ...record("mac-a", "10.0.0.1", 22), instanceTagWriteMode: "preserve" },
+      }],
+    });
+    expect(preserved.ok).toBe(true);
+    if (preserved.ok) {
+      expect(preserved.ops[0]).toMatchObject({ kind: "upsert", instanceTagWriteMode: "preserve" });
+    }
+
+    expect(parsePairedMacBackup({
+      ops: [{
+        macDeviceID: "mac-a",
+        record: { ...record("mac-a", "10.0.0.1", 22), instanceTagWriteMode: "replace" },
+      }],
+    }).ok).toBe(false);
+  });
 });
 
 describe("applyBackupOps", () => {
+  it("keeps stored tag and routes atomic across legacy omitted-tag uploads", async () => {
+    const storage = new FakeStorage();
+    const tagged = {
+      ...record("mac-a", "10.0.0.1", 22),
+      instanceTag: "feature-a",
+    };
+    await applyBackupOps(
+      storage,
+      "user-1",
+      [{ kind: "upsert", id: "mac-a", record: tagged, providedInstanceTag: true }],
+      T0,
+    );
+
+    const legacyRoutes = {
+      ...record("mac-a", "10.0.0.99", 99),
+      displayName: "Legacy overwrite",
+      lastSeenAt: T0 + 100,
+      isActive: false,
+    };
+    await applyBackupOps(
+      storage,
+      "user-1",
+      [{ kind: "upsert", id: "mac-a", record: legacyRoutes, providedInstanceTag: false }],
+      T0 + 1,
+    );
+
+    const restored = (await listBackupSnapshot(storage, "user-1")).records[0];
+    expect(restored?.instanceTag).toBe("feature-a");
+    expect(restored?.routes).toEqual(tagged.routes);
+    expect(restored).toEqual(tagged);
+  });
+
+  it("lets a Mac publisher refresh only an unclaimed or same-tag authority tuple", async () => {
+    const storage = new FakeStorage();
+    const routesA1 = { ...record("mac-a", "10.0.0.1", 22), instanceTag: "feature-a" };
+    const routesA2 = { ...record("mac-a", "10.0.0.2", 23), instanceTag: "feature-a" };
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert",
+      id: "mac-a",
+      record: routesA1,
+      providedInstanceTag: true,
+      instanceTagWriteMode: "compare_and_set",
+    }], T0);
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert",
+      id: "mac-a",
+      record: routesA2,
+      providedInstanceTag: true,
+      instanceTagWriteMode: "compare_and_set",
+    }], T0 + 1);
+    let refreshed = (await listBackupSnapshot(storage, "user-1")).records[0];
+    expect(refreshed?.instanceTag).toBe("feature-a");
+    expect(refreshed?.routes).toEqual(routesA2.routes);
+
+    const explicitB = { ...record("mac-a", "10.0.0.3", 24), instanceTag: "feature-b" };
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert", id: "mac-a", record: explicitB, providedInstanceTag: true,
+    }], T0 + 2);
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert",
+      id: "mac-a",
+      record: { ...routesA1, lastSeenAt: T0 + 500, isActive: false },
+      providedInstanceTag: true,
+      instanceTagWriteMode: "compare_and_set",
+    }], T0 + 3);
+    const retained = (await listBackupSnapshot(storage, "user-1")).records[0];
+    expect(retained?.instanceTag).toBe("feature-b");
+    expect(retained?.routes).toEqual(explicitB.routes);
+    expect(retained).toEqual(explicitB);
+  });
+
+  it("preserves cross-tag host authority while applying active and customization metadata", async () => {
+    const storage = new FakeStorage();
+    const authenticatedB = {
+      ...record("mac-a", "10.0.0.2", 23),
+      displayName: "Authenticated B",
+      instanceTag: "feature-b",
+      createdAt: T0 + 20,
+      lastSeenAt: T0 + 500,
+      customName: "Old name",
+    };
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert",
+      id: "mac-a",
+      record: authenticatedB,
+      providedInstanceTag: true,
+    }], T0);
+
+    const staleMetadataWrite = {
+      ...record("mac-a", "10.0.0.1", 22),
+      displayName: "Stale A",
+      instanceTag: "feature-a",
+      createdAt: T0,
+      lastSeenAt: T0 + 100,
+      isActive: false,
+      customName: "New name",
+    };
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert",
+      id: "mac-a",
+      record: staleMetadataWrite,
+      providedInstanceTag: true,
+      providedCustom: { name: true, color: false, icon: false },
+      instanceTagWriteMode: "preserve",
+    }], T0 + 1);
+
+    const restored = (await listBackupSnapshot(storage, "user-1")).records[0];
+    expect(restored?.instanceTag).toBe("feature-b");
+    expect(restored?.routes).toEqual(authenticatedB.routes);
+    expect(restored?.displayName).toBe("Authenticated B");
+    expect(restored?.createdAt).toBe(T0 + 20);
+    expect(restored?.lastSeenAt).toBe(T0 + 500);
+    expect(restored?.isActive).toBe(false);
+    expect(restored?.customName).toBe("New name");
+  });
+
+  it("preserves same-tag fresh routes while accepting newer metadata freshness", async () => {
+    const storage = new FakeStorage();
+    const fresh = {
+      ...record("mac-a", "10.0.0.2", 23),
+      instanceTag: "feature-a",
+      createdAt: T0 + 20,
+      lastSeenAt: T0 + 500,
+    };
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert",
+      id: "mac-a",
+      record: fresh,
+      providedInstanceTag: true,
+    }], T0);
+
+    const staleRoutes = {
+      ...record("mac-a", "10.0.0.1", 22),
+      instanceTag: "feature-a",
+      lastSeenAt: T0 + 600,
+      isActive: false,
+    };
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert",
+      id: "mac-a",
+      record: staleRoutes,
+      providedInstanceTag: true,
+      instanceTagWriteMode: "preserve",
+    }], T0 + 1);
+
+    const restored = (await listBackupSnapshot(storage, "user-1")).records[0];
+    expect(restored?.instanceTag).toBe("feature-a");
+    expect(restored?.routes).toEqual(fresh.routes);
+    expect(restored?.createdAt).toBe(T0 + 20);
+    expect(restored?.lastSeenAt).toBe(T0 + 600);
+    expect(restored?.isActive).toBe(false);
+  });
+
+  it("creates a missing row from a preserve-mode snapshot", async () => {
+    const storage = new FakeStorage();
+    const incoming = {
+      ...record("mac-a", "10.0.0.1", 22),
+      instanceTag: "feature-a",
+      customName: "Desk",
+    };
+
+    await applyBackupOps(storage, "user-1", [{
+      kind: "upsert",
+      id: "mac-a",
+      record: incoming,
+      providedInstanceTag: true,
+      instanceTagWriteMode: "preserve",
+    }], T0);
+
+    expect((await listBackupSnapshot(storage, "user-1")).records[0]).toEqual(incoming);
+  });
+
+  it("normalizes optional client scopes into separate per-user collections", async () => {
+    const storage = new FakeStorage();
+    await applyBackupOps(
+      storage,
+      "user-1",
+      [{ kind: "upsert", id: "mac-a", record: record("mac-a", "10.0.0.1", 22) }],
+      T0,
+      "ios:Feature Tag",
+    );
+    await applyBackupOps(
+      storage,
+      "user-1",
+      [{ kind: "upsert", id: "mac-b", record: record("mac-b", "10.0.0.2", 22) }],
+      T0,
+      "ios:other",
+    );
+
+    expect(normalizeClientScope(" ios:Feature Tag ")).toBe("b64_aW9zOkZlYXR1cmUgVGFn");
+    expect(pairedMacsCollection("user-1", "ios:Feature Tag")).toBe(
+      "pairedMacsScoped:user-1:b64_aW9zOkZlYXR1cmUgVGFn",
+    );
+    expect((await listBackupSnapshot(storage, "user-1", "ios:Feature Tag")).records.map((r) => r.macDeviceID)).toEqual(["mac-a"]);
+    expect((await listBackupSnapshot(storage, "user-1", "ios:other")).records.map((r) => r.macDeviceID)).toEqual(["mac-b"]);
+    expect((await listBackupSnapshot(storage, "user-1")).records).toEqual([]);
+  });
+
+  it("rejects over-limit client scopes instead of rewriting them", () => {
+    expect(normalizeClientScope(`ios:${"x".repeat(MAX_CLIENT_SCOPE_LENGTH)}`)).toBeNull();
+  });
+
+  it("bounds client-created scoped collections per user", async () => {
+    const storage = new FakeStorage();
+    for (let i = 0; i < MAX_PAIRED_MAC_CLIENT_SCOPES_PER_USER; i += 1) {
+      const deltas = await applyBackupOps(
+        storage,
+        "user-1",
+        [{ kind: "upsert", id: `mac-${i}`, record: record(`mac-${i}`, "10.0.0.1", 22) }],
+        T0 + i,
+        `ios:tag-${i}`,
+      );
+      expect(deltas).toHaveLength(1);
+    }
+
+    let overError: unknown;
+    try {
+      await applyBackupOps(
+        storage,
+        "user-1",
+        [{ kind: "upsert", id: "blocked", record: record("blocked", "10.0.0.2", 22) }],
+        T0 + 1000,
+        "ios:blocked",
+      );
+    } catch (error) {
+      overError = error;
+    }
+    expect(overError).toBeInstanceOf(PairedMacBackupApplyError);
+    expect((overError as PairedMacBackupApplyError).code).toBe("too_many_client_scopes");
+    expect((await listBackupSnapshot(storage, "user-1", "ios:blocked")).records).toEqual([]);
+
+    const existingScopeUpdate = await applyBackupOps(
+      storage,
+      "user-1",
+      [{ kind: "upsert", id: "mac-0", record: record("mac-0", "10.0.0.9", 22) }],
+      T0 + 2000,
+      "ios:tag-0",
+    );
+    expect(existingScopeUpdate.length).toBeGreaterThan(0);
+    expect((await listBackupSnapshot(storage, "user-1", "ios:tag-0")).records.map((r) => r.macDeviceID)).toEqual([
+      "mac-0",
+    ]);
+  });
+
+  it("isolates v2 scope capacity from legacy heads while keeping both generations bounded", async () => {
+    const storage = new FakeStorage();
+    for (let i = 0; i < MAX_PAIRED_MAC_CLIENT_SCOPES_PER_USER; i += 1) {
+      await applyBackupOps(
+        storage,
+        "user-1",
+        [{ kind: "upsert", id: `legacy-${i}`, record: record(`legacy-${i}`, "10.0.0.1", 22) }],
+        T0 + i,
+        `ios:tag-${i}`,
+      );
+    }
+
+    for (let i = 0; i < MAX_PAIRED_MAC_CLIENT_SCOPES_PER_USER; i += 1) {
+      const deltas = await applyBackupOps(
+        storage,
+        "user-1",
+        [{ kind: "upsert", id: `current-${i}`, record: record(`current-${i}`, "10.0.0.2", 22) }],
+        T0 + 1000 + i,
+        `ios:v2:tag-${i}`,
+      );
+      expect(deltas).toHaveLength(1);
+    }
+
+    expect(pairedMacsCollection("user-1", "ios:tag-0").startsWith("pairedMacsScoped:user-1:")).toBe(true);
+    expect(pairedMacsCollection("user-1", "ios:v2:tag-0").startsWith("pairedMacsScopedIosV2:user-1:")).toBe(true);
+    expect((await listBackupSnapshot(storage, "user-1", "ios:tag-0")).records.map((r) => r.macDeviceID)).toEqual([
+      "legacy-0",
+    ]);
+    expect((await listBackupSnapshot(storage, "user-1", "ios:v2:tag-0")).records.map((r) => r.macDeviceID)).toEqual([
+      "current-0",
+    ]);
+
+    let overError: unknown;
+    try {
+      await applyBackupOps(
+        storage,
+        "user-1",
+        [{ kind: "upsert", id: "blocked", record: record("blocked", "10.0.0.3", 22) }],
+        T0 + 2000,
+        "ios:v2:blocked",
+      );
+    } catch (error) {
+      overError = error;
+    }
+    expect(overError).toBeInstanceOf(PairedMacBackupApplyError);
+    expect((overError as PairedMacBackupApplyError).code).toBe("too_many_client_scopes");
+    expect((await listBackupSnapshot(storage, "user-1", "ios:v2:blocked")).records).toEqual([]);
+  });
+
   it("writes the per-user physical collection and relabels frames to the logical name", async () => {
     const storage = new FakeStorage();
     const deltas = await applyBackupOps(
@@ -314,15 +632,51 @@ describe("applyBackupOps", () => {
     const storage = new FakeStorage();
     await applyBackupOps(storage, "user-1", [{ kind: "upsert", id: "mac-a", record: record("mac-a", "192.168.1.50", 22) }], T0);
     await applyBackupOps(storage, "user-1", [{ kind: "delete", id: "mac-a" }], T0 + 1000);
+    await applyBackupOps(
+      storage,
+      "user-1",
+      [{ kind: "upsert", id: "scoped-mac", record: record("scoped-mac", "192.168.1.51", 22) }],
+      T0,
+      "ios:dev",
+    );
+    await applyBackupOps(storage, "user-1", [{ kind: "delete", id: "scoped-mac" }], T0 + 1000, "ios:dev");
+    await applyBackupOps(
+      storage,
+      "user-1",
+      [{ kind: "upsert", id: "v2-scoped-mac", record: record("v2-scoped-mac", "192.168.1.52", 22) }],
+      T0,
+      "ios:v2:dev",
+    );
+    await applyBackupOps(
+      storage,
+      "user-1",
+      [{ kind: "delete", id: "v2-scoped-mac" }],
+      T0 + 1000,
+      "ios:v2:dev",
+    );
     // The alarm discovers the per-user collection by tombstone prefix without
-    // knowing the user id ahead of time.
+    // knowing the user id or iOS build scope ahead of time.
     const collection = pairedMacsCollection("user-1");
+    const scopedCollection = pairedMacsCollection("user-1", "ios:dev");
+    const v2ScopedCollection = pairedMacsCollection("user-1", "ios:v2:dev");
+    const scopedTombstonePrefix = `${scopedCollection.split(":", 1)[0]}:`;
+    const v2ScopedTombstonePrefix = `${v2ScopedCollection.split(":", 1)[0]}:`;
     expect(await listTombstonedCollections(storage, `${PAIRED_MACS_COLLECTION}:`)).toContain(collection);
+    expect(PAIRED_MACS_COLLECTION_TOMBSTONE_PREFIXES).toContain(scopedTombstonePrefix);
+    expect(PAIRED_MACS_COLLECTION_TOMBSTONE_PREFIXES).toContain(v2ScopedTombstonePrefix);
+    expect(await listTombstonedCollections(storage, scopedTombstonePrefix)).toContain(scopedCollection);
+    expect(await listTombstonedCollections(storage, v2ScopedTombstonePrefix)).toContain(v2ScopedCollection);
     // GC with retention elapsed collects the tombstone, so churned create/delete
     // cannot grow storage without bound.
     const res = await gcTombstones(storage, collection, T0 + 1_000_000_000, 0);
     expect(res.collected).toBe(1);
+    const scopedRes = await gcTombstones(storage, scopedCollection, T0 + 1_000_000_000, 0);
+    expect(scopedRes.collected).toBe(1);
+    const v2ScopedRes = await gcTombstones(storage, v2ScopedCollection, T0 + 1_000_000_000, 0);
+    expect(v2ScopedRes.collected).toBe(1);
     expect(await listTombstonedCollections(storage, `${PAIRED_MACS_COLLECTION}:`)).not.toContain(collection);
+    expect(await listTombstonedCollections(storage, scopedTombstonePrefix)).not.toContain(scopedCollection);
+    expect(await listTombstonedCollections(storage, v2ScopedTombstonePrefix)).not.toContain(v2ScopedCollection);
   });
 
   it("listLiveBackup returns live records newest-first and excludes tombstones, scoped per user", async () => {
