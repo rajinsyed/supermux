@@ -29,6 +29,9 @@ let package = Package(
         .package(path: "../CmuxMobileTerminal"),
         .package(path: "../CmuxMobileTerminalKit"),
         .package(path: "../CmuxMobileWorkspace"),
+        // SUPERMUX:begin supermux-mobile-shellui-deps (fork package: Projects section mounted in WorkspaceListView)
+        .package(path: "../SupermuxMobileUI"),
+        // SUPERMUX:end supermux-mobile-shellui-deps
         .package(path: "../../../vendor/stack-auth-swift-sdk-prerelease"),
     ],
     targets: [
@@ -49,6 +52,9 @@ let package = Package(
                 "CmuxMobileTerminal",
                 "CmuxMobileTerminalKit",
                 "CmuxMobileWorkspace",
+                // SUPERMUX:begin supermux-mobile-shellui-deps (fork package: Projects section mounted in WorkspaceListView)
+                "SupermuxMobileUI",
+                // SUPERMUX:end supermux-mobile-shellui-deps
                 .product(name: "StackAuth", package: "stack-auth-swift-sdk-prerelease"),
             ],
             resources: [.process("Resources")],

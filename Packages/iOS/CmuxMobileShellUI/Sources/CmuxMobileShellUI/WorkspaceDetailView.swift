@@ -7,6 +7,9 @@ import CmuxMobileShellModel
 import CmuxMobileSupport
 import CmuxMobileTerminal
 import CmuxMobileWorkspace
+// SUPERMUX:begin supermux-mobile-workspace-tools (fork workspace tools mount — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-workspace-tools
 import SwiftUI
 #if os(iOS)
 @preconcurrency import UIKit
@@ -89,7 +92,14 @@ struct WorkspaceDetailView: View {
     }
     #endif
     var body: some View {
+        // SUPERMUX:begin supermux-mobile-workspace-tools (fork Changes toolbar entry + sheet; hidden without supermux.changes.v1 — see SUPERMUX-TOUCHPOINTS.md)
+        // rpcWorkspaceID (not id): with two+ Macs paired, aggregation scopes the
+        // row id to "<macID>\u{1F}<uuid>", and the Mac's changes.*/files.* RPCs
+        // parse workspace_id as a bare UUID. Sending the scoped row id fails
+        // every request with invalid_params. rpcWorkspaceID is the Mac-local id.
         let content = Group { detailSurfaceContent }
+            .supermuxWorkspaceTools(connection: store.supermuxConnectionSeam, workspaceID: workspace.rpcWorkspaceID.rawValue, workspaceName: workspace.name)
+        // SUPERMUX:end supermux-mobile-workspace-tools
 
         #if os(iOS)
         content

@@ -338,6 +338,25 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         }
     }
 
+    /// Like ``refreshWorktrees(for:)`` but reports whether git actually listed
+    /// the worktrees, and — unlike it — leaves the last-known list in place on
+    /// failure instead of clearing to `[]`. Lets the mobile `worktrees.list`
+    /// RPC tell a genuinely empty repo from a transient git failure rather than
+    /// ship an authoritative empty list. Returns `false` on failure.
+    @discardableResult
+    public func refreshWorktreesReportingSuccess(for projectId: UUID) async -> Bool {
+        guard let project = projects.first(where: { $0.id == projectId }) else { return false }
+        do {
+            let list = try await worktreeService.listWorktrees(for: project)
+            if worktreesByProjectId[projectId] != list {
+                worktreesByProjectId[projectId] = list
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Creates a worktree and refreshes the project's worktree list.
     /// - Parameters:
     ///   - projectId: Owning project.

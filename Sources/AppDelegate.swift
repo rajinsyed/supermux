@@ -4531,6 +4531,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func ensureMobileWorkspaceListObserver(for tabManager: TabManager) {
+        // SUPERMUX:begin mobile-supermux-observers (fork mobile observers activate alongside upstream's; see Sources/Supermux/SupermuxMobileObservers.swift)
+        SupermuxMobileHostGlue.activateIfNeeded()
+        // SUPERMUX:end mobile-supermux-observers
         let id = ObjectIdentifier(tabManager)
         if mobileWorkspaceListObservers[id] == nil {
             mobileWorkspaceListObservers[id] = MobileWorkspaceListObserver(tabManager: tabManager, notificationStore: notificationStore)

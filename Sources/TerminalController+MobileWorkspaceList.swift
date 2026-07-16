@@ -212,7 +212,9 @@ extension TerminalController {
         let store = notificationStore ?? AppDelegate.shared?.notificationStore
         let latestNotification = store?.latestNotification(forTabId: workspace.id)
         let preview = Self.mobileWorkspacePreview(latestNotification: latestNotification)
-        return [
+        // SUPERMUX:begin mobile-supermux-workspace-fields (upstream returns this literal directly; supermux binds it to merge additive fields below)
+        let payload: [String: Any] = [
+        // SUPERMUX:end mobile-supermux-workspace-fields
             "id": workspace.id.uuidString,
             "window_id": v2OrNull(windowID?.uuidString),
             "title": workspace.title,
@@ -239,6 +241,9 @@ extension TerminalController {
             "has_unread": store?.workspaceIsUnread(forTabId: workspace.id) ?? false,
             "terminals": terminals
         ]
+        // SUPERMUX:begin mobile-supermux-workspace-fields (additive supermux_project_id / supermux_activity / supermux_branch / supermux_pull_request, §6 — see SUPERMUX-TOUCHPOINTS.md)
+        return SupermuxMobileWorkspaceListAugmenter.augment(payload, workspace: workspace)
+        // SUPERMUX:end mobile-supermux-workspace-fields
     }
 
     // SUPERMUX:begin keep-window-on-last-close

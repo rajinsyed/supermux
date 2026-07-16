@@ -60,6 +60,42 @@ Both phases are verified against a live tagged build (worktree creation, the Cha
 real git status, and the full ⌘G run→stop→restart cycle confirmed by an actually-listening dev
 server port).
 
+### Mobile (iOS companion) parity status
+
+The iOS companion app remote-controls a paired supermux Mac over additive `mobile.supermux.*`
+JSON-RPC methods (wire contract in `Packages/Shared/SupermuxMobileCore`; phone stores in
+`Packages/iOS/SupermuxMobileKit`; screens in `Packages/iOS/SupermuxMobileUI`; Mac handlers in
+`Sources/Supermux/SupermuxMobileHost+*.swift`). The Mac stays the sole source of truth (projects
+file, git, AI keys). Every iOS entry point is capability-gated (`supermux.*.v1`), so a fork phone
+paired with an upstream cmux Mac renders exactly upstream's UI. Status per fork feature area:
+
+| # | Fork feature area | Mobile status | How / where |
+|---|-------------------|---------------|-------------|
+| 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsMobileSection` + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
+| 2 | Project icons & colors | ✅ on iOS | custom icon via `project.icon` (base64 PNG, etag-cached `SupermuxProjectIconCache`) → SF Symbol → letter avatar tinted by `color_hex` |
+| 3 | Worktrees (create/open/remove, AI branch suggest) | ✅ on iOS | `SupermuxNewWorktreeSheet` + project-detail worktree rows over `worktrees.list` / `worktree.suggest_branch/create/open/remove` (dirty removals require `force` after a phone-side confirm) |
+| 4 | Worktree PR badges | ✅ on iOS | `SupermuxPullRequestDTO` (number/state/url; title optional-nil, matching the desktop probe) on `worktrees.list` rows |
+| 5 | Changes (git) panel | ✅ on iOS | `SupermuxChangesScreen` / `SupermuxDiffScreen`: status, diffs, stage/unstage/discard, commit, AI commit message, push/pull, stash/pop, history over `changes.*` |
+| 6 | Run actions | ✅ on iOS | project-row run menu + running indicator over `run.state/start/stop` |
+| 7 | Terminal presets | ✅ on iOS | preset manager + editors (m2) and launcher (m4) over `preset.create/update/delete/launch` |
+| 8 | Custom app actions | ✅ on iOS | `action.run`; `open_url`-classified actions return the URL and the phone opens it locally |
+| 9 | Worktree setup/teardown scripts | ✅ mac-side execution, phone-triggered | scripts always run on the Mac when worktrees are created/removed from the phone; script lists editable in the phone's project editor (config-imported projects render read-only) |
+| 10 | AI integration | ✅ mac-side only (by design) | the AI key/model never leave the Mac; the phone consumes results (`worktree.suggest_branch`, `changes.generate_commit_message`) and surfaces the `ai_unavailable` error when unconfigured |
+| 11 | Workspace switcher | ✅ covered by existing surface — **deliberate decision** | the existing iOS workspace list already is the mobile switcher; no new switcher UI was built (recorded mission decision) |
+| 12 | Agent activity indicators | ✅ on iOS | additive `supermux_activity` workspace-list field → `SupermuxWorkspaceActivityDot` (`working`/`needs_input`/`ready`, palette mirrors the Mac's `SupermuxActivityPalette`) |
+| 13 | File explorer ops | ✅ on iOS | `SupermuxFileBrowserScreen` (browse, new file/folder, rename, duplicate, trash — never `rm`) over root-confined `files.*`; doubles as the project editor's folder picker |
+| 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field folds loose project-owned rows under the Projects section; a project's open workspaces are listed in its detail screen |
+| 15 | Empty-home behavior | mac-side only — **deliberate decision** | pure macOS window behavior; the mobile close path is already handled by touchpoint #71. No iOS surface (recorded mission decision) |
+| 16 | Sidebar polish (font scale, switcher cards, list filter) | mac-side only | pure macOS sidebar cosmetics with no mobile analogue; the phone's Projects section has its own mobile-native styling |
+
+**Recorded non-goals** (deliberate, may be revisited later):
+
+- `files.read` (file **preview** on the phone) — stretch goal, not required for parity; the file
+  browser manages entries without reading contents.
+- Push/pull **job-progress events** — reserved; v1 serves `changes.push`/`changes.pull` over a
+  single RPC with an extended phone-side deadline (180 s, `SupermuxChangesSyncDeadline`).
+- Live device pairing is validated by the user's manual per-milestone demos, not automation.
+
 ### Localization
 
 All supermux user-facing strings use `String(localized: "supermux.<area>.<name>", defaultValue:

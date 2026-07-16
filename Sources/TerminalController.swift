@@ -13967,6 +13967,10 @@ class TerminalController {
             result = request.method == "workspace.group.create" ? v2MobileWorkspaceGroupCreate(params: request.params) : v2MobileWorkspaceGroupAction(params: request.params)
         case let method where method.hasPrefix("mobile.chat."):
             result = await v2MobileChatDispatch(method: method, params: request.params)
+        // SUPERMUX:begin mobile-supermux-dispatch (route the fork's mobile.supermux.* namespace; router lives in Sources/Supermux/TerminalController+SupermuxMobile.swift)
+        case let method where method.hasPrefix("mobile.supermux."):
+            result = await v2MobileSupermuxDispatch(method: method, params: request.params)
+        // SUPERMUX:end mobile-supermux-dispatch
         case "workspace.close":
             result = v2MobileWorkspaceClose(params: request.params)
         case "workspace.group.collapse":

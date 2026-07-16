@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 
+import CmuxFoundation
 import SupermuxKit
 
 /// Integration tests for `SupermuxGitChangesService` against real temporary
@@ -583,5 +584,83 @@ import SupermuxKit
         await #expect(throws: SupermuxGitError.self) {
             try await service.commit(repoPath: root, message: "Empty commit attempt")
         }
+    }
+
+    // MARK: - Hook environment
+
+    /// Pins the mutation launch shape: `/usr/bin/env`, then a `PATH=`
+    /// assignment carrying the runner's fallback directories, then the plain
+    /// git argv. That `PATH` is what the git child — and every repo hook it
+    /// spawns — inherits, so a husky pre-commit calling `bunx` resolves it
+    /// from /usr/local/bin even when the app was launched from the Dock with
+    /// the minimal launchd `PATH` (the "bunx: command not found" (127)
+    /// Generate & Commit failure).
+    @Test func commitRunsGitThroughEnvWithHookVisiblePath() async throws {
+        let runner = RecordingRunner()
+        let service = SupermuxGitChangesService(runner: runner)
+
+        try await service.commit(repoPath: "/repo", message: "message")
+
+        let invocation = try #require(await runner.all().first)
+        #expect(invocation.executable == "/usr/bin/env")
+        let pathAssignment = try #require(invocation.arguments.first)
+        #expect(pathAssignment.hasPrefix("PATH="))
+        for directory in CommandRunner.defaultFallbackSearchDirectories {
+            #expect(pathAssignment.contains(directory))
+        }
+        #expect(Array(invocation.arguments.dropFirst()) == ["git", "commit", "-m", "message"])
+    }
+
+    /// End-to-end against real git: a `pre-commit` hook observes a `PATH`
+    /// containing every fallback directory (Homebrew, /usr/local, MacPorts),
+    /// not just whatever the parent process happened to inherit.
+    @Test func preCommitHookSeesFallbackDirectoriesOnPath() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        // Pin the hooks directory locally so a machine-wide `core.hooksPath`
+        // (e.g. a global husky install) cannot bypass the fixture hook.
+        try GitFixture.runGit(["config", "--local", "core.hooksPath", ".git/hooks"], in: root)
+        let hookPath = (root as NSString).appendingPathComponent(".git/hooks/pre-commit")
+        let observedPath = (root as NSString).appendingPathComponent("hook-path.txt")
+        try GitFixture.write(
+            "#!/bin/sh\nprintf '%s' \"$PATH\" > \"\(observedPath)\"\n",
+            to: ".git/hooks/pre-commit",
+            in: root
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookPath)
+        try GitFixture.write("hooked\n", to: "hooked.txt", in: root)
+        try await service.stage(repoPath: root, paths: ["hooked.txt"])
+
+        try await service.commit(repoPath: root, message: "Commit through hook")
+
+        let hookObservedPath = try GitFixture.read("hook-path.txt", in: root)
+        for directory in CommandRunner.defaultFallbackSearchDirectories {
+            #expect(hookObservedPath.contains(directory))
+        }
+    }
+}
+
+/// Records every invocation the service hands the runner, answering each with
+/// a clean exit. Used to pin the exact executable/argv wire shape.
+private actor RecordingRunner: CommandRunning {
+    struct Invocation: Sendable {
+        var executable: String
+        var arguments: [String]
+    }
+
+    private var invocations: [Invocation] = []
+
+    func all() -> [Invocation] { invocations }
+
+    func run(
+        directory: String,
+        executable: String,
+        arguments: [String],
+        timeout: TimeInterval?
+    ) async -> CommandResult {
+        invocations.append(Invocation(executable: executable, arguments: arguments))
+        return CommandResult(
+            stdout: "", stderr: nil, exitStatus: 0, timedOut: false, executionError: nil
+        )
     }
 }

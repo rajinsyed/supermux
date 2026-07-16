@@ -1,6 +1,9 @@
 import CmuxMobileShell
 import CmuxMobileShellModel
 import CmuxMobileSupport
+// SUPERMUX:begin supermux-mobile-projects-section (fork Projects section — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-projects-section
 import SwiftUI
 #if os(iOS)
 #elseif os(macOS)
@@ -122,6 +125,9 @@ struct WorkspaceListView: View {
     /// Stored at list scope so reusable rows do not own transient presentation
     /// state while `List` is recycling swipe-action rows.
     @State var workspacePendingCloseID: MobileWorkspacePreview.ID?
+    // SUPERMUX:begin supermux-mobile-projects-section (fork-owned section model; rows below the List get value snapshots + closures only)
+    @State private var supermuxProjects = SupermuxProjectsSectionModel()
+    // SUPERMUX:end supermux-mobile-projects-section
     @State var optimisticFlatState = MobileWorkspaceOptimisticOrderReconciler()
     @State var optimisticGroupedState = MobileWorkspaceOptimisticOrderReconciler()
     /// In-flight move RPC count plus the tail of the send chain. Moves stay
@@ -175,10 +181,33 @@ struct WorkspaceListView: View {
             || workspace.terminals.contains { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
+    // SUPERMUX:begin supermux-mobile-hide-project-workspaces (fold loose project-owned rows under the Projects section; inert while hidden/searching/filtering — see SUPERMUX-TOUCHPOINTS.md)
+    /// Project ids actually rendered in the Projects section: only workspaces
+    /// owned by one of these fold out of the flat list (they stay reachable by
+    /// expanding that project). Empty while the section is hidden, not yet
+    /// loaded, or searching/filtering — so `projects.list` failing (or a second
+    /// Mac's workspaces, whose project lives elsewhere) never hides a row with
+    /// no way to reach it.
+    private var supermuxShownProjectIDs: Set<String> {
+        let snapshot = supermuxProjects.snapshot
+        guard snapshot.isVisible, snapshot.hasLoaded, trimmedQuery.isEmpty, !filter.isActive else {
+            return []
+        }
+        return Set(snapshot.rows.map(\.id))
+    }
+
+    private var supermuxFlatWorkspaces: [MobileWorkspacePreview] {
+        workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)
+    }
+    // SUPERMUX:end supermux-mobile-hide-project-workspaces
+
     /// Filtered workspaces for flat presentation, pinned first and otherwise stable.
     var filteredWorkspaces: [MobileWorkspacePreview] {
         let query = trimmedQuery
         let currentFilter = activeFilter
+        // SUPERMUX:begin supermux-mobile-hide-project-workspaces (upstream reads `workspaces` directly)
+        let workspaces = supermuxFlatWorkspaces
+        // SUPERMUX:end supermux-mobile-hide-project-workspaces
         let matches = workspaces.filter { workspace in
             currentFilter.matches(workspace)
                 && (query.isEmpty || matchesQuery(workspace, query: query))
@@ -217,7 +246,9 @@ struct WorkspaceListView: View {
 
     var groupedWorkspaces: [MobileWorkspacePreview] {
         let currentFilter = activeFilter
-        return workspaces.filter { currentFilter.matches($0) }
+        // SUPERMUX:begin supermux-mobile-hide-project-workspaces (upstream reads `workspaces` directly; supermuxShownProjectIDs is empty under an active filter, so hiding stays inert while filtering)
+        return supermuxFlatWorkspaces.filter { currentFilter.matches($0) }
+        // SUPERMUX:end supermux-mobile-hide-project-workspaces
     }
 
     var body: some View {
@@ -272,6 +303,9 @@ struct WorkspaceListView: View {
             case .none:
                 EmptyView()
             }
+            // SUPERMUX:begin supermux-mobile-projects-section (collapsible Projects section above the group sections; hidden without supermux.projects.v1)
+            SupermuxProjectsMobileSection(section: supermuxProjects.snapshot, actions: supermuxProjects.actions)
+            // SUPERMUX:end supermux-mobile-projects-section
             Section {
                 if rendersGroupedSections {
                     groupedRows
@@ -293,6 +327,9 @@ struct WorkspaceListView: View {
         .listStyle(.plain)
         // Let the invisible footer use its 16pt boundary height. Real rows are taller.
         .environment(\.defaultMinListRowHeight, 16)
+        // SUPERMUX:begin supermux-mobile-projects-section (session driver: rebuilds the fork stores per (re)connect/capability change; feeds the §6 workspace join + open-workspace navigation)
+        .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) })
+        // SUPERMUX:end supermux-mobile-projects-section
         .workspaceListRefreshable(refresh)
         .onChange(of: currentFilterMenuPresentMachineIDs) { _, present in
             // Drop machine filters whose Mac left the aggregated list (a secondary
@@ -304,7 +341,8 @@ struct WorkspaceListView: View {
         }
         .navigationTitle(L10n.string("mobile.workspaces.title", defaultValue: "Workspaces"))
         .mobileInlineNavigationTitle()
-        .searchable(text: $searchText)
+        // SUPERMUX:begin supermux-mobile-hide-search (upstream: `.searchable(text: $searchText)` — the bottom search bar is removed on the fork per user request; `searchText` stays empty so all query filtering is inert)
+        // SUPERMUX:end supermux-mobile-hide-search
 
         workspaceListWithToolbar(
             list,
@@ -595,6 +633,9 @@ struct WorkspaceListView: View {
                 )
                 : ""
         )
+        // SUPERMUX:begin supermux-mobile-row-activity (agent-activity dot mirroring the Mac sidebar indicator — see SUPERMUX-TOUCHPOINTS.md)
+        .supermuxWorkspaceActivityDot(rawActivity: workspace.supermuxActivity)
+        // SUPERMUX:end supermux-mobile-row-activity
         .listRowInsets(EdgeInsets(top: 4, leading: indented ? 32 : 12, bottom: 4, trailing: 12))
         .listRowSeparator(.hidden)
     }

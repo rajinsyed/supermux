@@ -88,3 +88,16 @@ enum GitFixture {
         try? FileManager.default.removeItem(atPath: path)
     }
 }
+
+/// Strips the `/usr/bin/env VAR=… git` wrapper the services use for
+/// env-sensitive git calls (the changes-service mutations, whose repo hooks
+/// need a full `PATH`; the worktree service's locale-pinned `worktree add`),
+/// returning the plain git argv. Calls made with `executable: "git"` come back
+/// unchanged. Shared by every fake ``CommandRunning`` that matches on git
+/// subcommands.
+func unwrappedGitArguments(executable: String, arguments: [String]) -> [String] {
+    guard executable == "/usr/bin/env" else { return arguments }
+    let command = arguments.drop { $0.contains("=") }
+    guard command.first == "git" else { return arguments }
+    return Array(command.dropFirst())
+}

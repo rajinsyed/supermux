@@ -1,0 +1,229 @@
+import Foundation
+import SupermuxMobileCore
+import SupermuxMobileKit
+
+/// The inline-nesting half of ``SupermuxProjectsSectionModel`` (m6-f1): the
+/// mac-sidebar-style per-project disclosure, its phone-local persistence,
+/// the section-owned worktree sessions behind the nested rows, the nested
+/// worktree open flow, and the detail-screen route — split from the main
+/// file to respect the per-file length budget.
+extension SupermuxProjectsSectionModel {
+    /// Whether one project's inline disclosure is open.
+    /// - Parameter projectID: The project's UUID string.
+    public func isProjectExpanded(_ projectID: String) -> Bool {
+        expandedProjectIDs.contains(projectID)
+    }
+
+    /// Toggles one project's inline disclosure, persisting the new state
+    /// phone-locally. Expanding starts the project's section-owned worktree
+    /// session (fetch on expand + `supermux.worktrees.updated` refetches);
+    /// collapsing cancels it — a re-expand fetches fresh, like the mac
+    /// sidebar's expand-refresh.
+    /// - Parameter projectID: The project's UUID string.
+    public func toggleProjectExpanded(_ projectID: String) {
+        if expandedProjectIDs.contains(projectID) {
+            expandedProjectIDs.remove(projectID)
+            endWorktreeSession(forProjectID: projectID)
+        } else {
+            expandedProjectIDs.insert(projectID)
+            startWorktreeSession(forProjectID: projectID)
+        }
+        expansionDefaults.set(expandedProjectIDs.sorted(), forKey: Self.expansionDefaultsKey)
+    }
+
+    /// Routes to the project DETAIL screen. Shared by the row's info
+    /// accessory and its long-press menu entry (one action path). Captures
+    /// the row's current snapshot as ``detailFallbackRow`` so the pushed
+    /// detail survives a session teardown (see ``detailRow``).
+    /// - Parameter projectID: The project's UUID string.
+    public func openProjectDetail(_ projectID: String) {
+        detailFallbackRow = snapshot.rows.first { $0.id == projectID }
+        detailProjectID = projectID
+    }
+
+    /// Pops the detail route (navigation dismissed).
+    public func dismissProjectDetail() {
+        detailProjectID = nil
+        detailFallbackRow = nil
+    }
+
+    /// The freshest row snapshot for the routed detail project, or `nil`
+    /// when nothing is routed. Resolution is by STABLE PROJECT ID against
+    /// the live snapshot, in three tiers:
+    ///
+    /// 1. The live row — the normal case; store refetches keep feeding the
+    ///    pushed detail fresh data.
+    /// 2. `nil` (the localized "no longer available" placeholder) ONLY when
+    ///    a live, fully-loaded projects list no longer contains the id —
+    ///    the project was genuinely deleted mac-side.
+    /// 3. The ``detailFallbackRow`` captured at push time while the section
+    ///    snapshot is hidden or still loading (session torn down by a
+    ///    disconnect, or the post-pop reload hasn't landed yet) — never the
+    ///    placeholder for a merely-paused session.
+    public var detailRow: SupermuxProjectRowSnapshot? {
+        guard let detailProjectID else { return nil }
+        let snapshot = snapshot
+        if let live = snapshot.rows.first(where: { $0.id == detailProjectID }) {
+            return live
+        }
+        if snapshot.isVisible, snapshot.hasLoaded {
+            return nil
+        }
+        return detailFallbackRow
+    }
+
+    /// Navigates to a workspace through the shell's own closure — the ONE
+    /// workspace-navigation path for the section's affordances. Pops any
+    /// routed project detail first, so the destination binding never holds a
+    /// stale `true` (which would swallow the next detail push).
+    /// - Parameter workspaceID: The workspace's UI row id.
+    func navigateToWorkspace(_ workspaceID: String) {
+        dismissProjectDetail()
+        selectWorkspaceAction(workspaceID)
+    }
+
+    /// Opens a nested worktree row: an already-open worktree navigates
+    /// straight to its workspace; an unopened one runs the m2-f2
+    /// `worktree.open` → navigate flow through the project's section-owned
+    /// store. Failures surface on ``nestedOpenErrorMessage``. A late answer
+    /// from a session that has since ended (disconnect/reconnect) is
+    /// dropped: it must neither navigate the new shell with a stale
+    /// workspace id nor surface an obsolete error. A late answer from a
+    /// request the user has since superseded — by tapping a different
+    /// worktree row, including the synchronous already-open path, before
+    /// this one answered — is dropped too: it must never yank the app back
+    /// to a target the user has moved on from.
+    /// - Parameters:
+    ///   - projectID: The owning project's UUID string.
+    ///   - worktree: The tapped row's value snapshot.
+    public func openNestedWorktree(projectID: String, worktree: SupermuxWorktreeRowSnapshot) {
+        nestedOpenRequestToken += 1
+        let requestToken = nestedOpenRequestToken
+        if let workspaceID = worktree.workspaceID {
+            navigateToWorkspace(workspaceID)
+            return
+        }
+        guard let store = worktreeSessions[projectID]?.store else { return }
+        let generation = sessionGeneration
+        Task {
+            do {
+                let workspaceID = try await store.openWorktree(path: worktree.path)
+                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
+                if let workspaceID {
+                    navigateToWorkspace(workspaceID)
+                }
+            } catch {
+                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
+                nestedOpenErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Clears a surfaced nested-worktree open failure (alert dismissed).
+    public func dismissNestedOpenError() {
+        nestedOpenErrorMessage = nil
+    }
+
+    /// The nested-worktree slice for one EXPANDED project, projected from
+    /// its section-owned worktrees store (a pure read — the store's
+    /// `@Observable` fields re-project the snapshot as fetches land).
+    func nestedWorktrees(forProjectID projectID: String) -> SupermuxProjectNestedWorktrees {
+        guard let store = worktreeSessions[projectID]?.store else { return .unavailable }
+        guard store.hasLoaded else { return .loading }
+        return .loaded(SupermuxWorktreeRowSnapshot.unopenedRows(from: store.worktrees))
+    }
+
+    /// Starts the section-owned worktree session for one expanded project —
+    /// a no-op while disconnected or without `supermux.worktrees.v1` (the
+    /// nested slice stays ``SupermuxProjectNestedWorktrees/unavailable``).
+    func startWorktreeSession(forProjectID projectID: String) {
+        guard worktreeSessions[projectID] == nil,
+              let store = makeWorktreesStore(forProjectID: projectID) else { return }
+        let task = Task { await store.run() }
+        worktreeSessions[projectID] = WorktreeSession(store: store, task: task)
+    }
+
+    func endWorktreeSession(forProjectID projectID: String) {
+        worktreeSessions.removeValue(forKey: projectID)?.task?.cancel()
+    }
+
+    /// Pauses every worktree session's event loop WITHOUT dropping its
+    /// store (m6-f3): while a navigation push covers the list, the loaded
+    /// nested rows keep rendering, but nothing polls — or keeps re-dialling
+    /// a dead connection — in the background. The cancelled loop's handle is
+    /// retained as the session's `predecessor` so a pop-resume can chain
+    /// behind its (cooperative) exit via ``resumeWorktreeSessionLoops()``.
+    func pauseWorktreeSessionLoops() {
+        for (projectID, session) in worktreeSessions where session.task != nil {
+            session.task?.cancel()
+            worktreeSessions[projectID]?.predecessor = session.task
+            worktreeSessions[projectID]?.task = nil
+        }
+    }
+
+    /// Restarts the paused worktree sessions' event loops (each resubscribes
+    /// and refetches — the silent revalidation of the retained nested rows),
+    /// chained behind the cancelled predecessor's exit so one store never
+    /// runs two subscriptions concurrently (cancellation is cooperative —
+    /// the old loop may still be finishing a request). Sessions whose loop
+    /// still runs (a rapid pop beat the pause) are left alone.
+    func resumeWorktreeSessionLoops() {
+        for (projectID, session) in worktreeSessions where session.task == nil {
+            let store = session.store
+            let previous = session.predecessor
+            worktreeSessions[projectID]?.predecessor = nil
+            worktreeSessions[projectID]?.task = Task {
+                await previous?.value
+                guard !Task.isCancelled else { return }
+                await store.run()
+            }
+        }
+    }
+
+    /// Ends orphan worktree sessions whose project is no longer in the
+    /// authoritative list (deleted mac-side): their rows are gone, so they
+    /// could never be collapsed away, and without pruning they would refetch
+    /// on every worktrees event forever. Persisted expansion ids are kept —
+    /// they may belong to ANOTHER paired Mac's projects (ids are per-Mac
+    /// UUIDs), and a stale id costs nothing while unconnected.
+    /// - Parameter projectIDs: The fetched project ids.
+    func pruneWorktreeSessions(keepingProjectIDs projectIDs: [String]) {
+        let known = Set(projectIDs)
+        for projectID in worktreeSessions.keys where !known.contains(projectID) {
+            endWorktreeSession(forProjectID: projectID)
+        }
+    }
+
+    func endAllWorktreeSessions() {
+        for session in worktreeSessions.values {
+            session.task?.cancel()
+        }
+        worktreeSessions.removeAll()
+    }
+
+    /// One-shot worktree-count seeding for projects WITHOUT a live worktree
+    /// session, mirroring the mac's eager `refreshWorktrees` for every
+    /// project at load (its capsule count shows without ever expanding).
+    /// Runs at most once per project per session; expanded projects are
+    /// skipped (their session's own fetch feeds the count). A no-op without
+    /// `supermux.worktrees.v1`. Generation-guarded so a reconnect's fresh
+    /// counts are never overwritten by a stale session's late answers.
+    /// - Parameters:
+    ///   - projectIDs: The authoritative fetched project ids.
+    ///   - generation: The calling session's generation stamp.
+    func seedWorktreeCounts(forProjectIDs projectIDs: [String], generation: Int) {
+        guard let client = sessionClient,
+              sessionCapabilities?.supportsWorktrees == true else { return }
+        for projectID in projectIDs
+        where worktreeSessions[projectID] == nil && !seededWorktreeCountProjectIDs.contains(projectID) {
+            seededWorktreeCountProjectIDs.insert(projectID)
+            Task { [weak self] in
+                guard let response = try? await client.worktreesList(
+                    SupermuxWorktreesListRequest(projectID: projectID)
+                ) else { return }
+                guard let self, self.sessionGeneration == generation else { return }
+                self.recordWorktrees(response.worktrees, forProjectID: projectID)
+            }
+        }
+    }
+}

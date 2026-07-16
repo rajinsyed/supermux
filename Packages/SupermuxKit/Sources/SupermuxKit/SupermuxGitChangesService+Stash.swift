@@ -1,3 +1,4 @@
+public import CmuxFoundation
 import Foundation
 
 /// Stash operations for ``SupermuxGitChangesService``.
@@ -15,11 +16,19 @@ extension SupermuxGitChangesService {
     /// - Parameters:
     ///   - repoPath: Repository directory.
     ///   - includeUntracked: Whether to also stash untracked files.
+    ///   - message: Optional stash message (`-m`); blank/`nil` keeps git's
+    ///     default "WIP on <branch>" entry name.
+    /// - Returns: git's captured output (stdout/stderr), for callers that
+    ///   surface a log (the mobile `changes.stash` `log_lines`).
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
-    public func stash(repoPath: String, includeUntracked: Bool) async throws {
+    @discardableResult
+    public func stash(
+        repoPath: String, includeUntracked: Bool, message: String? = nil
+    ) async throws -> CommandResult {
         var arguments = ["stash", "push"]
         if includeUntracked { arguments.append("--include-untracked") }
-        try await runGit(
+        if let message, !message.isEmpty { arguments += ["-m", message] }
+        return try await runGit(
             in: repoPath, arguments,
             commandLabel: includeUntracked ? "stash push --include-untracked" : "stash push"
         )
@@ -32,8 +41,11 @@ extension SupermuxGitChangesService {
     /// as a ``SupermuxGitError/gitFailed(command:message:)`` for the caller to
     /// show, while the conflicted files appear on the next status refresh.
     /// - Parameter repoPath: Repository directory.
+    /// - Returns: git's captured output (stdout/stderr), for callers that
+    ///   surface a log (the mobile `changes.stash_pop` `log_lines`).
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
-    public func popStash(repoPath: String) async throws {
+    @discardableResult
+    public func popStash(repoPath: String) async throws -> CommandResult {
         try await runGit(in: repoPath, ["stash", "pop"], commandLabel: "stash pop")
     }
 }

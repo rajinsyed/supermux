@@ -210,6 +210,7 @@ public final class SupermuxWorktreePullRequestModel {
                         number: kept.number,
                         status: kept.status,
                         url: kept.url,
+                        title: kept.title,
                         isStale: true
                     )
                 }

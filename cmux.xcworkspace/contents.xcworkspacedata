@@ -31,6 +31,9 @@
       <FileRef
          location = "group:CmuxSyncStore">
       </FileRef>
+      <FileRef
+         location = "group:SupermuxMobileCore">
+      </FileRef>
    </Group>
    <Group
       location = "container:Packages/iOS"
@@ -85,6 +88,12 @@
       </FileRef>
       <FileRef
          location = "group:CmuxMobileWorkspace">
+      </FileRef>
+      <FileRef
+         location = "group:SupermuxMobileKit">
+      </FileRef>
+      <FileRef
+         location = "group:SupermuxMobileUI">
       </FileRef>
    </Group>
    <Group

@@ -18,6 +18,8 @@ let package = Package(
         // CmuxProcess micro-package into CmuxFoundation (cmux #6356).
         .package(path: "../macOS/CmuxFoundation"),
         .package(path: "../macOS/CmuxGit"),
+        // Shared wire contract with the iOS companion app (mobile.supermux.* DTOs).
+        .package(path: "../Shared/SupermuxMobileCore"),
     ],
     targets: [
         .target(
@@ -25,6 +27,7 @@ let package = Package(
             dependencies: [
                 .product(name: "CmuxFoundation", package: "CmuxFoundation"),
                 .product(name: "CmuxGit", package: "CmuxGit"),
+                .product(name: "SupermuxMobileCore", package: "SupermuxMobileCore"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
@@ -34,7 +37,10 @@ let package = Package(
         ),
         .testTarget(
             name: "SupermuxKitTests",
-            dependencies: ["SupermuxKit"],
+            dependencies: [
+                "SupermuxKit",
+                .product(name: "SupermuxMobileCore", package: "SupermuxMobileCore"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 .enableUpcomingFeature("ExistentialAny"),

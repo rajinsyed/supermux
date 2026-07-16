@@ -18,7 +18,17 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     }
 
     func openWorkspace(_ request: SupermuxOpenWorkspaceRequest) {
-        guard let tabManager else { return }
+        openWorkspaceReturningWorkspaceId(request)
+    }
+
+    /// The one shared open path behind ``openWorkspace(_:)``, additionally
+    /// reporting which workspace served the request (focused or created) so
+    /// RPC callers (`mobile.supermux.project.open` / `worktree.open` /
+    /// `worktree.create {open: true}`) can return a `workspace_id`. Returns
+    /// `nil` only when the window's tab manager is gone.
+    @discardableResult
+    func openWorkspaceReturningWorkspaceId(_ request: SupermuxOpenWorkspaceRequest) -> UUID? {
+        guard let tabManager else { return nil }
         let directory = (request.directory as NSString).expandingTildeInPath
         // A command- or setup-carrying request always opens a fresh workspace so
         // the work runs in a clean terminal; plain "open" requests reuse a
@@ -45,7 +55,7 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
            }) {
             tabManager.selectWorkspace(existing)
             associate(workspaceId: existing.id, directory: directory, with: request)
-            return
+            return existing.id
         }
         // Run the action's command through the new workspace's interactive
         // shell (see SupermuxCommandLaunch): resolves shell aliases/functions
@@ -68,6 +78,7 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         }
         associate(workspaceId: workspace.id, directory: directory, with: request)
         runSetupScriptIfNeeded(in: workspace, directory: directory, request: request)
+        return workspace.id
     }
 
     /// Spawns a dedicated, focused setup terminal in `workspace` that runs the
@@ -87,7 +98,7 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         // script (e.g. `cp "$SUPERSET_ROOT_PATH/.env" .env`) sees it directly.
         let panel = workspace.newTerminalSurface(
             inPane: paneId,
-            focus: true,
+            focus: !request.preservesUserFocus,
             workingDirectory: directory,
             initialInput: SupermuxCommandLaunch.shellInput(for: setupScript),
             startupEnvironment: request.setupEnvironment
@@ -118,13 +129,16 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         let directory = (resolved as NSString).expandingTildeInPath
         guard let panel = workspace.newTerminalSurface(
             inPane: paneId,
-            focus: true,
+            focus: !request.preservesUserFocus,
             workingDirectory: directory,
             initialInput: SupermuxCommandLaunch.shellInput(for: command)
         ) else { return }
         // Open the action's tab as the first tab, matching the ⌘G run action.
-        // The action runs in the foreground, so the new surface keeps focus.
-        workspace.supermuxMoveSurfaceToFront(panelId: panel.id, keepFocus: true)
+        // On the desktop the foreground action keeps focus; a remote (mobile)
+        // action must not yank the Mac user's keyboard focus (socket policy).
+        workspace.supermuxMoveSurfaceToFront(
+            panelId: panel.id, keepFocus: !request.preservesUserFocus
+        )
     }
 
     /// Records the workspace→project association for project-originated opens,

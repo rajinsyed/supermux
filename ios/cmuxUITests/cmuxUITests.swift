@@ -1894,6 +1894,9 @@ final class cmuxUITests: XCTestCase {
             terminalID: nil,
             macDeviceID: "ui-test-mac",
             macDisplayName: "UI Test Mac",
+            // SUPERMUX:begin uitest-ticket-compat-version (fixture must carry the compat level like real Mac-minted tickets)
+            macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion,
+            // SUPERMUX:end uitest-ticket-compat-version
             routes: [route],
             expiresAt: Date(timeIntervalSinceNow: 60 * 60),
             authToken: "ui-test-ticket"
@@ -1998,6 +2001,9 @@ final class cmuxUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["CMUX_UITEST_MOCK_DATA"] = mockData ? "1" : "0"
+        // SUPERMUX:begin uitest-clear-paired-mac-launch (pairing persists across launches since #89; every harness launch starts unpaired)
+        app.launchEnvironment["CMUX_UITEST_CLEAR_PAIRED_MACS"] = "1"
+        // SUPERMUX:end uitest-clear-paired-mac-launch
         for (key, value) in environment {
             app.launchEnvironment[key] = value
         }

@@ -1190,6 +1190,25 @@ jobs:
           echo "::group::swift test Packages/SupermuxKit"
           swift test --package-path Packages/SupermuxKit
           echo "::endgroup::"
+          # SupermuxMobileCore is supermux-owned and absent from upstream's
+          # PACKAGES allowlist above; test it explicitly so its wire-contract
+          # suite (DTO round-trips, unknown-field tolerance) gates CI.
+          echo "::group::swift test Packages/Shared/SupermuxMobileCore"
+          swift test --package-path Packages/Shared/SupermuxMobileCore
+          echo "::endgroup::"
+          # SupermuxMobileKit is supermux-owned and absent from upstream's
+          # PACKAGES allowlist above; test it explicitly so its store/
+          # capability-gating suite (UI-01/UI-02) gates CI.
+          echo "::group::swift test Packages/iOS/SupermuxMobileKit"
+          swift test --package-path Packages/iOS/SupermuxMobileKit
+          echo "::endgroup::"
+          # SupermuxMobileUI is supermux-owned and absent from upstream's
+          # PACKAGES allowlist above; test it explicitly so its section
+          # view-model suite (UI-02) and xcstrings en+ja completeness check
+          # (POL-04) gate CI.
+          echo "::group::swift test Packages/iOS/SupermuxMobileUI"
+          swift test --package-path Packages/iOS/SupermuxMobileUI
+          echo "::endgroup::"
           # SUPERMUX:end ci-package-tests
 
   agent-session-web-resources:

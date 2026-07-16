@@ -41,6 +41,9 @@ extension MobileHostService {
             // this to render collapsible groups only against a Mac that emits them.
             "workspace.groups.v1",
         ]
+        // SUPERMUX:begin mobile-supermux-capabilities (fork capability list lives in Sources/Supermux/SupermuxMobileCapabilities.swift; appended before the DEBUG suppression filter so CMUX_DEBUG_SUPPRESS_MOBILE_CAPS can hide fork capabilities too)
+        + SupermuxMobileCapabilities.advertised
+        // SUPERMUX:end mobile-supermux-capabilities
         #if DEBUG
         // Lets a dev Mac impersonate an older host while dogfooding the iOS update hint.
         let suppressed = Set(

@@ -137,6 +137,25 @@ def dependency_calls_include_url(calls: list[str]) -> bool:
     return any(PACKAGE_URL_ARGUMENT_RE.search(call) for call in calls)
 
 
+# SUPERMUX:begin fix-resolved-policy-path-deps
+def lockfile_recorded_dependency_calls(calls: list[str]) -> list[str]:
+    """Dependency calls that SwiftPM records in Package.resolved.
+
+    `.package(path:)` dependencies are resolved by location and never written
+    to any lockfile, so manifest changes limited to path-based dependencies
+    cannot produce a legitimate Package.resolved diff (`swift package resolve`
+    rewrites nothing). Only url/registry (version/branch/revision-pinned)
+    dependency changes must come with lockfile churn.
+    """
+    return [
+        call
+        for call in calls
+        if PACKAGE_URL_ARGUMENT_RE.search(call)
+        or PACKAGE_PATH_ARGUMENT_RE.search(call) is None
+    ]
+# SUPERMUX:end fix-resolved-policy-path-deps
+
+
 def has_remote_dependency(
     root: str,
     graph: dict[str, tuple[bool, list[str]]],
@@ -156,6 +175,47 @@ def has_remote_dependency(
     visiting.remove(root)
     memo[root] = needs_lockfile
     return needs_lockfile
+
+
+# SUPERMUX:begin fix-resolved-policy-path-deps
+def path_dependency_remote_pin_roots(
+    calls: list[str],
+    manifest: Path,
+    all_manifests: dict[str, Path],
+    graph: dict[str, tuple[bool, list[str]]],
+    memo: dict[str, bool],
+) -> set[str]:
+    """Graph roots reachable through this manifest's `.package(path:)` deps
+    that carry remote (url/registry) pins.
+
+    A path-dependency-only manifest change is invisible to Package.resolved
+    ONLY when it does not alter which remote-pinned packages the root pulls
+    into its resolution closure. Retargeting a path dep to a pinned package —
+    or adding such a path dep — changes this set and MUST still demand a
+    lockfile diff; adding/retargeting among pin-free local packages (the
+    mission's local package graph) does not. Comparing this set current-vs-
+    previous distinguishes the two, so the exemption stays satisfiable for
+    pin-free path deps without letting closure-changing path deps escape.
+    """
+    root_by_resolved_path = {
+        candidate.parent.resolve(): root
+        for root, candidate in all_manifests.items()
+    }
+    pins: set[str] = set()
+    for call in calls:
+        if PACKAGE_URL_ARGUMENT_RE.search(call):
+            continue
+        match = PACKAGE_PATH_ARGUMENT_RE.search(call)
+        if match is None:
+            continue
+        target = (manifest.parent / match.group(1)).resolve()
+        target_root = root_by_resolved_path.get(target)
+        if target_root is not None and has_remote_dependency(
+            target_root, graph, memo, set()
+        ):
+            pins.add(target_root)
+    return pins
+# SUPERMUX:end fix-resolved-policy-path-deps
 
 
 def package_dependency_closure(
@@ -224,10 +284,21 @@ def changed_files_since(merge_base: str | None) -> set[str]:
 
 
 def file_text_at(ref: str, path: str) -> str:
-    try:
-        return git_stdout("show", f"{ref}:{path}")
-    except subprocess.CalledProcessError:
+    # SUPERMUX:begin fix-resolved-policy-path-deps
+    # A manifest new since the merge-base has no blob at `ref`; that is
+    # expected (it reads as ""), so silence git's `fatal: path … exists on
+    # disk, but not in <ref>` stderr noise instead of letting it leak
+    # into the check output.
+    result = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    if result.returncode != 0:
         return ""
+    return result.stdout
+    # SUPERMUX:end fix-resolved-policy-path-deps
 
 
 def xcode_package_reference_changed(
@@ -312,6 +383,30 @@ def main() -> int:
             )
             if current_calls == previous_calls:
                 continue
+            # SUPERMUX:begin fix-resolved-policy-path-deps
+            # Path-based dependency changes never appear in Package.resolved
+            # directly, so requiring a lockfile diff for a change limited to
+            # them is normally unsatisfiable. BUT a path dep retargeted to (or
+            # newly pointed at) a package that carries remote pins DOES change
+            # the root's recorded resolution closure — `swift package resolve`
+            # would rewrite Package.resolved with the new transitive pins. So
+            # skip only when BOTH the recorded (url) calls are unchanged AND
+            # the set of remote-pin-bearing packages reachable via the root's
+            # path deps is unchanged. Pinned (url) changes still demand churn.
+            # Upstream's coarser remote-dependency gate below stays as the
+            # fallback for everything this precise skip does not cover.
+            if (
+                lockfile_recorded_dependency_calls(current_calls)
+                == lockfile_recorded_dependency_calls(previous_calls)
+                and path_dependency_remote_pin_roots(
+                    current_calls, manifest, all_manifests, graph, current_remote_memo
+                )
+                == path_dependency_remote_pin_roots(
+                    previous_calls, manifest, all_manifests, graph, current_remote_memo
+                )
+            ):
+                continue
+            # SUPERMUX:end fix-resolved-policy-path-deps
             # Local path-only dependency edits do not always change the resolved
             # external pins. Require a matching Package.resolved diff only when
             # the edited manifest's graph currently has, previously had, or

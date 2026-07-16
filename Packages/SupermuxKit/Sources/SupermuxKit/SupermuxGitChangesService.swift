@@ -296,16 +296,24 @@ public actor SupermuxGitChangesService {
     /// - Parameters:
     ///   - repoPath: Repository directory.
     ///   - hasUpstream: Whether the current branch already has an upstream.
+    /// - Returns: git's captured output (stdout/stderr), for callers that
+    ///   surface a transfer log (the mobile `changes.push` `log_lines`).
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
-    public func push(repoPath: String, hasUpstream: Bool) async throws {
+    @discardableResult
+    public func push(repoPath: String, hasUpstream: Bool) async throws -> CommandResult {
         let arguments = hasUpstream ? ["push"] : ["push", "-u", "origin", "HEAD"]
-        try await runGit(in: repoPath, arguments, commandLabel: "push", timeout: Self.networkTimeout)
+        return try await runGit(
+            in: repoPath, arguments, commandLabel: "push", timeout: Self.networkTimeout
+        )
     }
 
     /// Pulls from the configured upstream (`git pull`).
     /// - Parameter repoPath: Repository directory.
+    /// - Returns: git's captured output (stdout/stderr), for callers that
+    ///   surface a transfer log (the mobile `changes.pull` `log_lines`).
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
-    public func pull(repoPath: String) async throws {
+    @discardableResult
+    public func pull(repoPath: String) async throws -> CommandResult {
         try await runGit(in: repoPath, ["pull"], commandLabel: "pull", timeout: Self.networkTimeout)
     }
 
@@ -356,11 +364,13 @@ public actor SupermuxGitChangesService {
         return result.exitStatus == 0
     }
 
-    /// `PATH` for the `env`-launched shell pipelines (background fetch, AI
-    /// captures): the inherited `PATH` first (so a user's custom git wins,
-    /// matching ``CommandRunner``'s search order), then the runner's fallback
-    /// directories and the standard system bins. Internal (not private): also
-    /// used by `SupermuxGitChangesService+AICapture.swift`.
+    /// `PATH` for every `env`-launched git call (the `runGit` mutations, the
+    /// background fetch, the AI-capture shell pipelines): the inherited `PATH`
+    /// first (so a user's custom git wins, matching ``CommandRunner``'s search
+    /// order), then the runner's fallback directories and the standard system
+    /// bins. Mutations need it too, not just resolution: repo hooks inherit
+    /// this `PATH` (see `runGit`). Internal (not private): also used by
+    /// `SupermuxGitChangesService+AICapture.swift`.
     static let gitSearchPath: String = {
         let inherited = ProcessInfo.processInfo.environment["PATH"]
         let fallbacks = CommandRunner.defaultFallbackSearchDirectories
@@ -404,6 +414,15 @@ public actor SupermuxGitChangesService {
 
     // Internal (not private): also used by the stash extension in
     // `SupermuxGitChangesService+Stash.swift`.
+    //
+    // Launched via `/usr/bin/env PATH=…` rather than `executable: "git"`:
+    // ``CommandRunner`` resolves the git binary itself against its fallback
+    // directories, but it does not amend the child's environment, so a GUI app
+    // launched from the Dock hands git the minimal launchd `PATH`
+    // (`/usr/bin:/bin:…`). Repo hooks then inherit that `PATH` and anything
+    // they invoke from Homebrew//usr/local — e.g. a husky pre-commit running
+    // `bunx` — fails with "command not found" (127). Setting `PATH` to
+    // ``gitSearchPath`` gives the hooks the same search path the runner uses.
     @discardableResult
     func runGit(
         in directory: String,
@@ -413,8 +432,8 @@ public actor SupermuxGitChangesService {
     ) async throws -> CommandResult {
         let result = await runner.run(
             directory: directory,
-            executable: "git",
-            arguments: arguments,
+            executable: "/usr/bin/env",
+            arguments: ["PATH=\(Self.gitSearchPath)", "git"] + arguments,
             timeout: timeout
         )
         guard result.exitStatus == 0 else {
