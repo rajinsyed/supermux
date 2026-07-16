@@ -34,6 +34,16 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     /// `SUPERSET_ROOT_PATH`). Empty when there is no setup script.
     public var setupEnvironment: [String: String]
 
+    /// Whether the open must preserve the Mac user's current keyboard focus.
+    ///
+    /// `false` (default) is the desktop behavior: activating a project/worktree
+    /// ON the Mac makes the new terminal the first responder. Remote (mobile)
+    /// opens set `true` — per the cmux socket/focus policy, a command arriving
+    /// from the phone must not yank keyboard focus out from under whatever the
+    /// Mac user is doing. The workspace still opens and is selected; only the
+    /// terminal-surface first-responder grab is suppressed.
+    public var preservesUserFocus: Bool
+
     /// Creates a request.
     /// - Parameters:
     ///   - title: Workspace title.
@@ -43,6 +53,7 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     ///   - projectId: Owning project to associate the opened workspace with.
     ///   - setupScript: Setup script for a dedicated setup terminal, or `nil`.
     ///   - setupEnvironment: Variables exported into the setup terminal.
+    ///   - preservesUserFocus: Suppress the keyboard-focus grab (remote opens).
     public init(
         title: String,
         directory: String,
@@ -50,7 +61,8 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         initialCommand: String? = nil,
         projectId: UUID? = nil,
         setupScript: String? = nil,
-        setupEnvironment: [String: String] = [:]
+        setupEnvironment: [String: String] = [:],
+        preservesUserFocus: Bool = false
     ) {
         self.title = title
         self.directory = directory
@@ -59,6 +71,7 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         self.projectId = projectId
         self.setupScript = setupScript
         self.setupEnvironment = setupEnvironment
+        self.preservesUserFocus = preservesUserFocus
     }
 }
 

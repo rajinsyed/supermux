@@ -1,0 +1,265 @@
+public import Foundation
+public import SupermuxMobileCore
+public import SupermuxMobileKit
+
+/// Immutable value snapshot of the whole Projects section, computed by
+/// ``SupermuxProjectsSectionModel`` and passed across the shell's `List`
+/// boundary. The section view renders exclusively from this value.
+public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
+    /// Whether the section renders at all. `false` unless a live session
+    /// exists AND the host advertises `supermux.projects.v1` (UI-02).
+    public let isVisible: Bool
+    /// Whether the rows are folded away (header stays visible).
+    public let isCollapsed: Bool
+    /// Whether at least one fetch succeeded (drives loading vs empty vs rows).
+    public let hasLoaded: Bool
+    /// The project rows, in the Mac sidebar's order.
+    public let rows: [SupermuxProjectRowSnapshot]
+    /// Whether the global Presets entry renders. `false` unless the host
+    /// advertises `supermux.presets.v1` (an upstream or older fork Mac shows
+    /// no presets UI at all).
+    public let showsPresets: Bool
+    /// The global terminal presets, in the Mac bar's order. Presets are NOT
+    /// scoped per project — the desktop shows the same set above every
+    /// workspace's terminal.
+    public let presets: [SupermuxTerminalPresetDTO]
+    /// Whether the project detail's Actions section renders. `false` unless
+    /// the host advertises `supermux.actions.v1`.
+    public let showsActions: Bool
+
+    /// The snapshot of a hidden section (no session, or capability absent).
+    public static let hidden = SupermuxProjectsSectionSnapshot(
+        isVisible: false,
+        isCollapsed: false,
+        hasLoaded: false,
+        rows: []
+    )
+
+    /// Memberwise initializer.
+    /// - Parameters:
+    ///   - isVisible: Whether the section renders at all.
+    ///   - isCollapsed: Whether the rows are folded away.
+    ///   - hasLoaded: Whether at least one fetch succeeded.
+    ///   - rows: The project rows, in the Mac sidebar's order.
+    ///   - showsPresets: Whether the global Presets entry renders.
+    ///   - presets: The global terminal presets, in the Mac bar's order.
+    ///   - showsActions: Whether the project detail's Actions section renders.
+    public init(
+        isVisible: Bool,
+        isCollapsed: Bool,
+        hasLoaded: Bool,
+        rows: [SupermuxProjectRowSnapshot],
+        showsPresets: Bool = false,
+        presets: [SupermuxTerminalPresetDTO] = [],
+        showsActions: Bool = false
+    ) {
+        self.isVisible = isVisible
+        self.isCollapsed = isCollapsed
+        self.hasLoaded = hasLoaded
+        self.rows = rows
+        self.showsPresets = showsPresets
+        self.presets = presets
+        self.showsActions = showsActions
+    }
+}
+
+/// Closure action bundle for the run/launch/action controls — the row-level
+/// run control and the detail screen's Run/Presets/Actions sections reach
+/// the live session's ``SupermuxMobileRunStore`` only through these (no
+/// store reference crosses the `List` boundary). `nil` on the section
+/// actions means no session is live (every run affordance hides).
+public struct SupermuxProjectRunActions {
+    /// `run.start`: starts a project's run command; a non-`nil` command id
+    /// is the chosen command's 0-based `run_commands` index, `nil` starts
+    /// the default (all commands, desktop ⌘G semantics).
+    public let startRun: @MainActor (_ projectID: String, _ commandID: Int?) async throws -> Void
+    /// `run.stop`: interrupts the project's running command.
+    public let stopRun: @MainActor (_ projectID: String) async throws -> Void
+    /// `preset.launch` targeting the project's root; returns the hosting
+    /// workspace + terminal ids for the caller to navigate to.
+    public let launchPreset: @MainActor (
+        _ presetID: String,
+        _ projectID: String
+    ) async throws -> SupermuxPresetLaunchResponse
+    /// `action.run`: runs one project action; `open_url` outcomes return the
+    /// URL for the CALLER to open locally.
+    public let runAction: @MainActor (
+        _ projectID: String,
+        _ actionID: String
+    ) async throws -> SupermuxActionRunResponse
+
+    /// Memberwise initializer.
+    /// - Parameters:
+    ///   - startRun: `run.start` by project id + optional command index.
+    ///   - stopRun: `run.stop` by project id.
+    ///   - launchPreset: `preset.launch` by preset id, targeting a project.
+    ///   - runAction: `action.run` by project id + action id.
+    public init(
+        startRun: @escaping @MainActor (_ projectID: String, _ commandID: Int?) async throws -> Void,
+        stopRun: @escaping @MainActor (_ projectID: String) async throws -> Void,
+        launchPreset: @escaping @MainActor (
+            _ presetID: String,
+            _ projectID: String
+        ) async throws -> SupermuxPresetLaunchResponse,
+        runAction: @escaping @MainActor (
+            _ projectID: String,
+            _ actionID: String
+        ) async throws -> SupermuxActionRunResponse
+    ) {
+        self.startRun = startRun
+        self.stopRun = stopRun
+        self.launchPreset = launchPreset
+        self.runAction = runAction
+    }
+}
+
+/// Closure action bundle for the Projects section — the only way row-level
+/// views reach back to the model (no store reference crosses the `List`
+/// boundary).
+public struct SupermuxProjectsSectionActions {
+    /// Toggles the section's local collapse state.
+    public let toggleCollapsed: @MainActor () -> Void
+    /// Fetches a project's custom icon PNG through the model's etag cache;
+    /// `nil` when the project is unknown or has no custom icon.
+    public let iconPNGData: @Sendable (_ projectID: String) async -> Data?
+    /// Opens a nested workspace by its UI row id — the same navigation the
+    /// flat list's workspace rows use.
+    public let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
+    /// Builds a worktrees store for one project against the LIVE session's
+    /// client, or `nil` while disconnected or when the host lacks
+    /// `supermux.worktrees.v1` (the detail screen's Worktrees section hides).
+    public let makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore?
+    /// The project/preset editor seam, or `nil` when editing is unavailable
+    /// (the "+"/Edit affordances hide).
+    public let editing: SupermuxProjectEditingActions?
+    /// The run/launch/action seam, or `nil` when no session is live (every
+    /// run affordance hides).
+    public let run: SupermuxProjectRunActions?
+    /// Toggles one project's inline disclosure (mac-sidebar-style nesting);
+    /// expansion persists phone-locally by project id.
+    public let toggleProjectExpanded: @MainActor (_ projectID: String) -> Void
+    /// Routes to the project DETAIL screen (editor, presets, actions, run
+    /// control, files entry) — the info accessory and the long-press menu
+    /// entry share this one path.
+    public let openProjectDetail: @MainActor (_ projectID: String) -> Void
+    /// Opens a nested worktree row: an already-open worktree navigates to
+    /// its workspace; an unopened one goes through the m2-f2
+    /// `worktree.open` → navigate flow (failure surfaces on the model's
+    /// error state, never silently).
+    public let openNestedWorktree: @MainActor (
+        _ projectID: String,
+        _ worktree: SupermuxWorktreeRowSnapshot
+    ) -> Void
+
+    /// Memberwise initializer.
+    /// - Parameters:
+    ///   - toggleCollapsed: Toggles the section's local collapse state.
+    ///   - iconPNGData: Fetches a project's custom icon PNG by project id.
+    ///   - selectWorkspace: Opens a nested workspace by its UI row id.
+    ///   - makeWorktreesStore: Builds a worktrees store for one project.
+    ///   - editing: The editor seam, or `nil` to hide editing affordances.
+    ///   - run: The run/launch/action seam, or `nil` to hide run affordances.
+    ///   - toggleProjectExpanded: Toggles one project's inline disclosure.
+    ///   - openProjectDetail: Routes to the project detail screen.
+    ///   - openNestedWorktree: Opens a nested worktree row.
+    public init(
+        toggleCollapsed: @escaping @MainActor () -> Void,
+        iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
+        selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
+        makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
+        editing: SupermuxProjectEditingActions? = nil,
+        run: SupermuxProjectRunActions? = nil,
+        toggleProjectExpanded: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
+        openProjectDetail: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
+        openNestedWorktree: @escaping @MainActor (
+            _ projectID: String,
+            _ worktree: SupermuxWorktreeRowSnapshot
+        ) -> Void = { _, _ in }
+    ) {
+        self.toggleCollapsed = toggleCollapsed
+        self.iconPNGData = iconPNGData
+        self.selectWorkspace = selectWorkspace
+        self.makeWorktreesStore = makeWorktreesStore
+        self.editing = editing
+        self.run = run
+        self.toggleProjectExpanded = toggleProjectExpanded
+        self.openProjectDetail = openProjectDetail
+        self.openNestedWorktree = openNestedWorktree
+    }
+}
+
+/// The editor sheets' seam onto the live session: project CRUD, preset CRUD,
+/// and the fresh-DTO lookup that seeds the edit form. Every call routes
+/// through the session's ``SupermuxMobileProjectsStore`` (send → await →
+/// refetch); with no live session the closures throw
+/// `SupermuxMacUnavailableError`, which the sheets surface as a localized
+/// error — never a silent failure (UI-03).
+public struct SupermuxProjectEditingActions {
+    /// `project.create` with the folder's absolute Mac path; returns the
+    /// created (or pre-existing) record.
+    public let createProject: @MainActor (_ rootPath: String) async throws -> SupermuxProjectDTO
+    /// `project.update` with a present-key patch; returns the updated record.
+    public let updateProject: @MainActor (
+        _ projectID: String,
+        _ patch: SupermuxProjectPatch
+    ) async throws -> SupermuxProjectDTO
+    /// `project.delete` (the confirm dialog lives on the caller).
+    public let deleteProject: @MainActor (_ projectID: String) async throws -> Void
+    /// The freshest fetched DTO for one project, for seeding the edit form;
+    /// `nil` when the project is unknown to the session.
+    public let editorProject: @MainActor (_ projectID: String) -> SupermuxProjectDTO?
+    /// `preset.create` from a launchable draft; returns the created record.
+    public let createPreset: @MainActor (
+        _ request: SupermuxPresetCreateRequest
+    ) async throws -> SupermuxTerminalPresetDTO
+    /// `preset.update` with a present-key patch; returns the updated record.
+    public let updatePreset: @MainActor (
+        _ presetID: String,
+        _ patch: SupermuxPresetPatch
+    ) async throws -> SupermuxTerminalPresetDTO
+    /// `preset.delete` (the confirm dialog lives on the caller).
+    public let deletePreset: @MainActor (_ presetID: String) async throws -> Void
+    /// The project editor's Mac folder-picker seam, or `nil` when the host
+    /// lacks `supermux.files.v1` (the Browse affordance hides and the create
+    /// form stays text-only).
+    public let rootPathPicker: SupermuxProjectRootPathPicking?
+
+    /// Memberwise initializer.
+    /// - Parameters:
+    ///   - createProject: `project.create` by absolute Mac folder path.
+    ///   - updateProject: `project.update` with a present-key patch.
+    ///   - deleteProject: `project.delete` by project id.
+    ///   - editorProject: Fresh DTO lookup for seeding the edit form.
+    ///   - createPreset: `preset.create` from a typed request.
+    ///   - updatePreset: `preset.update` with a present-key patch.
+    ///   - deletePreset: `preset.delete` by preset id.
+    ///   - rootPathPicker: The Mac folder-picker seam, or `nil` to hide the
+    ///     editor's Browse affordance.
+    public init(
+        createProject: @escaping @MainActor (_ rootPath: String) async throws -> SupermuxProjectDTO,
+        updateProject: @escaping @MainActor (
+            _ projectID: String,
+            _ patch: SupermuxProjectPatch
+        ) async throws -> SupermuxProjectDTO,
+        deleteProject: @escaping @MainActor (_ projectID: String) async throws -> Void,
+        editorProject: @escaping @MainActor (_ projectID: String) -> SupermuxProjectDTO?,
+        createPreset: @escaping @MainActor (
+            _ request: SupermuxPresetCreateRequest
+        ) async throws -> SupermuxTerminalPresetDTO,
+        updatePreset: @escaping @MainActor (
+            _ presetID: String,
+            _ patch: SupermuxPresetPatch
+        ) async throws -> SupermuxTerminalPresetDTO,
+        deletePreset: @escaping @MainActor (_ presetID: String) async throws -> Void,
+        rootPathPicker: SupermuxProjectRootPathPicking? = nil
+    ) {
+        self.createProject = createProject
+        self.updateProject = updateProject
+        self.deleteProject = deleteProject
+        self.editorProject = editorProject
+        self.createPreset = createPreset
+        self.updatePreset = updatePreset
+        self.deletePreset = deletePreset
+        self.rootPathPicker = rootPathPicker
+    }
+}

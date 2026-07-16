@@ -27,7 +27,7 @@ Rules for adding a touchpoint:
 | 10 | `CLI/cmux.swift` | `right-sidebar-changes-mode-*` | CLI accepts `cmux right-sidebar set changes` (and the `changes` alias) |
 | 11 | `Sources/KeyboardShortcutSettings.swift` | `run-toggle-shortcut-*` | `supermuxToggleRun` action (case/label/default ⌘G, shared with Find Next) |
 | 12 | `Sources/AppDelegate.swift` | `run-toggle-shortcut-*` | ⌘G dispatch: Find Next while find overlay is open, run toggle otherwise; auto-repeat key events are excluded from the run toggle |
-| 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit` to the SPM package-test allowlist so its tests gate CI |
+| 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit`, `Packages/Shared/SupermuxMobileCore`, and `Packages/iOS/SupermuxMobileKit` to the SPM package-test allowlist so their tests gate CI |
 | 14 | `web/data/cmux.schema.json` | `unfenced` | Adds all five supermux ids — `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, `supermuxWorkspaceSwitcherPrevious`, `supermuxCommit`, and `supermuxCommitAccelerator` — to the shortcut-action enum so cmux.json validation accepts rebinding them; also rewrites the `workspaceInheritWorkingDirectory` description for the #80 fork behavior (off = always home directory) and gives it a `descriptionKey` (`schemaDescriptions.app.workspaceInheritWorkingDirectory`, messages under #86/#87) so the docs page localizes it |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits (normal mode only) inside a single `VStack` wrapper that keeps upstream's dynamic `ignoresSafeArea` edges — one structural identity, so minimal-mode toggles never rebuild the workspace subtree |
@@ -102,6 +102,30 @@ Rules for adding a touchpoint:
 | 86 | `web/messages/en.json` | `unfenced` | Adds `schemaDescriptions.app.workspaceInheritWorkingDirectory` so the localized docs configuration page renders the reworded #14 schema description through `descriptionKey` (the sibling mechanism 32 other schema properties use) instead of the English-only `description` fallback |
 | 87 | `web/messages/ja.json` | `unfenced` | Japanese translation for the #86 message key |
 | 88 | `skills/cmux-settings/references/all-keys.md` | `unfenced` | Regenerated the `app.workspaceInheritWorkingDirectory` description row to match the #14 schema description (the file is auto-generated from `web/data/cmux.schema.json` and had the removed Ghostty-fallback wording) |
+| 89 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-ticket-compat-version` | Adds `macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion` to the mock-host attach-ticket fixture in `attachURL(port:)`, matching what every real Mac-minted ticket carries (`MobileHostService`). Without it the ticket decodes to compat 0 ("unknown compatibility"), `MobileShellComposite.versionWarning` blocks pairing behind a "Continue anyway" sheet, and every connection-dependent cmuxUITest times out. Upstream-latent bug (upstream CI runs `-skip-testing:cmuxUITests` on PRs, so it never sees it) |
+| 90 | `cmux.xcworkspace/contents.xcworkspacedata` | `unfenced` | Adds the supermux-owned package FileRefs to the workspace groups: `Packages/Shared/SupermuxMobileCore` (Shared group) and `Packages/iOS/SupermuxMobileKit` (iOS group). Generated file — regenerate with `python3 scripts/check-workspace-package-groups.py --write` (the `Packages/` folder layout is the source of truth), never hand-edit |
+| 91 | `Sources/TerminalController.swift` | `mobile-supermux-dispatch` | One case in the `mobileHostHandleRPC` switch routes the whole `mobile.supermux.*` namespace to `v2MobileSupermuxDispatch` (fork-owned `Sources/Supermux/TerminalController+SupermuxMobile.swift`), mirroring the adjacent `mobile.chat.*` prefix case |
+| 92 | `Sources/Mobile/MobileHostService.swift` | `mobile-supermux-authz` | In `ticketAuthorizationError(authorization:request:)`, after the alias/conflict guards and before the upstream method switch, delegates every `mobile.supermux.*` method to the fail-closed `SupermuxMobileAuthorization.ticketError` table (fork-owned `Sources/Supermux/SupermuxMobileAuthorization.swift`); reachable in tests via the existing `debugTicketAuthorizationError` seam |
+| 93 | `Sources/Mobile/MobileHostService+Capabilities.swift` | `mobile-supermux-capabilities` | Appends `SupermuxMobileCapabilities.advertised` (fork-owned `Sources/Supermux/SupermuxMobileCapabilities.swift`) to `mobileHostCapabilities` so the phone can gate supermux screens on `supermux.*.v1` entries |
+| 94 | `Sources/AppDelegate.swift` | `mobile-supermux-observers` | One line at the top of `ensureMobileWorkspaceListObserver(for:)` calls `SupermuxMobileHostGlue.activateIfNeeded()` (fork-owned `Sources/Supermux/SupermuxMobileObservers.swift`) so fork mobile observers activate exactly where upstream constructs `MobileWorkspaceListObserver` |
+| 95 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the `SupermuxMobileCore` package (local package reference + product dependency on the `cmux` and `cmuxTests` targets), the fifteen `Sources/Supermux/` mobile files (`TerminalController+SupermuxMobile.swift`, `SupermuxMobileHost+Projects.swift`, `SupermuxMobileHost+Worktrees.swift`, `SupermuxMobileHost+PresetsActions.swift`, `SupermuxMobileHost+Changes.swift`, `SupermuxMobileHost+ChangesSync.swift`, `SupermuxMobileHost+Run.swift`, `SupermuxMobileHost+Files.swift`, `SupermuxMobileAuthorization.swift`, `SupermuxMobileCapabilities.swift`, `SupermuxMobileObservers.swift`, `SupermuxMobileActivityObserver.swift`, `SupermuxMobileRunObserver.swift`, `SupermuxMobileChangesWatchRegistry.swift`, `SupermuxMobileWorkspaceListAugmenter.swift`) into the cmux target, and `cmuxTests/SupermuxMobileAuthorizationTests.swift` + `cmuxTests/SupermuxMobileObserversTests.swift` + `cmuxTests/SupermuxMobileChangesWatchRegistryTests.swift` + `cmuxTests/SupermuxMobileRunObserverTests.swift` into the cmuxTests target (all ids prefixed `50BE0002…`) |
+| 96 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `supermux-mobile-client-mount` | One computed property `supermuxConnectionSeam` (next to `remoteClientForAgentChat`) exposes the live `MobileCoreRPCClient` + `supportedHostCapabilities` snapshot to the fork's supermux phone stores; `nil` unless connected. All tracked `@Observable` reads, so the fork's section driver re-runs (and rebuilds `SupermuxMacClient` + stores) on every (re)connect and on capability arrival |
+| 97 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-projects-section` | Four 1-line fences: `import SupermuxMobileUI`; a `@State` `SupermuxProjectsSectionModel`; the `SupermuxProjectsMobileSection(section:actions:)` mount inside the `List` above the workspace/group section; the `.supermuxProjectsSectionDriver(model:connection:workspaces:selectWorkspace:)` session driver on the `List` (fed by the #96 seam; `workspaces` + `selectWorkspace` feed the §6 open-workspace join and nested-row navigation). Section renders nothing without `supermux.projects.v1` |
+| 98 | `Packages/iOS/CmuxMobileShellUI/Package.swift` | `supermux-mobile-shellui-deps` | Two fenced 1-line additions: `.package(path: "../SupermuxMobileUI")` in `dependencies` and `"SupermuxMobileUI"` in the `CmuxMobileShellUI` target dependencies (fork-owned Projects section package) |
+| 99 | `Sources/TerminalController+MobileWorkspaceList.swift` | `mobile-supermux-workspace-fields` | Two fence blocks in `mobileWorkspacePayload`: the upstream `return [` becomes `let payload: [String: Any] = [`, and after the literal a fenced `return SupermuxMobileWorkspaceListAugmenter.augment(payload, workspace: workspace)` merges the additive §6 fields (`supermux_project_id` / `supermux_activity` / `supermux_branch` / `supermux_pull_request` (m6-f2 row parity); fork-owned `Sources/Supermux/SupermuxMobileWorkspaceListAugmenter.swift` → package-tested `SupermuxMobileWorkspaceFields` in SupermuxKit) |
+| 100 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileSyncWorkspaceListResponse.swift` | `supermux-mobile-workspace-fields` | Two fence blocks in `Workspace`: the OPTIONAL `supermuxProjectID` / `supermuxActivity` / `supermuxBranch` / `supermuxPullRequest` stored lets and their snake_case `CodingKeys` (`supermux_project_id` / `supermux_activity` / `supermux_branch` / `supermux_pull_request`). The scalars decode synthesized; the nested `SupermuxPullRequest` struct (`{number?, state?, url?, is_stale?}`) has a LOSSY custom `init(from:)` — malformed extension objects degrade to nil fields instead of failing the whole list. Pre-mission payloads (keys absent) decode unchanged — regression-tested by `SupermuxWorkspaceListFieldsDecodeTests` |
+| 101 | `Packages/iOS/CmuxMobileShellModel/Sources/CmuxMobileShellModel/MobileWorkspacePreview.swift` | `supermux-mobile-workspace-fields` | One fence block: defaulted `public var supermuxProjectID/supermuxActivity/supermuxBranch: String? = nil` plus the PR flattened to scalars (`supermuxPullRequestNumber: Int?`, `supermuxPullRequestState/URL: String?` — no wire-type dependency), all following the `machineColorIndex` pattern, so upstream initializers and call sites need no change |
+| 102 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileWorkspacePreview+RemoteMapping.swift` | `supermux-mobile-workspace-fields` | One fence block after `self.init(...)` in `init(remote:)`: copies the decoded supermux fields (project id, activity, branch, and the PR object flattened to number/state/url scalars) onto the preview (aggregation's `var stamped = workspace` copies then carry them everywhere) |
+| 103 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-project-workspaces`, `supermux-mobile-row-activity` | Hide filter: a fenced `supermuxFlatWorkspaces` helper (`workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)`), where `supermuxShownProjectIDs` is non-empty only while `snapshot.isVisible && snapshot.hasLoaded && trimmedQuery.isEmpty && !filter.isActive` — i.e. the hide is active only when the Projects section is visible AND loaded AND no search/filter, plus two fenced one-line swaps where upstream read `workspaces` (`filteredWorkspaces`, `groupedListItems`). Row dot: one fenced `.supermuxWorkspaceActivityDot(rawActivity:)` modifier on `WorkspaceNavigationRow` in `workspaceRow` |
+| 104 | `ios/cmux/AppCompositionRoot.swift` | `uitest-clear-paired-mac-state` | When `UITestConfig.mockDataEnabled` and the harness sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1`, deletes `Application Support/cmux/` (the `MobilePairedMacStore` sqlite + WAL/SHM) once at composition-root init, before `CMUXMobileRootScene` opens the store. Fixes cross-test pairing-state leakage on the shared simulator: since #89 made pairing actually complete, a persisted paired Mac from a prior test/run auto-navigated past `MobileAddDeviceForm` and its dead-host reconnect churn broke 3 cmuxUITests (cmuxUITests.swift:245/:586). No-op for real installs: the mock gate is DEBUG-only and the env var is only set by the XCUITest harness (#105) |
+| 105 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-clear-paired-mac-launch` | `launchApp` sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1` on every harness launch so each test starts from an unpaired slate (consumed by #104) |
+| 106 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-new-workspace-menu-item` | `testWorkspaceToolbarCreatesWorkspaceAndTerminal` creates the workspace via the terminal dropdown's `MobileNewWorkspaceMenuItem` instead of tapping a nav-bar `MobileTerminalNewWorkspaceButton`, because this upstream snapshot's iOS `WorkspaceDetailView` only mounts `newWorkspaceToolbarButton` in the non-iOS `#else` toolbar branch — on iOS the identifier does not exist and the tap times out deterministically (cmuxUITests.swift:245). Upstream never noticed (PR CI runs `-skip-testing:cmuxUITests`) and a newer upstream restores a nav-bar button; all behavioral assertions (host `workspace.create`, `workspace-3`/`workspace-3-terminal-1` selection, menu-item existence) are unchanged |
+| 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base (three fence blocks: helper `lockfile_recorded_dependency_calls`, the changed-roots skip in `main`, and `file_text_at`) |
+| 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two 1-line fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:)` modifier on the detail `body`'s outer `Group`. Mounts the fork's capability-gated Changes and Files toolbar entries (fork-owned `SupermuxMobileUI/SupermuxWorkspaceTools.swift`) which present `SupermuxChangesScreen` / `SupermuxFileBrowserScreen` as sheets; fed by the #96 `supermuxConnectionSeam`. Each entry hides without its capability (`supermux.changes.v1` / `supermux.files.v1`) |
+| 109 | `scripts/lint-ios-package-conventions.sh` | `lint-ios-conventions-fork-scopes` | Adds the fork mobile packages (`Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobile*`) to the lint's SCOPES so the iOS conventions lint (CI job `package-conventions-lint` in `.github/workflows/test-ios.yml`) mechanically enforces its per-line rules on them; deliberate constant/text namespace holders in the fork packages carry inline `lint:allow` justifications |
+| 110 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-search` | One comment-only fence replacing upstream's `.searchable(text: $searchText)` on the workspace `List`: the fork removes the main list's (bottom-placed) search bar per direct user request. `searchText` stays `""` so upstream's query filtering (`trimmedQuery`, `matchesQuery`, search-flattened sections) compiles unchanged but is inert. Trade-off: no free-text workspace search on the phone; the Unread filter and grouping remain |
+| 111 | `.gitignore` | `supermux-gitignore-mission` | One fenced line ignoring the fork-local `mission/` mission-kit state directory (mission-plan/mission-run progress artifacts; local tooling data, never product code). `.phone-build/` directly above is upstream/pre-existing and stays unfenced. Re-apply: if upstream rewrites `.gitignore`, re-add `mission/` inside the fence anywhere in the file |
+| 112 | `Packages/iOS/CmuxMobileRPC/Tests/CmuxMobileRPCTests/SupermuxWorkspaceListFieldsDecodeTests.swift` | `unfenced` | Whole fork-owned test file living in the upstream `CmuxMobileRPC` test target (a new file needs no in-file fence, but is registered here so `supermux-check-touchpoints.sh` guards its existence — an upstream restructure of the test target that drops it fails the check). Proves PROTO-03: the additive `supermux_*` workspace-list fields decode tolerantly (pre-mission payloads decode unchanged; payloads carrying `supermux_project_id`/`supermux_activity` populate the optional fields). Re-apply: keep the file compiled into the `CmuxMobileRPCTests` target |
 
 ## How to re-apply
 
@@ -1435,3 +1459,394 @@ If upstream ever fixes the inheritance leak itself (e.g. passing an explicit cwd
 no-inherit flag to `ghostty_surface_new` when the setting is off), drop all
 `new-workspace-home-dir` fences and take upstream's fix; the #81 test and
 `SupermuxNewWorkspaceHomeDirectoryTests` tell you whether the symptom is truly gone.
+
+## iOS / mobile sync
+
+### 89. `ios/cmuxUITests/cmuxUITests.swift` — `uitest-ticket-compat-version`
+
+The XCUITest mock-host harness (`launchConnectedApp` → `attachURL(port:)`) builds a
+`CmxAttachTicket` fixture for the in-runner `MobileSyncMockHostServer` and injects it via
+`CMUX_UITEST_ATTACH_URL`. Upstream's fixture omits `macPairingCompatibilityVersion`, but
+`CmxAttachTicketInput.decode` normalizes a missing compat version to `0`
+(`withUnknownCompatibilityVersionForPairingURL`), and
+`MobileShellComposite.versionWarning(for:)` treats `0 != CmxMobileDefaults.pairingCompatibilityVersion`
+as a cross-compatibility pairing → `connectPairingURLResult` returns `.needsUserApproval` and the
+app parks behind a `MobilePairingVersionWarning` sheet ("Continue anyway") that no test ever taps.
+Every connection-dependent cmuxUITest (9 of 12) then times out waiting for
+`MobileWorkspaceRow-workspace-main` / `MobileTerminalSurface`.
+
+This is an upstream-latent test-fixture bug, not app misbehavior: every real Mac-minted ticket
+carries the compat level (`MobileHostService` passes
+`macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion`), and upstream CI
+never notices because `.github/workflows/test-ios.yml` runs `-skip-testing:cmuxUITests` on pull
+requests ("Full UI tests currently exceed the pull-request simulator budget on macos-26").
+
+The fence adds the one missing argument to the fixture initializer:
+
+```swift
+let ticket = try CmxAttachTicket(
+    ...
+    macDisplayName: "UI Test Mac",
+    // SUPERMUX:begin uitest-ticket-compat-version (fixture must carry the compat level like real Mac-minted tickets)
+    macPairingCompatibilityVersion: CmxMobileDefaults.pairingCompatibilityVersion,
+    // SUPERMUX:end uitest-ticket-compat-version
+    routes: [route],
+    ...
+```
+
+Re-apply note: if upstream adds the compat version to the fixture itself (or removes the
+`versionWarning` gate for compat 0), drop this fence and take upstream. If upstream rewrites
+`attachURL(port:)`, the requirement is: the UITest fixture ticket must decode with
+`macPairingCompatibilityVersion == CmxMobileDefaults.pairingCompatibilityVersion` so the pairing
+version warning does not fire under the mock harness.
+
+### 13 (cont.) + 90. `Packages/Shared/SupermuxMobileCore` registration (ci.yml allowlist + workspace group)
+
+`Packages/Shared/SupermuxMobileCore` is the supermux-owned zero-dependency wire-contract package
+for the iOS companion app (`mobile.supermux.*` method/topic/capability constants + Codable DTOs +
+the `SupermuxWireJSON` Codable↔`[String: Any]` bridge). Two upstream files register it:
+
+- **`.github/workflows/ci.yml` (#13, inside the existing `ci-package-tests` fence):** upstream's
+  `PACKAGES=(...)` allowlist in the package-tests job never lists fork packages, so the fence runs
+  `swift test --package-path Packages/Shared/SupermuxMobileCore` explicitly (same pattern as
+  `Packages/SupermuxKit`). Re-apply: restore the fenced block after the group-agnostic loop; keep
+  every fork package the fence tests listed there.
+- **`cmux.xcworkspace/contents.xcworkspacedata` (#90, unfenced — generated XML):** the package's
+  FileRef in the Shared group. Re-apply after any merge by running
+  `python3 scripts/check-workspace-package-groups.py --write` (the `Packages/` directory layout is
+  the source of truth); CI's `--check` fails on drift. Never hand-edit the workspace file.
+
+The package itself is fork-owned (no fences inside it). It intentionally has zero dependencies and
+no `Package.resolved` (SwiftPM only writes one when dependencies exist); if it ever gains a
+dependency, track the generated package-local `Package.resolved` per repo policy.
+
+### 91–95. Mac host plumbing for `mobile.supermux.*` (dispatch, authz, capabilities, observers, wiring)
+
+The Mac side of the iOS supermux parity plane. All logic lives in fork-owned files
+(`Sources/Supermux/TerminalController+SupermuxMobile.swift`, `SupermuxMobileHost+Projects.swift`,
+`SupermuxMobileAuthorization.swift`, `SupermuxMobileCapabilities.swift`,
+`SupermuxMobileObservers.swift`, and `Packages/SupermuxKit/Sources/SupermuxKit/Mobile/`); four
+1–3-line fences hook it into upstream:
+
+- **`Sources/TerminalController.swift` (#91, `mobile-supermux-dispatch`):** one
+  `case let method where method.hasPrefix("mobile.supermux."):` in the `mobileHostHandleRPC`
+  switch, placed right after the `mobile.chat.` prefix case. Re-apply: keep it anywhere in that
+  switch before `default:`; the router body is fork-owned.
+- **`Sources/Mobile/MobileHostService.swift` (#92, `mobile-supermux-authz`):** a 3-line guard in
+  `ticketAuthorizationError(authorization:request:)` — AFTER the workspace/terminal alias and
+  conflict guards (they must keep applying to supermux methods) and BEFORE upstream's method
+  switch — returning `SupermuxMobileAuthorization.ticketError(method:params:ticket:)` for the
+  whole prefix. The fork table fails closed (`default:` = scoped-ticket `forbidden`), so a merge
+  that drops this fence makes every supermux method hit upstream's own fail-closed `default:` —
+  safe, but the phone loses scoped-ticket access; `cmuxTests/SupermuxMobileAuthorizationTests`
+  goes red either way.
+- **`Sources/Mobile/MobileHostService+Capabilities.swift` (#93, `mobile-supermux-capabilities`):**
+  `+ SupermuxMobileCapabilities.advertised` appended to upstream's array literal in
+  `mobileHostCapabilities`. Re-apply: any composition that folds the fork list into the returned
+  array works; never inline `supermux.*` strings into upstream's literal.
+- **`Sources/AppDelegate.swift` (#94, `mobile-supermux-observers`):**
+  `SupermuxMobileHostGlue.activateIfNeeded()` at the top of
+  `ensureMobileWorkspaceListObserver(for:)`. Re-apply: the call must run wherever upstream
+  constructs `MobileWorkspaceListObserver`, so fork observers exist exactly when the mobile event
+  plane is live. Idempotent — safe to call from several sites.
+- **`cmux.xcodeproj/project.pbxproj` (#95, unfenced):** `SupermuxMobileCore` local package
+  reference + product dependency (cmux + cmuxTests targets), the `Sources/Supermux/` mobile
+  files (see the #95 table row for the current list) in the cmux target, and
+  `cmuxTests/SupermuxMobileAuthorizationTests.swift`,
+  `cmuxTests/SupermuxMobileObserversTests.swift`,
+  `cmuxTests/SupermuxMobileChangesWatchRegistryTests.swift`, and
+  `cmuxTests/SupermuxMobileRunObserverTests.swift` in the cmuxTests
+  target. Ids prefixed `50BE0002…`; re-add via Xcode or by copying any `50BE0001…` sibling's
+  four-entry shape, then run `python3 scripts/normalize-pbxproj.py`.
+- **`.github/swift-file-length-budget.tsv` (#4):** rows for `TerminalController.swift` (+4),
+  `MobileHostService.swift` (+5), and `AppDelegate.swift` (+3) raised by exactly the fenced growth.
+
+`Packages/SupermuxKit/Package.swift` (fork-owned, no fence) gains a path dependency on
+`../Shared/SupermuxMobileCore`; both stay path-only, so still no `Package.resolved` is generated.
+
+### 13 (cont.) + 90 (cont.). `Packages/iOS/SupermuxMobileKit` registration (ci.yml allowlist + workspace group)
+
+`Packages/iOS/SupermuxMobileKit` is the supermux-owned iOS domain layer for the companion app:
+the `SupermuxMacCalling` seam (typed `mobile.supermux.*` request/response + event streams), the
+production `SupermuxMacClient` adapter over `CmuxMobileRPC`'s `MobileCoreRPCClient`, the
+`SupermuxMobileCapabilities` gate (one accessor per `supermux.*.v1`), the etag-keyed
+`SupermuxProjectIconCache`, and the `@Observable` phone stores (`SupermuxMobileProjectsStore`).
+Dependencies are path-only (`../../Shared/SupermuxMobileCore`, `../CmuxMobileRPC`), so no
+`Package.resolved` is generated. Two upstream files register it:
+
+- **`.github/workflows/ci.yml` (#13, inside the existing `ci-package-tests` fence):**
+  `swift test --package-path Packages/iOS/SupermuxMobileKit` appended after the SupermuxMobileCore
+  entry, same pattern and re-apply note as that entry (restore the fenced block; keep every fork
+  package listed).
+- **`cmux.xcworkspace/contents.xcworkspacedata` (#90, unfenced — generated XML):** the package's
+  FileRef in the iOS group. Re-apply after any merge by running
+  `python3 scripts/check-workspace-package-groups.py --write`; never hand-edit.
+
+The package itself is fork-owned (no fences inside it). Note: the fork packages are included in
+`scripts/lint-ios-package-conventions.sh`'s SCOPES via the `lint-ios-conventions-fork-scopes`
+fence (#109), so the lint's per-line rules ARE mechanically enforced here; the deliberate
+constant/text namespace holders carry inline `/// lint:allow …` justifications.
+
+### 96–98 (+ 13/90 cont.). iOS Projects section (`Packages/iOS/SupermuxMobileUI` + shell mount)
+
+`Packages/iOS/SupermuxMobileUI` is the supermux-owned iOS screens package for the companion app
+(deps, all path-only: `SupermuxMobileKit`, `SupermuxMobileCore`, and `CmuxMobileRPC` — the latter
+declared directly so the shell's typed `(rpcClient: MobileCoreRPCClient, …)` seam can be named in
+the driver API; no `Package.resolved` is generated). It owns its `Resources/Localizable.xcstrings`
+(every `supermux.*` key localized in BOTH `en` and `ja`; a package test parses the catalog and
+fails on any missing/empty translation) and contains `SupermuxProjectsSectionModel` (one
+`SupermuxMobileProjectsStore` per connection session), the value-snapshot types
+(`SupermuxProjectsSectionSnapshot` / `SupermuxProjectRowSnapshot` / `SupermuxProjectsSectionActions`),
+`SupermuxProjectsMobileSection` (collapsible section; rows = custom icon → SF symbol → letter
+avatar tinted by `color_hex`), the read-only `SupermuxProjectDetailScreen`, and the
+`supermuxProjectsSectionDriver` view extension. Upstream touchpoints:
+
+- **`MobileShellComposite.swift` (#96, `supermux-mobile-client-mount`):** the 3-line computed
+  `supermuxConnectionSeam` next to `remoteClientForAgentChat`. Re-apply: any placement inside the
+  class works; it must read `connectionState`, `remoteClient`, and `supportedHostCapabilities`
+  (all observation-tracked) and return `nil` unless `.connected`. Raise the
+  `.github/swift-file-length-budget.tsv` row by the fenced growth (+5).
+- **`WorkspaceListView.swift` (#97, `supermux-mobile-projects-section`, four 1-line fences):**
+  the import; `@State private var supermuxProjects = SupermuxProjectsSectionModel()`;
+  `SupermuxProjectsMobileSection(section: supermuxProjects.snapshot, actions: supermuxProjects.actions)`
+  as the first section-level entry before the workspaces `Section` (below the connection-status
+  rows); `.supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam)`
+  directly on the `List` (NOT inside it — the driver's `.task(id:)` must live on a stable view).
+  Re-apply: keep the mount above the workspace/group sections and the driver on the `List`.
+- **`Packages/iOS/CmuxMobileShellUI/Package.swift` (#98, `supermux-mobile-shellui-deps`):** the
+  package + target dependency lines. Re-apply: both lines, same fence id.
+- **`.github/workflows/ci.yml` (#13, inside the existing `ci-package-tests` fence):**
+  `swift test --package-path Packages/iOS/SupermuxMobileUI` appended after the SupermuxMobileKit
+  entry (same pattern; restore the fenced block, keep every fork package listed).
+- **`cmux.xcworkspace/contents.xcworkspacedata` (#90, unfenced — generated XML):** the package's
+  FileRef in the iOS group. Re-apply with `python3 scripts/check-workspace-package-groups.py --write`;
+  never hand-edit.
+
+Same `lint-ios-package-conventions.sh` coverage as SupermuxMobileKit above (the #109
+`lint-ios-conventions-fork-scopes` fence adds the fork packages to SCOPES).
+
+### 99–103. Workspace-list augmentation (§6: `supermux_project_id` / `supermux_activity`)
+
+The Mac merges two ADDITIVE, optional fields into every `workspace.list` workspace payload and the
+phone folds project-owned rows under the Projects section, shows agent-activity dots, and lists a
+project's open workspaces inside `SupermuxProjectDetailScreen`. Field computation is fork-owned and
+package-tested (`SupermuxMobileWorkspaceFields` in `Packages/SupermuxKit/Sources/SupermuxKit/Mobile/`,
+RPC-WSL-01 suite `SupermuxMobileWorkspaceFieldsTests`); the app-target adapter
+`Sources/Supermux/SupermuxMobileWorkspaceListAugmenter.swift` feeds it the ONE shared activity
+resolution (`SupermuxWorkspaceActivityResolver`) and the sidebar's association resolution
+(`SupermuxWorkspaceAssociationStore.projectId(forWorkspace:directory:in:)`), so the phone and the
+Mac sidebar can never disagree. Both fields travel only for project-associated workspaces; an
+idle associated workspace carries the project id alone. `Sources/Supermux/SupermuxMobileActivityObserver.swift`
+re-emits the EXISTING `workspace.updated` topic (payload `[:]`, trailing 80 ms throttle) on agent
+lifecycle changes (`SupermuxWorkspaceLifecycleRelay`) and association/projects changes
+(Observation-tracked summary hash) — upstream's `MobileWorkspaceListObserver.summaryHash` is
+deliberately untouched. The host now also advertises `supermux.activity.v1`.
+
+- **`Sources/TerminalController+MobileWorkspaceList.swift` (#99, `mobile-supermux-workspace-fields`):**
+  re-apply by rebinding upstream's returned literal (`return [` → `let payload: [String: Any] = [`)
+  inside the first fence block and returning `SupermuxMobileWorkspaceListAugmenter.augment(payload,
+  workspace: workspace)` in the second. If upstream restructures `mobileWorkspacePayload`, the
+  requirement is: the augmenter wraps the final per-workspace dictionary on every payload path.
+- **`MobileSyncWorkspaceListResponse.swift` (#100) / `MobileWorkspacePreview.swift` (#101) /
+  `MobileWorkspacePreview+RemoteMapping.swift` (#102, all `supermux-mobile-workspace-fields`):** the
+  decode → preview plumbing for the four additive fields (`supermux_project_id` / `supermux_activity`
+  / `supermux_branch` / `supermux_pull_request {number, state, url, is_stale}`). All additions are
+  optional/defaulted so upstream inits, tests, and old payloads are untouched; the nested PR object
+  decodes lossily (malformed → nil fields, never a list-wide failure); `PROTO-03` regression suite
+  `SupermuxWorkspaceListFieldsDecodeTests` (CmuxMobileRPCTests) locks the wire shape both ways.
+  Freshness note: no fork observer pokes on branch/PR-only changes yet, so the phone's branch/PR
+  values refresh on the NEXT `workspace.updated` poke (activity/title/preview churn) or list refetch.
+  The aggregated multi-Mac path needs no fence: `derivedWorkspaces` mutates copies
+  (`var stamped = workspace`), which carries the new fields automatically.
+- **`WorkspaceListView.swift` (#103, `supermux-mobile-hide-project-workspaces` +
+  `supermux-mobile-row-activity`):** the hide filter must stay gated on
+  `supermuxProjects.snapshot.isVisible && trimmedQuery.isEmpty && !filter.isActive` so rows never
+  become unreachable while disconnected/upstream-paired and never unsearchable; only LOOSE
+  (ungrouped) project-owned rows hide, mirroring the Mac's `SupermuxProjectResolutionCache.filter`.
+  The dot modifier attaches to `WorkspaceNavigationRow` before the row insets. The #97 driver fence
+  gained `workspaces:` + `selectWorkspace:` arguments (pass the shell's closure as a literal —
+  `{ selectWorkspace($0) }` — because `@MainActor` function types are implicitly `@Sendable` and a
+  stored plain closure won't convert).
+
+`Packages/iOS/SupermuxMobileUI` additions are fork-owned (no fences): the `supermuxFlatRows` array extension (SupermuxWorkspaceListPartition.swift),
+`SupermuxProjectWorkspaceRowSnapshot`, `SupermuxWorkspaceActivityDot` (palette mirrors the Mac's
+`SupermuxActivityPalette`), the section model's open-workspace join, and the detail screen's real
+Workspaces section. Its `Package.swift` gained a path dep on `../CmuxMobileShellModel` (target +
+test target) so the partition/mapping can name `MobileWorkspacePreview`. New localization keys
+`supermux.activity.working/needsInput/ready` exist in BOTH en and ja in the package catalog.
+
+### 104–105. XCUITest paired-Mac state hygiene (`uitest-clear-paired-mac-state` / `-launch`)
+
+Since #89 fixed the mock-host connect flow, XCUITest pairings actually complete and the app
+persists the paired mock Mac in `Application Support/cmux/paired-macs.sqlite3` inside the shared
+simulator app container (`/tmp/cmux-ios-readiness` runs reuse the same "iPhone 17" device). That
+state leaked across tests and runs: `testAddDeviceManualHostValidationUsesStableIdentifiers` and
+`testAddDevicePairButtonStaysVisibleWhenKeyboardOpens` launched onto `MobileWorkspaceShell` with a
+dead-host reconnect error instead of the `MobileAddDeviceForm` they expect (cmuxUITests.swift:586),
+and `testWorkspaceToolbarCreatesWorkspaceAndTerminal` had its navigation disrupted by stale-pairing
+reconnect churn (cmuxUITests.swift:245, then a runner crash + 600s diagnostics timeout).
+
+Two fences make every harness launch start from an unpaired slate, siblings of the existing
+`CMUX_UITEST_CLEAR_AUTH` reset path:
+
+- **`ios/cmux/AppCompositionRoot.swift` (#104, `uitest-clear-paired-mac-state`):** at the top of
+  `AppCompositionRoot.init` (runs exactly once per process, before `CMUXMobileRootScene` opens
+  `MobilePairedMacStore`), when `UITestConfig.mockDataEnabled` AND
+  `CMUX_UITEST_CLEAR_PAIRED_MACS=1`, remove the `Application Support/cmux` directory (`try?`, so a
+  missing directory is a no-op). Do NOT move this into `CMUXMobileRootScene.init` — that view is
+  re-initialized on body re-evaluation and would delete a freshly persisted pairing mid-session.
+- **`ios/cmuxUITests/cmuxUITests.swift` (#105, `uitest-clear-paired-mac-launch`):** one line in
+  `launchApp` right after the `CMUX_UITEST_MOCK_DATA` assignment sets
+  `CMUX_UITEST_CLEAR_PAIRED_MACS=1` for every harness launch.
+
+Re-apply note: if upstream adds its own persisted-pairing reset hook (or erases the simulator per
+run in CI), drop both fences and take upstream. Otherwise the requirement is: every mock-harness
+launch must start with no persisted paired Mac, the clear must run before the paired-Mac store is
+opened, exactly once per process, and must never fire outside the DEBUG mock harness
+(`UITestConfig.mockDataEnabled` gates it; real installs never see the env var). Tests must NOT be
+weakened to tolerate leaked pairing state instead.
+
+### 106. `ios/cmuxUITests/cmuxUITests.swift` — `uitest-new-workspace-menu-item`
+
+`testWorkspaceToolbarCreatesWorkspaceAndTerminal` tapped `app.buttons["MobileTerminalNewWorkspaceButton"]`,
+but in this upstream snapshot the iOS `WorkspaceDetailView.toolbar` mounts only
+`glassTitle` + `chatToggleButton` + `terminalPickerToolbarButton` in `topBarTrailing`;
+`newWorkspaceToolbarButton` (which carries that identifier) sits solely in the non-iOS `#else`
+branch. On iOS the New Workspace action lives in the terminal dropdown menu as
+`MobileNewWorkspaceMenuItem` (`terminalPickerMenuContent`). The test therefore failed
+deterministically at cmuxUITests.swift:245 even from a clean pairing slate — this is test/UI
+drift, not the #104/#105 state leakage (upstream PR CI skips cmuxUITests, so upstream never saw
+it; a NEWER upstream restores a nav-bar new-workspace button alongside `MobileWorkspaceBackButton`
+/ `MobileWorkspaceTitleMenu`).
+
+The fence swaps the single tap for the same two-step pattern the test already uses for New
+Terminal (`MobileTerminalDropdown` → `tapMenuItem`), leaving every behavioral assertion
+(`assertHostSelection` for `workspace-3`/`workspace-3-terminal-1`, terminal menu-item existence,
+new-terminal flow) untouched:
+
+```swift
+// SUPERMUX:begin uitest-new-workspace-menu-item (this snapshot's iOS mounts New Workspace in the terminal dropdown, not a nav-bar MobileTerminalNewWorkspaceButton)
+tap(app.buttons["MobileTerminalDropdown"], in: app)
+tapMenuItem(app.buttons["MobileNewWorkspaceMenuItem"], in: app)
+// SUPERMUX:end uitest-new-workspace-menu-item
+```
+
+Re-apply note: on the next upstream merge, take upstream's version of this test wholesale and
+drop this fence — upstream's newer UI re-adds a nav-bar create button and rewrites the test
+around `MobileWorkspaceBackButton`/`MobileWorkspaceTitleMenu`. The requirement while this
+snapshot's UI stands: the test must drive New Workspace through a control that actually exists on
+iOS, without weakening the mock-host `workspace.create`/selection assertions.
+
+### 107. `scripts/check-package-resolved-policy.py` — `fix-resolved-policy-path-deps`
+
+Upstream's POL-03 gate diffs `merge-base(origin/main, HEAD)..HEAD` and, whenever a manifest in a
+tracked lockfile's dependency closure changed its `.package(…)` calls, demands a diff in that
+`Package.resolved`. That demand is unsatisfiable for PATH-ONLY dependency changes: SwiftPM never
+records `.package(path:)` dependencies in any lockfile, so `swift package resolve` rewrites
+nothing and no legitimate lockfile diff can exist. The fork's new path-only packages
+(`SupermuxMobileCore/Kit/UI` + the fenced `CmuxMobileShellUI` path dep) made the script exit 1 at
+HEAD with no possible fix on the lockfile side.
+
+Three fence blocks, all sharing the `fix-resolved-policy-path-deps` id:
+
+- **`lockfile_recorded_dependency_calls(calls)`** (module-level helper): filters dependency calls
+  down to those SwiftPM records in a lockfile — a call counts as recorded when it has a `url:`
+  argument or has no `path:` argument (registry/url pins), so path-only calls are excluded.
+- **`main`'s changed-roots loop:** after the existing `current_calls == previous_calls`
+  short-circuit, also `continue` when the *lockfile-recorded* calls are unchanged between
+  merge-base and HEAD. A brand-new path-only manifest reads as `previous_calls == []` with zero
+  recorded calls on both sides, so it passes; any added/removed/edited `url:` pin still differs
+  and still requires lockfile churn (verified: a scratch commit adding
+  `.package(url: …, from: …)` to `CmuxMobileShellUI/Package.swift` without lockfile churn exits
+  1 naming both affected lockfiles, and exits 0 once the lockfiles are touched in the same range).
+- **`file_text_at`:** runs `git show` with stderr suppressed and returns `""` on failure, because
+  a manifest new since the merge-base has no blob at that ref — expected, previously leaked
+  `fatal: path … exists on disk, but not in <merge-base>` noise into the check output.
+
+Re-apply note: if upstream rewrites the script, re-apply by keeping the invariant "a manifest
+dependency change requires a lockfile diff only if the change is visible to Package.resolved
+(url/registry pins)". If upstream ships its own path-dep exemption, drop all three fences and
+take upstream. Do NOT weaken the pinned-dependency protection: url-pin changes without lockfile
+churn must keep failing (re-run the scratch-worktree red/green check above after any merge).
+Note: the policy script has NO automated tests in-repo — the scratch-worktree red/green check
+described above is the only verification of this fence's behavior, so it must be repeated by
+hand after any merge that touches the script.
+
+### 108. `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` — `supermux-mobile-workspace-tools`
+
+The iOS Changes AND Files screens' mount point (architecture §7: workspace-detail toolbar
+entries). All logic is fork-owned in `Packages/iOS/SupermuxMobileUI`
+(`SupermuxWorkspaceTools.swift` — the `supermuxWorkspaceTools` view modifier + capability gates
+— plus `SupermuxChangesScreen` / `SupermuxDiffScreen` / `SupermuxFileBrowserScreen` and their
+`SupermuxMobileKit` stores `SupermuxMobileChangesStore` / `SupermuxMobileFileBrowserStore`). Two
+1-line fences, same fence id:
+
+- the `import SupermuxMobileUI` in the import block;
+- `.supermuxWorkspaceTools(connection: store.supermuxConnectionSeam, workspaceID:
+  workspace.rpcWorkspaceID.rawValue, workspaceName: workspace.name)` on the outer `Group` in
+  `body`, BEFORE `.mobileConnectionRecoveryOverlay` — the outer Group so the toolbar entry rides
+  every detail branch (terminal / browser / chat) and survives upstream reshuffles of the inner
+  `.toolbar` blocks. IMPORTANT: pass `workspace.rpcWorkspaceID.rawValue`, NOT `workspace.id.rawValue`.
+  With two+ Macs paired, aggregation scopes `workspace.id` to `<macID>\u{1F}<uuid>`, but the Mac's
+  `changes.*`/`files.*` RPCs parse `workspace_id` as a bare UUID, so the scoped id fails every
+  request with `invalid_params`. `rpcWorkspaceID` is the Mac-local (unscoped) id the host expects.
+
+The modifier adds `topBarTrailing` toolbar buttons (each hidden unless the #96 seam is connected
+AND the host advertises its capability — `supermux.changes.v1` for Changes, `supermux.files.v1`
+for Files; an upstream Mac renders exactly today's UI) and `.sheet`s presenting
+`SupermuxChangesScreen` / `SupermuxFileBrowserScreen`; one store is built per presentation from
+the seam's `MobileCoreRPCClient` + capability snapshot (the file browser rooted
+`.workspace(id:)`). `.github/swift-file-length-budget.tsv` row for `WorkspaceDetailView.swift`
+raised by exactly the fenced growth (878 → 888, including the `rpcWorkspaceID` rationale comment).
+The m5-f2 Files entry changed only the fork-owned modifier — the upstream fence lines are
+byte-identical to m3.
+
+Re-apply note: if upstream rewrites `WorkspaceDetailView`, the requirement is: the modifier must
+sit on a view that (a) is inside the detail's `NavigationStack` context so the toolbar item lands
+in the nav bar, and (b) has `store` + `workspace` in scope, with `store.supermuxConnectionSeam`
+read inside `body` so Observation re-evaluates on (re)connect/capability arrival. Any placement
+satisfying that works; keep both fence lines and the budget row in sync.
+
+### 109. `scripts/lint-ios-package-conventions.sh` — `lint-ios-conventions-fork-scopes`
+
+Upstream's iOS conventions lint (run by the `package-conventions-lint` job in
+`.github/workflows/test-ios.yml` whenever `ios/` or `Packages/` files change) builds its SCOPES
+from globs that never match the fork's mobile packages (`Packages/iOS/CmuxMobile*` misses
+`Packages/iOS/SupermuxMobile*`). One fenced 3-line loop after upstream's SCOPES loop appends
+`Packages/Shared/SupermuxMobileCore` and `Packages/iOS/SupermuxMobile*`, so the per-line rules
+(singleton/Combine/lock/timer/KVO/free-function/namespace-enum) are mechanically enforced on the
+fork packages too. The repo-wide namespace-type rule already scanned them regardless of SCOPES.
+
+The fork packages' deliberate constant/text namespace holders (`SupermuxWireErrorCode`,
+`SupermuxChangesSyncDeadline`, `SupermuxFileName`, `SupermuxFileOpErrorText`,
+`SupermuxProjectStyle`, `SupermuxWorkspaceTools`, `SupermuxMobileActivityPalette`,
+`SupermuxEditorErrorText`, `SupermuxFolderPickerPath`) carry inline `/// lint:allow …`
+justifications following the lint's own sanctioned-exception mechanism (precedent:
+`CmxPairingURLScheme`, `AutoNamingAgentCatalog`).
+
+Re-apply note: re-add the fenced loop directly after upstream's `SCOPES=()` construction — any
+placement that appends the fork package directories to `SCOPES` before the first `scan` call
+works. If upstream generalizes its globs to cover fork packages (or switches to scanning all of
+`Packages/`), drop the fence and take upstream. After re-applying, run
+`./scripts/lint-ios-package-conventions.sh` and expect exit 0; new ERROR findings in fork
+packages must be fixed or carry a reviewed inline `lint:allow` justification — never grow
+`scripts/lint-namespace-types-baseline.txt` (that list may only shrink).
+
+### 110. `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` — `supermux-mobile-hide-search`
+
+Removes the main workspace list's search bar (iOS 26 places `.searchable` in the bottom
+toolbar on iPhone) per direct user feedback on the shipped app. The fence is comment-only: it
+REPLACES upstream's single `.searchable(text: $searchText)` modifier line on the `List` (right
+after `.mobileInlineNavigationTitle()`), leaving nothing between begin/end. All of upstream's
+search plumbing (`@State searchText`, `trimmedQuery`, `matchesQuery`, the search branch of
+`rendersGroupedSections`, and the #103 hide-filter's `trimmedQuery.isEmpty` gate) stays
+untouched and compiles; with `searchText` permanently empty it is simply inert.
+
+Recorded trade-off: the search field was the only free-text way to find a workspace across
+groups on the phone; the Unread filter, machine filter, and group sections remain. If the user
+later wants search back, delete this fence and restore the one upstream line.
+
+Re-apply note: after an upstream merge, find the workspace `List`'s `.searchable(text:
+$searchText)` (or successor search-scope API) in `WorkspaceListView.body` and replace exactly
+that modifier line with this fence. If upstream ever makes other behavior depend on a non-empty
+`searchText` being reachable, re-evaluate with the user before keeping the removal.

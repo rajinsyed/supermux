@@ -25,15 +25,42 @@ import SupermuxKit
 @MainActor
 @Observable
 final class SupermuxRunCoordinator {
+    /// How a ``startRun(workspace:commandOverride:)`` request ended.
+    enum StartOutcome: Equatable {
+        case started
+        case alreadyRunning
+        /// The workspace's directory matches no registered project.
+        case missingProject
+        /// The matched project has no (selected) run command.
+        case missingRunCommand
+        /// No pane, or the run surface failed to spawn/accept input.
+        case launchFailed
+    }
+
+    /// How a ``stopRun(workspace:)`` request ended.
+    enum StopOutcome: Equatable {
+        case stopped
+        case notRunning
+        /// The interrupt never reached the PTY; the run stays marked running
+        /// so a retry stops it instead of pasting into the live server.
+        case stopFailed
+    }
+
     private struct RunHandle {
         let workspaceId: UUID
+        /// The project this run was launched for, pinned at launch. Read by
+        /// ``mobileRunSnapshots`` instead of re-matching the (mutable)
+        /// `currentDirectory`, so a workspace that `cd`s into another project
+        /// after launch does not reassign or orphan the running process.
+        let projectId: UUID?
         /// Weak so a closed workspace's handle reads as not running instead of
         /// keeping the workspace alive; also guards against a session-restored
         /// workspace reusing the persisted id of a stale handle.
         weak var workspace: Workspace?
         let panelId: UUID
-        let command: String
+        var command: String
         var isRunning: Bool
+        var startedAt: Date
 
         /// `true` while the launched run surface still exists in its workspace.
         /// `@MainActor` because the nested struct does not inherit the
@@ -108,64 +135,72 @@ final class SupermuxRunCoordinator {
             presentMissingProject(directory: workspace.currentDirectory)
             return true
         }
-        let command = project.runCommands
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " && ")
+        if let handle = handlesByWorkspaceId[workspace.id],
+           workspace.panels[handle.panelId] is TerminalPanel,
+           handle.isRunning {
+            // Every stop outcome consumes the event, matching the old inline
+            // stop branch (a failed interrupt keeps the run marked running so
+            // the next toggle retries the stop).
+            _ = stopRun(workspace: workspace)
+            return true
+        }
+        switch startRun(workspace: workspace) {
+        case .started, .alreadyRunning:
+            return true
+        case .missingProject:
+            presentMissingProject(directory: workspace.currentDirectory)
+            return true
+        case .missingRunCommand:
+            presentMissingRunCommand(project: project)
+            return true
+        case .launchFailed:
+            return false
+        }
+    }
+
+    /// Starts the workspace's run command without toggle semantics (shared by
+    /// the desktop toggle above and `mobile.supermux.run.start`). Presents no
+    /// alerts — callers map the outcome to their own surface.
+    ///
+    /// - Parameters:
+    ///   - workspace: The workspace to run in.
+    ///   - commandOverride: A specific command to run instead of the
+    ///     project's joined run commands (the mobile `command_id` selection).
+    /// - Returns: The start outcome.
+    @discardableResult
+    func startRun(workspace: Workspace, commandOverride: String? = nil) -> StartOutcome {
+        guard let project = matchedProject(for: workspace) else { return .missingProject }
+        guard let command = resolvedRunCommand(for: workspace, override: commandOverride) else {
+            return .missingRunCommand
+        }
 
         if var handle = handlesByWorkspaceId[workspace.id],
            let panel = workspace.panels[handle.panelId] as? TerminalPanel {
             if handle.isRunning {
-                // Stop: send a real Ctrl+C key event (SIGINT) through the panel
-                // wrapper so a hibernated run surface is resumed first.
-                // sendText() would route through ghostty_surface_text and get
-                // wrapped in bracketed paste, turning the interrupt into literal
-                // input.
-                switch panel.sendNamedKeyResult("ctrl+c") {
-                case .sent, .queued:
-                    handle.isRunning = false
-                    handlesByWorkspaceId[workspace.id] = handle
-                case .surfaceUnavailable, .processExited:
-                    // Nothing left to stop; drop the handle so the next toggle
-                    // starts fresh instead of pasting into a dead surface.
-                    handlesByWorkspaceId[workspace.id] = nil
-                case .unknownKey, .inputQueueFull:
-                    // The interrupt never reached the PTY: keep the run marked
-                    // running so the next toggle retries the stop instead of
-                    // pasting the command into the still-live server.
-                    break
-                }
-                return true
-            } else {
-                guard !command.isEmpty else {
-                    presentMissingRunCommand(project: project)
-                    return true
-                }
-                // Restart in the same surface (the shell survives because run
-                // surfaces are created with wait-after-command behavior). Paste
-                // the command body, then press Return as a real key so the
-                // shell executes it (a pasted newline would not, under bracketed
-                // paste). Only mark running if the input was actually accepted;
-                // otherwise drop the handle and spawn a fresh surface below.
-                if panel.sendText(command) && panel.sendNamedKey("enter") {
-                    handle.isRunning = true
-                    handlesByWorkspaceId[workspace.id] = handle
-                    panel.triggerFlash(reason: .navigation)
-                    return true
-                }
-                handlesByWorkspaceId[workspace.id] = nil
+                return .alreadyRunning
             }
+            // Restart in the same surface (the shell survives because run
+            // surfaces are created with wait-after-command behavior). Paste
+            // the command body, then press Return as a real key so the
+            // shell executes it (a pasted newline would not, under bracketed
+            // paste). Only mark running if the input was actually accepted;
+            // otherwise drop the handle and spawn a fresh surface below.
+            if panel.sendText(command) && panel.sendNamedKey("enter") {
+                handle.command = command
+                handle.isRunning = true
+                handle.startedAt = Date()
+                handlesByWorkspaceId[workspace.id] = handle
+                panel.triggerFlash(reason: .navigation)
+                return .started
+            }
+            handlesByWorkspaceId[workspace.id] = nil
         }
 
         // No live run surface for this workspace yet.
         handlesByWorkspaceId[workspace.id] = nil
-        guard !command.isEmpty else {
-            presentMissingRunCommand(project: project)
-            return true
-        }
         guard let paneId = workspace.bonsplitController.focusedPaneId
             ?? workspace.bonsplitController.allPaneIds.first else {
-            return false
+            return .launchFailed
         }
         // Capture the user's surface before opening the run surface so we can
         // keep focus on it: the run surface is launched in the background and
@@ -180,7 +215,7 @@ final class SupermuxRunCoordinator {
             workingDirectory: workspace.currentDirectory,
             initialInput: SupermuxCommandLaunch.shellInput(for: command)
         ) else {
-            return false
+            return .launchFailed
         }
         // Always place the run surface as the first tab instead of at the end of
         // the pane's tab bar, so the project's dev-server lives in a predictable
@@ -193,13 +228,95 @@ final class SupermuxRunCoordinator {
         )
         handlesByWorkspaceId[workspace.id] = RunHandle(
             workspaceId: workspace.id,
+            projectId: project.id,
             workspace: workspace,
             panelId: panel.id,
             command: command,
-            isRunning: true
+            isRunning: true,
+            startedAt: Date()
         )
         panel.triggerFlash(reason: .navigation)
-        return true
+        return .started
+    }
+
+    /// Stops the workspace's run command without toggle semantics (shared by
+    /// the desktop toggle above and `mobile.supermux.run.stop`).
+    /// - Parameter workspace: The workspace whose run to stop.
+    /// - Returns: The stop outcome.
+    @discardableResult
+    func stopRun(workspace: Workspace) -> StopOutcome {
+        guard var handle = handlesByWorkspaceId[workspace.id] else { return .notRunning }
+        guard let panel = workspace.panels[handle.panelId] as? TerminalPanel else {
+            // The run surface is gone; prune the stale handle eagerly.
+            handlesByWorkspaceId[workspace.id] = nil
+            return .notRunning
+        }
+        guard handle.isRunning else { return .notRunning }
+        // Stop: send a real Ctrl+C key event (SIGINT) through the panel
+        // wrapper so a hibernated run surface is resumed first.
+        // sendText() would route through ghostty_surface_text and get
+        // wrapped in bracketed paste, turning the interrupt into literal
+        // input.
+        switch panel.sendNamedKeyResult("ctrl+c") {
+        case .sent, .queued:
+            handle.isRunning = false
+            handlesByWorkspaceId[workspace.id] = handle
+            return .stopped
+        case .surfaceUnavailable, .processExited:
+            // Nothing left to stop; drop the handle so the next start
+            // spawns fresh instead of pasting into a dead surface.
+            handlesByWorkspaceId[workspace.id] = nil
+            return .stopped
+        case .unknownKey, .inputQueueFull:
+            // The interrupt never reached the PTY: keep the run marked
+            // running so a retry stops it instead of pasting the command
+            // into the still-live server.
+            return .stopFailed
+        }
+    }
+
+    /// Stops a run by its hosting workspace id (the mobile path — the
+    /// coordinator's weak handle still knows the workspace).
+    /// - Parameter workspaceId: The workspace whose run to stop.
+    /// - Returns: The stop outcome.
+    @discardableResult
+    func stopRun(workspaceId: UUID) -> StopOutcome {
+        guard let workspace = handlesByWorkspaceId[workspaceId]?.workspace else {
+            handlesByWorkspaceId[workspaceId] = nil
+            return .notRunning
+        }
+        return stopRun(workspace: workspace)
+    }
+
+    /// Value projection of every live run for the mobile host: the payload
+    /// builder and ``SupermuxMobileRunObserver`` consume these snapshots so
+    /// their logic stays package/unit-testable away from GUI types. Reading
+    /// this in a `withObservationTracking` block re-arms on every handle
+    /// mutation (`handlesByWorkspaceId` is `@Observable` state).
+    var mobileRunSnapshots: [SupermuxMobileRunSnapshot] {
+        handlesByWorkspaceId.values
+            .compactMap { handle -> SupermuxMobileRunSnapshot? in
+                guard handle.isRunningInLivePanel, handle.workspace != nil else { return nil }
+                return SupermuxMobileRunSnapshot(
+                    projectId: handle.projectId,
+                    workspaceId: handle.workspaceId,
+                    command: handle.command,
+                    startedAt: handle.startedAt
+                )
+            }
+            .sorted { ($0.startedAt, $0.workspaceId.uuidString) < ($1.startedAt, $1.workspaceId.uuidString) }
+    }
+
+    /// The workspace-directory-matched run command for the mobile/desktop
+    /// start paths, or `nil` when nothing runnable is configured.
+    private func resolvedRunCommand(for workspace: Workspace, override: String?) -> String? {
+        if let override {
+            let trimmed = override.trimmingCharacters(in: .whitespaces)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        guard let project = matchedProject(for: workspace) else { return nil }
+        let command = SupermuxMobileRunCommand.joined(project.runCommands)
+        return command.isEmpty ? nil : command
     }
 
     private func matchedProject(for workspace: Workspace) -> SupermuxProject? {

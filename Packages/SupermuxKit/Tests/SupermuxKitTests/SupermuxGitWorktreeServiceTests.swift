@@ -676,15 +676,9 @@ import SupermuxKit
     }
 }
 
-/// Strips the `/usr/bin/env VAR=… git` wrapper the service uses for its
-/// locale-pinned `worktree add`, returning the plain git argv. Every other
-/// service call passes `executable: "git"` and comes back unchanged.
-private func unwrappedGitArguments(executable: String, arguments: [String]) -> [String] {
-    guard executable == "/usr/bin/env" else { return arguments }
-    let command = arguments.drop { $0.contains("=") }
-    guard command.first == "git" else { return arguments }
-    return Array(command.dropFirst())
-}
+// The `/usr/bin/env VAR=… git` unwrapping these fakes rely on lives in
+// `SupermuxGitTestSupport.swift` (`unwrappedGitArguments`), shared with the
+// changes-service fakes.
 
 /// Delegates to the real `CommandRunner`, but creates the branch the first
 /// `worktree add` is about to claim just before running it — simulating a

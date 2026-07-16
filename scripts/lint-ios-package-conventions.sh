@@ -22,6 +22,11 @@ SCOPES=()
 for d in Packages/Shared/CMUXMobileCore Packages/iOS/CmuxMobile* Packages/Shared/CmuxAgentChat Packages/iOS/CmuxAgentChatUI Packages/Shared/CmuxSyncStore ios/cmuxPackage/Sources ios/cmux; do
   [ -d "$d" ] && SCOPES+=("$d")
 done
+# SUPERMUX:begin lint-ios-conventions-fork-scopes (fork mobile packages join the iOS lint scope — see SUPERMUX-TOUCHPOINTS.md)
+for d in Packages/Shared/SupermuxMobileCore Packages/iOS/SupermuxMobile*; do
+  [ -d "$d" ] && SCOPES+=("$d")
+done
+# SUPERMUX:end lint-ios-conventions-fork-scopes
 
 fail=0
 report() { # rule, severity, file, line, text

@@ -19,6 +19,15 @@ extension MobileWorkspacePreview {
                 MobileTerminalPreview(remote: terminal)
             }
         )
+        // SUPERMUX:begin supermux-mobile-workspace-fields (carry the additive §6 fields into the preview — see SUPERMUX-TOUCHPOINTS.md)
+        self.supermuxProjectID = remote.supermuxProjectID
+        self.supermuxActivity = remote.supermuxActivity
+        self.supermuxBranch = remote.supermuxBranch
+        self.supermuxPullRequestNumber = remote.supermuxPullRequest?.number ?? nil
+        self.supermuxPullRequestState = remote.supermuxPullRequest?.state
+        self.supermuxPullRequestURL = remote.supermuxPullRequest?.url
+        self.supermuxPullRequestIsStale = remote.supermuxPullRequest?.isStale ?? nil
+        // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }
 

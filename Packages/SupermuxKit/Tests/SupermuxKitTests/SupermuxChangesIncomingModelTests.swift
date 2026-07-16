@@ -260,7 +260,9 @@ import SupermuxKit
             arguments: [String],
             timeout: TimeInterval?
         ) async -> CommandResult {
-            await handle(arguments: arguments)
+            await handle(
+                arguments: unwrappedGitArguments(executable: executable, arguments: arguments)
+            )
         }
 
         private func handle(arguments: [String]) -> CommandResult {
@@ -336,7 +338,9 @@ import SupermuxKit
             arguments: [String],
             timeout: TimeInterval?
         ) async -> CommandResult {
-            await handle(arguments: arguments)
+            await handle(
+                arguments: unwrappedGitArguments(executable: executable, arguments: arguments)
+            )
         }
 
         private func handle(arguments: [String]) async -> CommandResult {
@@ -397,7 +401,9 @@ import SupermuxKit
             arguments: [String],
             timeout: TimeInterval?
         ) async -> CommandResult {
-            await handle(arguments: arguments)
+            await handle(
+                arguments: unwrappedGitArguments(executable: executable, arguments: arguments)
+            )
         }
 
         private func handle(arguments: [String]) async -> CommandResult {

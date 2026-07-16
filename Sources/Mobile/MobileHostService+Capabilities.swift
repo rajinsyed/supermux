@@ -33,5 +33,8 @@ extension MobileHostService {
             // this to render collapsible groups only against a Mac that emits them.
             "workspace.groups.v1",
         ]
+        // SUPERMUX:begin mobile-supermux-capabilities (fork capability list lives in Sources/Supermux/SupermuxMobileCapabilities.swift)
+        + SupermuxMobileCapabilities.advertised
+        // SUPERMUX:end mobile-supermux-capabilities
     }
 }

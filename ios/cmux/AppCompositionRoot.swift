@@ -49,6 +49,12 @@ final class AppCompositionRoot {
         auth: MobileAuthComposition,
         reachability: any ReachabilityProviding
     ) {
+        // SUPERMUX:begin uitest-clear-paired-mac-state (XCUITest harness state hygiene: start unpaired — see SUPERMUX-TOUCHPOINTS.md)
+        if UITestConfig.mockDataEnabled, ProcessInfo.processInfo.environment["CMUX_UITEST_CLEAR_PAIRED_MACS"] == "1",
+           let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            try? FileManager.default.removeItem(at: appSupport.appendingPathComponent("cmux", isDirectory: true))
+        }
+        // SUPERMUX:end uitest-clear-paired-mac-state
         self.runtime = runtime
         self.auth = auth
         self.reachability = reachability
