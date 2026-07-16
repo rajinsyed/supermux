@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> Dette er den norske oversettelsen av README-en til [cmux](https://github.com/manaflow-ai/cmux), oppstrømsprosjektet. Dette repositoriet er **supermux**, en fork; hva forken legger til, er beskrevet i [README.md](README.md) (på engelsk).
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > Denne oversettelsen ble generert av Claude. Hvis du har forslag til forbedringer, send gjerne en PR.
 
 <h1 align="center">cmux</h1>

@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> Bu, üst kaynak proje [cmux](https://github.com/manaflow-ai/cmux) README'sinin Türkçe çevirisidir. Bu depo bir fork olan **supermux**'tur; fork'un eklediği özellikler [README.md](README.md) dosyasında (İngilizce) anlatılmaktadır.
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > Bu çeviri Claude tarafından oluşturulmuştur. İyileştirme önerileriniz varsa lütfen bir PR açın.
 
 <h1 align="center">cmux</h1>

@@ -129,6 +129,9 @@ Rules for adding a touchpoint:
 | 115 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `keep-window-on-last-close` | Repurposes upstream's `testCmdWClosesWindowWhenClosingLastSurfaceInLastWorkspace` (renamed `testCmdWLeavesEmptyHomeWhenClosingLastSurfaceInLastWorkspace`): with the close-workspace-on-last-surface setting on, Cmd+W on the last surface of the last workspace closes the WORKSPACE but keeps the window open as the empty home; upstream asserted the window closes, which is exactly the behavior keep-window-on-last-close removes (same class as #45/#81/#83) |
 | 116 | `Sources/Workspace.swift` | `workspace-geometry-snapshot-dedup` | Early-return in `splitTabBar(_:didChangeGeometry:)` when the incoming `LayoutSnapshot` differs from `tmuxLayoutSnapshot` only by `timestamp` (Bonsplit stamps every snapshot with `Date()`, so synthesized equality never dedupes, and its container re-emits geometry from `onAppear`/`onChange` during SwiftUI remounts). Skips the `@Published` republish, the `.workspacePaneGeometryDidChange` post, and `scheduleTerminalGeometryReconcile()`; keeps the order-gated `surfaceList.registerGeometryChange()` and `scheduleFocusReconcile()` unconditional. Selection/focus changes always pass (carried by `selectedTabId`/`focusedPaneId`). Breaks the layout→publish→layout feedback loop captured in the supermux CPU investigation |
 | 117 | `cmuxTests/TabManagerUnitTests.swift` | `workspace-geometry-snapshot-dedup` | Regression test `WorkspaceGeometrySnapshotDedupTests`: a timestamp-only geometry callback must not republish `tmuxLayoutSnapshot`; a real geometry change must still publish (two-commit red/green pair) |
+| 118 | `README.md` | `readme-fork-rewrite` | Wholesale replaces upstream's README with the supermux one (fork identity, features, build-from-source, upstream credit). The fence wraps the whole file. The `README.<lang>.md` translations stay upstream's apart from the #120 banner |
+| 119 | `CONTRIBUTING.md` | `contributing-fork-note` | One fenced blockquote after the H1: upstream's guide is kept for reference; fork issues/PRs go to rajinsyed/supermux and SUPERMUX.md is the fork contract |
+| 120 | `README.ja.md` | `readme-translation-banner` | Same one-line fenced banner (localized per file) prepended to all 20 `README.<lang>.md` translations: "this is the upstream cmux README; the fork's additions are in README.md". Only the `ja` file is registered here; the fence id is identical in all 20 |
 ## How to re-apply
 
 ### 2. `Sources/ContentView.swift` — `sidebar-projects-section` + `sidebar-hide-project-workspaces`
@@ -1165,14 +1168,14 @@ than gitignored.
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer /opt/homebrew/bin/bash \
-  ios/scripts/reload.sh --tag rajin --device-only --team NRGUG8GVV4 \
+  ios/scripts/reload.sh --tag <your-tag> --device-only --team <TEAM_ID> \
   --allow-device-registration --no-setup
 ```
 
 Needs Homebrew bash 5 (`ios/scripts/reload.sh` trips a bash 3.2 empty-array bug under `set -u`) and
 the Xcode 27 beta toolchain (stable Xcode couldn't see the device). iPhone connected via USB +
 trusted. The Mac side must have `mobile.iOSPairingHost.enabled` on; the phone reaches it over
-Tailscale (LAN-speed / direct at home).
+the local network or a VPN such as Tailscale.
 
 ### 56. `Sources/Workspace+AgentLifecycle.swift` — `workspace-agent-lifecycle-observation`
 
@@ -1862,3 +1865,57 @@ except `timestamp`) or the guard silently stops deduping. If upstream ever drops
 from equality or dedupes in Bonsplit itself, delete the fence. The regression pair lives in
 `cmuxTests/TabManagerUnitTests.swift` (`WorkspaceGeometrySnapshotDedupTests`, same fence id):
 timestamp-only callbacks must not republish; real geometry changes must.
+
+### 118. `README.md` — `readme-fork-rewrite`
+
+The public repo's front page. Upstream's README describes cmux and points at cmux downloads,
+docs, community, and Founders Edition; showing it verbatim on the fork would misrepresent the
+repo, so the fork owns this file wholesale. The entire file is wrapped in one
+`<!-- SUPERMUX:begin readme-fork-rewrite -->` … `<!-- SUPERMUX:end readme-fork-rewrite -->`
+fence (HTML comments, invisible when rendered).
+
+Contents are fork-authored: identity ("fork of cmux"), the feature list (projects, worktrees,
+Changes panel, run actions, presets, `.supermux/config.json`, AI, iOS), build-from-source
+instructions, the mergeability story, upstream credit, and license. The header image is the
+app icon already shipped at `AppIcon.icon/Assets/supermux.jpg` (no new asset).
+
+The 20 `README.<lang>.md` translation files remain upstream's, byte-for-byte — deleting them
+would create recurring modify/delete merge conflicts for zero gain, so they are kept but no
+longer linked from `README.md`.
+
+Re-apply note: on any upstream merge conflict in `README.md`, take OUR whole file
+(`git checkout --ours README.md`). Never union the two; upstream's marketing sections don't
+apply here. When upstream ships features worth surfacing on the fork's front page, edit our
+README deliberately instead of merging upstream text in. If upstream renames or moves its
+README, nothing to do — this file stays.
+
+### 119. `CONTRIBUTING.md` — `contributing-fork-note`
+
+Upstream's contributing guide tells people to clone `manaflow-ai/cmux` and grants Manaflow a
+license over contributions — misleading on a public fork that invites fork-feature PRs. One
+fenced blockquote directly after the `# Contributing to cmux` H1 redirects fork contributions
+to `rajinsyed/supermux` and to `SUPERMUX.md` as the fork contract; the rest of the file stays
+upstream's, byte-for-byte.
+
+Re-apply note: on merge conflict, take upstream's whole file, then re-insert the fenced
+blockquote immediately after the H1. If upstream restructures the file heading, the fence just
+goes at the very top.
+
+### 120. `README.<lang>.md` (all 20) — `readme-translation-banner`
+
+Each translation file still describes upstream cmux under cmux branding (title, DMG download
+badge), and each links "English" back to our fork-owned `README.md` — so a non-English visitor
+lands on a document about a different app with no explanation. A one-line fenced blockquote,
+written in that file's language, is prepended to every `README.<lang>.md`: "this is the upstream
+cmux README, translated; this repo is supermux, a fork — the fork's additions are documented in
+README.md (English)". Nothing else in the files is touched.
+
+Only `README.ja.md` carries a registry row (the check script wants one file per row); the fence
+id is identical in all 20 files, and the check script's fence-registration scan accepts them all
+via this entry. Files: ar, bs, da, de, es, fr, it, ja, km, ko, no, pl, pt-BR, ru, th, tr, uk,
+vi, zh-CN, zh-TW.
+
+Re-apply note: upstream edits to translation bodies merge cleanly under the banner (it sits
+above the first heading). On a conflict, take upstream's file and re-prepend the banner —
+recover the localized text with `git show <our-side>:README.<lang>.md | head -3`. If upstream
+adds a new `README.<lang>.md`, prepend a banner in that language and add it to the list above.

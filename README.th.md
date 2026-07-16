@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> นี่คือ README ของโปรเจกต์ต้นน้ำ [cmux](https://github.com/manaflow-ai/cmux) ฉบับแปลภาษาไทย รีโพนี้คือ **supermux** ซึ่งเป็น fork โดยสิ่งที่ fork เพิ่มเข้ามาดูได้ที่ [README.md](README.md) (ภาษาอังกฤษ)
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > การแปลนี้สร้างโดย Claude หากมีข้อเสนอแนะในการปรับปรุง กรุณาเปิด PR
 
 <h1 align="center">cmux</h1>
