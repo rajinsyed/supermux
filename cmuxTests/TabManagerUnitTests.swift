@@ -4092,3 +4092,65 @@ final class CrossWindowWorkspaceMoveTests: XCTestCase {
         XCTAssertTrue(destination.tabs.contains { $0.id == moving.id })
     }
 }
+
+// SUPERMUX:begin workspace-geometry-snapshot-dedup
+// MARK: - Workspace geometry snapshot dedup
+
+@MainActor
+final class WorkspaceGeometrySnapshotDedupTests: XCTestCase {
+    /// Bonsplit re-emits `didChangeGeometry` from its container's
+    /// `onAppear`/`onChange` during SwiftUI remounts, and every snapshot
+    /// carries a fresh `timestamp`, so synthesized equality never dedupes.
+    /// Each redundant publish invalidates `WorkspaceContentView`
+    /// (`@ObservedObject workspace`), posts `.workspacePaneGeometryDidChange`
+    /// into ContentView's `onReceive`, and re-kicks terminal geometry
+    /// reconciliation (`layoutSubtreeIfNeeded` on every visible window) —
+    /// re-entering layout and feeding the layout→publish→layout feedback
+    /// loop captured in the supermux CPU investigation.
+    func testTimestampOnlyGeometryCallbackDoesNotRepublishSnapshot() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.tabs.first)
+
+        // Workspace setup already routes geometry through didChangeGeometry,
+        // so anchor on whatever is cached after one explicit callback (the
+        // fresh snapshot, or an earlier semantically-equal one it deduped
+        // against - both carry the same geometry).
+        workspace.splitTabBar(
+            workspace.bonsplitController,
+            didChangeGeometry: workspace.bonsplitController.layoutSnapshot()
+        )
+        let anchor = try XCTUnwrap(workspace.tmuxLayoutSnapshot)
+
+        let timestampOnly = LayoutSnapshot(
+            containerFrame: anchor.containerFrame,
+            panes: anchor.panes,
+            focusedPaneId: anchor.focusedPaneId,
+            timestamp: anchor.timestamp + 1
+        )
+        workspace.splitTabBar(workspace.bonsplitController, didChangeGeometry: timestampOnly)
+        XCTAssertEqual(
+            workspace.tmuxLayoutSnapshot?.timestamp,
+            anchor.timestamp,
+            "a geometry callback identical except for its timestamp must not republish tmuxLayoutSnapshot"
+        )
+
+        let resized = LayoutSnapshot(
+            containerFrame: PixelRect(
+                x: anchor.containerFrame.x,
+                y: anchor.containerFrame.y,
+                width: anchor.containerFrame.width + 10,
+                height: anchor.containerFrame.height
+            ),
+            panes: anchor.panes,
+            focusedPaneId: anchor.focusedPaneId,
+            timestamp: anchor.timestamp + 2
+        )
+        workspace.splitTabBar(workspace.bonsplitController, didChangeGeometry: resized)
+        XCTAssertEqual(
+            workspace.tmuxLayoutSnapshot?.timestamp,
+            anchor.timestamp + 2,
+            "a real geometry change must still publish"
+        )
+    }
+}
+// SUPERMUX:end workspace-geometry-snapshot-dedup
