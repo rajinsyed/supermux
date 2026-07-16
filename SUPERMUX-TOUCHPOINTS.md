@@ -127,6 +127,8 @@ Rules for adding a touchpoint:
 | 113 | `Sources/SidebarWorkspaceSnapshotBuilder.swift` | `sidebar-flatrow-activity` | The fenced `var supermuxActivity: SupermuxWorkspaceActivity = .idle` field (defaulted so non-production construction sites can omit it) + a fenced `import SupermuxKit`. Upstream (0.64.x) extracted `SidebarWorkspaceSnapshotBuilder` out of `ContentView.swift` into this file; the Snapshot-field part of the #2 fence moved with it. The construction sites (`makeWorkspaceSnapshot` in `ContentView.swift`, the frozen-snapshot rebuild in #49) pass it as the LAST parameter (the struct declares it after upstream's checklist fields) |
 | 114 | `Sources/TabItemView+WorkspaceContextMenu.swift` | `sidebar-hide-project-workspaces` | Upstream (0.64.x) extracted `workspaceContextMenu` out of `ContentView.swift` into this file; the context-menu enablement part of the #2 fence moved with it: the fenced `menuProjectHiddenIds`/`hasVisibleAbove`/`hasVisibleBelow`/`hasOtherVisibleWorkspaces` block before Move Up, and the five fenced `.disabled(...)` overrides (Move Up/Down, Close Other/Below/Above). Reads `projectHiddenWorkspaceIds()`, which the #2 fence in `ContentView.swift` made internal (upstream made `moveBy` internal for the same extraction) |
 | 115 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `keep-window-on-last-close` | Repurposes upstream's `testCmdWClosesWindowWhenClosingLastSurfaceInLastWorkspace` (renamed `testCmdWLeavesEmptyHomeWhenClosingLastSurfaceInLastWorkspace`): with the close-workspace-on-last-surface setting on, Cmd+W on the last surface of the last workspace closes the WORKSPACE but keeps the window open as the empty home; upstream asserted the window closes, which is exactly the behavior keep-window-on-last-close removes (same class as #45/#81/#83) |
+| 116 | `Sources/Workspace.swift` | `workspace-geometry-snapshot-dedup` | Early-return in `splitTabBar(_:didChangeGeometry:)` when the incoming `LayoutSnapshot` differs from `tmuxLayoutSnapshot` only by `timestamp` (Bonsplit stamps every snapshot with `Date()`, so synthesized equality never dedupes, and its container re-emits geometry from `onAppear`/`onChange` during SwiftUI remounts). Skips the `@Published` republish, the `.workspacePaneGeometryDidChange` post, and `scheduleTerminalGeometryReconcile()`; keeps the order-gated `surfaceList.registerGeometryChange()` and `scheduleFocusReconcile()` unconditional. Selection/focus changes always pass (carried by `selectedTabId`/`focusedPaneId`). Breaks the layout→publish→layout feedback loop captured in the supermux CPU investigation |
+| 117 | `cmuxTests/TabManagerUnitTests.swift` | `workspace-geometry-snapshot-dedup` | Regression test `WorkspaceGeometrySnapshotDedupTests`: a timestamp-only geometry callback must not republish `tmuxLayoutSnapshot`; a real geometry change must still publish (two-commit red/green pair) |
 ## How to re-apply
 
 ### 2. `Sources/ContentView.swift` — `sidebar-projects-section` + `sidebar-hide-project-workspaces`
@@ -320,7 +322,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 |-----|---|--------|
 | `Sources/ContentView.swift` | +9, +14, +28, +26, +19 | `sidebar-projects-section` mount (+3) and `sidebar-hide-project-workspaces` filter (+6); `sidebar-selection-faint` (+14: faint-tint `backgroundColor` + `usesInvertedActiveForeground` overrides); `sidebar-projects-empty-area` (+28: `@State` height + empty-area subtraction + `.onPreferenceChange` handler, 19311→19339). Budget also absorbed a pre-existing 2-line drift (HEAD file was 19297 vs a 19295 budget). `empty-home` (+26: `SupermuxEmptyHomeView` mount in `terminalContent`, the startup-recovery auto-add suppression, and clearing the titlebar title on empty, 16751→16777); `sidebar-hide-scrollbar` (+19: replaces the one-line `applySidebarOverlayScrollerConfiguration()` call in `configureSidebarScrollView` with the inlined hidden-scroller config and folds the now-stale upstream overlay-scroller doc comment into the fence; plus `.scrollIndicators(.hidden)` on both sidebar `ScrollView`s — workspace list and extension-provider list — so SwiftUI does not re-assert the scroller, 16236→16255); +86: `sidebar-hide-project-workspaces` render-context threading + selection pruning, `sidebar-selection-faint` user-hue tint, and the `empty-home` startup-recovery early-return (16255→16341); +38: `sidebar-hide-project-workspaces` closeOtherTabs visible-rows scoping + the context-menu visible-neighbor enablement block for Move Up/Down and Close Below/Above/Other (16341→16379); +25: `sidebar-unified-row-style` flat-row restyle to the nested project-workspace design (16380→16405) |
 | `Sources/TabManager.swift` | +25, +28, +24, +6 | `new-workspace-standalone` (+25: `markStandalone` call in `addWorkspace`, the central close-path `forget` cleanup, and the `forget` clear in `restoreClosedWorkspace` so reopened project workspaces re-nest); `keep-window-on-last-close` (+28: `allowEmptyingWindow` param/guard, selection-to-`nil`, the three last-workspace close sites + bulk short-circuit/plan, the child-exit path, close-confirmation metadata cleanup, and failed closed-workspace restore cleanup, 6116→6169); `keep-window-on-last-close` (+24: `detachWorkspace` empty-source handling, zero-workspace snapshot restore, orphaned-helper comment, 6228→6252); `new-workspace-standalone` (+6: `forget` in `releaseRestoredAwayWorkspace`, 6252→6258); `new-workspace-home-dir` (+6: fenced home-directory return in `implicitWorkingDirectoryForNewWorkspace`, 6258→6264) |
-| `cmuxTests/TabManagerUnitTests.swift` | +69, +21 | `keep-window-on-last-close` (repurposed `testChildExitOnLastWorkspaceKeepsWindowOpenAsEmptyHome`, updated all-workspaces confirmation copy expectations, two new empty-home close tests, and failed restore cleanup coverage, 3926→3995); +21: `testDetachingLastWorkspaceLeavesEmptyHome` + `testRestoreSessionSnapshotKeepsPersistedEmptyHomeEmpty` (3995→4016) |
+| `cmuxTests/TabManagerUnitTests.swift` | +69, +21, +56 | `keep-window-on-last-close` (repurposed `testChildExitOnLastWorkspaceKeepsWindowOpenAsEmptyHome`, updated all-workspaces confirmation copy expectations, two new empty-home close tests, and failed restore cleanup coverage, 3926→3995); +21: `testDetachingLastWorkspaceLeavesEmptyHome` + `testRestoreSessionSnapshotKeepsPersistedEmptyHomeEmpty` (3995→4016); +56: `workspace-geometry-snapshot-dedup` regression tests (`WorkspaceGeometrySnapshotDedupTests`, 4094→4150) |
 | `cmuxTests/WorkspaceUnitTests.swift` | +10 | `new-workspace-home-dir` (repurposed the disabled-inheritance test to assert the explicit home directory, 7366→7376) |
 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` | +2 | `new-workspace-home-dir` (fence around the rewritten OFF subtitle, 928→930) |
 | `Sources/SettingsNavigation.swift` | +2 | `new-workspace-home-dir` (fence around the toggle's search-keyword swap, 606→608) |
@@ -339,7 +341,7 @@ number of fenced lines added to that file — never to absorb unrelated debt:
 | `Sources/FileExplorerView.swift` | +14, +6 | `file-explorer-operations` (+3: end-of-menu call), `file-explorer-operations-empty` (+5: empty-area `else` block adding root New File/Folder), `file-explorer-operations-keys` (+6: ⌘⌫/Return hook in the outline `keyDown`), 2355→2369; `file-explorer-operations-reveal` (+6: scroll-into-view hook in `reloadIfNeeded`, 2369→2375) |
 | `Sources/FileExplorerStore.swift` | +17, +14, +16 | `file-explorer-operations-reveal` (`supermuxRevealPath` property + `supermuxReveal(path:)` method, 1446→1463; then `supermuxClearSelection()` + the `setRootPath` reveal-flag clear, 1463→1477; then +16: `supermuxRevealRequestedAt` in the main fence (+6) and the two new selection-clear fences in `select(node:)` (+6) / `select(nodes:anchor:)` (+4), 1478→1494) |
 | `cmuxTests/FileExplorerStoreTests.swift` | +55 | four supermux-reveal regression tests, fenced as `file-explorer-operations-reveal` (#72) (1204→1259) |
-| `Sources/Workspace.swift` | +3, +10 | `workspace-agent-lifecycle-observation` (+3: one relay call + two fence comments in `recordAgentLifecycleChange`); `keep-window-on-last-close` (+10: remote-tmux close-button last-window fallback, 12828→12841) |
+| `Sources/Workspace.swift` | +3, +10, +26 | `workspace-agent-lifecycle-observation` (+3: one relay call + two fence comments in `recordAgentLifecycleChange`); `keep-window-on-last-close` (+10: remote-tmux close-button last-window fallback, 12828→12841); `workspace-geometry-snapshot-dedup` (+26: timestamp-only dedup guard at the top of `splitTabBar(_:didChangeGeometry:)`, 12840→12866) |
 | `Sources/TerminalController.swift` | +7 | `keep-window-on-last-close` (9 fenced lines replacing the upstream `closeTab` call + unconditional OK reply in socket `close_workspace`, 13832→13839) |
 | `Sources/TerminalController+ControlWorkspaceContext.swift` | +8 | `keep-window-on-last-close` (9 fenced lines replacing the plain `closeWorkspace(ws)` call in the control-socket `workspace.close` resolver with the empty-home close + removal verification, 754→762) |
 | `Sources/RemoteTmuxController.swift` | −4 | `keep-window-on-last-close` (11 fenced lines replacing upstream's add-a-replacement-workspace workaround in the dead-mirror `.closeWorkspace` action, 1093→1089) |
@@ -1819,3 +1821,44 @@ Re-apply note: after an upstream merge, find the workspace `List`'s `.searchable
 $searchText)` (or successor search-scope API) in `WorkspaceListView.body` and replace exactly
 that modifier line with this fence. If upstream ever makes other behavior depend on a non-empty
 `searchText` being reachable, re-evaluate with the user before keeping the removal.
+
+### 116–117. `Sources/Workspace.swift` + `cmuxTests/TabManagerUnitTests.swift` — `workspace-geometry-snapshot-dedup`
+
+At the top of `Workspace.splitTabBar(_:didChangeGeometry:)`, one fenced guard early-returns when
+the incoming `LayoutSnapshot` is identical to the cached `tmuxLayoutSnapshot` except for its
+`timestamp`:
+
+```swift
+// SUPERMUX:begin workspace-geometry-snapshot-dedup
+if let previous = tmuxLayoutSnapshot,
+   previous.containerFrame == snapshot.containerFrame,
+   previous.focusedPaneId == snapshot.focusedPaneId,
+   previous.panes == snapshot.panes {
+    surfaceList.registerGeometryChange()
+    if !isDetachingCloseTransaction {
+        scheduleFocusReconcile()
+    }
+    return
+}
+// SUPERMUX:end workspace-geometry-snapshot-dedup
+```
+
+Why: Bonsplit stamps every snapshot with `Date()` (`BonsplitController.currentLayoutSnapshot`),
+so the type's synthesized `Equatable` never dedupes, and `SplitViewContainer` re-emits geometry
+callbacks from `onAppear`/`onChange` during SwiftUI remounts. Without the guard each redundant
+emission republishes the `@Published tmuxLayoutSnapshot` (invalidating `WorkspaceContentView`),
+posts `.workspacePaneGeometryDidChange` into `ContentView`'s `onReceive`, and re-kicks
+window-wide terminal geometry reconciliation (`layoutSubtreeIfNeeded` on every visible window)
+from inside a layout pass — the layout→publish→layout feedback loop captured in the supermux
+CPU investigation (see PR #13's profile evidence). Selection/focus-only events still pass the
+guard because `selectedTabId`/`focusedPaneId` are snapshot fields; the order-gated
+`surfaceList.registerGeometryChange()` and the debounced `scheduleFocusReconcile()` run
+unconditionally, matching pre-guard behavior for the cheap bookkeeping.
+
+Re-apply note: after an upstream merge, re-insert the fence as the first statement of
+`splitTabBar(_:didChangeGeometry:)` before the `tmuxLayoutSnapshot = snapshot` assignment. If
+upstream adds fields to `LayoutSnapshot`, extend the field-by-field comparison (everything
+except `timestamp`) or the guard silently stops deduping. If upstream ever drops the timestamp
+from equality or dedupes in Bonsplit itself, delete the fence. The regression pair lives in
+`cmuxTests/TabManagerUnitTests.swift` (`WorkspaceGeometrySnapshotDedupTests`, same fence id):
+timestamp-only callbacks must not republish; real geometry changes must.

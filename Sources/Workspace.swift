@@ -12817,6 +12817,32 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didChangeGeometry snapshot: LayoutSnapshot) {
+        // SUPERMUX:begin workspace-geometry-snapshot-dedup
+        // Bonsplit stamps every snapshot with Date() and re-emits geometry
+        // callbacks from its container's onAppear/onChange during SwiftUI
+        // remounts, so synthesized equality never dedupes: each redundant
+        // republish invalidates WorkspaceContentView (@ObservedObject),
+        // re-posts .workspacePaneGeometryDidChange into ContentView's
+        // onReceive, and re-kicks window-wide terminal geometry
+        // reconciliation from inside layout - the layout->publish->layout
+        // feedback loop captured in the supermux CPU investigation. Skip the
+        // publish/notify/reconcile when nothing but the timestamp changed;
+        // selection and focus changes are carried by the snapshot's
+        // selectedTabId/focusedPaneId fields, so they always pass. The
+        // order-gated paneLayoutVersion bump and the focus reconcile below
+        // stay unconditional, matching the pre-guard behavior for the
+        // bookkeeping that is already cheap and self-gated.
+        if let previous = tmuxLayoutSnapshot,
+           previous.containerFrame == snapshot.containerFrame,
+           previous.focusedPaneId == snapshot.focusedPaneId,
+           previous.panes == snapshot.panes {
+            surfaceList.registerGeometryChange()
+            if !isDetachingCloseTransaction {
+                scheduleFocusReconcile()
+            }
+            return
+        }
+        // SUPERMUX:end workspace-geometry-snapshot-dedup
         tmuxLayoutSnapshot = snapshot
         NotificationCenter.default.post(
             name: .workspacePaneGeometryDidChange,
