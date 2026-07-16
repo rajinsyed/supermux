@@ -217,11 +217,18 @@ struct SupermuxProjectsMount: View {
 /// Owns the merged Combine subscription that drives ``SupermuxProjectsMount``'s
 /// per-workspace re-reads, keeping the subscription's lifetime out of `body`.
 ///
-/// Three publisher families per workspace:
-/// - `$title`, delivered immediately — so renaming a nested workspace via
-///   `setCustomTitle` (which mutates `title` in place on the `Workspace`,
-///   firing no `TabManager` `@Published`) re-titles its row at once, matching
-///   cmux's own sidebar.
+/// Trigger families per workspace:
+/// - `$customTitle`, delivered immediately — so renaming a nested workspace
+///   via `setCustomTitle` re-titles its row at once, matching cmux's own
+///   sidebar. The raw `$title` is deliberately NOT observed: agent TUIs
+///   animate the automatic process title at ~10 Hz (cmux #5570), and an
+///   earlier raw-`$title` leg re-ran the mount body and rebuilt every
+///   workspace snapshot on each animation frame.
+/// - The workspace's `sidebarProcessTitleObservation` settle stream — the same
+///   model cmux's own rows use for automatic titles (0.5 s settle, 2 s
+///   staleness deadline), so a nested row's process title updates at settled
+///   cadence instead of animation cadence. Project-owned workspaces are hidden
+///   from the flat list, so nothing else consumes their settle stream.
 /// - `sidebarObservationPublisher` (`gitBranch`, `currentDirectory`, status,
 ///   logs, progress, ports — the late-detected branch update), debounced per
 ///   workspace by upstream's 40ms coalesce interval: this stream bursts at
@@ -229,22 +236,29 @@ struct SupermuxProjectsMount: View {
 ///   mount body and rebuilt every snapshot. `TabItemView` debounces the very
 ///   same publisher per row (`workspaceObservationCoalesceInterval`); per-leg
 ///   (not post-merge) so one busy workspace cannot starve the others' updates.
-/// - ``SupermuxWorkspaceLifecycleRelay``, debounced the same way — agent
-///   lifecycle mutations fire no cmux sidebar publisher at all, so without it
-///   the nested rows' activity indicator went stale on lifecycle-only changes
-///   (socket `set_agent_lifecycle`, hibernation, feed attention).
+/// - ``SupermuxWorkspaceLifecycleRelay`` — agent lifecycle mutations fire no
+///   cmux sidebar publisher at all, so without it the nested rows' activity
+///   indicator went stale on lifecycle-only changes (socket
+///   `set_agent_lifecycle`, hibernation, feed attention).
+///
+/// The merge is folded once more across workspaces (`coalesceLatest`, leading
+/// edge synchronous), and every delivery is gated by ``RenderedRowState``: the
+/// token bumps only when a field the Projects section actually renders
+/// changed. Telemetry that only touches unrendered state (logs, progress,
+/// ports, status entries) and lifecycle events that re-assert an unchanged
+/// activity (every agent hook re-reports `running` while working) no longer
+/// rebuild the section.
 ///
 /// Rebuilding this merge inside `body` and feeding it to `.onReceive` resubscribed
 /// every render, and on each new subscription the `@Published` inputs behind
 /// `sidebarObservationPublisher` re-send their current values (the `CombineLatest`
 /// then emits) — which drove a render→resubscribe→replay→invalidate feedback loop
 /// that pegged a CPU core. By owning the subscription here and rebuilding it only
-/// when the set of open workspaces changes, steady-state renders never resubscribe,
-/// so `removeDuplicates()` suppresses everything but real field changes.
+/// when the set of open workspaces changes, steady-state renders never resubscribe.
 @MainActor
 final class SupermuxWorkspaceObservation: ObservableObject {
-    /// Bumped on each observed per-workspace field change; read by the mount's
-    /// `body` to re-read the nested workspace snapshots.
+    /// Bumped on each observed per-workspace *rendered-field* change; read by
+    /// the mount's `body` to re-read the nested workspace snapshots.
     @Published private(set) var token = 0
 
     /// Upstream's `workspaceObservationCoalesceInterval` (`TabItemView`),
@@ -252,7 +266,48 @@ final class SupermuxWorkspaceObservation: ObservableObject {
     private static let coalesceInterval: RunLoop.SchedulerTimeType.Stride = .milliseconds(40)
 
     private var observedIds: Set<UUID> = []
+    private var observedTabs: [Workspace] = []
     private var cancellable: AnyCancellable?
+    private var settledTitleTasks: [Task<Void, Never>] = []
+    private var lastRendered: [RenderedRowState] = []
+
+    /// The per-workspace fields ``SupermuxWorkspaceRow`` snapshots actually
+    /// render (title, directory, branch, activity, PR badge). The volatile
+    /// automatic process title is represented by the settle model's
+    /// `changeGeneration` instead of its raw value, so telemetry-triggered
+    /// checks don't see mid-animation title frames as changes.
+    private struct RenderedRowState: Equatable {
+        let id: UUID
+        let customTitle: String?
+        let settledTitleGeneration: UInt64
+        let directory: String
+        let branch: String?
+        let activity: SupermuxWorkspaceActivity
+        let pullRequest: SupermuxPullRequest?
+    }
+
+    private static func renderedState(for workspace: Workspace) -> RenderedRowState {
+        RenderedRowState(
+            id: workspace.id,
+            customTitle: workspace.customTitle,
+            // A custom title masks the automatic process title entirely, so
+            // settled-title publications must not refresh the row while one
+            // is set (clearing the custom title changes `customTitle` itself,
+            // which re-reads the process title fresh).
+            settledTitleGeneration: workspace.customTitle == nil
+                ? workspace.sidebarProcessTitleObservation.changeGeneration
+                : 0,
+            directory: workspace.currentDirectory,
+            branch: workspace.supermuxSidebarBranch,
+            activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
+            pullRequest: workspace.sidebarPullRequestsInDisplayOrder().first
+                .flatMap(SupermuxPullRequest.init(sidebarState:))
+        )
+    }
+
+    deinit {
+        settledTitleTasks.forEach { $0.cancel() }
+    }
 
     /// (Re)subscribes to the workspaces' sidebar-observation streams, but only
     /// when the set of open workspaces actually changes — so steady-state renders
@@ -265,18 +320,36 @@ final class SupermuxWorkspaceObservation: ObservableObject {
         let ids = Set(tabs.map(\.id))
         guard ids != observedIds else { return }
         observedIds = ids
+        observedTabs = tabs
+        // Seed without bumping: a set change re-ran the mount body already.
+        lastRendered = tabs.map(Self.renderedState(for:))
+        settledTitleTasks.forEach { $0.cancel() }
+        settledTitleTasks = []
         guard !tabs.isEmpty else {
             cancellable = nil
             return
         }
 
-        let titleLegs = tabs.map { workspace in
-            workspace.$title.removeDuplicates().map { _ in () }
+        let customTitleLegs = tabs.map { workspace in
+            workspace.$customTitle.removeDuplicates().map { _ in () }
                 .receive(on: RunLoop.main)
                 .eraseToAnyPublisher()
         }
         let observationLegs = tabs.map { workspace in
             workspace.sidebarObservationPublisher
+                .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
+                .eraseToAnyPublisher()
+        }
+        // A pure surface reorder can change which branch/PR is first in
+        // display order without touching any observation field, so the
+        // rendered branch/PR would go stale without this leg. The version
+        // only changes when the ordered panel IDs actually change
+        // (WorkspaceSurfaceListModel's semantic gate), so it stays quiet
+        // during divider drags and geometry churn.
+        let paneLayoutLegs = tabs.map { workspace in
+            workspace.paneLayoutVersionPublisher
+                .removeDuplicates()
+                .map { _ in () }
                 .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
                 .eraseToAnyPublisher()
         }
@@ -286,8 +359,30 @@ final class SupermuxWorkspaceObservation: ObservableObject {
             .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
             .eraseToAnyPublisher()
 
-        cancellable = Publishers.MergeMany(titleLegs + observationLegs + [lifecycleLeg])
-            .sink { [weak self] in self?.token &+= 1 }
+        cancellable = Publishers.MergeMany(customTitleLegs + observationLegs + paneLayoutLegs + [lifecycleLeg])
+            .coalesceLatest(for: Self.coalesceInterval, scheduler: RunLoop.main)
+            .sink { [weak self] in self?.bumpIfRenderedStateChanged() }
+
+        // Automatic process titles at settled cadence (cmux's own row model);
+        // its publication bumps `changeGeneration`, which the rendered-state
+        // comparison picks up.
+        for workspace in tabs {
+            let changes = workspace.sidebarProcessTitleObservation.changes()
+            settledTitleTasks.append(Task { @MainActor [weak self] in
+                for await _ in changes {
+                    if Task.isCancelled { break }
+                    guard let self else { break }
+                    self.bumpIfRenderedStateChanged()
+                }
+            })
+        }
+    }
+
+    private func bumpIfRenderedStateChanged() {
+        let current = observedTabs.map(Self.renderedState(for:))
+        guard current != lastRendered else { return }
+        lastRendered = current
+        token &+= 1
     }
 }
 
