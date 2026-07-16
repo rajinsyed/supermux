@@ -18,6 +18,11 @@ public enum SupermuxWireErrorCode {
     /// failed — the two cases carry distinct messages worth surfacing.
     public static let aiUnavailable = "ai_unavailable"
 
+    /// A changes mutation whose `expected_root` no longer matches the
+    /// workspace's live repository directory — the phone's view is stale;
+    /// the store refetches the status and surfaces the message.
+    public static let staleRoot = "stale_root"
+
     /// The server-reported error code carried by `error`, or `nil` when the
     /// error is not an RPC error (or carried no code).
     /// - Parameter error: The error a seam call threw.

@@ -80,6 +80,13 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     public let avatarRGB: SupermuxAvatarRGB?
     /// Whether a custom icon is fetchable via `mobile.supermux.project.icon`.
     public let hasCustomIcon: Bool
+    /// The custom icon's CONTENT etag as carried by the projects list (the
+    /// same value the `project.icon` RPC answers), or `nil` while the wire
+    /// doesn't surface one. This is the avatar's icon-change signal: a
+    /// Mac-side icon replacement keeps `hasCustomIcon == true` but changes
+    /// the etag, so the avatar's fetch task re-keys on it — without it a
+    /// changed icon would render stale indefinitely.
+    public let iconETag: String?
     /// Branch new worktrees are created from, when the Mac reported one.
     public let defaultBranch: String?
     /// First grapheme of the name, uppercased, for the letter avatar.
@@ -123,6 +130,10 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     ///     matches this project. Defaults to none.
     ///   - worktreeCount: The store-derived worktree count, or `nil` before a
     ///     worktrees fetch has run (badge hidden). Defaults to `nil`.
+    ///   - iconETag: The custom icon's content etag from the projects list
+    ///     (`icon_etag`), or `nil` while the wire doesn't surface one —
+    ///     populate from the DTO once the field lands there. Defaults to
+    ///     `nil`.
     ///   - run: The run-store-derived run state, or `nil` (run UI hidden).
     ///     Defaults to `nil`.
     ///   - isExpanded: Whether the inline disclosure is open. Defaults to
@@ -133,6 +144,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         project: SupermuxProjectDTO,
         openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot] = [],
         worktreeCount: Int? = nil,
+        iconETag: String? = nil,
         run: SupermuxProjectRunState? = nil,
         isExpanded: Bool = false,
         nestedWorktrees: SupermuxProjectNestedWorktrees = .unavailable
@@ -143,6 +155,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         self.iconSymbol = project.iconSymbol
         self.avatarRGB = project.colorHex.flatMap(SupermuxAvatarRGB.init(hex:))
         self.hasCustomIcon = project.hasCustomIcon ?? false
+        self.iconETag = iconETag
         self.defaultBranch = project.defaultBranch
         let trimmed = project.name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.avatarLetter = trimmed.first.map { String($0).uppercased() } ?? "?"

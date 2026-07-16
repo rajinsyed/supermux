@@ -97,6 +97,17 @@ public final class SupermuxProjectsSectionModel {
     /// or surface an obsolete error.
     @ObservationIgnored var sessionGeneration = 0
 
+    /// Monotonic token for nested-worktree open requests (m6-f1), bumped by
+    /// EVERY ``openNestedWorktree(projectID:worktree:)`` call — including
+    /// the synchronous already-open navigate path. A slow `worktree.open`
+    /// response captures this at request time and only navigates if it is
+    /// STILL the latest token when the answer lands, so a user who taps a
+    /// different worktree (or an already-open one) before a slow response
+    /// arrives is never yanked back to the superseded target.
+    /// ``sessionGeneration`` alone doesn't catch this: it only changes on a
+    /// reconnect, not on a newer in-session selection.
+    @ObservationIgnored var nestedOpenRequestToken = 0
+
     /// Shared across sessions so custom icons survive a reconnect without a
     /// re-download (the etag round-trip answers `not_modified`).
     /// Internal (not private) for the `+Session.swift` lifecycle extension.
@@ -187,6 +198,11 @@ public final class SupermuxProjectsSectionModel {
                         .filter { $0.projectID == project.id }
                         .map { $0.runningMarked($0.hostsRunningWorkspace(runningWorkspaceID)) },
                     worktreeCount: worktreeCounts[project.id],
+                    // Icon-change signal for the avatar's fetch task: the Mac's
+                    // `icon_etag` (a size+mtime token that moves when the image
+                    // is replaced), so the task re-fetches on an icon change but
+                    // not on unrelated row churn.
+                    iconETag: project.iconETag,
                     run: runState(for: project),
                     isExpanded: isExpanded,
                     nestedWorktrees: isExpanded ? nestedWorktrees(forProjectID: project.id) : .unavailable

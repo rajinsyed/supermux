@@ -160,4 +160,62 @@ struct SupermuxMobileChangesWatchRegistryTests {
         #expect(harness.continuationsByDirectory.keys.sorted() == ["/tmp/repo-a", "/tmp/repo-b"])
         #expect(harness.registry.watchedWorkspaceIds == ["ws-1"])
     }
+
+    // MARK: - Multi-device holders (one client's release must not kill another)
+
+    @Test func aReleaseByOneHolderKeepsTheWatcherAliveForAnother() {
+        let harness = Harness()
+        harness.registry.watch(workspaceId: "ws-1", directory: "/tmp/repo", holder: "iphone")
+        harness.registry.watch(workspaceId: "ws-1", directory: "/tmp/repo", holder: "ipad")
+        // One shared FSEvents watcher backs both devices.
+        #expect(harness.continuationsByDirectory.count == 1)
+        #expect(harness.registry.watchedWorkspaceIds == ["ws-1"])
+
+        // The iPad closes its Changes sheet — the iPhone's live watch survives.
+        harness.registry.unwatch(workspaceId: "ws-1", holder: "ipad")
+        #expect(harness.registry.watchedWorkspaceIds == ["ws-1"])
+
+        // Only when the last holder releases is the watcher torn down.
+        harness.registry.unwatch(workspaceId: "ws-1", holder: "iphone")
+        #expect(harness.registry.watchedWorkspaceIds.isEmpty)
+    }
+
+    @Test func sweepReapsOnlyExpiredHoldersNotTheWholeWorkspace() {
+        let harness = Harness()
+        let ttl = SupermuxMobileChangesWatchRegistry.ttl
+        harness.registry.watch(workspaceId: "ws-1", directory: "/tmp/repo", holder: "stale")
+        harness.clock.advance(by: 100)
+        harness.registry.watch(workspaceId: "ws-1", directory: "/tmp/repo", holder: "fresh")
+
+        // Past the first holder's TTL, but the second heartbeated more recently:
+        // the stale holder is swept, the workspace stays watched for the fresh one.
+        harness.clock.advance(by: ttl - 50)
+        harness.registry.sweep()
+        #expect(harness.registry.watchedWorkspaceIds == ["ws-1"])
+
+        // Once the fresh holder also lapses, the watcher is finally reaped.
+        harness.clock.advance(by: 100)
+        harness.registry.sweep()
+        #expect(harness.registry.watchedWorkspaceIds.isEmpty)
+    }
+
+    // MARK: - RPC-CHG-07: the PRODUCTION automatic sweep (not just manual sweep())
+
+    @Test func theAutomaticSweepReapsExpiredHoldersWithoutAManualSweep() async throws {
+        let clock = FakeClock()
+        let registry = SupermuxMobileChangesWatchRegistry(
+            now: { clock.now },
+            makeChangeStream: { _ in AsyncStream { _ in } },
+            emit: { _, _ in },
+            sweepsAutomatically: true,
+            sweepInterval: .milliseconds(5)
+        )
+        registry.watch(workspaceId: "ws-1", directory: "/tmp/repo")
+        #expect(registry.watchedWorkspaceIds == ["ws-1"])
+
+        // Advancing the injected clock past the TTL must let the periodic sweep
+        // TASK reap the lease on its own — no manual sweep() call.
+        clock.advance(by: SupermuxMobileChangesWatchRegistry.ttl + 1)
+        try await waitUntil { registry.watchedWorkspaceIds.isEmpty }
+    }
 }

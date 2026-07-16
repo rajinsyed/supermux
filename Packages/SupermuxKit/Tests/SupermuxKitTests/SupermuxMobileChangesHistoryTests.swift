@@ -5,10 +5,10 @@ import Testing
 
 /// Core tests for the mobile `changes.history` RPC (validation contract
 /// RPC-CHG-06): against a repository with more commits than one page, the
-/// sha-cursor pagination yields non-overlapping pages, `next_cursor` resumes
-/// exactly where the previous page ended, `is_pushed` flags reflect what is
-/// on the `file://` remote, and incoming (pullable) commits ride the first
-/// page.
+/// pinned-root/offset pagination yields non-overlapping, COMPLETE pages,
+/// `next_cursor` resumes exactly where the previous page ended, `is_pushed`
+/// flags reflect what is on the `file://` remote, and incoming (pullable)
+/// commits ride the first page.
 // Serialized: shells out to real `git`. Alongside the other git-integration
 // suites, subprocess concurrency can transiently drop a capture (the shared
 // CommandRunner partial/empty-read artifact); one full-suite rerun is the
@@ -45,39 +45,73 @@ import Testing
 
         let limit = 3
         // Page 1: the three unpushed local commits, with a cursor onward.
-        let raw1 = try #require(
-            await service.historyCommits(repoPath: clone, limit: limit + 1, before: nil)
+        let (page1, cursor1) = try await historyPage(
+            in: clone, limit: limit, root: nil, skip: 0, unpushedShas: unpushedShas
         )
-        let page1 = try decodePage(builder.history(
-            localCommits: raw1, limit: limit, unpushedShas: unpushedShas, incoming: []
-        ))
         #expect(page1.commits.map(\.subject) == ["Local 3", "Local 2", "Local 1"])
         #expect(page1.commits.map(\.isPushed) == [false, false, false])
-        let cursor1 = try #require(page1.nextCursor)
-        #expect(cursor1 == page1.commits.last?.sha)
+        // The compound cursor pins the traversal root (page 1's HEAD) and the
+        // offset of the next page — not the last sha.
+        let resume1 = try #require(cursor1.flatMap(parseCursor))
+        #expect(resume1.skip == limit)
+        #expect(resume1.root == page1.commits.first?.sha)
 
         // Page 2: resumes after the cursor with the pushed commits.
-        let raw2 = try #require(
-            await service.historyCommits(repoPath: clone, limit: limit + 1, before: cursor1)
+        let (page2, cursor2) = try await historyPage(
+            in: clone, limit: limit, root: resume1.root, skip: resume1.skip, unpushedShas: unpushedShas
         )
-        let page2 = try decodePage(builder.history(
-            localCommits: raw2, limit: limit, unpushedShas: unpushedShas, incoming: []
-        ))
         #expect(page2.commits.map(\.subject) == ["Pushed c", "Pushed b", "Pushed a"])
         #expect(page2.commits.map(\.isPushed) == [true, true, true])
         #expect(Set(page1.commits.map(\.sha)).isDisjoint(with: page2.commits.map(\.sha)))
-        let cursor2 = try #require(page2.nextCursor)
+        let resume2 = try #require(cursor2.flatMap(parseCursor))
 
         // Page 3: the fixture root ends the history — no further cursor.
-        let raw3 = try #require(
-            await service.historyCommits(repoPath: clone, limit: limit + 1, before: cursor2)
+        let (page3, cursor3) = try await historyPage(
+            in: clone, limit: limit, root: resume2.root, skip: resume2.skip, unpushedShas: unpushedShas
         )
-        let page3 = try decodePage(builder.history(
-            localCommits: raw3, limit: limit, unpushedShas: unpushedShas, incoming: []
-        ))
         #expect(page3.commits.map(\.subject) == ["Initial commit"])
         #expect(page3.commits.map(\.isPushed) == [true])
-        #expect(page3.nextCursor == nil)
+        #expect(cursor3 == nil)
+    }
+
+    /// Regression for the sha-cursor pagination that silently dropped
+    /// side-branch commits after page 1: resuming a later page with
+    /// `git log <cursor>` only walked that commit's ancestors, so a commit
+    /// sorting after the page boundary but reachable through a merge's OTHER
+    /// parent never appeared on any page. Pinning the traversal to page 1's
+    /// HEAD and advancing by offset returns every commit exactly once.
+    @Test func historyPagesDoNotDropSideBranchCommitsAcrossPages() async throws {
+        let repo = try GitFixture.makeFixtureRepo(prefix: "supermux-history-merge")
+        defer { GitFixture.cleanUp(repo) }
+        // A side branch off the root with its own commit...
+        try GitFixture.runGit(["checkout", "-b", "feature"], in: repo)
+        try addCommit("Feature one", file: "feature-1.txt", in: repo)
+        // ...a commit back on the default branch...
+        try GitFixture.runGit(["checkout", "-"], in: repo)
+        try addCommit("Main two", file: "main-2.txt", in: repo)
+        // ...then a real (--no-ff) merge commit tying both parents together.
+        try GitFixture.runGit(["merge", "--no-ff", "feature", "-m", "Merge feature"], in: repo)
+
+        // Page size 2 forces the merge's other parent ("Feature one") onto a
+        // later page — exactly where the old paging dropped it.
+        let limit = 2
+        var subjects: [String] = []
+        var root: String?
+        var skip = 0
+        for _ in 0..<10 {
+            let (page, cursor) = try await historyPage(
+                in: repo, limit: limit, root: root, skip: skip, unpushedShas: []
+            )
+            subjects.append(contentsOf: page.commits.compactMap(\.subject))
+            guard let resume = cursor.flatMap(parseCursor) else { break }
+            root = resume.root
+            skip = resume.skip
+        }
+        // No drops, no duplicates: all four commits, "Feature one" included.
+        #expect(subjects.count == 4)
+        #expect(
+            Set(subjects) == ["Merge feature", "Main two", "Feature one", "Initial commit"]
+        )
     }
 
     @Test func incomingCommitsRideTheFirstPage() async throws {
@@ -97,10 +131,11 @@ import Testing
 
         let incoming = await service.incomingCommits(repoPath: clone, limit: 10)
         let raw = try #require(
-            await service.historyCommits(repoPath: clone, limit: 11, before: nil)
+            await service.historyCommits(repoPath: clone, limit: 11, from: nil, skip: 0)
         )
         let payload = try builder.history(
-            localCommits: raw, limit: 10, unpushedShas: [], incoming: incoming
+            localCommits: raw, limit: 10, unpushedShas: [], incoming: incoming,
+            nextCursor: raw.first.map { "\($0.hash).10" } ?? ""
         )
         let page = try decodePage(payload)
         #expect(page.incoming.map(\.subject) == ["Incoming commit"])
@@ -109,11 +144,12 @@ import Testing
         #expect(!page.commits.map(\.subject).contains("Incoming commit"))
     }
 
-    @Test func historyCommitsReturnsNilForAnUnknownCursor() async throws {
+    @Test func historyCommitsReturnsNilForAnUnknownRoot() async throws {
         let repo = try GitFixture.makeFixtureRepo(prefix: "supermux-history-cursor")
         defer { GitFixture.cleanUp(repo) }
         let page = await service.historyCommits(
-            repoPath: repo, limit: 3, before: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+            repoPath: repo, limit: 3,
+            from: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", skip: 3
         )
         #expect(page == nil)
     }
@@ -125,7 +161,7 @@ import Testing
             ),
         ]
         let payload = try builder.history(
-            localCommits: commits, limit: 3, unpushedShas: [], incoming: []
+            localCommits: commits, limit: 3, unpushedShas: [], incoming: [], nextCursor: "a1.3"
         )
         #expect(payload["next_cursor"] == nil)
         #expect((payload["incoming"] as? [Any])?.isEmpty == true)
@@ -137,6 +173,31 @@ import Testing
         let commits: [SupermuxCommitDTO]
         let incoming: [SupermuxCommitDTO]
         let nextCursor: String?
+    }
+
+    /// Reads one history page through the service + payload builder exactly
+    /// as `v2SupermuxChangesHistory` does: pin the traversal root (page 1's
+    /// HEAD once known) and emit a compound `<root-sha>.<offset>` cursor.
+    private func historyPage(
+        in repo: String, limit: Int, root: String?, skip: Int, unpushedShas: Set<String>
+    ) async throws -> (page: Page, nextCursor: String?) {
+        let raw = try #require(
+            await service.historyCommits(repoPath: repo, limit: limit + 1, from: root, skip: skip)
+        )
+        let startSha = root ?? raw.first?.hash
+        let nextCursor = startSha.map { "\($0).\(skip + limit)" } ?? ""
+        let payload = try builder.history(
+            localCommits: raw, limit: limit, unpushedShas: unpushedShas,
+            incoming: [], nextCursor: nextCursor
+        )
+        return (try decodePage(payload), payload["next_cursor"] as? String)
+    }
+
+    /// Parses the handler's compound `<root-sha>.<offset>` cursor.
+    private func parseCursor(_ cursor: String) -> (root: String, skip: Int)? {
+        let parts = cursor.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, let skip = Int(parts[1]) else { return nil }
+        return (String(parts[0]), skip)
     }
 
     /// Decodes a history payload's DTO arrays through the shared wire bridge.

@@ -56,6 +56,36 @@ import Testing
         #expect(after.totalChangeCount == 0)
     }
 
+    @Test func discardingOnePathLeavesADirtySiblingUntouched() async throws {
+        let root = try GitFixture.makeFixtureRepo(prefix: "supermux-changes-discard-subset")
+        defer { GitFixture.cleanUp(root) }
+        // A second tracked file committed alongside the fixture root.
+        try GitFixture.write("base other\n", to: "other.txt", in: root)
+        try GitFixture.runGit(["add", "other.txt"], in: root)
+        try GitFixture.commit("Add other", in: root)
+        // Both tracked files dirtied in the working tree.
+        try GitFixture.write("changed readme\n", to: "README.md", in: root)
+        try GitFixture.write("changed other\n", to: "other.txt", in: root)
+
+        // Discard ONLY README.md through the mobile resolve → discard path.
+        let snapshot = await service.status(repoPath: root)
+        let resolution = SupermuxMobileChangesDiscard.resolve(paths: ["README.md"], in: snapshot)
+        guard case let .changes(changes) = resolution else {
+            Issue.record("expected README.md to resolve to a current change")
+            return
+        }
+        #expect(changes.count == 1)
+        for change in changes {
+            try await service.discard(repoPath: root, change: change)
+        }
+
+        // README restored to HEAD; the dirty sibling is untouched. A resolve()
+        // that over-returned (every change for a single-path request) would
+        // wrongly discard other.txt too — silent data loss.
+        #expect(try GitFixture.read("README.md", in: root) == "fixture\n")
+        #expect(try GitFixture.read("other.txt", in: root) == "changed other\n")
+    }
+
     // MARK: - Re-validation
 
     @Test func unknownPathsResolveToUnknownWithoutMutating() async throws {

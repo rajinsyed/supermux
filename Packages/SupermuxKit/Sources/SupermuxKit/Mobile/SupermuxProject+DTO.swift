@@ -19,7 +19,12 @@ extension SupermuxProjectDTO {
     ///     marker; the caller resolves it via
     ///     ``SupermuxMobileProjectConfigMarker/managedRelativePath(projectRoot:)``),
     ///     or `nil` when those fields are user-owned.
-    public init(project: SupermuxProject, hasCustomIcon: Bool, configPath: String? = nil) {
+    public init(
+        project: SupermuxProject,
+        hasCustomIcon: Bool,
+        iconETag: String? = nil,
+        configPath: String? = nil
+    ) {
         self.init(
             id: project.id.uuidString,
             name: project.name,
@@ -27,6 +32,7 @@ extension SupermuxProjectDTO {
             colorHex: project.colorHex,
             iconSymbol: project.iconSymbol,
             hasCustomIcon: hasCustomIcon,
+            iconETag: iconETag,
             defaultBranch: project.defaultBranch,
             worktreesDirName: project.worktreesDirName,
             runCommands: project.runCommands,

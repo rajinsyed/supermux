@@ -65,19 +65,37 @@ public struct SupermuxMobileProjectsPayloadBuilder: Sendable {
         ["project": try encodedProject(project)]
     }
 
-    /// One project's wire dictionary, with the fetchable-icon flag and the
-    /// config-managed read-only marker resolved (both are file probes — run
-    /// this off the main actor).
+    /// One project's wire dictionary, with the fetchable-icon flag, the icon
+    /// change token, and the config-managed read-only marker resolved (all are
+    /// file probes — run this off the main actor).
     private func encodedProject(_ project: SupermuxProject) throws -> [String: Any] {
-        try SupermuxWireJSON().dictionary(from: SupermuxProjectDTO(
+        let iconURL = iconResolver.resolveAvatar(
+            rootPath: project.rootPath,
+            customIconPath: project.customIconPath
+        )
+        return try SupermuxWireJSON().dictionary(from: SupermuxProjectDTO(
             project: project,
-            hasCustomIcon: iconResolver.resolveAvatar(
-                rootPath: project.rootPath,
-                customIconPath: project.customIconPath
-            ) != nil,
+            hasCustomIcon: iconURL != nil,
+            iconETag: iconURL.flatMap(Self.iconChangeToken),
             configPath: SupermuxMobileProjectConfigMarker.managedRelativePath(
                 projectRoot: project.rootPath
             )
         ))
+    }
+
+    /// A cheap change token for an icon: the resolved path plus its size and
+    /// modification time. Changes whenever the image is edited, replaced, or
+    /// switched to a different file (the path covers a switch to a same-size,
+    /// same-mtime file), WITHOUT reading or hashing the bytes — the projects
+    /// list encodes every project. It is only a re-fetch TRIGGER for the phone;
+    /// the actual content etag round-trips through `project.icon`, so a fetch
+    /// after any token move fetches the correct bytes. `nil` when the file
+    /// cannot be stat-ed.
+    private static func iconChangeToken(for url: URL) -> String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        else { return nil }
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        return "\(url.path)-\(size)-\(modified)"
     }
 }

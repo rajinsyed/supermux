@@ -9,32 +9,45 @@ public import SupermuxMobileCore
 /// exactly). Optional params are omitted — never sent as defaults — to match
 /// the Mac handlers' expectations.
 
-/// `mobile.supermux.changes.watch`: `{workspace_id, enable}`.
+/// `mobile.supermux.changes.watch`: `{workspace_id, enable, client_id?}`.
 ///
 /// `enable: true` starts (or heartbeats) the Mac's per-workspace repository
 /// watcher; the lease TTL is 120 s server-side, so the phone re-sends every
 /// 60 s while the screen is foregrounded. `enable: false` stops it.
+/// `client_id` identifies THIS device's watch session so the Mac can
+/// refcount watchers per client — one device closing its Changes sheet must
+/// not kill another device's live watcher. Omitted (old callers) means the
+/// Mac's legacy single-holder behavior.
 public struct SupermuxChangesWatchRequest: Equatable, Sendable {
     /// The workspace's UUID string.
     public let workspaceID: String
     /// Whether to start/renew (`true`) or stop (`false`) the watcher.
     public let enable: Bool
+    /// This device's stable watch-session id, for the Mac's per-client
+    /// refcount. `nil` is omitted from the wire (legacy behavior).
+    public let clientID: String?
 
     /// Creates the request.
     /// - Parameters:
     ///   - workspaceID: The workspace's UUID string.
     ///   - enable: Whether to start/renew or stop the watcher.
-    public init(workspaceID: String, enable: Bool) {
+    ///   - clientID: This device's stable watch-session id, if any.
+    public init(workspaceID: String, enable: Bool, clientID: String? = nil) {
         self.workspaceID = workspaceID
         self.enable = enable
+        self.clientID = clientID
     }
 
     /// The exact wire method string.
     public var wireMethod: String { SupermuxMobileMethod.changesWatch.rawValue }
 
-    /// The exact wire params.
+    /// The exact wire params (`client_id` present only when set).
     public var wireParams: [String: Any] {
-        ["workspace_id": workspaceID, "enable": enable]
+        var params: [String: Any] = ["workspace_id": workspaceID, "enable": enable]
+        if let clientID {
+            params["client_id"] = clientID
+        }
+        return params
     }
 }
 
@@ -111,61 +124,80 @@ public enum SupermuxChangesSelection: Equatable, Sendable {
     }
 }
 
-/// `mobile.supermux.changes.stage`: `{workspace_id, paths | all}`.
+/// `mobile.supermux.changes.stage`: `{workspace_id, paths | all,
+/// expected_root?}`.
 public struct SupermuxChangesStageRequest: Equatable, Sendable {
     /// The workspace's UUID string.
     public let workspaceID: String
     /// Which files to stage.
     public let selection: SupermuxChangesSelection
+    /// The repo root this mutation was composed against (stale-view pin);
+    /// `nil` is omitted from the wire. See ``SupermuxChangesCommitRequest``.
+    public let expectedRoot: String?
 
     /// Creates the request.
     /// - Parameters:
     ///   - workspaceID: The workspace's UUID string.
     ///   - selection: Which files to stage.
-    public init(workspaceID: String, selection: SupermuxChangesSelection) {
+    ///   - expectedRoot: The repo root the view was composed against.
+    public init(workspaceID: String, selection: SupermuxChangesSelection, expectedRoot: String? = nil) {
         self.workspaceID = workspaceID
         self.selection = selection
+        self.expectedRoot = expectedRoot
     }
 
     /// The exact wire method string.
     public var wireMethod: String { SupermuxMobileMethod.changesStage.rawValue }
 
-    /// The exact wire params.
+    /// The exact wire params (`expected_root` present only when set).
     public var wireParams: [String: Any] {
         var params: [String: Any] = ["workspace_id": workspaceID]
         selection.encode(into: &params)
+        if let expectedRoot {
+            params["expected_root"] = expectedRoot
+        }
         return params
     }
 }
 
-/// `mobile.supermux.changes.unstage`: `{workspace_id, paths | all}`.
+/// `mobile.supermux.changes.unstage`: `{workspace_id, paths | all,
+/// expected_root?}`.
 public struct SupermuxChangesUnstageRequest: Equatable, Sendable {
     /// The workspace's UUID string.
     public let workspaceID: String
     /// Which files to unstage.
     public let selection: SupermuxChangesSelection
+    /// The repo root this mutation was composed against (stale-view pin);
+    /// `nil` is omitted from the wire. See ``SupermuxChangesCommitRequest``.
+    public let expectedRoot: String?
 
     /// Creates the request.
     /// - Parameters:
     ///   - workspaceID: The workspace's UUID string.
     ///   - selection: Which files to unstage.
-    public init(workspaceID: String, selection: SupermuxChangesSelection) {
+    ///   - expectedRoot: The repo root the view was composed against.
+    public init(workspaceID: String, selection: SupermuxChangesSelection, expectedRoot: String? = nil) {
         self.workspaceID = workspaceID
         self.selection = selection
+        self.expectedRoot = expectedRoot
     }
 
     /// The exact wire method string.
     public var wireMethod: String { SupermuxMobileMethod.changesUnstage.rawValue }
 
-    /// The exact wire params.
+    /// The exact wire params (`expected_root` present only when set).
     public var wireParams: [String: Any] {
         var params: [String: Any] = ["workspace_id": workspaceID]
         selection.encode(into: &params)
+        if let expectedRoot {
+            params["expected_root"] = expectedRoot
+        }
         return params
     }
 }
 
-/// `mobile.supermux.changes.discard`: `{workspace_id, paths}`.
+/// `mobile.supermux.changes.discard`: `{workspace_id, paths,
+/// expected_root?}`.
 ///
 /// Discard is destructive: tracked files are restored to HEAD content;
 /// untracked files are DELETED on the Mac (desktop parity). The phone always
@@ -175,21 +207,30 @@ public struct SupermuxChangesDiscardRequest: Equatable, Sendable {
     public let workspaceID: String
     /// The repo-root-relative paths to discard (must be non-empty).
     public let paths: [String]
+    /// The repo root this mutation was composed against (stale-view pin);
+    /// `nil` is omitted from the wire. See ``SupermuxChangesCommitRequest``.
+    public let expectedRoot: String?
 
     /// Creates the request.
     /// - Parameters:
     ///   - workspaceID: The workspace's UUID string.
     ///   - paths: The repo-root-relative paths to discard.
-    public init(workspaceID: String, paths: [String]) {
+    ///   - expectedRoot: The repo root the view was composed against.
+    public init(workspaceID: String, paths: [String], expectedRoot: String? = nil) {
         self.workspaceID = workspaceID
         self.paths = paths
+        self.expectedRoot = expectedRoot
     }
 
     /// The exact wire method string.
     public var wireMethod: String { SupermuxMobileMethod.changesDiscard.rawValue }
 
-    /// The exact wire params.
+    /// The exact wire params (`expected_root` present only when set).
     public var wireParams: [String: Any] {
-        ["workspace_id": workspaceID, "paths": paths]
+        var params: [String: Any] = ["workspace_id": workspaceID, "paths": paths]
+        if let expectedRoot {
+            params["expected_root"] = expectedRoot
+        }
+        return params
     }
 }

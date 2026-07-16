@@ -88,11 +88,17 @@ extension SupermuxProjectsSectionModel {
     /// store. Failures surface on ``nestedOpenErrorMessage``. A late answer
     /// from a session that has since ended (disconnect/reconnect) is
     /// dropped: it must neither navigate the new shell with a stale
-    /// workspace id nor surface an obsolete error.
+    /// workspace id nor surface an obsolete error. A late answer from a
+    /// request the user has since superseded — by tapping a different
+    /// worktree row, including the synchronous already-open path, before
+    /// this one answered — is dropped too: it must never yank the app back
+    /// to a target the user has moved on from.
     /// - Parameters:
     ///   - projectID: The owning project's UUID string.
     ///   - worktree: The tapped row's value snapshot.
     public func openNestedWorktree(projectID: String, worktree: SupermuxWorktreeRowSnapshot) {
+        nestedOpenRequestToken += 1
+        let requestToken = nestedOpenRequestToken
         if let workspaceID = worktree.workspaceID {
             navigateToWorkspace(workspaceID)
             return
@@ -102,12 +108,12 @@ extension SupermuxProjectsSectionModel {
         Task {
             do {
                 let workspaceID = try await store.openWorktree(path: worktree.path)
-                guard sessionGeneration == generation else { return }
+                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
                 if let workspaceID {
                     navigateToWorkspace(workspaceID)
                 }
             } catch {
-                guard sessionGeneration == generation else { return }
+                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
                 nestedOpenErrorMessage = error.localizedDescription
             }
         }

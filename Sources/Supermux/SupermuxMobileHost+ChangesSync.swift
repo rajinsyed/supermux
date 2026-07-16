@@ -168,35 +168,56 @@ extension TerminalController {
             }
             limit = min(value, Self.supermuxHistoryMaxLimit)
         }
-        var cursor: String?
+        // Compound cursor `"<root-sha>.<offset>"`: the sha the WHOLE traversal
+        // is pinned to (the first page's HEAD) and how many commits precede
+        // this page. Paging by (pinned root, offset) rather than re-rooting at
+        // the previous page's last sha is what keeps side-branch commits from
+        // being silently dropped after page 1 (see `historyCommits`).
+        let hasCursor = params["cursor"] != nil
+        var root: String?
+        var skip = 0
         if let rawCursor = params["cursor"] {
             guard let value = (rawCursor as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
                 return .err(
-                    code: "invalid_params", message: "cursor must be a commit sha", data: nil
+                    code: "invalid_params", message: "cursor must be a history cursor", data: nil
                 )
             }
-            // The cursor is spliced into `git log`'s argv, so it MUST be a bare
-            // hex object name and nothing else — otherwise a value like
+            // The sha half is spliced into `git log`'s argv, so it MUST be a
+            // bare hex object name and nothing else — otherwise a value like
             // `--output=/path` would be parsed by git as an option and could
-            // overwrite an arbitrary user-writable file. `next_cursor` is always
-            // a full sha (40 for sha-1, 64 for sha-256), so require exactly that.
-            guard Self.supermuxIsFullCommitSha(value) else {
+            // overwrite an arbitrary user-writable file. The offset half must
+            // be a non-negative integer. `next_cursor` always has this shape.
+            let parts = value.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  Self.supermuxIsFullCommitSha(String(parts[0])),
+                  let offset = Int(parts[1]), offset >= 0 else {
                 return .err(
-                    code: "invalid_params", message: "cursor must be a commit sha", data: nil
+                    code: "invalid_params", message: "cursor must be a history cursor", data: nil
                 )
             }
-            cursor = value
+            root = String(parts[0])
+            skip = offset
         }
         let service = Self.supermuxMobileChangesService
+        // First page only: refresh remote-tracking refs BEFORE anything reads
+        // them. `status` (behind count), `unpushedCommits` (`is_pushed` flags),
+        // and `incomingCommits` (`HEAD..@{upstream}`) are all only as fresh as
+        // the last `git fetch`. Fetching after them would leave a commit that
+        // was pushed from another clone flagged `is_pushed: false` and the
+        // behind count stale until the next call. Best-effort: an offline/failed
+        // fetch still returns the local history unchanged.
+        if !hasCursor {
+            _ = await service.fetch(repoPath: target.directory)
+        }
         let snapshot = await service.status(repoPath: target.directory)
         let localCommits: [SupermuxGitCommit]
         if let page = await service.historyCommits(
-            repoPath: target.directory, limit: limit + 1, before: cursor
+            repoPath: target.directory, limit: limit + 1, from: root, skip: skip
         ) {
             localCommits = page
-        } else if cursor != nil {
-            // The cursor no longer names a commit (rebased away, or garbage).
+        } else if hasCursor {
+            // The pinned root no longer names a commit (rebased away, or garbage).
             return .err(code: "not_found", message: "Unknown history cursor", data: nil)
         } else {
             // Unborn branch or not a repository: an empty history, not an error.
@@ -207,15 +228,20 @@ extension TerminalController {
             hasUpstream: snapshot.upstreamBranch != nil,
             limit: Self.supermuxHistoryUnpushedProbeLimit
         )
-        let incoming = cursor == nil
-            ? await service.incomingCommits(repoPath: target.directory, limit: limit)
-            : []
+        let incoming: [SupermuxGitCommit] = hasCursor
+            ? []
+            : await service.incomingCommits(repoPath: target.directory, limit: limit)
+        // Pin every later page to this traversal's root: the caller's `root`
+        // once set, else the first page's HEAD (`localCommits.first`).
+        let startSha = root ?? localCommits.first?.hash
+        let nextCursor = startSha.map { "\($0).\(skip + limit)" } ?? ""
         do {
             return .ok(try SupermuxMobileChangesPayloadBuilder().history(
                 localCommits: localCommits,
                 limit: limit,
                 unpushedShas: Set(unpushed.map(\.hash)),
-                incoming: incoming
+                incoming: incoming,
+                nextCursor: nextCursor
             ))
         } catch {
             return .err(code: "unavailable", message: "Failed to encode history", data: nil)

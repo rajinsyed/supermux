@@ -182,7 +182,8 @@ extension TerminalController {
                 title: project.name,
                 directory: project.rootPath,
                 colorHex: project.colorHex,
-                projectId: project.id
+                projectId: project.id,
+                preservesUserFocus: true
             )) else {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
         }

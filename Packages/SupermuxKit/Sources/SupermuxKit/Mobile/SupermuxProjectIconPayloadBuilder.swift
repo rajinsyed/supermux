@@ -21,6 +21,15 @@ public struct SupermuxProjectIconPayloadBuilder: Sendable {
         self.resolver = resolver
     }
 
+    /// Largest icon source accepted. An icon rides one RPC response as base64
+    /// (~1.33× the source) and is decoded again on the phone, so an
+    /// unbounded source (a 200 MB `logo.png` accidentally shipped in a repo's
+    /// assets) would balloon Mac memory and can jetsam the iOS app. 8 MB
+    /// comfortably covers any real retina app icon while capping the abuse
+    /// case; an oversize source resolves to `notFound` (the phone shows its
+    /// initials fallback, exactly as a repo with no icon does).
+    public static let maximumIconSourceBytes = 8 * 1024 * 1024
+
     /// Resolves the icon payload for one project.
     ///
     /// - Parameters:
@@ -35,7 +44,7 @@ public struct SupermuxProjectIconPayloadBuilder: Sendable {
         ifNoneMatch: String?
     ) -> SupermuxProjectIconPayload {
         guard let url = resolver.resolveAvatar(rootPath: rootPath, customIconPath: customIconPath),
-              let data = try? Data(contentsOf: url) else {
+              let data = Self.readCapped(url, maxBytes: Self.maximumIconSourceBytes) else {
             return .notFound
         }
         let etag = Self.etag(for: data)
@@ -46,6 +55,18 @@ public struct SupermuxProjectIconPayloadBuilder: Sendable {
             return .notFound
         }
         return .icon(pngBase64: png.base64EncodedString(), etag: etag)
+    }
+
+    /// Reads at most `maxBytes + 1` bytes through a bounded file handle,
+    /// returning nil when the source is larger (or unreadable). Reading the
+    /// cap-plus-one — rather than `Data(contentsOf:)` then checking the count —
+    /// means an oversize or non-regular source (a pipe, a file enlarged between
+    /// a size stat and the read) is never fully loaded into memory.
+    private static func readCapped(_ url: URL, maxBytes: Int) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: maxBytes + 1) else { return nil }
+        return data.count > maxBytes ? nil : data
     }
 
     /// SHA-256 hex digest of the source bytes.

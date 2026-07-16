@@ -313,6 +313,80 @@ import Testing
         }
     }
 
+    @Test func gitInternalsAreRejectedByEveryMethodWithNoEffect() throws {
+        try withBase { base in
+            let root = try makeFixtureRoot(in: base)
+            let fm = FileManager.default
+            // A repo's git dir (and a nested repo's) — hidden by listing, so
+            // UI-unreachable; a mutation here would corrupt the repository.
+            try fm.createDirectory(
+                at: root.appendingPathComponent(".git"), withIntermediateDirectories: true
+            )
+            try Data("[core]\n".utf8).write(to: root.appendingPathComponent(".git/config"))
+            try fm.createDirectory(
+                at: root.appendingPathComponent("src/.git"), withIntermediateDirectories: true
+            )
+            let browser = try SupermuxMobileFileBrowser(rootPath: root.path)
+
+            for path in [".git", ".git/config", "src/.git"] {
+                #expect(throws: SupermuxMobileFileBrowserError.self) { try browser.list(path: path) }
+                #expect(throws: SupermuxMobileFileBrowserError.self) { try browser.rename(path: path, to: "x") }
+                #expect(throws: SupermuxMobileFileBrowserError.self) { try browser.duplicate(path: path) }
+                #expect(throws: SupermuxMobileFileBrowserError.self) { try browser.trash(paths: [path]) }
+            }
+            #expect(throws: SupermuxMobileFileBrowserError.self) {
+                try browser.createFile(at: ".git/hooks/pre-commit")
+            }
+
+            // An INTERIOR symlink into `.git` (`metadata -> .git`) has no
+            // textual `.git` component, but its resolved target is git
+            // internals — it must be rejected after resolution too.
+            try fm.createSymbolicLink(
+                at: root.appendingPathComponent("metadata"),
+                withDestinationURL: root.appendingPathComponent(".git")
+            )
+            #expect(throws: SupermuxMobileFileBrowserError.self) {
+                try browser.rename(path: "metadata/config", to: "x")
+            }
+            #expect(throws: SupermuxMobileFileBrowserError.self) {
+                try browser.trash(paths: ["metadata/config"])
+            }
+
+            // The git internals are untouched.
+            #expect(exists(root.appendingPathComponent(".git/config")))
+            #expect(exists(root.appendingPathComponent("src/.git")))
+        }
+    }
+
+    @Test func absoluteRequestPathsCannotReachOutsideTheRoot() throws {
+        try withBase { base in
+            let root = try makeFixtureRoot(in: base)
+            try Data("victim".utf8).write(to: base.appendingPathComponent("victim.txt"))
+            let browser = try SupermuxMobileFileBrowser(rootPath: root.path)
+            // An absolute path pointing OUTSIDE the root must never read,
+            // mutate, or delete the outside target (the diff-side confinement
+            // already tests absolute paths; this pins it for the file browser).
+            // Such a path is reinterpreted as root-relative and resolves to a
+            // nonexistent in-root path — the outside file is untouchable.
+            let outsideAbsolute = base.appendingPathComponent("victim.txt").path
+            #expect(throws: SupermuxMobileFileBrowserError.self) {
+                try browser.rename(path: outsideAbsolute, to: "renamed.txt")
+            }
+            #expect(throws: SupermuxMobileFileBrowserError.self) {
+                try browser.duplicate(path: outsideAbsolute)
+            }
+            #expect(throws: SupermuxMobileFileBrowserError.self) {
+                try browser.createFile(at: "/tmp/supermux-evil.txt")
+            }
+            // trash treats a missing (reinterpreted) target as a no-op; the
+            // outside file survives regardless.
+            try browser.trash(paths: [outsideAbsolute])
+            #expect(exists(base.appendingPathComponent("victim.txt")))
+            #expect(!exists(base.appendingPathComponent("renamed.txt")))
+            #expect(!exists(URL(fileURLWithPath: "/tmp/supermux-evil.txt")))
+        }
+    }
+
     @Test func symlinkEscapeIsRejectedByEveryMethodWithNoEffect() throws {
         try withBase { base in
             let (root, outside) = try makeEscapeFixture(in: base)

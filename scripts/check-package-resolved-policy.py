@@ -149,6 +149,47 @@ def has_remote_dependency(
     return needs_lockfile
 
 
+# SUPERMUX:begin fix-resolved-policy-path-deps
+def path_dependency_remote_pin_roots(
+    calls: list[str],
+    manifest: Path,
+    all_manifests: dict[str, Path],
+    graph: dict[str, tuple[bool, list[str]]],
+    memo: dict[str, bool],
+) -> set[str]:
+    """Graph roots reachable through this manifest's `.package(path:)` deps
+    that carry remote (url/registry) pins.
+
+    A path-dependency-only manifest change is invisible to Package.resolved
+    ONLY when it does not alter which remote-pinned packages the root pulls
+    into its resolution closure. Retargeting a path dep to a pinned package —
+    or adding such a path dep — changes this set and MUST still demand a
+    lockfile diff; adding/retargeting among pin-free local packages (the
+    mission's local package graph) does not. Comparing this set current-vs-
+    previous distinguishes the two, so the exemption stays satisfiable for
+    pin-free path deps without letting closure-changing path deps escape.
+    """
+    root_by_resolved_path = {
+        candidate.parent.resolve(): root
+        for root, candidate in all_manifests.items()
+    }
+    pins: set[str] = set()
+    for call in calls:
+        if PACKAGE_URL_ARGUMENT_RE.search(call):
+            continue
+        match = PACKAGE_PATH_ARGUMENT_RE.search(call)
+        if match is None:
+            continue
+        target = (manifest.parent / match.group(1)).resolve()
+        target_root = root_by_resolved_path.get(target)
+        if target_root is not None and has_remote_dependency(
+            target_root, graph, memo, set()
+        ):
+            pins.add(target_root)
+    return pins
+# SUPERMUX:end fix-resolved-policy-path-deps
+
+
 def package_dependency_closure(
     root: str,
     graph: dict[str, tuple[bool, list[str]]],
@@ -309,13 +350,25 @@ def main() -> int:
             if current_calls == previous_calls:
                 continue
             # SUPERMUX:begin fix-resolved-policy-path-deps
-            # Changes limited to path-based dependencies (including brand-new
-            # path-referenced manifests) never appear in Package.resolved, so
-            # requiring a lockfile diff for them is unsatisfiable. Pinned
-            # (url) dependency changes below still demand lockfile churn.
-            if lockfile_recorded_dependency_calls(
-                current_calls
-            ) == lockfile_recorded_dependency_calls(previous_calls):
+            # Path-based dependency changes never appear in Package.resolved
+            # directly, so requiring a lockfile diff for a change limited to
+            # them is normally unsatisfiable. BUT a path dep retargeted to (or
+            # newly pointed at) a package that carries remote pins DOES change
+            # the root's recorded resolution closure — `swift package resolve`
+            # would rewrite Package.resolved with the new transitive pins. So
+            # skip only when BOTH the recorded (url) calls are unchanged AND
+            # the set of remote-pin-bearing packages reachable via the root's
+            # path deps is unchanged. Pinned (url) changes still demand churn.
+            if (
+                lockfile_recorded_dependency_calls(current_calls)
+                == lockfile_recorded_dependency_calls(previous_calls)
+                and path_dependency_remote_pin_roots(
+                    current_calls, manifest, all_manifests, graph, remote_memo
+                )
+                == path_dependency_remote_pin_roots(
+                    previous_calls, manifest, all_manifests, graph, remote_memo
+                )
+            ):
                 continue
             # SUPERMUX:end fix-resolved-policy-path-deps
             if (

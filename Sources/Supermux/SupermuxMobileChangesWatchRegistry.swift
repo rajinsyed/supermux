@@ -19,14 +19,24 @@ import SupermuxMobileCore
 /// unit-testable without real FSEvents or a live mobile session.
 @MainActor
 final class SupermuxMobileChangesWatchRegistry {
-    /// Lease duration: an entry not heartbeated for this long is swept.
+    /// Lease duration: a holder not heartbeated for this long is swept.
     static let ttl: TimeInterval = 120
     /// How often the automatic sweep re-checks the leases.
     static let sweepInterval: Duration = .seconds(30)
 
+    /// The holder token for a client that does not identify itself (an older
+    /// phone build that omits `client_id`). All such clients collapse onto one
+    /// token — the pre-multi-client behavior — so nothing regresses for them.
+    static let legacyHolder = ""
+
+    /// One workspace's watcher lease. `holders` maps each client token to its
+    /// last heartbeat: a single FSEvents watcher is shared across every device
+    /// viewing the workspace, and it is torn down only when the LAST holder
+    /// releases or its lease expires — so one device closing its Changes sheet
+    /// can never cancel a watcher another device is still heartbeating.
     private struct Entry {
         var directory: String
-        var lastHeartbeat: Date
+        var holders: [String: Date]
         var watchTask: Task<Void, Never>
     }
 
@@ -34,6 +44,7 @@ final class SupermuxMobileChangesWatchRegistry {
     private let makeChangeStream: @MainActor (String) -> AsyncStream<Void>
     private let emit: @MainActor (_ topic: String, _ payload: [String: Any]) -> Void
     private let sweepsAutomatically: Bool
+    private let sweepIntervalValue: Duration
     private var entries: [String: Entry] = [:]
     private var sweepTask: Task<Void, Never>?
 
@@ -45,6 +56,9 @@ final class SupermuxMobileChangesWatchRegistry {
     ///   - emit: The event sink; defaults to `MobileHostService.emitEvent`.
     ///   - sweepsAutomatically: Whether to run the periodic TTL sweep task;
     ///     tests pass `false` and call ``sweep()`` with an advanced clock.
+    ///   - sweepInterval: How often the automatic sweep re-checks; defaults to
+    ///     ``sweepInterval``. Tests injecting `sweepsAutomatically: true` pass a
+    ///     tiny interval to exercise the real periodic sweep without a 30 s wait.
     init(
         now: @escaping @MainActor () -> Date = { Date() },
         makeChangeStream: @escaping @MainActor (String) -> AsyncStream<Void> = { path in
@@ -53,12 +67,14 @@ final class SupermuxMobileChangesWatchRegistry {
         emit: @escaping @MainActor (_ topic: String, _ payload: [String: Any]) -> Void = { topic, payload in
             MobileHostService.shared.emitEvent(topic: topic, payload: payload)
         },
-        sweepsAutomatically: Bool = true
+        sweepsAutomatically: Bool = true,
+        sweepInterval: Duration = SupermuxMobileChangesWatchRegistry.sweepInterval
     ) {
         self.now = now
         self.makeChangeStream = makeChangeStream
         self.emit = emit
         self.sweepsAutomatically = sweepsAutomatically
+        self.sweepIntervalValue = sweepInterval
     }
 
     deinit {
@@ -74,24 +90,33 @@ final class SupermuxMobileChangesWatchRegistry {
     /// The workspace ids currently holding a watch lease (test seam).
     var watchedWorkspaceIds: [String] { Array(entries.keys) }
 
-    /// Starts (or heartbeats) the watch lease for one workspace.
+    /// Starts (or heartbeats) one client's watch lease for a workspace.
     ///
     /// A fresh call for an already-watched workspace on the same directory
-    /// only renews the lease — the FSEvents stream keeps running. A changed
-    /// directory (the workspace cd-ed elsewhere) tears the old watcher down
-    /// and starts one on the new directory.
+    /// only renews the calling client's lease — the shared FSEvents stream
+    /// keeps running. A changed directory (the workspace cd-ed elsewhere)
+    /// tears the old watcher down and starts one on the new directory while
+    /// preserving every client's holder lease.
     /// - Parameters:
     ///   - workspaceId: The workspace to watch.
     ///   - directory: The workspace's current directory (tilde-expanded and
     ///     standardized here).
-    func watch(workspaceId: String, directory: String) {
+    ///   - holder: The requesting client's stable token (`client_id`). Nil
+    ///     from clients that do not identify themselves — see ``legacyHolder``.
+    func watch(workspaceId: String, directory: String, holder: String? = nil) {
         let normalized = ((directory as NSString).expandingTildeInPath as NSString).standardizingPath
+        let token = holder ?? Self.legacyHolder
         if var entry = entries[workspaceId], entry.directory == normalized {
-            entry.lastHeartbeat = now()
+            entry.holders[token] = now()
             entries[workspaceId] = entry
             return
         }
+        // New workspace, or the workspace cd-ed elsewhere: (re)start the
+        // watcher on the new directory, carrying over any OTHER clients'
+        // holder leases so their view keeps updating on the new directory.
+        var holders = entries[workspaceId]?.holders ?? [:]
         entries[workspaceId]?.watchTask.cancel()
+        holders[token] = now()
         let stream = makeChangeStream(normalized)
         let emit = emit
         let watchTask = Task { @MainActor in
@@ -105,26 +130,44 @@ final class SupermuxMobileChangesWatchRegistry {
         }
         entries[workspaceId] = Entry(
             directory: normalized,
-            lastHeartbeat: now(),
+            holders: holders,
             watchTask: watchTask
         )
         startSweepingIfNeeded()
     }
 
-    /// Releases one workspace's lease immediately (`enable: false`).
-    /// Unknown ids are a no-op — releasing twice must not error.
-    func unwatch(workspaceId: String) {
-        entries.removeValue(forKey: workspaceId)?.watchTask.cancel()
+    /// Releases one client's lease (`enable: false`). The shared watcher is
+    /// torn down only when the LAST holder releases. Unknown ids/holders are a
+    /// no-op — releasing twice must not error.
+    func unwatch(workspaceId: String, holder: String? = nil) {
+        let token = holder ?? Self.legacyHolder
+        guard var entry = entries[workspaceId] else { return }
+        entry.holders.removeValue(forKey: token)
+        if entry.holders.isEmpty {
+            entry.watchTask.cancel()
+            entries.removeValue(forKey: workspaceId)
+        } else {
+            entries[workspaceId] = entry
+        }
         stopSweepingIfIdle()
     }
 
-    /// Sweeps every lease whose last heartbeat is older than ``ttl``.
+    /// Sweeps every holder whose last heartbeat is older than ``ttl``, tearing
+    /// down a workspace's watcher once its last holder has expired.
     func sweep() {
         let reference = now()
-        for (workspaceId, entry) in entries
-        where reference.timeIntervalSince(entry.lastHeartbeat) > Self.ttl {
-            entry.watchTask.cancel()
-            entries.removeValue(forKey: workspaceId)
+        for workspaceId in Array(entries.keys) {
+            guard var entry = entries[workspaceId] else { continue }
+            for (token, beat) in Array(entry.holders)
+            where reference.timeIntervalSince(beat) > Self.ttl {
+                entry.holders.removeValue(forKey: token)
+            }
+            if entry.holders.isEmpty {
+                entry.watchTask.cancel()
+                entries.removeValue(forKey: workspaceId)
+            } else {
+                entries[workspaceId] = entry
+            }
         }
         stopSweepingIfIdle()
     }
@@ -135,9 +178,9 @@ final class SupermuxMobileChangesWatchRegistry {
     /// sweeping is enabled).
     private func startSweepingIfNeeded() {
         guard sweepsAutomatically, sweepTask == nil, !entries.isEmpty else { return }
-        sweepTask = Task { @MainActor [weak self] in
+        sweepTask = Task { @MainActor [weak self, sweepIntervalValue] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: SupermuxMobileChangesWatchRegistry.sweepInterval)
+                try? await Task.sleep(for: sweepIntervalValue)
                 guard let self, !Task.isCancelled else { return }
                 self.sweep()
             }

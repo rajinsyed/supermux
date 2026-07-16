@@ -104,6 +104,31 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     /// When set, `changesHistory` throws instead of returning.
     var changesHistoryError: (any Error)?
 
+    /// One-shot hold flag: the NEXT `changesStatus` call parks on
+    /// ``changesStatusGate`` (after snapshotting its response) until
+    /// released — scripts an out-of-order response race for the
+    /// request-generation guard test (#5).
+    var changesStatusShouldHoldNextCall = false
+    /// The park/release gate for a held `changesStatus` call.
+    let changesStatusGate = RPCHoldGate()
+
+    /// When true, every `changesStage` call parks on ``changesStageGate``
+    /// until released — scripts a mutation-still-in-flight race for the
+    /// `generateAndCommit()` no-silent-drop test (#1).
+    var changesStageShouldHold = false
+    let changesStageGate = RPCHoldGate()
+
+    /// When true, every `changesGenerateCommitMessage` call parks on
+    /// ``changesGenerateCommitMessageGate`` until released (#1).
+    var changesGenerateCommitMessageShouldHold = false
+    let changesGenerateCommitMessageGate = RPCHoldGate()
+
+    /// Extra latency applied ONLY to `changesWatch {enable:false}` calls —
+    /// lets a test prove a stale disable is still delivered in its correct
+    /// enqueue order (before a fresher enable), never racing ahead due to
+    /// being slow (#6).
+    var changesWatchDisableArtificialDelay: Duration?
+
     /// The response the next `runState` call returns.
     var runStateResponse = SupermuxRunStateResponse(runs: [])
     /// When set, `runState` throws instead of returning.
@@ -194,6 +219,21 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     /// Bumps the `changes.status` call counter (mutated from +Changes.swift).
     func countChangesStatusCall() {
         changesStatusCallCount += 1
+    }
+
+    /// Snapshots the current `changesStatus` response for THIS call (so a
+    /// later-changed `changesStatusResponse` cannot retroactively change
+    /// what an already-in-flight call returns), then parks it if
+    /// ``changesStatusShouldHoldNextCall`` is set — consumed one-shot, so
+    /// only the call that arrived while the flag was set holds. Called from
+    /// +Changes.swift.
+    func changesStatusResponseForCurrentCall() async -> SupermuxChangesStatusDTO {
+        let response = changesStatusResponse
+        if changesStatusShouldHoldNextCall {
+            changesStatusShouldHoldNextCall = false
+            await changesStatusGate.park()
+        }
+        return response
     }
 
     /// Bumps the `run.state` call counter (mutated from +Run.swift).
@@ -338,4 +378,29 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
 
 enum FakeSupermuxMacClientError: Error {
     case unscriptedIconRequest
+}
+
+/// A reusable FIFO parking gate for scripting deterministic response-order
+/// races against a fake RPC seam: ``park()`` suspends the caller until a
+/// matching ``release()`` runs, letting a test control exactly when a
+/// scripted call "returns" relative to other in-flight calls.
+@MainActor
+final class RPCHoldGate {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    /// Suspends the caller until ``release()`` is called once for it.
+    func park() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            continuations.append(continuation)
+        }
+    }
+
+    /// Resumes the oldest parked caller, if any.
+    func release() {
+        guard !continuations.isEmpty else { return }
+        continuations.removeFirst().resume()
+    }
+
+    /// Whether any caller is currently parked.
+    var hasParked: Bool { !continuations.isEmpty }
 }

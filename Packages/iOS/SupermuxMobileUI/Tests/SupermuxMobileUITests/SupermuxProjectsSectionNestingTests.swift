@@ -301,6 +301,61 @@ import Testing
         #expect(client.callLog.filter { $0 == "worktreeOpen" }.count == openCallsBefore)
     }
 
+    @Test func aSlowWorktreeOpenNeverNavigatesOverANewerSelection() async throws {
+        // #9: `sessionGeneration` alone only catches a RECONNECT racing an
+        // in-flight open — it does nothing for a user who taps a different
+        // worktree row before a slow response for the FIRST tap lands. The
+        // slow response must never yank the app back to the superseded
+        // target.
+        let project = fixtureProject()
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(projects: [project])
+        client.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: [
+            SupermuxWorktreeDTO(path: "/w/loose", branch: "loose", isOpen: false),
+        ])
+        client.worktreeOpenResponse = SupermuxWorktreeOpenResponse(workspaceId: "ws-slow")
+        client.worktreeOpenShouldHold = true
+        let model = SupermuxProjectsSectionModel(expansionDefaults: try makeIsolatedDefaults())
+        let session = Task {
+            await model.runSession(
+                client: client,
+                hostCapabilities: [Self.projectsCapability, Self.worktreesCapability]
+            )
+        }
+        defer { session.cancel() }
+        try await wait.until { model.snapshot.hasLoaded }
+
+        var selected: [String] = []
+        model.updateWorkspaces([], selectWorkspace: { selected.append($0) })
+        model.toggleProjectExpanded(project.id)
+        try await wait.until {
+            if case .loaded(let rows) = model.snapshot.rows.first?.nestedWorktrees {
+                return rows.count == 1
+            }
+            return false
+        }
+
+        // Tap the unopened worktree: the open RPC is in flight (held).
+        model.actions.openNestedWorktree(project.id, SupermuxWorktreeRowSnapshot(
+            worktree: SupermuxWorktreeDTO(path: "/w/loose", branch: "loose", isOpen: false)
+        ))
+        try await wait.until { client.callLog.contains("worktreeOpen") }
+
+        // Before the slow response lands, the user selects a DIFFERENT
+        // (already-open) worktree — a newer, synchronous navigation.
+        model.actions.openNestedWorktree(project.id, SupermuxWorktreeRowSnapshot(
+            worktree: SupermuxWorktreeDTO(path: "/w/opened", branch: "opened", isOpen: true, workspaceId: "ws-fresh")
+        ))
+        #expect(selected == ["ws-fresh"])
+
+        // The slow response finally lands — it must NOT navigate the app
+        // back to the worktree the user has since moved on from.
+        client.resumeWorktreeOpen()
+        for _ in 0..<20 { await Task.yield() }
+        #expect(selected == ["ws-fresh"], "a stale open response must never navigate over a newer selection")
+        #expect(model.nestedOpenErrorMessage == nil)
+    }
+
     @Test func nestedWorktreeOpenFailureSurfacesTheErrorNeverSilently() async throws {
         let project = fixtureProject()
         let client = FakeSupermuxMacClient()

@@ -157,6 +157,12 @@ public struct SupermuxMobileFileBrowser: Sendable {
                 || SupermuxFileSystemOperations.pathIsAncestor(rootPath, of: standardized) else {
             throw SupermuxMobileFileBrowserError.pathOutsideRoot(path: relativePath)
         }
+        // Never resolve a path that names or descends into a repository's
+        // `.git` internals: the listing hides dotfiles so `.git` is
+        // UI-unreachable, and trashing/renaming it corrupts the repo.
+        if Self.namesGitInternals(standardized, underRoot: rootPath) {
+            throw SupermuxMobileFileBrowserError.invalidPath(path: relativePath)
+        }
         if standardized == rootPath {
             guard allowRoot else {
                 throw SupermuxMobileFileBrowserError.invalidPath(path: relativePath)
@@ -166,14 +172,49 @@ public struct SupermuxMobileFileBrowser: Sendable {
         guard (try? FileManager.default.attributesOfItem(atPath: standardized)) != nil else {
             throw SupermuxMobileFileBrowserError.notFound(path: relativePath)
         }
-        // Canonicalize BEFORE the confinement decision: a symlink anywhere in
-        // the path pointing outside the root must reject the request.
-        let canonical = URL(fileURLWithPath: standardized).resolvingSymlinksInPath().path
+        let standardizedURL = URL(fileURLWithPath: standardized)
+        // Resolve the INTERIOR (parent) chain up front and operate on the
+        // parent's canonical path with a literal final component. This closes
+        // the check-then-use race: a concurrent `files.rename` that re-points
+        // a parent directory to a symlink between this confinement check and
+        // the operation can no longer redirect it, because the path handed to
+        // the operation carries no unresolved interior components — while a
+        // FINAL symlink is still acted on as the entry (the desktop explorer's
+        // behavior), not followed.
+        let resolvedParent = standardizedURL.deletingLastPathComponent()
+            .resolvingSymlinksInPath().path
+        guard resolvedParent == rootPath
+                || SupermuxFileSystemOperations.pathIsAncestor(rootPath, of: resolvedParent) else {
+            throw SupermuxMobileFileBrowserError.pathOutsideRoot(path: relativePath)
+        }
+        // A final symlink whose target escapes the root is still rejected.
+        let canonical = standardizedURL.resolvingSymlinksInPath().path
         guard canonical == rootPath
                 || SupermuxFileSystemOperations.pathIsAncestor(rootPath, of: canonical) else {
             throw SupermuxMobileFileBrowserError.pathOutsideRoot(path: relativePath)
         }
-        return URL(fileURLWithPath: standardized)
+        // Re-apply the `.git` guard AFTER resolution: an interior symlink
+        // (`metadata -> .git`) or a final symlink into `.git` has no textual
+        // `.git` component, but its resolved target is still git internals.
+        if Self.namesGitInternals(resolvedParent, underRoot: rootPath)
+            || Self.namesGitInternals(canonical, underRoot: rootPath) {
+            throw SupermuxMobileFileBrowserError.invalidPath(path: relativePath)
+        }
+        let confined = (resolvedParent as NSString)
+            .appendingPathComponent(standardizedURL.lastPathComponent)
+        return URL(fileURLWithPath: confined)
+    }
+
+    /// Whether `absolutePath` (under `root`) names or descends into a `.git`
+    /// directory — the guard that keeps every mutation and listing away from
+    /// git internals.
+    private static func namesGitInternals(_ absolutePath: String, underRoot root: String) -> Bool {
+        guard absolutePath.hasPrefix(root) else { return false }
+        let relative = String(absolutePath.dropFirst(root.count))
+        // Case-insensitive: on the default case-insensitive macOS volume `.GIT`
+        // resolves to `.git`, so a case-sensitive check would miss the alias.
+        return (relative as NSString).pathComponents
+            .contains { $0.caseInsensitiveCompare(".git") == .orderedSame }
     }
 
     /// Splits a root-relative create path into its (existing, confined)

@@ -7,9 +7,9 @@ import Testing
 /// UI-04 for changes: store state transitions correctly on
 /// stage/unstage/discard actions (exact §2 wire calls asserted against the
 /// fake's recording), a `supermux.changes.updated` poke for THIS workspace
-/// refetches the status, and the watch heartbeat fires `changes.watch
-/// {enable:true}` at the expected 60 s cadence through the injected clock
-/// seam — with `{enable:false}` on the way out.
+/// refetches the status, and the `expected_root` stale-view pin travels on
+/// every mutation. The watch heartbeat/ordering/client-id tests live in
+/// `SupermuxMobileChangesStoreWatchTests.swift` (file-length budget).
 @MainActor
 @Suite struct SupermuxMobileChangesStoreTests {
     private static let workspaceID = "7B1D4C22-9F3A-4E0D-B7A1-5C6E8F0A2D33"
@@ -59,13 +59,6 @@ import Testing
                 try? await Task.sleep(for: .seconds(3600))
             }
         )
-    }
-
-    /// The fake's recorded `changes.watch` params, in call order.
-    private func watchCalls(_ fake: FakeSupermuxMacClient) -> [NSDictionary] {
-        fake.recordedWireCalls
-            .filter { $0.method == "mobile.supermux.changes.watch" }
-            .map(\.params)
     }
 
     // MARK: Status sync + event-driven refetch
@@ -227,6 +220,114 @@ import Testing
         #expect(store.lastErrorDescription == nil)
     }
 
+    // MARK: Stale-view mutation pin (expected_root)
+
+    @Test func mutationsOmitExpectedRootBeforeAnyStatusArrives() async throws {
+        // No status has ever been decoded (or the Mac is old and omits
+        // `root`): the pin must be OMITTED, not sent as null/empty —
+        // otherwise an old Mac's handler would reject valid mutations.
+        let fake = FakeSupermuxMacClient()
+        fake.changesStatusResponse = Self.statusA // no root
+        let store = makeStore(fake: fake)
+
+        await store.stage(paths: ["src/app.swift"])
+        #expect(fake.recordedWireCalls[0].params == [
+            "workspace_id": Self.workspaceID,
+            "paths": ["src/app.swift"],
+        ] as NSDictionary)
+
+        // The refetched status ALSO carried no root (old Mac) — the next
+        // mutation still omits the pin.
+        await store.unstage(paths: ["staged.txt"])
+        let unstageCall = try #require(
+            fake.recordedWireCalls.first { $0.method == "mobile.supermux.changes.unstage" }
+        )
+        #expect(unstageCall.params == [
+            "workspace_id": Self.workspaceID,
+            "paths": ["staged.txt"],
+        ] as NSDictionary)
+    }
+
+    @Test func mutationsCarryTheStatusReportedRootAsExpectedRoot() async throws {
+        let root = "/Users/dev/repo"
+        let fake = FakeSupermuxMacClient()
+        fake.changesStatusResponse = SupermuxChangesStatusDTO(
+            workspaceId: Self.workspaceID,
+            isRepository: true,
+            branch: "main",
+            root: root
+        )
+        let store = makeStore(fake: fake)
+        // The first mutation's refetch captures the root; every subsequent
+        // mutation pins against it.
+        await store.stage(paths: ["a.txt"])
+
+        await store.unstage(paths: ["b.txt"])
+        let unstageCall = try #require(
+            fake.recordedWireCalls.first { $0.method == "mobile.supermux.changes.unstage" }
+        )
+        #expect(unstageCall.params == [
+            "workspace_id": Self.workspaceID,
+            "paths": ["b.txt"],
+            "expected_root": root,
+        ] as NSDictionary)
+
+        await store.discard(paths: ["c.txt"])
+        let discardCall = try #require(
+            fake.recordedWireCalls.first { $0.method == "mobile.supermux.changes.discard" }
+        )
+        #expect(discardCall.params == [
+            "workspace_id": Self.workspaceID,
+            "paths": ["c.txt"],
+            "expected_root": root,
+        ] as NSDictionary)
+
+        store.commitMessage = "feat: pinned commit"
+        await store.commit()
+        let commitCall = try #require(
+            fake.recordedWireCalls.first { $0.method == "mobile.supermux.changes.commit" }
+        )
+        #expect(commitCall.params == [
+            "workspace_id": Self.workspaceID,
+            "message": "feat: pinned commit",
+            "expected_root": root,
+        ] as NSDictionary)
+    }
+
+    @Test func staleRootRejectionSurfacesTheErrorAndRefetchesTheStatus() async throws {
+        let fake = FakeSupermuxMacClient()
+        fake.changesStatusResponse = SupermuxChangesStatusDTO(
+            workspaceId: Self.workspaceID,
+            isRepository: true,
+            branch: "main",
+            root: "/Users/dev/new-repo"
+        )
+        fake.changesStageError = MobileShellConnectionError.rpcError(
+            "stale_root", "Workspace directory changed; refresh and retry"
+        )
+        let store = makeStore(fake: fake)
+
+        await store.stage(paths: ["a.txt"])
+        // Never a silent no-op: the message surfaces AND the stale view
+        // refetches (which also re-captures the fresh root for a retry).
+        #expect(store.lastErrorDescription != nil)
+        #expect(fake.changesStatusCallCount == 1, "a stale_root rejection must trigger a status refetch")
+        #expect(store.status?.root == "/Users/dev/new-repo")
+        #expect(!store.isMutating)
+
+        // The retry pins against the refreshed root.
+        fake.changesStageError = nil
+        await store.stage(paths: ["a.txt"])
+        let retryCall = try #require(
+            fake.recordedWireCalls.last { $0.method == "mobile.supermux.changes.stage" }
+        )
+        #expect(retryCall.params == [
+            "workspace_id": Self.workspaceID,
+            "paths": ["a.txt"],
+            "expected_root": "/Users/dev/new-repo",
+        ] as NSDictionary)
+    }
+
     // MARK: Diff fetch
 
     @Test func loadDiffSendsTheExactDiffWireCallAndReturnsTheFixture() async throws {
@@ -257,79 +358,32 @@ import Testing
         ] as NSDictionary)
     }
 
-    // MARK: Watch heartbeat (injected clock)
+    // MARK: Request-generation race guard (#5)
 
-    @Test func heartbeatSendsWatchEnableAtTheSixtySecondCadence() async throws {
+    @Test func aStaleStatusResponseNeverOverwritesAFresherOne() async throws {
         let fake = FakeSupermuxMacClient()
         fake.changesStatusResponse = Self.statusA
-        let gate = HeartbeatSleepGate()
-        let store = makeStore(fake: fake, heartbeatSleep: { await gate.sleep($0) })
-        let runner = Task { await store.run() }
-        defer { runner.cancel() }
-
-        // Beat 1 fires immediately on run (screen appear).
-        try await TestWait().until { self.watchCalls(fake).count == 1 }
-        #expect(watchCalls(fake)[0] == [
-            "workspace_id": Self.workspaceID,
-            "enable": true,
-        ] as NSDictionary)
-        // The store then asks the clock for exactly the 60 s interval.
-        try await TestWait().until { gate.requested.count == 1 }
-        #expect(gate.requested == [SupermuxMobileChangesStore.heartbeatInterval])
-        #expect(SupermuxMobileChangesStore.heartbeatInterval == .seconds(60))
-        // No extra beat sneaks in while the clock is parked.
-        #expect(watchCalls(fake).count == 1)
-
-        // Advancing the clock by one interval yields exactly one more beat.
-        gate.advance()
-        try await TestWait().until { self.watchCalls(fake).count == 2 }
-        #expect(watchCalls(fake)[1] == [
-            "workspace_id": Self.workspaceID,
-            "enable": true,
-        ] as NSDictionary)
-        try await TestWait().until { gate.requested.count == 2 }
-        #expect(gate.requested == Array(
-            repeating: SupermuxMobileChangesStore.heartbeatInterval,
-            count: 2
-        ))
-        #expect(watchCalls(fake).count == 2)
-
-        gate.advance()
-        try await TestWait().until { self.watchCalls(fake).count == 3 }
-    }
-
-    @Test func cancellationSendsWatchDisable() async throws {
-        let fake = FakeSupermuxMacClient()
-        fake.changesStatusResponse = Self.statusA
+        // Hold the very next `changesStatus` call — this becomes `run()`'s
+        // initial (OLDER) refetch.
+        fake.changesStatusShouldHoldNextCall = true
         let store = makeStore(fake: fake)
         let runner = Task { await store.run() }
-
-        try await TestWait().until { self.watchCalls(fake).count == 1 }
-        runner.cancel()
-        try await TestWait().until {
-            self.watchCalls(fake).last == [
-                "workspace_id": Self.workspaceID,
-                "enable": false,
-            ] as NSDictionary
-        }
-    }
-
-    @Test func heartbeatFailureKeepsTheLoopAlive() async throws {
-        struct Down: Error {}
-        let fake = FakeSupermuxMacClient()
-        fake.changesStatusResponse = Self.statusA
-        fake.changesWatchError = Down()
-        let gate = HeartbeatSleepGate()
-        let store = makeStore(fake: fake, heartbeatSleep: { await gate.sleep($0) })
-        let runner = Task { await store.run() }
         defer { runner.cancel() }
+        try await TestWait().until { fake.changesStatusGate.hasParked }
 
-        try await TestWait().until { self.watchCalls(fake).count == 1 }
-        // The failed beat still schedules the next one.
-        try await TestWait().until { gate.requested.count == 1 }
-        fake.changesWatchError = nil
-        gate.advance()
-        try await TestWait().until { self.watchCalls(fake).count == 2 }
+        // A concurrent mutation's refetch (e.g. a stage the user made while
+        // the older request was still in flight) is NOT held and lands
+        // first, with FRESHER content.
+        fake.changesStatusResponse = Self.statusB
+        await store.stage(paths: ["src/app.swift"])
+        #expect(store.status == Self.statusB)
+
+        // The older, held request finally resolves with its (now stale)
+        // snapshot — it must never overwrite the fresher response that
+        // already landed.
+        fake.changesStatusGate.release()
+        for _ in 0..<20 { await Task.yield() }
+        #expect(store.status == Self.statusB)
     }
 
     // MARK: Response wire decoding (snake_case + unknown-field tolerance)
@@ -343,42 +397,5 @@ import Testing
         let ackJSON = Data(#"{"ok":true,"future_field":"x"}"#.utf8)
         let ack = try JSONDecoder().decode(SupermuxChangesAckResponse.self, from: ackJSON)
         #expect(ack.ok == true)
-    }
-}
-
-/// A controllable clock seam for the heartbeat: records every requested
-/// sleep duration and suspends the caller until the test advances it (or the
-/// task is cancelled, so cancelled runners never leak suspended children).
-@MainActor
-final class HeartbeatSleepGate {
-    private(set) var requested: [Duration] = []
-    private var pending: [(id: UUID, continuation: CheckedContinuation<Void, Never>)] = []
-
-    func sleep(_ duration: Duration) async {
-        requested.append(duration)
-        let id = UUID()
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                if Task.isCancelled {
-                    continuation.resume()
-                } else {
-                    pending.append((id, continuation))
-                }
-            }
-        } onCancel: {
-            Task { @MainActor [weak self] in self?.release(id) }
-        }
-    }
-
-    /// Simulates the requested interval elapsing for the oldest sleeper.
-    func advance() {
-        guard !pending.isEmpty else { return }
-        pending.removeFirst().continuation.resume()
-    }
-
-    private func release(_ id: UUID) {
-        guard let index = pending.firstIndex(where: { $0.id == id }) else { return }
-        let entry = pending.remove(at: index)
-        entry.continuation.resume()
     }
 }

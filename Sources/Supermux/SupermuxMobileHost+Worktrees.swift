@@ -22,8 +22,18 @@ extension TerminalController {
         case let .success(resolved): project = resolved
         }
         let model = SupermuxComposition.projectsModel
-        await model.refreshWorktrees(for: project.id)
+        let refreshed = await model.refreshWorktreesReportingSuccess(for: project.id)
         let worktrees = model.worktreesByProjectId[project.id] ?? []
+        // A transient git failure with nothing cached must not read as an
+        // authoritative empty list — surface it so the phone can retry rather
+        // than render "no worktrees" for a repo that has them.
+        if !refreshed, worktrees.isEmpty {
+            return .err(
+                code: "unavailable",
+                message: "Could not read worktrees",
+                data: ["project_id": project.id.uuidString]
+            )
+        }
         do {
             let payload = try SupermuxMobileWorktreesPayloadBuilder().worktreesList(
                 worktrees: worktrees,
@@ -269,7 +279,8 @@ extension TerminalController {
                 colorHex: project.colorHex,
                 projectId: project.id,
                 setupScript: setupScript,
-                setupEnvironment: setupEnvironment
+                setupEnvironment: setupEnvironment,
+                preservesUserFocus: true
             )
         )
     }

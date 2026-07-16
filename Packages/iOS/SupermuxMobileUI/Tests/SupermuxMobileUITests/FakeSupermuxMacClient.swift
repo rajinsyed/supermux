@@ -36,6 +36,11 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var worktreeOpenResponse = SupermuxWorktreeOpenResponse()
     /// When set, `worktreeOpen` throws instead of returning.
     var worktreeOpenError: (any Error)?
+    /// When true, `worktreeOpen` parks until ``resumeWorktreeOpen()`` is
+    /// called — scripts a slow-response race against a newer selection
+    /// (#9: a stale in-flight open must never navigate over it).
+    var worktreeOpenShouldHold = false
+    private var worktreeOpenContinuations: [CheckedContinuation<Void, Never>] = []
     /// When set, `worktreeRemove` throws instead of returning.
     var worktreeRemoveError: (any Error)?
 
@@ -196,8 +201,19 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     func worktreeOpen(_ request: SupermuxWorktreeOpenRequest) async throws -> SupermuxWorktreeOpenResponse {
         callLog.append("worktreeOpen")
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if worktreeOpenShouldHold {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                worktreeOpenContinuations.append(continuation)
+            }
+        }
         if let worktreeOpenError { throw worktreeOpenError }
         return worktreeOpenResponse
+    }
+
+    /// Resumes the oldest parked `worktreeOpen` call, if any.
+    func resumeWorktreeOpen() {
+        guard !worktreeOpenContinuations.isEmpty else { return }
+        worktreeOpenContinuations.removeFirst().resume()
     }
 
     func worktreeRemove(_ request: SupermuxWorktreeRemoveRequest) async throws -> SupermuxWorktreeRemoveResponse {

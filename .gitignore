@@ -67,4 +67,7 @@ tmux-*.log
 
 # Local-only phone-build backup (patch + LocalConfig backup + restore notes).
 .phone-build/
+
+# SUPERMUX:begin supermux-gitignore-mission (fork-local mission-kit state dir — see SUPERMUX-TOUCHPOINTS.md)
 mission/
+# SUPERMUX:end supermux-gitignore-mission

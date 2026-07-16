@@ -163,6 +163,14 @@ public struct SupermuxChangesScreen: View {
                 } else {
                     loadedBody(store)
                 }
+            } else if let errorDescription = store.lastErrorDescription {
+                // The first `changes.status` failed and nothing has ever
+                // loaded: the live `run()` subscription is idle between
+                // events with no poke coming, so without an explicit retry
+                // this would be stuck on the loading spinner forever.
+                loadErrorPlaceholder(errorDescription) {
+                    Task { await store.retryInitialLoad() }
+                }
             } else {
                 loadingPlaceholder
             }
@@ -196,6 +204,22 @@ public struct SupermuxChangesScreen: View {
             .multilineTextAlignment(.center)
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func loadErrorPlaceholder(_ message: String, retry: @escaping () -> Void) -> some View {
+        VStack(spacing: 12) {
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button(action: retry) {
+                Text(String(localized: "supermux.common.retry", defaultValue: "Retry", bundle: .module))
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("SupermuxChangesRetryButton")
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// The loaded-repository body: the Changes | History segmented control
@@ -270,7 +294,12 @@ public struct SupermuxChangesScreen: View {
         let staged = SupermuxChangedFileRowSnapshot.rows(from: status?.staged, area: .staged)
         let unstaged = SupermuxChangedFileRowSnapshot.rows(from: status?.unstaged, area: .unstaged)
         let untracked = SupermuxChangedFileRowSnapshot.rows(from: status?.untracked, area: .untracked)
-        let actionsDisabled = store.isMutating
+        // Also disabled while generating: a stage/unstage landing mid
+        // `generateAndCommit()` could otherwise still be on the wire when
+        // generation finishes, forcing the store to wait out the race
+        // instead of committing immediately (see the store's
+        // `waitForMutationSlot()`).
+        let actionsDisabled = store.isMutating || store.isGeneratingMessage
         return List {
             SupermuxChangesSummarySection(
                 branch: status?.branch,

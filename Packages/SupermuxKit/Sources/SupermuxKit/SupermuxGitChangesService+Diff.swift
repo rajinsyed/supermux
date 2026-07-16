@@ -83,22 +83,64 @@ extension SupermuxGitChangesService {
     // MARK: - Internals
 
     /// The resolved, repo-confined absolute path when `path` names an untracked
-    /// file (present on disk, not in the index) — else nil. Returns the
+    /// file that is a genuine working-tree change — else nil. Returns the
     /// RESOLVED path (the object that passed confinement) so the caller hands
     /// git a concrete path rather than re-walking caller-controlled symlink
     /// components at read time. An absolute, `..`, or symlink-escaping path
     /// resolves to nil and is never previewed via `--no-index`.
+    ///
+    /// "Not in the index" alone is NOT enough to preview: a `.gitignored` file
+    /// (an `.env` secret) or a `.git/` internal is also absent from the index,
+    /// but it is not a change the Changes screen shows, so dumping its bytes
+    /// would leak a file the user never staged. So an ignored path
+    /// (`git check-ignore`) and any `.git/` path are excluded first; only then
+    /// does an untracked (`ls-files --error-unmatch` miss) file qualify — which
+    /// still covers untracked files reached through an interior symlink that
+    /// resolves inside the repo (git may not list those under `ls-files
+    /// --others`, but they are legitimate previews).
     private func untrackedResolvedPath(repoPath: String, path: String) async -> String? {
         guard let resolved = Self.repoConfinedExistingPath(repoPath: repoPath, path: path) else {
             return nil
         }
-        let result = await runner.run(
+        // Evaluate the ignore/`.git` rules against the RESOLVED target, not the
+        // caller's alias: an untracked symlink `leak -> .env` (or `-> .git/…`)
+        // is itself neither ignored nor a `.git` path, so a check on the
+        // textual request path would slip the ignored secret / git internal
+        // through `--no-index`. `repoConfinedExistingPath` already proved the
+        // target stays inside the repo, so its repo-relative form is safe here.
+        let canonicalRoot = URL(fileURLWithPath: repoPath).resolvingSymlinksInPath().path
+        let target = Self.repoRelativePath(resolved, canonicalRoot: canonicalRoot) ?? path
+        // Case-insensitive: on the default case-insensitive macOS volume `.GIT`
+        // resolves to `.git`, and git treats them as the same directory.
+        if (target as NSString).pathComponents
+            .contains(where: { $0.caseInsensitiveCompare(".git") == .orderedSame }) {
+            return nil
+        }
+        // Never preview an ignored file (check-ignore exits 0 when ignored).
+        let ignored = await runner.run(
             directory: repoPath,
             executable: "git",
-            arguments: [Self.noOptionalLocks, "ls-files", "--error-unmatch", "--", path],
+            arguments: [Self.noOptionalLocks, "check-ignore", "-q", "--", target],
             timeout: Self.gitTimeout
         )
-        return result.exitStatus != 0 ? resolved : nil
+        if ignored.exitStatus == 0 { return nil }
+        // Otherwise preview only a genuinely untracked file (not in the index).
+        let tracked = await runner.run(
+            directory: repoPath,
+            executable: "git",
+            arguments: [Self.noOptionalLocks, "ls-files", "--error-unmatch", "--", target],
+            timeout: Self.gitTimeout
+        )
+        return tracked.exitStatus != 0 ? resolved : nil
+    }
+
+    /// The repo-relative form of an absolute path already known to be inside
+    /// `canonicalRoot` (`""` for the root itself), or nil when it is not.
+    private static func repoRelativePath(_ absolutePath: String, canonicalRoot: String) -> String? {
+        if absolutePath == canonicalRoot { return "" }
+        let prefix = canonicalRoot.hasSuffix("/") ? canonicalRoot : canonicalRoot + "/"
+        guard absolutePath.hasPrefix(prefix) else { return nil }
+        return String(absolutePath.dropFirst(prefix.count))
     }
 
     /// Resolves `path` against the repository root and returns the absolute

@@ -167,18 +167,17 @@ struct SupermuxFolderPickerBrowser: View {
                 )
                 Divider()
                 folderList(store)
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text(String(
-                        localized: "supermux.files.loading",
-                        defaultValue: "Loading files…",
-                        bundle: .module
-                    ))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            } else if let store, let errorDescription = store.lastErrorDescription {
+                // The first `files.list` failed: without an explicit retry
+                // this was stuck on the loading spinner forever, with "Use
+                // This Folder" permanently disabled.
+                loadErrorState(errorDescription) {
+                    Task { await store.load() }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if store != nil {
+                loadingState
+            } else {
+                notConnectedState
             }
         }
         .navigationTitle(option.name)
@@ -194,6 +193,49 @@ struct SupermuxFolderPickerBrowser: View {
             await store?.load()
         }
         .accessibilityIdentifier("SupermuxFolderPickerBrowser")
+    }
+
+    private var loadingState: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+            Text(String(
+                localized: "supermux.files.loading",
+                defaultValue: "Loading files…",
+                bundle: .module
+            ))
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var notConnectedState: some View {
+        Text(String(
+            localized: "supermux.files.notConnected",
+            defaultValue: "Not connected to a Mac.",
+            bundle: .module
+        ))
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func loadErrorState(_ message: String, retry: @escaping () -> Void) -> some View {
+        VStack(spacing: 12) {
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button(action: retry) {
+                Text(String(localized: "supermux.common.retry", defaultValue: "Retry", bundle: .module))
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("SupermuxFolderPickerRetryButton")
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func folderList(_ store: SupermuxMobileFileBrowserStore) -> some View {

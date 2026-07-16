@@ -89,35 +89,37 @@ extension SupermuxGitChangesService {
     /// Reads one page of the repository's full commit history (newest first)
     /// for the mobile `changes.history` RPC.
     ///
-    /// Without a cursor the page starts at `HEAD`. With one, the page resumes
-    /// immediately AFTER the cursor commit (`git log <cursor> --skip=1`), so a
-    /// caller passing the previous page's last sha never sees an overlap —
-    /// and because the cursor names a commit rather than an offset, commits
-    /// added on top of `HEAD` between calls cannot shift later pages.
+    /// Paging roots the WHOLE traversal at a single commit (`root`, pinned to
+    /// `HEAD` on the first page) and advances by `skip`, so every page is a
+    /// slice of the identical `git log <root>` walk. This is why side-branch
+    /// commits are never dropped: re-rooting a later page at the previous
+    /// page's last sha (the old `git log <cursor>`) would only walk that
+    /// commit's ancestors and silently omit commits that sort after the page
+    /// boundary but are not its ancestors (any repo with merges). Pinning to
+    /// `root` also makes later pages a stable snapshot — commits added on top
+    /// of `HEAD` between calls cannot shift or duplicate entries.
     /// - Parameters:
     ///   - repoPath: Repository directory.
     ///   - limit: Maximum number of commits to return (callers fetch one
     ///     extra to detect a further page).
-    ///   - cursor: Full sha of the previous page's last commit, or `nil` for
-    ///     the first page.
+    ///   - root: Full sha the traversal is rooted at, or `nil` for the first
+    ///     page (rooted at `HEAD`).
+    ///   - skip: Number of commits to skip from `root` before this page.
     /// - Returns: The parsed page, or `nil` when git fails — an unknown
-    ///   cursor, an unborn branch, or a non-repository (callers distinguish
+    ///   root, an unborn branch, or a non-repository (callers distinguish
     ///   by whether a cursor was supplied).
     public func historyCommits(
-        repoPath: String, limit: Int, before cursor: String?
+        repoPath: String, limit: Int, from root: String?, skip: Int
     ) async -> [SupermuxGitCommit]? {
         guard limit > 0 else { return [] }
-        if let cursor {
-            // `--end-of-options` guarantees git parses `cursor` as a revision,
-            // never as an option, even if a caller slips a leading-dash value
-            // past the handler's sha validation (defense in depth).
-            return await commitLog(
-                repoPath: repoPath,
-                revision: ["--skip=1", "--end-of-options", cursor],
-                limit: limit
-            )
-        }
-        return await commitLog(repoPath: repoPath, revision: ["HEAD"], limit: limit)
+        // `--end-of-options` guarantees git parses `root` as a revision, never
+        // as an option, even if a caller slips a leading-dash value past the
+        // handler's sha validation (defense in depth).
+        let revision = root.map { ["--end-of-options", $0] } ?? ["HEAD"]
+        let skipArgs = skip > 0 ? ["--skip=\(skip)"] : []
+        return await commitLog(
+            repoPath: repoPath, revision: skipArgs + revision, limit: limit
+        )
     }
 
     /// The full sha `HEAD` resolves to (`git rev-parse HEAD`), or `nil` on an

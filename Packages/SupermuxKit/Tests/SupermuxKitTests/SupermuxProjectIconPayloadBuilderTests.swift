@@ -112,6 +112,24 @@ struct SupermuxProjectIconPayloadBuilderTests {
         #expect(result == .notFound)
     }
 
+    @Test func oversizeIconSourceReportsNotFoundWithoutLoadingIt() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let iconURL = dir.appendingPathComponent("huge.png")
+        // Just over the cap, with PNG magic so it would otherwise pass through
+        // byte-for-byte: an uncapped source (a 200 MB logo shipped in a repo)
+        // would balloon Mac memory as base64 and can jetsam the phone. The
+        // size guard rejects it up front, so it never gets base64-encoded.
+        var data = Data([0x89, 0x50, 0x4E, 0x47])
+        data.append(Data(count: SupermuxProjectIconPayloadBuilder.maximumIconSourceBytes + 1))
+        try data.write(to: iconURL)
+        let builder = SupermuxProjectIconPayloadBuilder()
+
+        let result = builder.payload(rootPath: dir.path, customIconPath: iconURL.path, ifNoneMatch: nil)
+
+        #expect(result == .notFound)
+    }
+
     @Test func unreadableImageDataReportsNotFound() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

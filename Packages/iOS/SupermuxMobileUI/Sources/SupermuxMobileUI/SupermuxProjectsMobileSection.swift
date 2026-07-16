@@ -193,7 +193,7 @@ struct SupermuxProjectMobileAvatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
-        .task(id: row) {
+        .task(id: iconIdentity) {
             guard row.hasCustomIcon else {
                 customIcon = nil
                 return
@@ -202,6 +202,24 @@ struct SupermuxProjectMobileAvatar: View {
             customIcon = Self.decodeImage(data)
         }
         .accessibilityHidden(true)
+    }
+
+    /// The avatar's icon-refetch identity: only the fields that actually
+    /// change which bytes must be fetched/decoded. Keying `.task(id:)` on the
+    /// FULL row snapshot re-issues `project.icon` and re-decodes the PNG on
+    /// EVERY unrelated row change (branch subtitle, expansion, counts,
+    /// run state, …); keying on just the project id + custom-icon flag +
+    /// content etag re-fetches only when the project changes, its custom-icon
+    /// flag flips, or the icon's CONTENT changes (a Mac-side icon replacement
+    /// keeps the flag `true` but moves the etag — without the etag in the
+    /// identity that change would never re-run the task and the stale icon
+    /// would render forever).
+    private var iconIdentity: SupermuxProjectIconIdentity {
+        SupermuxProjectIconIdentity(
+            projectID: row.id,
+            hasCustomIcon: row.hasCustomIcon,
+            iconETag: row.iconETag
+        )
     }
 
     private static func decodeImage(_ data: Data) -> Image? {
@@ -213,4 +231,16 @@ struct SupermuxProjectMobileAvatar: View {
         nil
         #endif
     }
+}
+
+/// See ``SupermuxProjectMobileAvatar/iconIdentity``. Internal (not private)
+/// so a focused unit test can pin the equality semantics without a SwiftUI
+/// test harness.
+struct SupermuxProjectIconIdentity: Equatable {
+    let projectID: String
+    let hasCustomIcon: Bool
+    /// The icon's content etag (`nil` while the wire doesn't surface one) —
+    /// the signal that re-keys the fetch when the icon's BYTES change while
+    /// `hasCustomIcon` stays `true`.
+    let iconETag: String?
 }

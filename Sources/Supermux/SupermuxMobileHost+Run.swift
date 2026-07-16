@@ -166,7 +166,8 @@ extension TerminalController {
                 title: project.name,
                 directory: project.rootPath,
                 colorHex: project.colorHex,
-                projectId: project.id
+                projectId: project.id,
+                preservesUserFocus: true
             )) else { return nil }
         return tabManager.tabs.first(where: { $0.id == workspaceID })
     }

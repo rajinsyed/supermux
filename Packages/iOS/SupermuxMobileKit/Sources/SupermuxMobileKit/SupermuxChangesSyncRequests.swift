@@ -21,10 +21,15 @@ public enum SupermuxChangesSyncDeadline {
     public static let rpcTimeoutNanoseconds: UInt64 = 180_000_000_000
 }
 
-/// `mobile.supermux.changes.commit`: `{workspace_id, message, stage_all?}`.
+/// `mobile.supermux.changes.commit`: `{workspace_id, message, stage_all?,
+/// expected_root?}`.
 ///
 /// The Mac validates a non-empty trimmed message (`invalid_params`), commits
 /// the staged files (everything when `stage_all`), and answers `{sha}`.
+/// `expected_root` (when present) is the repo root the phone's view was
+/// composed against — the Mac rejects with `stale_root` if the workspace's
+/// live directory has since changed, so a stale view can never mutate the
+/// wrong repository. Omitted (no status seen yet / old Mac) means no pin.
 public struct SupermuxChangesCommitRequest: Equatable, Sendable {
     /// The workspace's UUID string.
     public let workspaceID: String
@@ -33,26 +38,35 @@ public struct SupermuxChangesCommitRequest: Equatable, Sendable {
     /// Whether the Mac stages every change before committing. `false` is
     /// omitted from the wire.
     public let stageAll: Bool
+    /// The repo root this mutation was composed against (stale-view pin);
+    /// `nil` is omitted from the wire.
+    public let expectedRoot: String?
 
     /// Creates the request.
     /// - Parameters:
     ///   - workspaceID: The workspace's UUID string.
     ///   - message: The commit message.
     ///   - stageAll: Whether to stage everything before committing.
-    public init(workspaceID: String, message: String, stageAll: Bool = false) {
+    ///   - expectedRoot: The repo root the view was composed against.
+    public init(workspaceID: String, message: String, stageAll: Bool = false, expectedRoot: String? = nil) {
         self.workspaceID = workspaceID
         self.message = message
         self.stageAll = stageAll
+        self.expectedRoot = expectedRoot
     }
 
     /// The exact wire method string.
     public var wireMethod: String { SupermuxMobileMethod.changesCommit.rawValue }
 
-    /// The exact wire params (`stage_all` present only when `true`).
+    /// The exact wire params (`stage_all` present only when `true`;
+    /// `expected_root` present only when set).
     public var wireParams: [String: Any] {
         var params: [String: Any] = ["workspace_id": workspaceID, "message": message]
         if stageAll {
             params["stage_all"] = true
+        }
+        if let expectedRoot {
+            params["expected_root"] = expectedRoot
         }
         return params
     }

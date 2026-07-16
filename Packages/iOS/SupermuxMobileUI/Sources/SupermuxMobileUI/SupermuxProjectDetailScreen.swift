@@ -428,16 +428,19 @@ public struct SupermuxProjectDetailScreen: View {
 
     /// The dirty-worktree confirm-force payload, when the store parked there.
     private var forceConfirmation: (path: String, message: String)? {
-        guard case let .awaitingForceConfirmation(path, message) = worktreesStore?.removal else {
-            return nil
-        }
+        guard case let .awaitingForceConfirmation(path, _, message) = worktreesStore?.removal else { return nil }
         return (path, message)
     }
 
-    /// The terminal removal-failure message, when the store parked there.
+    /// The removal-failure message: `.failed`, or `.confirmationStale`
+    /// (aborted force-remove) via the same "Couldn't Remove Worktree" alert.
     private var removalFailureMessage: String? {
-        guard case let .failed(_, message) = worktreesStore?.removal else { return nil }
-        return message
+        switch worktreesStore?.removal {
+        case let .failed(_, message): message
+        case .confirmationStale:
+            String(localized: "supermux.worktrees.remove.staleConfirmation", defaultValue: "This worktree changed since you confirmed — nothing was removed. Try again.", bundle: .module)
+        default: nil
+        }
     }
 }
 

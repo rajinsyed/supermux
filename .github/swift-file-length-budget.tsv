@@ -101,7 +101,7 @@
 905	Sources/CmuxSSHURLRequest.swift
 899	Sources/Panels/MarkdownWebRenderer.swift
 885	Sources/Panels/TerminalPanel.swift
-884	Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift
+888	Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift
 877	Packages/Shared/CmuxAgentChat/Tests/CmuxAgentChatTests/ChatConversationStoreTests.swift
 871	cmuxTests/ClaudeHookSurfaceResolutionSwiftTests.swift
 868	Sources/Panels/BrowserScreenshotSnapshotter.swift
@@ -227,9 +227,12 @@
 507	Sources/TerminalControllerTopSupport.swift
 506	Sources/App/MainWindowVisibilityController.swift
 505	Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/CMUXMobileRootView.swift
+505	Packages/SupermuxKit/Sources/SupermuxKit/SupermuxProjectsModel.swift
 505	cmuxUITests/DisplayResolutionRegressionUITests.swift
 504	cmuxTests/TerminalNotificationSocketActionTests.swift
+503	Packages/iOS/SupermuxMobileUI/Tests/SupermuxMobileUITests/SupermuxProjectsSectionNestingTests.swift
 503	Sources/Settings/ConfigSource.swift
+502	Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxProjectDetailScreen.swift
 502	Sources/CmuxEventPublishing.swift
 502	Sources/KeyboardShortcutContext.swift
 502	Sources/RemoteTmuxSessionMirror.swift

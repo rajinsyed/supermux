@@ -23,6 +23,11 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
     public var untracked: [SupermuxChangedFileDTO]?
     /// Number of entries on the stash.
     public var stashCount: Int?
+    /// The workspace's live repository root (the Mac's resolved directory).
+    /// The phone echoes it back as `expected_root` on mutations so the Mac can
+    /// reject a stale-view mutation when the workspace has since cd-ed to a
+    /// different repo. Optional: old Macs omit it (no pin, legacy behavior).
+    public var root: String?
 
     /// Creates a changes-status DTO.
     /// - Parameters:
@@ -36,6 +41,7 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
     ///   - unstaged: Optional unstaged changes.
     ///   - untracked: Optional untracked files.
     ///   - stashCount: Optional stash entry count.
+    ///   - root: Optional live repository root for stale-view pinning.
     public init(
         workspaceId: String? = nil,
         isRepository: Bool? = nil,
@@ -46,7 +52,8 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         staged: [SupermuxChangedFileDTO]? = nil,
         unstaged: [SupermuxChangedFileDTO]? = nil,
         untracked: [SupermuxChangedFileDTO]? = nil,
-        stashCount: Int? = nil
+        stashCount: Int? = nil,
+        root: String? = nil
     ) {
         self.workspaceId = workspaceId
         self.isRepository = isRepository
@@ -58,6 +65,7 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         self.unstaged = unstaged
         self.untracked = untracked
         self.stashCount = stashCount
+        self.root = root
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -71,5 +79,6 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         case unstaged
         case untracked
         case stashCount = "stash_count"
+        case root
     }
 }

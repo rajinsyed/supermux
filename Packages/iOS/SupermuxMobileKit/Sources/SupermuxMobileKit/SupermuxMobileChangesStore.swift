@@ -89,6 +89,20 @@ public final class SupermuxMobileChangesStore {
     /// The workspace whose repository this store follows (UUID string).
     public let workspaceID: String
 
+    /// This store's stable watch-session id, sent as `client_id` on every
+    /// `changes.watch` (enable AND disable) so the Mac can refcount watchers
+    /// per client — one device closing its Changes sheet must not kill
+    /// another device's live watcher.
+    @ObservationIgnored private let watchClientID = UUID().uuidString
+
+    /// The workspace's live repository root as last reported by a
+    /// `changes.status` response, echoed back as `expected_root` on every
+    /// mutation so the Mac can reject a stale view's mutation
+    /// (`stale_root`). `nil` before the first status (or against an old Mac
+    /// that omits `root`) — then no pin is sent. Internal so the sync
+    /// extension's commit reaches it.
+    @ObservationIgnored var currentRoot: String?
+
     /// The Mac RPC seam. Internal so the sync extension file reaches it.
     @ObservationIgnored let client: any SupermuxMacCalling
     @ObservationIgnored private let capabilities: SupermuxMobileCapabilities
@@ -142,10 +156,10 @@ public final class SupermuxMobileChangesStore {
         }
         // Reached on cancellation (screen disappeared / app backgrounded):
         // release the Mac-side watch promptly instead of riding out the TTL.
-        // Unstructured so the cancelled task cannot cancel the RPC itself.
-        let client = self.client
-        let request = SupermuxChangesWatchRequest(workspaceID: workspaceID, enable: false)
-        Task { _ = try? await client.changesWatch(request) }
+        // Routed through ``sendWatch(enable:)`` so a fresh session's enable
+        // (push→pop→push can start `run()` again immediately) can never be
+        // overtaken by this disable.
+        sendWatch(enable: false)
     }
 
     /// `mobile.supermux.changes.diff`: one file's diff. Throws for the screen
@@ -167,7 +181,8 @@ public final class SupermuxMobileChangesStore {
         await mutate {
             _ = try await self.client.changesStage(SupermuxChangesStageRequest(
                 workspaceID: self.workspaceID,
-                selection: .paths(paths)
+                selection: .paths(paths),
+                expectedRoot: self.currentRoot
             ))
         }
     }
@@ -177,7 +192,8 @@ public final class SupermuxMobileChangesStore {
         await mutate {
             _ = try await self.client.changesStage(SupermuxChangesStageRequest(
                 workspaceID: self.workspaceID,
-                selection: .all
+                selection: .all,
+                expectedRoot: self.currentRoot
             ))
         }
     }
@@ -188,7 +204,8 @@ public final class SupermuxMobileChangesStore {
         await mutate {
             _ = try await self.client.changesUnstage(SupermuxChangesUnstageRequest(
                 workspaceID: self.workspaceID,
-                selection: .paths(paths)
+                selection: .paths(paths),
+                expectedRoot: self.currentRoot
             ))
         }
     }
@@ -198,7 +215,8 @@ public final class SupermuxMobileChangesStore {
         await mutate {
             _ = try await self.client.changesUnstage(SupermuxChangesUnstageRequest(
                 workspaceID: self.workspaceID,
-                selection: .all
+                selection: .all,
+                expectedRoot: self.currentRoot
             ))
         }
     }
@@ -211,7 +229,8 @@ public final class SupermuxMobileChangesStore {
         await mutate {
             _ = try await self.client.changesDiscard(SupermuxChangesDiscardRequest(
                 workspaceID: self.workspaceID,
-                paths: paths
+                paths: paths,
+                expectedRoot: self.currentRoot
             ))
         }
     }
@@ -230,7 +249,26 @@ public final class SupermuxMobileChangesStore {
             try await operation()
             await refetchStatus()
         } catch {
+            if SupermuxWireErrorCode.code(from: error) == SupermuxWireErrorCode.staleRoot {
+                // The Mac rejected the mutation because the phone's view was
+                // composed against a repo root that has since changed. The
+                // view is stale by definition — refetch FIRST (also
+                // re-capturing the fresh root for the retry), THEN surface
+                // the message, so the refetch's success can't clear it.
+                await refetchStatus()
+            }
             lastErrorDescription = error.localizedDescription
+        }
+    }
+
+    /// Waits until no mutation is on the wire. Used by
+    /// ``generateAndCommit(stageAll:)`` so its final `commit()` never hits
+    /// the mutation gate and silently no-ops against a stage/unstage/discard
+    /// that landed while generation was in flight — the store's "never a
+    /// silent no-op" contract. A no-op when nothing is mutating.
+    func waitForMutationSlot() async {
+        while isMutating {
+            await Task.yield()
         }
     }
 
@@ -267,23 +305,74 @@ public final class SupermuxMobileChangesStore {
     /// non-fatal (the next one retries; the Mac's TTL is the backstop).
     private func heartbeat() async {
         while !Task.isCancelled {
-            _ = try? await client.changesWatch(
-                SupermuxChangesWatchRequest(workspaceID: workspaceID, enable: true)
-            )
+            sendWatch(enable: true)
             await heartbeatSleep(Self.heartbeatInterval)
         }
     }
 
+    /// Serializes every `changes.watch` send — heartbeat enables AND the
+    /// teardown disable in ``run()`` — into one FIFO chain keyed on this
+    /// store instance: each call enqueues its send behind the chain's
+    /// current tail (awaiting it first) and becomes the new tail. Without
+    /// this, a torn-down session's trailing `enable:false` was an
+    /// unstructured, unordered `Task` that could complete AFTER a freshly
+    /// started session's `enable:true` (push→pop→push), killing the fresh
+    /// watch lease. Fire-and-forget by design (mirrors the previous
+    /// `run()` teardown call) so a cancelled `heartbeat()`/`run()` can never
+    /// cancel the RPC itself — only the ORDER is guaranteed, not that every
+    /// caller awaits completion.
+    @ObservationIgnored private var watchSendChain: Task<Void, Never>?
+
+    private func sendWatch(enable: Bool) {
+        let client = self.client
+        let workspaceID = self.workspaceID
+        let clientID = self.watchClientID
+        let previous = watchSendChain
+        watchSendChain = Task {
+            await previous?.value
+            let request = SupermuxChangesWatchRequest(
+                workspaceID: workspaceID,
+                enable: enable,
+                clientID: clientID
+            )
+            _ = try? await client.changesWatch(request)
+        }
+    }
+
+    /// Monotonic request counter for ``refetchStatus()``: each call claims
+    /// the next value, and only the latest may commit its result — so a
+    /// slower, earlier-issued status fetch (e.g. one triggered by
+    /// `followEvents()`'s poke handling racing a `mutate()` refetch from a
+    /// concurrent stage/unstage/commit) can never overwrite a fresher
+    /// response that already landed.
+    @ObservationIgnored private var statusRequestGeneration = 0
+
     /// Internal so the sync extension refetches after commit/push/pull.
     func refetchStatus() async {
+        statusRequestGeneration += 1
+        let generation = statusRequestGeneration
         do {
-            status = try await client.changesStatus(
+            let response = try await client.changesStatus(
                 SupermuxChangesStatusRequest(workspaceID: workspaceID)
             )
+            guard generation == statusRequestGeneration else { return }
+            status = response
+            currentRoot = response.root
             hasLoaded = true
             lastErrorDescription = nil
         } catch {
+            guard generation == statusRequestGeneration else { return }
             lastErrorDescription = error.localizedDescription
         }
+    }
+
+    /// Re-attempts the initial status fetch after it failed without ever
+    /// succeeding (``hasLoaded`` still `false`) — the screen's Retry action
+    /// when the first `changes.status` errors out. Safe to call while
+    /// ``run()``'s own event loop is already live (idle between events):
+    /// the request-generation guard on ``refetchStatus()`` keeps the two
+    /// paths from racing.
+    public func retryInitialLoad() async {
+        await refetchStatus()
     }
 }

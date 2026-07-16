@@ -223,8 +223,11 @@ import Testing
 
         await store.removeWorktree(path: path)
         // NOT a silent failure: the store parks in the confirm-force state.
+        // `branch` is `nil` here because the store's own `worktrees` list
+        // was never fetched in this test.
         #expect(store.removal == .awaitingForceConfirmation(
             worktreePath: path,
+            branch: nil,
             message: "Worktree has uncommitted changes"
         ))
         #expect(fake.recordedWireCalls[0].method == "mobile.supermux.worktree.remove")
@@ -248,6 +251,76 @@ import Testing
         // Successful removal refreshes the list immediately.
         #expect(fake.worktreesListCallCount == 1)
         #expect(store.worktrees.isEmpty)
+    }
+
+    @Test func forceRemovalAbortsWhenTheWorktreeAtThatPathChangedSinceTheConfirmation() async throws {
+        // A worktree can be removed and a DIFFERENT one recreated at the
+        // exact same path between the dirty-worktree refusal and the
+        // user's confirm tap. Because `path` is the DTO's only guaranteed
+        // identity, the store must additionally check the captured branch
+        // before force-deleting — never blindly trust a stale dialog.
+        let path = Self.fixturesA[0].path
+        let fake = FakeSupermuxMacClient()
+        fake.worktreeRemoveError = MobileShellConnectionError.rpcError(
+            "dirty_worktree", "Worktree has uncommitted changes"
+        )
+        fake.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: Self.fixturesA)
+        let store = makeStore(fake: fake)
+        let runner = Task { await store.run() }
+        defer { runner.cancel() }
+        try await TestWait().until { store.hasLoaded }
+
+        await store.removeWorktree(path: path)
+        #expect(store.removal == .awaitingForceConfirmation(
+            worktreePath: path,
+            branch: "fix-login",
+            message: "Worktree has uncommitted changes"
+        ))
+
+        // Between the refusal and the confirm tap, the worktree at this
+        // exact path was removed and a DIFFERENT one recreated there.
+        fake.worktreeRemoveError = nil
+        let recreated = SupermuxWorktreeDTO(path: path, branch: "totally-different-branch")
+        fake.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: [recreated])
+        fake.emit(SupermuxMobileEvent(topic: .worktreesUpdated))
+        try await TestWait().until { store.worktrees == [recreated] }
+
+        // The stale confirmation must abort — never force-delete the new
+        // worktree under the old dialog.
+        await store.removeWorktree(path: path, force: true)
+        #expect(store.removal == .confirmationStale(worktreePath: path))
+        #expect(
+            fake.recordedWireCalls.filter { $0.method == "mobile.supermux.worktree.remove" }.count == 1,
+            "no force-remove RPC may ever be sent against a stale confirmation"
+        )
+    }
+
+    @Test func forceRemovalProceedsWhenTheWorktreeAtThatPathStillMatches() async throws {
+        // The happy path: the worktree at the confirmed path hasn't
+        // changed, so the force retry proceeds normally.
+        let path = Self.fixturesA[0].path
+        let fake = FakeSupermuxMacClient()
+        fake.worktreeRemoveError = MobileShellConnectionError.rpcError(
+            "dirty_worktree", "Worktree has uncommitted changes"
+        )
+        fake.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: Self.fixturesA)
+        let store = makeStore(fake: fake)
+        let runner = Task { await store.run() }
+        defer { runner.cancel() }
+        try await TestWait().until { store.hasLoaded }
+
+        await store.removeWorktree(path: path)
+        #expect(store.removal == .awaitingForceConfirmation(
+            worktreePath: path,
+            branch: "fix-login",
+            message: "Worktree has uncommitted changes"
+        ))
+
+        fake.worktreeRemoveError = nil
+        fake.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: [])
+        await store.removeWorktree(path: path, force: true)
+        #expect(store.removal == .idle)
+        #expect(fake.recordedWireCalls.filter { $0.method == "mobile.supermux.worktree.remove" }.count == 2)
     }
 
     @Test func nonDirtyRemovalErrorSurfacesAsFailedNotConfirmForce() async {

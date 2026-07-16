@@ -902,6 +902,23 @@
         }
       }
     },
+    "supermux.common.retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再試行"
+          }
+        }
+      }
+    },
     "supermux.common.save" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3431,6 +3448,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未コミットの変更"
+          }
+        }
+      }
+    },
+    "supermux.worktrees.remove.staleConfirmation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This worktree changed since you confirmed — nothing was removed. Try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認後にこのワークツリーが変更されたため、何も削除されませんでした。もう一度お試しください。"
           }
         }
       }

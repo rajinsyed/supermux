@@ -138,6 +138,14 @@ public struct SupermuxFileBrowserScreen: View {
         if let store {
             if store.hasLoaded {
                 loadedBody(store)
+            } else if let errorDescription = store.lastErrorDescription {
+                // The first `files.list` failed: there's no event topic to
+                // refetch and `.refreshable`/`.task` are both unreachable
+                // from this state, so without an explicit retry this would
+                // be stuck on the loading spinner forever.
+                loadErrorPlaceholder(errorDescription) {
+                    Task { await store.load() }
+                }
             } else if store.showsFileBrowser {
                 loadingPlaceholder
             } else {
@@ -177,6 +185,22 @@ public struct SupermuxFileBrowserScreen: View {
             .multilineTextAlignment(.center)
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func loadErrorPlaceholder(_ message: String, retry: @escaping () -> Void) -> some View {
+        VStack(spacing: 12) {
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button(action: retry) {
+                Text(String(localized: "supermux.common.retry", defaultValue: "Retry", bundle: .module))
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("SupermuxFileBrowserRetryButton")
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func loadedBody(_ store: SupermuxMobileFileBrowserStore) -> some View {

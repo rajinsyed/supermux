@@ -108,7 +108,9 @@ extension TerminalController {
             ?? workspace.bonsplitController.allPaneIds.first,
             let panel = workspace.newTerminalSurface(
                 inPane: paneId,
-                focus: true,
+                // Remote launch: preserve the Mac user's keyboard focus rather
+                // than yanking it to the new preset terminal (socket policy).
+                focus: false,
                 workingDirectory: workspace.currentDirectory,
                 initialInput: SupermuxCommandLaunch.shellInput(for: preset.command)
             ) else {
@@ -163,7 +165,8 @@ extension TerminalController {
                 directory: project.rootPath,
                 colorHex: project.colorHex,
                 initialCommand: action.command,
-                projectId: project.id
+                projectId: project.id,
+                preservesUserFocus: true
             ))
             return .ok(SupermuxMobileActionRun.commandResult())
         }
@@ -218,7 +221,8 @@ extension TerminalController {
                 title: project.name,
                 directory: project.rootPath,
                 colorHex: project.colorHex,
-                projectId: project.id
+                projectId: project.id,
+                preservesUserFocus: true
             )),
             let workspace = tabManager.tabs.first(where: { $0.id == workspaceID }) else {
             return .failure(.err(code: "unavailable", message: "Workspace context is unavailable", data: nil))

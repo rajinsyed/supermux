@@ -190,6 +190,86 @@ import Testing
         #expect(store.aiUnavailableNotice == nil)
     }
 
+    @Test func generateAndCommitWaitsForAnInFlightMutationInsteadOfSilentlyDroppingTheCommit() async throws {
+        // Reproduces the m3-f2 bug: generation starts (isMutating stays
+        // false), a stage lands WHILE generation is still in flight
+        // (isMutating flips true), and generation finishes before the stage
+        // does. The final commit must never hit `commit()`'s mutation gate
+        // and silently no-op — it must wait for the stage, then commit.
+        let fake = FakeSupermuxMacClient()
+        fake.changesStatusResponse = Self.status
+        fake.generateCommitMessageResponse = SupermuxChangesGeneratedMessageResponse(
+            message: "feat: generated while a stage was in flight"
+        )
+        fake.changesGenerateCommitMessageShouldHold = true
+        fake.changesStageShouldHold = true
+        let store = makeStore(fake: fake)
+
+        let generateTask = Task { await store.generateAndCommit() }
+        try await TestWait().until { fake.callLog.contains("changesGenerateCommitMessage") }
+        #expect(store.isGeneratingMessage)
+        #expect(!store.isMutating, "generation alone must not set isMutating")
+
+        // A stage lands mid-generation and is still on the wire.
+        let stageTask = Task { await store.stage(paths: ["src/app.swift"]) }
+        try await TestWait().until { fake.callLog.contains("changesStage") }
+        #expect(store.isMutating)
+
+        // Generation completes while the stage is still in flight.
+        fake.changesGenerateCommitMessageGate.release()
+        try await TestWait().until { !store.isGeneratingMessage }
+        // The commit must NOT have fired yet — it must be waiting for the
+        // mutation slot, not silently dropping.
+        for _ in 0..<20 { await Task.yield() }
+        #expect(!fake.callLog.contains("changesCommit"), "must wait for the in-flight stage, not fire early")
+
+        // The stage finally completes, freeing the mutation slot.
+        fake.changesStageGate.release()
+        await stageTask.value
+        await generateTask.value
+
+        // The commit must still have landed — never a silent drop.
+        #expect(fake.callLog.contains("changesCommit"))
+        #expect(store.commitMessage.isEmpty)
+        #expect(store.lastCommitShortSha != nil)
+    }
+
+    @Test func commitNeverClearsThePriorConfirmationWhenItNoOpsAgainstAnInFlightMutation() async throws {
+        // The store's OWN reentrancy guard (not generateAndCommit's wait):
+        // a `commit()` call that no-ops against an in-flight mutation must
+        // never wipe a PRIOR confirmation — before the fix,
+        // `lastCommitShortSha` was cleared unconditionally BEFORE the
+        // mutation guard, wiping it even when nothing new committed.
+        let fake = FakeSupermuxMacClient()
+        fake.changesStatusResponse = Self.status
+        fake.changesCommitResponse = SupermuxChangesCommitResponse(sha: "1111111111111111111111111111111111aaaa")
+        let store = makeStore(fake: fake)
+
+        // An earlier commit already landed and left its confirmation
+        // visible.
+        store.commitMessage = "feat: already committed"
+        await store.commit()
+        #expect(store.lastCommitShortSha == "1111111")
+
+        // Occupy the mutation slot with a held stage so a concurrent commit
+        // attempt hits `mutate`'s reentrancy guard.
+        fake.changesStageShouldHold = true
+        let stageTask = Task { await store.stage(paths: ["a.txt"]) }
+        try await TestWait().until { fake.callLog.contains("changesStage") }
+        #expect(store.isMutating)
+
+        store.commitMessage = "feat: second, while a stage is in flight"
+        await store.commit()
+        #expect(store.lastCommitShortSha == "1111111", "the no-op commit must not wipe the prior confirmation")
+        #expect(
+            fake.callLog.filter { $0 == "changesCommit" }.count == 1,
+            "the second attempt must not have committed"
+        )
+
+        fake.changesStageGate.release()
+        await stageTask.value
+    }
+
     // MARK: Push / pull
 
     @Test func pushSendsTheExactWireCallWithAnExtendedDeadlineAndReturnsTheLog() async throws {

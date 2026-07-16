@@ -19,11 +19,14 @@ public struct SupermuxMobileChangesPayloadBuilder: Sendable {
     /// - Parameters:
     ///   - workspaceId: The workspace the snapshot describes (echoed back).
     ///   - snapshot: The parsed `git status` snapshot.
+    ///   - root: The workspace's live repository root, echoed so the phone can
+    ///     pin `expected_root` on mutations against a stale view.
     /// - Returns: The RPC result object (`SupermuxChangesStatusDTO` shape).
     /// - Throws: Any encoding failure from the shared wire bridge.
     public func status(
         workspaceId: String,
-        snapshot: SupermuxGitStatusSnapshot
+        snapshot: SupermuxGitStatusSnapshot,
+        root: String? = nil
     ) throws -> [String: Any] {
         try SupermuxWireJSON().dictionary(from: SupermuxChangesStatusDTO(
             workspaceId: workspaceId,
@@ -35,7 +38,8 @@ public struct SupermuxMobileChangesPayloadBuilder: Sendable {
             staged: snapshot.staged.map(Self.changedFile),
             unstaged: snapshot.unstaged.map(Self.changedFile),
             untracked: snapshot.untracked.map(Self.changedFile),
-            stashCount: snapshot.stashEntryCount
+            stashCount: snapshot.stashEntryCount,
+            root: root
         ))
     }
 
@@ -79,22 +83,25 @@ public struct SupermuxMobileChangesPayloadBuilder: Sendable {
     ///
     /// `localCommits` is the raw page read with `limit + 1` entries so this
     /// builder can detect a further page: when more than `limit` commits
-    /// arrived, the payload carries `next_cursor` — the page's last included
-    /// sha, passed back verbatim to resume after it. `is_pushed` is `false`
-    /// exactly for the shas in `unpushedShas`; incoming (pullable) commits
-    /// are on the upstream by definition and travel with `is_pushed: true`.
+    /// arrived, the payload carries `nextCursor` (the caller-computed resume
+    /// token — see the handler's compound `<root-sha>.<offset>` cursor).
+    /// `is_pushed` is `false` exactly for the shas in `unpushedShas`; incoming
+    /// (pullable) commits are on the upstream by definition and travel with
+    /// `is_pushed: true`.
     /// - Parameters:
     ///   - localCommits: Up to `limit + 1` local history commits, newest first.
     ///   - limit: The requested page size.
     ///   - unpushedShas: Full shas of commits not yet on the remote.
     ///   - incoming: Pullable upstream commits (first page only).
+    ///   - nextCursor: The resume token to emit when a further page exists.
     /// - Returns: The RPC result object.
     /// - Throws: Any encoding failure from the shared wire bridge.
     public func history(
         localCommits: [SupermuxGitCommit],
         limit: Int,
         unpushedShas: Set<String>,
-        incoming: [SupermuxGitCommit]
+        incoming: [SupermuxGitCommit],
+        nextCursor: String
     ) throws -> [String: Any] {
         let wire = SupermuxWireJSON()
         let page = localCommits.prefix(limit)
@@ -106,8 +113,8 @@ public struct SupermuxMobileChangesPayloadBuilder: Sendable {
                 try wire.dictionary(from: Self.commit($0, isPushed: true))
             },
         ]
-        if localCommits.count > limit, let cursor = page.last?.hash {
-            payload["next_cursor"] = cursor
+        if localCommits.count > limit {
+            payload["next_cursor"] = nextCursor
         }
         return payload
     }

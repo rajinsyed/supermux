@@ -18,6 +18,12 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
     /// Whether a custom icon file exists Mac-side (fetch it via
     /// ``SupermuxMobileMethod/projectIcon``); the path itself never travels.
     public var hasCustomIcon: Bool?
+    /// An opaque token that changes whenever the project's icon image changes,
+    /// so the phone can re-fetch the bytes when — and only when — the icon was
+    /// replaced (a changed image keeps ``hasCustomIcon`` `true`, so that flag
+    /// alone can't signal it). Never used for content matching; purely a
+    /// change signal. `nil` when no icon is fetchable.
+    public var iconETag: String?
     /// Branch new worktrees are created from; `nil` uses `HEAD`.
     public var defaultBranch: String?
     /// Directory (relative to ``rootPath``) holding supermux-managed worktrees.
@@ -66,6 +72,7 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         colorHex: String? = nil,
         iconSymbol: String? = nil,
         hasCustomIcon: Bool? = nil,
+        iconETag: String? = nil,
         defaultBranch: String? = nil,
         worktreesDirName: String? = nil,
         runCommands: [String]? = nil,
@@ -82,6 +89,7 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         self.colorHex = colorHex
         self.iconSymbol = iconSymbol
         self.hasCustomIcon = hasCustomIcon
+        self.iconETag = iconETag
         self.defaultBranch = defaultBranch
         self.worktreesDirName = worktreesDirName
         self.runCommands = runCommands
@@ -100,6 +108,7 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         case colorHex = "color_hex"
         case iconSymbol = "icon_symbol"
         case hasCustomIcon = "has_custom_icon"
+        case iconETag = "icon_etag"
         case defaultBranch = "default_branch"
         case worktreesDirName = "worktrees_dir_name"
         case runCommands = "run_commands"

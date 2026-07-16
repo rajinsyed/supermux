@@ -8,6 +8,14 @@ import SupermuxMobileKit
 /// file's `record`/`count…` seams (the recorded storage stays `private(set)`).
 extension FakeSupermuxMacClient {
     func changesWatch(_ request: SupermuxChangesWatchRequest) async throws -> SupermuxChangesWatchResponse {
+        // Only `enable:false` (the teardown disable) can be artificially
+        // delayed — recorded AFTER the delay, simulating delivery latency,
+        // so a test can prove a slow disable is still delivered in its
+        // correct enqueue order rather than racing a faster, later-enqueued
+        // enable (#6).
+        if !request.enable, let changesWatchDisableArtificialDelay {
+            try? await Task.sleep(for: changesWatchDisableArtificialDelay)
+        }
         record("changesWatch", method: request.wireMethod, params: request.wireParams)
         if let changesWatchError { throw changesWatchError }
         return SupermuxChangesWatchResponse(watching: request.enable, ttlSeconds: 120)
@@ -15,9 +23,10 @@ extension FakeSupermuxMacClient {
 
     func changesStatus(_ request: SupermuxChangesStatusRequest) async throws -> SupermuxChangesStatusDTO {
         record("changesStatus", method: request.wireMethod, params: request.wireParams)
+        let response = await changesStatusResponseForCurrentCall()
         if let changesStatusError { throw changesStatusError }
         countChangesStatusCall()
-        return changesStatusResponse
+        return response
     }
 
     func changesDiff(_ request: SupermuxChangesDiffRequest) async throws -> SupermuxDiffDTO {
@@ -28,6 +37,9 @@ extension FakeSupermuxMacClient {
 
     func changesStage(_ request: SupermuxChangesStageRequest) async throws -> SupermuxChangesAckResponse {
         record("changesStage", method: request.wireMethod, params: request.wireParams)
+        if changesStageShouldHold {
+            await changesStageGate.park()
+        }
         if let changesStageError { throw changesStageError }
         return SupermuxChangesAckResponse(ok: true)
     }
@@ -54,6 +66,9 @@ extension FakeSupermuxMacClient {
         _ request: SupermuxChangesGenerateCommitMessageRequest
     ) async throws -> SupermuxChangesGeneratedMessageResponse {
         record("changesGenerateCommitMessage", method: request.wireMethod, params: request.wireParams)
+        if changesGenerateCommitMessageShouldHold {
+            await changesGenerateCommitMessageGate.park()
+        }
         if let generateCommitMessageError { throw generateCommitMessageError }
         return generateCommitMessageResponse
     }

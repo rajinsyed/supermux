@@ -12,10 +12,20 @@ public enum SupermuxWorktreeRemovalState: Equatable, Sendable {
     /// A remove request is on the wire.
     case removing(worktreePath: String)
     /// The Mac refused with `dirty_worktree`; the user must confirm a forced
-    /// retry (or dismiss).
-    case awaitingForceConfirmation(worktreePath: String, message: String)
+    /// retry (or dismiss). ``branch`` captures the worktree's checked-out
+    /// branch AT THE TIME of the refusal — the identity a force-confirm
+    /// retry is checked against, since ``SupermuxWorktreeDTO`` only
+    /// guarantees `path` as a stable identity and a worktree can be removed
+    /// and a DIFFERENT one recreated at the same path before the user taps
+    /// confirm.
+    case awaitingForceConfirmation(worktreePath: String, branch: String?, message: String)
     /// The removal failed terminally; the message is user-facing.
     case failed(worktreePath: String, message: String)
+    /// A confirm-force retry no longer matches the worktree at ``worktreePath``
+    /// (removed and recreated there since the dialog was raised) — the
+    /// force-remove was aborted rather than deleting the wrong worktree; the
+    /// UI must re-prompt from a fresh state, not retry silently.
+    case confirmationStale(worktreePath: String)
 }
 
 /// Main-actor state for one project's worktree list on the phone: the list
@@ -179,6 +189,18 @@ public final class SupermuxMobileWorktreesStore {
     ///   - force: Whether to remove despite uncommitted changes.
     public func removeWorktree(path: String, force: Bool = false) async {
         if case .removing = removal { return }
+        if force, case let .awaitingForceConfirmation(confirmedPath, confirmedBranch, _) = removal,
+           confirmedPath == path {
+            // A force retry FROM the confirm dialog must still describe the
+            // SAME worktree the dialog was raised for — re-check identity
+            // against the freshest known list before deleting anything. A
+            // direct `force: true` call made without a pending confirmation
+            // (not the UI's dialog flow) is left alone below.
+            guard worktrees.first(where: { $0.path == path })?.branch == confirmedBranch else {
+                removal = .confirmationStale(worktreePath: path)
+                return
+            }
+        }
         removal = .removing(worktreePath: path)
         do {
             _ = try await client.worktreeRemove(SupermuxWorktreeRemoveRequest(
@@ -192,6 +214,7 @@ public final class SupermuxMobileWorktreesStore {
             if !force, SupermuxWireErrorCode.code(from: error) == SupermuxWireErrorCode.dirtyWorktree {
                 removal = .awaitingForceConfirmation(
                     worktreePath: path,
+                    branch: worktrees.first(where: { $0.path == path })?.branch,
                     message: error.localizedDescription
                 )
             } else {

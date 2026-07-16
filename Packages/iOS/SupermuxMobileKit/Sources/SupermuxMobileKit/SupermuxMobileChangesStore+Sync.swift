@@ -16,12 +16,17 @@ extension SupermuxMobileChangesStore {
         let submittedDraft = commitMessage
         let message = submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
-        lastCommitShortSha = nil
         await mutate {
+            // Cleared here, once the commit has actually passed `mutate`'s
+            // gate — clearing it unconditionally (before the gate) would
+            // wipe a valid prior confirmation even when this call no-ops
+            // against an in-flight mutation.
+            self.lastCommitShortSha = nil
             let response = try await self.client.changesCommit(SupermuxChangesCommitRequest(
                 workspaceID: self.workspaceID,
                 message: message,
-                stageAll: stageAll
+                stageAll: stageAll,
+                expectedRoot: self.currentRoot
             ))
             self.lastCommitShortSha = response.sha.map { String($0.prefix(7)) }
             // The composer stays editable during the round-trip, so only clear
@@ -59,6 +64,13 @@ extension SupermuxMobileChangesStore {
         isGeneratingMessage = false
         guard let generated else { return }
         commitMessage = generated
+        // A stage/unstage/discard triggered while generation was in flight
+        // (the screen also disables those affordances during generation —
+        // see SupermuxChangesScreen's `actionsDisabled` — but the store
+        // itself must never silently drop this commit) may still be on the
+        // wire. Wait for it instead of letting `commit()` hit the mutation
+        // gate and no-op.
+        await waitForMutationSlot()
         await commit(stageAll: stageAll)
     }
 

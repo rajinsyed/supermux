@@ -95,6 +95,36 @@ import Testing
         #expect(text.contains("+hello mobile"))
     }
 
+    @Test func gitignoredFileIsNotPreviewedAndLeaksNothing() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        // A gitignored secret is "not in the index" but is NOT a change the
+        // Changes screen shows — previewing its bytes would leak a file the
+        // user never staged. The untracked preview must gate on the real
+        // untracked set (`ls-files --others --exclude-standard`), not merely
+        // "absent from the index".
+        try GitFixture.write(".env\n", to: ".gitignore", in: root)
+        try GitFixture.runGit(["add", ".gitignore"], in: root)
+        try GitFixture.commit("Ignore .env", in: root)
+        try GitFixture.write("SECRET_TOKEN=topsecret\n", to: ".env", in: root)
+
+        let diff = await service.fileDiff(repoPath: root, path: ".env", staged: false)
+
+        #expect((diff.text ?? "").contains("topsecret") == false)
+        #expect((diff.text ?? "").isEmpty)
+    }
+
+    @Test func gitInternalFileIsNotPreviewedAndLeaksNothing() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        // `.git/config` is inside the repo root but is a git internal, never a
+        // user change — it must not be dumped via the untracked preview.
+        let diff = await service.fileDiff(repoPath: root, path: ".git/config", staged: false)
+
+        #expect((diff.text ?? "").contains("[core]") == false)
+        #expect((diff.text ?? "").isEmpty)
+    }
+
     // MARK: - Repository confinement (arbitrary-file-read hardening)
 
     @Test func escapingPathIsNotPreviewedAndLeaksNothing() async throws {
@@ -148,6 +178,28 @@ import Testing
         let diff = await service.fileDiff(repoPath: root, path: "link/note.txt", staged: false)
 
         #expect((diff.text ?? "").contains("+inside body"))
+    }
+
+    @Test func gitignoredFileReachedThroughASymlinkAliasIsNotPreviewed() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        // An ignored secret, plus an untracked symlink alias to it. The alias
+        // itself is neither ignored nor tracked, so a check on the request path
+        // alone would preview it; the ignore rule must follow the RESOLVED
+        // target (`.env`) and refuse.
+        try GitFixture.write(".env\n", to: ".gitignore", in: root)
+        try GitFixture.runGit(["add", ".gitignore"], in: root)
+        try GitFixture.commit("Ignore .env", in: root)
+        try GitFixture.write("SECRET_TOKEN=topsecret\n", to: ".env", in: root)
+        try FileManager.default.createSymbolicLink(
+            atPath: (root as NSString).appendingPathComponent("leak"),
+            withDestinationPath: (root as NSString).appendingPathComponent(".env")
+        )
+
+        let diff = await service.fileDiff(repoPath: root, path: "leak", staged: false)
+
+        #expect((diff.text ?? "").contains("topsecret") == false)
+        #expect((diff.text ?? "").isEmpty)
     }
 
     @Test func untrackedSymlinkEscapingRootLeaksNothing() async throws {

@@ -40,9 +40,11 @@ extension TerminalController {
                     code: "invalid_params", message: "workspace_id must be a workspace UUID", data: nil
                 )
             }
-            // Stop immediately, even when the workspace has since closed.
+            // Release only THIS client's hold, even when the workspace has
+            // since closed. A co-viewing device keeps the shared watcher.
             SupermuxMobileHostGlue.changesWatchRegistry.unwatch(
-                workspaceId: workspaceID.uuidString
+                workspaceId: workspaceID.uuidString,
+                holder: params["client_id"] as? String
             )
             return .ok(["watching": false])
         }
@@ -53,7 +55,8 @@ extension TerminalController {
         }
         SupermuxMobileHostGlue.changesWatchRegistry.watch(
             workspaceId: target.workspaceId,
-            directory: target.directory
+            directory: target.directory,
+            holder: params["client_id"] as? String
         )
         return .ok([
             "watching": true,
@@ -75,7 +78,8 @@ extension TerminalController {
         do {
             return .ok(try SupermuxMobileChangesPayloadBuilder().status(
                 workspaceId: target.workspaceId,
-                snapshot: snapshot
+                snapshot: snapshot,
+                root: target.directory
             ))
         } catch {
             return .err(code: "unavailable", message: "Failed to encode changes status", data: nil)
@@ -266,6 +270,29 @@ extension TerminalController {
                 data: ["workspace_id": workspaceID.uuidString]
             ))
         }
+        // Stale-view guard: the phone caches only `workspace_id`, but the Mac
+        // re-resolves the workspace's LIVE directory here. If the Mac user
+        // cd-ed the workspace terminal after the phone rendered a repo, a
+        // mutation would silently hit the new repo. When the phone pins the
+        // root it is acting on via `expected_root`, reject any drift so a
+        // stale screen can never stage/discard/commit/trash the wrong repo —
+        // the phone re-fetches and re-renders on the error.
+        if let expectedRoot = (params["expected_root"] as? String),
+           !expectedRoot.isEmpty,
+           Self.supermuxNormalizedPath(expectedRoot) != Self.supermuxNormalizedPath(directory) {
+            return .failure(.err(
+                code: "stale_root",
+                message: "Workspace directory changed; refresh and retry",
+                data: ["workspace_id": workspaceID.uuidString, "current_root": directory]
+            ))
+        }
         return .success((workspaceID.uuidString, directory))
+    }
+
+    /// Tilde-expanded, `.`/`..`-collapsed absolute form for comparing a
+    /// phone-supplied `expected_root` against the workspace's live directory
+    /// (matches the watch registry's normalization).
+    static func supermuxNormalizedPath(_ path: String) -> String {
+        ((path as NSString).expandingTildeInPath as NSString).standardizingPath
     }
 }
