@@ -284,7 +284,11 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
         let duration = Self.frameInterval * Double(Self.frames.count)
         let animation = CAKeyframeAnimation(keyPath: "contents")
         animation.values = frameImages
-        animation.keyTimes = (0..<Self.frames.count).map { NSNumber(value: Double($0) / Double(Self.frames.count)) }
+        // Discrete keyframes need values.count + 1 key times, terminating at
+        // 1.0 — each pair [t(i), t(i+1)) is one frame's display window. With
+        // only values.count entries CA considers the timing malformed and
+        // freezes on the first frame.
+        animation.keyTimes = (0...Self.frames.count).map { NSNumber(value: Double($0) / Double(Self.frames.count)) }
         animation.calculationMode = .discrete
         animation.duration = duration
         animation.repeatCount = .infinity
