@@ -32,6 +32,27 @@ struct SupermuxAgentActivityIndicatorTests {
         #expect(view.renderedFrameCountForTesting == 10)
     }
 
+    @Test func brailleSpinnerSwapsInstalledAnimationFramesOnSizeChange() {
+        let view = SupermuxBrailleSpinnerNSView(frame: NSRect(x: 0, y: 0, width: 7, height: 7))
+        view.glyphPointSize = 7 * 1.7
+        view.installAnimationIfNeeded()
+        let before = view.installedAnimationFramesForTesting
+        #expect(before?.count == 10)
+        // A live size change must drop the installed animation — the
+        // CAKeyframeAnimation owns the image array it was created with, so
+        // keeping it would animate stale bitmaps at the old size. (Windowed
+        // views reinstall via updateAnimationState; headless tests reinstall
+        // explicitly. If the stale animation survived the size change,
+        // installAnimationIfNeeded would early-return with the old frames.)
+        view.glyphPointSize = 14 * 1.7
+        view.installAnimationIfNeeded()
+        let after = view.installedAnimationFramesForTesting
+        #expect(after?.count == 10)
+        if let before, let after {
+            #expect(before.first !== after.first)
+        }
+    }
+
     @Test func brailleSpinnerInstallsAndRemovesContentsAnimation() {
         let view = SupermuxBrailleSpinnerNSView(frame: NSRect(x: 0, y: 0, width: 7, height: 7))
         view.glyphPointSize = 7 * 1.7

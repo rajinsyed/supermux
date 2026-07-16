@@ -72,7 +72,7 @@ enum SupermuxActivityPalette {
 /// CPU-safety (this is a terminal app where main-thread time is precious):
 /// the animation is a Core Animation `contents` keyframe loop on a plain
 /// `CALayer` (render-server driven, like cmux's `GPUSpinnerNSView`), so a
-/// spinning indicator costs the app process nothing per frame. An earlier
+/// spinning indicator does no per-frame SwiftUI or main-thread work. An earlier
 /// `TimelineView(.animation)` implementation kept the window's display link
 /// alive at full refresh rate and forced a window-wide SwiftUI layout pass on
 /// every glyph tick, which alone burned ~15% CPU while any agent was working
@@ -109,7 +109,7 @@ private struct SupermuxBrailleSpinnerRepresentable: NSViewRepresentable {
 /// for the attention-grabbing needs-input state.
 ///
 /// The halo is a Core Animation scale+fade loop on its own `CALayer`
-/// (render-server driven, zero app-process cost per frame). An earlier
+/// (render-server driven, no per-frame SwiftUI or main-thread work). An earlier
 /// implementation used SwiftUI `withAnimation(.repeatForever)`, which drives
 /// the whole hosting view's update cycle from the main thread at display
 /// refresh rate. Animations stop while the window is occluded or Reduce
@@ -304,6 +304,9 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
     var renderedFrameCountForTesting: Int { frameImages.count }
     var isAnimationInstalledForTesting: Bool { glyphLayer.animation(forKey: Self.animationKey) != nil }
     var glyphCellSizeForTesting: CGSize { glyphCellSize }
+    var installedAnimationFramesForTesting: [CGImage]? {
+        (glyphLayer.animation(forKey: Self.animationKey) as? CAKeyframeAnimation)?.values as? [CGImage]
+    }
 
     private func renderFramesIfNeeded() {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
@@ -327,6 +330,13 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
         }
         glyphLayer.contents = frameImages.first
         needsLayout = true
+        // An installed animation owns the image array it was created with, so
+        // a size/scale re-render must swap it for one built from the new
+        // frames — otherwise the spinner keeps animating the stale bitmaps.
+        if glyphLayer.animation(forKey: Self.animationKey) != nil {
+            glyphLayer.removeAnimation(forKey: Self.animationKey)
+            updateAnimationState()
+        }
     }
 
     private static func renderGlyph(

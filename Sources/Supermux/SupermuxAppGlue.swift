@@ -290,7 +290,13 @@ final class SupermuxWorkspaceObservation: ObservableObject {
         RenderedRowState(
             id: workspace.id,
             customTitle: workspace.customTitle,
-            settledTitleGeneration: workspace.sidebarProcessTitleObservation.changeGeneration,
+            // A custom title masks the automatic process title entirely, so
+            // settled-title publications must not refresh the row while one
+            // is set (clearing the custom title changes `customTitle` itself,
+            // which re-reads the process title fresh).
+            settledTitleGeneration: workspace.customTitle == nil
+                ? workspace.sidebarProcessTitleObservation.changeGeneration
+                : 0,
             directory: workspace.currentDirectory,
             branch: workspace.supermuxSidebarBranch,
             activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
@@ -334,13 +340,26 @@ final class SupermuxWorkspaceObservation: ObservableObject {
                 .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
                 .eraseToAnyPublisher()
         }
+        // A pure surface reorder can change which branch/PR is first in
+        // display order without touching any observation field, so the
+        // rendered branch/PR would go stale without this leg. The version
+        // only changes when the ordered panel IDs actually change
+        // (WorkspaceSurfaceListModel's semantic gate), so it stays quiet
+        // during divider drags and geometry churn.
+        let paneLayoutLegs = tabs.map { workspace in
+            workspace.paneLayoutVersionPublisher
+                .removeDuplicates()
+                .map { _ in () }
+                .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
+                .eraseToAnyPublisher()
+        }
         let lifecycleLeg = SupermuxWorkspaceLifecycleRelay.lifecycleDidChange
             .filter { ids.contains($0) }
             .map { _ in () }
             .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
             .eraseToAnyPublisher()
 
-        cancellable = Publishers.MergeMany(customTitleLegs + observationLegs + [lifecycleLeg])
+        cancellable = Publishers.MergeMany(customTitleLegs + observationLegs + paneLayoutLegs + [lifecycleLeg])
             .coalesceLatest(for: Self.coalesceInterval, scheduler: RunLoop.main)
             .sink { [weak self] in self?.bumpIfRenderedStateChanged() }
 
