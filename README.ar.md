@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> هذه هي الترجمة العربية لملف README الخاص بمشروع [cmux](https://github.com/manaflow-ai/cmux) الأصلي. هذا المستودع هو **supermux**، وهو نسخة معدّلة (fork)؛ ما تضيفه هذه النسخة موثّق في [README.md](README.md) (بالإنجليزية).
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > تمت هذه الترجمة بواسطة Claude. إذا كانت لديك اقتراحات للتحسين، يرجى فتح PR.
 
 <h1 align="center">cmux</h1>

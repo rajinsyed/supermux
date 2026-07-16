@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> Ovo je bosanski prijevod README-a projekta [cmux](https://github.com/manaflow-ai/cmux). Ovaj repozitorij je **supermux**, fork; šta fork dodaje opisano je u [README.md](README.md) (na engleskom).
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > Ovaj prijevod je generisan od strane Claude. Ako imate prijedloge za poboljšanje, otvorite PR.
 
 <h1 align="center">cmux</h1>

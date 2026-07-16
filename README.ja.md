@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> これは上流プロジェクト [cmux](https://github.com/manaflow-ai/cmux) の README の日本語訳です。このリポジトリはそのフォークである **supermux** で、フォークが追加する機能は [README.md](README.md)(英語)にまとめてあります。
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > この翻訳は Claude によって生成されました。改善の提案がある場合は、PR を作成してください。
 
 <h1 align="center">cmux</h1>

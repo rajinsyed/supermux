@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> To jest polskie tłumaczenie README projektu [cmux](https://github.com/manaflow-ai/cmux). To repozytorium to **supermux**, fork; to, co fork dodaje, opisano w [README.md](README.md) (po angielsku).
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > To tłumaczenie zostało wygenerowane przez Claude. Jeśli masz sugestie dotyczące poprawek, otwórz PR.
 
 <h1 align="center">cmux</h1>

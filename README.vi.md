@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> Đây là bản dịch tiếng Việt của README dự án gốc [cmux](https://github.com/manaflow-ai/cmux). Repo này là **supermux**, một bản fork; những gì bản fork bổ sung được mô tả trong [README.md](README.md) (tiếng Anh).
+<!-- SUPERMUX:end readme-translation-banner -->
+
 <h1 align="center">cmux</h1>
 <p align="center">Một terminal macOS dựa trên Ghostty với tab dọc và thông báo cho các agent lập trình AI</p>
 

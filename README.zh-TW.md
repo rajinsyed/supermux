@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> 這是上游專案 [cmux](https://github.com/manaflow-ai/cmux) README 的繁體中文版。本儲存庫是其分支 **supermux**,分支新增的功能請見 [README.md](README.md)(英文)。
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > 此翻譯由 Claude 生成。如有改進建議，歡迎提交 PR。
 
 <h1 align="center">cmux</h1>

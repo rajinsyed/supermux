@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> នេះជាការបកប្រែជាភាសាខ្មែរនៃ README របស់គម្រោងដើម [cmux](https://github.com/manaflow-ai/cmux)។ ឃ្លាំងកូដនេះគឺ **supermux** ដែលជា fork មួយ។ អ្វីដែល fork បន្ថែម មានរៀបរាប់ក្នុង [README.md](README.md) (ជាភាសាអង់គ្លេស)។
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > ការបកប្រែនេះត្រូវបានបង្កើតដោយ Claude។ ប្រសិនបើអ្នកមានការកែលម្អ សូមបង្កើត PR។
 
 <h1 align="center">cmux</h1>

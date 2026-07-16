@@ -297,6 +297,5 @@ Constraints inherited from upstream that supermux code MUST follow:
 ## Branch/remote model
 
 - `upstream` remote → `manaflow-ai/cmux`, branch `main`.
-- Local `main` → supermux trunk (cmux main + supermux commits).
-- No `origin` is configured yet; if the user wants a GitHub repo, add it as `origin` and keep
-  `upstream` pointing at cmux.
+- `origin` remote → `rajinsyed/supermux` (public GitHub repo), the fork's home.
+- Local `main` → supermux trunk (cmux main + supermux commits), pushed to `origin/main`.

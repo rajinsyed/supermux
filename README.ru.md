@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> Это русский перевод README проекта [cmux](https://github.com/manaflow-ai/cmux). Этот репозиторий — **supermux**, форк; всё, что добавляет форк, описано в [README.md](README.md) (на английском).
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > Этот перевод создан Claude. Если у вас есть предложения по улучшению, откройте PR.
 
 <h1 align="center">cmux</h1>

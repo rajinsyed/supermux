@@ -1,3 +1,7 @@
+<!-- SUPERMUX:begin readme-translation-banner -->
+> 이 문서는 업스트림 프로젝트 [cmux](https://github.com/manaflow-ai/cmux) README의 한국어 번역본입니다. 이 저장소는 그 포크인 **supermux**이며, 포크에서 추가된 기능은 [README.md](README.md)(영어)에 정리되어 있습니다.
+<!-- SUPERMUX:end readme-translation-banner -->
+
 > 이 문서는 Claude가 번역했어요. 개선할 부분이 있다면 PR을 보내주세요.
 
 <h1 align="center">cmux</h1>
