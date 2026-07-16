@@ -33,7 +33,18 @@ SIDEBAR_EXTENSION_POINT_ID="${BUNDLE_ID}.cmux.sidebar"
 BASE_APP_NAME="cmux"          # PRODUCT_NAME stays "cmux"; we rename the bundle on copy.
 INSTALL_APP="/Applications/${APP_NAME}.app"
 DERIVED_DATA="${HOME}/Library/Developer/Xcode/DerivedData/cmux-supermux-release"
-SIGN_IDENTITY="${SUPERMUX_SIGN_IDENTITY:-Developer ID Application: Syed Ramijuzzaman Rajin (NRGUG8GVV4)}"
+# Signing identity: set SUPERMUX_SIGN_IDENTITY explicitly, otherwise the first
+# "Developer ID Application" certificate in the keychain is used.
+SIGN_IDENTITY="${SUPERMUX_SIGN_IDENTITY:-}"
+if [[ -z "${SIGN_IDENTITY}" ]]; then
+  SIGN_IDENTITY="$(security find-identity -v -p codesigning \
+    | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+fi
+if [[ -z "${SIGN_IDENTITY}" ]]; then
+  echo 'error: no "Developer ID Application" identity in the keychain.' >&2
+  echo '       Set SUPERMUX_SIGN_IDENTITY="Developer ID Application: NAME (TEAMID)"' >&2
+  exit 1
+fi
 LAUNCH=1
 
 # Isolated runtime sockets so Supermux never fights an installed/running cmux.
