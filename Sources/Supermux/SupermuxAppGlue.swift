@@ -368,7 +368,32 @@ struct SupermuxPresetsBarMount: View {
     let workspace: Workspace
     @ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
 
+    // Minimal mode is chrome-free, so the bar hides itself. The mode is read
+    // HERE, not by the `presets-bar` fence in `WorkspaceContentView`: upstream
+    // moved its own minimal-mode read out of that view body and into
+    // `WorkspaceContentMinimalModeSafeAreaModifier`, and
+    // `WorkspaceContentViewVisibilityTests` asserts a mode toggle re-evaluates
+    // neither `ContentView` nor `WorkspaceContentView` bodies. Gating inside
+    // the mount keeps that contract — a toggle invalidates only this subview —
+    // and the mount itself stays permanently in the tree, so the workspace
+    // content keeps one structural identity across mode switches.
+    @AppStorage(WorkspacePresentationModeSettings.modeKey)
+    private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
+
+    private var isMinimalMode: Bool {
+        WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
+    }
+
     var body: some View {
+        if isMinimalMode {
+            EmptyView()
+        } else {
+            presetsBar
+        }
+    }
+
+    @ViewBuilder
+    private var presetsBar: some View {
         // Subscribes the bar to live run-state changes (Run ↔ Stop) and shortcut
         // rebinds; preset edits invalidate inside the bar view, not here.
         let _ = shortcutObserver.revision

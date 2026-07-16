@@ -11,7 +11,7 @@ import Testing
 /// Logic-only coverage of the fail-closed `mobile.supermux.*` ticket-scoping
 /// table (architecture §4; validation contract AUTH-01/02/03). Modeled on
 /// `MobileHostAuthorizationTests`: pure value fixtures through the
-/// `debugTicketAuthorizationError` seam — no Ghostty surfaces, no
+/// `ticketAuthorizationError` seam (upstream 0.64.x dropped the debug wrapper; the internal static is directly callable) — no Ghostty surfaces, no
 /// `Workspace`/`TabManager` construction, no real config.
 @Suite(.serialized)
 @MainActor
@@ -51,7 +51,7 @@ struct SupermuxMobileAuthorizationTests {
     @Test func macWideTicketAcceptsEverySupermuxMethod() throws {
         let ticket = try attachTicket(workspaceID: "")
         for method in SupermuxMobileMethod.all {
-            let error = MobileHostService.debugTicketAuthorizationError(
+            let error = MobileHostService.ticketAuthorizationError(
                 ticket: ticket,
                 request: request(method: method.rawValue, params: ["workspace_id": "workspace"])
             )
@@ -62,7 +62,7 @@ struct SupermuxMobileAuthorizationTests {
     @Test func scopedTicketAcceptsChangesAndFilesForItsOwnWorkspace() throws {
         let ticket = try attachTicket(workspaceID: "workspace")
         for method in workspaceScopedMethods() {
-            let error = MobileHostService.debugTicketAuthorizationError(
+            let error = MobileHostService.ticketAuthorizationError(
                 ticket: ticket,
                 request: request(method: method.rawValue, params: ["workspace_id": "workspace"])
             )
@@ -73,7 +73,7 @@ struct SupermuxMobileAuthorizationTests {
     @Test func scopedTicketRejectsChangesAndFilesForOtherWorkspaces() throws {
         let ticket = try attachTicket(workspaceID: "workspace")
         for method in workspaceScopedMethods() {
-            let error = MobileHostService.debugTicketAuthorizationError(
+            let error = MobileHostService.ticketAuthorizationError(
                 ticket: ticket,
                 request: request(method: method.rawValue, params: ["workspace_id": "other-workspace"])
             )
@@ -84,7 +84,7 @@ struct SupermuxMobileAuthorizationTests {
     @Test func scopedTicketRejectsChangesAndFilesWithoutAWorkspaceSelection() throws {
         let ticket = try attachTicket(workspaceID: "workspace")
         for method in workspaceScopedMethods() {
-            let error = MobileHostService.debugTicketAuthorizationError(
+            let error = MobileHostService.ticketAuthorizationError(
                 ticket: ticket,
                 request: request(method: method.rawValue, params: [:])
             )
@@ -98,7 +98,7 @@ struct SupermuxMobileAuthorizationTests {
             // Even a matching workspace_id riding along must not widen a
             // scoped ticket to Mac-wide surfaces (projects, worktrees,
             // presets, run, actions, icon).
-            let error = MobileHostService.debugTicketAuthorizationError(
+            let error = MobileHostService.ticketAuthorizationError(
                 ticket: ticket,
                 request: request(method: method.rawValue, params: ["workspace_id": "workspace"])
             )
@@ -108,7 +108,7 @@ struct SupermuxMobileAuthorizationTests {
 
     @Test func scopedTicketRejectsFilesRequestsNamingAProjectRoot() throws {
         let ticket = try attachTicket(workspaceID: "workspace")
-        let error = MobileHostService.debugTicketAuthorizationError(
+        let error = MobileHostService.ticketAuthorizationError(
             ticket: ticket,
             request: request(
                 method: SupermuxMobileMethod.filesList.rawValue,
@@ -123,7 +123,7 @@ struct SupermuxMobileAuthorizationTests {
 
     @Test func macWideTicketAcceptsFilesRequestsNamingAProjectRoot() throws {
         let ticket = try attachTicket(workspaceID: "")
-        let error = MobileHostService.debugTicketAuthorizationError(
+        let error = MobileHostService.ticketAuthorizationError(
             ticket: ticket,
             request: request(
                 method: SupermuxMobileMethod.filesList.rawValue,
@@ -137,7 +137,7 @@ struct SupermuxMobileAuthorizationTests {
         let macWide = try attachTicket(workspaceID: "")
         let scoped = try attachTicket(workspaceID: "workspace")
         for ticket in [macWide, scoped] {
-            let error = MobileHostService.debugTicketAuthorizationError(
+            let error = MobileHostService.ticketAuthorizationError(
                 ticket: ticket,
                 request: request(method: "mobile.supermux.evil.method", params: [:])
             )
@@ -147,7 +147,7 @@ struct SupermuxMobileAuthorizationTests {
 
     @Test func terminalScopedTicketBehavesLikeItsWorkspacePin() throws {
         let ticket = try attachTicket(workspaceID: "workspace", terminalID: "terminal")
-        let accepted = MobileHostService.debugTicketAuthorizationError(
+        let accepted = MobileHostService.ticketAuthorizationError(
             ticket: ticket,
             request: request(
                 method: SupermuxMobileMethod.changesStatus.rawValue,
@@ -155,7 +155,7 @@ struct SupermuxMobileAuthorizationTests {
             )
         )
         #expect(accepted == nil)
-        let rejected = MobileHostService.debugTicketAuthorizationError(
+        let rejected = MobileHostService.ticketAuthorizationError(
             ticket: ticket,
             request: request(
                 method: SupermuxMobileMethod.projectsList.rawValue,

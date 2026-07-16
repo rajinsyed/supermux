@@ -238,6 +238,25 @@ Conflict heuristics:
 
 ## Building
 
+### ⚠️ NEVER run app-hosted test suites on the user's machine
+
+`xcodebuild test` on the `cmux-unit` / `cmux` schemes launches the **real cmux app as the test
+host in the user's login session**. Suites like `TabManagerUnitTests`,
+`WorkspaceContentViewVisibilityTests`, and most of `cmuxTests` create real `NSWindow`s and
+workspaces — a single run opens dozens of windows on the user's desktop and pegs the machine;
+running the suite twice doubles it. This has burned the user more than once. Hard rules:
+
+1. **Do not run `cmuxTests` / `cmuxUITests` locally** (any `-only-testing:` subset included)
+   unless the user explicitly asks for a local run in this session.
+2. To verify app-target tests still **compile** after a change/merge, use
+   `xcodebuild build-for-testing -scheme cmux-unit -derivedDataPath /tmp/cmux-<tag>` — it
+   compiles the test target with zero app launches.
+3. To verify **behavior**, run the SPM package tests (`swift test` in `Packages/SupermuxKit`,
+   `Packages/macOS/CmuxSettings`, `Packages/macOS/CmuxSettingsUI`, …) — they are headless — and
+   let GitHub Actions run the app-hosted suites.
+4. To inspect a past run's failures, read the `.xcresult` bundle with `xcrun xcresulttool`
+   instead of re-running the tests.
+
 Same as cmux (see `AGENTS.md`): `./scripts/setup.sh` once, then
 
 > **Toolchain note:** the app build's "Ghostty CLI helper" script phase requires **zig 0.15.2

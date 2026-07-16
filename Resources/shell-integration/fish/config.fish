@@ -20,6 +20,24 @@ if test "$_cmux_integration_enabled" != 0
     set -g _CMUX_PORTS_LAST_RUN 0
     set -g _CMUX_TTY_NAME ""
     set -g _CMUX_TTY_REPORTED 0
+    set -g _CMUX_PWD_LAST_PWD ""
+
+    function _cmux_restore_scrollback_once
+        set -l path "$CMUX_RESTORE_SCROLLBACK_FILE"
+        test -n "$path"; or return 0
+        set -e CMUX_RESTORE_SCROLLBACK_FILE
+        set -l token (string replace -r '^.*/' '' -- "$path")
+        set -l host (/bin/hostname)
+
+        printf '\033]1337;CurrentDir=kitty-shell-cwd://%s/.cmux/session-scrollback-replay/%s/start\007' "$host" "$token"
+        if test -r "$path"
+            /bin/cat -- "$path" 2>/dev/null; or true
+            /bin/rm -f -- "$path" >/dev/null 2>&1; or true
+        end
+        printf '\033]1337;CurrentDir=kitty-shell-cwd://%s/.cmux/session-scrollback-replay/%s/end\007' "$host" "$token"
+        printf '\033]1337;CurrentDir=kitty-shell-cwd://%s%s\007' "$host" "$PWD"
+    end
+    _cmux_restore_scrollback_once
 
     function _cmux_now
         if test -n "$EPOCHSECONDS"
@@ -105,6 +123,19 @@ if test "$_cmux_integration_enabled" != 0
         end
         set params "$params}"
         _cmux_relay_rpc_bg surface.report_tty "$params"
+    end
+
+    function _cmux_report_pwd_via_relay --argument-names pwd
+        _cmux_socket_uses_remote_relay; or return 1
+        test -n "$pwd"; or return 1
+        set -l workspace_id (_cmux_relay_workspace_id); or return 1
+        set -l pwd_json (_cmux_json_escape "$pwd")
+        set -l params "{\"workspace_id\":\"$workspace_id\",\"path\":\"$pwd_json\""
+        if test -n "$CMUX_PANEL_ID"
+            set params "$params,\"surface_id\":\"$CMUX_PANEL_ID\""
+        end
+        set params "$params}"
+        _cmux_relay_rpc_bg surface.report_pwd "$params"
     end
 
     function _cmux_ports_kick_via_relay --argument-names reason
@@ -281,6 +312,19 @@ if test "$_cmux_integration_enabled" != 0
         _cmux_reset_terminal_keyboard_protocols
         _cmux_report_tty_once
         _cmux_report_shell_activity_state prompt
+        set -l pwd "$PWD"
+        if test "$pwd" != "$_CMUX_PWD_LAST_PWD"
+            if _cmux_socket_is_unix
+                if test -n "$CMUX_TAB_ID"; and test -n "$CMUX_PANEL_ID"
+                    set -l qpwd (_cmux_json_escape "$pwd")
+                    if _cmux_send_bg "report_pwd \"$qpwd\" --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
+                        set -g _CMUX_PWD_LAST_PWD "$pwd"
+                    end
+                end
+            else if _cmux_report_pwd_via_relay "$pwd"
+                set -g _CMUX_PWD_LAST_PWD "$pwd"
+            end
+        end
         set -l now (_cmux_now)
         if test (math "$now - $_CMUX_PORTS_LAST_RUN") -ge 5
             _cmux_ports_kick refresh

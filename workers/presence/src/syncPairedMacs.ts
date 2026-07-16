@@ -32,6 +32,14 @@ import {
 
 /** Logical collection name the client subscribes to and stores under. */
 export const PAIRED_MACS_COLLECTION = "pairedMacs";
+const SCOPED_PAIRED_MACS_COLLECTION = "pairedMacsScoped";
+const IOS_V2_SCOPED_PAIRED_MACS_COLLECTION = "pairedMacsScopedIosV2";
+const IOS_V2_CLIENT_SCOPE_PREFIX = "ios:v2:";
+export const PAIRED_MACS_COLLECTION_TOMBSTONE_PREFIXES = [
+  `${PAIRED_MACS_COLLECTION}:`,
+  `${SCOPED_PAIRED_MACS_COLLECTION}:`,
+  `${IOS_V2_SCOPED_PAIRED_MACS_COLLECTION}:`,
+];
 
 /** Max saved-host records a single user may back up. Bounds the storage a client
  * can create, mirroring MAX_DEVICES_PER_TEAM for the device registry. */
@@ -43,6 +51,13 @@ export const MAX_PAIRED_MACS_PER_USER = 200;
  * ids → delete → repeat unbounded. 5× the live cap leaves generous headroom for
  * legitimate forget/re-pair while capping the abuse vector. */
 export const MAX_PAIRED_MAC_RECORDS_PER_USER = MAX_PAIRED_MACS_PER_USER * 5;
+/** Max tagged-build backup scopes one user may create per supported storage
+ * generation. Scopes are client-provided dev-build labels, so the server bounds
+ * their count before using them in a physical collection name. The deprecated
+ * iOS v1 and current iOS v2 generations have separate 32-scope namespaces: stale
+ * v1 heads cannot deny v2 capacity, while total retained scope state remains
+ * bounded at twice this limit during the fail-closed migration. */
+export const MAX_PAIRED_MAC_CLIENT_SCOPES_PER_USER = 32;
 
 /** Max ops accepted in one backup request. A full reconcile pushes at most the
  * whole list, so the per-user cap is the natural bound. */
@@ -52,6 +67,9 @@ export const MAX_BACKUP_OPS = MAX_PAIRED_MACS_PER_USER;
  * display-name bound and a generous id bound). */
 export const MAX_MAC_ID_LENGTH = 256;
 export const MAX_DISPLAY_NAME_LENGTH = 128;
+export const MAX_INSTANCE_TAG_LENGTH = 64;
+export const MAX_CLIENT_SCOPE_LENGTH = 128;
+const SYNC_HEAD_PREFIX = "synchead:";
 /** Route bounds mirror validate.ts so the backup payload can't exceed what a
  * heartbeat could push. */
 export const MAX_ROUTES = 16;
@@ -74,6 +92,8 @@ export const MAX_PAIRED_MAC_BACKUP_BYTES =
 export interface PairedMacBackupRecord {
   macDeviceID: string;
   displayName?: string;
+  /** Authenticated Mac app-instance identity that owns the reconnect routes. */
+  instanceTag?: string;
   routes: unknown[];
   /** epoch ms */
   createdAt: number;
@@ -107,6 +127,13 @@ export type PairedMacBackupOp =
        * Absent here (e.g. a hand-built op) is treated as "all provided", i.e. the
        * record's custom fields are authoritative as-is. */
       providedCustom?: { name: boolean; color: boolean; icon: boolean };
+      /** Whether this client carried `instanceTag`. Older iOS builds omitted it,
+       * so their uploads preserve newer stored authority instead of clearing it. */
+      providedInstanceTag?: boolean;
+      /** Mac self-publishers may claim an empty/same-tag row but cannot switch
+       * another authenticated app instance's authority. Routine iOS metadata
+       * writes preserve an existing live row's authenticated host authority. */
+      instanceTagWriteMode?: "compare_and_set" | "preserve";
       /** Explicit user re-add of an id with a retained server tombstone. Normal
        * route refreshes and full reconciles must leave tombstones authoritative. */
       allowTombstoneRevive?: boolean;
@@ -117,14 +144,59 @@ export type PairedMacBackupParse =
   | { ok: true; ops: PairedMacBackupOp[] }
   | { ok: false; error: string };
 
-/** Physical per-user collection name. Derived from the VERIFIED user id ONLY, so
- * a client can never read or write another user's saved hosts. */
-export function pairedMacsCollection(userId: string): string {
-  return `${PAIRED_MACS_COLLECTION}:${userId}`;
+export class PairedMacBackupApplyError extends Error {
+  constructor(readonly code: "too_many_client_scopes") {
+    super(code);
+    this.name = "PairedMacBackupApplyError";
+  }
 }
 
 function trimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function base64URL(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+/** Physical per-user collection name. Derived from the VERIFIED user id, with an
+ * optional client-owned sub-scope for tagged app builds. The client scope never
+ * replaces user/team authorization; it only partitions that user's own backup. */
+export function normalizeClientScope(value: unknown): string | null {
+  const trimmed = trimmedString(value);
+  if (!trimmed) return null;
+  if (trimmed.length > MAX_CLIENT_SCOPE_LENGTH) return null;
+  return `b64_${base64URL(new TextEncoder().encode(trimmed))}`;
+}
+
+function scopedPairedMacCollectionNamespace(clientScope: unknown): string {
+  const scope = trimmedString(clientScope);
+  return scope.startsWith(IOS_V2_CLIENT_SCOPE_PREFIX) && scope.length > IOS_V2_CLIENT_SCOPE_PREFIX.length
+    ? IOS_V2_SCOPED_PAIRED_MACS_COLLECTION
+    : SCOPED_PAIRED_MACS_COLLECTION;
+}
+
+export function pairedMacsCollection(userId: string, clientScope?: string | null): string {
+  const scope = normalizeClientScope(clientScope);
+  if (!scope) return `${PAIRED_MACS_COLLECTION}:${userId}`;
+  return `${scopedPairedMacCollectionNamespace(clientScope)}:${userId}:${scope}`;
+}
+
+function scopedPairedMacCollectionHeadPrefix(userId: string, clientScope: string): string {
+  return `${SYNC_HEAD_PREFIX}${scopedPairedMacCollectionNamespace(clientScope)}:${userId}:`;
+}
+
+async function hasScopedCollectionCapacity(
+  storage: SyncStorage,
+  userId: string,
+  collection: string,
+  clientScope: string,
+): Promise<boolean> {
+  const heads = await storage.list<number>({ prefix: scopedPairedMacCollectionHeadPrefix(userId, clientScope) });
+  if (heads.has(`${SYNC_HEAD_PREFIX}${collection}`)) return true;
+  return heads.size < MAX_PAIRED_MAC_CLIENT_SCOPES_PER_USER;
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -168,6 +240,19 @@ export function parsePairedMacBackup(body: Record<string, unknown>): PairedMacBa
     if (displayName.length > MAX_DISPLAY_NAME_LENGTH) {
       return { ok: false, error: "invalid_display_name" };
     }
+    const providedInstanceTag = "instanceTag" in r;
+    const instanceTag = trimmedString(r.instanceTag);
+    if (instanceTag.length > MAX_INSTANCE_TAG_LENGTH) {
+      return { ok: false, error: "invalid_instance_tag" };
+    }
+    const rawInstanceTagWriteMode = r.instanceTagWriteMode;
+    if (
+      rawInstanceTagWriteMode !== undefined &&
+      rawInstanceTagWriteMode !== "compare_and_set" &&
+      rawInstanceTagWriteMode !== "preserve"
+    ) {
+      return { ok: false, error: "invalid_instance_tag_write_mode" };
+    }
     // User customizations: opaque strings, bounded like the display name. Over-long
     // values are rejected rather than silently truncated. Track whether each key was
     // PRESENT in the upload (vs absent) so the server can preserve a stored value
@@ -210,10 +295,13 @@ export function parsePairedMacBackup(body: Record<string, unknown>): PairedMacBa
       kind: "upsert",
       id,
       providedCustom,
+      providedInstanceTag,
+      instanceTagWriteMode: rawInstanceTagWriteMode,
       allowTombstoneRevive: e.reviveDeleted === true,
       record: {
         macDeviceID: id,
         displayName: displayName || undefined,
+        instanceTag: instanceTag || undefined,
         routes,
         createdAt,
         lastSeenAt,
@@ -240,6 +328,7 @@ export function pairedMacShapeEqual(a: PairedMacBackupRecord, b: PairedMacBackup
   return (
     a.macDeviceID === b.macDeviceID &&
     (a.displayName ?? "") === (b.displayName ?? "") &&
+    (a.instanceTag ?? "") === (b.instanceTag ?? "") &&
     a.isActive === b.isActive &&
     // User customizations are part of the shape: a rename / color / icon change
     // must mint a rev and broadcast so the user's other devices receive it.
@@ -252,8 +341,9 @@ export function pairedMacShapeEqual(a: PairedMacBackupRecord, b: PairedMacBackup
 
 /** Relabel a frame's collection from the physical per-user name back to the
  * logical `pairedMacs` so the client never sees (or stores under) the user-id
- * suffix. The rev space is the physical collection's, but each user has exactly
- * one physical collection, so the client's logical cursor tracks it 1:1. */
+ * suffix. The rev space is the physical collection's, and each user/scope pair
+ * has exactly one physical collection, so the client's logical cursor tracks it
+ * 1:1. */
 export function relabelDelta<P>(delta: SyncDeltaFrame<P>): SyncDeltaFrame<P> {
   return { ...delta, collection: PAIRED_MACS_COLLECTION };
 }
@@ -274,8 +364,13 @@ export async function applyBackupOps(
   userId: string,
   ops: readonly PairedMacBackupOp[],
   nowMs: number,
+  clientScope?: string | null,
 ): Promise<SyncDeltaFrame<unknown>[]> {
-  const collection = pairedMacsCollection(userId);
+  const collection = pairedMacsCollection(userId, clientScope);
+  const scope = normalizeClientScope(clientScope);
+  if (scope && !(await hasScopedCollectionCapacity(storage, userId, collection, clientScope ?? ""))) {
+    throw new PairedMacBackupApplyError("too_many_client_scopes");
+  }
   // One listing gives both the live count (cap on visible Macs) AND the total
   // record count (live + RETAINED tombstones). Capping the total bounds storage
   // against create/delete churn: a delete keeps a tombstone for the GC retention
@@ -292,11 +387,10 @@ export async function applyBackupOps(
 
   for (const op of ops) {
     if (op.kind === "delete") {
+      const existing = await readRecord<PairedMacBackupRecord>(storage, collection, op.id);
       const res = await tombstoneRecord(storage, collection, op.id, nowMs);
       if (res.delta !== null) {
-        liveCount = Math.max(0, liveCount - 1);
-        // `totalCount` is unchanged: tombstoning replaces the live record in place
-        // (same storage key), it does not add a slot.
+        if (existing !== undefined && !existing.deleted) liveCount = Math.max(0, liveCount - 1);
         deltas.push(relabelDelta(res.delta));
       }
       continue;
@@ -333,6 +427,34 @@ export async function applyBackupOps(
     const provided = op.providedCustom ?? { name: true, color: true, icon: true };
     if (existing !== undefined && !existing.deleted) {
       const prev = existing.payload;
+      const preservesExistingAuthority = op.instanceTagWriteMode === "preserve";
+      const legacyCannotReplaceAuthority =
+        !preservesExistingAuthority && !(op.providedInstanceTag ?? true) && prev.instanceTag;
+      const publisherCannotSwitchAuthority =
+        op.instanceTagWriteMode === "compare_and_set" &&
+        !!prev.instanceTag &&
+        prev.instanceTag !== record.instanceTag;
+      if (legacyCannotReplaceAuthority || publisherCannotSwitchAuthority) {
+        // A pre-instance-identity client cannot atomically identify the Mac
+        // process that supplied its record. Ignore the WHOLE stale operation so
+        // its routes, active bit, and freshness cannot make the retained tag's
+        // payload appear newly authoritative. A Mac self-publisher has the same
+        // CAS rule when another nonnil tag owns the row. Explicit authenticated
+        // iOS pairing uploads carry the key without CAS and may switch authority.
+        continue;
+      }
+      if (preservesExistingAuthority) {
+        // Active selection and user customization writes do not authenticate a
+        // Mac process. Keep the server's current host-owned authority tuple even
+        // when the phone's local row is stale, while still applying the metadata
+        // fields below. A missing/tombstoned row has no authority to preserve and
+        // is created/revived from the incoming snapshot instead.
+        record.displayName = prev.displayName;
+        record.instanceTag = prev.instanceTag;
+        record.routes = prev.routes;
+        record.createdAt = prev.createdAt;
+        record.lastSeenAt = Math.max(prev.lastSeenAt, record.lastSeenAt);
+      }
       if (!provided.name) record.customName = prev.customName;
       if (!provided.color) record.customColor = prev.customColor;
       if (!provided.icon) record.customIcon = prev.customIcon;
@@ -397,8 +519,9 @@ async function clearOtherActiveBackupRecords(
 export async function listLiveBackup(
   storage: SyncStorage,
   userId: string,
+  clientScope?: string | null,
 ): Promise<PairedMacBackupRecord[]> {
-  return (await listBackupSnapshot(storage, userId)).records;
+  return (await listBackupSnapshot(storage, userId, clientScope)).records;
 }
 
 /** The full restore snapshot for a user: live records plus delete tombstones.
@@ -408,8 +531,9 @@ export async function listLiveBackup(
 export async function listBackupSnapshot(
   storage: SyncStorage,
   userId: string,
+  clientScope?: string | null,
 ): Promise<PairedMacBackupSnapshot> {
-  const all = await listRecords<PairedMacBackupRecord>(storage, pairedMacsCollection(userId));
+  const all = await listRecords<PairedMacBackupRecord>(storage, pairedMacsCollection(userId, clientScope));
   const records = all
     .filter((r) => !r.deleted)
     .map((r) => r.payload)

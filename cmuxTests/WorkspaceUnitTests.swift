@@ -320,7 +320,6 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
     }
 }
 
-
 final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     func testRenameTabShortcutDefaultsAndMetadata() {
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.label, "Rename Tab")
@@ -2969,6 +2968,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
     private final class DetachedWorkspaceTestPanel: Panel {
         let objectWillChange = ObservableObjectPublisher()
         let id: UUID
+        let stableSurfaceIdentity = PanelStableSurfaceIdentity()
         let panelType: PanelType = .terminal
         let displayTitle = "Detached"
         let displayIcon: String? = "terminal.fill"
@@ -3177,7 +3177,6 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
         try body()
     }
-
     private func makeDetachedWorkspaceTestTransfer(
         sourceWorkspaceId: UUID,
         directory: String? = nil,
@@ -3195,6 +3194,8 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
             isLoading: false,
             isPinned: false,
             directory: directory,
+            directoryIsTrustedRemoteReport: false,
+            directoryDisplayLabel: nil,
             ttyName: nil,
             cachedTitle: nil,
             customTitle: nil,
@@ -3202,7 +3203,8 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
             manuallyUnread: false,
             restoredUnreadIndicator: nil,
             restorableAgent: nil,
-            restorableAgentResumeState: nil,
+            restorableAgentResumeState: nil, restoredAgentCompletedGeneration: nil,
+            shellActivityState: nil, restoredResumeSessionWorkingDirectory: nil,
             resumeBinding: resumeBinding,
             agentRuntime: nil,
             isRemoteTerminal: false,
@@ -3233,7 +3235,11 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
             initialTerminalCommand: String?,
             initialTerminalInput: String?,
             initialTerminalEnvironment: [String: String],
-            workspaceEnvironment: [String: String]
+            initialBrowserURL: URL?,
+            initialBrowserOmnibarVisible: Bool,
+            initialBrowserTransparentBackground: Bool,
+            workspaceEnvironment: [String: String],
+            allowTextBoxFocusDefault: Bool
         ) -> Workspace {
             beforeCreateWorkspace?()
             return super.makeWorkspaceForCreation(
@@ -3245,7 +3251,11 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
                 initialTerminalCommand: initialTerminalCommand,
                 initialTerminalInput: initialTerminalInput,
                 initialTerminalEnvironment: initialTerminalEnvironment,
-                workspaceEnvironment: workspaceEnvironment
+                initialBrowserURL: initialBrowserURL,
+                initialBrowserOmnibarVisible: initialBrowserOmnibarVisible,
+                initialBrowserTransparentBackground: initialBrowserTransparentBackground,
+                workspaceEnvironment: workspaceEnvironment,
+                allowTextBoxFocusDefault: allowTextBoxFocusDefault
             )
         }
     }
@@ -3536,7 +3546,11 @@ final class WorkspaceCreationConfigSanitizationTests: XCTestCase {
             initialTerminalCommand: String?,
             initialTerminalInput: String?,
             initialTerminalEnvironment: [String: String],
-            workspaceEnvironment: [String: String]
+            initialBrowserURL: URL?,
+            initialBrowserOmnibarVisible: Bool,
+            initialBrowserTransparentBackground: Bool,
+            workspaceEnvironment: [String: String],
+            allowTextBoxFocusDefault: Bool
         ) -> Workspace {
             capturedConfigTemplate = configTemplate
             return super.makeWorkspaceForCreation(
@@ -3548,7 +3562,11 @@ final class WorkspaceCreationConfigSanitizationTests: XCTestCase {
                 initialTerminalCommand: initialTerminalCommand,
                 initialTerminalInput: initialTerminalInput,
                 initialTerminalEnvironment: initialTerminalEnvironment,
-                workspaceEnvironment: workspaceEnvironment
+                initialBrowserURL: initialBrowserURL,
+                initialBrowserOmnibarVisible: initialBrowserOmnibarVisible,
+                initialBrowserTransparentBackground: initialBrowserTransparentBackground,
+                workspaceEnvironment: workspaceEnvironment,
+                allowTextBoxFocusDefault: allowTextBoxFocusDefault
             )
         }
     }
@@ -4453,24 +4471,22 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
 
 @MainActor
 final class WorkspaceTeardownTests: XCTestCase {
-    func testTeardownAllPanelsClearsPanelMetadataCaches() {
+    func testTeardownAllPanelsClearsPanelMetadataCaches() throws {
         let workspace = Workspace()
-        guard let initialPanelId = workspace.focusedPanelId else {
-            XCTFail("Expected focused panel in new workspace")
-            return
-        }
+        let initialPanelId = try XCTUnwrap(workspace.focusedPanelId)
 
         workspace.setPanelCustomTitle(panelId: initialPanelId, title: "Initial custom title")
         workspace.setPanelPinned(panelId: initialPanelId, pinned: true)
 
-        guard let splitPanel = workspace.newTerminalSplit(from: initialPanelId, orientation: .horizontal) else {
-            XCTFail("Expected split panel to be created")
-            return
-        }
+        let splitPanel = try XCTUnwrap(
+            workspace.newTerminalSplit(from: initialPanelId, orientation: .horizontal)
+        )
 
         workspace.setPanelCustomTitle(panelId: splitPanel.id, title: "Split custom title")
         workspace.setPanelPinned(panelId: splitPanel.id, pinned: true)
         workspace.markPanelUnread(initialPanelId)
+        workspace.agentListeningPorts = [4200]
+        workspace.recomputeListeningPorts()
 
         XCTAssertFalse(workspace.panels.isEmpty)
         XCTAssertFalse(workspace.panelTitles.isEmpty)
@@ -4485,6 +4501,8 @@ final class WorkspaceTeardownTests: XCTestCase {
         XCTAssertTrue(workspace.panelCustomTitles.isEmpty)
         XCTAssertTrue(workspace.pinnedPanelIds.isEmpty)
         XCTAssertTrue(workspace.manualUnreadPanelIds.isEmpty)
+        XCTAssertTrue(workspace.agentListeningPorts.isEmpty)
+        XCTAssertFalse(workspace.listeningPorts.contains(4200))
     }
 
     func testDisabledPortalRenderingDoesNotRestoreTerminalVisibility() throws {
@@ -4912,6 +4930,78 @@ final class WorkspaceTerminalFocusRecoveryTests: XCTestCase {
 
 @MainActor
 final class WorkspaceSidebarExtensionBrowserSurfaceTests: XCTestCase {
+    func testCloudVMLoadingWorkspaceStartsWithoutTerminalAndDoesNotPersist() {
+        let manager = TabManager()
+        let workspace = manager.addWorkspace(
+            title: "Cloud VM",
+            initialSurface: .cloudVMLoading,
+            inheritWorkingDirectory: false,
+            autoWelcomeIfNeeded: false
+        )
+
+        guard let focusedPanelId = workspace.focusedPanelId,
+              let loadingPanel = workspace.panels[focusedPanelId] as? CloudVMLoadingPanel else {
+            XCTFail("Expected initial Cloud VM loading panel")
+            return
+        }
+
+        XCTAssertEqual(loadingPanel.panelType, .cloudVMLoading)
+        XCTAssertNil(workspace.focusedTerminalPanel)
+        XCTAssertTrue(workspace.sessionSnapshot(includeScrollback: false).panels.isEmpty)
+    }
+
+    func testCloudVMLoadingSurfaceSwapsToTerminalInPlace() throws {
+        let manager = TabManager()
+        let workspace = manager.addWorkspace(
+            title: "Cloud VM",
+            initialSurface: .cloudVMLoading,
+            inheritWorkingDirectory: false,
+            autoWelcomeIfNeeded: false
+        )
+
+        let loadingPanelId = try XCTUnwrap(workspace.focusedPanelId)
+        let loadingSurfaceId = try XCTUnwrap(workspace.surfaceIdFromPanelId(loadingPanelId))
+        let stableSurfaceId = try XCTUnwrap(workspace.panels[loadingPanelId]).stableSurfaceId
+
+        let command = "cmux vm-pty-connect --config /tmp/cmux.json --id vm_123"
+        let terminal = workspace.replaceCloudVMLoadingSurfaceWithTerminal(
+            workspaceId: workspace.id,
+            initialCommand: command,
+            focus: true
+        )
+
+        XCTAssertEqual(terminal?.id, loadingPanelId)
+        XCTAssertEqual(workspace.panels[loadingPanelId]?.panelType, .terminal)
+        XCTAssertEqual(workspace.surfaceIdFromPanelId(loadingPanelId), loadingSurfaceId)
+        XCTAssertEqual(terminal?.stableSurfaceId, stableSurfaceId)
+        XCTAssertEqual(workspace.focusedTerminalPanel?.id, loadingPanelId)
+        XCTAssertEqual(terminal?.surface.initialCommand, command)
+    }
+
+    func testCloudVMLoadingFailureSummarizesRetrySpam() {
+        let panel = CloudVMLoadingPanel(
+            workspaceId: UUID(),
+            startedAt: Date(timeIntervalSinceNow: -42)
+        )
+        panel.showFailure("""
+        Created Cloud VM in066h50tkjqapx042qn
+        \u{001B}[2K[cmux] Waiting for the Cloud VM service. Retrying in 2s (attempt 1/120).
+        \u{001B}[2K[cmux] Waiting for the Cloud VM service. Retrying in 2s (attempt 2/120).
+        \u{001B}[2K[cmux] Waiting for the Cloud VM service. Retrying in 2s (attempt 3/120).
+        """)
+
+        guard case .failed(let message, let elapsedSeconds) = panel.phase else {
+            XCTFail("Expected failed loading panel")
+            return
+        }
+        XCTAssertTrue(message.contains("could not create a VM yet"), message)
+        XCTAssertTrue(message.contains("same VM"), message)
+        XCTAssertEqual(elapsedSeconds, 42)
+        XCTAssertFalse(message.contains("[cmux]"))
+        XCTAssertFalse(message.contains("[2K"))
+        XCTAssertFalse(message.contains("in066h50"))
+    }
+
     func testCreatesExtensionBrowserTabInFocusedPane() {
         let manager = TabManager()
         guard let workspace = manager.selectedWorkspace,
@@ -5890,7 +5980,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(forkPanel.requestedWorkingDirectory, "/tmp/workspace fork repo")
         XCTAssertEqual(
             forkPanel.surface.initialInput,
-            "{ cd -- '/tmp/workspace fork repo' 2>/dev/null || [ ! -d '/tmp/workspace fork repo' ]; } && '/Users/example/.bun/bin/codex' 'fork' '019dad34-d218-7943-b81a-eddac5c87951'\n"
+            "cd -- '/tmp/workspace fork repo' 2>/dev/null || [ ! -d '/tmp/workspace fork repo' ] && '/Users/example/.bun/bin/codex' 'fork' '019dad34-d218-7943-b81a-eddac5c87951'\n"
         )
     }
 
@@ -5991,7 +6081,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(workspace.panelDirectories[forkPanel.id], "/Users/cmux/fallback repo")
         XCTAssertEqual(
             forkPanel.surface.initialInput,
-            "{ cd -- '/Users/cmux/fallback repo' 2>/dev/null || [ ! -d '/Users/cmux/fallback repo' ]; } && '/Users/example/.bun/bin/codex' 'fork' '019dad34-d218-7943-b81a-eddac5c87951'\n"
+            "cd -- '/Users/cmux/fallback repo' 2>/dev/null || [ ! -d '/Users/cmux/fallback repo' ] && '/Users/example/.bun/bin/codex' 'fork' '019dad34-d218-7943-b81a-eddac5c87951'\n"
         )
     }
 
@@ -6214,7 +6304,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(launch.initialTerminalCommand, "ssh -tt cmux-macmini")
         XCTAssertEqual(
             launch.initialTerminalInput,
-            "{ cd -- '/Users/cmux/fallback repo' 2>/dev/null || [ ! -d '/Users/cmux/fallback repo' ]; } && '/Users/example/.bun/bin/codex' 'fork' '019dad34-d218-7943-b81a-eddac5c87951'\n"
+            "cd -- '/Users/cmux/fallback repo' 2>/dev/null || [ ! -d '/Users/cmux/fallback repo' ] && '/Users/example/.bun/bin/codex' 'fork' '019dad34-d218-7943-b81a-eddac5c87951'\n"
         )
     }
 
@@ -6251,7 +6341,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertNil(launch.remoteConfiguration)
         XCTAssertEqual(
             launch.initialTerminalInput,
-            "{ cd -- '/tmp/local fork repo' 2>/dev/null || [ ! -d '/tmp/local fork repo' ]; } && '/Users/example/.bun/bin/codex' 'fork' '019dad34-d218-7943-b81a-eddac5c87951'\n"
+            "cd -- '/tmp/local fork repo' 2>/dev/null || [ ! -d '/tmp/local fork repo' ] && '/Users/example/.bun/bin/codex' 'fork' '019dad34-d218-7943-b81a-eddac5c87951'\n"
         )
     }
 
@@ -6738,7 +6828,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelDirectory(panelId: firstPanelId, directory: liveDirectory)
+        workspace.updateRemotePanelDirectory(panelId: firstPanelId, directory: liveDirectory)
 
         let orderedPanelIds = workspace.sidebarOrderedPanelIds()
         XCTAssertEqual(orderedPanelIds, [firstPanelId, requestedPanel.id])
@@ -6750,6 +6840,39 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(
             workspace.sidebarBranchDirectoryEntriesInDisplayOrder(orderedPanelIds: orderedPanelIds).map(\.directory),
             [liveDirectory]
+        )
+    }
+
+    func testSidebarDirectoryDisplayLabelUpgradesSharedRowWhileFilesystemVariantKeepsPath() {
+        let workspace = Workspace()
+        guard let firstPanelId = workspace.focusedPanelId,
+              let paneId = workspace.paneId(forPanelId: firstPanelId),
+              let secondPanel = workspace.newTerminalSurface(inPane: paneId, focus: false) else {
+            XCTFail("Expected panels for display-label ordering test")
+            return
+        }
+
+        let sharedDirectory = "/tmp/cmux-display-label-shared"
+        workspace.updatePanelDirectory(panelId: firstPanelId, directory: sharedDirectory)
+        workspace.updatePanelDirectory(
+            panelId: secondPanel.id,
+            directory: sharedDirectory,
+            displayLabel: "Shared  main"
+        )
+
+        let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+        XCTAssertEqual(orderedPanelIds, [firstPanelId, secondPanel.id])
+        XCTAssertEqual(
+            workspace.sidebarDirectoriesInDisplayOrder(orderedPanelIds: orderedPanelIds),
+            ["Shared  main"]
+        )
+        XCTAssertEqual(
+            workspace.sidebarDisplayedDirectoriesInDisplayOrder(orderedPanelIds: orderedPanelIds),
+            [Workspace.SidebarDisplayedDirectory(text: "Shared  main", isDisplayLabel: true)]
+        )
+        XCTAssertEqual(
+            workspace.sidebarFilesystemDirectoriesInDisplayOrder(orderedPanelIds: orderedPanelIds),
+            [sharedDirectory]
         )
     }
 

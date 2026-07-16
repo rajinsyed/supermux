@@ -77,14 +77,42 @@ def tracked_package_manifests(*, include_allowed_vendor: bool) -> dict[str, Path
     return manifests
 
 
-def package_graph(manifests: dict[str, Path]) -> dict[str, tuple[bool, list[str]]]:
+def tracked_package_manifests_at_ref(
+    ref: str,
+    *,
+    include_allowed_vendor: bool,
+) -> dict[str, Path]:
+    manifests: dict[str, Path] = {}
+    for manifest in git_stdout("ls-tree", "-r", "--name-only", ref).splitlines():
+        if Path(manifest).name != "Package.swift":
+            continue
+        if has_skipped_part(manifest):
+            continue
+        if not include_allowed_vendor and is_allowed_vendor_path(manifest):
+            continue
+        path = Path(manifest)
+        manifests[path.parent.as_posix()] = path
+    return manifests
+
+
+def package_graph(
+    manifests: dict[str, Path],
+    *,
+    ref: str | None = None,
+) -> dict[str, tuple[bool, list[str]]]:
     root_by_resolved_path = {
         manifest.parent.resolve(): root for root, manifest in manifests.items()
     }
     graph: dict[str, tuple[bool, list[str]]] = {}
 
     for root, manifest in manifests.items():
-        text = manifest.read_text(encoding="utf-8")
+        text = (
+            file_text_at(ref, manifest.as_posix())
+            if ref is not None
+            else manifest.read_text(encoding="utf-8")
+        )
+        if not text:
+            continue
         path_dependencies: list[str] = []
         has_url_dependency = False
         for dependency in PACKAGE_DEPENDENCY_RE.findall(text):
@@ -337,7 +365,13 @@ def main() -> int:
     changed_dependency_roots: set[str] = set()
 
     if merge_base is not None:
-        remote_memo: dict[str, bool] = {}
+        current_remote_memo: dict[str, bool] = {}
+        previous_manifests = tracked_package_manifests_at_ref(
+            merge_base,
+            include_allowed_vendor=True,
+        )
+        previous_graph = package_graph(previous_manifests, ref=merge_base)
+        previous_remote_memo: dict[str, bool] = {}
         for root, manifest in all_manifests.items():
             if manifest.as_posix() not in changed_files:
                 continue
@@ -359,22 +393,33 @@ def main() -> int:
             # skip only when BOTH the recorded (url) calls are unchanged AND
             # the set of remote-pin-bearing packages reachable via the root's
             # path deps is unchanged. Pinned (url) changes still demand churn.
+            # Upstream's coarser remote-dependency gate below stays as the
+            # fallback for everything this precise skip does not cover.
             if (
                 lockfile_recorded_dependency_calls(current_calls)
                 == lockfile_recorded_dependency_calls(previous_calls)
                 and path_dependency_remote_pin_roots(
-                    current_calls, manifest, all_manifests, graph, remote_memo
+                    current_calls, manifest, all_manifests, graph, current_remote_memo
                 )
                 == path_dependency_remote_pin_roots(
-                    previous_calls, manifest, all_manifests, graph, remote_memo
+                    previous_calls, manifest, all_manifests, graph, current_remote_memo
                 )
             ):
                 continue
             # SUPERMUX:end fix-resolved-policy-path-deps
+            # Local path-only dependency edits do not always change the resolved
+            # external pins. Require a matching Package.resolved diff only when
+            # the edited manifest's graph currently has, previously had, or
+            # directly changes a remote dependency.
             if (
-                root in cmux_manifests
-                or dependency_calls_include_url(current_calls + previous_calls)
-                or has_remote_dependency(root, graph, remote_memo, set())
+                dependency_calls_include_url(current_calls + previous_calls)
+                or has_remote_dependency(root, graph, current_remote_memo, set())
+                or has_remote_dependency(
+                    root,
+                    previous_graph,
+                    previous_remote_memo,
+                    set(),
+                )
             ):
                 changed_dependency_roots.add(root)
 
