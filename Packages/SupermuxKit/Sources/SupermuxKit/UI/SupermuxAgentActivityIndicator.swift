@@ -55,8 +55,9 @@ public struct SupermuxAgentActivityIndicator: View {
     }
 }
 
-/// Shared activity colors, tuned to read well on the sidebar's dark chrome and
-/// matched to superset's amber/red/green status palette.
+/// Shared activity colors, tuned to read well on the sidebar's dark chrome:
+/// Tailwind's stock amber-500 / red-500 / green-500 (MIT), the same de-facto
+/// standard status hues superset uses.
 enum SupermuxActivityPalette {
     /// amber-500 — agent working.
     static let working = Color(red: 0.96, green: 0.62, blue: 0.04)
@@ -66,8 +67,9 @@ enum SupermuxActivityPalette {
     static let ready = Color(red: 0.13, green: 0.77, blue: 0.37)
 }
 
-/// An amber braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) ported from piggycode's
-/// `AsciiSpinner`.
+/// An amber braille spinner using the standard cli-spinners "dots" frame
+/// sequence (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, MIT) — the same ubiquitous glyph cycle shown by
+/// ora, piggycode's `AsciiSpinner`, and countless CLI tools.
 ///
 /// CPU-safety (this is a terminal app where main-thread time is precious):
 /// the animation is a Core Animation `contents` keyframe loop on a plain

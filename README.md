@@ -41,9 +41,9 @@ There are tools that own the outer loop (worktree managers like Superset), but t
 }
 ```
 
-`.superset/config.json` is read too, so repos already set up for Superset just work.
+`.superset/config.json` is read too, so repos already set up for Superset just work. One thing to be clear about: these are shell commands, and setup runs automatically when you create a worktree — so treat a repo's config the way you'd treat its install scripts, and read it before registering a repo you don't trust.
 
-**AI, kept small.** One Vercel AI Gateway key (Settings → Automation) is all the AI there is: it names branches and writes commit messages. The key sits in a private `0600` file, never in `cmux.json`, and is only ever sent to the gateway you configured — branch naming sends your workspace description as the prompt, commit messages send the staged diff. Without a key, branch names fall back to generated ones and you write your own commit messages; nothing else changes.
+**AI, kept small.** One Vercel AI Gateway key (Settings → Automation) is all the AI there is: it names branches and writes commit messages. The key sits in a private `0600` file, never in `cmux.json`, and is only ever sent to Vercel's AI Gateway — branch naming sends your workspace description as the prompt, commit messages send the staged diff. Without a key, branch names fall back to generated ones and you write your own commit messages; nothing else changes.
 
 **iOS companion.** The upstream iOS app, extended. Browse projects, create and remove worktrees, stage/commit/push from your phone, kick off run actions, manage files. The Mac stays the source of truth; pair a fork phone with a stock cmux Mac and it behaves exactly like the stock app.
 
@@ -77,7 +77,7 @@ If you maintain a long-lived fork of anything, this pattern is worth stealing.
 
 ## Everything else is cmux
 
-The credit goes to [Manaflow](https://github.com/manaflow-ai): the terminal itself, notifications, the in-app browser, SSH workspaces, session restore, the CLI and socket API, and the iOS app this fork extends. Read the [cmux README](https://github.com/manaflow-ai/cmux#readme) and the [docs](https://cmux.com/docs/getting-started) for all of that. The fork tracks upstream `main` closely.
+The credit goes to [Manaflow](https://github.com/manaflow-ai): the terminal itself, notifications, the in-app browser, SSH workspaces, session restore, the CLI and socket API, and the iOS app this fork extends. Read the [cmux README](https://github.com/manaflow-ai/cmux#readme) and the [docs](https://cmux.com/docs/getting-started) for all of that. The fork exists to stay mergeable with upstream, not to diverge from it.
 
 This is a personal fork. Issues and PRs for fork features are welcome here; anything about cmux itself belongs upstream at [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux/issues).
 

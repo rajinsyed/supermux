@@ -5,7 +5,9 @@
 > open issues and PRs against [rajinsyed/supermux](https://github.com/rajinsyed/supermux) and read
 > [SUPERMUX.md](SUPERMUX.md) first — it is the fork's contract (where code goes, how upstream
 > merges stay cheap). Contributions to cmux itself belong at
-> [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux).
+> [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux). The license-grant language at the
+> bottom of this guide is upstream's and applies to contributions made to upstream cmux;
+> contributions to this fork are accepted under GPL-3.0-or-later, nothing more.
 <!-- SUPERMUX:end contributing-fork-note -->
 
 ## Prerequisites

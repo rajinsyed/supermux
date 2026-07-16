@@ -1,6 +1,8 @@
 public import SwiftUI
 
-/// The piggycode-style 12-color palette for project accents.
+/// The 12-color palette for project accents: Tailwind CSS's stock 500-series
+/// hues (MIT), the same de-facto standard palette piggycode picks project
+/// colors from.
 public struct SupermuxProjectColor: Identifiable, Hashable, Sendable {
     /// Palette entry name shown in pickers, tooltips, and VoiceOver labels.
     /// Localized at declaration via `String(localized:)` (the palette is a
@@ -12,7 +14,7 @@ public struct SupermuxProjectColor: Identifiable, Hashable, Sendable {
 
     public var id: String { hex }
 
-    /// The standard palette, mirroring piggycode's project colors.
+    /// The standard palette — Tailwind's `-500` hex values.
     public static let palette: [SupermuxProjectColor] = [
         SupermuxProjectColor(
             name: String(localized: "supermux.projectColor.red", defaultValue: "Red"),
