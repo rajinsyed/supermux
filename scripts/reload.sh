@@ -687,6 +687,14 @@ fi
 if [[ "${CMUX_SKIP_ZIG_BUILD:-}" == "1" ]]; then
   XCODEBUILD_ARGS+=(CMUX_SKIP_ZIG_BUILD=1)
 fi
+# SUPERMUX:begin ci-exclude-icon-composer
+# Headless CI builds set CMUX_EXCLUDE_ICON_COMPOSER=1 to skip the fork's Icon
+# Composer AppIcon*.icon files: ibtoold deterministically crashes rendering
+# them on some CI VMs, and the app icon is cosmetic in CI.
+if [[ "${CMUX_EXCLUDE_ICON_COMPOSER:-}" == "1" ]]; then
+  XCODEBUILD_ARGS+=('EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon')
+fi
+# SUPERMUX:end ci-exclude-icon-composer
 if [[ "$SWIFT_FRONTEND_WORKAROUND" -eq 1 || "${CMUX_SWIFT_FRONTEND_WORKAROUND:-}" == "1" || "${CMUX_SWIFT_DISABLE_GLOBAL_ISEL:-}" == "1" ]]; then
   SWIFT_FRONTEND_WORKAROUND_EFFECTIVE=1
   echo "==> Swift frontend workaround enabled for this reload"

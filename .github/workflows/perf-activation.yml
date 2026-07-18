@@ -205,11 +205,15 @@ jobs:
         run: |
           set -euo pipefail
           # SUPERMUX:begin actool-crash-retry
-          # (upstream: single reload.sh invocation) ibtoold intermittently
-          # crashes rendering the fork's Icon Composer AppIcon*.icon files on
-          # CI VMs; retry once when that exact signature appears.
+          # (upstream: single reload.sh invocation) ibtoold crashes rendering
+          # the fork's Icon Composer AppIcon*.icon files on some CI VMs —
+          # deterministically on affected machines — so this headless build
+          # excludes them via CMUX_EXCLUDE_ICON_COMPOSER (see reload.sh's
+          # ci-exclude-icon-composer fence); the retry remains as a backstop
+          # for other asset-catalog flakes.
           for attempt in 1 2; do
             if CMUX_SKIP_ZIG_BUILD=1 \
+              CMUX_EXCLUDE_ICON_COMPOSER=1 \
               CMUX_SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages" \
               CMUX_DISABLE_AUTOMATIC_PACKAGE_RESOLUTION=1 \
               ./scripts/reload.sh --tag "$PERF_TAG" 2>&1 | tee /tmp/cmux-perf-build.log; then

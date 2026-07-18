@@ -1475,15 +1475,18 @@ jobs:
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
           # SUPERMUX:begin actool-crash-retry
-          # (upstream: single xcodebuild invocation) ibtoold intermittently
-          # crashes rendering the fork's Icon Composer AppIcon*.icon files on
-          # CI VMs; retry once when that exact signature appears.
+          # (upstream: single xcodebuild invocation) ibtoold crashes rendering
+          # the fork's Icon Composer AppIcon*.icon files on some CI VMs —
+          # deterministically on affected machines — so headless CI builds
+          # exclude them (the app icon is cosmetic here); the retry remains as
+          # a backstop for other asset-catalog flakes.
           for attempt in 1 2; do
             if xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \
               -derivedDataPath "$CMUX_DERIVED_DATA_PATH" \
               -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
               -disableAutomaticPackageResolution \
-              -destination "platform=macOS" build-for-testing 2>&1 | tee /tmp/cmux-build-output.txt; then
+              -destination "platform=macOS" build-for-testing \
+              'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon' 2>&1 | tee /tmp/cmux-build-output.txt; then
               break
             fi
             if [ "$attempt" -eq 2 ] || ! grep -Fq 'Command CompileAssetCatalogVariant failed' /tmp/cmux-build-output.txt; then
@@ -1684,7 +1687,13 @@ jobs:
     # restored SwiftPM cache. Default to a clean paid macOS 26 runner instead
     # of the generic persistent macOS 26 pool.
     runs-on: ${{ vars.MACOS_RUNNER_26_RELEASE || 'blacksmith-6vcpu-macos-26' }}
-    timeout-minutes: 60
+    # SUPERMUX:begin release-build-timeout
+    # (upstream: 60) A cold universal Release build exceeds 60 minutes on the
+    # fork's runner pool, and a job killed at the cap never seeds the
+    # DerivedData cache — so the 60-minute cap could never converge. The first
+    # slow run under the raised cap seeds the cache; later runs fit easily.
+    timeout-minutes: 120
+    # SUPERMUX:end release-build-timeout
     env:
       CMUX_CI_XCODE_APP: ${{ vars.CMUX_CI_XCODE_APP_MACOS_26 }}
       CMUX_CI_REQUIRED_MACOS_SDK_MAJOR: "26"

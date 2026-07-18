@@ -62,8 +62,14 @@ while [ "$attempt" -le "$max_attempts" ]; do
   # a clean slate.
   kill_stale_app_host
   set +e
+  # SUPERMUX:begin ci-exclude-icon-composer
+  # (upstream: no trailing build setting) ibtoold deterministically crashes
+  # rendering the fork's Icon Composer AppIcon*.icon files on some CI VMs, so
+  # headless CI builds skip them entirely — the app icon is cosmetic here.
   CMUX_XCODEBUILD_NONINTERACTIVE_LOG_PATH="$log_path" \
-    scripts/ci/xcodebuild_noninteractive.py xcodebuild "$@"
+    scripts/ci/xcodebuild_noninteractive.py xcodebuild "$@" \
+    'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'
+  # SUPERMUX:end ci-exclude-icon-composer
   status=$?
   set -e
 
