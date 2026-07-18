@@ -1474,11 +1474,24 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \
-            -derivedDataPath "$CMUX_DERIVED_DATA_PATH" \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -disableAutomaticPackageResolution \
-            -destination "platform=macOS" build-for-testing 2>&1 | tee /tmp/cmux-build-output.txt
+          # SUPERMUX:begin actool-crash-retry
+          # (upstream: single xcodebuild invocation) ibtoold intermittently
+          # crashes rendering the fork's Icon Composer AppIcon*.icon files on
+          # CI VMs; retry once when that exact signature appears.
+          for attempt in 1 2; do
+            if xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \
+              -derivedDataPath "$CMUX_DERIVED_DATA_PATH" \
+              -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+              -disableAutomaticPackageResolution \
+              -destination "platform=macOS" build-for-testing 2>&1 | tee /tmp/cmux-build-output.txt; then
+              break
+            fi
+            if [ "$attempt" -eq 2 ] || ! grep -Fq 'Command CompileAssetCatalogVariant failed' /tmp/cmux-build-output.txt; then
+              exit 1
+            fi
+            echo "Retrying build after asset catalog compiler crash (attempt $attempt/2)" >&2
+          done
+          # SUPERMUX:end actool-crash-retry
 
       - name: Validate Swift warning budget
         run: python3 scripts/swift_warning_budget.py --log /tmp/cmux-build-output.txt

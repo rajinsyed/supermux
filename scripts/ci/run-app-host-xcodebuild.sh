@@ -89,6 +89,14 @@ while [ "$attempt" -le "$max_attempts" ]; do
       retry_reason="testmanagerd connection invalidated"
     elif grep -Fq "Couldn't communicate with a helper application" "$log_path"; then
       retry_reason="test helper communication failure"
+    # SUPERMUX:begin actool-crash-retry
+    # ibtoold intermittently crashes rendering the fork's Icon Composer
+    # AppIcon*.icon files on CI VMs (upstream has no .icon files); the crash
+    # is environment-flaky — the same commit builds clean locally and on
+    # sibling shards — so it earns a retry like the other known flakes.
+    elif grep -Fq 'Command CompileAssetCatalogVariant failed' "$log_path"; then
+      retry_reason="asset catalog compiler crash"
+    # SUPERMUX:end actool-crash-retry
     fi
 
     if [ -n "$retry_reason" ] && [ "$attempt" -lt "$max_attempts" ]; then
