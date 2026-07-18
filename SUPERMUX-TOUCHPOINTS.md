@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges, Close Tabs Below/Above/Other, and Move Up/Down exclude project-hidden workspaces (via a fenced `TabItemView.projectHiddenWorkspaceIds()` helper computed only in event handlers and the on-demand context-menu builder), the four Move/Close menu items disable on visible-neighbor availability instead of raw full-list indices (so they are never enabled no-ops when only hidden rows lie in that direction), and a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`; renders the agent-activity indicator on flat-list workspace rows; gives the flat-list selection the faint accent tint used by nested project rows (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
-| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17) |
+| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width), with a third fallback putting the icon-only row in a horizontal `ScrollView` so mode buttons scroll instead of clipping at extreme narrowness; `right-sidebar-changes-mode-focushost` mounts `SupermuxChangesFocusHostBridge`/`SupermuxChangesFocusHostView` as the changes panel's background, registering a geometry-based focus host with the window's `MainWindowFocusController` |
@@ -177,30 +177,44 @@ and make it the row's *only* agent-status signal:
    `SidebarWorkspaceSnapshotBuilder.Snapshot` (it is `Equatable`-synthesized, so the row
    re-renders when activity changes).
 3. In `makeWorkspaceSnapshot()`, resolve `let supermuxActivity =
-   SupermuxWorkspaceActivityResolver.activity(for: tab)` once, pass it as the snapshot's
+   SupermuxWorkspaceActivityResolver.activity(for: tab)` (the aggregate, for the indicator) and
+   `let supermuxActivityByAgentKey = SupermuxWorkspaceActivityResolver.activityByAgentKey(for: tab)`
+   (per agent key, for the filter) once each, pass the aggregate as the snapshot's
    `supermuxActivity:`, and route `metadataEntries` through
    `SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(from:duplicatedBy:)`
    (`Sources/Supermux/SupermuxWorkspaceActivityResolver.swift`) so agent-published lifecycle
-   rows (the blue "⚡ Running" `set_status` line) don't duplicate the indicator. The filter is
-   shape-matched, not key-only: it drops an agent-keyed row only when its icon matches the
-   resolved state (`bolt.fill`↔working, `pause.circle.fill`↔ready, `bell.fill`↔needsInput);
-   agent error rows (`exclamationmark.triangle.fill`), status/lifecycle mismatches, and
-   user-defined `set_status` rows keep rendering (covered by
-   `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift`).
+   rows (the blue "⚡ Running" `set_status` line) don't duplicate the indicator. The resolver
+   ignores the reserved `manual`/`manual:<id>` workspace-loading keys (they drive cmux's gray
+   spinner, not agent status). The filter matches each row against *its own agent's* resolved
+   state, not the workspace aggregate — one agent's lifecycle never drops another agent's row —
+   and only when the icon shape matches (`bolt.fill`↔working, `pause.circle.fill`↔ready,
+   `bell.fill`↔needsInput) and the row carries no URL; agent error rows
+   (`exclamationmark.triangle.fill`), status/lifecycle mismatches, rows with click-through
+   URLs, rows for agents with no tracked lifecycle, and user-defined `set_status` rows keep
+   rendering (covered by `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift`).
 4. In `TabItemView`'s snapshot-shaping `let`s, suppress `showsLoadingSpinner` (cmux's gray
-   braille spinner) while `supermuxActivity.isVisible`, and compute
-   `supermuxIndicatorInTrailingSlot = (trailingStatusActive || canCloseWorkspace) && !badgeOnTrailing`.
+   braille spinner) while `supermuxActivity.isVisible` (manual loaders keep the gray spinner
+   because the resolver ignores manual keys), and compute
+   `supermuxIndicatorInTrailingSlot = workspaceSnapshot.supermuxActivity.isVisible
+   && canCloseWorkspace && !badgeOnTrailing && !spinnerOnTrailing`.
 5. In the row's title `HStack`: when `supermuxIndicatorInTrailingSlot`, render
-   `SupermuxAgentActivityIndicator(activity:size:)` as an `.overlay` on
-   `SidebarWorkspaceTrailingStatusSlot` (hidden while `showCloseButton`, hit-testing off) so it
-   occupies the reserved close-button slot instead of leaving an empty gutter at the row edge;
-   otherwise render it inline after `Text(workspaceSnapshot.title)` as a fallback (sole
-   workspace with no close slot, or unread badge occupying the slot).
-The indicator is reactive via the existing workspace observation (it changes with
-`statusEntries`/`progress`, which the snapshot already observes). If upstream restructures the
-snapshot/row, the requirements are: derive activity per workspace, render the indicator once on
-the row's trailing edge without trailing dead space, and keep cmux's own spinner and the
-agent-status metadata rows suppressed while it shows.
+   `SupermuxAgentActivityIndicator(activity:size:)` (size 6·scale, matching the nested rows) as
+   an `.overlay` on `SidebarWorkspaceTrailingStatusSlot` (faded to opacity 0 while
+   `showCloseButton` — kept mounted so hover never remounts the AppKit spinner — hit-testing
+   off) so it occupies the reserved close-button slot instead of leaving an empty gutter at the
+   row edge; otherwise render it inline after `Text(workspaceSnapshot.title)` as a fallback
+   (sole workspace with no close slot, or unread badge occupying the slot).
+The indicator is reactive via upstream's agent-runtime observation: every
+`agentLifecycleStatesByPanelId` mutation routes through
+`WorkspaceSidebarAgentRuntimeObservationModel.setAgentLifecycleStatesByPanelId` →
+`notifyChanged()`, and the row's existing `.sidebarAgentRuntimeObservation(id:model:)` hook
+rebuilds the snapshot on each change — so lifecycle-only mutations (`set_agent_lifecycle` with
+no `set_status`, hibernation's lifecycle clears) re-render the row even though they touch
+neither `statusEntries` nor `progress`. (`SupermuxWorkspaceLifecycleRelay` serves the projects
+mount and mobile observers, not this row.) If upstream restructures the snapshot/row, the
+requirements are: derive activity per workspace, render the indicator once on the row's
+trailing edge without trailing dead space, and keep cmux's own spinner and the agent-status
+metadata rows suppressed while it shows.
 
 **`sidebar-selection-faint`:** two computed properties on `SidebarWorkspaceRow` are overridden so
 the flat-list selection highlight matches the nested project-workspace rows
