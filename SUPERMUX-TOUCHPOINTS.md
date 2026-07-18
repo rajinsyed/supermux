@@ -132,6 +132,8 @@ Rules for adding a touchpoint:
 | 118 | `README.md` | `readme-fork-rewrite` | Wholesale replaces upstream's README with the supermux one (fork identity, features, build-from-source, upstream credit). The fence wraps the whole file. The `README.<lang>.md` translations stay upstream's apart from the #120 banner |
 | 119 | `CONTRIBUTING.md` | `contributing-fork-note` | One fenced blockquote after the H1: upstream's guide is kept for reference; fork issues/PRs go to rajinsyed/supermux and SUPERMUX.md is the fork contract |
 | 120 | `README.ja.md` | `readme-translation-banner` | Same one-line fenced banner (localized per file) prepended to all 20 `README.<lang>.md` translations: "this is the upstream cmux README; the fork's additions are in README.md". Only the `ja` file is registered here; the fence id is identical in all 20 |
+| 121 | `.github/workflows/ci.yml` | `budget-fork-caps` | In the "Validate Swift file length budget" step, a fenced `FORK_BUDGET_FLAGS="--hard-cap 40000 --incidental-growth 100"` definition plus an unfenced ` $FORK_BUDGET_FLAGS` suffix on the final line of each of the four `swift_file_length_budget.py` invocations (mid-command shell continuations cannot carry fence comments). Upstream's per-PR growth caps (hard cap 900 / incidental 25) can never pass for fenced growth in upstream giants like `Sources/ContentView.swift`; the checked-in tsv budget (#4) stays the binding ratchet, so the fork widens only the per-PR caps. Re-apply by hand after a merge: restore the fenced block after `set -euo pipefail` and re-append the suffix to all four invocations |
+| 122 | `.github/test-determinism-allowlist.txt` | `unfenced` | Three grandfathered entries for supermux-owned tests the determinism gate flags by heuristic: `SupermuxMobileChangesStoreSyncTests.swift` (assert-on-duration — static assertion on a configured RPC timeout, not a measured duration) and `SupermuxMobileObserversTests.swift` + `SupermuxMobileRunObserverTests.swift` (sleep-then-assert — prove-silence tests must outwait the poke throttle window). Data file like #4; re-add the three lines if a merge drops them |
 ## How to re-apply
 
 ### 2. `Sources/ContentView.swift` — `sidebar-projects-section` + `sidebar-hide-project-workspaces`
@@ -360,7 +362,13 @@ Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `89
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 
 Several rows carry supermux's fenced growth over upstream. Each was raised by exactly the
-number of fenced lines added to that file — never to absorb unrelated debt:
+number of fenced lines added to that file — never to absorb unrelated debt. Fork-owned files
+under `Sources/Supermux/` that cross the 500-line tracking threshold get plain rows at their
+actual length (currently `Sources/Supermux/SupermuxAppGlue.swift` at 536). When a file shrinks,
+ratchet its row back down to the actual count (done for `Sources/ContentView.swift`,
+16252→16123, after the working-only indicator simplification). The per-PR growth caps the
+checker layers on top of these rows are widened for the fork by touchpoint #121
+(`budget-fork-caps` in `ci.yml`):
 
 | Row | Δ | Reason |
 |-----|---|--------|

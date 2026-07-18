@@ -243,6 +243,16 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
+          # SUPERMUX:begin budget-fork-caps
+          # (upstream: no extra flags) Supermux growth lands inside SUPERMUX
+          # fences in upstream giants (e.g. Sources/ContentView.swift) that the
+          # fork cannot split, so upstream's per-PR growth caps (hard cap 900,
+          # incidental 25) can never pass for fenced work. The checked-in tsv
+          # budget stays the binding ratchet; these overrides only widen the
+          # per-PR caps. $FORK_BUDGET_FLAGS is appended (unquoted, word-split)
+          # to every invocation below.
+          FORK_BUDGET_FLAGS="--hard-cap 40000 --incidental-growth 100"
+          # SUPERMUX:end budget-fork-caps
           if [ "$EVENT_NAME" = "pull_request" ]; then
             BASE_REF="$BASE_SHA"
             if MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"; then
@@ -252,18 +262,18 @@ jobs:
               --budget .github/swift-file-length-budget.tsv \
               --base-ref "$BASE_REF" \
               --merge-ref "origin/${BASE_BRANCH:-main}" \
-              --merge-head "$HEAD_SHA"
+              --merge-head "$HEAD_SHA" $FORK_BUDGET_FLAGS
           elif [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             python3 scripts/swift_file_length_budget.py \
               --budget .github/swift-file-length-budget.tsv \
-              --base-ref "$BEFORE_SHA"
+              --base-ref "$BEFORE_SHA" $FORK_BUDGET_FLAGS
           elif git rev-parse --verify --quiet origin/main >/dev/null && MERGE_BASE="$(git merge-base origin/main HEAD)"; then
             python3 scripts/swift_file_length_budget.py \
               --budget .github/swift-file-length-budget.tsv \
-              --base-ref "$MERGE_BASE"
+              --base-ref "$MERGE_BASE" $FORK_BUDGET_FLAGS
           else
             python3 scripts/swift_file_length_budget.py \
-              --budget .github/swift-file-length-budget.tsv
+              --budget .github/swift-file-length-budget.tsv $FORK_BUDGET_FLAGS
           fi
 
       - name: Validate feature flags (naming, owners, expiry, single use, no reuse)
