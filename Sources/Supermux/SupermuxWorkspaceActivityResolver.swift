@@ -1,4 +1,5 @@
 import Combine
+import CmuxSidebar
 import Foundation
 import SupermuxKit
 
@@ -25,6 +26,50 @@ enum SupermuxWorkspaceActivityResolver {
             .flatMap { $0.values }
             .map(\.rawValue)
         return SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: lifecycleRawValues)
+    }
+}
+
+/// Drops agent-published lifecycle status rows that duplicate the activity
+/// indicator from a flat sidebar row's metadata.
+///
+/// Agent hooks report routine lifecycle twice: as a textual status row
+/// (`set_status claude_code Running --icon=bolt.fill …` → the blue "⚡ Running"
+/// line) and as the per-panel lifecycle state that drives
+/// ``SupermuxAgentActivityIndicator``. Supermux renders the indicator on every
+/// workspace row and the nested project-workspace rows never show the textual
+/// row, so the flat (global) rows drop the duplicate too — one agent status
+/// signal per row, identical styling in and out of projects.
+///
+/// A row is dropped only when it is *actually* a duplicate: its key is an agent
+/// lifecycle key AND its icon shape matches the resolved indicator state
+/// (`bolt.fill`↔working, `pause.circle.fill`↔ready, `bell.fill`↔needsInput).
+/// Everything else keeps rendering — user-defined `set_status` rows, agent
+/// error rows (`exclamationmark.triangle.fill`, e.g. "Codex network error"),
+/// and status/lifecycle mismatches. Some hook paths publish only the status row
+/// without a lifecycle update (codex transcript questions/failures), so a
+/// key-only filter would silently erase the row's sole signal.
+enum SupermuxSidebarAgentStatusRows {
+    /// Returns `entries` without the agent status rows `activity` duplicates.
+    static func droppingAgentStatusRows(
+        from entries: [SidebarStatusEntry],
+        duplicatedBy activity: SupermuxWorkspaceActivity
+    ) -> [SidebarStatusEntry] {
+        entries.filter { !isDuplicate($0, of: activity) }
+    }
+
+    private static func isDuplicate(
+        _ entry: SidebarStatusEntry,
+        of activity: SupermuxWorkspaceActivity
+    ) -> Bool {
+        guard AgentHibernationLifecycleStatusKeys.isAllowed(entry.key) else { return false }
+        switch (entry.icon, activity) {
+        case ("bolt.fill", .working),
+             ("pause.circle.fill", .ready),
+             ("bell.fill", .needsInput):
+            return true
+        default:
+            return false
+        }
     }
 }
 

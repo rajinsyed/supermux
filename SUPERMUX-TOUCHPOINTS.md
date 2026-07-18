@@ -169,21 +169,38 @@ exclude project-hidden workspaces (via a fenced `TabItemView.projectHiddenWorksp
 computed only in event handlers — never in `body`), and a fenced `.onChange` strips newly
 project-hidden ids from `selectedTabIds`.
 
-**`sidebar-flatrow-activity`:** four small edits give flat-list workspace rows the same agent
-activity indicator as the nested rows (amber braille spinner / red pulsing dot / green dot):
+**`sidebar-flatrow-activity`:** small fenced edits give flat-list workspace rows the same agent
+activity indicator as the nested rows (amber braille spinner / red pulsing dot / green dot),
+and make it the row's *only* agent-status signal:
 1. `import SupermuxKit` near the top imports.
 2. A `let supermuxActivity: SupermuxWorkspaceActivity` field on
    `SidebarWorkspaceSnapshotBuilder.Snapshot` (it is `Equatable`-synthesized, so the row
    re-renders when activity changes).
-3. In `makeWorkspaceSnapshot()`, set `supermuxActivity: SupermuxWorkspaceActivityResolver.activity(for: tab)`.
-4. In the row's title `HStack`, after `Text(workspaceSnapshot.title)` (on the row's trailing
-   edge, ahead of the close button), render `SupermuxAgentActivityIndicator(activity:size:)`
-   when `supermuxActivity.isVisible` — so the status dot reads as a trailing indicator rather
-   than a leading icon.
+3. In `makeWorkspaceSnapshot()`, resolve `let supermuxActivity =
+   SupermuxWorkspaceActivityResolver.activity(for: tab)` once, pass it as the snapshot's
+   `supermuxActivity:`, and route `metadataEntries` through
+   `SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(from:duplicatedBy:)`
+   (`Sources/Supermux/SupermuxWorkspaceActivityResolver.swift`) so agent-published lifecycle
+   rows (the blue "⚡ Running" `set_status` line) don't duplicate the indicator. The filter is
+   shape-matched, not key-only: it drops an agent-keyed row only when its icon matches the
+   resolved state (`bolt.fill`↔working, `pause.circle.fill`↔ready, `bell.fill`↔needsInput);
+   agent error rows (`exclamationmark.triangle.fill`), status/lifecycle mismatches, and
+   user-defined `set_status` rows keep rendering (covered by
+   `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift`).
+4. In `TabItemView`'s snapshot-shaping `let`s, suppress `showsLoadingSpinner` (cmux's gray
+   braille spinner) while `supermuxActivity.isVisible`, and compute
+   `supermuxIndicatorInTrailingSlot = (trailingStatusActive || canCloseWorkspace) && !badgeOnTrailing`.
+5. In the row's title `HStack`: when `supermuxIndicatorInTrailingSlot`, render
+   `SupermuxAgentActivityIndicator(activity:size:)` as an `.overlay` on
+   `SidebarWorkspaceTrailingStatusSlot` (hidden while `showCloseButton`, hit-testing off) so it
+   occupies the reserved close-button slot instead of leaving an empty gutter at the row edge;
+   otherwise render it inline after `Text(workspaceSnapshot.title)` as a fallback (sole
+   workspace with no close slot, or unread badge occupying the slot).
 The indicator is reactive via the existing workspace observation (it changes with
 `statusEntries`/`progress`, which the snapshot already observes). If upstream restructures the
-snapshot/row, the requirement is just: derive activity per workspace and render the indicator
-on the row's trailing edge.
+snapshot/row, the requirements are: derive activity per workspace, render the indicator once on
+the row's trailing edge without trailing dead space, and keep cmux's own spinner and the
+agent-status metadata rows suppressed while it shows.
 
 **`sidebar-selection-faint`:** two computed properties on `SidebarWorkspaceRow` are overridden so
 the flat-list selection highlight matches the nested project-workspace rows
@@ -314,7 +331,12 @@ and `50BE0001…00A6` (`SupermuxTabManagerOpener.swift`), with build files `…0
 listed in the `Supermux` group's `children` and the `cmux` target's Sources phase, mirroring the
 rows above).
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `85`.
+The flat-row agent-status dedup filter adds one more `cmuxTests/` file under the same reserved
+prefix: file reference `50BE0001…00F7` and build file `50BE0001…00F8` for
+`SupermuxSidebarAgentStatusRowsTests.swift` (listed in the cmuxTests group's `children` and the
+`cmuxTests` target's Sources phase, mirroring the `SupermuxSidebarBranchTests.swift` rows above).
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `89`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 

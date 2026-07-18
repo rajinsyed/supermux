@@ -13516,13 +13516,26 @@ struct TabItemView: View, Equatable {
             scaledCloseButtonHitSize
         )
 
+        // SUPERMUX:begin sidebar-flatrow-activity
+        // The supermux activity indicator already conveys agent state, so
+        // suppress cmux's gray loading spinner while it is visible — one agent
+        // indicator per row, matching the nested project-workspace rows.
+        // (upstream: showsAgentActivity && activeCodingAgentCount > 0)
         let showsLoadingSpinner = showsAgentActivity && workspaceSnapshot.activeCodingAgentCount > 0
+            && !workspaceSnapshot.supermuxActivity.isVisible
+        // SUPERMUX:end sidebar-flatrow-activity
         let badgeOnLeading = unreadCount > 0 && settings.notificationBadgePosition == .leading
         let badgeOnTrailing = unreadCount > 0 && settings.notificationBadgePosition == .trailing
         let spinnerOnLeading = showsLoadingSpinner && settings.loadingSpinnerPosition == .leading
         let spinnerOnTrailing = showsLoadingSpinner && settings.loadingSpinnerPosition == .trailing
         let leadingSlotActive = badgeOnLeading || spinnerOnLeading
         let trailingStatusActive = badgeOnTrailing || spinnerOnTrailing
+        // SUPERMUX:begin sidebar-flatrow-activity
+        // The activity indicator rides inside the reserved close-button slot
+        // whenever that slot exists and isn't showing the unread badge, so no
+        // empty gutter trails it at the row's right edge.
+        let supermuxIndicatorInTrailingSlot = (trailingStatusActive || canCloseWorkspace) && !badgeOnTrailing
+        // SUPERMUX:end sidebar-flatrow-activity
         let titleRowSpacing: CGFloat = spinnerOnLeading ? 6 : 8
         let badgeFont = magnifiedFont(scaledFontSize(9), weight: .semibold)
         let spinnerTooltip = SidebarWorkspaceLoadingTooltip.text(count: workspaceSnapshot.activeCodingAgentCount)
@@ -13598,17 +13611,34 @@ struct TabItemView: View, Equatable {
                 }
 
                 // SUPERMUX:begin sidebar-flatrow-activity
-                if workspaceSnapshot.supermuxActivity.isVisible {
+                // Inline fallback for rows without a trailing slot to host the
+                // indicator (sole workspace, unread badge occupying the slot).
+                if workspaceSnapshot.supermuxActivity.isVisible, !supermuxIndicatorInTrailingSlot {
                     SupermuxAgentActivityIndicator(
                         activity: workspaceSnapshot.supermuxActivity,
                         size: scaledFontSize(7)
                     )
-                    .frame(width: scaledFontSize(13), height: scaledFontSize(13))
                 }
                 // SUPERMUX:end sidebar-flatrow-activity
 
                 if trailingStatusActive || canCloseWorkspace {
                     SidebarWorkspaceTrailingStatusSlot(showsSpinner: spinnerOnTrailing, showsBadge: badgeOnTrailing, unreadCount: unreadCount, side: scaledUnreadBadgeSize, width: scaledCloseButtonWidth, height: scaledCloseButtonHitSize, badgeFont: badgeFont, badgeFillColor: activeUnreadBadgeFillColor, badgeTextColor: activeUnreadBadgeTextColor, spinnerColor: spinnerColor, spinnerTooltip: spinnerTooltip, canCloseWorkspace: canCloseWorkspace, showsCloseButton: showCloseButton, closeButtonTooltip: closeButtonTooltip, closeButtonColor: activeSecondaryColor(0.7), closeButtonFontSize: scaledFontSize(9), closeAction: { tabManager.closeWorkspaceWithConfirmation(tab) })
+                    // SUPERMUX:begin sidebar-flatrow-activity
+                    // The activity indicator occupies the reserved close-button
+                    // slot and yields to the close button on hover, exactly
+                    // like upstream's trailing spinner/badge.
+                    .overlay {
+                        if supermuxIndicatorInTrailingSlot,
+                           workspaceSnapshot.supermuxActivity.isVisible,
+                           !showCloseButton {
+                            SupermuxAgentActivityIndicator(
+                                activity: workspaceSnapshot.supermuxActivity,
+                                size: scaledFontSize(7)
+                            )
+                            .allowsHitTesting(false)
+                        }
+                    }
+                    // SUPERMUX:end sidebar-flatrow-activity
                 }
             }
 
@@ -14500,6 +14530,11 @@ struct TabItemView: View, Equatable {
             )
         }
         let checklistProgress = tab.checklistProgressSummary
+        // SUPERMUX:begin sidebar-flatrow-activity
+        // Resolved once: feeds both the snapshot's indicator field and the
+        // duplicate-status filter on `metadataEntries` below.
+        let supermuxActivity = SupermuxWorkspaceActivityResolver.activity(for: tab)
+        // SUPERMUX:end sidebar-flatrow-activity
 
         return SidebarWorkspaceSnapshotBuilder.Snapshot(
             presentationKey: workspaceSnapshotPresentationKey,
@@ -14514,7 +14549,18 @@ struct TabItemView: View, Equatable {
                 && (tab.remoteConnectionState == .suspended || tab.remoteConnectionState == .disconnected),
             copyableSidebarSSHError: copyableSidebarSSHError,
             latestConversationMessage: tab.latestConversationMessage,
-            metadataEntries: detailVisibility.showsMetadata ? tab.sidebarStatusEntriesInDisplayOrder() : [],
+            // SUPERMUX:begin sidebar-flatrow-activity
+            // Agent-published lifecycle rows ("⚡ Running" etc.) that the
+            // activity indicator duplicates are dropped so flat rows match the
+            // nested project-workspace rows; agent error rows and mismatched
+            // statuses keep rendering.
+            // (upstream: detailVisibility.showsMetadata ? tab.sidebarStatusEntriesInDisplayOrder() : [])
+            metadataEntries: detailVisibility.showsMetadata
+                ? SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(
+                    from: tab.sidebarStatusEntriesInDisplayOrder(),
+                    duplicatedBy: supermuxActivity)
+                : [],
+            // SUPERMUX:end sidebar-flatrow-activity
             metadataBlocks: detailVisibility.showsMetadata ? tab.sidebarMetadataBlocksInDisplayOrder() : [],
             latestLog: detailVisibility.showsLog ? tab.logEntries.last : nil,
             progress: detailVisibility.showsProgress ? tab.progress : nil,
@@ -14537,7 +14583,7 @@ struct TabItemView: View, Equatable {
             checklistTotalCount: checklistProgress.totalCount,
             checklistFirstUncheckedText: checklistProgress.firstUncheckedText,
             // SUPERMUX:begin sidebar-flatrow-activity
-            supermuxActivity: SupermuxWorkspaceActivityResolver.activity(for: tab)
+            supermuxActivity: supermuxActivity
             // SUPERMUX:end sidebar-flatrow-activity
         )
     }
