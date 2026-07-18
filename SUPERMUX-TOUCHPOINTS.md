@@ -170,8 +170,10 @@ computed only in event handlers — never in `body`), and a fenced `.onChange` s
 project-hidden ids from `selectedTabIds`.
 
 **`sidebar-flatrow-activity`:** small fenced edits give flat-list workspace rows the same agent
-activity indicator as the nested rows (amber braille spinner / red pulsing dot / green dot),
-and make it the row's *only* agent-status signal:
+activity indicator as the nested rows, and make it the row's *only* agent-status signal. Policy:
+only the amber **working** spinner ever renders — the needs-input (red) and ready (green) dots
+are deliberately not shown on any Mac surface (sidebar rows, nested project rows, workspace
+switcher cards), and the spinner always sits at the row's right edge:
 1. `import SupermuxKit` near the top imports.
 2. A `let supermuxActivity: SupermuxWorkspaceActivity` field on
    `SidebarWorkspaceSnapshotBuilder.Snapshot` (it is `Equatable`-synthesized, so the row
@@ -193,9 +195,9 @@ and make it the row's *only* agent-status signal:
    URLs, rows for agents with no tracked lifecycle, and user-defined `set_status` rows keep
    rendering (covered by `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift`).
 4. In `TabItemView`'s snapshot-shaping `let`s, suppress `showsLoadingSpinner` (cmux's gray
-   braille spinner) while `supermuxActivity.isVisible` (manual loaders keep the gray spinner
+   braille spinner) while `supermuxActivity == .working` (manual loaders keep the gray spinner
    because the resolver ignores manual keys), and compute
-   `supermuxIndicatorInTrailingSlot = workspaceSnapshot.supermuxActivity.isVisible
+   `supermuxIndicatorInTrailingSlot = workspaceSnapshot.supermuxActivity == .working
    && canCloseWorkspace && !badgeOnTrailing && !spinnerOnTrailing`.
 5. In the row's title `HStack`: when `supermuxIndicatorInTrailingSlot`, render
    `SupermuxAgentActivityIndicator(activity:size:)` (size 6·scale, matching the nested rows) as
@@ -212,9 +214,12 @@ rebuilds the snapshot on each change — so lifecycle-only mutations (`set_agent
 no `set_status`, hibernation's lifecycle clears) re-render the row even though they touch
 neither `statusEntries` nor `progress`. (`SupermuxWorkspaceLifecycleRelay` serves the projects
 mount and mobile observers, not this row.) If upstream restructures the snapshot/row, the
-requirements are: derive activity per workspace, render the indicator once on the row's
-trailing edge without trailing dead space, and keep cmux's own spinner and the agent-status
-metadata rows suppressed while it shows.
+requirements are: derive activity per workspace, render only the working spinner (no
+needs-input/ready dots) once at the row's right edge without trailing dead space, and keep
+cmux's own spinner and the duplicate agent-status metadata rows suppressed. The working-only
+placement lives in supermux-owned files for the other surfaces: nested rows render the spinner
+after the PR badge and run indicator (`SupermuxOpenWorkspaceRowView`), and the workspace
+switcher badge gates on `.working` (`SupermuxWorkspaceSwitcherCard`).
 
 **`sidebar-selection-faint`:** two computed properties on `SidebarWorkspaceRow` are overridden so
 the flat-list selection highlight matches the nested project-workspace rows

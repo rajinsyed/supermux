@@ -13517,12 +13517,12 @@ struct TabItemView: View, Equatable {
         )
 
         // SUPERMUX:begin sidebar-flatrow-activity
-        // The supermux activity indicator already conveys agent state, so
-        // suppress cmux's gray loading spinner while it is visible — one agent
-        // indicator per row, matching the nested project-workspace rows.
+        // The supermux amber working spinner replaces cmux's gray loading
+        // spinner while an agent runs — one agent indicator per row, matching
+        // the nested project-workspace rows.
         // (upstream: showsAgentActivity && activeCodingAgentCount > 0)
         let showsLoadingSpinner = showsAgentActivity && workspaceSnapshot.activeCodingAgentCount > 0
-            && !workspaceSnapshot.supermuxActivity.isVisible
+            && workspaceSnapshot.supermuxActivity != .working
         // SUPERMUX:end sidebar-flatrow-activity
         let badgeOnLeading = unreadCount > 0 && settings.notificationBadgePosition == .leading
         let badgeOnTrailing = unreadCount > 0 && settings.notificationBadgePosition == .trailing
@@ -13531,14 +13531,15 @@ struct TabItemView: View, Equatable {
         let leadingSlotActive = badgeOnLeading || spinnerOnLeading
         let trailingStatusActive = badgeOnTrailing || spinnerOnTrailing
         // SUPERMUX:begin sidebar-flatrow-activity
-        // The activity indicator rides inside the reserved close-button slot
-        // whenever that slot exists and isn't showing the unread badge or the
-        // trailing spinner, so no empty gutter trails it at the row's right
-        // edge. The !spinnerOnTrailing term is redundant while the suppression
-        // above holds (isVisible forces the spinner off) but keeps the
-        // indicator out of an occupied slot if an upstream merge ever drops
-        // that suppression.
-        let supermuxIndicatorInTrailingSlot = workspaceSnapshot.supermuxActivity.isVisible
+        // Only the amber working spinner renders (the needs-input and ready
+        // dots are deliberately not shown). It rides inside the reserved
+        // close-button slot whenever that slot exists and isn't showing the
+        // unread badge or the trailing spinner, so no empty gutter trails it
+        // at the row's right edge. The !spinnerOnTrailing term is redundant
+        // while the suppression above holds (working forces the spinner off)
+        // but keeps the indicator out of an occupied slot if an upstream merge
+        // ever drops that suppression.
+        let supermuxIndicatorInTrailingSlot = workspaceSnapshot.supermuxActivity == .working
             && canCloseWorkspace && !badgeOnTrailing && !spinnerOnTrailing
         // SUPERMUX:end sidebar-flatrow-activity
         let titleRowSpacing: CGFloat = spinnerOnLeading ? 6 : 8
@@ -13617,9 +13618,10 @@ struct TabItemView: View, Equatable {
 
                 // SUPERMUX:begin sidebar-flatrow-activity
                 // Inline fallback for rows without a trailing slot to host the
-                // indicator (sole workspace, unread badge occupying the slot).
-                // Size matches the nested project-workspace rows (6·scale).
-                if workspaceSnapshot.supermuxActivity.isVisible, !supermuxIndicatorInTrailingSlot {
+                // working spinner (sole workspace, unread badge occupying the
+                // slot). Size matches the nested project-workspace rows
+                // (6·scale).
+                if workspaceSnapshot.supermuxActivity == .working, !supermuxIndicatorInTrailingSlot {
                     SupermuxAgentActivityIndicator(
                         activity: workspaceSnapshot.supermuxActivity,
                         size: scaledFontSize(6)
