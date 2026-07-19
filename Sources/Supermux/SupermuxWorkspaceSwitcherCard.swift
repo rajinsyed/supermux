@@ -90,13 +90,14 @@ struct SupermuxWorkspaceSwitcherCard: View {
         .contentShape(Rectangle())
     }
 
-    /// The workspace's agent-activity status in the top-right corner — the amber
-    /// spinner (working), red dot (needs input), or green dot (ready) the rest of
-    /// the app uses — so you can tell at a glance what each workspace is doing.
-    /// Nothing is shown when idle. On a subtle dark backing for legibility.
+    /// The workspace's agent-activity status in the top-right corner — the
+    /// amber working spinner the sidebar rows use, so you can tell at a glance
+    /// which workspaces have an agent running. Needs-input and ready states
+    /// deliberately show nothing (matching the sidebar's working-only policy);
+    /// nothing is shown when idle. On a subtle dark backing for legibility.
     @ViewBuilder
     private var activityBadge: some View {
-        if item.activity.isVisible {
+        if item.activity == .working {
             SupermuxAgentActivityIndicator(activity: item.activity, size: 9)
                 .padding(4)
                 .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6, style: .continuous))

@@ -62,8 +62,14 @@ while [ "$attempt" -le "$max_attempts" ]; do
   # a clean slate.
   kill_stale_app_host
   set +e
+  # SUPERMUX:begin ci-exclude-icon-composer
+  # (upstream: no trailing build setting) ibtoold deterministically crashes
+  # rendering the fork's Icon Composer AppIcon*.icon files on some CI VMs, so
+  # headless CI builds skip them entirely — the app icon is cosmetic here.
   CMUX_XCODEBUILD_NONINTERACTIVE_LOG_PATH="$log_path" \
-    scripts/ci/xcodebuild_noninteractive.py xcodebuild "$@"
+    scripts/ci/xcodebuild_noninteractive.py xcodebuild "$@" \
+    'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'
+  # SUPERMUX:end ci-exclude-icon-composer
   status=$?
   set -e
 
@@ -89,6 +95,14 @@ while [ "$attempt" -le "$max_attempts" ]; do
       retry_reason="testmanagerd connection invalidated"
     elif grep -Fq "Couldn't communicate with a helper application" "$log_path"; then
       retry_reason="test helper communication failure"
+    # SUPERMUX:begin actool-crash-retry
+    # ibtoold intermittently crashes rendering the fork's Icon Composer
+    # AppIcon*.icon files on CI VMs (upstream has no .icon files); the crash
+    # is environment-flaky — the same commit builds clean locally and on
+    # sibling shards — so it earns a retry like the other known flakes.
+    elif grep -Fq 'Command CompileAssetCatalogVariant failed' "$log_path"; then
+      retry_reason="asset catalog compiler crash"
+    # SUPERMUX:end actool-crash-retry
     fi
 
     if [ -n "$retry_reason" ] && [ "$attempt" -lt "$max_attempts" ]; then

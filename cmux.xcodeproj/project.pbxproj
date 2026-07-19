@@ -1519,6 +1519,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */; };
 		50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */; };
 		50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B4 /* SupermuxRunSupport.swift */; };
+		50BE000100000000000000F8 /* SupermuxSidebarAgentStatusRowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */; };
 		50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */; };
 		50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */; };
 		50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */; };
@@ -3399,6 +3400,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 		50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNewWorkspaceHomeDirectoryTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxProjectsSectionHeightPreferenceKey.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B4 /* SupermuxRunSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRunSupport.swift; sourceTree = "<group>"; };
+		50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarAgentStatusRowsTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarBranchTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarFontScaleStore.swift; sourceTree = "<group>"; };
 		50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTabManagerOpener.swift; sourceTree = "<group>"; };
@@ -5677,6 +5679,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				F1C3F1DBF6BF5D7223C4A30C /* SidebarMarkdownRendererTests.swift */,
 				50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */,
 				50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */,
+				50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */,
 				50BE000200000000000000C2 /* SupermuxMobileAuthorizationTests.swift */,
 				50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */,
 				50BE000200000000000000D1 /* SupermuxMobileChangesWatchRegistryTests.swift */,
@@ -7972,6 +7975,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000200000000000000CB /* SupermuxMobileObserversTests.swift in Sources */,
 				50BE000200000000000000DA /* SupermuxMobileRunObserverTests.swift in Sources */,
 				50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */,
+				50BE000100000000000000F8 /* SupermuxSidebarAgentStatusRowsTests.swift in Sources */,
 				50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */,
 				F6572012A1B2C3D4E5F60718 /* SurfaceResumeBindingCodexUpdateCheckTests.swift in Sources */,
 				A7206B010000000000000001 /* SystemAppearanceObserverTests.swift in Sources */,

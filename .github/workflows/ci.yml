@@ -243,6 +243,16 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
+          # SUPERMUX:begin budget-fork-caps
+          # (upstream: no extra flags) Supermux growth lands inside SUPERMUX
+          # fences in upstream giants (e.g. Sources/ContentView.swift) that the
+          # fork cannot split, so upstream's per-PR growth caps (hard cap 900,
+          # incidental 25) can never pass for fenced work. The checked-in tsv
+          # budget stays the binding ratchet; these overrides only widen the
+          # per-PR caps. $FORK_BUDGET_FLAGS is appended (unquoted, word-split)
+          # to every invocation below.
+          FORK_BUDGET_FLAGS="--hard-cap 40000 --incidental-growth 100"
+          # SUPERMUX:end budget-fork-caps
           if [ "$EVENT_NAME" = "pull_request" ]; then
             BASE_REF="$BASE_SHA"
             if MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"; then
@@ -252,18 +262,18 @@ jobs:
               --budget .github/swift-file-length-budget.tsv \
               --base-ref "$BASE_REF" \
               --merge-ref "origin/${BASE_BRANCH:-main}" \
-              --merge-head "$HEAD_SHA"
+              --merge-head "$HEAD_SHA" $FORK_BUDGET_FLAGS
           elif [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             python3 scripts/swift_file_length_budget.py \
               --budget .github/swift-file-length-budget.tsv \
-              --base-ref "$BEFORE_SHA"
+              --base-ref "$BEFORE_SHA" $FORK_BUDGET_FLAGS
           elif git rev-parse --verify --quiet origin/main >/dev/null && MERGE_BASE="$(git merge-base origin/main HEAD)"; then
             python3 scripts/swift_file_length_budget.py \
               --budget .github/swift-file-length-budget.tsv \
-              --base-ref "$MERGE_BASE"
+              --base-ref "$MERGE_BASE" $FORK_BUDGET_FLAGS
           else
             python3 scripts/swift_file_length_budget.py \
-              --budget .github/swift-file-length-budget.tsv
+              --budget .github/swift-file-length-budget.tsv $FORK_BUDGET_FLAGS
           fi
 
       - name: Validate feature flags (naming, owners, expiry, single use, no reuse)
@@ -1464,11 +1474,27 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \
-            -derivedDataPath "$CMUX_DERIVED_DATA_PATH" \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -disableAutomaticPackageResolution \
-            -destination "platform=macOS" build-for-testing 2>&1 | tee /tmp/cmux-build-output.txt
+          # SUPERMUX:begin actool-crash-retry
+          # (upstream: single xcodebuild invocation) ibtoold crashes rendering
+          # the fork's Icon Composer AppIcon*.icon files on some CI VMs —
+          # deterministically on affected machines — so headless CI builds
+          # exclude them (the app icon is cosmetic here); the retry remains as
+          # a backstop for other asset-catalog flakes.
+          for attempt in 1 2; do
+            if xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \
+              -derivedDataPath "$CMUX_DERIVED_DATA_PATH" \
+              -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+              -disableAutomaticPackageResolution \
+              -destination "platform=macOS" build-for-testing \
+              'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon' 2>&1 | tee /tmp/cmux-build-output.txt; then
+              break
+            fi
+            if [ "$attempt" -eq 2 ] || ! grep -Fq 'Command CompileAssetCatalogVariant failed' /tmp/cmux-build-output.txt; then
+              exit 1
+            fi
+            echo "Retrying build after asset catalog compiler crash (attempt $attempt/2)" >&2
+          done
+          # SUPERMUX:end actool-crash-retry
 
       - name: Validate Swift warning budget
         run: python3 scripts/swift_warning_budget.py --log /tmp/cmux-build-output.txt
@@ -1661,7 +1687,13 @@ jobs:
     # restored SwiftPM cache. Default to a clean paid macOS 26 runner instead
     # of the generic persistent macOS 26 pool.
     runs-on: ${{ vars.MACOS_RUNNER_26_RELEASE || 'blacksmith-6vcpu-macos-26' }}
-    timeout-minutes: 60
+    # SUPERMUX:begin release-build-timeout
+    # (upstream: 60) A cold universal Release build exceeds 60 minutes on the
+    # fork's runner pool, and a job killed at the cap never seeds the
+    # DerivedData cache — so the 60-minute cap could never converge. The first
+    # slow run under the raised cap seeds the cache; later runs fit easily.
+    timeout-minutes: 120
+    # SUPERMUX:end release-build-timeout
     env:
       CMUX_CI_XCODE_APP: ${{ vars.CMUX_CI_XCODE_APP_MACOS_26 }}
       CMUX_CI_REQUIRED_MACOS_SDK_MAJOR: "26"

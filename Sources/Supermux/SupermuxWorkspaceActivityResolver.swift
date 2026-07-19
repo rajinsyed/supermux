@@ -1,4 +1,5 @@
 import Combine
+import CmuxSidebar
 import Foundation
 import SupermuxKit
 
@@ -21,10 +22,98 @@ enum SupermuxWorkspaceActivityResolver {
     /// The most urgent agent activity across all of the workspace's panels.
     /// - Parameter workspace: The workspace to inspect.
     static func activity(for workspace: Workspace) -> SupermuxWorkspaceActivity {
-        let lifecycleRawValues = workspace.agentLifecycleStatesByPanelId.values
-            .flatMap { $0.values }
-            .map(\.rawValue)
+        activity(fromStatesByPanelId: workspace.agentLifecycleStatesByPanelId)
+    }
+
+    /// Pure core of ``activity(for:)``, split out for unit testing.
+    ///
+    /// Reserved manual workspace-loading keys (`manual`/`manual:<id>`, written
+    /// by `cmux workspace loading`) are excluded, mirroring upstream's own
+    /// consumer (`Workspace.agentHibernationLifecycleState`): manual loaders
+    /// drive cmux's gray sidebar spinner, never agent status.
+    static func activity(
+        fromStatesByPanelId statesByPanelId: [UUID: [String: AgentHibernationLifecycleState]]
+    ) -> SupermuxWorkspaceActivity {
+        let lifecycleRawValues = statesByPanelId.values.flatMap { states in
+            states.compactMap { key, state in
+                AgentHibernationLifecycleStatusKeys.isManualKey(key) ? nil : state.rawValue
+            }
+        }
         return SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: lifecycleRawValues)
+    }
+
+    /// Each agent key's own resolved activity across all of the workspace's
+    /// panels. Keys with no lifecycle entry are absent. Manual workspace-loading
+    /// keys are excluded, as in ``activity(for:)``.
+    static func activityByAgentKey(for workspace: Workspace) -> [String: SupermuxWorkspaceActivity] {
+        activityByAgentKey(fromStatesByPanelId: workspace.agentLifecycleStatesByPanelId)
+    }
+
+    /// Pure core of ``activityByAgentKey(for:)``, split out for unit testing.
+    static func activityByAgentKey(
+        fromStatesByPanelId statesByPanelId: [UUID: [String: AgentHibernationLifecycleState]]
+    ) -> [String: SupermuxWorkspaceActivity] {
+        var rawValuesByKey: [String: [String]] = [:]
+        for states in statesByPanelId.values {
+            for (key, state) in states where !AgentHibernationLifecycleStatusKeys.isManualKey(key) {
+                rawValuesByKey[key, default: []].append(state.rawValue)
+            }
+        }
+        return rawValuesByKey.mapValues(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues:))
+    }
+}
+
+/// Drops agent-published lifecycle status rows that duplicate the activity
+/// indicator from a flat sidebar row's metadata.
+///
+/// Agent hooks report routine lifecycle twice: as a textual status row
+/// (`set_status claude_code Running --icon=bolt.fill …` → the blue "⚡ Running"
+/// line) and as the per-panel lifecycle state that drives
+/// ``SupermuxAgentActivityIndicator``. Supermux renders the indicator on every
+/// workspace row and the nested project-workspace rows never show the textual
+/// row, so the flat (global) rows drop the duplicate too — one agent status
+/// signal per row, identical styling in and out of projects.
+///
+/// A row is dropped only when it is *actually* a duplicate: its key is an agent
+/// lifecycle key AND that key has its own tracked lifecycle AND its icon shape
+/// matches that key's *own* resolved state (`bolt.fill`↔working,
+/// `pause.circle.fill`↔ready, `bell.fill`↔needsInput) AND it carries no URL.
+/// Matching per key — not against the workspace aggregate — matters in
+/// multi-agent workspaces: agent A's lifecycle must never drop agent B's row.
+/// Everything else keeps rendering — user-defined `set_status` rows, agent
+/// error rows (`exclamationmark.triangle.fill`, e.g. "Codex network error"),
+/// rows with click-through URLs, and status/lifecycle mismatches. Some hook
+/// paths publish only the status row without a lifecycle update (codex
+/// transcript questions/failures), so a key-only filter would silently erase
+/// the row's sole signal. Known tradeoff: Claude Code's verbose tool status
+/// ("Editing Foo.swift") shares the agent key and `bolt.fill` icon, so its text
+/// is dropped while working — same as the nested project rows, which never show
+/// textual status rows at all.
+enum SupermuxSidebarAgentStatusRows {
+    /// Returns `entries` without the agent status rows the per-key activities
+    /// in `activityByAgentKey` duplicate.
+    static func droppingAgentStatusRows(
+        from entries: [SidebarStatusEntry],
+        duplicatedBy activityByAgentKey: [String: SupermuxWorkspaceActivity]
+    ) -> [SidebarStatusEntry] {
+        entries.filter { !isDuplicate($0, of: activityByAgentKey) }
+    }
+
+    private static func isDuplicate(
+        _ entry: SidebarStatusEntry,
+        of activityByAgentKey: [String: SupermuxWorkspaceActivity]
+    ) -> Bool {
+        guard AgentHibernationLifecycleStatusKeys.isAllowed(entry.key),
+              entry.url == nil,
+              let ownActivity = activityByAgentKey[entry.key] else { return false }
+        switch (entry.icon, ownActivity) {
+        case ("bolt.fill", .working),
+             ("pause.circle.fill", .ready),
+             ("bell.fill", .needsInput):
+            return true
+        default:
+            return false
+        }
     }
 }
 

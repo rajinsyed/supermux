@@ -68,13 +68,16 @@ final class SupermuxMobileChangesWatchRegistry {
             MobileHostService.shared.emitEvent(topic: topic, payload: payload)
         },
         sweepsAutomatically: Bool = true,
-        sweepInterval: Duration = SupermuxMobileChangesWatchRegistry.sweepInterval
+        sweepInterval: Duration? = nil
     ) {
         self.now = now
         self.makeChangeStream = makeChangeStream
         self.emit = emit
         self.sweepsAutomatically = sweepsAutomatically
-        self.sweepIntervalValue = sweepInterval
+        // Resolved here rather than as a default argument: default-argument
+        // expressions evaluate in the caller's context, where touching the
+        // @MainActor static warns under strict concurrency.
+        self.sweepIntervalValue = sweepInterval ?? Self.sweepInterval
     }
 
     deinit {

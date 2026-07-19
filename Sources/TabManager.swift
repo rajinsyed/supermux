@@ -2507,32 +2507,27 @@ class TabManager: ObservableObject {
     private func closeWorkspacesPlan(for workspaces: [Workspace]) -> CloseWorkspacesPlan {
         // SUPERMUX:begin keep-window-on-last-close
         // Closing every workspace keeps the window open as an empty home rather
-        // than closing it, so this is never a window-closing action — always use
-        // the "close workspaces" copy (upstream: `workspaces.count == tabs.count`).
-        let willCloseWindow = false
-        // SUPERMUX:end keep-window-on-last-close
-        let title = willCloseWindow
-            ? String(localized: "dialog.closeWindow.title", defaultValue: "Close window?")
-            : String(localized: "dialog.closeWorkspaces.title", defaultValue: "Close workspaces?")
+        // than closing it, so this is never a window-closing action — always
+        // use the "close workspaces" copy and never accept Cmd-D as
+        // close-window. (upstream: `let willCloseWindow = workspaces.count ==
+        // tabs.count` selecting the window/workspaces copy via two ternaries
+        // and feeding `acceptCmdD`.)
+        let title = String(localized: "dialog.closeWorkspaces.title", defaultValue: "Close workspaces?")
         let titleLines = workspaces
             .map { "• \(closeWorkspaceDisplayTitle($0.title))" }
             .joined(separator: "\n")
-        let format = willCloseWindow
-            ? String(
-                localized: "dialog.closeWorkspacesWindow.message",
-                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their panels:\n%2$@"
-            )
-            : String(
-                localized: "dialog.closeWorkspaces.message",
-                defaultValue: "This will close %1$lld workspaces and all of their panels:\n%2$@"
-            )
+        let format = String(
+            localized: "dialog.closeWorkspaces.message",
+            defaultValue: "This will close %1$lld workspaces and all of their panels:\n%2$@"
+        )
         let message = String(format: format, locale: .current, Int64(workspaces.count), titleLines)
         return CloseWorkspacesPlan(
             workspaces: workspaces,
             title: title,
             message: message,
-            acceptCmdD: willCloseWindow
+            acceptCmdD: false
         )
+        // SUPERMUX:end keep-window-on-last-close
     }
 
     private func closeWorkspaceDisplayTitle(_ title: String?) -> String {

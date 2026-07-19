@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges, Close Tabs Below/Above/Other, and Move Up/Down exclude project-hidden workspaces (via a fenced `TabItemView.projectHiddenWorkspaceIds()` helper computed only in event handlers and the on-demand context-menu builder), the four Move/Close menu items disable on visible-neighbor availability instead of raw full-list indices (so they are never enabled no-ops when only hidden rows lie in that direction), and a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`; renders the agent-activity indicator on flat-list workspace rows; gives the flat-list selection the faint accent tint used by nested project rows (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
-| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17) |
+| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
 | 4 | `.github/swift-file-length-budget.tsv` | `unfenced` | Budget rows raised by exactly the fenced growth in their files (see #4 notes below) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width), with a third fallback putting the icon-only row in a horizontal `ScrollView` so mode buttons scroll instead of clipping at extreme narrowness; `right-sidebar-changes-mode-focushost` mounts `SupermuxChangesFocusHostBridge`/`SupermuxChangesFocusHostView` as the changes panel's background, registering a geometry-based focus host with the window's `MainWindowFocusController` |
@@ -132,6 +132,13 @@ Rules for adding a touchpoint:
 | 118 | `README.md` | `readme-fork-rewrite` | Wholesale replaces upstream's README with the supermux one (fork identity, features, build-from-source, upstream credit). The fence wraps the whole file. The `README.<lang>.md` translations stay upstream's apart from the #120 banner |
 | 119 | `CONTRIBUTING.md` | `contributing-fork-note` | One fenced blockquote after the H1: upstream's guide is kept for reference; fork issues/PRs go to rajinsyed/supermux and SUPERMUX.md is the fork contract |
 | 120 | `README.ja.md` | `readme-translation-banner` | Same one-line fenced banner (localized per file) prepended to all 20 `README.<lang>.md` translations: "this is the upstream cmux README; the fork's additions are in README.md". Only the `ja` file is registered here; the fence id is identical in all 20 |
+| 121 | `.github/workflows/ci.yml` | `budget-fork-caps` | In the "Validate Swift file length budget" step, a fenced `FORK_BUDGET_FLAGS="--hard-cap 40000 --incidental-growth 100"` definition plus an unfenced ` $FORK_BUDGET_FLAGS` suffix on the final line of each of the four `swift_file_length_budget.py` invocations (mid-command shell continuations cannot carry fence comments). Upstream's per-PR growth caps (hard cap 900 / incidental 25) can never pass for fenced growth in upstream giants like `Sources/ContentView.swift`; the checked-in tsv budget (#4) stays the binding ratchet, so the fork widens only the per-PR caps. Re-apply by hand after a merge: restore the fenced block after `set -euo pipefail` and re-append the suffix to all four invocations |
+| 122 | `.github/test-determinism-allowlist.txt` | `unfenced` | Three grandfathered entries for supermux-owned tests the determinism gate flags by heuristic: `SupermuxMobileChangesStoreSyncTests.swift` (assert-on-duration — static assertion on a configured RPC timeout, not a measured duration) and `SupermuxMobileObserversTests.swift` + `SupermuxMobileRunObserverTests.swift` (sleep-then-assert — prove-silence tests must outwait the poke throttle window). Data file like #4; re-add the three lines if a merge drops them |
+| 123 | `scripts/ci/run-app-host-xcodebuild.sh` | `actool-crash-retry`, `ci-exclude-icon-composer` | One fenced `elif` in the retry-reason chain (`Command CompileAssetCatalogVariant failed` retries as "asset catalog compiler crash") plus a fenced trailing `'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'` build setting on the xcodebuild invocation. ibtoold crashes rendering the fork's Icon Composer `AppIcon*.icon` files (#17) on some CI VMs — deterministically on affected machines, so the exclusion is the fix and the retry is a backstop for other asset-catalog flakes; upstream has no `.icon` files, so this crash class is fork-introduced. The app icon is cosmetic in headless CI |
+| 124 | `.github/workflows/ci.yml` | `actool-crash-retry` | The `tests-build-and-lag` "Build for runtime regressions" step's single xcodebuild invocation is wrapped in a fenced 2-attempt loop that adds `'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'` and retries only on the `CompileAssetCatalogVariant` crash signature (same rationale as #123); other flags and the `tee /tmp/cmux-build-output.txt` log path (consumed by the warning-budget step) are unchanged |
+| 125 | `.github/workflows/perf-activation.yml` | `actool-crash-retry` | The "Build tagged app" step's single `reload.sh` invocation is wrapped in the same fenced 2-attempt retry loop as #124 and sets `CMUX_EXCLUDE_ICON_COMPOSER=1` (consumed by #126) |
+| 126 | `scripts/reload.sh` | `ci-exclude-icon-composer` | Fenced env hook: `CMUX_EXCLUDE_ICON_COMPOSER=1` appends `'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'` to `XCODEBUILD_ARGS` so headless CI reload builds skip Icon Composer rendering (see #123); local/dev reloads are unaffected |
+| 127 | `.github/workflows/ci.yml` | `release-build-timeout` | `release-build`'s `timeout-minutes` raised 60 → 120 (fenced): a cold universal Release build exceeds 60 minutes on the fork's runner pool, and a job killed at the cap never seeds the DerivedData cache, so the upstream cap could never converge on the fork |
 ## How to re-apply
 
 ### 2. `Sources/ContentView.swift` — `sidebar-projects-section` + `sidebar-hide-project-workspaces`
@@ -169,21 +176,57 @@ exclude project-hidden workspaces (via a fenced `TabItemView.projectHiddenWorksp
 computed only in event handlers — never in `body`), and a fenced `.onChange` strips newly
 project-hidden ids from `selectedTabIds`.
 
-**`sidebar-flatrow-activity`:** four small edits give flat-list workspace rows the same agent
-activity indicator as the nested rows (amber braille spinner / red pulsing dot / green dot):
+**`sidebar-flatrow-activity`:** small fenced edits give flat-list workspace rows the same agent
+activity indicator as the nested rows, and make it the row's *only* agent-status signal. Policy:
+only the amber **working** spinner ever renders — the needs-input (red) and ready (green) dots
+are deliberately not shown on any Mac surface (sidebar rows, nested project rows, workspace
+switcher cards), and the spinner always sits at the row's right edge:
 1. `import SupermuxKit` near the top imports.
 2. A `let supermuxActivity: SupermuxWorkspaceActivity` field on
    `SidebarWorkspaceSnapshotBuilder.Snapshot` (it is `Equatable`-synthesized, so the row
    re-renders when activity changes).
-3. In `makeWorkspaceSnapshot()`, set `supermuxActivity: SupermuxWorkspaceActivityResolver.activity(for: tab)`.
-4. In the row's title `HStack`, after `Text(workspaceSnapshot.title)` (on the row's trailing
-   edge, ahead of the close button), render `SupermuxAgentActivityIndicator(activity:size:)`
-   when `supermuxActivity.isVisible` — so the status dot reads as a trailing indicator rather
-   than a leading icon.
-The indicator is reactive via the existing workspace observation (it changes with
-`statusEntries`/`progress`, which the snapshot already observes). If upstream restructures the
-snapshot/row, the requirement is just: derive activity per workspace and render the indicator
-on the row's trailing edge.
+3. In `makeWorkspaceSnapshot()`, resolve `let supermuxActivity =
+   SupermuxWorkspaceActivityResolver.activity(for: tab)` (the aggregate, for the indicator) and
+   `let supermuxActivityByAgentKey = SupermuxWorkspaceActivityResolver.activityByAgentKey(for: tab)`
+   (per agent key, for the filter) once each, pass the aggregate as the snapshot's
+   `supermuxActivity:`, and route `metadataEntries` through
+   `SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(from:duplicatedBy:)`
+   (`Sources/Supermux/SupermuxWorkspaceActivityResolver.swift`) so agent-published lifecycle
+   rows (the blue "⚡ Running" `set_status` line) don't duplicate the indicator. The resolver
+   ignores the reserved `manual`/`manual:<id>` workspace-loading keys (they drive cmux's gray
+   spinner, not agent status). The filter matches each row against *its own agent's* resolved
+   state, not the workspace aggregate — one agent's lifecycle never drops another agent's row —
+   and only when the icon shape matches (`bolt.fill`↔working, `pause.circle.fill`↔ready,
+   `bell.fill`↔needsInput) and the row carries no URL; agent error rows
+   (`exclamationmark.triangle.fill`), status/lifecycle mismatches, rows with click-through
+   URLs, rows for agents with no tracked lifecycle, and user-defined `set_status` rows keep
+   rendering (covered by `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift`).
+4. In `TabItemView`'s snapshot-shaping `let`s, suppress `showsLoadingSpinner` (cmux's gray
+   braille spinner) while `supermuxActivity == .working` (manual loaders keep the gray spinner
+   because the resolver ignores manual keys), and compute
+   `supermuxIndicatorInTrailingSlot = workspaceSnapshot.supermuxActivity == .working
+   && canCloseWorkspace && !badgeOnTrailing && !spinnerOnTrailing`.
+5. In the row's title `HStack`: when `supermuxIndicatorInTrailingSlot`, render
+   `SupermuxAgentActivityIndicator(activity:size:)` (size 6·scale, matching the nested rows) as
+   an `.overlay` on `SidebarWorkspaceTrailingStatusSlot` (faded to opacity 0 while
+   `showCloseButton` — kept mounted so hover never remounts the AppKit spinner — hit-testing
+   off) so it occupies the reserved close-button slot instead of leaving an empty gutter at the
+   row edge; otherwise render it inline after `Text(workspaceSnapshot.title)` as a fallback
+   (sole workspace with no close slot, or unread badge occupying the slot).
+The indicator is reactive via upstream's agent-runtime observation: every
+`agentLifecycleStatesByPanelId` mutation routes through
+`WorkspaceSidebarAgentRuntimeObservationModel.setAgentLifecycleStatesByPanelId` →
+`notifyChanged()`, and the row's existing `.sidebarAgentRuntimeObservation(id:model:)` hook
+rebuilds the snapshot on each change — so lifecycle-only mutations (`set_agent_lifecycle` with
+no `set_status`, hibernation's lifecycle clears) re-render the row even though they touch
+neither `statusEntries` nor `progress`. (`SupermuxWorkspaceLifecycleRelay` serves the projects
+mount and mobile observers, not this row.) If upstream restructures the snapshot/row, the
+requirements are: derive activity per workspace, render only the working spinner (no
+needs-input/ready dots) once at the row's right edge without trailing dead space, and keep
+cmux's own spinner and the duplicate agent-status metadata rows suppressed. The working-only
+placement lives in supermux-owned files for the other surfaces: nested rows render the spinner
+after the PR badge and run indicator (`SupermuxOpenWorkspaceRowView`), and the workspace
+switcher badge gates on `.working` (`SupermuxWorkspaceSwitcherCard`).
 
 **`sidebar-selection-faint`:** two computed properties on `SidebarWorkspaceRow` are overridden so
 the flat-list selection highlight matches the nested project-workspace rows
@@ -314,12 +357,23 @@ and `50BE0001…00A6` (`SupermuxTabManagerOpener.swift`), with build files `…0
 listed in the `Supermux` group's `children` and the `cmux` target's Sources phase, mirroring the
 rows above).
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `85`.
+The flat-row agent-status dedup filter adds one more `cmuxTests/` file under the same reserved
+prefix: file reference `50BE0001…00F7` and build file `50BE0001…00F8` for
+`SupermuxSidebarAgentStatusRowsTests.swift` (listed in the cmuxTests group's `children` and the
+`cmuxTests` target's Sources phase, mirroring the `SupermuxSidebarBranchTests.swift` rows above).
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `89`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — unfenced
 
 Several rows carry supermux's fenced growth over upstream. Each was raised by exactly the
-number of fenced lines added to that file — never to absorb unrelated debt:
+number of fenced lines added to that file — never to absorb unrelated debt. Fork-owned files
+under `Sources/Supermux/` that cross the 500-line tracking threshold get plain rows at their
+actual length (currently `Sources/Supermux/SupermuxAppGlue.swift` at 536). When a file shrinks,
+ratchet its row back down to the actual count (done for `Sources/ContentView.swift`,
+16252→16123, after the working-only indicator simplification). The per-PR growth caps the
+checker layers on top of these rows are widened for the fork by touchpoint #121
+(`budget-fork-caps` in `ci.yml`):
 
 | Row | Δ | Reason |
 |-----|---|--------|

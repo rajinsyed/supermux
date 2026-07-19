@@ -44,12 +44,6 @@ struct SupermuxOpenWorkspaceRowView: View {
                 }
             }
             Spacer(minLength: 2)
-            // Agent activity (spinner / pulsing / ready dot) sits on the trailing
-            // edge alongside the PR and run status, so it reads as a status
-            // indicator rather than an avatar; idle workspaces show nothing.
-            if workspace.activity.isVisible {
-                SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
-            }
             if let pullRequest = workspace.pullRequest {
                 SupermuxPullRequestBadge(
                     pullRequest: pullRequest,
@@ -59,6 +53,14 @@ struct SupermuxOpenWorkspaceRowView: View {
             }
             if workspace.isRunning {
                 SupermuxRunIndicator()
+            }
+            // Agent activity: only the amber working spinner, rendered as the
+            // rightmost element (after the PR badge and run status) so the
+            // loading signal always sits at the row's right edge. The
+            // needs-input and ready dots are deliberately not shown — one
+            // working indicator per row, nothing when the agent is settled.
+            if workspace.activity == .working {
+                SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
             }
             if isHovered {
                 Button(action: close) {

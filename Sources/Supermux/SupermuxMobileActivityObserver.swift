@@ -55,8 +55,7 @@ final class SupermuxMobileActivityObserver {
     init(
         projectsModel: SupermuxProjectsModel,
         associations: SupermuxWorkspaceAssociationStore,
-        lifecycleEvents: AnyPublisher<UUID, Never> =
-            SupermuxWorkspaceLifecycleRelay.lifecycleDidChange.eraseToAnyPublisher(),
+        lifecycleEvents: AnyPublisher<UUID, Never>? = nil,
         emit: @escaping @MainActor (_ topic: String, _ payload: [String: Any]) -> Void = { topic, payload in
             MobileHostService.shared.emitEvent(topic: topic, payload: payload)
         }
@@ -65,7 +64,12 @@ final class SupermuxMobileActivityObserver {
         self.associations = associations
         self.emit = emit
         lastAssociationHash = armAndReadAssociationHash()
-        lifecycleCancellable = lifecycleEvents.sink { [weak self] _ in
+        // Resolved here rather than as a default argument: default-argument
+        // expressions evaluate in the caller's context, where touching the
+        // @MainActor relay warns under strict concurrency.
+        let events = lifecycleEvents
+            ?? SupermuxWorkspaceLifecycleRelay.lifecycleDidChange.eraseToAnyPublisher()
+        lifecycleCancellable = events.sink { [weak self] _ in
             self?.schedulePass(force: true)
         }
     }
