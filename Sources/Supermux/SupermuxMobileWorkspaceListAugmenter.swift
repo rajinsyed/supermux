@@ -33,7 +33,10 @@ enum SupermuxMobileWorkspaceListAugmenter {
         // settings are off the mac row hides its badge, so the phone must
         // not show one either (same gate as SupermuxAppGlue's
         // pullRequestsEnabled).
-        let pullRequest = SidebarWorkspaceDetailDefaults.pullRequestPollingEnabled(defaults: .standard)
+        let pullRequestPollingEnabled =
+            SidebarWorkspaceDetailDefaults.watchGitStatusValue(defaults: .standard)
+                && SidebarWorkspaceDetailDefaults.showPullRequestsValue(defaults: .standard)
+        let pullRequest = pullRequestPollingEnabled
             ? workspace.sidebarPullRequestsInDisplayOrder().first
                 .flatMap(SupermuxPullRequest.init(sidebarState:))
             : nil

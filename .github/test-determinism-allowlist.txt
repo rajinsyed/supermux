@@ -5,3 +5,5 @@
 Packages/iOS/SupermuxMobileKit/Tests/SupermuxMobileKitTests/SupermuxMobileChangesStoreSyncTests.swift	assert-on-duration	static assertion on the configured sync RPC timeout, not a measured duration
 cmuxTests/SupermuxMobileObserversTests.swift	sleep-then-assert	prove-silence test must outwait the 80 ms poke throttle window
 cmuxTests/SupermuxMobileRunObserverTests.swift	sleep-then-assert	prove-silence test must outwait the 80 ms poke throttle window
+cmuxTests/WorkspaceForkConversationContextMenuTests.swift	assert-on-duration	grandfathered
+cmuxTests/WorkspaceForkConversationContextMenuTests.swift	sleep-then-assert	grandfathered

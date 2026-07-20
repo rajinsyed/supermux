@@ -133,7 +133,11 @@ public struct SupermuxPullRequestProbe: Sendable {
             )
         }
         let resolution = await service.resolveCandidateSeeds(seeds, gitMetadata: gitMetadata)
-        let repoResults = await service.fetchRepoResults(
+        // fetchRepoResults returns (repoResults, rateLimitRetryDate) since cmux
+        // 0.65; the coordinator inside CmuxGit already enforces the retry
+        // deadline for subsequent fetches, so the probe only consumes the
+        // per-repo results.
+        let (repoResults, _) = await service.fetchRepoResults(
             repoDirectoriesBySlug: resolution.repoDirectoriesBySlug,
             candidateBranchesByRepo: resolution.candidateBranchesByRepo,
             cacheBySlug: cache,
