@@ -57,13 +57,16 @@ struct SidebarWorkspaceRowActions {
     let onPointerFrameChange: (CGRect) -> Void
     let onPointerFrameDisappear: () -> Void
     // SUPERMUX:begin sidebar-hide-project-workspaces
-    /// Visible-row availability around this row (`index`, menu target ids),
-    /// excluding project-hidden workspaces. Resolved on demand at menu open —
-    /// like `currentWindowMoveTargets` — so menu enablement can mirror the
-    /// hidden-row-aware stepping/close scoping without the row observing any
-    /// store. A defaulted `var` so upstream construction sites (tests) compile
+    /// Visible-row availability around this row (row workspace id, menu target
+    /// ids), excluding project-hidden workspaces. Resolved on demand at menu
+    /// open — like `currentWindowMoveTargets` — so menu enablement can mirror
+    /// the hidden-row-aware stepping/close scoping without the row observing
+    /// any store. Keyed by workspace id (not row index) so the provider can
+    /// resolve the current full-list position itself; the row's snapshot index
+    /// is its *visible* ordinal, which no longer matches `TabManager.tabs`.
+    /// A defaulted `var` so upstream construction sites (tests) compile
     /// unchanged.
-    var supermuxMenuVisibility: (Int, Set<UUID>) -> SupermuxRowMenuVisibility = { _, _ in .allVisible }
+    var supermuxMenuVisibility: (UUID, Set<UUID>) -> SupermuxRowMenuVisibility = { _, _ in .allVisible }
     // SUPERMUX:end sidebar-hide-project-workspaces
 }
 

@@ -6,8 +6,19 @@ extension TabManager {
     /// clamps the result to the workspace's pinned or unpinned tier.
     @discardableResult
     func reorderWorkspace(tabId: UUID, by offset: Int) -> Bool {
-        guard let currentIndex = tabs.firstIndex(where: { $0.id == tabId }) else { return false }
-        return reorderWorkspace(tabId: tabId, toIndex: currentIndex + offset)
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // Step over project-hidden rows so every adjacent-move entrypoint
+        // (context menu, shortcut, socket verbs) swaps with the nearest
+        // *visible* flat-list neighbor; moves whose clamped destination would
+        // not change the visible order are refused. See
+        // `supermuxSteppedReorderTarget` in
+        // `Sources/Supermux/SupermuxWorkspaceReorderStepping.swift`.
+        // (upstream:
+        //   guard let currentIndex = tabs.firstIndex(where: { $0.id == tabId }) else { return false }
+        //   return reorderWorkspace(tabId: tabId, toIndex: currentIndex + offset))
+        guard let targetIndex = supermuxSteppedReorderTarget(tabId: tabId, by: offset) else { return false }
+        return reorderWorkspace(tabId: tabId, toIndex: targetIndex)
+        // SUPERMUX:end sidebar-hide-project-workspaces
     }
 
     /// Reorders the selected workspace while preserving its selection.

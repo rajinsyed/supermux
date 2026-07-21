@@ -11,6 +11,13 @@ struct SidebarWorkspaceRowSnapshot: Equatable {
     let groupId: UUID?
     let index: Int
     let workspaceCount: Int
+    // SUPERMUX:begin sidebar-hide-project-workspaces
+    /// Visible-flat-list ordinal/total for the VoiceOver "workspace N of M"
+    /// announcement (project-hidden rows excluded); `nil` falls back to the
+    /// full-list `index`/`workspaceCount`. Synthesized `==` covers them.
+    var supermuxVisibleIndex: Int? = nil
+    var supermuxVisibleCount: Int? = nil
+    // SUPERMUX:end sidebar-hide-project-workspaces
     let workspace: SidebarWorkspaceSnapshotBuilder.Snapshot
     let isActive: Bool
     let isMultiSelected: Bool

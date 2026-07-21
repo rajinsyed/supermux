@@ -2323,9 +2323,10 @@ class TabManager: ObservableObject {
         // (Projects sidebar), so this window-closing short-circuit is omitted —
         // the loop below closes each workspace and the last one empties the
         // window via closeWorkspace(allowEmptyingWindow:). Each closeWorkspace
-        // call kills its own remote-tmux mirror via handleWorkspaceClosed
-        // (upstream's per-workspace close semantics), so the window-close
-        // detach path is not involved here.
+        // call DETACHES its own remote-tmux mirror via
+        // detachMirrorWorkspaceKeptOpenLocally — never kills; killing a live
+        // session is only ever an explicit disconnect action (PR #7264) — so
+        // the window-close detach path is not involved here.
         // SUPERMUX:end keep-window-on-last-close
 
         for workspace in plan.workspaces {
@@ -2601,9 +2602,11 @@ class TabManager: ObservableObject {
         // Closing the last workspace leaves the window open as an empty home
         // (Projects sidebar) instead of closing the window — which on the last
         // window would quit the app. allowEmptyingWindow lets the final
-        // workspace actually be removed. closeWorkspace kills the workspace's own
-        // remote-tmux mirror via handleWorkspaceClosed (upstream's per-workspace
-        // close semantics), so no window-close detach path is involved here.
+        // workspace actually be removed. closeWorkspace DETACHES the
+        // workspace's own remote-tmux mirror via
+        // detachMirrorWorkspaceKeptOpenLocally — never kills; killing a live
+        // session is only ever an explicit disconnect action (PR #7264) — so
+        // no window-close detach path is involved here.
         closeWorkspace(workspace, allowEmptyingWindow: true)
         // SUPERMUX:end keep-window-on-last-close
         return true

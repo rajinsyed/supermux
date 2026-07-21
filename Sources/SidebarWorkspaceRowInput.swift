@@ -14,6 +14,15 @@ struct SidebarWorkspaceRowInput {
     let groupId: UUID?
     let index: Int
     let workspaceCount: Int
+    // SUPERMUX:begin sidebar-hide-project-workspaces
+    /// The row's ordinal and total among *visible* flat-list rows (project-
+    /// hidden workspaces excluded) for the VoiceOver "workspace N of M"
+    /// announcement. `index`/`workspaceCount` keep upstream's full-list
+    /// semantics. Defaulted `nil` (consumers fall back to the full-list
+    /// values) so upstream construction sites compile unchanged.
+    var supermuxVisibleIndex: Int? = nil
+    var supermuxVisibleCount: Int? = nil
+    // SUPERMUX:end sidebar-hide-project-workspaces
     let workspace: SidebarWorkspaceSnapshotBuilder.Snapshot
     let isActive: Bool
     let isMultiSelected: Bool
@@ -53,6 +62,10 @@ struct SidebarWorkspaceRowInput {
             groupId: groupId,
             index: index,
             workspaceCount: workspaceCount,
+            // SUPERMUX:begin sidebar-hide-project-workspaces
+            supermuxVisibleIndex: supermuxVisibleIndex,
+            supermuxVisibleCount: supermuxVisibleCount,
+            // SUPERMUX:end sidebar-hide-project-workspaces
             workspace: workspace,
             isActive: isActive,
             isMultiSelected: isMultiSelected,

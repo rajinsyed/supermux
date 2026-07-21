@@ -1735,6 +1735,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */; };
 		50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */; };
 		50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */; };
+		50BE000100000000000000FC /* SupermuxWorkspaceReorderStepping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */; };
 		50BE000100000000000000E5 /* SupermuxWorkspaceSwitcherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */; };
 		50BE000100000000000000E9 /* SupermuxWorkspaceSwitcherController+Items.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D9 /* SupermuxWorkspaceSwitcherController+Items.swift */; };
 		50BE000100000000000000E8 /* SupermuxWorkspaceSwitcherController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D8 /* SupermuxWorkspaceSwitcherController.swift */; };
@@ -3860,6 +3861,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 		50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarFontScaleStore.swift; sourceTree = "<group>"; };
 		50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTabManagerOpener.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceActivityResolver.swift; sourceTree = "<group>"; };
+		50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceReorderStepping.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceSwitcherCard.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D9 /* SupermuxWorkspaceSwitcherController+Items.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxWorkspaceSwitcherController+Items.swift"; sourceTree = "<group>"; };
 		50BE000100000000000000D8 /* SupermuxWorkspaceSwitcherController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceSwitcherController.swift; sourceTree = "<group>"; };
@@ -4440,6 +4442,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000100000000000000F5 /* SupermuxEmptyHomeView.swift */,
 				50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */,
 				50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */,
+				50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */,
 				50BE000100000000000000D3 /* SupermuxWorkspaceSwitcherViewState.swift */,
 				50BE000100000000000000D4 /* SupermuxWorkspaceSwitcherStyle.swift */,
 				50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */,
@@ -8058,6 +8061,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
 				50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */,
 				50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */,
+				50BE000100000000000000FC /* SupermuxWorkspaceReorderStepping.swift in Sources */,
 				50BE000100000000000000E5 /* SupermuxWorkspaceSwitcherCard.swift in Sources */,
 				50BE000100000000000000E9 /* SupermuxWorkspaceSwitcherController+Items.swift in Sources */,
 				50BE000100000000000000E8 /* SupermuxWorkspaceSwitcherController.swift in Sources */,

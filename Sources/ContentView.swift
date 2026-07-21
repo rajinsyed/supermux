@@ -11078,9 +11078,13 @@ struct VerticalTabsSidebar: View, Equatable {
         // `.scrollIndicators(.automatic)` on every update pass, which
         // wins over the AppKit resolver's deferred `hasVerticalScroller =
         // false`. Tell SwiftUI itself to keep the indicator hidden so the
-        // two layers agree and the bar never reappears. (scrollIndicators
-        // propagates through the environment, so setting it on the shared
-        // Group covers both list implementations.)
+        // two layers agree and the bar never reappears. This covers the
+        // legacy SwiftUI list only: the AppKit branch's
+        // `SidebarWorkspaceTableView` owns an NSScrollView that never reads
+        // this environment value, so under the AppKit opt-in the stock
+        // scroller shows — like every other fork sidebar feature, hidden
+        // scrollbars are not ported to that path (see the
+        // `appkit-sidebar-default-off` touchpoint).
         .scrollIndicators(.hidden)
         // SUPERMUX:end sidebar-hide-scrollbar
         // Workspace publisher observations and the snapshot refresh feed BOTH
@@ -13579,21 +13583,7 @@ struct VerticalTabsSidebar: View, Equatable {
     }
 
     private func moveWorkspaceRow(_ workspace: Workspace, by delta: Int) {
-        // SUPERMUX:begin sidebar-hide-project-workspaces
-        // Step over project-hidden workspaces so Move Up/Down swaps with the
-        // nearest *visible* flat-list neighbor instead of invisibly reordering
-        // around rows the user can't see.
-        // (upstream: `guard tabManager.reorderWorkspace(tabId: workspace.id, by: delta) else { return }`)
-        guard let index = tabManager.tabs.firstIndex(where: { $0.id == workspace.id }) else { return }
-        let hiddenIds = supermuxProjectHiddenWorkspaceIds()
-        var targetIndex = index + delta
-        while targetIndex >= 0, targetIndex < tabManager.tabs.count,
-              hiddenIds.contains(tabManager.tabs[targetIndex].id) {
-            targetIndex += delta
-        }
-        guard targetIndex >= 0, targetIndex < tabManager.tabs.count,
-              tabManager.reorderWorkspace(tabId: workspace.id, toIndex: targetIndex) else { return }
-        // SUPERMUX:end sidebar-hide-project-workspaces
+        guard tabManager.reorderWorkspace(tabId: workspace.id, by: delta) else { return }
         selectedTabIds = [workspace.id]
         lastSidebarSelectionIndex = tabManager.tabs.firstIndex { $0.id == workspace.id }
         tabManager.selectTab(workspace)
@@ -13713,6 +13703,19 @@ struct VerticalTabsSidebar: View, Equatable {
         let signpost = SidebarProfilingSignposts.begin("sidebar-workspace-row", "index=\(renderContext.tabIndexById[tab.id] ?? -1) workspace=\(sidebarShortTabId(tab.id)) selected=\(tabManager.selectedTabId == tab.id)")
         defer { SidebarProfilingSignposts.end(signpost) }
         let index = renderContext.tabIndexById[tab.id] ?? 0
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // The row's VoiceOver "workspace N of M" announcement must count
+        // *visible* flat-list rows, or with project-owned rows hidden it names
+        // positions the user can't see or navigate. Carried as separate
+        // fenced fields: `index`/`workspaceCount` keep their upstream
+        // full-list semantics (⌘-number digits, shift-range selection,
+        // `lastSidebarSelectionIndex`).
+        let visibleRowIndex = index - renderContext.tabs.prefix(index)
+            .filter { renderContext.projectHiddenWorkspaceIds.contains($0.id) }
+            .count
+        let visibleRowCount = renderContext.tabs.count
+            - renderContext.projectHiddenWorkspaceIds.count
+        // SUPERMUX:end sidebar-hide-project-workspaces
         let usesSelectedContextMenuTargets = selectedTabIds.contains(tab.id)
         let contextMenuWorkspaceIds = usesSelectedContextMenuTargets
             ? renderContext.selectedContextTargetIds
@@ -13793,6 +13796,10 @@ struct VerticalTabsSidebar: View, Equatable {
             groupId: tab.groupId,
             index: index,
             workspaceCount: renderContext.workspaceCount,
+            // SUPERMUX:begin sidebar-hide-project-workspaces
+            supermuxVisibleIndex: visibleRowIndex,
+            supermuxVisibleCount: visibleRowCount,
+            // SUPERMUX:end sidebar-hide-project-workspaces
             workspace: workspaceSnapshot,
             isActive: tabManager.selectedTabId == tab.id,
             isMultiSelected: selectedTabIds.contains(tab.id),
@@ -14167,17 +14174,29 @@ struct VerticalTabsSidebar: View, Equatable {
                 pointerInteractionMonitor.removeFrame(for: rowId)
             },
             // SUPERMUX:begin sidebar-hide-project-workspaces
-            supermuxMenuVisibility: { rowIndex, menuTargetIds in
+            supermuxMenuVisibility: { rowWorkspaceId, menuTargetIds in
                 let hiddenIds = supermuxProjectHiddenWorkspaceIds()
                 let tabs = tabManager.tabs
+                let rowIndex = tabs.firstIndex { $0.id == rowWorkspaceId } ?? 0
+                let hasVisibleAbove = tabs.prefix(rowIndex)
+                    .contains { !hiddenIds.contains($0.id) }
+                let hasVisibleBelow = tabs.dropFirst(rowIndex + 1)
+                    .contains { !hiddenIds.contains($0.id) }
+                // Move enablement additionally runs the stepped-plan check the
+                // move itself uses: the reorder clamp (pin tier / group
+                // section) can make the only visible neighbor unreachable,
+                // and an enabled item that visibly does nothing is worse
+                // than a disabled one.
                 return SupermuxRowMenuVisibility(
-                    hasVisibleAbove: tabs.prefix(max(rowIndex, 0))
-                        .contains { !hiddenIds.contains($0.id) },
-                    hasVisibleBelow: tabs.dropFirst(max(rowIndex, 0) + 1)
-                        .contains { !hiddenIds.contains($0.id) },
+                    hasVisibleAbove: hasVisibleAbove,
+                    hasVisibleBelow: hasVisibleBelow,
                     hasOtherVisibleWorkspaces: tabs.contains {
                         !menuTargetIds.contains($0.id) && !hiddenIds.contains($0.id)
-                    }
+                    },
+                    canMoveUp: hasVisibleAbove
+                        && tabManager.supermuxSteppedReorderTarget(tabId: rowWorkspaceId, by: -1) != nil,
+                    canMoveDown: hasVisibleBelow
+                        && tabManager.supermuxSteppedReorderTarget(tabId: rowWorkspaceId, by: 1) != nil
                 )
             }
             // SUPERMUX:end sidebar-hide-project-workspaces
@@ -15753,7 +15772,15 @@ struct TabItemView: View, Equatable {
     private func accessibilityTitle(
         for workspaceSnapshot: SidebarWorkspaceSnapshotBuilder.Snapshot
     ) -> String {
-        String(localized: "accessibility.workspacePosition", defaultValue: "\(workspaceSnapshot.title), workspace \(index + 1) of \(accessibilityWorkspaceCount)")
+        // SUPERMUX:begin sidebar-hide-project-workspaces
+        // Announce the position within the *visible* flat list: with
+        // project-owned rows hidden, the full-list index/count would name
+        // positions a VoiceOver user can't see or navigate.
+        // (upstream: "\(workspaceSnapshot.title), workspace \(index + 1) of \(accessibilityWorkspaceCount)")
+        let announcedIndex = snapshot.supermuxVisibleIndex ?? index
+        let announcedCount = snapshot.supermuxVisibleCount ?? accessibilityWorkspaceCount
+        return String(localized: "accessibility.workspacePosition", defaultValue: "\(workspaceSnapshot.title), workspace \(announcedIndex + 1) of \(announcedCount)")
+        // SUPERMUX:end sidebar-hide-project-workspaces
     }
 
     func moveBy(_ delta: Int) {

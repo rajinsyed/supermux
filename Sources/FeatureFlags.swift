@@ -304,13 +304,20 @@ final class CmuxFeatureFlags {
         let previousResolutions = resolutionsByKey
         remoteValuesByKey = Self.allFlags.reduce(into: [:]) { values, definition in
             // SUPERMUX:begin appkit-sidebar-default-off
-            // Ignore upstream's remote rollout for the AppKit sidebar
-            // experiment: a PostHog `true` outranks both the fork's flipped
-            // default and the user's local override (setOverride refuses to
-            // shadow a remote value), which would silently remove the
-            // Projects section again. The Debug local override remains the
-            // only way to opt in on the fork.
-            if definition.key == "sidebar-appkit-list-experiment" { return }
+            // Ignore upstream's remote *rollout* (`true`) for the AppKit
+            // sidebar experiment: a PostHog `true` outranks both the fork's
+            // flipped default and the user's local override (setOverride
+            // refuses to shadow a remote value), which would silently remove
+            // the Projects section again. A remote `false` is upstream's
+            // kill-switch direction and still ingests, so a Debug opt-in
+            // cannot outlive an upstream emergency disable. The Debug local
+            // override remains the only way to opt in on the fork.
+            if definition.key == "sidebar-appkit-list-experiment" {
+                if Self.coerceBoolFlagValue(remoteFlagValueProvider(definition.key)) == false {
+                    values[definition.key] = false
+                }
+                return
+            }
             // SUPERMUX:end appkit-sidebar-default-off
             if let value = Self.coerceBoolFlagValue(remoteFlagValueProvider(definition.key)) {
                 values[definition.key] = value

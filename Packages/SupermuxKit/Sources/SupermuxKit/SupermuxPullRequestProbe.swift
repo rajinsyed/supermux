@@ -74,11 +74,20 @@ public struct SupermuxPullRequestProbe: Sendable {
         public let resolutions: [PathResolution]
         /// The repo cache to hand back on the next pass.
         public let updatedCache: [String: WorkspacePullRequestRepoCacheEntry]
+        /// GitHub's rate-limit reset deadline when the pass was limited, or
+        /// `nil`. Callers must not launch another pass before it (mirrors
+        /// upstream's `PullRequestPollService` back-off on the same value).
+        public let rateLimitRetryDate: Date?
 
         /// Creates a probe outcome.
-        public init(resolutions: [PathResolution], updatedCache: [String: WorkspacePullRequestRepoCacheEntry]) {
+        public init(
+            resolutions: [PathResolution],
+            updatedCache: [String: WorkspacePullRequestRepoCacheEntry],
+            rateLimitRetryDate: Date? = nil
+        ) {
             self.resolutions = resolutions
             self.updatedCache = updatedCache
+            self.rateLimitRetryDate = rateLimitRetryDate
         }
     }
 
@@ -111,20 +120,18 @@ public struct SupermuxPullRequestProbe: Sendable {
         allowCache: Bool,
         now: Date = Date()
     ) async -> Outcome {
-        // Default branches never earn a badge; resolve them as absent without a
-        // network call, matching cmux's own skip rule.
-        let probeTargets = targets.filter { !PullRequestProbeService.shouldSkipLookup(branch: $0.branch) }
-        guard !probeTargets.isEmpty else {
-            return Outcome(
-                resolutions: targets.map { PathResolution(path: $0.path, resolution: .absent) },
-                updatedCache: cache
-            )
+        guard !targets.isEmpty else {
+            return Outcome(resolutions: [], updatedCache: cache)
         }
 
         // One seed per target; `resolveCandidateSeeds` emits candidates in seed
         // order and `resolveRefreshResults` preserves it, so results correlate to
-        // targets by index.
-        let seeds = probeTargets.map { target in
+        // targets by index. No default-branch pre-filter on the caller-recorded
+        // branch: the pipeline re-detects each directory's actual checked-out
+        // branch (a stale recorded "main" must not skip a worktree that has
+        // since checked out a PR branch) and itself resolves default-branch
+        // candidates `.notFound` without a network call.
+        let seeds = targets.map { target in
             WorkspacePullRequestCandidateSeed(
                 workspaceId: UUID(),
                 panelId: UUID(),
@@ -134,10 +141,10 @@ public struct SupermuxPullRequestProbe: Sendable {
         }
         let resolution = await service.resolveCandidateSeeds(seeds, gitMetadata: gitMetadata)
         // fetchRepoResults returns (repoResults, rateLimitRetryDate) since cmux
-        // 0.65; the coordinator inside CmuxGit already enforces the retry
-        // deadline for subsequent fetches, so the probe only consumes the
-        // per-repo results.
-        let (repoResults, _) = await service.fetchRepoResults(
+        // 0.65. The shared coordinator enforces the deadline transport-side;
+        // the date still travels on the Outcome so the polling model can stop
+        // launching doomed passes until it lapses.
+        let (repoResults, rateLimitRetryDate) = await service.fetchRepoResults(
             repoDirectoriesBySlug: resolution.repoDirectoriesBySlug,
             candidateBranchesByRepo: resolution.candidateBranchesByRepo,
             cacheBySlug: cache,
@@ -151,7 +158,7 @@ public struct SupermuxPullRequestProbe: Sendable {
 
         var resolutions: [PathResolution] = []
         resolutions.reserveCapacity(targets.count)
-        for (target, result) in zip(probeTargets, refreshResults) {
+        for (target, result) in zip(targets, refreshResults) {
             switch result.resolution {
             case .resolved(let item):
                 if let pullRequest = SupermuxPullRequest(resolvedItem: item) {
@@ -165,13 +172,6 @@ public struct SupermuxPullRequestProbe: Sendable {
                 resolutions.append(PathResolution(path: target.path, resolution: .keepExisting))
             }
         }
-        // Skipped (default-branch) targets resolve as absent so the model clears
-        // any leftover badge for them.
-        let probedPaths = Set(probeTargets.map(\.path))
-        for target in targets where !probedPaths.contains(target.path) {
-            resolutions.append(PathResolution(path: target.path, resolution: .absent))
-        }
-
         // Fold successful repo fetches back into the cache; leave failed slugs on
         // their previous entry so a transient failure doesn't evict good data.
         var updatedCache = cache
@@ -180,7 +180,11 @@ public struct SupermuxPullRequestProbe: Sendable {
                 updatedCache[slug] = entry
             }
         }
-        return Outcome(resolutions: resolutions, updatedCache: updatedCache)
+        return Outcome(
+            resolutions: resolutions,
+            updatedCache: updatedCache,
+            rateLimitRetryDate: rateLimitRetryDate
+        )
     }
 }
 

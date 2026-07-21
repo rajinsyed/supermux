@@ -101,12 +101,19 @@ struct SidebarWorkspaceSnapshotFactory {
             // Agent-published lifecycle rows ("⚡ Running" etc.) that the
             // activity indicator duplicates are dropped so flat rows match the
             // nested project-workspace rows; agent error rows and mismatched
-            // statuses keep rendering.
+            // statuses keep rendering. Only the SwiftUI list mounts the
+            // compensating indicator (`TabItemView`'s fenced overlay); the
+            // AppKit NSTableView cells render metadata rows verbatim, so when
+            // that list is active (Debug opt-in) the rows keep upstream's
+            // unfiltered entries — dropping them there would erase agent
+            // status from the sidebar entirely.
             // (upstream: detailVisibility.showsMetadata ? workspace.sidebarStatusEntriesInDisplayOrder() : [])
             metadataEntries: detailVisibility.showsMetadata
-                ? SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(
-                    from: workspace.sidebarStatusEntriesInDisplayOrder(),
-                    duplicatedBy: supermuxActivityByAgentKey)
+                ? (CmuxFeatureFlags.shared.isAppKitSidebarListEnabled
+                    ? workspace.sidebarStatusEntriesInDisplayOrder()
+                    : SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(
+                        from: workspace.sidebarStatusEntriesInDisplayOrder(),
+                        duplicatedBy: supermuxActivityByAgentKey))
                 : [],
             // SUPERMUX:end sidebar-flatrow-activity
             metadataBlocks: detailVisibility.showsMetadata

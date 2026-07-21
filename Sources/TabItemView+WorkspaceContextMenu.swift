@@ -192,21 +192,21 @@ extension TabItemView {
         // `actions.currentWindowMoveTargets()` call in this builder — this
         // never runs on the typing path. Resolved through the actions bundle
         // (the row holds no store reference under the snapshot boundary).
-        let menuVisibility = actions.supermuxMenuVisibility(index, Set(targetIds))
+        let menuVisibility = actions.supermuxMenuVisibility(workspaceId, Set(targetIds))
         // SUPERMUX:end sidebar-hide-project-workspaces
 
         Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
             moveBy(-1)
         }
         // SUPERMUX:begin sidebar-hide-project-workspaces
-        .disabled(!menuVisibility.hasVisibleAbove)
+        .disabled(!menuVisibility.canMoveUp)
         // SUPERMUX:end sidebar-hide-project-workspaces
 
         Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
             moveBy(1)
         }
         // SUPERMUX:begin sidebar-hide-project-workspaces
-        .disabled(!menuVisibility.hasVisibleBelow)
+        .disabled(!menuVisibility.canMoveDown)
         // SUPERMUX:end sidebar-hide-project-workspaces
 
         Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {

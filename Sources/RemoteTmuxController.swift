@@ -612,9 +612,16 @@ final class RemoteTmuxController {
                 manager.closeWorkspace(workspace, allowEmptyingWindow: true)
                 // SUPERMUX:end keep-window-on-last-close
             case .explicitDetach:
-                // Detach is authoritative even for a pinned final mirror. Closing
-                // its owning window avoids stranding a blank `--new-window` shell.
-                _ = manager.closeWorkspaceNonInteractively(workspace, allowPinned: true)
+                // SUPERMUX:begin keep-window-on-last-close
+                // Detach is authoritative even for a pinned final mirror —
+                // closeWorkspace has no pin veto, so the mirror still closes.
+                // Upstream closes the owning window here (a blank
+                // `--new-window` shell would otherwise be stranded), but on
+                // the fork the emptied window is the supermux empty home, and
+                // closing it on the last window would quit the app.
+                // (upstream: `_ = manager.closeWorkspaceNonInteractively(workspace, allowPinned: true)`)
+                manager.closeWorkspace(workspace, allowEmptyingWindow: true)
+                // SUPERMUX:end keep-window-on-last-close
             }
         }
     }

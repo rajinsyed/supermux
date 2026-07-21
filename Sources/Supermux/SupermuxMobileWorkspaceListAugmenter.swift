@@ -29,13 +29,16 @@ enum SupermuxMobileWorkspaceListAugmenter {
     ///   - payload: The upstream-built workspace payload.
     ///   - workspace: The workspace being serialized.
     static func augment(_ payload: [String: Any], workspace: Workspace) -> [String: Any] {
-        // Mirror the sidebar row exactly: when cmux's PR polling/visibility
-        // settings are off the mac row hides its badge, so the phone must
-        // not show one either (same gate as SupermuxAppGlue's
-        // pullRequestsEnabled).
-        let pullRequestPollingEnabled =
-            SidebarWorkspaceDetailDefaults.watchGitStatusValue(defaults: .standard)
-                && SidebarWorkspaceDetailDefaults.showPullRequestsValue(defaults: .standard)
+        // Mirror the sidebar row exactly: when the mac row hides its PR badge,
+        // the phone must not show one either (same gate as SupermuxAppGlue's
+        // pullRequestsEnabled). `pullRequestActivity` is cmux's own resolution
+        // — watch-git-status AND show-pull-requests AND the master "Hide all
+        // details" switch — and only `.activePolling` means the badge is
+        // actually visible (passive states still *accept* agent-pushed PR
+        // reports without displaying them).
+        let pullRequestPollingEnabled = SidebarWorkspaceDetailDefaults
+            .pullRequestActivity(defaults: .standard)
+            .performsActivePolling
         let pullRequest = pullRequestPollingEnabled
             ? workspace.sidebarPullRequestsInDisplayOrder().first
                 .flatMap(SupermuxPullRequest.init(sidebarState:))

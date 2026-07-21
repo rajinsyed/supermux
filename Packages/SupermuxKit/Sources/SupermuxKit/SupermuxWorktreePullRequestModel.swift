@@ -65,6 +65,12 @@ public final class SupermuxWorktreePullRequestModel {
     /// Client id used for refreshes that don't pass one (unshared instances).
     private static let soleClient = UUID()
 
+    /// GitHub's rate-limit reset deadline from the last limited pass. Passes
+    /// starting before it are skipped outright (badges kept as-is) instead of
+    /// launching probes the shared transport coordinator would refuse anyway —
+    /// mirroring upstream's `PullRequestPollService` back-off on the same value.
+    @ObservationIgnored private var rateLimitedUntil: Date?
+
     /// Creates the model.
     /// - Parameter probe: PR resolver; defaults to the production probe.
     public init(probe: any SupermuxPullRequestResolving = SupermuxPullRequestProbe()) {
@@ -103,6 +109,11 @@ public final class SupermuxWorktreePullRequestModel {
             pruneToTrackedPaths()
             return
         }
+        // Rate-limited: keep the current badges and skip the pass entirely
+        // rather than burning a probe into a locked-out transport.
+        if let rateLimitedUntil, Date() < rateLimitedUntil {
+            return
+        }
 
         let outcome = await probe.resolve(
             targets: targets,
@@ -117,6 +128,7 @@ public final class SupermuxWorktreePullRequestModel {
         // fresh state. Other clients' passes carry disjoint targets and merge
         // safely, so they never invalidate this one.
         guard generation == refreshGenerationByClient[clientId], !Task.isCancelled else { return }
+        rateLimitedUntil = outcome.rateLimitRetryDate
         // Merge per-slug keeping the freshest entry: with concurrent passes
         // from different windows, whole-map assignment would let the pass that
         // *finishes* last regress another client's newer cache entries. Then

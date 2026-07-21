@@ -23,6 +23,27 @@ private struct StubResolver: SupermuxPullRequestResolving {
     }
 }
 
+/// A resolver that serves scripted outcomes per call index and counts calls,
+/// so tests can assert a refresh was (or wasn't) allowed to probe.
+private actor CountingResolver: SupermuxPullRequestResolving {
+    private let outcomes: [SupermuxPullRequestProbe.Outcome]
+    private(set) var callCount = 0
+
+    init(outcomes: [SupermuxPullRequestProbe.Outcome]) {
+        self.outcomes = outcomes
+    }
+
+    func resolve(
+        targets: [SupermuxPullRequestTarget],
+        cache: [String: WorkspacePullRequestRepoCacheEntry],
+        allowCache: Bool,
+        now: Date
+    ) async -> SupermuxPullRequestProbe.Outcome {
+        callCount += 1
+        return outcomes[min(callCount - 1, outcomes.count - 1)]
+    }
+}
+
 /// A resolver whose first call suspends until the test opens a gate (holding a
 /// probe pass in flight while a second pass runs), then serves scripted
 /// outcomes per call index.
@@ -268,6 +289,53 @@ struct SupermuxWorktreePullRequestModelTests {
         model.endTracking(client: window)
         model.endTracking(client: window)
         #expect(model.pullRequestsByWorktreePath.isEmpty)
+    }
+
+    // MARK: Rate-limit back-off
+
+    @Test func rateLimitedPassSkipsProbesUntilTheDeadline() async {
+        // Call 1 reports a rate limit with a future reset; the next refresh
+        // must keep the badges and not launch another probe.
+        let resolver = CountingResolver(outcomes: [
+            SupermuxPullRequestProbe.Outcome(
+                resolutions: [.init(path: "/a", resolution: .pullRequest(pullRequest(1)))],
+                updatedCache: [:],
+                rateLimitRetryDate: Date().addingTimeInterval(3600)
+            ),
+            outcome(path: "/a", number: 2),
+        ])
+        let model = SupermuxWorktreePullRequestModel(probe: resolver)
+        let targets = [target("/a")]
+
+        await model.refresh(targets: targets, allowCache: true)
+        #expect(model.pullRequestsByWorktreePath["/a"]?.number == 1)
+        await model.refresh(targets: targets, allowCache: true)
+        #expect(await resolver.callCount == 1)
+        #expect(model.pullRequestsByWorktreePath["/a"]?.number == 1)
+    }
+
+    @Test func lapsedRateLimitDeadlineResumesProbing() async {
+        // A reset date already in the past must not suppress the next pass,
+        // and a clean pass clears the stored deadline.
+        let resolver = CountingResolver(outcomes: [
+            SupermuxPullRequestProbe.Outcome(
+                resolutions: [.init(path: "/a", resolution: .pullRequest(pullRequest(1)))],
+                updatedCache: [:],
+                rateLimitRetryDate: Date().addingTimeInterval(-1)
+            ),
+            outcome(path: "/a", number: 2),
+            outcome(path: "/a", number: 3),
+        ])
+        let model = SupermuxWorktreePullRequestModel(probe: resolver)
+        let targets = [target("/a")]
+
+        await model.refresh(targets: targets, allowCache: true)
+        await model.refresh(targets: targets, allowCache: true)
+        #expect(await resolver.callCount == 2)
+        #expect(model.pullRequestsByWorktreePath["/a"]?.number == 2)
+        await model.refresh(targets: targets, allowCache: true)
+        #expect(await resolver.callCount == 3)
+        #expect(model.pullRequestsByWorktreePath["/a"]?.number == 3)
     }
 
     @Test func singleCallerSemanticsMatchLegacyBehavior() async {
