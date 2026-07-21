@@ -47,7 +47,16 @@ final class CmuxFeatureFlags {
     private static let agentChatUIDefault = false
     private static let sidebarWorkspaceAgentSpinnerDefault = false
     private static let workspaceTodoControlsDefault = false
-    private static let appKitSidebarListDefault = true
+    // SUPERMUX:begin appkit-sidebar-default-off
+    // (upstream: `= true`) The AppKit NSTableView sidebar renders
+    // `SidebarWorkspaceTableView` directly and bypasses the SwiftUI list that
+    // hosts every supermux sidebar feature (Projects section, project-owned
+    // workspace nesting/hiding, activity indicators, unified row style). Until
+    // the fork ports those to the AppKit list, supermux defaults the
+    // experiment off; users can still opt in via the Debug feature-flag
+    // override, accepting the missing Projects section.
+    private static let appKitSidebarListDefault = false
+    // SUPERMUX:end appkit-sidebar-default-off
 
     private static let overrideKeyPrefix = "cmux.flags.override."
 
@@ -294,6 +303,15 @@ final class CmuxFeatureFlags {
     func applyLoadedFlags() {
         let previousResolutions = resolutionsByKey
         remoteValuesByKey = Self.allFlags.reduce(into: [:]) { values, definition in
+            // SUPERMUX:begin appkit-sidebar-default-off
+            // Ignore upstream's remote rollout for the AppKit sidebar
+            // experiment: a PostHog `true` outranks both the fork's flipped
+            // default and the user's local override (setOverride refuses to
+            // shadow a remote value), which would silently remove the
+            // Projects section again. The Debug local override remains the
+            // only way to opt in on the fork.
+            if definition.key == "sidebar-appkit-list-experiment" { return }
+            // SUPERMUX:end appkit-sidebar-default-off
             if let value = Self.coerceBoolFlagValue(remoteFlagValueProvider(definition.key)) {
                 values[definition.key] = value
             }
