@@ -142,6 +142,11 @@ Rules for adding a touchpoint:
 | 131 | `Sources/TabManager+AdjacentWorkspaceReordering.swift` | `sidebar-hide-project-workspaces` | `reorderWorkspace(tabId:by:)` — the ONE adjacent-move entrypoint shared by the sidebar context menu, the menu-bar/keyboard shortcut (`moveSelectedWorkspace`), and the socket `workspace.action move_up`/`move_down` verbs — is fenced to route through fork-owned `TabManager.supermuxSteppedReorderTarget` (`Sources/Supermux/SupermuxWorkspaceReorderStepping.swift`): steps over project-hidden rows to the nearest visible neighbor and returns `false` (no mutation) when the clamped destination (pin tier / group section, via the coordinator's public `workspaceReorderPlan`) would not change the visible flat-list order. The same helper drives the #114 Move Up/Down enablement, so menu state and mutation agree. With no hidden rows (or under the AppKit list, where #130's filter gate empties the hidden set) it degrades to upstream's `currentIndex + offset` |
 | 132 | `Sources/SidebarWorkspaceRowInput.swift` | `sidebar-hide-project-workspaces` | Two fenced defaulted fields `supermuxVisibleIndex`/`supermuxVisibleCount: Int?` (visible-flat-list ordinal/total for the row's VoiceOver "workspace N of M" announcement; `nil` falls back to the full-list values) plus the fenced pass-through in `rowSnapshot(list:)`. `index`/`workspaceCount` keep upstream's full-list semantics (⌘-number digits, shift-range selection, `lastSidebarSelectionIndex`). Values computed in the #2 row-input construction from `renderContext.projectHiddenWorkspaceIds`; consumed by the fenced `accessibilityTitle` in `TabItemView` (#2). Defaulted so upstream construction sites compile unchanged |
 | 133 | `Sources/SidebarWorkspaceRowSnapshot.swift` | `sidebar-hide-project-workspaces` | The matching two fenced defaulted fields on the row snapshot value (`supermuxVisibleIndex`/`supermuxVisibleCount: Int?`); synthesized `Equatable` covers them, preserving the row's change-detection contract. See #132 |
+| 134 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/CmxDeviceIDCanonicalization.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow free-function` for `cmxCanonicalDeviceID` — upstream conventions-lint debt at the 0.64.20 merge point (see #134–138 re-apply note) |
+| 135 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShellReleaseGateSupport/MobileIrohReleaseGateResponseValidator.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow namespace-enum` for `MobileIrohReleaseGateResponseValidator` — same upstream lint debt family |
+| 136 | `Packages/Shared/CmuxIrohTransport/Sources/CmuxIrohTransport/CmxIrohTCPFirstActivation.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow namespace-type` for `CmxIrohTCPFirstActivation` — same upstream lint debt family |
+| 137 | `Packages/macOS/CmuxAppKitSupportUI/Sources/CmuxAppKitSupportUI/Popover/CmuxPopoverMutation.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow namespace-type` for `CmuxPopoverMutation` — same upstream lint debt family |
+| 138 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/DiagnosticLog.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow lock` for the `OSAllocatedUnfairLock(initialState:)` constructor in `EventBuffer.init` (upstream justified only the property decl 7 lines above, outside the rule's 3-line window) — same upstream lint debt family |
 ## How to re-apply
 
 ### 2. `Sources/ContentView.swift` — `sidebar-projects-section` + `sidebar-hide-project-workspaces`
@@ -1913,3 +1918,22 @@ Re-apply note: upstream edits to translation bodies merge cleanly under the bann
 above the first heading). On a conflict, take upstream's file and re-prepend the banner —
 recover the localized text with `git show <our-side>:README.<lang>.md | head -3`. If upstream
 adds a new `README.<lang>.md`, prepend a banner in that language and add it to the list above.
+
+### 134–138. Upstream conventions-lint debt at the 0.64.20 merge — `lint-allow-upstream-debt`
+
+Upstream paused its automatic CI on 2026-07-13 (all core workflows became `workflow_dispatch`-
+only), so `scripts/lint-ios-package-conventions.sh` violations accumulated on upstream `main`
+unchecked. The 0.64.20 merge (upstream snapshot `98a701ffd9`) imported five of them; the fork
+still dispatches the `iOS simulator tests` workflow, whose `package-conventions-lint` job fails
+on any ERROR. Each offender carries a two-line fence directly above the flagged declaration,
+with the `lint:allow <rule>` marker on the `SUPERMUX:end` line so it lands inside each rule's
+suppression window (free-function/lock: ≤2–3 lines above; namespace-enum: exactly 1 line above;
+namespace-type: ≤3 lines above). Per #109's rule, `scripts/lint-namespace-types-baseline.txt`
+was NOT grown.
+
+Re-apply note: re-insert the two fence lines directly above the flagged declaration (below any
+doc comment; above `@MainActor` in `CmuxPopoverMutation.swift`), keeping `lint:allow <rule>` on
+the `SUPERMUX:end` line. Verify with `./scripts/lint-ios-package-conventions.sh` (expect
+"OK: no unjustified convention violations."). Drop any of these fences as soon as an upstream
+merge brings the real fix for (or upstream's own `lint:allow` at) that site — these fences are
+pure grandfathering and may only shrink.

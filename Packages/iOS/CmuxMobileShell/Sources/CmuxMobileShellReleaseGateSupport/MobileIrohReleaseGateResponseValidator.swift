@@ -9,6 +9,8 @@ internal import CmuxMobileShell
 /// The probe discards decoded values and publishes only operation booleans, so
 /// chat descriptors, notification identifiers, session identifiers, and
 /// artifact metadata never enter the report.
+// SUPERMUX:begin lint-allow-upstream-debt
+// SUPERMUX:end lint-allow-upstream-debt (lint:allow namespace-enum — upstream debt at the 0.64.20 merge; conventions gate runs only on the fork while upstream CI is paused)
 enum MobileIrohReleaseGateResponseValidator {
     static func independentEventSubscription(
         _ data: Data,

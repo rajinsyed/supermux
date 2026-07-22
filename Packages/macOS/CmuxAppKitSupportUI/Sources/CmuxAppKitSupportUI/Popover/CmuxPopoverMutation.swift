@@ -37,6 +37,8 @@ public final class CmuxPopoverVisibleUpdateScheduler {
     }
 }
 
+// SUPERMUX:begin lint-allow-upstream-debt
+// SUPERMUX:end lint-allow-upstream-debt (lint:allow namespace-type — upstream debt at the 0.64.20 merge; conventions gate runs only on the fork while upstream CI is paused)
 @MainActor
 public enum CmuxPopoverMutation {
     public static func performWithoutImplicitAnimation(_ body: () -> Void) {

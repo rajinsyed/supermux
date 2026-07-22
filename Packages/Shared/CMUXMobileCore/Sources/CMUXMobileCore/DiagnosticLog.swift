@@ -246,6 +246,8 @@ public final class DiagnosticLog: Sendable {
             commandContinuation: AsyncStream<DrainCommand>.Continuation
         ) {
             let (events, eventContinuation) = Self.makeEventSegment(capacity: capacity)
+            // SUPERMUX:begin lint-allow-upstream-debt
+            // SUPERMUX:end lint-allow-upstream-debt (lint:allow lock — constructor of the property justified above; upstream debt at the 0.64.20 merge, gate runs only on the fork)
             self.state = OSAllocatedUnfairLock(initialState: State(
                 capacity: capacity,
                 commandContinuation: commandContinuation,
