@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -project cmux.xcodeproj -target cmux-cli -configuration Debug \
-            -derivedDataPath /tmp/dd SYMROOT=/tmp/dd/sym OBJROOT=/tmp/dd/obj build 2>&1 | tail -20
+            SYMROOT=/tmp/dd/sym OBJROOT=/tmp/dd/obj build 2>&1 | tail -20
           CLI=$(find /tmp/dd -type f -name cmux -perm +111 | grep -v dSYM | head -1)
           echo "CLI=$CLI" >> "$GITHUB_ENV"
           ls -la "$CLI"
