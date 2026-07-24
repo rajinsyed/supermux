@@ -89,6 +89,12 @@ jobs:
           python3 "$ROOT/stub.py" "$SOCK" "$ROOT/server.log" &
           SERVER=$!
           sleep 1
+          mkdir -p "$ROOT/home"
+          echo "== binary size:"; ls -la "$CLI"
+          echo "== first exec (cold — includes any Gatekeeper/XProtect scan):"
+          { /usr/bin/time -p "$CLI" help >/dev/null; } 2>&1 | grep real || true
+          echo "== second exec (warm):"
+          { /usr/bin/time -p "$CLI" help >/dev/null; } 2>&1 | grep real || true
           INPUT='{"session_id":"repro","hook_event_name":"Stop","cwd":"'"$ROOT"'","last_assistant_message":"done"}'
           echo "== starting hook at $(date +%T)"
           ( echo "$INPUT" | env -i HOME="$ROOT/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
