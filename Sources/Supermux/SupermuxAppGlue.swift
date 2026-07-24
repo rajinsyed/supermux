@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CmuxFoundation
+import CmuxGit
 import CmuxSettings
 import CmuxSidebar
 import Foundation
@@ -64,7 +65,18 @@ enum SupermuxComposition {
     /// sidebars (the model is multi-window-safe: client-scoped union tracking
     /// plus a generation guard). Must be a stable instance — the section seeds
     /// its `@State` from it on first mount.
-    static let worktreePullRequestModel = SupermuxWorktreePullRequestModel()
+    ///
+    /// The probe wraps the app's shared `PullRequestProbeService`: service
+    /// copies retain the same `GitHubPullRequestRequestCoordinator` actor, so
+    /// the worktree prober and cmux's opened-workspace pollers coalesce
+    /// requests, share the ETag cache, and honor one rate-limit deadline
+    /// instead of spending the same GitHub token from two disjoint transports.
+    /// (This static is first touched from the sidebar render path, well after
+    /// AppDelegate exists; the fallback covers non-app harnesses only.)
+    static let worktreePullRequestModel = SupermuxWorktreePullRequestModel(
+        probe: AppDelegate.shared.map { SupermuxPullRequestProbe(service: $0.pullRequestProbeService) }
+            ?? SupermuxPullRequestProbe()
+    )
 }
 
 /// The view mounted inside the cmux sidebar (see the `sidebar-projects-section`
@@ -87,10 +99,14 @@ struct SupermuxProjectsMount: View {
 
     // cmux's PR-probe gates (Settings → sidebar), read via @AppStorage so a
     // toggle re-renders the mount and restarts/stops the section's probe loop.
-    // Missing keys default to true, matching `SidebarWorkspaceDetailDefaults`'s
-    // `boolValue` semantics; the AND mirrors its `pullRequestPollingEnabled`.
+    // Missing keys default to the catalog defaults, matching
+    // `SidebarWorkspaceDetailDefaults`'s semantics; the combination mirrors
+    // its `pullRequestActivity` resolution — including the master "Hide all
+    // details" switch, which hides every PR badge on the mac sidebar and must
+    // hide the fork's nested-row badges the same way.
     @AppStorage(SidebarWorkspaceDetailDefaults.showPullRequestsKey) private var showPullRequests = true
     @AppStorage(SidebarWorkspaceDetailDefaults.watchGitStatusKey) private var watchGitStatus = true
+    @AppStorage(SidebarCatalogSection().hideAllDetails.userDefaultsKey) private var hideAllDetails = false
 
     var body: some View {
         // Make the body's dependency on the observation token explicit (cmux
@@ -110,7 +126,7 @@ struct SupermuxProjectsMount: View {
         // what re-renders this body on association changes now that the raw
         // `associations.projectId` reads no longer happen here.
         let resolutionCache = SupermuxMainListFilter.resolutionCache(for: tabManager)
-        let pullRequestsEnabled = watchGitStatus && showPullRequests
+        let pullRequestsEnabled = watchGitStatus && showPullRequests && !hideAllDetails
         let openWorkspaces = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
             let isSelected = workspace.id == tabManager.selectedTabId
             // Full snapshots (branch/PR/activity, each walking the bonsplit

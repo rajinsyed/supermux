@@ -83,8 +83,8 @@ cmux-tui plugin disable
 | `browser.discover_ports` | integer array | `[9222]` | Local ports to probe for `/json/version` |
 | `browser.user_data_dir` | string | `null` | Persistent profile directory for launched Chrome |
 | `browser.ephemeral` | boolean | `false` | Use a temporary launched Chrome profile and delete it on shutdown |
-| `browser.max_capture_megapixels` | number | `2.0` | Maximum browser capture size before downscaling |
-| `browser.capture_scale` | number or null | `null` | Fixed capture scale from 0.0 through 1.0 |
+| `browser.max_capture_megapixels` | number | `2.0` | Maximum browser capture size before downscaling, from 0.0 through 2.0 |
+| `browser.capture_scale` | number or null | `null` | Maximum capture scale from 0.0 through 1.0, reduced further when needed to stay under the megapixel limit |
 
 When `browser.ephemeral` is true, it takes precedence over `browser.user_data_dir`: launched Chrome uses a fresh temporary profile, and the configured directory is not deleted.
 
@@ -103,9 +103,9 @@ Chrome 136 and newer reject CDP remote debugging on the OS-default profile direc
 | Key | Type | Default | Effect |
 | --- | --- | --- | --- |
 | `server.ws` | socket address string | unset | Enables the WebSocket control listener, for example `127.0.0.1:7681` |
-| `server.ws_token` | string | unset | Requires the first WebSocket text frame to be `{"auth":{"token":"..."}}` |
+| `server.ws_token` | string | unset | Adds a static-token bypass for interactive TUI pairing |
 
-WebSocket binds must be loopback unless cmux-tui is started with `--ws-insecure-bind`. The listener has no TLS; use an authenticated TLS reverse proxy for remote access. See the [transport contract](../spec/transports.md#websocket).
+WebSocket clients pair through a six-digit browser/TUI comparison by default. WebSocket binds must be loopback unless cmux-tui is started with `--ws-insecure-bind`. The listener has no TLS; use an authenticated TLS reverse proxy for remote access. See the [transport contract](../spec/transports.md#websocket).
 
 ## Keys
 
@@ -115,7 +115,7 @@ WebSocket binds must be loopback unless cmux-tui is started with `--ws-insecure-
 | `keys.alt_shortcuts` | boolean | `true` | Enables default modeless Alt bindings when true |
 | `keys.new-tab` | chord string or array or `"none"` | `["t","alt+t"]` | New PTY tab |
 | `keys.new_browser_tab` | chord string or array or `"none"` | `"B"` | Browser URL prompt |
-| `keys.new-pane-smart` | chord string or array or `"none"` | `"alt+n"` | New pane using smart split direction |
+| `keys.new-pane-smart` | chord string or array or `"none"` | `"alt+n"` | New pane using the default automatic layout |
 | `keys.next-tab` | chord string or array or `"none"` | `"tab"` | Next tab |
 | `keys.prev-tab` | chord string or array or `"none"` | `"backtab"` | Previous tab |
 | `keys.select-tab-1` through `keys.select-tab-9` | chord string or array or `"none"` | unbound | Select tab by visible tab number; use these to restore the old `Ctrl-b 1` through `Ctrl-b 9` tab selectors |

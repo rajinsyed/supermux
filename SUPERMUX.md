@@ -265,6 +265,14 @@ Same as cmux (see `AGENTS.md`): `./scripts/setup.sh` once, then
 > after `/opt/homebrew/bin/zig`. If a build fails with "zig 0.15.2 is required", re-install it
 > there or run `ZIG_REQUIRED=0.15.2 ./scripts/install-zig-ci.sh`. Also note: prebuilt
 > GhosttyKit is fetched by `./scripts/ensure-ghosttykit.sh` (no zig needed for that).
+>
+> **Rust (since the 0.64.20 upstream merge):** upstream's diff viewer builds a Rust sidecar
+> (`Native/DiffSidecar`, "Build Diff Sidecar" script phase) and requires **rustup** with the
+> pinned toolchain from `Native/DiffSidecar/rust-toolchain.toml` (currently 1.88.0). On this
+> machine rustup is installed user-locally in `~/.cargo`/`~/.rustup` (no shell-profile edits;
+> the build phase finds it via its own PATH fallback). If a build fails with "rustup is
+> required", run: `rustup toolchain install 1.88.0 --profile minimal --component clippy,rustfmt
+> && rustup target add --toolchain 1.88.0 aarch64-apple-darwin x86_64-apple-darwin`.
 
 ```bash
 ./scripts/reload.sh --tag <your-tag>            # build Debug app

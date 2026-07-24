@@ -43,7 +43,8 @@ extension MobileHostService {
         // SUPERMUX:end mobile-supermux-authz
 
         switch request.method {
-        case "mobile.workspace.list", "workspace.list":
+        case "mobile.workspace.list", "workspace.list",
+             "mobile.directory.list", "mobile.directory.search":
             return nil
         case "workspace.create":
             guard request.params["group_id"] == nil || request.params["group_id"] is NSNull else {
@@ -76,7 +77,8 @@ extension MobileHostService {
              "mobile.terminal.artifact.scan",
              "mobile.terminal.artifact.stat",
              "mobile.terminal.artifact.fetch",
-             "mobile.terminal.artifact.thumbnail":
+             "mobile.terminal.artifact.thumbnail",
+             "mobile.terminal.artifact.list":
             return ticketTerminalAuthorizationError(
                 authorization: authorization,
                 workspaceSelection: workspaceSelection.value,

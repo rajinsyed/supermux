@@ -1163,6 +1163,11 @@ struct BrowserPortalSearchOverlayConfiguration {
     let onFieldDidFocus: () -> Void
 }
 
+struct BrowserPortalDesignComposerConfiguration {
+    let panelId: UUID
+    let controller: BrowserDesignModeController
+}
+
 struct BrowserPaneDropContext: Equatable {
     let workspaceId: UUID
     let panelId: UUID
@@ -1180,6 +1185,8 @@ final class WindowBrowserSlotView: NSView {
     private let paneDropTargetView = BrowserPaneDropTargetView(frame: .zero)
     private let dropZoneOverlayView = BrowserDropZoneOverlayView(frame: .zero)
     private var searchOverlayHostingView: NSHostingView<BrowserSearchOverlay>?
+    private var designComposerHostingView: BrowserDesignModeComposerHostingView?
+    private var designComposerPanelId: UUID?
     private var omnibarSuggestionsHostingView: BrowserPortalOmnibarSuggestionsHostingView?
     private weak var hostedWebView: WKWebView?
     private var hostedWebViewConstraints: [NSLayoutConstraint] = []
@@ -1231,6 +1238,12 @@ final class WindowBrowserSlotView: NSView {
         super.layout()
         paneDropTargetView.frame = bounds
         applyResolvedDropZoneOverlay()
+        if let hostedWebView,
+           hostedWebView.cmuxBrowserViewportUsesHost,
+           hostedWebView.cmuxBrowserViewportPresentationView.superview === self,
+           !browserPortalHasVisibleWebKitCompanionSubview(for: hostedWebView) {
+            hostedWebView.cmuxApplyBrowserViewportLayout(in: bounds)
+        }
         guard !isApplyingHostedInspectorLayout else { return }
         if let previousSize = lastHostedInspectorLayoutBoundsSize,
            Self.sizeApproximatelyEqual(previousSize, bounds.size) {
@@ -1400,6 +1413,77 @@ final class WindowBrowserSlotView: NSView {
         bringInteractionLayersToFrontIfNeeded()
     }
 
+    func setDesignComposer(_ configuration: BrowserPortalDesignComposerConfiguration?) {
+        guard let configuration else {
+            designComposerHostingView?.removeFromSuperview()
+            designComposerHostingView = nil
+            designComposerPanelId = nil
+            return
+        }
+
+        if let overlay = designComposerHostingView {
+            if designComposerPanelId != configuration.panelId {
+                overlay.rootView = Self.makeDesignComposerRootView(
+                    configuration: configuration,
+                    overlay: overlay
+                )
+                overlay.cardFrameInTopLeftCoordinates = .zero
+                designComposerPanelId = configuration.panelId
+            }
+            if overlay.superview !== self {
+                overlay.removeFromSuperview()
+                addSubview(overlay)
+                NSLayoutConstraint.activate([
+                    overlay.topAnchor.constraint(equalTo: topAnchor),
+                    overlay.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    overlay.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    overlay.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+            }
+            bringInteractionLayersToFrontIfNeeded()
+            return
+        }
+
+        let overlay = BrowserDesignModeComposerHostingView(
+            rootView: BrowserDesignModePopoverHost(controller: configuration.controller)
+        )
+        overlay.rootView = Self.makeDesignComposerRootView(
+            configuration: configuration,
+            overlay: overlay
+        )
+        overlay.onPointerInsideCard = { [weak controller = configuration.controller] in
+            controller?.clearPageHoverThrottled()
+        }
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+        designComposerHostingView = overlay
+        designComposerPanelId = configuration.panelId
+        bringInteractionLayersToFrontIfNeeded()
+    }
+
+    private static func makeDesignComposerRootView(
+        configuration: BrowserPortalDesignComposerConfiguration,
+        overlay: BrowserDesignModeComposerHostingView
+    ) -> BrowserDesignModePopoverHost {
+        let dragBridge = BrowserDesignModeCardDragBridge()
+        overlay.onCardDrag = { [weak dragBridge] translation in
+            dragBridge?.translation = translation
+        }
+        return BrowserDesignModePopoverHost(
+            controller: configuration.controller,
+            dragBridge: dragBridge
+        ) { [weak overlay, weak controller = configuration.controller] frame in
+            overlay?.cardFrameInTopLeftCoordinates = frame
+            controller?.updateComposerFrame(frame)
+        }
+    }
+
     private func logOmnibarSuggestionsEvent(_ action: String, configuration: BrowserPortalOmnibarSuggestionsConfiguration?) {
 #if DEBUG
         cmuxDebugLog(
@@ -1524,18 +1608,18 @@ final class WindowBrowserSlotView: NSView {
     }
 
     func pinHostedWebView(_ webView: WKWebView) {
-        guard webView.superview === self else { return }
+        let presentationView = webView.cmuxBrowserViewportPresentationView
+        guard presentationView.superview === self else { return }
 
         let hasCompanionWKSubviews = browserPortalHasVisibleWebKitCompanionSubview(for: webView)
         let needsPlainWebViewFrameReset =
             !hasCompanionWKSubviews &&
-            Self.frameDiffersFromBounds(webView.frame, bounds: bounds)
+            !webView.cmuxBrowserViewportLayoutMatches(bounds)
         let needsFrameHosting =
             hostedWebView !== webView ||
             !hostedWebViewConstraints.isEmpty ||
             needsPlainWebViewFrameReset ||
-            !webView.translatesAutoresizingMaskIntoConstraints ||
-            webView.autoresizingMask != [.width, .height]
+            !presentationView.translatesAutoresizingMaskIntoConstraints
         guard needsFrameHosting else {
             needsLayout = true
             layoutSubtreeIfNeeded()
@@ -1548,20 +1632,14 @@ final class WindowBrowserSlotView: NSView {
         // Attached Web Inspector mutates the moved WKWebView's frame directly.
         // Re-pin plain web views after cross-host reattach, but preserve the
         // WebKit-managed split frame when docked DevTools siblings are present.
-        webView.translatesAutoresizingMaskIntoConstraints = true
-        webView.autoresizingMask = [.width, .height]
         if !hasCompanionWKSubviews {
-            webView.frame = bounds
+            webView.cmuxApplyBrowserViewportLayout(in: bounds)
+        } else {
+            presentationView.translatesAutoresizingMaskIntoConstraints = true
+            presentationView.autoresizingMask = [.width, .height]
         }
         needsLayout = true
         layoutSubtreeIfNeeded()
-    }
-
-    private static func frameDiffersFromBounds(_ frame: NSRect, bounds: NSRect, epsilon: CGFloat = 0.5) -> Bool {
-        abs(frame.minX - bounds.minX) > epsilon ||
-            abs(frame.minY - bounds.minY) > epsilon ||
-            abs(frame.width - bounds.width) > epsilon ||
-            abs(frame.height - bounds.height) > epsilon
     }
 
     func effectivePaneTopChromeHeight() -> CGFloat {
@@ -1665,9 +1743,10 @@ final class WindowBrowserSlotView: NSView {
     }
 
     private func interactionLayerPriority(of view: NSView) -> Int {
-        if view === paneDropTargetView { return 3 }
-        if view === omnibarSuggestionsHostingView { return 2 }
-        if view === searchOverlayHostingView { return 1 }
+        if view === paneDropTargetView { return 4 }
+        if view === omnibarSuggestionsHostingView { return 3 }
+        if view === searchOverlayHostingView { return 2 }
+        if view === designComposerHostingView { return 1 }
         return 0
     }
 
@@ -1755,6 +1834,7 @@ final class WindowBrowserPortal: NSObject {
         var dropZone: DropZone?
         var paneDropContext: BrowserPaneDropContext?
         var searchOverlay: BrowserPortalSearchOverlayConfiguration?
+        var designComposer: BrowserPortalDesignComposerConfiguration?
         var omnibarSuggestions: BrowserPortalOmnibarSuggestionsConfiguration?
         var paneTopChromeHeight: CGFloat
         var transientRecoveryReason: String?
@@ -1944,7 +2024,7 @@ final class WindowBrowserPortal: NSObject {
             guard let webView = entry.webView,
                   let containerView = entry.containerView,
                   !containerView.isHidden else { continue }
-            guard webView.superview === containerView else { continue }
+            guard webView.cmuxBrowserViewportPresentationView.superview === containerView else { continue }
             invalidateHostedWebViewGeometry(
                 webView,
                 in: containerView,
@@ -2062,6 +2142,20 @@ final class WindowBrowserPortal: NSObject {
             return lhs.panelId == rhs.panelId &&
                 lhs.searchState === rhs.searchState &&
                 lhs.focusRequestGeneration == rhs.focusRequestGeneration
+        default:
+            return false
+        }
+    }
+
+    private static func designComposerConfigurationsEquivalent(
+        _ lhs: BrowserPortalDesignComposerConfiguration?,
+        _ rhs: BrowserPortalDesignComposerConfiguration?
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case let (lhs?, rhs?):
+            return lhs.panelId == rhs.panelId && lhs.controller === rhs.controller
         default:
             return false
         }
@@ -2231,7 +2325,6 @@ final class WindowBrowserPortal: NSObject {
         } else {
             append(primaryTransferView)
         }
-
         for view in sourceSuperview.subviews {
             if view === primaryWebView { continue }
             let className = String(describing: type(of: view))
@@ -2318,6 +2411,7 @@ final class WindowBrowserPortal: NSObject {
         if let existing = entry.containerView {
             existing.setPaneDropContext(entry.paneDropContext)
             existing.setSearchOverlay(entry.searchOverlay)
+            existing.setDesignComposer(entry.designComposer)
             existing.setOmnibarSuggestions(entry.omnibarSuggestions)
             existing.setPaneTopChromeHeight(entry.paneTopChromeHeight)
             return existing
@@ -2325,6 +2419,7 @@ final class WindowBrowserPortal: NSObject {
         let created = WindowBrowserSlotView(frame: .zero)
         created.setPaneDropContext(entry.paneDropContext)
         created.setSearchOverlay(entry.searchOverlay)
+        created.setDesignComposer(entry.designComposer)
         created.setOmnibarSuggestions(entry.omnibarSuggestions)
         created.setPaneTopChromeHeight(entry.paneTopChromeHeight)
 #if DEBUG
@@ -2589,7 +2684,7 @@ final class WindowBrowserPortal: NSObject {
         }
 #if DEBUG
         let hadContainerSuperview = (entry.containerView?.superview === hostView) ? 1 : 0
-        let hadWebSuperview = entry.webView?.superview == nil ? 0 : 1
+        let hadWebSuperview = entry.webView?.cmuxBrowserViewportAttachmentSuperview == nil ? 0 : 1
         cmuxDebugLog(
             "browser.portal.detach web=\(browserPortalDebugToken(entry.webView)) " +
             "container=\(browserPortalDebugToken(entry.containerView)) " +
@@ -2606,7 +2701,7 @@ final class WindowBrowserPortal: NSObject {
         } else {
             entry.webView?.browserPortalNotifyHidden(reason: "detach")
         }
-        entry.webView?.removeFromSuperview()
+        entry.webView?.cmuxBrowserViewportPresentationView.removeFromSuperview()
         entry.containerView?.removeFromSuperview()
     }
 
@@ -2621,7 +2716,7 @@ final class WindowBrowserPortal: NSObject {
             webViewByAnchorId.removeValue(forKey: ObjectIdentifier(anchor))
         }
 
-        let portalOwnsWebView = entry.webView?.superview === entry.containerView
+        let portalOwnsWebView = entry.webView?.cmuxBrowserViewportPresentationView.superview === entry.containerView
 #if DEBUG
         cmuxDebugLog(
             "browser.portal.discard web=\(browserPortalDebugToken(entry.webView)) " +
@@ -2629,7 +2724,7 @@ final class WindowBrowserPortal: NSObject {
             "anchor=\(browserPortalDebugToken(entry.anchorView)) " +
             "source=\(source) preserve=\(preserveCurrentSuperview ? 1 : 0) " +
             "portalOwnsWeb=\(portalOwnsWebView ? 1 : 0) " +
-            "currentSuper=\(browserPortalDebugToken(entry.webView?.superview))"
+            "currentSuper=\(browserPortalDebugToken(entry.webView?.cmuxBrowserViewportAttachmentSuperview))"
         )
 #endif
 
@@ -2643,7 +2738,7 @@ final class WindowBrowserPortal: NSObject {
             } else {
                 entry.webView?.browserPortalNotifyHidden(reason: "discard:\(source)")
             }
-            entry.webView?.removeFromSuperview()
+            entry.webView?.cmuxBrowserViewportPresentationView.removeFromSuperview()
         }
         entry.containerView?.removeFromSuperview()
     }
@@ -2761,6 +2856,17 @@ final class WindowBrowserPortal: NSObject {
         entry.containerView?.setSearchOverlay(configuration)
     }
 
+    func updateDesignComposer(
+        forWebViewId webViewId: ObjectIdentifier,
+        configuration: BrowserPortalDesignComposerConfiguration?
+    ) {
+        guard var entry = entriesByWebViewId[webViewId] else { return }
+        guard !Self.designComposerConfigurationsEquivalent(entry.designComposer, configuration) else { return }
+        entry.designComposer = configuration
+        entriesByWebViewId[webViewId] = entry
+        entry.containerView?.setDesignComposer(configuration)
+    }
+
     func updateOmnibarSuggestions(
         forWebViewId webViewId: ObjectIdentifier,
         configuration: BrowserPortalOmnibarSuggestionsConfiguration?
@@ -2854,6 +2960,7 @@ final class WindowBrowserPortal: NSObject {
                 dropZone: nil,
                 paneDropContext: nil,
                 searchOverlay: nil,
+                designComposer: nil,
                 omnibarSuggestions: nil,
                 paneTopChromeHeight: 0,
                 transientRecoveryReason: nil,
@@ -2891,6 +2998,7 @@ final class WindowBrowserPortal: NSObject {
             dropZone: previousEntry?.dropZone,
             paneDropContext: previousEntry?.paneDropContext,
             searchOverlay: previousEntry?.searchOverlay,
+            designComposer: previousEntry?.designComposer,
             omnibarSuggestions: previousEntry?.omnibarSuggestions,
             paneTopChromeHeight: previousEntry?.paneTopChromeHeight ?? 0,
             transientRecoveryReason: previousEntry?.transientRecoveryReason,
@@ -2908,7 +3016,7 @@ final class WindowBrowserPortal: NSObject {
             didChangeAnchor ||
             becameVisible ||
             priorityIncreased ||
-            webView.superview !== containerView ||
+            webView.cmuxBrowserViewportPresentationView.superview !== containerView ||
             containerView.superview !== hostView {
             cmuxDebugLog(
                 "browser.portal.bind web=\(browserPortalDebugToken(webView)) " +
@@ -2929,7 +3037,7 @@ final class WindowBrowserPortal: NSObject {
                 "state=\(String(describing: webView.fullscreenState))"
             )
 #endif
-        } else if webView.superview !== containerView {
+        } else if webView.cmuxBrowserViewportPresentationView.superview !== containerView {
 #if DEBUG
             cmuxDebugLog(
                 "browser.portal.reparent web=\(browserPortalDebugToken(webView)) " +
@@ -2937,7 +3045,7 @@ final class WindowBrowserPortal: NSObject {
                 "container=\(browserPortalDebugToken(containerView))"
             )
 #endif
-            if let sourceSuperview = webView.superview {
+            if let sourceSuperview = webView.cmuxBrowserViewportAttachmentSuperview {
                 moveWebKitRelatedSubviewsIfNeeded(
                     from: sourceSuperview,
                     to: containerView,
@@ -2945,7 +3053,11 @@ final class WindowBrowserPortal: NSObject {
                     reason: "bind.attachContainer"
                 )
             } else {
-                containerView.addSubview(webView, positioned: .above, relativeTo: nil)
+                containerView.addSubview(
+                    webView.cmuxBrowserViewportPresentationView,
+                    positioned: .above,
+                    relativeTo: nil
+                )
             }
             containerView.pinHostedWebView(webView)
             webView.needsLayout = true
@@ -3087,6 +3199,7 @@ final class WindowBrowserPortal: NSObject {
             cancelPendingHostedWebViewRefreshes(for: webViewId)
             containerView.setPaneTopChromeHeight(0)
             containerView.setSearchOverlay(nil)
+            containerView.setDesignComposer(nil)
             containerView.setOmnibarSuggestions(nil)
             containerView.setPaneDropContext(nil)
             containerView.setPortalDragDropZone(nil)
@@ -3095,7 +3208,9 @@ final class WindowBrowserPortal: NSObject {
             // WebKit through `_exitInWindow`/`_enterInWindow`, which fires visibilitychange
             // and can trigger page reloads. Reserve the full lifecycle notify for cases
             // where the visible surface is actually leaving the window/render tree.
-            if entry.visibleInUI, !containerView.isHidden, webView.superview === containerView {
+            if entry.visibleInUI,
+               !containerView.isHidden,
+               webView.cmuxBrowserViewportPresentationView.superview === containerView {
                 notifyHostedWebKitHidden(
                     in: containerView,
                     primaryWebView: webView,
@@ -3208,7 +3323,7 @@ final class WindowBrowserPortal: NSObject {
         let shouldPreserveExternalHostForHiddenEntry =
             !shouldPreserveExternalFullscreenHost &&
             !entry.visibleInUI &&
-            webView.superview !== containerView
+            webView.cmuxBrowserViewportPresentationView.superview !== containerView
         if shouldPreserveExternalFullscreenHost {
 #if DEBUG
             cmuxDebugLog(
@@ -3226,7 +3341,7 @@ final class WindowBrowserPortal: NSObject {
                 "container=\(browserPortalDebugToken(containerView))"
             )
 #endif
-        } else if webView.superview !== containerView {
+        } else if webView.cmuxBrowserViewportPresentationView.superview !== containerView {
 #if DEBUG
             cmuxDebugLog(
                 "browser.portal.reparent web=\(browserPortalDebugToken(webView)) " +
@@ -3234,7 +3349,7 @@ final class WindowBrowserPortal: NSObject {
                 "container=\(browserPortalDebugToken(containerView))"
             )
 #endif
-            if let sourceSuperview = webView.superview {
+            if let sourceSuperview = webView.cmuxBrowserViewportAttachmentSuperview {
                 moveWebKitRelatedSubviewsIfNeeded(
                     from: sourceSuperview,
                     to: containerView,
@@ -3242,7 +3357,11 @@ final class WindowBrowserPortal: NSObject {
                     reason: "sync.attachContainer"
                 )
             } else {
-                containerView.addSubview(webView, positioned: .above, relativeTo: nil)
+                containerView.addSubview(
+                    webView.cmuxBrowserViewportPresentationView,
+                    positioned: .above,
+                    relativeTo: nil
+                )
             }
             containerView.pinHostedWebView(webView)
             refreshReasons.append("syncAttachWebView")
@@ -3518,6 +3637,7 @@ final class WindowBrowserPortal: NSObject {
         }
         containerView.setPaneTopChromeHeight(shouldHide ? 0 : entry.paneTopChromeHeight)
         containerView.setSearchOverlay(shouldHide ? nil : entry.searchOverlay)
+        containerView.setDesignComposer(shouldHide ? nil : entry.designComposer)
         containerView.setOmnibarSuggestions(shouldHide ? nil : entry.omnibarSuggestions)
         containerView.setPaneDropContext(containerView.isHidden ? nil : entry.paneDropContext)
         containerView.setDropZoneOverlay(zone: containerView.isHidden ? nil : entry.dropZone)
@@ -3888,6 +4008,16 @@ enum BrowserWindowPortalRegistry {
         guard let windowId = webViewToWindowId[webViewId],
               let portal = portalsByWindowId[windowId] else { return }
         portal.updateSearchOverlay(forWebViewId: webViewId, configuration: configuration)
+    }
+
+    static func updateDesignComposer(
+        for webView: WKWebView,
+        configuration: BrowserPortalDesignComposerConfiguration?
+    ) {
+        let webViewId = ObjectIdentifier(webView)
+        guard let windowId = webViewToWindowId[webViewId],
+              let portal = portalsByWindowId[windowId] else { return }
+        portal.updateDesignComposer(forWebViewId: webViewId, configuration: configuration)
     }
 
     static func updateOmnibarSuggestions(
