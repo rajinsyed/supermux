@@ -132,12 +132,17 @@ import Testing
         #expect(connection.exited)
     }
 
-    /// Explicit detach of a mirror opened in its own window must close that
-    /// window when the mirror is its final workspace. Leaving a replacement
-    /// local workspace here strands the blank `--new-window` shell and makes a
-    /// subsequent socket `close-window` appear to succeed without removing the
-    /// observed window (#7992).
-    @Test func explicitDetachOfDedicatedLastMirrorClosesOwningWindow() async throws {
+    // SUPERMUX:begin keep-window-on-last-close
+    // Repurposed from upstream's explicitDetachOfDedicatedLastMirrorClosesOwningWindow
+    // (same class as the #115 Cmd+W repurpose): upstream closes the dedicated
+    // window on explicit detach of its final mirror; supermux keeps the window
+    // open as the empty home (Projects sidebar) — closing it would quit the
+    // app on the last window. No replacement workspace is created either, so
+    // upstream's stranded-blank-shell concern (#7992) does not apply.
+    /// Explicit detach of a mirror opened in its own window removes the final
+    /// mirror workspace but keeps the owning window open as the empty home.
+    @Test func explicitDetachOfDedicatedLastMirrorLeavesEmptyHomeWindow() async throws {
+    // SUPERMUX:end keep-window-on-last-close
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("remote-tmux-explicit-detach-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -189,18 +194,27 @@ import Testing
         _ = try await waitForSSHArgument("exit", at: logURL)
         #expect(controller.sessionMirror(host: host, sessionName: "dev") == nil)
         #expect(connection.exited)
-        #expect(didCloseOwningWindow)
-        #expect(!owningWindow.isVisible)
-        #expect(!harness.appDelegate.listMainWindowSummaries().contains {
+        // SUPERMUX:begin keep-window-on-last-close
+        // (upstream: didCloseOwningWindow, !owningWindow.isVisible, window
+        // absent from listMainWindowSummaries, recoverable route nil)
+        #expect(!didCloseOwningWindow)
+        #expect(owningWindow.isVisible)
+        #expect(harness.appDelegate.listMainWindowSummaries().contains {
             $0.windowId == harness.windowId
         })
-        #expect(harness.appDelegate.recoverableMainWindowRoute(windowId: harness.windowId) == nil)
+        #expect(harness.manager.tabs.isEmpty)
+        // SUPERMUX:end keep-window-on-last-close
     }
 
+    // SUPERMUX:begin keep-window-on-last-close
+    // Upstream preserves the window by inserting a fresh local replacement
+    // workspace; supermux preserves it as the EMPTY home instead, so the
+    // tabs-count assertion below flips from "one replacement" to "empty".
     /// A remote session ending removes its dead mirror but preserves the owning
-    /// window with a fresh local workspace. Only explicit detach closes a
-    /// dedicated final-mirror window.
+    /// window as the empty home. Explicit detach keeps the window too on the
+    /// fork (see explicitDetachOfDedicatedLastMirrorLeavesEmptyHomeWindow).
     @Test func remoteSessionEndOfDedicatedLastMirrorKeepsOwningWindowUsable() throws {
+    // SUPERMUX:end keep-window-on-last-close
         let harness = try Harness()
         defer { harness.tearDown() }
         let host = RemoteTmuxHost(destination: "remote-end-\(UUID().uuidString)@example.test")
@@ -218,7 +232,10 @@ import Testing
         #expect(controller.sessionMirror(host: host, sessionName: "dev") == nil)
         #expect(harness.appDelegate.mainWindow(for: harness.windowId) === owningWindow)
         #expect(owningWindow.isVisible)
-        #expect(harness.manager.tabs.count == 1)
+        // SUPERMUX:begin keep-window-on-last-close
+        // (upstream: tabs.count == 1 — the fresh local replacement workspace)
+        #expect(harness.manager.tabs.isEmpty)
+        // SUPERMUX:end keep-window-on-last-close
         #expect(harness.manager.tabs.allSatisfy { !$0.isRemoteTmuxMirror })
         #expect(!harness.manager.tabs.contains { $0.id == mirrorWorkspace.id })
     }

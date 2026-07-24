@@ -1,0 +1,103 @@
+# TEMPORARY diagnostic for the ClaudeHook test timeouts on PR #17.
+# Builds only the cmux-cli target, runs the claude stop hook against a stub
+# socket exactly like cmuxTests' ClaudeHookLiveDeliveryHarness does, and
+# captures a `sample` stack of the process if it stalls. Delete this file
+# once the hang is diagnosed — it must not outlive the investigation.
+name: Debug hook hang
+
+on:
+  workflow_dispatch:
+
+jobs:
+  repro:
+    runs-on: ${{ vars.MACOS_RUNNER_15 || 'warp-macos-15-arm64-6x' }}
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          if [ -d "/Applications/Xcode_16.4.app" ]; then sudo xcode-select -s /Applications/Xcode_16.4.app; fi
+          xcodebuild -version
+
+      - name: Build cmux-cli only
+        run: |
+          set -euo pipefail
+          xcodebuild -project cmux.xcodeproj -target cmux-cli -configuration Debug \
+            -derivedDataPath /tmp/dd SYMROOT=/tmp/dd/sym OBJROOT=/tmp/dd/obj build 2>&1 | tail -20
+          CLI=$(find /tmp/dd -type f -name cmux -perm +111 | grep -v dSYM | head -1)
+          echo "CLI=$CLI" >> "$GITHUB_ENV"
+          ls -la "$CLI"
+
+      - name: Reproduce hook run against stub socket
+        run: |
+          set -uo pipefail
+          ROOT=$(mktemp -d /tmp/hookrepro.XXXX)
+          SOCK=/tmp/hr-$$.sock
+          cat > "$ROOT/stub.py" <<'EOF'
+          import socket, os, sys, threading, json
+          path, logpath = sys.argv[1], sys.argv[2]
+          try: os.unlink(path)
+          except FileNotFoundError: pass
+          srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          srv.bind(path); srv.listen(8)
+          log = open(logpath, "a", buffering=1)
+          def handle(conn):
+              f = conn.makefile("rwb")
+              for line in f:
+                  text = line.decode(errors="replace").rstrip("\n")
+                  log.write("RECV: " + text + "\n")
+                  try:
+                      payload = json.loads(text)
+                      rid = payload.get("id")
+                      resp = {"id": rid, "ok": True, "result": {"workspace_id": "11111111-1111-1111-1111-111111111111", "surface_id": "22222222-2222-2222-2222-222222222222"}}
+                      f.write((json.dumps(resp) + "\n").encode()); f.flush()
+                  except Exception:
+                      f.write(b"OK\n"); f.flush()
+          while True:
+              conn, _ = srv.accept()
+              log.write("ACCEPTED\n")
+              threading.Thread(target=handle, args=(conn,), daemon=True).start()
+          EOF
+          python3 "$ROOT/stub.py" "$SOCK" "$ROOT/server.log" &
+          SERVER=$!
+          sleep 1
+          INPUT='{"session_id":"repro","hook_event_name":"Stop","cwd":"'"$ROOT"'","last_assistant_message":"done"}'
+          echo "== starting hook at $(date +%T)"
+          ( echo "$INPUT" | env -i HOME="$ROOT/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+              CMUX_SOCKET_PATH="$SOCK" CMUX_CLAUDE_HOOK_STATE_PATH="$ROOT/home/state.json" \
+              CMUX_CLI_SENTRY_DISABLED=1 CMUX_CLAUDE_HOOK_SENTRY_DISABLED=1 \
+              CMUX_WORKSPACE_ID=33333333-3333-3333-3333-333333333333 \
+              CMUX_SURFACE_ID=55555555-5555-5555-5555-555555555555 \
+              CMUX_CLAUDE_PID=43210 \
+              "$CLI" hooks claude stop > "$ROOT/hook.out" 2> "$ROOT/hook.err" ) &
+          mkdir -p "$ROOT/home"
+          WRAP=$!
+          sleep 8
+          PID=$(pgrep -f "hooks claude stop" | head -1 || true)
+          if [ -n "${PID:-}" ]; then
+            echo "== HOOK STILL RUNNING after 8s (pid $PID) — sampling"
+            sample "$PID" 5 -file "$ROOT/sample.txt" || true
+            echo "== lsof of hook process"
+            lsof -p "$PID" || true
+            echo "== killing"
+            kill -TERM "$PID" || true
+            sleep 2
+          else
+            echo "== hook exited within 8s"
+          fi
+          echo "== hook stdout:"; cat "$ROOT/hook.out" || true
+          echo "== hook stderr:"; head -50 "$ROOT/hook.err" || true
+          echo "== server log:"; cat "$ROOT/server.log" || true
+          echo "== sample (first 200 lines):"; head -200 "$ROOT/sample.txt" 2>/dev/null || echo "(no sample)"
+          kill "$SERVER" 2>/dev/null || true
+          echo "== done at $(date +%T)"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hook-hang-diagnostics
+          path: /tmp/hookrepro.*
+          if-no-files-found: ignore
