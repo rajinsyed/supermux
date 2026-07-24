@@ -21,6 +21,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Init bonsplit submodule (package resolution needs its manifest)
+        run: git submodule update --init vendor/bonsplit
+
       - name: Select Xcode
         run: |
           if [ -d "/Applications/Xcode_16.4.app" ]; then sudo xcode-select -s /Applications/Xcode_16.4.app; fi
