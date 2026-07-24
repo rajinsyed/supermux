@@ -257,7 +257,7 @@ enum SurfaceResumeApprovalPolicy: String, Codable, CaseIterable, Sendable {
     case auto
 }
 
-nonisolated struct SurfaceResumeBindingSnapshot: Codable, Equatable, Sendable {
+struct SurfaceResumeBindingSnapshot: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case name
         case kind
@@ -480,7 +480,7 @@ extension SurfaceResumeBindingSnapshot: WorkspaceSurfaceResumeBinding {
     }
 }
 
-nonisolated struct SurfaceResumeApprovalRecord: Codable, Equatable, Identifiable, Sendable {
+struct SurfaceResumeApprovalRecord: Codable, Equatable, Identifiable, Sendable {
     var version: Int
     var id: String
     var name: String?
@@ -1269,7 +1269,7 @@ enum SurfaceResumeApprovalStore {
 #endif
 }
 
-nonisolated enum TerminalStartupReturnShellScript {
+enum TerminalStartupReturnShellScript {
     private static let shellLine = #"_cmux_resume_shell="${SHELL:-/bin/zsh}""#
     private static let zshIntegrationReentryLines = [
         #"if [[ "${_cmux_resume_shell:t}" == "zsh" ]]; then"#,
@@ -1742,6 +1742,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     /// legacy or externally-created snapshots can leave it nil.
     var workspaceId: UUID? = nil
     var stableId: UUID? = nil
+    var taskCreateOperationID: UUID? = nil
     var processTitle: String
     var customTitle: String?
     /// Provenance of `customTitle`; absent provenance restores as user-set for compatibility.
@@ -1769,8 +1770,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var progress: SessionProgressSnapshot?
     var gitBranch: SessionGitBranchSnapshot?
     var remote: SessionRemoteWorkspaceSnapshot?
-    /// User-defined per-workspace environment variables (issue #5995). Optional
-    /// with a `nil` default so manifests written before this field decode cleanly.
+    /// Optional so manifests written before this field decode cleanly.
     var environment: [String: String]? = nil
     /// Manual task-status override raw values and the persisted checklist. Optional-with-nil-default
     /// (the `groupId` back-compat pattern); bridging to/from live `WorkspaceTodoState` lives in `SessionPersistence+Todos.swift`.

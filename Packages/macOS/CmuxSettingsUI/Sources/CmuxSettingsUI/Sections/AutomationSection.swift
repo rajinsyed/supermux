@@ -2,15 +2,11 @@ import CmuxFoundation
 import CmuxSettings
 import SwiftUI
 
-/// **Automation** section — mirrors the legacy in-app section
-/// row-for-row: Socket Control (mode picker, password subrow when
-/// .password, warnings, overrides note), then separate cards for
-/// Claude Code Integration, Claude Binary Path, Ripgrep Binary Path,
-/// Suppress Subagent Notifications, Cursor Integration, Gemini
-/// Integration, and Port Base / Port Range Size.
+/// Automation settings, including socket access, agent integrations, and port ranges.
 @MainActor
 public struct AutomationSection: View {
     private let catalog: SettingCatalog
+    private let hostActions: any SettingsHostActions
     // SUPERMUX:begin ai-settings
     private let supermuxSecretStore: SecretFileStore
     private let supermuxErrorLog: SettingsErrorLog
@@ -49,9 +45,11 @@ public struct AutomationSection: View {
         jsonStore: JSONConfigStore,
         secretStore: SecretFileStore,
         catalog: SettingCatalog,
-        errorLog: SettingsErrorLog
+        errorLog: SettingsErrorLog,
+        hostActions: any SettingsHostActions
     ) {
         self.catalog = catalog
+        self.hostActions = hostActions
         // SUPERMUX:begin ai-settings
         self.supermuxSecretStore = secretStore
         self.supermuxErrorLog = errorLog
@@ -67,8 +65,6 @@ public struct AutomationSection: View {
         _claudePathModel = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.integrations.claudeCodeCustomClaudePath))
         _autoNamingModel = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.automation.workspaceAutoNaming))
         _autoNamingAgentModel = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.automation.autoNamingAgent))
-        // Internal status (not a user setting), observed reactively via an
-        // inline key so a failure reported mid-session updates the line live.
         _autoNamingStatusModel = State(initialValue: DefaultsValueModel(
             store: defaultsStore,
             key: DefaultsKey<String>(
@@ -120,7 +116,9 @@ public struct AutomationSection: View {
                 role: .destructive
             ) {
                 if let pending = pendingOpenAccessMode {
-                    modeModel.set(pending)
+                    modeModel.set(pending) { @MainActor [hostActions] in
+                        hostActions.socketControlConfigurationDidChange()
+                    }
                 }
                 pendingOpenAccessMode = nil
                 modeBeforePendingOpenAccess = nil
@@ -162,7 +160,9 @@ public struct AutomationSection: View {
                             showOpenAccessConfirmation = true
                             return
                         }
-                        modeModel.set(newValue)
+                        modeModel.set(newValue) { @MainActor [hostActions] in
+                            hostActions.socketControlConfigurationDidChange()
+                        }
                         if newValue != .password {
                             socketPasswordStatus = nil
                         }

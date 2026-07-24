@@ -277,7 +277,17 @@ enum ClaudeHookLiveDeliveryHarness {
         handler: @escaping @Sendable (String) -> String
     ) -> DispatchSemaphore {
         let handled = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
+        // SUPERMUX:begin claude-hook-mock-server-threads
+        // Dedicated threads, not DispatchQueue.global: a blocking accept()/
+        // read() loop parks its GCD worker for the queue's entire lifetime,
+        // and the 0.64.20 app-host under test raises global-pool pressure
+        // enough that these blocks can wait behind it indefinitely — the CLI's
+        // connect() then lands in the kernel backlog with nobody accepting,
+        // every hook test times out, and the server records zero commands
+        // (upstream: DispatchQueue.global(qos: .userInitiated).async for both
+        // the accept loop and the per-connection reader).
+        let acceptThread = Thread {
+            FileHandle.standardError.write(Data("[mock-server] accept loop running\n".utf8))
             while true {
                 var clientAddr = sockaddr_un()
                 var clientAddrLen = socklen_t(MemoryLayout<sockaddr_un>.size)
@@ -291,7 +301,8 @@ enum ClaudeHookLiveDeliveryHarness {
                     return
                 }
 
-                DispatchQueue.global(qos: .userInitiated).async {
+                let connectionThread = Thread {
+        // SUPERMUX:end claude-hook-mock-server-threads
                     defer {
                         Darwin.close(clientFD)
                         handled.signal()
@@ -324,8 +335,14 @@ enum ClaudeHookLiveDeliveryHarness {
                         }
                     }
                 }
+                // SUPERMUX:begin claude-hook-mock-server-threads
+                connectionThread.name = "cmux-mock-server-connection"
+                connectionThread.start()
             }
         }
+        acceptThread.name = "cmux-mock-server-accept"
+        acceptThread.start()
+        // SUPERMUX:end claude-hook-mock-server-threads
         return handled
     }
 

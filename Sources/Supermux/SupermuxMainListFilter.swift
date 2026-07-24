@@ -44,7 +44,17 @@ enum SupermuxMainListFilter {
     ///   - tabs: All workspaces from `TabManager.tabs`.
     ///   - tabManager: The calling window's manager, selecting its cache.
     static func tabsForMainList(_ tabs: [Workspace], tabManager: TabManager) -> [Workspace] {
-        resolutionCache(for: tabManager).filter(
+        // The AppKit NSTableView sidebar experiment (Debug opt-in only on the
+        // fork — see the `appkit-sidebar-default-off` touchpoint in
+        // FeatureFlags.swift) renders none of the fork's sidebar surfaces: no Projects
+        // section, no hidden-row-aware menus, no activity indicator. Hiding
+        // rows there would strand project workspaces with no sidebar
+        // representation at all and let its full-list NSMenu actions close or
+        // reorder around rows the user can't see. In that mode nothing is
+        // hidden, so every consumer (render context, menu enablement, the
+        // shared Move Up/Down stepping) degrades to stock cmux behavior.
+        guard !CmuxFeatureFlags.shared.isAppKitSidebarListEnabled else { return tabs }
+        return resolutionCache(for: tabManager).filter(
             tabs,
             projects: SupermuxComposition.projectsModel.projects,
             associations: SupermuxComposition.workspaceAssociations

@@ -75,6 +75,7 @@ struct WorkspaceDetailView: View {
     @State var selectedTerminalArtifact: TerminalArtifactSelection?
     @State var terminalArtifactThumbnailCache = ChatArtifactThumbnailCache()
     @State var visibleArtifactCount = 0
+    @State var artifactGalleryRefreshSignal = TerminalArtifactGalleryRefreshSignal.initial
     /// App lifecycle phase used to re-pull chat sessions on foreground.
     @Environment(\.scenePhase) var scenePhase
     #endif
@@ -83,6 +84,9 @@ struct WorkspaceDetailView: View {
         browserStore.activeBrowser(for: workspace.id.rawValue)
     }
     #if os(iOS)
+    var terminalFilesChipEnabled: Bool {
+        displaySettings.terminalFilesChipEnabled
+    }
     var activeSurface: WorkspaceActiveSurface {
         WorkspaceActiveSurface.derive(
             isChatMode: isChatMode,
@@ -105,7 +109,7 @@ struct WorkspaceDetailView: View {
         content
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
             .navigationTitle(systemNavigationTitle)
-            .mobileTerminalNavigationChrome()
+            .mobileTerminalNavigationChrome(theme: store.activeTerminalTheme)
             .toolbar { workspaceDetailToolbar }
             .task(id: chatRefreshKey) { await refreshChatSessions() }
             .task(id: chatConversationWarmKey) { await runWarmChatConversation() }
@@ -204,7 +208,7 @@ struct WorkspaceDetailView: View {
                 .font(.headline)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundStyle(TerminalPalette.foreground)
+                .foregroundStyle(store.activeTerminalTheme.terminalChromeForegroundColor)
         } else {
             WorkspaceToolbarTitleView(title: workspace.name, subtitle: selectedToolbarSubtitle)
         }
@@ -219,11 +223,11 @@ struct WorkspaceDetailView: View {
             if let terminalID = selectedTerminal?.id.rawValue {
                 terminalArtifactSurface(terminalID: terminalID)
             } else {
-                TerminalPalette.background
+                store.activeTerminalTheme.terminalBackgroundColor
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             #else
-            TerminalPalette.background
+            store.activeTerminalTheme.terminalBackgroundColor
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             #endif
         }
@@ -236,7 +240,11 @@ struct WorkspaceDetailView: View {
         .overlay {
             // Show a reconnecting/offline state instead of a black terminal.
             if connectionStatus != .connected {
-                TerminalDisconnectedOverlay(status: connectionStatus, host: host) {
+                TerminalDisconnectedOverlay(
+                    status: connectionStatus,
+                    host: host,
+                    theme: store.activeTerminalTheme
+                ) {
                     Task {
                         if let macDeviceID = workspace.macDeviceID,
                            !macDeviceID.isEmpty,
@@ -267,25 +275,29 @@ struct WorkspaceDetailView: View {
         )
         .background {
             // Fill under translucent chrome with the terminal's own color.
-            TerminalPalette.background
+            store.activeTerminalTheme.terminalBackgroundColor
                 .ignoresSafeArea(.container, edges: [.horizontal, .top, .bottom])
         }
-        .sheet(item: $selectedTerminalArtifact) { selection in
-            ChatArtifactViewerSheet(path: selection.path, scope: .terminal)
-                .environment(
-                    \.chatArtifactLoader,
-                    terminalArtifactLoader(
-                        workspaceID: selection.workspaceID,
-                        surfaceID: selection.surfaceID
+        .navigationDestination(isPresented: terminalArtifactIsPresented) {
+            if let selectedTerminalArtifact {
+                ChatArtifactViewerDestination(
+                    path: selectedTerminalArtifact.path,
+                    scope: selectedTerminalArtifact.usesSessionAuthorization ? .chat : .terminal
+                ) {
+                    self.selectedTerminalArtifact = nil
+                }
+                    .environment(
+                        \.chatArtifactLoader,
+                        artifactLoader(for: selectedTerminalArtifact)
                     )
-                )
+            }
         }
         #else
-        .background(TerminalPalette.background)
+        .background(store.activeTerminalTheme.terminalBackgroundColor)
         #endif
         #if !os(iOS)
         .navigationTitle(systemNavigationTitle)
-        .mobileTerminalNavigationChrome()
+        .mobileTerminalNavigationChrome(theme: store.activeTerminalTheme)
         .toolbar {
             ToolbarItem {
                 terminalToolbarButtons
@@ -295,6 +307,15 @@ struct WorkspaceDetailView: View {
     }
 
     #if os(iOS)
+    private var terminalArtifactIsPresented: Binding<Bool> {
+        Binding(
+            get: { selectedTerminalArtifact != nil },
+            set: { isPresented in
+                if !isPresented { selectedTerminalArtifact = nil }
+            }
+        )
+    }
+
     func terminalArtifactLoader(workspaceID: String, surfaceID: String) -> ChatArtifactLoader {
         guard let source = store.makeChatEventSource() else {
             return .unsupported(cache: terminalArtifactThumbnailCache)
@@ -303,6 +324,7 @@ struct WorkspaceDetailView: View {
             terminalWorkspaceID: workspaceID,
             terminalSurfaceID: surfaceID,
             supportsArtifacts: store.supportsTerminalArtifacts,
+            supportsDirectoryBrowsing: store.supportsTerminalArtifactList,
             cache: terminalArtifactThumbnailCache,
             stat: { path in
                 try await source.terminalArtifactStat(
@@ -319,6 +341,14 @@ struct WorkspaceDetailView: View {
                     progress: progress
                 )
             },
+            stream: { path, onChunk in
+                try await source.terminalArtifactFetch(
+                    workspaceID: workspaceID,
+                    surfaceID: surfaceID,
+                    path: path,
+                    onChunk: onChunk
+                )
+            },
             thumbnail: { path, maxDimension in
                 try await source.terminalArtifactThumbnail(
                     workspaceID: workspaceID,
@@ -326,7 +356,32 @@ struct WorkspaceDetailView: View {
                     path: path,
                     maxDimension: maxDimension
                 )
+            },
+            list: { path in
+                try await source.terminalArtifactList(
+                    workspaceID: workspaceID,
+                    surfaceID: surfaceID,
+                    path: path
+                )
             }
+        )
+    }
+
+    private func artifactLoader(for selection: TerminalArtifactSelection) -> ChatArtifactLoader {
+        guard let sessionID = selection.sessionID else {
+            return terminalArtifactLoader(
+                workspaceID: selection.workspaceID,
+                surfaceID: selection.surfaceID
+            )
+        }
+        guard store.supportsChatArtifacts,
+              let source = store.makeChatEventSource() else {
+            return .unsupported(cache: terminalArtifactThumbnailCache)
+        }
+        return ChatArtifactLoader(
+            source: source,
+            sessionID: sessionID,
+            cache: terminalArtifactThumbnailCache
         )
     }
     #endif
@@ -369,7 +424,7 @@ struct WorkspaceDetailView: View {
             Label(L10n.string("mobile.workspace.new", defaultValue: "New Workspace"), systemImage: "plus.square.on.square")
                 .labelStyle(.iconOnly)
         }
-        .foregroundStyle(TerminalPalette.foreground)
+        .foregroundStyle(store.activeTerminalTheme.terminalChromeForegroundColor)
         .disabled(!canCreateWorkspace)
         .accessibilityIdentifier("MobileTerminalNewWorkspaceButton")
     }
@@ -398,7 +453,8 @@ struct WorkspaceDetailView: View {
                     #endif
                 },
                 sendFeedback: openFeedbackComposerFromMenu
-            )
+            ),
+            terminalTheme: store.activeTerminalTheme
         )
         .equatable()
         .simultaneousGesture(TapGesture().onEnded { syncTerminalPickerRows(includeTitleChanges: true) })
