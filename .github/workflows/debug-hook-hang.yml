@@ -24,16 +24,28 @@ jobs:
       - name: Init bonsplit submodule (package resolution needs its manifest)
         run: git submodule update --init vendor/bonsplit
 
-      - name: Download pre-built GhosttyKit.xcframework (project-level SwiftPM requires the binary artifact)
-        run: ./scripts/download-prebuilt-ghosttykit.sh
+      - name: Capture Ghostty revision
+        id: ghostty-revision
+        run: echo "sha=$(git rev-parse HEAD:ghostty)" >> "$GITHUB_OUTPUT"
+
+      # The fork pins its own ghostty SHA with no published prebuilt artifact;
+      # CI survives on the runners' warm cache, so restore from the same key.
+      - name: Cache GhosttyKit.xcframework
+        id: cache-ghosttykit
+        uses: actions/cache@v4
+        with:
+          path: GhosttyKit.xcframework
+          key: ghosttykit-${{ steps.ghostty-revision.outputs.sha }}
+
+      - name: Require cached GhosttyKit
+        run: |
+          test -d GhosttyKit.xcframework || { echo "no cached GhosttyKit for ${{ steps.ghostty-revision.outputs.sha }} on this runner pool"; exit 1; }
 
       - name: Install Rust (build phases may invoke the sidecar toolchain)
         run: ./scripts/install-rust-ci.sh
 
       - name: Select Xcode
-        run: |
-          if [ -d "/Applications/Xcode_16.4.app" ]; then sudo xcode-select -s /Applications/Xcode_16.4.app; fi
-          xcodebuild -version
+        run: ./scripts/select-ci-xcode.sh
 
       - name: Build cmux-cli only
         run: |
