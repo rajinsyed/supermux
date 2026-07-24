@@ -7,6 +7,11 @@ name: Debug hook hang
 
 on:
   workflow_dispatch:
+  # workflow_dispatch only resolves workflows on the default branch, so this
+  # temporary diagnostic fires on pushes to the PR branch instead.
+  push:
+    branches: [upgrade-to-0-64-20]
+    paths: [.github/workflows/debug-hook-hang.yml]
 
 jobs:
   repro:
