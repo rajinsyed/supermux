@@ -24,6 +24,12 @@ jobs:
       - name: Init bonsplit submodule (package resolution needs its manifest)
         run: git submodule update --init vendor/bonsplit
 
+      - name: Download pre-built GhosttyKit.xcframework (project-level SwiftPM requires the binary artifact)
+        run: ./scripts/download-prebuilt-ghosttykit.sh
+
+      - name: Install Rust (build phases may invoke the sidecar toolchain)
+        run: ./scripts/install-rust-ci.sh
+
       - name: Select Xcode
         run: |
           if [ -d "/Applications/Xcode_16.4.app" ]; then sudo xcode-select -s /Applications/Xcode_16.4.app; fi
