@@ -64,15 +64,7 @@ struct SSHPTYAttachNoProgressRetryTests {
             command: "/bin/sh \(Self.shellQuote(scriptFile.path))",
             environment: ["CMUX_TEST_POLICY_LOG": policyLog.path]
         )
-        // SUPERMUX:begin upstream-expect-comment-fix
-        // Upstream compile break carried in from cmux 84f5755b56 (#9425):
-        // `#expect(_:_:)` takes a `Comment?`, and a plain `String` variable does
-        // not convert (only string *literals* do, via ExpressibleByStringInterpolation).
-        // Every other call in this file already wraps with `Comment(rawValue:)`.
-        // (upstream: `#expect(execution.status == 0, execution.stderr)`)
-        // Drop this fence once upstream fixes it.
-        #expect(execution.status == 0, Comment(rawValue: execution.stderr))
-        // SUPERMUX:end upstream-expect-comment-fix
+        #expect(execution.status == 0, "\(execution.stderr)")
         let loggedBudget = try String(contentsOf: policyLog, encoding: .utf8)
         #expect(loggedBudget == "0/3\n")
     }

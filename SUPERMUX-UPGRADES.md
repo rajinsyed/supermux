@@ -14,6 +14,48 @@ Add a section here as the last step of every upstream merge.
 
 ---
 
+## cmux 0.64.21 → 0.64.22 (2026-08-03)
+
+Merged `manaflow-ai/cmux` main @ `6edf2570b8` — **13 commits, 247 files**. A bugfix release: no
+new shortcuts, no changed defaults, nothing to relearn.
+
+### Fixes you will feel
+
+- **Intel Macs no longer crash seconds after launch.** cmux is now the only process-wide crash
+  handler, and embedded GhosttyKit no longer links Ghostty's native Sentry initializer. If you run
+  cmux on an Intel Mac, this is the reason to take this update.
+- **`cmux ssh <host>` works again.** It was failing immediately with a shell syntax error from the
+  generated startup script.
+- **`close` and `respawn-pane` fail closed on a stale `--surface`.** Passing an explicit surface id
+  that no longer exists used to fall through and act on a *different* live surface — i.e. close the
+  wrong pane. It now errors instead. Worth knowing if you script cmux.
+- **Bash shell integration stops printing `cannot overwrite existing file`** on every prompt under
+  `set -o noclobber`.
+- **Dock notifications clear when you focus the pane that raised them.**
+- **A restored Claude agent stays on its own account** instead of falling back to the ambient one.
+
+### Under the hood
+
+Upstream published four SDKs (including the Rust SDK as `cmux-sdk`) without taking over the `cmux`
+CLI package names, and made iOS workspace groups and reconnect dogfood-ready.
+
+### Fork-side
+
+Touchpoint **#142 retired**. The 0.64.21 merge carried a one-line fence working around a compile
+break upstream shipped in `84f5755b56` (`#expect` takes a `Comment?`, not a `String`). Upstream
+fixed it in `b0b96e7b34`, so the fence is gone and the file is byte-identical to upstream again —
+exactly the retirement path that row predicted.
+
+Everything else is unchanged: no fence moved, no supermux behavior needed re-applying, and the
+only other conflict was one `@State` block in the iOS workspace list where upstream added group
+rename/destructive state next to the fork's projects-section model (kept both).
+
+### What should feel identical
+
+Everything. No fork feature, shortcut, or setting changed in this update.
+
+---
+
 ## cmux 0.64.20 → 0.64.21 (2026-08-03)
 
 Merged `manaflow-ai/cmux` main @ `06bc29603c` — **1669 commits, 5065 files**.

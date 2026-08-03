@@ -182,7 +182,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
     }
 
     /// A workspace group section in the list response. Mirrors the iOS-facing
-    /// subset the Mac emits (no v2 handle refs, color, or icon). Members are
+    /// subset the Mac emits (no v2 handle refs or color). Members are
     /// listed in the Mac's spatial (`tabs`) order. Absent on Macs old enough not
     /// to emit groups.
     public struct Group: Decodable, Sendable {
@@ -194,6 +194,8 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         public let isCollapsed: Bool
         /// Whether the group is pinned on the Mac.
         public let isPinned: Bool
+        /// SF Symbol rendered by the corresponding group row on the Mac.
+        public let iconSymbol: String?
         /// The anchor workspace that owns this group. It is represented by the
         /// group header and never rendered as a separate row.
         public let anchorWorkspaceID: String
@@ -207,6 +209,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case name
             case isCollapsed = "is_collapsed"
             case isPinned = "is_pinned"
+            case iconSymbol = "icon_symbol"
             case anchorWorkspaceID = "anchor_workspace_id"
         }
 
@@ -216,12 +219,14 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             name: String,
             isCollapsed: Bool,
             isPinned: Bool,
+            iconSymbol: String? = nil,
             anchorWorkspaceID: String
         ) {
             self.id = id
             self.name = name
             self.isCollapsed = isCollapsed
             self.isPinned = isPinned
+            self.iconSymbol = iconSymbol
             self.anchorWorkspaceID = anchorWorkspaceID
         }
     }
@@ -320,4 +325,3 @@ extension MobileSyncWorkspaceListResponse {
         self.createdTerminalID = createdTerminalID
     }
 }
-

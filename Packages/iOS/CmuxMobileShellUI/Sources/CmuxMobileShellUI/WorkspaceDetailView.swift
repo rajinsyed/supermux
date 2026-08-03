@@ -21,6 +21,13 @@ import AppKit
 #endif
 
 struct WorkspaceDetailView: View {
+    static func reconnectAction(
+        connectionRequiresReauth: Bool,
+        reconnect: @escaping () -> Void
+    ) -> (() -> Void)? {
+        connectionRequiresReauth ? nil : reconnect
+    }
+
     let host: String
     let connectionStatus: MobileMacConnectionStatus
     let workspace: MobileWorkspacePreview
@@ -360,7 +367,10 @@ struct WorkspaceDetailView: View {
             MobileMacConnectionStatusPill(
                 host: host,
                 status: effectiveConnectionStatus,
-                reconnect: { reconnectToWorkspaceMac() }
+                reconnect: Self.reconnectAction(
+                    connectionRequiresReauth: store.connectionRequiresReauth,
+                    reconnect: { reconnectToWorkspaceMac() }
+                )
             )
                 .padding(.top, 10)
                 .padding(.leading, 10)
