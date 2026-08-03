@@ -12,6 +12,10 @@ extension NSMenu {
     /// Appends the supermux file-operation items for a clicked tree node:
     /// New File / New Folder (scoped to the node's directory), Rename, Duplicate,
     /// and Move to Trash. No-op for non-local providers (SSH file ops unsupported).
+    /// `@MainActor`: reads `coordinator.store`, which upstream made
+    /// main-actor-isolated. Both call sites are AppKit menu construction on the
+    /// main actor already.
+    @MainActor
     func addSupermuxFileOperationItems(
         coordinator: FileExplorerPanelView.Coordinator,
         clickedNode node: FileExplorerNode
@@ -40,6 +44,7 @@ extension NSMenu {
 
     /// Appends only New File / New Folder, scoped to the explorer root. Used when
     /// the user right-clicks the empty area below the tree (no node clicked).
+    @MainActor
     func addSupermuxRootFileOperationItems(coordinator: FileExplorerPanelView.Coordinator) {
         guard coordinator.store.provider is LocalFileExplorerProvider,
               !coordinator.store.rootPath.isEmpty else { return }

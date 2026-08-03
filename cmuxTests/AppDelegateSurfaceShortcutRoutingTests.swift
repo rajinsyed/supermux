@@ -177,7 +177,12 @@ struct AppDelegateSurfaceShortcutRoutingTests {
         }
     }
 
-    @Test func cmdShiftReturnInCanvasModeDoesNotToggleBonsplitSplitZoom() throws {
+    // SUPERMUX:begin toggle-split-zoom-rebind
+    // Supermux rebound toggleSplitZoom from ⇧⌘↩ to ⌃⌘Z so ⇧⌘↩ is free for the Changes-panel
+    // commit accelerator. `withTemporaryShortcut` installs the action's CONFIGURED default, so
+    // this test must press ⌃⌘Z (upstream: `cmdShiftReturnInCanvasModeDoesNotToggleBonsplitSplitZoom`
+    // building `key: "\r", modifiers: [.command, .shift], keyCode: 36`).
+    @Test func cmdControlZInCanvasModeDoesNotToggleBonsplitSplitZoom() throws {
         try withTemporaryShortcut(action: .toggleSplitZoom) {
             let appDelegate = try #require(AppDelegate.shared)
 
@@ -190,9 +195,9 @@ struct AppDelegateSurfaceShortcutRoutingTests {
             let leftPanelId = try #require(workspace.focusedPanelId)
             _ = try #require(workspace.newTerminalSplit(from: leftPanelId, orientation: .horizontal))
             let event = try #require(makeKeyDownEvent(
-                key: "\r",
-                modifiers: [.command, .shift],
-                keyCode: 36,
+                key: "z",
+                modifiers: [.command, .control],
+                keyCode: 6,
                 windowNumber: window.windowNumber
             ))
 
@@ -215,6 +220,7 @@ struct AppDelegateSurfaceShortcutRoutingTests {
             #expect(viewport.overviewToggleCount == 1)
         }
     }
+    // SUPERMUX:end toggle-split-zoom-rebind
 
     @Test func cmdDInCanvasCreatesFloatingCanvasPaneWithoutBonsplitSplit() throws {
         try withTemporaryShortcut(action: .splitRight) {
@@ -372,7 +378,7 @@ struct AppDelegateSurfaceShortcutRoutingTests {
             let firstPanelId = try #require(workspace.focusedPanelId)
             let event = try #require(makeKeyDownEvent(
                 key: "=",
-                modifiers: [.command, .control],
+                modifiers: [.command, .control, .shift],
                 keyCode: 24,
                 windowNumber: window.windowNumber
             ))

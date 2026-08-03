@@ -26,11 +26,22 @@ import SupermuxKit
 /// window as `MobileWorkspaceListObserver` and the projects observer). The
 /// payload is `[:]` — `workspace.updated` is a payload-light poke and the
 /// phone refetches `workspace.list`, exactly as for upstream's own emits.
+///
+/// Since cmux 0.64.21 the phone prefers **mobile state sync v2**: once it has
+/// negotiated `mobile.sync.fetch`, `MobileShellComposite` ignores the
+/// `workspace.updated` poke entirely and only applies `mobile.sync.delta`
+/// frames. So every pass also ticks `MobileStateSyncHost`, exactly as
+/// upstream's `MobileWorkspaceListObserver` does — otherwise a v2 phone would
+/// never see an activity flip or an association change, because upstream's
+/// `summaryHash` is blind to the fork fields and nothing else would trip a
+/// delta. The tick is a cheap no-op when no phone subscribed to the delta
+/// topic.
 @MainActor
 final class SupermuxMobileActivityObserver {
     private let projectsModel: SupermuxProjectsModel
     private let associations: SupermuxWorkspaceAssociationStore
     private let emit: @MainActor (_ topic: String, _ payload: [String: Any]) -> Void
+    private let pokeStateSync: @MainActor () -> Void
     private var lifecycleCancellable: AnyCancellable?
     /// The scheduled trailing pass; `nil` when idle. Its presence is the
     /// throttle: at most one emit-check per window.
@@ -52,17 +63,24 @@ final class SupermuxMobileActivityObserver {
     ///   - lifecycleEvents: Agent-lifecycle mutation stream; defaults to
     ///     ``SupermuxWorkspaceLifecycleRelay``.
     ///   - emit: The event sink; defaults to `MobileHostService.emitEvent`.
+    ///   - pokeStateSync: The mobile state sync v2 tick; defaults to
+    ///     `MobileStateSyncHost.broadcastIfSubscribed()`, which no-ops unless a
+    ///     phone subscribed to the delta topic.
     init(
         projectsModel: SupermuxProjectsModel,
         associations: SupermuxWorkspaceAssociationStore,
         lifecycleEvents: AnyPublisher<UUID, Never>? = nil,
         emit: @escaping @MainActor (_ topic: String, _ payload: [String: Any]) -> Void = { topic, payload in
             MobileHostService.shared.emitEvent(topic: topic, payload: payload)
+        },
+        pokeStateSync: @escaping @MainActor () -> Void = {
+            MobileStateSyncHost.shared.broadcastIfSubscribed()
         }
     ) {
         self.projectsModel = projectsModel
         self.associations = associations
         self.emit = emit
+        self.pokeStateSync = pokeStateSync
         lastAssociationHash = armAndReadAssociationHash()
         // Resolved here rather than as a default argument: default-argument
         // expressions evaluate in the caller's context, where touching the
@@ -94,6 +112,9 @@ final class SupermuxMobileActivityObserver {
             self.lastAssociationHash = hash
             if force || changed {
                 self.emit("workspace.updated", [:])
+                // v1 phones act on the poke above; v2 phones ignore it and only
+                // apply delta frames, so rebuild the sync store too.
+                self.pokeStateSync()
             }
         }
     }

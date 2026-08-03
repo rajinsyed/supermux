@@ -54,7 +54,7 @@ building a parallel system.
 | Custom app actions + terminal presets (per project) | ✅ | `SupermuxProjectAction`, editor Actions section, project-row Actions submenu |
 | Worktree setup/teardown + `config.json` import | ✅ | `SupermuxProjectConfig`(+`Loader`), `SupermuxWorktreeScript`/`SupermuxWorktreeEnvironment`; setup runs in a dedicated terminal via `SupermuxTabManagerOpener`, teardown headless in `SupermuxGitWorktreeService.removeWorktree`; import wired in `SupermuxProjectsModel` |
 | AI integration (Vercel AI Gateway key + branch names + commit messages) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/AI/` (`SupermuxAIConfig`, `SupermuxAIGatewayClient`, `SupermuxAIBranchNamer`, `SupermuxAICommitMessenger`); key UI via the `ai-settings` touchpoint (#18) → `SupermuxAISettingsCard`; wired in `SupermuxComposition`. Key in a `0600` secret file under the cmux state dir; model id (default `openai/gpt-5.4-mini`) editable in Settings, persisted in UserDefaults (`supermux.ai.model`). |
-| Localization (en + ja) | ✅ | all `supermux.*` keys in `Resources/Localizable.xcstrings`; regenerate with the scripts under "Localization" below |
+| Localization (en + ja) | ✅ | macOS/app-target `supermux.*` keys in `Resources/Localizable.xcstrings`; the iOS screens package owns a SECOND catalog, `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/Resources/Localizable.xcstrings` (~207 keys). Regenerate with the scripts under "Localization" below |
 
 Both phases are verified against a live tagged build (worktree creation, the Changes panel on
 real git status, and the full ⌘G run→stop→restart cycle confirmed by an actually-listening dev
@@ -99,10 +99,21 @@ paired with an upstream cmux Mac renders exactly upstream's UI. Status per fork 
 ### Localization
 
 All supermux user-facing strings use `String(localized: "supermux.<area>.<name>", defaultValue:
-"English")`. Because cmux packages resolve `String(localized:)` against the **app** bundle
-(`Bundle.main`), every supermux key — package or app-target — lives in the app catalog at
-`Resources/Localizable.xcstrings` with `en` + `ja` entries (matching cmux's two required
-locales). Interpolated strings (`\(path)`, counts) are stored as `%@` / `%lld` format strings.
+"English")`, with `en` + `ja` entries (cmux's two required locales). Interpolated strings
+(`\(path)`, counts) are stored as `%@` / `%lld` format strings.
+
+There are **two** catalogs, not one:
+
+1. `Resources/Localizable.xcstrings` (the app catalog) holds every macOS key, **including keys
+   used from macOS packages** — cmux packages resolve `String(localized:)` against the **app**
+   bundle (`Bundle.main`), so a package string still needs its entry here (e.g. the #62c settings
+   display names).
+2. `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/Resources/Localizable.xcstrings` — the
+   iOS screens package resolves against its own bundle and owns ~207 `supermux.*` keys. A package
+   test parses it and fails on any missing/empty translation.
+
+When adding an iOS-visible string, put it in catalog 2; a macOS one in catalog 1. Do not assume a
+single catalog — an earlier version of this note claimed one and it was wrong.
 
 To refresh after adding/changing supermux strings, re-run the audit tooling kept under
 `scripts/` (`supermux-extract-loc-keys.py` → format → translate → `supermux-merge-loc.py`); the
@@ -158,9 +169,14 @@ pulls cmux upstream and hates conflicts. Every line of supermux code is written 
 conflict surface:
 
 1. **New code lives in new files.** Supermux features are implemented in:
-   - `Packages/SupermuxKit/` — domain models, services, persistence (Swift Package).
+   - `Packages/SupermuxKit/` — macOS domain models, services, persistence (Swift Package).
    - `Sources/Supermux/` — app-target UI + glue that needs app types (new files only).
-   New files never conflict on merge.
+   - `Packages/Shared/SupermuxMobileCore/` — the `mobile.supermux.*` wire contract.
+   - `Packages/iOS/SupermuxMobileKit/` — iOS domain layer (Mac client, stores, capability gate).
+   - `Packages/iOS/SupermuxMobileUI/` — iOS screens + its own localization catalog.
+   New files never conflict on merge. (The `supermux-check-touchpoints.sh` fence-registration scan
+   skips only `Packages/SupermuxKit/` and `Sources/Supermux/`, so the three mobile packages still
+   need registered fences if they ever edit upstream code — today they do not.)
 2. **Upstream files are touched only at registered touchpoints.** When wiring into an upstream
    file is unavoidable (composition root, sidebar mount, menu/shortcut registration), the edit
    must be:
@@ -188,19 +204,26 @@ git status --porcelain          # must be empty; stash/commit first otherwise
 # 1. Fetch and inspect what's coming
 git fetch upstream
 git log --oneline HEAD..upstream/main | head -50   # eyeball the incoming changes
-git diff --stat HEAD...upstream/main -- $(awk '/^\| `/{gsub(/`/,"",$2); print $2}' SUPERMUX-TOUCHPOINTS.md) 
-#    ^ shows whether upstream touched any of our touchpoint files — those need attention
+#    Which touchpoint files did upstream touch? Those need attention.
+#    (The old one-liner here was broken: its /^\| `/ pattern matched ZERO registry rows — rows
+#     start "| 17 | `path`" — and $2 is the row NUMBER, so it printed pbxproj hex UUIDs. This
+#     form reads the path out of field 3 of every numbered row; ~116 unique paths today.)
+git diff --stat HEAD...upstream/main -- \
+  $(awk -F'|' '/^\| *[0-9]/{gsub(/[ `]/,"",$3); if ($3 != "") print $3}' SUPERMUX-TOUCHPOINTS.md | sort -u)
 
 # 2. Merge (NOT rebase — merge keeps our history stable and rerere effective)
 git merge upstream/main
 
 # 3. If conflicts:
-#    - For files NOT in SUPERMUX-TOUCHPOINTS.md: take upstream's side unless the conflict is in
-#      a Sources/Supermux/ or Packages/SupermuxKit/ file (ours).
+#    - For files NOT in SUPERMUX-TOUCHPOINTS.md: take upstream's side unless the conflict is in a
+#      fork-owned dir (ours): Sources/Supermux/, Packages/SupermuxKit/,
+#      Packages/Shared/SupermuxMobileCore/, Packages/iOS/SupermuxMobile{Kit,UI}/.
 #    - For touchpoint files: take upstream's version of the surrounding code, then re-apply the
 #      fenced SUPERMUX block per SUPERMUX-TOUCHPOINTS.md instructions.
-#    - grep -rn "SUPERMUX:begin" Sources/ Packages/ cmux.xcodeproj/ — verify every registered
-#      fence still exists after resolution.
+#    - git grep -n "SUPERMUX:begin" -- ':!SUPERMUX*.md' — verify every registered fence still
+#      exists. Do NOT scope this to Sources/ Packages/ cmux.xcodeproj/ (the old advice): live
+#      fences also sit in CLI/, cmuxTests/, cmuxUITests/, web/data/, .github/workflows/,
+#      scripts/, ios/, .gitignore, CLAUDE.md and every README.<lang>.md.
 
 # 4. Verify integrity
 ./scripts/supermux-check-touchpoints.sh    # all fences present + manifest in sync
@@ -220,8 +243,11 @@ Conflict heuristics:
 - `project.pbxproj` conflicts: keep upstream's changes AND our package/file references. Our
   pbxproj additions are registered as touchpoints. Re-run `scripts/normalize-pbxproj.py` and
   `scripts/check-pbxproj.sh` after resolving.
-- `Resources/Localizable.xcstrings` conflicts: it's JSON; union both sides' keys (ours all start
-  with `supermux.`).
+- `Resources/Localizable.xcstrings` conflicts: it's JSON; union both sides' keys. Fork keys almost
+  all start with `supermux.`, but there are TWO deliberate exceptions the fork rewrites in place —
+  `settings.app.workspaceInheritWorkingDirectory.subtitleOff` and
+  `settings.search.alias.setting.app.workspace-inherit-working-directory` (touchpoints #82/#84,
+  registered under #4b). Take the fork side for those two; union everything else.
 - If upstream added a feature that overlaps a supermux feature (e.g. they build their own
   projects concept), STOP and present options to the user instead of auto-resolving.
 
@@ -231,8 +257,11 @@ Conflict heuristics:
 |------|---------|
 | `SUPERMUX.md` | This file — fork context, rules, merge playbook |
 | `SUPERMUX-TOUCHPOINTS.md` | Registry of every modified upstream file |
-| `Packages/SupermuxKit/` | Supermux domain package (models, services, persistence) |
+| `Packages/SupermuxKit/` | Supermux macOS domain package (models, services, persistence) |
 | `Sources/Supermux/` | App-target UI and glue code (new files only) |
+| `Packages/Shared/SupermuxMobileCore/` | `mobile.supermux.*` wire contract shared by Mac + phone |
+| `Packages/iOS/SupermuxMobileKit/` | iOS domain layer (Mac client, stores, capability gate) |
+| `Packages/iOS/SupermuxMobileUI/` | iOS screens + its own `Localizable.xcstrings` |
 | `scripts/supermux-check-touchpoints.sh` | CI/manual check that fences and manifest agree |
 | `cmuxTests/Supermux*` | Unit tests for supermux code |
 
@@ -259,12 +288,16 @@ running the suite twice doubles it. This has burned the user more than once. Har
 
 Same as cmux (see `AGENTS.md`): `./scripts/setup.sh` once, then
 
-> **Toolchain note:** the app build's "Ghostty CLI helper" script phase requires **zig 0.15.2
-> exactly** (Homebrew's newer zig will not be used). On this machine zig 0.15.2 is installed at
-> `/usr/local/bin/zig` (checksum-verified from ziglang.org), which the helper script probes
-> after `/opt/homebrew/bin/zig`. If a build fails with "zig 0.15.2 is required", re-install it
-> there or run `ZIG_REQUIRED=0.15.2 ./scripts/install-zig-ci.sh`. Also note: prebuilt
-> GhosttyKit is fetched by `./scripts/ensure-ghosttykit.sh` (no zig needed for that).
+> **Toolchain note:** the app build's "Ghostty CLI helper" script phase pins an **exact** zig
+> version, and `scripts/build-ghostty-cli-helper.sh` derives it from
+> `ghostty/build.zig.zon`'s `.minimum_zig_version` (**0.16.0** since the 0.65 merge — this note
+> previously hardcoded 0.15.2, which the submodule bump invalidated). Homebrew's zig is used only
+> if its `zig version` matches exactly. Read the required value with
+> `grep minimum_zig_version ghostty/build.zig.zon`; if a build fails with
+> "zig <version> is required", install that exact version (or run
+> `ZIG_REQUIRED=<version> ./scripts/install-zig-ci.sh`) and make sure it is on the helper's probe
+> path. Also note: prebuilt GhosttyKit is fetched by `./scripts/ensure-ghosttykit.sh` (no zig
+> needed for that).
 >
 > **Rust (since the 0.64.20 upstream merge):** upstream's diff viewer builds a Rust sidecar
 > (`Native/DiffSidecar`, "Build Diff Sidecar" script phase) and requires **rustup** with the
@@ -280,7 +313,14 @@ Same as cmux (see `AGENTS.md`): `./scripts/setup.sh` once, then
 ```
 
 Constraints inherited from upstream that supermux code MUST follow:
-- Swift files < 500 lines (`scripts/swift_file_length_budget.py`, CI-enforced).
+- Keep Swift files small (~500 lines is still the house style from
+  `skills/cmux-architecture/SKILL.md`), but note this is **no longer CI-enforced**: upstream
+  removed the whole Swift file-length budget system at the 0.65 merge
+  (`.github/swift-file-length-budget.tsv` and `scripts/swift_file_length_budget.py` are both
+  deleted — see SUPERMUX-TOUCHPOINTS.md #4, RETIRED). The only remaining budget gate in
+  `.github/workflows/ci.yml` is `scripts/swift_warning_budget.py`, which caps Swift **warnings**,
+  not file length (CI runs the script itself plus its regression wrapper
+  `./tests/test_ci_swift_warning_budget.sh`).
 - All user-facing strings localized via `String(localized:)` with keys in
   `Resources/Localizable.xcstrings` (supermux keys are prefixed `supermux.`).
 - New code follows `skills/cmux-architecture/SKILL.md`: Swift 6 concurrency (`actor`,
@@ -301,6 +341,115 @@ Constraints inherited from upstream that supermux code MUST follow:
   surface for a cosmetic gain. Tracked as a known low-priority gap.
 - **Changes panel is single-window-active-workspace.** Each window's mount owns its own
   `SupermuxChangesModel` tracking that window's selected workspace directory.
+
+### Open decisions from the 0.64.21 (v0.65) upstream merge
+
+These are **unresolved questions for the fork owner**, recorded so a future merge does not
+silently decide them. None of them is a bug to fix in-place; each needs a product call.
+
+1. **Touchpoint #110 (`supermux-mobile-hide-search`) is now inert — phone search is LIVE again.**
+   The fork had removed `.searchable(text: $searchText)` from `WorkspaceListView`. Upstream moved
+   phone search into two NEW files —
+   `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListSearchHost.swift`
+   (pre-iOS 26) and `…/MobilePrimaryTabScaffold.swift` (the iOS 26 `role: .search` Tab) — and
+   `WorkspaceListView.searchText` is now an **injected property** rather than `@State`, so the
+   query filters for real. The fence that remains in `WorkspaceListView.swift` is a comment-only
+   marker; there is nothing left in that file to remove — confirm with
+   `git grep -n '\.searchable(' -- Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift`
+   (must print nothing; scoping the grep to the whole package instead just hits the new hosts).
+   Options: re-apply the
+   removal at the new host(s) — which would now also amputate the iOS 26 search Tab, a much more
+   visible change than the old bottom-bar field; retire the touchpoint and accept upstream's
+   search; or keep the marker and document that the fork no longer removes search. **The fork
+   currently ships upstream's search.**
+
+2. **Upstream now ships its own mobile diff viewer, overlapping the fork's Changes screen.**
+   Upstream advertises `workspace.changes.v1` (gated on `CmuxFeatureFlags.mobileWorkspaceChangesFlag`,
+   filtered by `mobileHostCapabilities(includingWorkspaceChanges:)`), which covers the same ground
+   as the fork's `supermux.changes.v1` (touchpoints #93/#108, `SupermuxChangesScreen` /
+   `SupermuxDiffScreen`). **Both are advertised simultaneously whenever `mobileWorkspaceChangesFlag`
+   is on** — when it is off, `mobileHostCapabilities(includingWorkspaceChanges:)` strips upstream's
+   entry and only the fork's remains. So a fork phone paired with a flag-enabled fork Mac is
+   offered two different diff UIs. Options: keep both (they are
+   independently capability-gated), suppress one, or converge the fork's Changes screen onto
+   upstream's viewer. Note the hard constraint from #93: the fork capability list must **never**
+   contain the literal `workspace.changes.v1`, or upstream's
+   `cmuxTests/MobileHostConnectionLifecycleTests.swift` equality assertion breaks.
+
+3. **Dock terminals do not get the fork's new-tab browser-link placement.** Upstream's
+   `TerminalLinkOpenContainer` extraction produced two conformances. `Workspace`'s
+   (`Sources/Workspace+TerminalLinkOpening.swift`) carries the fork's `browser-link-new-tab` fence;
+   `DockSplitStore`'s (`Sources/DockSplitStore+TerminalLinkOpening.swift`) is deliberately left
+   upstream-shaped, so a Command-clicked link from a **dock** terminal still opens as a split, not
+   a new tab. Deliberate for now (smaller touchpoint surface), and recorded so a merger does not
+   read the missing fence as clobbered. Question: should dock terminals match?
+
+4. **Three pre-existing red tests contradict touchpoint #130 — NOT caused by this merge.**
+   Confirmed byte-identical to pre-merge `HEAD`
+   (`git show HEAD:cmuxTests/PostHogAnalyticsPropertiesTests.swift`), so this is standing fork
+   debt, not merge damage. In `cmuxTests/PostHogAnalyticsPropertiesTests.swift`:
+   - `appKitSidebarFeatureFlagDefaultsOn` asserts `flag.defaultWhenUnavailable` for
+     `sidebar-appkit-list-experiment`, which the fork flipped to `false`.
+   - `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts
+     `flags.remoteValue(for: flag) == true` — the fork's gate filters it to `nil`.
+   - `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and
+     asserts `setOverride(false, …)` is rejected — with the gate there is no remote value to
+     reject against.
+
+   All three need a fence (or a retarget onto a different, non-fork-pinned flag key — the tests
+   are about the generic precedence machinery, not about the sidebar experiment specifically) plus
+   a SUPERMUX-TOUCHPOINTS.md row. Until then the fork's `cmuxTests` run is knowingly red on these
+   three. **Open question:** retarget the tests to a neutral flag key (cleanest, smallest fence),
+   or fence the three expectations to the fork's values (bigger fence, keeps the key coverage)?
+
+5. **Touchpoint #130 has no regression test — and this merge proves that is dangerous.** Nothing
+   asserts the ingestion invariant (a remote `true` for `sidebar-appkit-list-experiment` is never
+   ingested at any `remoteValuesByKey` write site; a remote `false` still is). Upstream moved
+   production ingestion from `applyLoadedFlags()` onto a new `applyRemoteFlagValues(_:)` in a
+   change that **automerged cleanly** — the fork's single gate would have silently stopped
+   protecting the production path with no test failure. Suggested fork-owned coverage
+   (`cmuxTests/SupermuxAppKitSidebarFlagGateTests.swift`): drive each of the three write paths
+   (`init` cache seeding, `applyRemoteFlagValues`, `applyLoadedFlags`) with remote `true` and
+   assert `remoteValue(for:) == nil` **and** the `cmux.flags.remote.…` defaults key is absent;
+   then drive each with remote `false` and assert it ingests. **Wiring caveat:** a new file in
+   `cmuxTests/` needs four `cmux.xcodeproj/project.pbxproj` entries (`PBXFileReference`,
+   `PBXBuildFile`, group `children`, target Sources phase) or it silently never runs — see the
+   pbxproj-test-wiring pitfall in `CLAUDE.md`, and use a reserved `50BE0001…` id per
+   SUPERMUX-TOUCHPOINTS.md #3.
+
+6. **Under state sync v2, fork-field freshness depends on the fork's own observer poke.** The
+   phone no longer refetches `mobile.workspace.list`; it consumes `mobile.sync.delta`. So the four
+   additive §6 fields are only as fresh as whatever ticks the v2 host.
+   `Sources/Supermux/SupermuxMobileActivityObserver.swift` (supermux-owned, no fence needed) now
+   ticks `MobileStateSyncHost.shared.broadcastIfSubscribed()` alongside its `workspace.updated`
+   emit, via an injectable `pokeStateSync` parameter, so activity and association changes
+   propagate. Unopened **worktree** PR badges are covered too, by
+   `SupermuxMobileWorktreesObserver` (`Sources/Supermux/SupermuxMobileObservers.swift`), which
+   hashes `pullRequestsByWorktreePath`. **Remaining gap — narrower than it first looks:** there is
+   no fork observer for branch-only or PR-only mutations on an **open `Workspace`**, so those
+   values refresh only when some other tracked field trips upstream's
+   `Sources/Mobile/MobileWorkspaceListObserver.swift`. Pre-existing (already true of the legacy
+   path) but **more visible under v2**, because the phone no longer papers over it with periodic
+   refetches. Fix would be a fork observer on open-workspace branch/PR state; not done.
+
+### Fork-owned files that track upstream API churn
+
+These are supermux-owned files (no fence, no registry row) that had to change **only** to keep
+compiling against upstream 0.64.21. Recorded so the next merger knows where upstream API drift
+lands first. All three are verified by a successful
+`xcodebuild build-for-testing -scheme cmux-unit`:
+
+- `Sources/Supermux/SupermuxAppGlue.swift` — two
+  `@ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared`
+  became `@State`, because upstream migrated that observer from `ObservableObject` to
+  `@Observable` (Swift Observation). Every upstream call site uses `@State` too.
+- `Sources/Supermux/SupermuxFileExplorerCommands.swift` — the two `extension NSMenu` builders are
+  now `@MainActor`, because upstream made `FileExplorerStore` main-actor-isolated. Both call sites
+  in `Sources/FileExplorerView.swift` are already on the main actor.
+- `Sources/Supermux/SupermuxMobileActivityObserver.swift` — gained an injectable `pokeStateSync`
+  (default `MobileStateSyncHost.shared.broadcastIfSubscribed()`) called alongside its
+  `workspace.updated` emit; this is what keeps the fork's §6 fields fresh under state sync v2
+  (see open decision 6 above). Its doc comment explains the rationale in place.
 
 ## Branch/remote model
 

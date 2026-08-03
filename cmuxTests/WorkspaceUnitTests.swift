@@ -3060,9 +3060,11 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
     func testDisabledInheritancePinsNewWorkspaceCwdToHomeDirectory() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(false) {
             let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
+            let fallbackCwd = "/tmp/cmux-ghostty-default-\(UUID().uuidString)"
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
-                autoWelcomeIfNeeded: false
+                autoWelcomeIfNeeded: false,
+                defaultWorkspaceWorkingDirectoryProvider: { fallbackCwd }
             )
 
             let inserted = manager.addWorkspace(autoWelcomeIfNeeded: false)
@@ -3076,12 +3078,14 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
     }
     // SUPERMUX:end new-workspace-home-dir
 
-    func testExplicitNoInheritanceLeavesNewWorkspaceCwdUnsetWhenGlobalInheritanceEnabled() throws {
+    func testExplicitNoInheritanceUsesGhosttyDefaultWhenGlobalInheritanceEnabled() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(nil) {
             let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
+            let fallbackCwd = "/tmp/cmux-ghostty-default-\(UUID().uuidString)"
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
-                autoWelcomeIfNeeded: false
+                autoWelcomeIfNeeded: false,
+                defaultWorkspaceWorkingDirectoryProvider: { fallbackCwd }
             )
 
             let inserted = manager.addWorkspace(
@@ -3089,8 +3093,8 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
                 autoWelcomeIfNeeded: false
             )
 
-            XCTAssertNil(inserted.focusedTerminalPanel?.requestedWorkingDirectory)
-            XCTAssertNotEqual(inserted.currentDirectory, sourceCwd)
+            XCTAssertEqual(inserted.focusedTerminalPanel?.requestedWorkingDirectory, fallbackCwd)
+            XCTAssertEqual(inserted.currentDirectory, fallbackCwd)
         }
     }
 
@@ -3237,6 +3241,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
         let panel = DetachedWorkspaceTestPanel()
         return Workspace.DetachedSurfaceTransfer(
             sourceWorkspaceId: sourceWorkspaceId,
+            sessionRestoreSourceWorkspaceId: nil,
             panelId: panel.id,
             panel: panel,
             title: panel.displayTitle,
@@ -3258,6 +3263,9 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
             restorableAgentResumeState: nil, restoredAgentCompletedGeneration: nil,
             shellActivityState: nil, restoredResumeSessionWorkingDirectory: nil,
             resumeBinding: resumeBinding,
+            managedAgentResumeBinding: resumeBinding.flatMap {
+                $0.hasCompleteManagedSessionIdentity ? $0 : nil
+            },
             agentRuntime: nil,
             isRemoteTerminal: false,
             remoteRelayPort: nil,
@@ -3279,6 +3287,7 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
         }
 
         override func makeWorkspaceForCreation(
+            id: UUID? = nil,
             title: String,
             workingDirectory: String?,
             portOrdinal: Int,
@@ -3295,6 +3304,7 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
         ) -> Workspace {
             beforeCreateWorkspace?()
             return super.makeWorkspaceForCreation(
+                id: id,
                 title: title,
                 workingDirectory: workingDirectory,
                 portOrdinal: portOrdinal,
@@ -3590,6 +3600,7 @@ final class WorkspaceCreationConfigSanitizationTests: XCTestCase {
         }
 
         override func makeWorkspaceForCreation(
+            id: UUID? = nil,
             title: String,
             workingDirectory: String?,
             portOrdinal: Int,
@@ -3606,6 +3617,7 @@ final class WorkspaceCreationConfigSanitizationTests: XCTestCase {
         ) -> Workspace {
             capturedConfigTemplate = configTemplate
             return super.makeWorkspaceForCreation(
+                id: id,
                 title: title,
                 workingDirectory: workingDirectory,
                 portOrdinal: portOrdinal,
@@ -4820,6 +4832,121 @@ final class WorkspaceTerminalFocusRecoveryTests: XCTestCase {
         XCTAssertTrue(
             rightPanel.hostedView.debugRenderStats().isActive,
             "Expected terminal-first-responder recovery to reactivate the selected split pane"
+        )
+    }
+
+    func testTerminalFirstResponderFeedbackPreservesActiveFocusTransaction() {
+        let originalAppDelegate = AppDelegate.shared
+        let appDelegate = originalAppDelegate ?? AppDelegate()
+        let manager = TabManager(autoWelcomeIfNeeded: false)
+        let originalTabManager = appDelegate.tabManager
+        let windowId = appDelegate.registerMainWindowContextForTesting(tabManager: manager)
+        AppDelegate.shared = appDelegate
+        appDelegate.tabManager = manager
+        defer {
+            appDelegate.unregisterMainWindowContextForTesting(windowId: windowId)
+            appDelegate.tabManager = originalTabManager
+            AppDelegate.shared = originalAppDelegate
+        }
+
+        guard let workspace = manager.selectedWorkspace,
+              let leftPanelId = workspace.focusedPanelId,
+              let leftPanel = workspace.terminalPanel(for: leftPanelId),
+              let rightPanel = workspace.newTerminalSplit(from: leftPanelId, orientation: .horizontal),
+              let leftPaneId = workspace.paneId(forPanelId: leftPanel.id),
+              let leftTabId = workspace.surfaceIdFromPanelId(leftPanel.id) else {
+            XCTFail("Expected split terminal panels")
+            return
+        }
+
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        guard let contentView = window.contentView else {
+            XCTFail("Expected content view")
+            return
+        }
+
+        leftPanel.hostedView.frame = NSRect(x: 0, y: 0, width: 180, height: 220)
+        rightPanel.hostedView.frame = NSRect(x: 180, y: 0, width: 180, height: 220)
+        contentView.addSubview(leftPanel.hostedView)
+        contentView.addSubview(rightPanel.hostedView)
+        leftPanel.hostedView.setVisibleInUI(true)
+        rightPanel.hostedView.setVisibleInUI(true)
+
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        contentView.layoutSubtreeIfNeeded()
+        leftPanel.hostedView.layoutSubtreeIfNeeded()
+        rightPanel.hostedView.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        FocusSurfaceBroadcaster.shared.flush()
+
+        var firstResponderFeedbackCount = 0
+        leftPanel.hostedView.setFocusHandler {
+            firstResponderFeedbackCount += 1
+            workspace.focusPanel(leftPanel.id, trigger: .terminalFirstResponder)
+        }
+
+        var observedTransactions: [UUID] = []
+        let token = NotificationCenter.default.addObserver(
+            forName: .ghosttyDidFocusSurface,
+            object: nil,
+            queue: nil
+        ) { notification in
+            guard notification.userInfo?[GhosttyNotificationKey.tabId] as? UUID == workspace.id,
+                  notification.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID == leftPanel.id,
+                  let transactionId = notification.userInfo?[GhosttyNotificationKey.focusTransactionId] as? UUID else {
+                return
+            }
+            observedTransactions.append(transactionId)
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        var sawFirstResponderNotification = false
+        var observedFirstResponderTransactions: [UUID] = []
+        let firstResponderToken = NotificationCenter.default.addObserver(
+            forName: .ghosttyDidBecomeFirstResponderSurface,
+            object: nil,
+            queue: nil
+        ) { notification in
+            guard notification.userInfo?[GhosttyNotificationKey.tabId] as? UUID == workspace.id,
+                  notification.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID == leftPanel.id else {
+                return
+            }
+            sawFirstResponderNotification = true
+            if let transactionId = notification.userInfo?[GhosttyNotificationKey.focusTransactionId] as? UUID {
+                observedFirstResponderTransactions.append(transactionId)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(firstResponderToken) }
+
+        let transactionId = UUID()
+        window.makeFirstResponder(nil)
+        workspace.applyTabSelection(
+            tabId: leftTabId,
+            inPane: leftPaneId,
+            focusTransactionId: transactionId
+        )
+        FocusSurfaceBroadcaster.shared.flush()
+
+        XCTAssertGreaterThan(
+            firstResponderFeedbackCount,
+            0,
+            "Expected AppKit first-responder focus to feed back through workspace.focusPanel"
+        )
+        XCTAssertTrue(
+            sawFirstResponderNotification,
+            "Expected the terminal first-responder notification to be posted for the focused panel"
+        )
+        XCTAssertEqual(
+            observedFirstResponderTransactions.last,
+            transactionId,
+            "Terminal first-responder notifications should carry the active focus transaction"
+        )
+        XCTAssertEqual(
+            observedTransactions.last,
+            transactionId,
+            "Terminal first-responder feedback should stay in the active focus transaction instead of starting a new circuit"
         )
     }
 
@@ -6453,7 +6580,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
 
         XCTAssertGreaterThan(
             (snapshot.forkCommand.map { $0 + "\n" } ?? "").utf8.count,
-            SessionRestorableAgentSnapshot.maxInlineStartupInputBytes
+            900
         )
         let forkPanel = try XCTUnwrap(
             workspace.forkAgentConversation(
@@ -6464,7 +6591,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
         XCTAssertNil(forkPanel.surface.debugInitialCommand())
         XCTAssertEqual(forkPanel.requestedWorkingDirectory, "/Users/cmux/project")
-        XCTAssertTrue(forkPanel.surface.initialInput?.hasPrefix("/bin/zsh ") == true)
+        XCTAssertTrue(forkPanel.surface.initialInput?.hasPrefix(" /bin/zsh ") == true)
 
         let launch = try XCTUnwrap(
             workspace.forkAgentWorkspaceLaunch(
@@ -6476,7 +6603,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertNil(launch.initialTerminalCommand)
         XCTAssertFalse(launch.autoConnectRemoteConfiguration)
         XCTAssertNil(launch.remoteConfiguration)
-        XCTAssertTrue(launch.initialTerminalInput.hasPrefix("/bin/zsh "))
+        XCTAssertTrue(launch.initialTerminalInput.hasPrefix(" /bin/zsh "))
     }
 
     func testForkAgentConversationFromLocalTerminalInRemoteWorkspaceStaysLocal() throws {
@@ -6538,7 +6665,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
         XCTAssertNil(forkPanel.surface.debugInitialCommand())
         XCTAssertEqual(forkPanel.requestedWorkingDirectory, "/tmp/local project")
-        XCTAssertTrue(forkPanel.surface.initialInput?.hasPrefix("/bin/zsh ") == true)
+        XCTAssertTrue(forkPanel.surface.initialInput?.hasPrefix(" /bin/zsh ") == true)
         XCTAssertEqual(workspace.activeRemoteTerminalSessionCount, initialRemoteSessionCount)
 
         let launch = try XCTUnwrap(
@@ -6551,7 +6678,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertNil(launch.initialTerminalCommand)
         XCTAssertFalse(launch.autoConnectRemoteConfiguration)
         XCTAssertNil(launch.remoteConfiguration)
-        XCTAssertTrue(launch.initialTerminalInput.hasPrefix("/bin/zsh "))
+        XCTAssertTrue(launch.initialTerminalInput.hasPrefix(" /bin/zsh "))
     }
 
     func testForkAgentConversationInRemoteWorkspaceRejectsLocalLauncherScriptFallback() throws {
@@ -6596,7 +6723,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
 
         XCTAssertGreaterThan(
             (snapshot.forkCommand.map { $0 + "\n" } ?? "").utf8.count,
-            SessionRestorableAgentSnapshot.maxInlineStartupInputBytes
+            900
         )
         XCTAssertNil(snapshot.forkStartupInput(allowLauncherScript: false))
         XCTAssertNil(

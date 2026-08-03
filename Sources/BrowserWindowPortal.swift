@@ -1,6 +1,7 @@
 import AppKit
 import Bonsplit
 import CmuxAppKitSupportUI
+import CmuxFoundation
 import ObjectiveC
 import SwiftUI
 import WebKit
@@ -1841,10 +1842,11 @@ final class WindowBrowserPortal: NSObject {
         var transientRecoveryRetriesRemaining: Int
     }
 
-    private struct PendingHostedWebViewRefresh {
+    @MainActor
+    private final class PendingHostedWebViewRefresh {
         var generation: UInt64 = 0
-        var asyncWorkItem: DispatchWorkItem?
-        var delayedWorkItem: DispatchWorkItem?
+        let asyncScheduler = MainActorDeferredActionScheduler()
+        let delayedScheduler = MainActorDeferredActionScheduler()
     }
 
     private var entriesByWebViewId: [ObjectIdentifier: Entry] = [:]
@@ -2510,14 +2512,10 @@ final class WindowBrowserPortal: NSObject {
         for webViewId: ObjectIdentifier,
         keepGeneration: Bool = false
     ) {
-        guard var pending = pendingHostedWebViewRefreshes[webViewId] else { return }
-        pending.asyncWorkItem?.cancel()
-        pending.delayedWorkItem?.cancel()
-        if keepGeneration {
-            pending.asyncWorkItem = nil
-            pending.delayedWorkItem = nil
-            pendingHostedWebViewRefreshes[webViewId] = pending
-        } else {
+        guard let pending = pendingHostedWebViewRefreshes[webViewId] else { return }
+        pending.asyncScheduler.cancel()
+        pending.delayedScheduler.cancel()
+        if !keepGeneration {
             pendingHostedWebViewRefreshes.removeValue(forKey: webViewId)
         }
     }
@@ -2548,10 +2546,11 @@ final class WindowBrowserPortal: NSObject {
         // Keep only the latest follow-up passes so reattach work does not pile up on
         // the main thread while browser panes are moving between hosts.
         cancelPendingHostedWebViewRefreshes(for: webViewId, keepGeneration: true)
-        var pending = pendingHostedWebViewRefreshes[webViewId] ?? PendingHostedWebViewRefresh()
+        let pending = pendingHostedWebViewRefreshes[webViewId] ?? PendingHostedWebViewRefresh()
         nextHostedWebViewRefreshGeneration &+= 1
         let generation = nextHostedWebViewRefreshGeneration
         pending.generation = generation
+        pendingHostedWebViewRefreshes[webViewId] = pending
 
         runHostedWebViewRefreshPass(
             webView,
@@ -2561,7 +2560,13 @@ final class WindowBrowserPortal: NSObject {
             reattachRenderingState: true
         )
 
-        let asyncWorkItem = DispatchWorkItem { [weak self, weak webView, weak containerView] in
+        // AppKit layout/display calls above can synchronously re-enter this
+        // method. Let the newer generation keep its follow-up passes instead of
+        // replacing them with stale closures from this frame.
+        guard pendingHostedWebViewRefreshes[webViewId] === pending,
+              pending.generation == generation else { return }
+
+        pending.asyncScheduler.schedule { [weak self, weak webView, weak containerView] in
             guard let self, let webView, let containerView else { return }
             guard self.pendingHostedWebViewRefreshes[webViewId]?.generation == generation else { return }
             self.runHostedWebViewRefreshPass(
@@ -2572,18 +2577,11 @@ final class WindowBrowserPortal: NSObject {
                 reattachRenderingState: true
             )
         }
-        pending.asyncWorkItem = asyncWorkItem
 
-        let delayedWorkItem = DispatchWorkItem { [weak self, weak webView, weak containerView] in
+        pending.delayedScheduler.schedule(
+            after: .milliseconds(30)
+        ) { [weak self, weak webView, weak containerView] in
             guard let self else { return }
-            defer {
-                if var current = self.pendingHostedWebViewRefreshes[webViewId],
-                   current.generation == generation {
-                    current.asyncWorkItem = nil
-                    current.delayedWorkItem = nil
-                    self.pendingHostedWebViewRefreshes[webViewId] = current
-                }
-            }
             guard let webView, let containerView else { return }
             guard self.pendingHostedWebViewRefreshes[webViewId]?.generation == generation else { return }
             self.runHostedWebViewRefreshPass(
@@ -2594,11 +2592,6 @@ final class WindowBrowserPortal: NSObject {
                 reattachRenderingState: true
             )
         }
-        pending.delayedWorkItem = delayedWorkItem
-        pendingHostedWebViewRefreshes[webViewId] = pending
-
-        DispatchQueue.main.async(execute: asyncWorkItem)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: delayedWorkItem)
     }
 
     private enum HostedWebViewPresentationUpdateKind {
@@ -2968,6 +2961,8 @@ final class WindowBrowserPortal: NSObject {
             ),
             webView: webView
         )
+        let shouldPreserveExternalRenderHost =
+            webView.cmuxIsManagedByExternalRenderHost(relativeTo: containerView)
 
         if let previousWebViewId = webViewByAnchorId[anchorId], previousWebViewId != webViewId {
 #if DEBUG
@@ -3028,11 +3023,12 @@ final class WindowBrowserPortal: NSObject {
         }
 #endif
 
-        if shouldPreserveExternalFullscreenHost {
+        if shouldPreserveExternalFullscreenHost || shouldPreserveExternalRenderHost {
 #if DEBUG
             cmuxDebugLog(
                 "browser.portal.reparent.skip web=\(browserPortalDebugToken(webView)) " +
-                "reason=fullscreenExternalHost super=\(browserPortalDebugToken(webView.superview)) " +
+                "reason=\(shouldPreserveExternalFullscreenHost ? "fullscreenExternalHost" : "renderExternalHost") " +
+                "super=\(browserPortalDebugToken(webView.superview)) " +
                 "container=\(browserPortalDebugToken(containerView)) " +
                 "state=\(String(describing: webView.fullscreenState))"
             )
@@ -3320,15 +3316,19 @@ final class WindowBrowserPortal: NSObject {
         }
         let shouldPreserveExternalFullscreenHost =
             webView.cmuxIsManagedByExternalFullscreenWindow(relativeTo: window)
+        let shouldPreserveExternalRenderHost =
+            webView.cmuxIsManagedByExternalRenderHost(relativeTo: containerView)
         let shouldPreserveExternalHostForHiddenEntry =
             !shouldPreserveExternalFullscreenHost &&
+            !shouldPreserveExternalRenderHost &&
             !entry.visibleInUI &&
             webView.cmuxBrowserViewportPresentationView.superview !== containerView
-        if shouldPreserveExternalFullscreenHost {
+        if shouldPreserveExternalFullscreenHost || shouldPreserveExternalRenderHost {
 #if DEBUG
             cmuxDebugLog(
                 "browser.portal.reparent.skip web=\(browserPortalDebugToken(webView)) " +
-                "reason=fullscreenExternalHost super=\(browserPortalDebugToken(webView.superview)) " +
+                "reason=\(shouldPreserveExternalFullscreenHost ? "fullscreenExternalHost" : "renderExternalHost") " +
+                "super=\(browserPortalDebugToken(webView.superview)) " +
                 "container=\(browserPortalDebugToken(containerView)) " +
                 "state=\(String(describing: webView.fullscreenState))"
             )

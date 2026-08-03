@@ -430,7 +430,9 @@ struct SupermuxChangesMount: View {
     @EnvironmentObject private var tabManager: TabManager
     // Re-render when the user rebinds a shortcut (the configured commit chords
     // are read from `KeyboardShortcutSettings`, which is not itself observable).
-    @ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
+    // `@State`, not `@ObservedObject`: upstream's observer is `@Observable`
+    // (Swift Observation), matching every upstream call site.
+    @State private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
     @StateObject private var box = SupermuxChangesModelBox()
 
     var body: some View {
@@ -477,7 +479,8 @@ struct SupermuxPresetsBarMount: View {
     /// `body`; shortcut rebinds via `shortcutObserver.revision`. If a future
     /// edit needs mutable workspace state in `body`, pass it in as a value.
     let workspace: Workspace
-    @ObservedObject private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
+    // `@State`, not `@ObservedObject`: upstream's observer is `@Observable`.
+    @State private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
 
     // Minimal mode is chrome-free, so the bar hides itself. The mode is read
     // HERE, not by the `presets-bar` fence in `WorkspaceContentView`: upstream

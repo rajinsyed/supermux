@@ -13,6 +13,12 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         public let windowID: String?
         /// User-facing workspace title.
         public let title: String
+        /// Custom workspace description, when reported by the Mac.
+        public let customDescription: String?
+        /// Whether `customDescription` is a bounded projection of a longer Mac value.
+        public let customDescriptionIsTruncated: Bool?
+        /// Custom workspace accent color as `#RRGGBB`, when reported by the Mac.
+        public let customColorHex: String?
         /// The workspace's current working directory, if reported.
         public let currentDirectory: String?
         /// Whether the Mac currently has this workspace selected.
@@ -79,6 +85,23 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
                 url = (try? container.decodeIfPresent(String.self, forKey: .url)) ?? nil
                 isStale = (try? container.decodeIfPresent(Bool.self, forKey: .isStale)) ?? nil
             }
+
+            /// Memberwise construction for locally-synced sources: mobile state
+            /// sync v2 projects `WorkspaceSyncRecord.SupermuxPullRequest` (same
+            /// wire shape) through this type so both transports feed one apply
+            /// path. Declaring `init(from:)` above suppresses the synthesized
+            /// memberwise init, and a synthesized one would be internal anyway.
+            public init(
+                number: Int? = nil,
+                state: String? = nil,
+                url: String? = nil,
+                isStale: Bool? = nil
+            ) {
+                self.number = number
+                self.state = state
+                self.url = url
+                self.isStale = isStale
+            }
         }
         // SUPERMUX:end supermux-mobile-workspace-fields
 
@@ -86,6 +109,9 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case id
             case windowID = "window_id"
             case title
+            case customDescription = "description"
+            case customDescriptionIsTruncated = "description_truncated"
+            case customColorHex = "custom_color"
             case currentDirectory = "current_directory"
             case isSelected = "is_selected"
             case isPinned = "is_pinned"
@@ -100,6 +126,57 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case supermuxActivity = "supermux_activity"
             case supermuxBranch = "supermux_branch"
             case supermuxPullRequest = "supermux_pull_request"
+            // SUPERMUX:end supermux-mobile-workspace-fields
+        }
+
+        /// Memberwise construction for callers that assemble a row from an
+        /// already-synced local source (mobile state sync v2 projects its
+        /// record mirror through the same apply path as the wire response).
+        public init(
+            id: String,
+            windowID: String?,
+            title: String,
+            customDescription: String? = nil,
+            customDescriptionIsTruncated: Bool? = nil,
+            customColorHex: String? = nil,
+            currentDirectory: String?,
+            isSelected: Bool,
+            isPinned: Bool?,
+            groupID: String?,
+            preview: String?,
+            previewAt: Double?,
+            lastActivityAt: Double?,
+            hasUnread: Bool?,
+            terminals: [Terminal],
+            // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields on upstream's
+            // memberwise init; defaulted to nil so upstream call sites compile unchanged and an
+            // upstream Mac's rows stay field-free — see SUPERMUX-TOUCHPOINTS.md)
+            supermuxProjectID: String? = nil,
+            supermuxActivity: String? = nil,
+            supermuxBranch: String? = nil,
+            supermuxPullRequest: SupermuxPullRequest? = nil
+            // SUPERMUX:end supermux-mobile-workspace-fields
+        ) {
+            self.id = id
+            self.windowID = windowID
+            self.title = title
+            self.customDescription = customDescription
+            self.customDescriptionIsTruncated = customDescriptionIsTruncated
+            self.customColorHex = customColorHex
+            self.currentDirectory = currentDirectory
+            self.isSelected = isSelected
+            self.isPinned = isPinned
+            self.groupID = groupID
+            self.preview = preview
+            self.previewAt = previewAt
+            self.lastActivityAt = lastActivityAt
+            self.hasUnread = hasUnread
+            self.terminals = terminals
+            // SUPERMUX:begin supermux-mobile-workspace-fields
+            self.supermuxProjectID = supermuxProjectID
+            self.supermuxActivity = supermuxActivity
+            self.supermuxBranch = supermuxBranch
+            self.supermuxPullRequest = supermuxPullRequest
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
     }
@@ -132,6 +209,21 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case isPinned = "is_pinned"
             case anchorWorkspaceID = "anchor_workspace_id"
         }
+
+        /// Memberwise construction for locally-synced sources (state sync v2).
+        public init(
+            id: String,
+            name: String,
+            isCollapsed: Bool,
+            isPinned: Bool,
+            anchorWorkspaceID: String
+        ) {
+            self.id = id
+            self.name = name
+            self.isCollapsed = isCollapsed
+            self.isPinned = isPinned
+            self.anchorWorkspaceID = anchorWorkspaceID
+        }
     }
 
     /// A terminal entry within a workspace.
@@ -153,6 +245,21 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case currentDirectory = "current_directory"
             case isFocused = "is_focused"
             case isReady = "is_ready"
+        }
+
+        /// Memberwise construction for locally-synced sources (state sync v2).
+        public init(
+            id: String,
+            title: String,
+            currentDirectory: String?,
+            isFocused: Bool,
+            isReady: Bool?
+        ) {
+            self.id = id
+            self.title = title
+            self.currentDirectory = currentDirectory
+            self.isFocused = isFocused
+            self.isReady = isReady
         }
     }
 
@@ -194,3 +301,23 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         try JSONDecoder().decode(Self.self, from: data)
     }
 }
+
+// Memberwise construction for callers that assemble a list response from an
+// already-synced local source (mobile state sync v2 projects its record mirror
+// through the same apply path the decoded wire response uses).
+extension MobileSyncWorkspaceListResponse {
+    /// Memberwise construction for locally-synced sources (state sync v2
+    /// projects its record mirror through the same apply path).
+    public init(
+        workspaces: [Workspace],
+        groups: [Group],
+        createdWorkspaceID: String?,
+        createdTerminalID: String?
+    ) {
+        self.workspaces = workspaces
+        self.groups = groups
+        self.createdWorkspaceID = createdWorkspaceID
+        self.createdTerminalID = createdTerminalID
+    }
+}
+

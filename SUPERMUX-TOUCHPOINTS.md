@@ -9,6 +9,16 @@ Rules for adding a touchpoint:
 - Keep it as small as possible — a call into `Packages/SupermuxKit` or `Sources/Supermux` code.
 - Fence it: `// SUPERMUX:begin <id>` / `// SUPERMUX:end <id>` (use `<!-- -->` in Markdown/XML).
 - Register it in the table AND add a "How to re-apply" entry.
+- One row per line. Never let two rows share a line (the checker rejects it) and never put a
+  `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
+  `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
+- Numbering: the highest number in use is **145**. Numbers **4, 19, 52, 89, 106, 121** are unused;
+  all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
+  #18 → #20). Numbers **134** and **135** are each used
+  **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
+  two `lint-allow-upstream-debt` rows) — a pre-existing collision, deliberately left as-is so
+  existing cross-references keep resolving. Do not reuse them, and do not renumber. Letter
+  suffixes (`4b`, `33b`, `62b`) keep a new row adjacent to its family without renumbering.
 
 ## Registry
 
@@ -32,7 +42,7 @@ Rules for adding a touchpoint:
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits inside a single `VStack` wrapper that keeps upstream's `WorkspaceContentMinimalModeSafeAreaModifier` — one structural identity. The minimal-mode hide moved INTO the supermux-owned mount (v0.64.19 merge): upstream's `WorkspaceContentViewVisibilityTests` asserts mode toggles re-evaluate neither `ContentView` nor `WorkspaceContentView` bodies, so the fence must not read the presentation mode |
 | 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + byte-identical `AppIcon-Debug.icon` + `AppIcon-Nightly.icon` (no DEV/NIGHTLY bands — all three channels share one mark); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered icon. Wiring lives in touchpoint #3. |
 | 18 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AutomationSection.swift` | `ai-settings` | Renders `SupermuxAISettingsCard` (Vercel AI Gateway API key + model) at the end of the Automation section, and stores the `secretStore` + `errorLog` the card needs. The card itself is a new supermux-owned file, `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` (no conflict on merge; lives in the upstream package only because the section stack is closed to app injection and cannot import `SupermuxKit`). **Upstream relocated this package under `Packages/macOS/`; the new card moved with it (git rename detection placed it at the new path).** |
-| 20 | `Sources/GhosttyTerminalView.swift` | `browser-link-new-tab` | When a cmd-clicked terminal link opens in the embedded browser and there is no existing browser pane to reuse, open it as a new browser tab in the current pane (and switch to it) instead of creating a horizontal split |
+| 20 | `Sources/Workspace+TerminalLinkOpening.swift` | `browser-link-new-tab` | When a Command-clicked terminal link — a web URL, or a local `.html`/`.htm` file routed through `Sources/TerminalHTMLFileBrowserAction.swift` — opens in the embedded browser and there is no existing right-side browser pane to reuse, open it as a new browser tab in the current pane (and switch to it) instead of creating a horizontal split. Upstream (0.65) deleted `GhosttyTerminalView.openEmbeddedBrowserLink(...)` and replaced it with the `TerminalLinkOpenContainer` protocol; the fence moved into `Workspace.openTerminalBrowserLink(url:sourcePanelId:)`. The SECOND conformance, `Sources/DockSplitStore+TerminalLinkOpening.swift`, is deliberately NOT fenced (known deviation — dock terminals keep upstream's split fallback) |
 | 21 | `Sources/App/ShortcutRoutingSupport.swift` | `run-toggle-shortcut-dispatch` | ⌘G (the supermux Run/Stop toggle, shared with Find Next) is never ceded to a focused browser's native find, so cmux always owns the chord (otherwise WebKit swallows ⌘G and it is a dead key in the browser) |
 | 22 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `run-toggle-shortcut-dispatch` | Updates the browser-find routing contract for ⌘G (run-toggle chord excluded from browser-first routing) and adds the regression test |
 | 23 | `Sources/KeyboardShortcutSettings.swift` | `workspace-switcher-shortcut-case`, `workspace-switcher-shortcut-label`, `workspace-switcher-shortcut-default` | Adds the two workspace-switcher shortcut actions: `supermuxWorkspaceSwitcherNext` (default ⌘\`) and `supermuxWorkspaceSwitcherPrevious` (default ⇧⌘\`) |
@@ -41,11 +51,12 @@ Rules for adding a touchpoint:
 | 26 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Policies/RightSidebarWidthSettings.swift` | `right-sidebar-min-width` | Lowers the right-sidebar minimum width floor from upstream's 276 to 200 so the panel can be dragged narrower (mode bar collapses to icon-only via touchpoint #5). **Upstream relocated this package under `Packages/macOS/` (cmux package reorg).** |
 | 27 | `cmuxTests/SidebarWidthPolicyTests.swift` | `right-sidebar-min-width-test` | Two right-sidebar clamp assertions read `RightSidebarWidthSettings.minimumWidth` instead of the hardcoded `276`, so they track the lowered floor |
 | 28 | `Sources/KeyboardShortcutSettings.swift` | `toggle-split-zoom-rebind` | Rebinds the `toggleSplitZoom` default from ⇧⌘↩ to ⌃⌘Z (canonical table) so ⇧⌘↩ is free for the supermux Changes-panel commit accelerator |
-| 29 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Defaults.swift` | `toggle-split-zoom-rebind` | Mirror of the rebound ⌃⌘Z default for the settings-UI package. **Upstream relocated this package under `Packages/macOS/`.** |
+| 29 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Defaults.swift` | `toggle-split-zoom-rebind` | Mirror of the rebound ⌃⌘Z default for the settings-UI package. **Upstream relocated this package under `Packages/macOS/`** (the old `Packages/CmuxSettings/…` path in the re-apply prose was stale) |
 | 30 | `web/data/cmux-shortcuts.ts` | `toggle-split-zoom-rebind` | Documents Toggle Pane Zoom as ⌃⌘Z in the keyboard-shortcut registry |
-| 31 | `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift` | `toggle-split-zoom-rebind` | The split-zoom shortcut test drives the configured default, so it presses ⌃⌘Z (was ⇧⌘↩) |
+| 31 | `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift` | `toggle-split-zoom-rebind` | The split-zoom shortcut test drives the configured default, so it presses ⌃⌘Z (was ⇧⌘↩). **This file is Swift Testing since 0.65** (`@Suite(.serialized) @MainActor final class`, no `: XCTestCase`, no `import XCTest`, file-private `XCTAssert*` shims forwarding to `#expect`) — the fenced test MUST carry `@Test` or it silently stops running with green CI |
 | 32 | `cmuxTests/KeyboardShortcutContextTests.swift` | `toggle-split-zoom-rebind` | Comment accuracy: toggleSplitZoom is no longer the Return-based shortcut (now ⌃⌘Z); assertions unchanged |
-| 33 | `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift` | `toggle-split-zoom-rebind` | Two browser zoom round-trip UI tests press ⌃⌘Z instead of ⇧⌘↩ |
+| 33 | `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift` | `toggle-split-zoom-rebind` | Two browser zoom round-trip UI tests press ⌃⌘Z instead of ⇧⌘↩. The file now builds its app with upstream's `XCUIApplication.cmuxTestApplication()` helper, not bare `XCUIApplication()` |
+| 33b | `cmuxTests/AppDelegateSurfaceShortcutRoutingTests.swift` | `toggle-split-zoom-rebind` | Seventh `toggle-split-zoom-rebind` site in the #28–33b sequence (the id appears in nine files tree-wide once #35/#36 are counted), never registered before the 0.65 merge: `cmdControlZInCanvasModeDoesNotToggleBonsplitSplitZoom` (upstream: `cmdShiftReturnInCanvasModeDoesNotToggleBonsplitSplitZoom`) presses ⌃⌘Z (`key: "z", modifiers: [.command, .control], keyCode: 6`) because `withTemporaryShortcut(action: .toggleSplitZoom)` installs the action's CONFIGURED default, which the fork rebound. Swift Testing (`@Test`) — same silent-skip hazard as #31 |
 | 34 | `Sources/GhosttyTerminalView.swift` | `ghostty-unbind-split-zoom-return` | Unbinds Ghostty's built-ins `super+shift+enter = toggle_split_zoom` **and** `super+enter = toggle_fullscreen` so the freed ⇧⌘↩ / ⌘↩ actually reach the Changes-panel commit shortcuts in a focused terminal (without them the rebind is incomplete — same class as the numbered-tab unbinds, #5189) |
 | 35 | `Sources/App/ShortcutRoutingSupport.swift` | `toggle-split-zoom-rebind` | Comment accuracy: the browser-Return rule no longer cites Toggle Pane Zoom as the Command-Return app shortcut (now ⌃⌘Z); notes ⇧⌘↩ is the commit accelerator. Logic unchanged |
 | 36 | `cmuxTests/AppDelegateShortcutRoutingTests.swift` | `toggle-split-zoom-rebind` | Regression test `testGhosttyConfigDoesNotRetainSplitZoomReturnFallback` asserts the loaded Ghostty config has no `super+shift+enter` binding (companion to the #5189 numbered-fallback test) |
@@ -55,7 +66,7 @@ Rules for adding a touchpoint:
 | 40 | `Sources/FileExplorerStore.swift` | `file-explorer-operations-reveal` | Adds `supermuxRevealPath` + `supermuxReveal(path:)` to `FileExplorerStore` so a supermux file operation can select a just-created/renamed item by path (the selection state is `private(set)`, so this must live in the store's own file). The store fence also carries `var supermuxRevealRequestedAt: Date?` (set in `supermuxReveal`, cleared in `supermuxClearSelection`) used by the coordinator to expire a reveal after 10s, and two minimal same-id fences in `select(node:)` and `select(nodes:anchor:)` clear `supermuxRevealPath` when the selection moves to a different path. Paired with the coordinator's `-reveal` hook in touchpoint #39 |
 | 41 | `Sources/TabManager.swift` | `new-workspace-standalone` | Marks every workspace created through cmux's normal new-workspace flow (`+` / ⌘T / surface tab bar) as standalone (`SupermuxWorkspaceAssociationStore.markStandalone` in `addWorkspace`) so it lands at the root of the flat list, never nested under the focused project. The project opener clears it via `associate`; the central close path clears it via `forget`. `restoreClosedWorkspace` (reopen) goes through `addWorkspace` too, so it explicitly `forget`s the mark afterwards to re-nest by directory; **session**-restore builds `Workspace` objects directly (no `addWorkspace`) and is unaffected. `releaseRestoredAwayWorkspace` `forget`s each released pre-restore workspace after the session-restore swap (it never reaches the central close path; the restored replacement re-nests by directory) |
 | 42 | `Sources/TabManager+DetachedWorkspace.swift` | `new-workspace-standalone` | The detached-surface path (move-tab / move-surface to a new workspace) builds a `Workspace` directly, not via `addWorkspace`, so it marks the new workspace standalone too — a moved-out surface becomes a root-level workspace, never nested under a project whose directory it inherited |
-| 43 | `Sources/TabManager.swift` | `keep-window-on-last-close` | Keeps the window open as an empty home when the last workspace closes — instead of `window.performClose`, which quit the app on the last window. `closeWorkspace(allowEmptyingWindow:)` removes the final workspace (selection clears to `nil`); the three last-workspace close sites + the bulk-close short-circuit/plan + the child-exit path route through it, failed closed-workspace restore cleanup can empty the window again, and close confirmations no longer mark last-workspace closes as window-closing. Also fenced: `detachWorkspace` leaves the source window empty (`selectedTabId = nil`) when its last workspace moves to another window instead of upstream's `addWorkspace()` refill; `restoreSessionSnapshot` restores a zero-workspace snapshot as an empty home (fallback fabrication gated on `!snapshot.workspaces.isEmpty`); and a fenced comment marks `markRemoteTmuxKillOnWindowCloseIfNeeded` as intentionally orphaned (kept verbatim for merge cleanliness). Explicit window close (red button / ⌘⇧W) is unchanged |
+| 43 | `Sources/TabManager.swift` | `keep-window-on-last-close` | Keeps the window open as an empty home when the last workspace closes — instead of `window.performClose`, which quit the app on the last window. `closeWorkspace(allowEmptyingWindow:)` removes the final workspace (selection clears to `nil`); the two surviving last-workspace close sites (`closeWorkspaceIfRunningProcess`, `closePanelAfterChildExited` — upstream deleted the bulk-close anchor branch at 0.65) + the bulk-close short-circuit/plan route through it, failed closed-workspace restore cleanup can empty the window again, and close confirmations no longer mark last-workspace closes as window-closing. Also fenced: `detachWorkspace` leaves the source window empty (`selectedTabId = nil`) when its last workspace moves to another window instead of upstream's `addWorkspace()` refill; `restoreSessionSnapshot` restores a zero-workspace snapshot as an empty home (fallback fabrication gated on `!snapshot.workspaces.isEmpty`); and a fenced comment marks `markRemoteTmuxKillOnWindowCloseIfNeeded` as intentionally orphaned (kept verbatim for merge cleanliness). Explicit window close (red button / ⌘⇧W) is unchanged |
 | 44 | `Sources/ContentView.swift` | `empty-home` | `terminalContent` renders `SupermuxEmptyHomeView` (centered "No open tabs" hint) when `tabManager.tabs` is empty, gated to the `.tabs` sidebar surface and non-interactive. New file `Sources/Supermux/SupermuxEmptyHomeView.swift` wired via touchpoint #3 (IDs `…F5`/`…F6`); `supermux.emptyHome.*` keys under #4b |
 | 45 | `cmuxTests/TabManagerUnitTests.swift` | `keep-window-on-last-close` | Repurposes the child-exit window-close test to assert the window stays open (empty home), adds two tests for `closeWorkspace(allowEmptyingWindow:)` emptying the window vs. a plain close keeping the last workspace, and covers failed closed-workspace restore cleanup from empty home; plus `testDetachingLastWorkspaceLeavesEmptyHome` and `testRestoreSessionSnapshotKeepsPersistedEmptyHomeEmpty` |
 | 46 | `Sources/FileExplorerNSOutlineView.swift` | `file-explorer-operations-keys` | ⌘⌫ (Move to Trash) / Return (Rename) keyboard handling in the outline view's `keyDown`, placed **before** upstream's `handleOpenSelectionShortcut` so Return renames (Finder-standard) and ⌘⌫ trashes; ⌘↓ still opens via upstream's Finder alias. Return/⌘⌫ are never claimed during an active `/` quick-search (Return keeps upstream's end-search+open semantics), and `handleSupermuxFileOperationKey` yields to a user-**explicitly**-configured Open Selection binding (Settings override or cmux.json) matching the keystroke, while the built-in Return default remains shadowed. Upstream (cmux #6001) extracted `FileExplorerNSOutlineView` out of `FileExplorerView.swift` into this file, so the `-keys` fence (originally part of #39) moved here. One-line call into the `FileExplorerPanelView.Coordinator` extension |
@@ -73,7 +84,9 @@ Rules for adding a touchpoint:
 | 59 | `Sources/TerminalController.swift` | `keep-window-on-last-close` | The socket `close_workspace` command routes through `closeWorkspace(tab, allowEmptyingWindow: true)` and replies OK only when the workspace actually left `tabs` (upstream `closeTab` silently no-ops on a window's last workspace while replying OK) |
 | 60 | `Sources/RemoteTmuxController.swift` | `keep-window-on-last-close` | BOTH arms of upstream 0.65's teardown-reason switch are fenced: `.sessionEnded` (dead mirror) drops upstream's add-a-replacement-workspace workaround and closes with `allowEmptyingWindow: true`; `.explicitDetach` (deliberate detach, remote session kept alive) replaces upstream's `closeWorkspaceNonInteractively(allowPinned: true)` — which closes the whole window (and on the last window quits the app) when the mirror is the window's last workspace — with the same `closeWorkspace(allowEmptyingWindow: true)`, leaving the empty home. Pre-0.65 both cases shared one teardown path and one fence |
 | 61 | `Sources/AppleScriptSupport.swift` | `keep-window-on-last-close` | AppleScript `close tab` (`ScriptTab.handleCloseTab`) and terminal `close` last-panel path (`ScriptTerminal.handleClose`) call `closeWorkspace(workspace, allowEmptyingWindow: true)` instead of the `tabs.count > 1` fork + `window.performClose(nil)`, so scripted last-workspace closes leave the empty home like ⌘W |
-| 62 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction.swift` | `run-toggle-shortcut-case`, `workspace-switcher-shortcut-case`, `supermux-commit-shortcut-case`, `supermux-shortcut-groups`, `supermux-shortcut-display-names` | Registers the five supermux actions (`supermuxToggleRun`, the two workspace-switcher actions, the two commit actions) in the settings-package enum that drives the Settings UI and its conflict detection (reuses the app-target fence ids for the case additions) |
+| 62 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction.swift` | `run-toggle-shortcut-case`, `workspace-switcher-shortcut-case`, `supermux-commit-shortcut-case` | Adds the five supermux cases (`supermuxToggleRun`, the two workspace-switcher actions, the two commit actions) to the settings-package enum that drives the Settings UI and its conflict detection (reuses the app-target fence ids). Upstream (0.65) extracted `group` and `displayName` out of this file, so the two other fences moved to #62b/#62c |
+| 62b | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Group.swift` | `supermux-shortcut-groups` | Places the five supermux actions in the Settings groups (`supermuxToggleRun`/`supermuxCommit`/`supermuxCommitAccelerator` → `.workspace`; the two workspace-switcher actions → `.navigation`). Upstream extracted `ShortcutAction.group` out of `ShortcutAction.swift` into this file; the fence moved with it |
+| 62c | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+DisplayName.swift` | `supermux-shortcut-display-names` | The five `String(localized: "supermux.shortcut.*.label", …)` display names shown in the Settings shortcut list. Upstream extracted `ShortcutAction.displayName` out of `ShortcutAction.swift` into this file; the fence moved with it. The package resolves `String(localized:)` against `Bundle.main`, so the app catalog (`Resources/Localizable.xcstrings`, #4b) serves these keys in en + ja |
 | 63 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Defaults.swift` | `supermux-shortcut-defaults` | Package mirror of the five supermux default strokes (⌘G, ⌘\`, ⇧⌘\`, ⌘↩, ⇧⌘↩) from `Sources/KeyboardShortcutSettings.swift`; both tables must agree |
 | 64 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Stores/SecretFileStore.swift` | `secret-file-0600-write` | Temp-file-at-0600 + `rename(2)` write path removing the chmod-after-write exposure window for the AI gateway key |
 | 65 | `Packages/macOS/CmuxSettings/Tests/CmuxSettingsTests/SecretFileStoreTests.swift` | `secret-file-0600-write` | Regression test for the 0600 write path (same fence id as #64) |
@@ -91,8 +104,8 @@ Rules for adding a touchpoint:
 | 77 | `Sources/BrowserPaneDropTargetView.swift` | `browser-hover-drag-guard` | Same stale-drag-pasteboard fix one layer down: the slot's invisible pane drop target no longer captures hover-kind hit tests while no left button is held, so a stale tab-transfer/file payload can't misroute post-drag cursor updates and tooltips inside the slot (and can't defeat #74's topmost check, which hit-tests the slot) |
 | 78 | `cmuxTests/BrowserPanelTests.swift` | `browser-hover-drag-guard` | Updates upstream's two hover pass-through tests to the fork contract (hover-kind pass-through requires the left button held; the sidebar-reorder test is renamed accordingly); upstream's originals asserted exactly the stale-hover behavior #73 removes and would fail deterministically on CI |
 | 79 | `cmuxTests/BrowserPaneDropRoutingTests.swift` | `browser-hover-drag-guard` | Updates upstream's capture test to inject the pressed-button state and adds stale-hover regression coverage for #77 |
-| 80 | `Sources/TabManager.swift` | `new-workspace-home-dir` | With "Inherit Workspace Working Directory" OFF, `implicitWorkingDirectoryForNewWorkspace` returns the home directory explicitly instead of nil. A nil cwd reaches `ghostty_surface_new` unset, and Ghostty's own `tab-inherit-working-directory` (default on) then reuses the focused surface's pwd — so the sidebar empty-area double-click and the `+` button still opened new workspaces in the focused workspace's directory despite the setting. Regression test: `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` (wired via #3) |
-| 81 | `cmuxTests/WorkspaceUnitTests.swift` | `new-workspace-home-dir` | Upstream's `testDisabledInheritanceLeavesNewWorkspaceCwdUnsetForGhosttyConfigFallback` asserted the nil-cwd contract #80 replaces; renamed to `testDisabledInheritancePinsNewWorkspaceCwdToHomeDirectory` and asserts the explicit home directory |
+| 80 | `Sources/TabManager.swift` | `new-workspace-home-dir` | With "Inherit Workspace Working Directory" OFF, new workspaces always start in the home directory. **TWO fence sites since 0.65.** (a) `addWorkspace` — upstream rewrote it to resolve the cwd through `WorkspaceCreationWorkingDirectoryPolicy(inheritanceEnabled:).resolve(explicitWorkingDirectory:inheritedWorkingDirectory:defaultWorkingDirectory:)` and STOPPED calling `implicitWorkingDirectoryForNewWorkspace`; the fence supplies `FileManager.default.homeDirectoryForCurrentUser.path` as `defaultWorkingDirectory` in place of upstream's `defaultWorkspaceWorkingDirectoryProvider()`. The guard keys off the **SETTING alone**, never `inheritanceEnabled`, so an explicit `inheritWorkingDirectory: false` call with the setting ON still takes upstream's default (upstream's `testExplicitNoInheritanceUsesGhosttyDefaultWhenGlobalInheritanceEnabled` depends on that). (b) `implicitWorkingDirectoryForNewWorkspace` — same home pin, now serving only the detached path (#42's file). Regression test: `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` (wired via #3). See the OPEN DECISION note in the #80 re-apply section: upstream has since closed the nil-cwd leak on its own terms |
+| 81 | `cmuxTests/WorkspaceUnitTests.swift` | `new-workspace-home-dir` | Upstream renamed this test to `testDisabledInheritanceUsesGhosttyDefaultForNewWorkspaceCwd` (was `…LeavesNewWorkspaceCwdUnsetForGhosttyConfigFallback`) and it now asserts `fallbackCwd` via an injected `defaultWorkspaceWorkingDirectoryProvider` instead of a nil cwd. Either form contradicts the fork, so it stays fenced as `testDisabledInheritancePinsNewWorkspaceCwdToHomeDirectory`, keeps the injected provider, and asserts the explicit home directory (proving the fork's pin beats the provider). Only coverage of #80's `addWorkspace` fence site |
 | 82 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` | `new-workspace-home-dir` | The Inherit Working Directory toggle's OFF subtitle now says new workspaces always start in the home directory (upstream promised a Ghostty working-directory fallback that #80 removes); matching en/ja catalog values updated under #4b, schema description under #14 |
 | 83 | `cmuxUITests/SettingsAppBehaviorUITests.swift` | `new-workspace-home-dir` | `Subtitle.inheritOff` now matches the fork's OFF subtitle; upstream's constant held the removed Ghostty-fallback wording, so `testInheritWorkingDirectoryToggleSwapsSubtitle` (which polls for that exact static text after clicking the toggle) failed deterministically against #82's reworded row |
 | 84 | `Sources/SettingsSearchAliases.swift` | `new-workspace-home-dir` | The toggle's settings-search alias swaps the stale `ghostty` keyword for `home` (the OFF behavior no longer involves Ghostty's working-directory setting); en/ja catalog values under #4b |
@@ -101,25 +114,25 @@ Rules for adding a touchpoint:
 | 87 | `web/messages/ja.json` | `unfenced` | Japanese translation for the #86 message key |
 | 88 | `skills/cmux-settings/references/all-keys.md` | `unfenced` | Regenerated the `app.workspaceInheritWorkingDirectory` description row to match the #14 schema description (the file is auto-generated from `web/data/cmux.schema.json` and had the removed Ghostty-fallback wording) |
 | 90 | `cmux.xcworkspace/contents.xcworkspacedata` | `unfenced` | Adds the supermux-owned package FileRefs to the workspace groups: `Packages/Shared/SupermuxMobileCore` (Shared group) and `Packages/iOS/SupermuxMobileKit` (iOS group). Generated file — regenerate with `python3 scripts/check-workspace-package-groups.py --write` (the `Packages/` folder layout is the source of truth), never hand-edit |
-| 91 | `Sources/TerminalController.swift` | `mobile-supermux-dispatch` | One case in the `mobileHostHandleRPC` switch routes the whole `mobile.supermux.*` namespace to `v2MobileSupermuxDispatch` (fork-owned `Sources/Supermux/TerminalController+SupermuxMobile.swift`), mirroring the adjacent `mobile.chat.*` prefix case |
-| 92 | `Sources/Mobile/MobileHostService+TicketAuthorization.swift` | `mobile-supermux-authz` | In `ticketAuthorizationError(authorization:request:)` (**upstream 0.64.x extracted ticket authorization out of `MobileHostService.swift` into this file; the fence moved with it**), after the alias/conflict guards and before the upstream method switch, delegates every `mobile.supermux.*` method to the fail-closed `SupermuxMobileAuthorization.ticketError` table (fork-owned `Sources/Supermux/SupermuxMobileAuthorization.swift`); reachable in tests via the existing `debugTicketAuthorizationError` seam |
-| 93 | `Sources/Mobile/MobileHostService+Capabilities.swift` | `mobile-supermux-capabilities` | Appends `SupermuxMobileCapabilities.advertised` (fork-owned `Sources/Supermux/SupermuxMobileCapabilities.swift`) to `mobileHostCapabilities` so the phone can gate supermux screens on `supermux.*.v1` entries |
+| 91 | `Sources/TerminalController.swift` | `mobile-supermux-dispatch` | One case in the `mobileHostHandleRPC` switch routes the whole `mobile.supermux.*` namespace to `v2MobileSupermuxDispatch` (fork-owned `Sources/Supermux/TerminalController+SupermuxMobile.swift`), mirroring the adjacent prefix cases. Since the 0.64.21 merge it sits **after upstream's new `mobile.browser.*` case** (it used to follow `mobile.chat.*` directly); position among the prefix cases is irrelevant as long as it precedes `default:` |
+| 92 | `Sources/Mobile/MobileHostService+TicketAuthorization.swift` | `mobile-supermux-authz` | In `ticketAuthorizationError(authorization:request:)` (**upstream 0.64.x extracted ticket authorization out of `MobileHostService.swift` into this file; the fence moved with it**), after the alias/conflict guards and before the upstream method switch, delegates every `mobile.supermux.*` method to the fail-closed `SupermuxMobileAuthorization.ticketError` table (fork-owned `Sources/Supermux/SupermuxMobileAuthorization.swift`); reachable in tests by calling `ticketAuthorizationError` directly (upstream removed the `debugTicketAuthorizationError` seam) |
+| 93 | `Sources/Mobile/MobileHostService+Capabilities.swift` | `mobile-supermux-capabilities` | `capabilities += SupermuxMobileCapabilities.advertised` (fork-owned `Sources/Supermux/SupermuxMobileCapabilities.swift`) inside `mobileHostCapabilities(includingWorkspaceChanges:)`, placed **after** upstream's `includingWorkspaceChanges` filter and **before** the `#if DEBUG` `CMUX_DEBUG_SUPPRESS_MOBILE_CAPS` suppression, so the phone can gate supermux screens on `supermux.*.v1` and a dev Mac can still suppress fork capabilities. **Invariant:** the fork list must never contain the literal `workspace.changes.v1` — upstream's `cmuxTests/MobileHostConnectionLifecycleTests.swift` asserts `enabled.filter { $0 != workspaceChangesCapability } == disabled`, which a duplicate entry breaks |
 | 94 | `Sources/AppDelegate.swift` | `mobile-supermux-observers` | One line at the top of `ensureMobileWorkspaceListObserver(for:)` calls `SupermuxMobileHostGlue.activateIfNeeded()` (fork-owned `Sources/Supermux/SupermuxMobileObservers.swift`) so fork mobile observers activate exactly where upstream constructs `MobileWorkspaceListObserver` |
 | 95 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the `SupermuxMobileCore` package (local package reference + product dependency on the `cmux` and `cmuxTests` targets), the fifteen `Sources/Supermux/` mobile files (`TerminalController+SupermuxMobile.swift`, `SupermuxMobileHost+Projects.swift`, `SupermuxMobileHost+Worktrees.swift`, `SupermuxMobileHost+PresetsActions.swift`, `SupermuxMobileHost+Changes.swift`, `SupermuxMobileHost+ChangesSync.swift`, `SupermuxMobileHost+Run.swift`, `SupermuxMobileHost+Files.swift`, `SupermuxMobileAuthorization.swift`, `SupermuxMobileCapabilities.swift`, `SupermuxMobileObservers.swift`, `SupermuxMobileActivityObserver.swift`, `SupermuxMobileRunObserver.swift`, `SupermuxMobileChangesWatchRegistry.swift`, `SupermuxMobileWorkspaceListAugmenter.swift`) into the cmux target, and `cmuxTests/SupermuxMobileAuthorizationTests.swift` + `cmuxTests/SupermuxMobileObserversTests.swift` + `cmuxTests/SupermuxMobileChangesWatchRegistryTests.swift` + `cmuxTests/SupermuxMobileRunObserverTests.swift` into the cmuxTests target (all ids prefixed `50BE0002…`) |
 | 96 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `supermux-mobile-client-mount` | One computed property `supermuxConnectionSeam` (next to `remoteClientForAgentChat`) exposes the live `MobileCoreRPCClient` + `supportedHostCapabilities` snapshot to the fork's supermux phone stores; `nil` unless connected. All tracked `@Observable` reads, so the fork's section driver re-runs (and rebuilds `SupermuxMacClient` + stores) on every (re)connect and on capability arrival |
 | 97 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-projects-section` | Four 1-line fences: `import SupermuxMobileUI`; a `@State` `SupermuxProjectsSectionModel`; the `SupermuxProjectsMobileSection(section:actions:)` mount inside the `List` above the workspace/group section; the `.supermuxProjectsSectionDriver(model:connection:workspaces:selectWorkspace:)` session driver on the `List` (fed by the #96 seam; `workspaces` + `selectWorkspace` feed the §6 open-workspace join and nested-row navigation). Section renders nothing without `supermux.projects.v1` |
 | 98 | `Packages/iOS/CmuxMobileShellUI/Package.swift` | `supermux-mobile-shellui-deps` | Two fenced 1-line additions: `.package(path: "../SupermuxMobileUI")` in `dependencies` and `"SupermuxMobileUI"` in the `CmuxMobileShellUI` target dependencies (fork-owned Projects section package) |
 | 99 | `Sources/TerminalController+MobileWorkspaceList.swift` | `mobile-supermux-workspace-fields` | Two fence blocks in `mobileWorkspacePayload`: the upstream `return [` becomes `let payload: [String: Any] = [`, and after the literal a fenced `return SupermuxMobileWorkspaceListAugmenter.augment(payload, workspace: workspace)` merges the additive §6 fields (`supermux_project_id` / `supermux_activity` / `supermux_branch` / `supermux_pull_request` (m6-f2 row parity); fork-owned `Sources/Supermux/SupermuxMobileWorkspaceListAugmenter.swift` → package-tested `SupermuxMobileWorkspaceFields` in SupermuxKit) |
-| 100 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileSyncWorkspaceListResponse.swift` | `supermux-mobile-workspace-fields` | Two fence blocks in `Workspace`: the OPTIONAL `supermuxProjectID` / `supermuxActivity` / `supermuxBranch` / `supermuxPullRequest` stored lets and their snake_case `CodingKeys` (`supermux_project_id` / `supermux_activity` / `supermux_branch` / `supermux_pull_request`). The scalars decode synthesized; the nested `SupermuxPullRequest` struct (`{number?, state?, url?, is_stale?}`) has a LOSSY custom `init(from:)` — malformed extension objects degrade to nil fields instead of failing the whole list. Pre-mission payloads (keys absent) decode unchanged — regression-tested by `SupermuxWorkspaceListFieldsDecodeTests` |
+| 100 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileSyncWorkspaceListResponse.swift` | `supermux-mobile-workspace-fields` | Four fence blocks in `Workspace`: (a) the OPTIONAL `supermuxProjectID` / `supermuxActivity` / `supermuxBranch` / `supermuxPullRequest` stored lets, the nested `SupermuxPullRequest` struct (`{number?, state?, url?, is_stale?}`) with its LOSSY custom `init(from:)` (malformed extension objects degrade to nil fields instead of failing the whole list) **and a public memberwise `init(number:state:url:isStale:)`** — declaring `init(from:)` suppresses synthesis and a synthesized memberwise init would be `internal`, so state sync v2's cross-module projection (#141) could not construct one without it; (b) the snake_case `CodingKeys` (`supermux_project_id` / `supermux_activity` / `supermux_branch` / `supermux_pull_request`); (c)+(d) defaulted-nil supermux params and their assignments on upstream's NEW memberwise `Workspace.init(...)` (added by the state-sync-v2 merge for locally-projected rows). Pre-mission payloads (keys absent) decode unchanged — regression-tested by `SupermuxWorkspaceListFieldsDecodeTests` |
 | 101 | `Packages/iOS/CmuxMobileShellModel/Sources/CmuxMobileShellModel/MobileWorkspacePreview.swift` | `supermux-mobile-workspace-fields` | One fence block: defaulted `public var supermuxProjectID/supermuxActivity/supermuxBranch: String? = nil` plus the PR flattened to scalars (`supermuxPullRequestNumber: Int?`, `supermuxPullRequestState/URL: String?` — no wire-type dependency), all following the `machineColorIndex` pattern, so upstream initializers and call sites need no change |
 | 102 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileWorkspacePreview+RemoteMapping.swift` | `supermux-mobile-workspace-fields` | One fence block after `self.init(...)` in `init(remote:)`: copies the decoded supermux fields (project id, activity, branch, and the PR object flattened to number/state/url scalars) onto the preview (aggregation's `var stamped = workspace` copies then carry them everywhere) |
-| 103 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-project-workspaces`, `supermux-mobile-row-activity` | Hide filter: a fenced `supermuxFlatWorkspaces` helper (`workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)`), where `supermuxShownProjectIDs` is non-empty only while `snapshot.isVisible && snapshot.hasLoaded && trimmedQuery.isEmpty && !filter.isActive` — i.e. the hide is active only when the Projects section is visible AND loaded AND no search/filter, plus two fenced one-line swaps where upstream read `workspaces` (`filteredWorkspaces`, `groupedListItems`). Row dot: one fenced `.supermuxWorkspaceActivityDot(rawActivity:)` modifier on `WorkspaceNavigationRow` in `workspaceRow` |
+| 103 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-project-workspaces`, `supermux-mobile-row-activity` | Hide filter: a fenced `supermuxFlatWorkspaces` helper (`workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)`), where `supermuxShownProjectIDs` is non-empty only while `snapshot.isVisible && snapshot.hasLoaded && trimmedQuery.isEmpty && !filter.isActive` — i.e. the hide is active only when the Projects section is visible AND loaded AND no search/filter, plus two fenced swaps where upstream read `workspaces` — one in `filteredWorkspaces` (a one-line `let workspaces = supermuxFlatWorkspaces` rebind) and one in `groupedWorkspaces` (the fence wraps only the `return`; upstream's `parsedMachines` precompute sits above it, unfenced). Row dot: one fenced `.supermuxWorkspaceActivityDot(rawActivity:)` modifier on `WorkspaceNavigationRow` in `workspaceRow` |
 | 104 | `ios/cmux/AppCompositionRoot.swift` | `uitest-clear-paired-mac-state` | When `UITestConfig.mockDataEnabled` and the harness sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1`, deletes `Application Support/cmux/` (the `MobilePairedMacStore` sqlite + WAL/SHM) once at composition-root init, before `CMUXMobileRootScene` opens the store. Fixes cross-test pairing-state leakage on the shared simulator: since #89 made pairing actually complete, a persisted paired Mac from a prior test/run auto-navigated past `MobileAddDeviceForm` and its dead-host reconnect churn broke 3 cmuxUITests (cmuxUITests.swift:245/:586). No-op for real installs: the mock gate is DEBUG-only and the env var is only set by the XCUITest harness (#105) |
 | 105 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-clear-paired-mac-launch` | `launchApp` sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1` on every harness launch so each test starts from an unpaired slate (consumed by #104) |
-| 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base (three fence blocks: helper `lockfile_recorded_dependency_calls`, the changed-roots skip in `main`, and `file_text_at`) |
-| 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two 1-line fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:)` modifier on the detail `body`'s outer `Group`. Mounts the fork's capability-gated Changes and Files toolbar entries (fork-owned `SupermuxMobileUI/SupermuxWorkspaceTools.swift`) which present `SupermuxChangesScreen` / `SupermuxFileBrowserScreen` as sheets; fed by the #96 `supermuxConnectionSeam`. Each entry hides without its capability (`supermux.changes.v1` / `supermux.files.v1`) |
+| 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base. **FOUR fence blocks** (a previous note said three): helper `lockfile_recorded_dependency_calls`, `path_dependency_remote_pin_roots`, the changed-roots skip in `main`, and `file_text_at` |
+| 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two 1-line fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:)` modifier on the detail `body`'s outer `Group`. Mounts the fork's capability-gated Changes and Files toolbar entries (fork-owned `SupermuxMobileUI/SupermuxWorkspaceTools.swift`) which present `SupermuxChangesScreen` / `SupermuxFileBrowserScreen` as sheets; fed by the #96 `supermuxConnectionSeam`. Each entry hides without its capability (`supermux.changes.v1` / `supermux.files.v1`). Note upstream now ships its OWN mobile diff viewer behind `workspace.changes.v1`; both are advertised whenever `CmuxFeatureFlags.mobileWorkspaceChangesFlag` is on — see SUPERMUX.md "Known limitations", open decision 2 |
 | 109 | `scripts/lint-ios-package-conventions.sh` | `lint-ios-conventions-fork-scopes` | Adds the fork mobile packages (`Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobile*`) to the lint's SCOPES so the iOS conventions lint (CI job `package-conventions-lint` in `.github/workflows/test-ios.yml`) mechanically enforces its per-line rules on them; deliberate constant/text namespace holders in the fork packages carry inline `lint:allow` justifications |
-| 110 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-search` | One comment-only fence replacing upstream's `.searchable(text: $searchText)` on the workspace `List`: the fork removes the main list's (bottom-placed) search bar per direct user request. `searchText` stays `""` so upstream's query filtering (`trimmedQuery`, `matchesQuery`, search-flattened sections) compiles unchanged but is inert. Trade-off: no free-text workspace search on the phone; the Unread filter and grouping remain |
+| 110 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-search` | ⚠️ **INERT since the 0.64.21 merge — comment-only marker, the fork behavior is gone.** It used to replace upstream's `.searchable(text: $searchText)` on the workspace `List` so the phone had no main-list search bar. Upstream moved search into two NEW files (`…/WorkspaceListSearchHost.swift` pre-iOS 26, `…/MobilePrimaryTabScaffold.swift` for the iOS 26 search Tab) and `searchText` is now an injected property rather than `@State`, so **phone search is LIVE again** and there is nothing left in this file to remove. OPEN DECISION — re-apply at the new hosts, retire the touchpoint, or accept upstream's search (current default). See SUPERMUX.md "Known limitations" |
 | 111 | `.gitignore` | `supermux-gitignore-mission` | One fenced line ignoring the fork-local `mission/` mission-kit state directory (mission-plan/mission-run progress artifacts; local tooling data, never product code). `.phone-build/` directly above is upstream/pre-existing and stays unfenced. Re-apply: if upstream rewrites `.gitignore`, re-add `mission/` inside the fence anywhere in the file |
 | 112 | `Packages/iOS/CmuxMobileRPC/Tests/CmuxMobileRPCTests/SupermuxWorkspaceListFieldsDecodeTests.swift` | `unfenced` | Whole fork-owned test file living in the upstream `CmuxMobileRPC` test target (a new file needs no in-file fence, but is registered here so `supermux-check-touchpoints.sh` guards its existence — an upstream restructure of the test target that drops it fails the check). Proves PROTO-03: the additive `supermux_*` workspace-list fields decode tolerantly (pre-mission payloads decode unchanged; payloads carrying `supermux_project_id`/`supermux_activity` populate the optional fields). Re-apply: keep the file compiled into the `CmuxMobileRPCTests` target |
 | 113 | `Sources/SidebarWorkspaceSnapshotBuilder.swift` | `sidebar-flatrow-activity` | The fenced `var supermuxActivity: SupermuxWorkspaceActivity = .idle` field (defaulted so non-production construction sites can omit it) + a fenced `import SupermuxKit`. Upstream (0.64.x) extracted `SidebarWorkspaceSnapshotBuilder` out of `ContentView.swift` into this file; the Snapshot-field part of the #2 fence moved with it. The production construction sites (`SidebarWorkspaceSnapshotFactory.makeSnapshot` in #128, the frozen-snapshot rebuild in #49) pass it as the LAST parameter (the struct declares it after upstream's checklist fields) |
@@ -131,14 +144,14 @@ Rules for adding a touchpoint:
 | 119 | `CONTRIBUTING.md` | `contributing-fork-note` | One fenced blockquote after the H1: upstream's guide is kept for reference; fork issues/PRs go to rajinsyed/supermux and SUPERMUX.md is the fork contract |
 | 120 | `README.ja.md` | `readme-translation-banner` | Same one-line fenced banner (localized per file) prepended to all 20 `README.<lang>.md` translations: "this is the upstream cmux README; the fork's additions are in README.md". Only the `ja` file is registered here; the fence id is identical in all 20 |
 | 122 | `.github/test-determinism-allowlist.txt` | `unfenced` | Three grandfathered entries for supermux-owned tests the determinism gate flags by heuristic: `SupermuxMobileChangesStoreSyncTests.swift` (assert-on-duration — static assertion on a configured RPC timeout, not a measured duration) and `SupermuxMobileObserversTests.swift` + `SupermuxMobileRunObserverTests.swift` (sleep-then-assert — prove-silence tests must outwait the poke throttle window). Data file like #4; re-add the three lines if a merge drops them |
-| 123 | `scripts/ci/run-app-host-xcodebuild.sh` | `actool-crash-retry`, `ci-exclude-icon-composer` | One fenced `elif` in the retry-reason chain (`Command CompileAssetCatalogVariant failed` retries as "asset catalog compiler crash") plus a fenced trailing `'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'` build setting on the xcodebuild invocation. ibtoold crashes rendering the fork's Icon Composer `AppIcon*.icon` files (#17) on some CI VMs — deterministically on affected machines, so the exclusion is the fix and the retry is a backstop for other asset-catalog flakes; upstream has no `.icon` files, so this crash class is fork-introduced. The app icon is cosmetic in headless CI |
+| 123 | `scripts/ci/run-app-host-xcodebuild.sh` | `actool-crash-retry`, `ci-exclude-icon-composer` | One fenced `elif` in the retry-reason chain (`Command CompileAssetCatalogVariant failed` retries as "asset catalog compiler crash") plus a fenced trailing `'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'` build setting on the xcodebuild invocation. **The `ci-exclude-icon-composer` fence now also encloses upstream's `TEST_RUNNER_CMUX_TEST_PROCESS=1 \` env prefix** — a shell line continuation cannot host a comment mid-command, so the fence had to start above the whole invocation. A re-apply that restores only the trailing build setting would silently drop that env var and break `tests/test_ci_app_host_xcodebuild_retry.sh`. ibtoold crashes rendering the fork's Icon Composer `AppIcon*.icon` files (#17) on some CI VMs — deterministically on affected machines, so the exclusion is the fix and the retry is a backstop for other asset-catalog flakes; upstream has no `.icon` files, so this crash class is fork-introduced. The app icon is cosmetic in headless CI |
 | 124 | `.github/workflows/ci.yml` | `actool-crash-retry` | The `tests-build-and-lag` "Build for runtime regressions" step's single xcodebuild invocation is wrapped in a fenced 2-attempt loop that adds `'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'` and retries only on the `CompileAssetCatalogVariant` crash signature (same rationale as #123); other flags and the `tee /tmp/cmux-build-output.txt` log path (consumed by the warning-budget step) are unchanged |
 | 125 | `.github/workflows/perf-activation.yml` | `actool-crash-retry` | The "Build tagged app" step's single `reload.sh` invocation is wrapped in the same fenced 2-attempt retry loop as #124 and sets `CMUX_EXCLUDE_ICON_COMPOSER=1` (consumed by #126) |
 | 126 | `scripts/reload.sh` | `ci-exclude-icon-composer` | Fenced env hook: `CMUX_EXCLUDE_ICON_COMPOSER=1` appends `'EXCLUDED_SOURCE_FILE_NAMES=AppIcon*.icon'` to `XCODEBUILD_ARGS` so headless CI reload builds skip Icon Composer rendering (see #123); local/dev reloads are unaffected |
 | 127 | `.github/workflows/ci.yml` | `release-build-timeout` | `release-build`'s `timeout-minutes` raised 60 → 120 (fenced): a cold universal Release build exceeds 60 minutes on the fork's runner pool, and a job killed at the cap never seeds the DerivedData cache, so the upstream cap could never converge on the fork |
 | 128 | `Sources/SidebarWorkspaceSnapshotFactory.swift` | `sidebar-flatrow-activity` | Upstream (0.65) extracted per-workspace snapshot building out of `TabItemView` into this parent-side factory; the snapshot-resolution part of the #2 fence moved with it: resolves `SupermuxWorkspaceActivityResolver.activity(for:)` + `activityByAgentKey(for:)` once per snapshot, filters duplicate agent lifecycle rows out of `metadataEntries` via `SupermuxSidebarAgentStatusRows.droppingAgentStatusRows`, and passes `supermuxActivity` as the Snapshot's LAST parameter (#113). The metadata filter is gated OFF when `isAppKitSidebarListEnabled`: the factory feeds BOTH list implementations, but only `TabItemView` mounts the compensating activity indicator — dropping the rows in the AppKit path would erase agent status from the sidebar entirely |
 | 129 | `Sources/SidebarWorkspaceRowActions.swift` | `sidebar-hide-project-workspaces` | One fenced defaulted `var supermuxMenuVisibility: (UUID, Set<UUID>) -> SupermuxRowMenuVisibility = { _, _ in .allVisible }` at the end of the actions struct — keyed by the row's workspace id, not an index (rows hold no store reference under upstream's 0.65 snapshot boundary, so menu enablement resolves through the actions bundle on menu open, like `currentWindowMoveTargets`). The provider is bound in the #2 actions-bundle construction; the value type lives in fork-owned `Sources/Supermux/SupermuxRowMenuVisibility.swift` (now also carrying `canMoveUp`/`canMoveDown` from the #131 stepped-plan check); consumed by the #114 menu builder. Defaulted so upstream construction sites (tests) compile unchanged |
-| 130 | `Sources/FeatureFlags.swift` | `appkit-sidebar-default-off` | Two fences pinning upstream's `sidebar-appkit-list-experiment` OFF on the fork: (a) `appKitSidebarListDefault` flipped `true` → `false`; (b) `applyLoadedFlags` skips ingesting that key's remote (PostHog) `true` — a remote rollout outranks both the default and the user's local override and `appKitWorkspaceScrollArea` renders `SidebarWorkspaceTableView` directly, bypassing the SwiftUI list that hosts every supermux sidebar feature (Projects section, project-workspace nesting/hiding, activity indicators, unified row style) — while a remote `false` (upstream's kill-switch direction) still ingests, so a Debug opt-in cannot outlive an upstream emergency disable. Debug local override remains the opt-in; while it is on, fork-owned `SupermuxMainListFilter.tabsForMainList` returns the list unfiltered and #128's metadata filter is bypassed, so the AppKit list behaves like stock cmux (no hidden rows for its full-list NSMenu actions to destroy). Re-evaluate when porting the Projects section to the AppKit list |
+| 130 | `Sources/FeatureFlags.swift` | `appkit-sidebar-default-off` | **FIVE fenced regions** (was two before the 0.64.21 merge) pinning upstream's `sidebar-appkit-list-experiment` OFF on the fork: (a) `appKitSidebarListDefault` flipped `true` → `false`; (b) a shared `supermuxIngestibleRemoteValue(_:for:)` gate; and one-line wraps at **all three** `remoteValuesByKey` write sites — (c) the `init` remote-cache seeding, (d) `applyRemoteFlagValues(_:)` (the production PostHog control-plane path this merge added), and (e) `applyLoadedFlags()` (now test-only). **Invariant:** a remote `true` for `sidebar-appkit-list-experiment` is never ingested at ANY site, a cached `true` is evicted, and a remote `false` still ingests as upstream's kill switch — a Debug opt-in cannot outlive an upstream emergency disable. The gate is keyed off `appKitSidebarListFlag.key`, not a string literal, so an upstream key rename cannot silently disarm it. **ANY new writer of `remoteValuesByKey` must route through the gate.** Why: a remote rollout outranks both the default and the user's local override, and `appKitWorkspaceScrollArea` then renders `SidebarWorkspaceTableView` directly, bypassing the SwiftUI list that hosts every supermux sidebar feature (Projects section, project-workspace nesting/hiding, activity indicators, unified row style). Debug local override remains the opt-in; while it is on, fork-owned `SupermuxMainListFilter.tabsForMainList` returns the list unfiltered and #128's metadata filter is bypassed, so the AppKit list behaves like stock cmux (no hidden rows for its full-list NSMenu actions to destroy). Three upstream tests currently contradict this fence — see SUPERMUX.md "Known limitations", entry on `PostHogAnalyticsPropertiesTests`. Re-evaluate when porting the Projects section to the AppKit list |
 | 131 | `Sources/TabManager+AdjacentWorkspaceReordering.swift` | `sidebar-hide-project-workspaces` | `reorderWorkspace(tabId:by:)` — the ONE adjacent-move entrypoint shared by the sidebar context menu, the menu-bar/keyboard shortcut (`moveSelectedWorkspace`), and the socket `workspace.action move_up`/`move_down` verbs — is fenced to route through fork-owned `TabManager.supermuxSteppedReorderTarget` (`Sources/Supermux/SupermuxWorkspaceReorderStepping.swift`): steps over project-hidden rows to the nearest visible neighbor and returns `false` (no mutation) when the clamped destination (pin tier / group section, via the coordinator's public `workspaceReorderPlan`) would not change the visible flat-list order. The same helper drives the #114 Move Up/Down enablement, so menu state and mutation agree. With no hidden rows (or under the AppKit list, where #130's filter gate empties the hidden set) it degrades to upstream's `currentIndex + offset` |
 | 132 | `Sources/SidebarWorkspaceRowInput.swift` | `sidebar-hide-project-workspaces` | Two fenced defaulted fields `supermuxVisibleIndex`/`supermuxVisibleCount: Int?` (visible-flat-list ordinal/total for the row's VoiceOver "workspace N of M" announcement; `nil` falls back to the full-list values) plus the fenced pass-through in `rowSnapshot(list:)`. `index`/`workspaceCount` keep upstream's full-list semantics (⌘-number digits, shift-range selection, `lastSidebarSelectionIndex`). Values computed in the #2 row-input construction from `renderContext.projectHiddenWorkspaceIds`; consumed by the fenced `accessibilityTitle` in `TabItemView` (#2). Defaulted so upstream construction sites compile unchanged |
 | 133 | `Sources/SidebarWorkspaceRowSnapshot.swift` | `sidebar-hide-project-workspaces` | The matching two fenced defaulted fields on the row snapshot value (`supermuxVisibleIndex`/`supermuxVisibleCount: Int?`); synthesized `Equatable` covers them, preserving the row's change-detection contract. See #132 |
@@ -148,13 +161,21 @@ Rules for adding a touchpoint:
 | 135 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShellReleaseGateSupport/MobileIrohReleaseGateResponseValidator.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow namespace-enum` for `MobileIrohReleaseGateResponseValidator` — same upstream lint debt family |
 | 136 | `Packages/Shared/CmuxIrohTransport/Sources/CmuxIrohTransport/CmxIrohTCPFirstActivation.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow namespace-type` for `CmxIrohTCPFirstActivation` — same upstream lint debt family |
 | 137 | `Packages/macOS/CmuxAppKitSupportUI/Sources/CmuxAppKitSupportUI/Popover/CmuxPopoverMutation.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow namespace-type` for `CmuxPopoverMutation` — same upstream lint debt family |
-| 138 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/DiagnosticLog.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow lock` for the `OSAllocatedUnfairLock(initialState:)` constructor in `EventBuffer.init` (upstream justified only the property decl 7 lines above, outside the rule's 3-line window) — same upstream lint debt family |
+| 138 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/DiagnosticLog.swift` | `lint-allow-upstream-debt` | Fenced `lint:allow lock` for the `OSAllocatedUnfairLock(initialState:)` constructor in the nested `Ingress.init` (the enclosing type is `Ingress`, not `EventBuffer` — an earlier note named a type that does not exist in this file); upstream justified only the property decl 7 lines above, outside the rule's 3-line window — same upstream lint debt family |
+| 139 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileStateSyncRecords.swift` | `supermux-mobile-workspace-fields` | State sync v2 (`docs/mobile-state-sync-v2.md`) bypasses the legacy `mobile.workspace.list` payload, so the four additive §6 fields are mirrored onto `WorkspaceSyncRecord`. Five fence blocks: the optional `supermuxProjectID`/`supermuxActivity`/`supermuxBranch`/`supermuxPullRequest` stored lets plus the nested lossy-decoding `SupermuxPullRequest` (`{number?, state?, url?, is_stale?}`, `Codable`+`Equatable`+`Sendable`, with a defaulted public memberwise init); defaulted-nil memberwise `init` params; their assignments; lenient `try?` decodes in `init(from:)` (a malformed additive field degrades to nil instead of gapping the client's mirror); and the snake_case `CodingKeys` matching the legacy wire names |
+| 140 | `Sources/Mobile/MobileStateSync.swift` | `supermux-mobile-workspace-fields` | Three fence blocks in the Mac-side v2 host: a fenced `import SupermuxKit` (wire-key constants), and in `workspaceRow(...)` a call to the SAME `SupermuxMobileWorkspaceListAugmenter.augment(_:workspace:)` the legacy `mobile.workspace.list` path uses (#99) — augmenting an EMPTY dictionary yields just the additive fields — plus the four `supermux*` arguments on the `WorkspaceSyncRecord(...)` construction. One augmenter for both transports, so v2 and the legacy list can never disagree on project nesting, activity, branch, or PR badge |
+| 141 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+StateSync.swift` | `supermux-mobile-workspace-fields` | One fence block in `applyStateSyncProjection()`: passes the record's four supermux fields (mapping `WorkspaceSyncRecord.SupermuxPullRequest` → `MobileSyncWorkspaceListResponse.Workspace.SupermuxPullRequest` through the public memberwise init added in #100) into `MobileSyncWorkspaceListResponse.Workspace(...)`. Without it, project nesting, activity dots, the branch subtitle, and PR badges vanish the moment v2 negotiates |
+| 142 | `cmuxTests/SSHPTYAttachNoProgressRetryTests.swift` | `upstream-expect-comment-fix` | **TEMPORARY — upstream bug, not fork behavior.** Upstream `84f5755b56` (cmux #9425) shipped a compile break: `#expect(execution.status == 0, execution.stderr)` passes a plain `String` where `#expect(_:_:)` takes a `Comment?` (only string *literals* convert, via `ExpressibleByStringInterpolation`). Every other `#expect` in the same file already wraps with `Comment(rawValue:)`. One fenced line does the same so the `cmuxTests` target compiles at all. The file is byte-identical to upstream apart from this fence; upstream had not fixed it as of `06bc29603c`. DELETE the fence and take upstream’s line the moment they fix it |
+| 143 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` | `unfenced` | **Pre-existing registry gap, surfaced (not caused) by the 0.64.21 merge.** Whole fork-owned file living inside the upstream `CmuxSettingsUI` package — the Vercel AI Gateway key + model card mounted by #18. It sits in the upstream package only because `SettingsWindowScene.sectionStack` is a closed, hard-coded list with no app-side injection seam, and that package cannot import `SupermuxKit` (reverse dependency). #18's prose mentioned the file in passing but it had no row, so the check did not guard its existence. Registered on the #68/#69 precedent: an upstream restructure of the package that drops it would otherwise pass silently |
+| 144 | `scripts/cleanup-dev-builds.sh` | `unfenced` | **Pre-existing UNFENCED fork edit, surfaced (not caused) by the 0.64.21 merge — a real fence still needs to be ADDED to the file** (see the #144 re-apply note; this row is a placeholder until then). The running-app tag regex is `cmux\ DEV\ ([A-Za-z0-9-]+)\.app` instead of upstream's `cmux\ DEV\ ([A-Za-z0-9._-]+)`, so the captured slug matches the `cmux-<slug>` DerivedData directory name. Upstream's greedy class ate the `.app` suffix and yielded `<slug>.app`, silently defeating the running-app protection (cleanup could delete DerivedData for a tag that is still running) |
+| 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
 ### 2. `Sources/ContentView.swift` — `sidebar-projects-section` + `sidebar-hide-project-workspaces`
 
 **`sidebar-projects-section`:** in
-`VerticalTabsSidebar.workspaceScrollContent(renderContext:minHeight:emptyAreaHeight:)`, the
+`VerticalTabsSidebar.workspaceScrollContent(renderContext:minHeight:unreadSnapshot:)` (upstream
+renamed the third parameter from `emptyAreaHeight:` to `unreadSnapshot:`), the
 content `VStack(spacing: 0)` starts with the projects mount, before `workspaceRows`:
 
 ```swift
@@ -242,7 +263,8 @@ placement lives in supermux-owned files for the other surfaces: nested rows rend
 after the PR badge and run indicator (`SupermuxOpenWorkspaceRowView`), and the workspace
 switcher badge gates on `.working` (`SupermuxWorkspaceSwitcherCard`).
 
-**`sidebar-selection-faint`:** two computed properties on `SidebarWorkspaceRow` are overridden so
+**`sidebar-selection-faint`:** two computed members on **`TabItemView`** (there is no
+`SidebarWorkspaceRow` type — the old name in this note was stale) are overridden so
 the flat-list selection highlight matches the nested project-workspace rows
 (`SupermuxOpenWorkspaceRowView`) — a faint accent tint with normal text instead of the loud solid
 selection card with inverted white text:
@@ -282,34 +304,40 @@ workspaces and project workspaces read as one system:
 4. The row chrome uses `.padding(.vertical, 4)` (upstream: `8`) and
    `RoundedRectangle(cornerRadius: 5)` for both the fill and the stroke overlay (upstream: `6`).
 5. `backgroundColor`'s no-style fallback returns `Color.primary.opacity(0.06)` while
-   `rowInteractionState.isPointerHovering` (upstream: unconditional `.clear`), matching the
-   nested rows' hover tint without touching the multi-select / custom-color tints.
+   `isPointerHovering` (upstream: unconditional `.clear`), matching the nested rows' hover tint
+   without touching the multi-select / custom-color tints. (`rowInteractionState` no longer
+   exists — hover is snapshot-derived now.)
 If upstream restructures the row, the requirement is: flat-list rows must visually match the
 nested project-workspace rows — 11.5·scale title (semibold only when selected), compact line
 stack, 5pt-radius chrome with the faint selection tint (`sidebar-selection-faint`) and a
-primary-at-0.06 hover tint. All hover reads go through the already-rendered
-`rowInteractionState` — no new `@State` or observation, so the Equatable typing-latency
-contract is untouched.
+primary-at-0.06 hover tint. All hover reads go through the already-rendered `isPointerHovering`
+value — no new `@State` or observation, so the Equatable typing-latency contract is untouched.
 
 **`sidebar-projects-empty-area`:** cmux sizes the sidebar scroll content to exactly fill the
 viewport when everything fits — the empty drop/tap area below the last workspace row is a finite
-remainder (`SidebarWorkspaceScrollLayout.emptyAreaHeight`), not `maxHeight: .infinity`, which is what
+remainder derived from `SidebarWorkspaceScrollLayout.contentMinHeight(viewportHeight:insets:)`
+(`Sources/WindowChromeMetrics.swift`), not `maxHeight: .infinity`, which is what
 stops the document from overflowing and showing a phantom scroller / scrollable empty space
 (https://github.com/manaflow-ai/cmux/issues/3241). That fit assumes the workspace rows are the only
 content. Because `sidebar-projects-section` inserts `SupermuxProjectsMount()` above the rows in the
 same scroll content, its height must be subtracted from the remainder or the document overflows the
 viewport by exactly the section's height and the empty space becomes scrollable. Three small edits in
 `VerticalTabsSidebar`, all under this one fence id:
-1. A `@State private var supermuxProjectsSectionHeight: CGFloat = 0` field (next to
-   `workspaceRowsMeasurement`).
-2. In `workspaceScrollArea`, the `emptyAreaHeight` call passes
-   `contentMinHeight: max(0, contentMinHeight - supermuxProjectsSectionHeight)` instead of the raw
-   `contentMinHeight`.
-3. In the workspace `ScrollView` modifier chain (next to the
-   `SidebarWorkspaceRowsHeightPreferenceKey` handler) an
+1. A `@State private var supermuxProjectsSectionHeight: CGFloat = 0` field.
+2. In `workspaceScrollContent`, the content's
+   `.frame(minHeight: max(0, minHeight - supermuxProjectsSectionHeight), alignment: .top)`
+   instead of the raw `minHeight`.
+3. In the workspace `ScrollView` modifier chain, an
    `.onPreferenceChange(SupermuxProjectsSectionHeightPreferenceKey.self)` writes the measured height
    into that `@State` (accepts growth immediately; dedupes only shrink jitter with a 0.5pt
    tolerance, so a stale-low height never inflates the filler into sub-point overflow).
+
+   ⚠️ Upstream reshaped this area at the 0.65 merge: the named helpers this note used to cite
+   (`SidebarWorkspaceScrollLayout.emptyAreaHeight`, `workspaceRowsMeasurement`,
+   `SidebarWorkspaceRowsHeightPreferenceKey`) **no longer exist**. The requirement is unchanged —
+   subtract the measured Projects-section height from whatever quantity upstream uses to size the
+   scroll content to the viewport — but locate the current site by `git grep -n
+   'supermuxProjectsSectionHeight' Sources/ContentView.swift` rather than by those old names.
 
 The height is published by `SupermuxProjectsMount` itself via a `GeometryReader` background writing
 `SupermuxProjectsSectionHeightPreferenceKey` (both supermux-owned, so no upstream surface). If
@@ -389,6 +417,13 @@ Upstream removed the entire Swift file-length budget system (`Remove Swift file 
 upstream #8125): the tsv, `scripts/swift_file_length_budget.py`, and the ci.yml validation step
 are all gone. The fork's budget rows and the #121 `budget-fork-caps` per-PR cap widening were
 deleted with it. Nothing to re-apply.
+
+**This retirement invalidates every "raise the budget row" / "budget bump is in the #4 table"
+instruction that used to appear in the re-apply notes below** (#5, #34–36, #37, #39, #62–67, #95,
+#96, #108). Those steps have all been struck; do not go looking for the tsv. The only remaining
+CI length/quality gate is `scripts/swift_warning_budget.py` (Swift *warnings*, not file length),
+run from `.github/workflows/ci.yml`. Verify with
+`git ls-files | grep -i length.budget` — it must print nothing.
 
 ### 4b. `Resources/Localizable.xcstrings` — additive supermux keys
 
@@ -495,14 +530,15 @@ keep edits to upstream files inside `SUPERMUX:begin/end` fences and registered i
 <!-- SUPERMUX:end claude-md-pointer -->
 ```
 
-### 18. `Sources/CmuxSettingsUI/.../AutomationSection.swift` — `ai-settings`
+### 18. `Packages/macOS/CmuxSettingsUI/.../Sections/AutomationSection.swift` — `ai-settings`
 
 The settings section stack (`SettingsWindowScene.sectionStack`) is a closed,
 hard-coded list inside the upstream `CmuxSettingsUI` package with no app-side
 injection seam, and that package cannot import `SupermuxKit` (a reverse
 dependency). So the AI settings UI is a **new, self-contained file** in the same
 package —
-`Packages/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift`
+`Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift`
+(registered in its own right as #143)
 — that depends only on `CmuxSettings`/SwiftUI. It shares one contract with
 `SupermuxKit.SupermuxAIConfig`: the secret file name (`supermux-ai-gateway-key`)
 and the model-override UserDefaults key (`supermux.ai.model`), duplicated as
@@ -537,38 +573,72 @@ section, the requirement is: surface a `SecureField`-backed card writing the
 same secret file (via `SecretFileStore` rooted at `CmuxStateDirectory`) to power
 the AI features — no fence there (it is a supermux-owned file).
 
-### 20. `Sources/GhosttyTerminalView.swift` — `browser-link-new-tab`
+### 20. `Sources/Workspace+TerminalLinkOpening.swift` — `browser-link-new-tab`
 
+**Moved at the 0.65 merge.** Upstream deleted
 `GhosttyTerminalView.openEmbeddedBrowserLink(url:sourceWorkspaceId:sourcePanelId:host:)`
-chooses where a cmd-clicked terminal link opens in the embedded browser. Upstream
-reuses an existing right-side browser pane when one exists, and otherwise creates a
-new horizontal **split** (`newBrowserSplit`). The fence replaces only that split
-fallback so the link instead opens as a **new browser tab in the current pane and
-switches to it** (`newBrowserSurface(inPane:url:focus:true)`), keeping a split only
-when the source pane can't be resolved. The reuse-an-existing-browser-pane branch is
-left untouched.
+and replaced it with the `TerminalLinkOpenContainer` protocol
+(`Sources/TerminalLinkOpenContainer.swift`, driven by `Sources/TerminalLinkOpenCoordinator.swift`).
+`Workspace`'s conformance lives in this file and its
+`openTerminalBrowserLink(url:sourcePanelId:)` is the fork's new home for the fence. Because the
+code is now inside `extension Workspace`, the calls are **unqualified** (no `workspace.` prefix),
+the panel id comes from `target.containerPanelID` (resolved once via `surfaceOwnershipTarget`),
+and upstream uses early `return`s instead of the old `openedInBrowser = …` assignment form.
 
-The whole `else { … }` body is fenced; the upstream `if let targetPane = …` reuse
-branch and the surrounding `let openedInBrowser: Bool` / external-fallback code are
-unchanged:
+Upstream reuses an existing right-side browser pane when one exists, and otherwise creates a new
+horizontal **split** (`newBrowserSplit`). The fence replaces only that split fallback so the link
+instead opens as a **new browser tab in the current pane and switches to it**
+(`newBrowserSurface(inPane:url:focus:true)`), keeping the split only when the source pane can't be
+resolved. The reuse-an-existing-browser-pane branch is left untouched.
+
+Current implementation (working tree):
 
 ```swift
-} else {
+func openTerminalBrowserLink(url: URL, sourcePanelId: UUID) -> Bool {
+    guard let target = surfaceOwnershipTarget(for: sourcePanelId) else { return false }
+    if let targetPane = preferredRightSideTargetPane(fromPanelId: target.containerPanelID) {
+        return newBrowserSurface(inPane: targetPane, url: url, focus: true) != nil
+    }
     // SUPERMUX:begin browser-link-new-tab
-    if let sourcePane = workspace.paneId(forPanelId: sourcePanelId) {
-        openedInBrowser = workspace.newBrowserSurface(inPane: sourcePane, url: url, focus: true) != nil
-    } else {
-        openedInBrowser = workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url) != nil
+    // Open the link as a new browser tab in the current pane and switch to it,
+    // instead of creating a split (upstream's fallback was newBrowserSplit). Only
+    // fall back to a split if the source pane can't be resolved.
+    if let sourcePane = paneId(forPanelId: target.containerPanelID) {
+        return newBrowserSurface(inPane: sourcePane, url: url, focus: true) != nil
     }
     // SUPERMUX:end browser-link-new-tab
+    return newBrowserSplit(
+        from: target.containerPanelID,
+        orientation: .horizontal,
+        url: url
+    ) != nil
 }
 ```
 
-If upstream restructures this method, the requirement is: when no existing browser
-pane is reused, open the link via `newBrowserSurface(inPane:url:focus:true)` on the
-source link's pane (`workspace.paneId(forPanelId: sourcePanelId)`) rather than
-`newBrowserSplit(...)`. Budget row for `Sources/GhosttyTerminalView.swift` carries
-+12 for this fence.
+**Scope widened by the protocol extraction.** `openTerminalBrowserLink` is now also the sink for
+`Sources/TerminalHTMLFileBrowserAction.swift`, which routes Command-clicked local `.html`/`.htm`
+files into the embedded browser. So the fork's new-tab placement now governs **local HTML opens
+too**, not only web links — a behavior widening the fork inherited for free, and one to keep in
+mind if the placement is ever revisited.
+
+If upstream restructures `TerminalLinkOpenContainer.openTerminalBrowserLink`, the requirement is:
+in `Workspace`'s conformance, when no existing right-side browser pane is reused, open the link
+via `newBrowserSurface(inPane:url:focus:true)` on the source link's pane
+(`paneId(forPanelId:)` against whatever panel id the conformance resolves) rather than
+`newBrowserSplit(...)`.
+
+**Known deviation — dock terminals.** Upstream added a SECOND conformance,
+`Sources/DockSplitStore+TerminalLinkOpening.swift`, for terminals hosted in the Dock. It is
+**deliberately NOT fenced**: it keeps upstream's `newSplit(kind: .browser, …)` fallback, so a
+Command-clicked link from a dock terminal still opens as a split, not a new tab. A future merge
+must not read the missing fence there as a clobbered touchpoint. Revisit only if the fork decides
+dock terminals should share the workspace placement (see SUPERMUX.md "Known limitations").
+
+Fence size in the working tree: **8 lines** in
+`Sources/Workspace+TerminalLinkOpening.swift` (a 60-line file). `Sources/GhosttyTerminalView.swift`
+now carries only touchpoint #34 (`ghostty-unbind-split-zoom-return`, **21 lines**). The
+`.github/swift-file-length-budget.tsv` rows these numbers used to feed are gone — upstream removed
+the whole budget system (see #4, RETIRED) — so the counts are recorded for merge review only.
 
 ### 21–22. `Sources/App/ShortcutRoutingSupport.swift` + tests — `run-toggle-shortcut-dispatch`
 
@@ -678,7 +748,7 @@ keys in `Resources/Localizable.xcstrings` (touchpoint #4b).
 Lets the right sidebar be dragged narrower than upstream's 276 pt floor without clipping the
 header's close button. Two parts:
 
-**26. `Packages/CmuxSettings/Sources/CmuxSettings/Policies/RightSidebarWidthSettings.swift` —
+**26. `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Policies/RightSidebarWidthSettings.swift` —
 `right-sidebar-min-width`.** Lower the floor constant:
 
 ```swift
@@ -727,25 +797,36 @@ ZStack {
 `Text(mode.label)` when false. If upstream restructures `modeBar`, the requirement is: render the
 mode buttons through `ViewThatFits` with a labeled and an icon-only variant inside a
 `maxWidth: .infinity` clipped frame, with open-as-pane/close pinned outside it, and keep the drag
-handle as the ZStack background. Budget bump for this file is recorded in the #4 table.
+handle as the ZStack background. (The former budget-row bump for this file is retired — see #4.)
 
 **27. `cmuxTests/SidebarWidthPolicyTests.swift` — `right-sidebar-min-width-test`.** Two clamp
 assertions that previously hardcoded `276` now read `CGFloat(RightSidebarWidthSettings.minimumWidth)`
 so they track the floor regardless of its value.
 
-### 28–33. Toggle Pane Zoom rebind (`toggle-split-zoom-rebind`)
+### 28–33 (+33b). Toggle Pane Zoom rebind (`toggle-split-zoom-rebind`)
 
 supermux's Changes panel binds **⇧⌘↩** to its Commit accelerator (typed-message commit or AI
 "Generate & Commit", whichever applies — see `SupermuxChangesPanelView.commitArea` /
 `commitShiftReturnAccelerator`, a supermux-owned file with no fence). But ⇧⌘↩ was the cmux default
 for **Toggle Pane Zoom** (`toggleSplitZoom`), and the app-local NSEvent monitor in `AppDelegate`
 consumes that chord before any SwiftUI button shortcut can fire. So the commit accelerator only
-works once Toggle Pane Zoom is moved off ⇧⌘↩. All six edits share the fence id
-`toggle-split-zoom-rebind`; the new default is **⌃⌘Z** ("Z" for Zoom; pairs with ⌃⌘= equalize, and
-deliberately *not* ⌃⌘↩ which some screen recorders use — see the rationale comment in #32).
+works once Toggle Pane Zoom is moved off ⇧⌘↩. All seven edits share the fence id
+`toggle-split-zoom-rebind`; the new default is **⌃⌘Z** ("Z" for Zoom, a free letter in the ⌃⌘
+range, and deliberately *not* ⌃⌘↩ which some screen recorders use — see the rationale comment in
+#32).
+
+> **⌃⌘Z re-verified collision-free at the 0.65 merge.** The old justification here ("pairs with
+> ⌃⌘= equalize") is stale: upstream moved `equalizeSplits` to **⌃⇧⌘=** and gave **⌃⌘=** to a new
+> `increaseWorkspaceTerminalFontSize` (with ⌃⌘- / ⌃⌘0 siblings). The mnemonic pairing is gone, but
+> the binding itself still holds — `key: "z"` with `command + control` appears exactly once in each
+> default table (`toggleSplitZoom`) across upstream's expanded action set. Re-check with
+> `grep -n 'key: "z"' Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Defaults.swift
+> Sources/KeyboardShortcutSettings.swift` after every merge; two hits means upstream landed on the
+> fork's chord and one of the two must move.
 
 - **28. `Sources/KeyboardShortcutSettings.swift`** (canonical `defaultStroke` table) and
-  **29. `Packages/CmuxSettings/.../ShortcutAction+Defaults.swift`** (the settings-UI package mirror):
+  **29. `Packages/macOS/CmuxSettings/.../ShortcutAction+Defaults.swift`** (the settings-UI package
+  mirror; upstream relocated this package under `Packages/macOS/`):
   the `case .toggleSplitZoom` default returns `key: "z", command: true, control: true` instead of
   `key: "\r", command: true, shift: true`. Both tables must agree.
 - **30. `web/data/cmux-shortcuts.ts`:** the `toggleSplitZoom` registry row's `combos` is
@@ -759,18 +840,45 @@ deliberately *not* ⌃⌘↩ which some screen recorders use — see the rationa
   Return-key branch (`handleBrowserSurfaceKeyEquivalent` → full dispatcher), but a non-Return
   chord (⌃⌘Z) is owned by the local key monitor, which fires ahead of the responder chain — so
   the browser never claims it in real use.
+
+  ⚠️ **Framework change at the 0.65 merge — read before re-applying.** This file is no longer
+  XCTest. It is now Swift Testing: `@Suite(.serialized) @MainActor final class
+  AppDelegateEqualizeSplitsShortcutTests` with **no `: XCTestCase`** and **no `import XCTest`**,
+  and the familiar `XCTAssertEqual` / `XCTAssertTrue` / … calls inside it are *file-private shims*
+  declared at the top of the file that forward to `#expect`. Consequences: (a) both fenced tests
+  here (`testCmdControlZFocusedBrowserTogglesSplitZoom` in #31 and
+  `testSupermuxCommitDefaultsBindReturnChords` in #38) **MUST carry the `@Test` attribute**; a
+  merge that drops it leaves a compiling, never-executed method — the fork's coverage silently
+  disappears and **CI stays green**, exactly the failure class as the missing-pbxproj-test-wiring
+  pitfall in `CLAUDE.md`. (b) The `test` name prefix no longer registers anything by itself. After
+  any merge touching this file, verify with
+  `grep -c '@Test' cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift` and confirm an `@Test`
+  line sits immediately above each fenced `func`.
 - **32. `cmuxTests/KeyboardShortcutContextTests.swift`:** comment-only — the rationale for
   `toggleBrowserFocusMode`'s ⌥⌘↩ default no longer calls Toggle Pane Zoom "the other Return-based
   shortcut". Assertions are unchanged (⌥⌘↩ still differs from and does not conflict with ⌃⌘Z).
 - **33. `cmuxUITests/BrowserPaneNavigationKeybindUITests.swift`:** the two browser zoom round-trip
   tests (`testCmdControlZKeepsBrowserOmnibarHittableAcrossZoomRoundTripWhenWebViewFocused`,
   `testCmdControlZHidesBrowserPortalWhenTerminalPaneZooms`) press `app.typeKey("z", [.command, .control])`
-  instead of ⇧⌘↩, with matching renamed methods and assertion messages.
+  instead of ⇧⌘↩, with matching renamed methods and assertion messages. Note the file now builds
+  its app with upstream's `XCUIApplication.cmuxTestApplication()` helper rather than bare
+  `XCUIApplication()`; re-apply the keystroke change only, and keep whatever launcher upstream
+  ships.
+- **33b. `cmuxTests/AppDelegateSurfaceShortcutRoutingTests.swift`:** a site the registry never
+  listed before the 0.65 merge (the seventh in this numbered sequence; `git grep -l
+  'toggle-split-zoom-rebind'` reports nine files once #35/#36 are counted). Upstream's canvas-mode test
+  `cmdShiftReturnInCanvasModeDoesNotToggleBonsplitSplitZoom` asserts that in canvas mode the
+  split-zoom shortcut drives canvas overview instead of Bonsplit zoom. It wraps the body in
+  `withTemporaryShortcut(action: .toggleSplitZoom)`, which installs the action's **configured
+  default** — the fork's ⌃⌘Z — so the synthesized event must match or the test fails. The whole
+  method is fenced and renamed `cmdControlZInCanvasModeDoesNotToggleBonsplitSplitZoom`, building
+  `key: "z", modifiers: [.command, .control], keyCode: 6`. Swift Testing (`@Test`), same
+  silent-skip hazard as #31.
 
 If upstream changes the `toggleSplitZoom` default or these tests, keep our ⌃⌘Z value inside the
 fence. If upstream adds a different action on ⌃⌘Z, pick another free, non-`⌃⌘↩` chord for zoom and
-update all six sites. Budget bumps for #28/#32/#33 are in the #4 table; #29 (a package file) and
-#31 (a test) are not budget-tracked.
+update all seven sites. Find every site with:
+`git grep -ln 'toggle-split-zoom-rebind'`.
 
 ### 34–36. Completing the rebind: Ghostty must release ⇧⌘↩ too
 
@@ -801,7 +909,7 @@ numbered-tab unbinds, https://github.com/manaflow-ai/cmux/issues/5189).
   `[.command]`, via the same `ghosttyConfigKeyIsBinding` helper as the #5189 numbered-fallback
   test). Red without #34, green with it.
 
-Budget bumps for #34/#35/#36 are in the #4 table.
+(The former budget-row bumps for #34/#35/#36 are retired — see #4.)
 
 ### 37–38. Commit shortcut promoted to the registry (`supermux-commit-shortcut`)
 
@@ -819,7 +927,9 @@ global monitor handler would have to route to the focused panel's model).
   once Toggle Pane Zoom moved to ⌃⌘Z (#28), so neither default conflicts.
 - **38. `cmuxTests/AppDelegateEqualizeSplitsShortcutTests.swift`:** `testSupermuxCommit
   DefaultsBindReturnChords` clears any overrides, then asserts the two defaults match
-  ⌘↩ / ⇧⌘↩ and do not cross-match.
+  ⌘↩ / ⇧⌘↩ and do not cross-match. Since the 0.65 merge this file is **Swift Testing**, so the
+  fenced method must carry `@Test` — see the framework-change warning under #31; without the
+  attribute the test compiles, never runs, and CI stays green.
 
 The wiring lives in supermux-owned files (no fence): `SupermuxChangesMount`
 (`Sources/Supermux/SupermuxAppGlue.swift`) resolves each configured shortcut to a SwiftUI
@@ -827,9 +937,9 @@ The wiring lives in supermux-owned files (no fence): `SupermuxChangesMount`
 into `SupermuxChangesPanelView`, which applies them to the visible Commit button and the
 invisible accelerator. If upstream adds an action on ⌘↩ or ⇧⌘↩, rebind these or accept the
 conflict warning. The Settings UI's action list and conflict detection are driven by the
-settings-package enum, so the actions are also registered there (#62/#63) — without that
-registration the "editable in Settings" claim does not hold. Budget bump for #37 is in the #4
-table; #38 (a small test file) is not budget-tracked.
+settings-package enum, so the actions are also registered there (#62/#62b/#62c/#63) — without
+that registration the "editable in Settings" claim does not hold. (The former budget-row bump for
+#37 is retired — see #4.)
 
 ### 39. `Sources/FileExplorerView.swift` — file-explorer file operations
 
@@ -902,8 +1012,8 @@ default remains shadowed.
 If upstream restructures the explorer, the requirement is: populate the tree's context menu with
 the supermux file-operation items (node branch and empty-area branch) and route ⌘⌫/Return through
 `handleSupermuxFileOperationKey` before the outline view's own navigation handling. Operations are
-local-provider only. Budget bump for this file is in the #4 table; the pbxproj additions for the
-two new app files are in the #3 note.
+local-provider only. The pbxproj additions for the two new app files are in the #3 note. (The
+former budget-row bump for this file is retired — see #4.)
 
 **`file-explorer-operations-reveal` (#39 + #40, two files):** a just-created or renamed item is
 selected and scrolled into view after the post-operation reload.
@@ -1015,14 +1125,33 @@ keeps the window open as a "home" (the always-present Projects sidebar) with zer
    becomes `guard tabs.count > 1 || allowEmptyingWindow else { return }`; and the post-remove
    selection update sets `selectedTabId = nil` when `tabs.isEmpty` (the upstream `tabs[newIndex]`
    would crash on the empty array).
-2. The three last-workspace close sites that called `window.performClose(nil)` —
-   `closeWorkspaceIfRunningProcess`, the bulk-close anchor branch, and `closePanelAfterChildExited`
-   — now call `closeWorkspace(workspace, allowEmptyingWindow: true)`.
+2. The last-workspace close sites that called `window.performClose(nil)` now call
+   `closeWorkspace(workspace, allowEmptyingWindow: true)`. **This was three sites; since the 0.65
+   merge it is TWO** — `closeWorkspaceIfRunningProcess` and `closePanelAfterChildExited`. (Tree-wide
+   there are FOUR `allowEmptyingWindow: true` call sites in `Sources/TabManager.swift`; the other
+   two are the fork-added `restoreClosedWorkspace` failure-cleanup calls covered by item 4 below,
+   not replacements of an upstream `performClose`.) Upstream
+   deleted the bulk-close **anchor branch** entirely: closing a group's anchor is no longer
+   destructive (the group's next member is promoted via
+   `WorkspacesModel.promoteAnchorOrRemoveGroupsAnchoredBy(closedWorkspaceId:)`), so there is no
+   anchor prompt and no anchor-specific close path left. Verify with
+   `git grep -c confirmAnchorWorkspaceClose` — it must be **0** tree-wide. The fork contract still
+   holds for bulk closes because the surviving loop (`anchorLastCloseOrder(plan.workspaces)` →
+   `closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: false)`) routes through the
+   fenced site, i.e. through `closeWorkspace(allowEmptyingWindow: true)`.
 3. The bulk-close top short-circuit (`plan.workspaces.count == tabs.count` → close window) is
-   omitted so the loop empties the window instead; `closeWorkspacesPlan`'s `willCloseWindow` is
-   forced `false` so the confirmation copy reads "Close workspaces?" not "Close window?". The
-   pinned-workspace confirmation also passes `acceptCmdD: false`, because closing the final
-   workspace is no longer a window-closing action.
+   omitted so the loop empties the window instead; **`closeWorkspacesPlan`'s** `willCloseWindow`
+   is forced `false` so the confirmation copy reads "Close workspaces?" not "Close window?", and
+   the plan passes `acceptCmdD: false` because closing the final workspace is no longer a
+   window-closing action.
+
+   ⚠️ **Scope note — do not "fix" the other one.** There is a *separate*
+   `let willCloseWindow = tabs.count <= 1` inside `closeWorkspaceIfRunningProcess` (feeding that
+   function's own `acceptCmdD:`). It is **byte-identical in base, ours, and theirs** — the fork has
+   never touched it and it is deliberately left upstream-shaped. A future merger scanning for
+   "`willCloseWindow` must be false on the fork" must not extend the rule there. Confirm with
+   `for s in 1 2 3; do git show :$s:Sources/TabManager.swift | grep -n 'let willCloseWindow = tabs.count <= 1'; done`
+   during a merge.
 4. `restoreClosedWorkspace` failure cleanup passes `allowEmptyingWindow: true` so a malformed or
    unrestorable closed-workspace snapshot does not leave behind its temporary workspace when the
    reopen was attempted from the empty-home state.
@@ -1267,14 +1396,32 @@ If upstream restructures any of these, the requirement is: every last-workspace 
 `closeWorkspace(_:allowEmptyingWindow: true)`, verifies removal before reporting success, and
 never fabricates a replacement workspace or closes/quits the window.
 
-### 62–67. Settings-package shortcut registration + secret 0600 write
+### 62 / 62b / 62c–67. Settings-package shortcut registration + secret 0600 write
 
-- **62. `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction.swift`** — five
-  fences register the supermux actions in the settings-package enum (the app-target registration
-  in #11/#23/#37 alone does not surface them in the Settings UI or its conflict detection):
-  `run-toggle-shortcut-case`, `workspace-switcher-shortcut-case`, `supermux-commit-shortcut-case`
-  (reused ids) add the five cases; `supermux-shortcut-groups` places them in the Settings groups;
-  `supermux-shortcut-display-names` adds the display names.
+Registering the supermux actions in the settings-package enum is what surfaces them in the
+Settings UI and its conflict detection — the app-target registration in #11/#23/#37 alone does
+not. Upstream (0.65) split that enum's computed properties into per-property files, so what used
+to be five fences in one file is now **three files**:
+
+- **62. `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction.swift`** — three
+  fences add the five cases, reusing the app-target ids: `run-toggle-shortcut-case`
+  (`supermuxToggleRun`), `workspace-switcher-shortcut-case`
+  (`supermuxWorkspaceSwitcherNext`/`Previous`), `supermux-commit-shortcut-case`
+  (`supermuxCommit`/`supermuxCommitAccelerator`). Re-apply: add each case inside its own fence,
+  anywhere in the enum's case list — Codable/raw-value stability comes from the case names, not
+  their order.
+- **62b. `…/Values/ShortcutAction+Group.swift`** — `supermux-shortcut-groups`: two `case` arms in
+  the `group` switch, `supermuxToggleRun, supermuxCommit, supermuxCommitAccelerator → .workspace`
+  and `supermuxWorkspaceSwitcherNext, supermuxWorkspaceSwitcherPrevious → .navigation`. Re-apply:
+  the `group` switch is exhaustive, so the compiler names every missing case — add the two fenced
+  arms anywhere before the `default`/final arm. Without this file's fence the package does not
+  compile, so a merge cannot silently lose it.
+- **62c. `…/Values/ShortcutAction+DisplayName.swift`** — `supermux-shortcut-display-names`: five
+  `String(localized: "supermux.shortcut.<name>.label", defaultValue: …)` arms in the `displayName`
+  switch, using the SAME keys as the app-target labels (#11/#23/#37). The package resolves
+  `String(localized:)` against `Bundle.main`, so the app catalog (#4b, en + ja) serves both.
+  Re-apply: same exhaustive-switch mechanics as 62b; never invent new keys here — a duplicate key
+  set would drift from the app-target labels.
 - **63. `…/ShortcutAction+Defaults.swift`** — `supermux-shortcut-defaults` mirrors the five
   default strokes (⌘G, ⌘\`, ⇧⌘\`, ⌘↩, ⇧⌘↩) from `Sources/KeyboardShortcutSettings.swift`. Both
   tables must agree; the drift test in #66 enforces it.
@@ -1289,8 +1436,8 @@ never fabricates a replacement workspace or closes/quits the window.
   (⌘↩ / ⇧⌘↩, Changes panel) to the diff-viewer section of the shortcut registry.
 
 Whole-file supermux-owned package tests #68/#69 need no fences; they are registered so the check
-guards their existence. Budget: the package files stay under the 500-line threshold, so only the
-app-target files in the #4 table carry bumps.
+guards their existence. (The former budget-row bookkeeping for these package files is retired —
+see #4.)
 
 ### 73. `Sources/DragOverlayRoutingPolicy.swift` — `browser-hover-drag-guard`
 
@@ -1413,9 +1560,48 @@ you whether the symptom is truly gone.
 
 ### 80. `Sources/TabManager.swift` — `new-workspace-home-dir`
 
-In `implicitWorkingDirectoryForNewWorkspace(from:)`, the `guard` on the
-`app.workspaceInheritWorkingDirectory` setting used to `return nil` when the setting is off.
-Replace that `return nil` with a fenced explicit home-directory return:
+**Two fence sites since the 0.65 merge.** Upstream rewrote `addWorkspace` to resolve the cwd
+through a policy value type and stopped routing it through
+`implicitWorkingDirectoryForNewWorkspace`, so the fork needed a second pin.
+
+**(a) `addWorkspace` — the live path.** Upstream now computes:
+
+```swift
+let workingDirectory = WorkspaceCreationWorkingDirectoryPolicy(
+    inheritanceEnabled: inheritanceEnabled
+).resolve(
+    explicitWorkingDirectory: explicitWorkingDirectory,
+    inheritedWorkingDirectory: snapshot.preferredWorkingDirectory,
+    // SUPERMUX:begin new-workspace-home-dir
+    // Fork contract: with `app.workspaceInheritWorkingDirectory` OFF, a new
+    // workspace always starts in the home directory. Upstream's policy falls
+    // back to the Ghostty working-directory default here instead
+    // (upstream: `defaultWorkingDirectory: defaultWorkspaceWorkingDirectoryProvider()`),
+    // which is exactly what the fork overrides. Keyed on the SETTING alone, not
+    // on `inheritanceEnabled`: an explicit `inheritWorkingDirectory: false` call
+    // with the setting ON still takes upstream's default (upstream's
+    // `testExplicitNoInheritanceUsesGhosttyDefaultWhenGlobalInheritanceEnabled`).
+    // Mirrors `implicitWorkingDirectoryForNewWorkspace`, which upstream's
+    // addWorkspace rewrite stopped calling (it now serves the detached path only).
+    defaultWorkingDirectory: settings.value(
+        for: settingsCatalog.app.workspaceInheritWorkingDirectory
+    ) ? defaultWorkspaceWorkingDirectoryProvider()
+      : FileManager.default.homeDirectoryForCurrentUser.path
+    // SUPERMUX:end new-workspace-home-dir
+)
+```
+
+**Critical invariant:** the ternary reads
+`settings.value(for: settingsCatalog.app.workspaceInheritWorkingDirectory)` directly. It must
+**never** be rewritten to test `inheritanceEnabled`, which is
+`inheritWorkingDirectory && settings.value(…)`. A caller passing
+`inheritWorkingDirectory: false` while the global setting is ON is asking for upstream's Ghostty
+default, not the home pin — upstream's
+`testExplicitNoInheritanceUsesGhosttyDefaultWhenGlobalInheritanceEnabled` asserts exactly that and
+goes red if the condition is collapsed.
+
+**(b) `implicitWorkingDirectoryForNewWorkspace(from:)` — the detached path.** The `guard` on the
+setting used to `return nil`; the fence returns the home directory explicitly:
 
 ```swift
 guard settings.value(for: settingsCatalog.app.workspaceInheritWorkingDirectory) else {
@@ -1429,36 +1615,47 @@ guard settings.value(for: settingsCatalog.app.workspaceInheritWorkingDirectory) 
 }
 ```
 
-Why: every plain new-workspace entrypoint (sidebar empty-area double-click, sidebar `+`,
-⌘N, palette) funnels into `addWorkspace`, which passes this value down to the initial
-`TerminalPanel` → `ghostty_surface_new`. When it is nil, `apprt.surface.newConfig` in the
-ghostty submodule copies the previously focused surface's pwd into the new surface's config
-(`tab-inherit-working-directory` defaults to true), so the cmux-level setting appeared to do
-nothing. Regression coverage: `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift`
-(pbxproj IDs `50BE0001…00D1`/`…00D2`, see #3).
+Its **only** remaining caller is `addWorkspace(fromDetachedSurface:)`
+(`Sources/TabManager+DetachedWorkspace.swift`), as the fallback behind `detached.directory`. With
+the setting off, a detach-drop without a transfer directory gets the explicit home pin instead of
+nil. That is observationally identical today — `Workspace.init` already displayed home as
+`currentDirectory` when `workingDirectory` was nil — which is why upstream's unfenced tests
+`testDisabledInheritanceLeavesDetachedWorkspaceFallbackCwdUnset…` and
+`testDetachedWorkspaceTransferDirectoryWinsWhenInheritanceIsDisabled`
+(`cmuxTests/WorkspaceUnitTests.swift`) keep passing unmodified; if an upstream merge changes those
+tests or the nil-cwd display fallback, re-check this path.
 
-Second consumer, on purpose: `addWorkspace(fromDetachedSurface:)`
-(`Sources/TabManager+DetachedWorkspace.swift:38`) also calls
-`implicitWorkingDirectoryForNewWorkspace` as the fallback behind `detached.directory`, so
-with the setting off a detach-drop without a transfer directory now gets the explicit home
-pin instead of nil. That is observationally identical today — `Workspace.init` already
-displayed home as `currentDirectory` when `workingDirectory` was nil — which is why
-upstream's unfenced tests `testDisabledInheritanceLeavesDetachedWorkspaceFallbackCwdUnset…`
-and `testDetachedWorkspaceTransferDirectoryWinsWhenInheritanceIsDisabled`
-(`cmuxTests/WorkspaceUnitTests.swift` ~3084/3105) keep passing unmodified; if an upstream
-merge changes those tests or the nil-cwd display fallback, re-check this path.
+Why the fork does this at all: every plain new-workspace entrypoint (sidebar empty-area
+double-click, sidebar `+`, ⌘N, palette) funnels into `addWorkspace`, which passes the resolved
+value down to the initial `TerminalPanel` → `ghostty_surface_new`. Historically a nil cwd let
+`apprt.surface.newConfig` in the ghostty submodule copy the previously focused surface's pwd into
+the new surface's config (`tab-inherit-working-directory` defaults to true), so the cmux-level
+setting appeared to do nothing. Regression coverage:
+`cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` (pbxproj IDs `50BE0001…00D1`/`…00D2`,
+see #3) — note it exercises `implicitWorkingDirectoryForNewWorkspace` (site b), so **it does not
+cover site (a)**; site (a) is covered by the fenced #81 test.
 
 The behavior change ripples into these sibling surfaces (fenced ones share the
 `new-workspace-home-dir` id):
 
-- **`cmuxTests/WorkspaceUnitTests.swift` (#81):** upstream's
-  `testDisabledInheritanceLeavesNewWorkspaceCwdUnsetForGhosttyConfigFallback` asserted
-  `requestedWorkingDirectory == nil` — exactly the contract #80 replaces. It is fenced,
-  renamed `testDisabledInheritancePinsNewWorkspaceCwdToHomeDirectory`, and asserts
-  `FileManager.default.homeDirectoryForCurrentUser.path`. The plain-path sibling tests
-  (inherit-on, explicit per-call `inheritWorkingDirectory: false`, explicit-override) are
-  untouched; the two detached-path disabled-inheritance tests are also untouched but their
-  mechanism changed (see the second-consumer note above).
+- **`cmuxTests/WorkspaceUnitTests.swift` (#81):** at the 0.65 merge upstream **renamed** this test
+  to `testDisabledInheritanceUsesGhosttyDefaultForNewWorkspaceCwd` (it was
+  `testDisabledInheritanceLeavesNewWorkspaceCwdUnsetForGhosttyConfigFallback`) and changed what it
+  asserts: instead of `requestedWorkingDirectory == nil`, it now injects a
+  `defaultWorkspaceWorkingDirectoryProvider: { fallbackCwd }` into `TabManager` and asserts both
+  `requestedWorkingDirectory` and `currentDirectory` equal `fallbackCwd`. Either form contradicts
+  the fork's "off = always home" contract, so the test stays fenced, renamed
+  `testDisabledInheritancePinsNewWorkspaceCwdToHomeDirectory`: it keeps upstream's injected
+  `fallbackCwd` provider (so the assertion proves the fork's pin BEATS the provider, not merely
+  that the provider is absent) and asserts
+  `requestedWorkingDirectory == FileManager.default.homeDirectoryForCurrentUser.path` plus
+  `currentDirectory != sourceCwd`. This is the ONLY coverage of fence site (a) in `addWorkspace`.
+  The plain-path sibling tests (inherit-on, explicit per-call `inheritWorkingDirectory: false`,
+  explicit-override) are untouched — in particular
+  `testExplicitNoInheritanceUsesGhosttyDefaultWhenGlobalInheritanceEnabled` must keep passing,
+  which is what pins the "key off the SETTING alone" invariant above. The two detached-path
+  disabled-inheritance tests are also untouched but their mechanism changed (see the site-(b) note
+  above).
 - **`Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` (#82):**
   the toggle's OFF subtitle `defaultValue` becomes "New workspaces always start in your home
   directory." (fenced around the `:` branch of the subtitle ternary).
@@ -1485,10 +1682,65 @@ Deliberate trade-off: with the setting off, a user-configured Ghostty `working-d
 config value is now overridden by the home pin even at first launch (the one case upstream's
 nil fallback genuinely honored it). "Off = always home" is the fork's product decision.
 
-If upstream ever fixes the inheritance leak itself (e.g. passing an explicit cwd or a
-no-inherit flag to `ghostty_surface_new` when the setting is off), drop all
-`new-workspace-home-dir` fences and take upstream's fix; the #81 test and
-`SupermuxNewWorkspaceHomeDirectoryTests` tell you whether the symptom is truly gone.
+#### OPEN DECISION for the fork owner — upstream has closed the leak on its own terms
+
+The old standing note here said: *"if upstream ever fixes the inheritance leak itself, drop all
+`new-workspace-home-dir` fences and take upstream's fix."* **Upstream has now done so** — but not
+in a way that matches the fork's stated contract, so this is a decision, not an automatic
+retirement. It is recorded here unresolved; the fork currently **keeps its own semantics**.
+
+What upstream shipped (0.65): `WorkspaceCreationWorkingDirectoryPolicy.resolve(…)`
+(`Packages/macOS/CmuxWorkspaces/Sources/CmuxWorkspaces/Values/`) returns a **non-optional
+`String`** — the last line is `normalized(defaultWorkingDirectory()) ?? "/"`. There is therefore no
+longer any nil-cwd path into `ghostty_surface_new`, and Ghostty's `tab-inherit-working-directory`
+can no longer silently re-inherit the focused surface's pwd. The original bug is gone from
+upstream.
+
+Where the two contracts differ: upstream's default is
+`defaultWorkspaceWorkingDirectoryProvider()`, i.e. the user's **Ghostty `working-directory`
+config** value. The fork's product contract is **"off = always home"** (that exact wording is now
+shipped in the Settings subtitle, the localized catalog, the JSON schema description, and the
+generated settings docs). A user who sets `working-directory = /Users/x/code` in their Ghostty
+config would get `/Users/x/code` under upstream and `~` under the fork.
+
+If the fork owner decides to retire #80 and take upstream's behavior, **all of these change
+together** — do not retire them piecemeal, or the shipped copy will contradict the code:
+
+- **#80 `Sources/TabManager.swift`** — both `new-workspace-home-dir` fence sites (the
+  `addWorkspace` policy default and `implicitWorkingDirectoryForNewWorkspace`).
+- **#81 `cmuxTests/WorkspaceUnitTests.swift`** — un-fence and restore upstream's
+  `testDisabledInheritanceUsesGhosttyDefaultForNewWorkspaceCwd`.
+- **`cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift`** (fork-owned) — delete the file,
+  plus its four `50BE0001…00D1`/`…00D2` pbxproj entries (#3).
+- **`Sources/TabManager+DetachedWorkspace.swift`** — no edit, but its behavior changes (the
+  detached fallback stops being home-pinned); re-check the two upstream detached-inheritance
+  tests.
+- **#82 `Packages/macOS/CmuxSettingsUI/.../Sections/AppSection.swift`** — the OFF subtitle reverts
+  to upstream's Ghostty-fallback wording.
+- **#83 `cmuxUITests/SettingsAppBehaviorUITests.swift`** — `Subtitle.inheritOff` reverts to match
+  #82.
+- **#84 `Sources/SettingsSearchAliases.swift`** and **#85 `Sources/SettingsNavigation.swift`** —
+  the `home` search keyword reverts to `ghostty`.
+- **#4b `Resources/Localizable.xcstrings`** — the en+ja values of
+  `settings.app.workspaceInheritWorkingDirectory.subtitleOff` and of
+  `settings.search.alias.setting.app.workspace-inherit-working-directory` revert. These are the
+  ONLY non-`supermux.*` keys the fork touches, so retiring #80 would make #4b purely additive
+  again.
+- **#14 `web/data/cmux.schema.json`** — the reworded `workspaceInheritWorkingDirectory`
+  description AND its `descriptionKey` revert.
+- **#86 `web/messages/en.json`** and **#87 `web/messages/ja.json`** —
+  `schemaDescriptions.app.workspaceInheritWorkingDirectory` is deleted from both.
+- **#88 `skills/cmux-settings/references/all-keys.md`** — regenerate from the reverted schema.
+
+Middle options worth considering before deciding: (i) keep the fork pin but honor a **non-empty**
+Ghostty `working-directory` first, falling back to home only when the user configured none —
+smaller behavioral surprise, keeps most of the fork's intent, but makes the shipped "always"
+wording false and needs all the copy above reworded anyway; (ii) retire #80 and instead ship a
+supermux-owned Settings row that sets the user's Ghostty `working-directory` to home — zero
+upstream touchpoints, at the cost of mutating the user's Ghostty config.
+
+Do not resolve this from a merge; it is a product call. Until it is resolved, keep every fence and
+every piece of copy in the table above in sync with each other.
 
 ## iOS / mobile sync
 
@@ -1528,20 +1780,36 @@ The Mac side of the iOS supermux parity plane. All logic lives in fork-owned fil
 
 - **`Sources/TerminalController.swift` (#91, `mobile-supermux-dispatch`):** one
   `case let method where method.hasPrefix("mobile.supermux."):` in the `mobileHostHandleRPC`
-  switch, placed right after the `mobile.chat.` prefix case. Re-apply: keep it anywhere in that
-  switch before `default:`; the router body is fork-owned.
-- **`Sources/Mobile/MobileHostService.swift` (#92, `mobile-supermux-authz`):** a 3-line guard in
+  switch. It now sits right after upstream's `mobile.browser.` prefix case (upstream inserted that
+  case between `mobile.chat.` and the fork's, which is why the old "right after `mobile.chat.`"
+  wording is stale). Re-apply: keep it anywhere in that switch before `default:` — the prefixes are
+  disjoint, so ordering among them does not matter; the router body is fork-owned.
+- **`Sources/Mobile/MobileHostService+TicketAuthorization.swift` (#92, `mobile-supermux-authz`):**
+  (upstream 0.64.x extracted ticket authorization out of `MobileHostService.swift` into this file;
+  the table row has said so for a while but this bullet had not caught up) a 3-line guard in
   `ticketAuthorizationError(authorization:request:)` — AFTER the workspace/terminal alias and
   conflict guards (they must keep applying to supermux methods) and BEFORE upstream's method
   switch — returning `SupermuxMobileAuthorization.ticketError(method:params:ticket:)` for the
   whole prefix. The fork table fails closed (`default:` = scoped-ticket `forbidden`), so a merge
   that drops this fence makes every supermux method hit upstream's own fail-closed `default:` —
   safe, but the phone loses scoped-ticket access; `cmuxTests/SupermuxMobileAuthorizationTests`
-  goes red either way.
+  goes red either way. (Upstream removed the `debugTicketAuthorizationError` test seam this note
+  used to cite — zero occurrences tree-wide; the tests now call `ticketAuthorizationError`
+  directly.)
 - **`Sources/Mobile/MobileHostService+Capabilities.swift` (#93, `mobile-supermux-capabilities`):**
-  `+ SupermuxMobileCapabilities.advertised` appended to upstream's array literal in
-  `mobileHostCapabilities`. Re-apply: any composition that folds the fork list into the returned
-  array works; never inline `supermux.*` strings into upstream's literal.
+  `capabilities += SupermuxMobileCapabilities.advertised` inside
+  `mobileHostCapabilities(includingWorkspaceChanges:)` — AFTER upstream's
+  `if !includingWorkspaceChanges { capabilities.removeAll { … } }` filter and BEFORE the
+  `#if DEBUG` suppression block, so the fork list is not caught by the flag filter but IS
+  suppressible via `CMUX_DEBUG_SUPPRESS_MOBILE_CAPS`. Re-apply: any composition that folds the
+  fork list into the returned array in that window works; never inline `supermux.*` strings into
+  upstream's literal. **The fork list must never contain the literal `workspace.changes.v1`** —
+  upstream's `testWorkspaceChangesCapabilityFollowsFeatureFlag` in
+  `cmuxTests/MobileHostConnectionLifecycleTests.swift` asserts
+  `enabled.filter { $0 != workspaceChangesCapability } == disabled`, so a duplicate entry makes
+  that equality fail. (Upstream's own mobile diff viewer now ships behind that capability and
+  overlaps the fork's `supermux.changes.v1`; both are advertised at once whenever
+  `CmuxFeatureFlags.mobileWorkspaceChangesFlag` is on — see SUPERMUX.md "Known limitations".)
 - **`Sources/AppDelegate.swift` (#94, `mobile-supermux-observers`):**
   `SupermuxMobileHostGlue.activateIfNeeded()` at the top of
   `ensureMobileWorkspaceListObserver(for:)`. Re-apply: the call must run wherever upstream
@@ -1556,8 +1824,9 @@ The Mac side of the iOS supermux parity plane. All logic lives in fork-owned fil
   `cmuxTests/SupermuxMobileRunObserverTests.swift` in the cmuxTests
   target. Ids prefixed `50BE0002…`; re-add via Xcode or by copying any `50BE0001…` sibling's
   four-entry shape, then run `python3 scripts/normalize-pbxproj.py`.
-- **`.github/swift-file-length-budget.tsv` (#4):** rows for `TerminalController.swift` (+4),
-  `MobileHostService.swift` (+5), and `AppDelegate.swift` (+3) raised by exactly the fenced growth.
+- **Budget rows (#4): RETIRED.** The former `.github/swift-file-length-budget.tsv` bumps for
+  `TerminalController.swift` (+4), `MobileHostService.swift` (+5), and `AppDelegate.swift` (+3)
+  no longer exist — upstream deleted the whole budget system. Nothing to re-apply.
 
 `Packages/SupermuxKit/Package.swift` (fork-owned, no fence) gains a path dependency on
 `../Shared/SupermuxMobileCore`; both stay path-only, so still no `Package.resolved` is generated.
@@ -1602,10 +1871,12 @@ avatar tinted by `color_hex`), the read-only `SupermuxProjectDetailScreen`, and 
 - **`MobileShellComposite.swift` (#96, `supermux-mobile-client-mount`):** the 3-line computed
   `supermuxConnectionSeam` next to `remoteClientForAgentChat`. Re-apply: any placement inside the
   class works; it must read `connectionState`, `remoteClient`, and `supportedHostCapabilities`
-  (all observation-tracked) and return `nil` unless `.connected`. Raise the
-  `.github/swift-file-length-budget.tsv` row by the fenced growth (+5).
+  (all observation-tracked) and return `nil` unless `.connected`. (The former
+  `.github/swift-file-length-budget.tsv` row bump is retired — see #4.)
 - **`WorkspaceListView.swift` (#97, `supermux-mobile-projects-section`, four 1-line fences):**
-  the import; `@State private var supermuxProjects = SupermuxProjectsSectionModel()`;
+  the import; `@State private var supermuxProjects = SupermuxProjectsSectionModel()` (since the
+  0.64.21 merge it follows upstream's new `@State var workspacePendingCustomizationID`, which is
+  where the `@State` block now ends);
   `SupermuxProjectsMobileSection(section: supermuxProjects.snapshot, actions: supermuxProjects.actions)`
   as the first section-level entry before the workspaces `Section` (below the connection-status
   rows); `.supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam)`
@@ -1652,8 +1923,12 @@ deliberately untouched. The host now also advertises `supermux.activity.v1`.
   optional/defaulted so upstream inits, tests, and old payloads are untouched; the nested PR object
   decodes lossily (malformed → nil fields, never a list-wide failure); `PROTO-03` regression suite
   `SupermuxWorkspaceListFieldsDecodeTests` (CmuxMobileRPCTests) locks the wire shape both ways.
-  Freshness note: no fork observer pokes on branch/PR-only changes yet, so the phone's branch/PR
-  values refresh on the NEXT `workspace.updated` poke (activity/title/preview churn) or list refetch.
+  Freshness note: unopened-worktree PR badges are poked by `SupermuxMobileWorktreesObserver`
+  (fork-owned, hashes `pullRequestsByWorktreePath`), but there is no fork observer for branch/PR-only
+  changes on an OPEN `Workspace`, so those values refresh only when some other tracked field trips
+  upstream's `Sources/Mobile/MobileWorkspaceListObserver.swift` (activity/title/preview churn) or on
+  a list refetch. Pre-existing, but **more visible under state sync v2** (#139–141), where the phone
+  no longer refetches at all — see SUPERMUX.md "Known limitations", open decision 6.
   The aggregated multi-Mac path needs no fence: `derivedWorkspaces` mutates copies
   (`var stamped = workspace`), which carries the new fields automatically.
 - **`WorkspaceListView.swift` (#103, `supermux-mobile-hide-project-workspaces` +
@@ -1664,7 +1939,11 @@ deliberately untouched. The host now also advertises `supermux.activity.v1`.
   The dot modifier attaches to `WorkspaceNavigationRow` before the row insets. The #97 driver fence
   gained `workspaces:` + `selectWorkspace:` arguments (pass the shell's closure as a literal —
   `{ selectWorkspace($0) }` — because `@MainActor` function types are implicitly `@Sendable` and a
-  stored plain closure won't convert).
+  stored plain closure won't convert). Two consumer swaps: in `filteredWorkspaces` the fence is a
+  one-line `let workspaces = supermuxFlatWorkspaces` rebind; in **`groupedWorkspaces`** the fence
+  wraps only the `return` statement, because upstream's `parsedMachines` precompute now sits above
+  it and must stay outside the fence. (Earlier revisions of this note called that second site
+  `groupedListItems`; the property is `groupedWorkspaces`.)
 
 `Packages/iOS/SupermuxMobileUI` additions are fork-owned (no fences): the `supermuxFlatRows` array extension (SupermuxWorkspaceListPartition.swift),
 `SupermuxProjectWorkspaceRowSnapshot`, `SupermuxWorkspaceActivityDot` (palette mirrors the Mac's
@@ -1672,6 +1951,56 @@ deliberately untouched. The host now also advertises `supermux.activity.v1`.
 Workspaces section. Its `Package.swift` gained a path dep on `../CmuxMobileShellModel` (target +
 test target) so the partition/mapping can name `MobileWorkspacePreview`. New localization keys
 `supermux.activity.working/needsInput/ready` exist in BOTH en and ja in the package catalog.
+
+### 139–141 (+100 cont.). Mobile state sync v2 — §6 field parity (`supermux-mobile-workspace-fields`)
+
+Upstream's **state sync v2** (`docs/mobile-state-sync-v2.md`) gives the phone a versioned record
+mirror fed by `mobile.sync.delta` events and stops it re-fetching `mobile.workspace.list`. That
+**bypasses the entire legacy payload path** the fork augments in #99, so without these fences a v2
+phone silently loses project nesting, activity dots, branch subtitles, and PR badges the moment v2
+negotiates — with no error and no test failure. The four fields therefore travel a second time,
+through the v2 record type, and both transports are fed by the SAME augmenter so they cannot
+diverge.
+
+Chain, Mac → phone:
+
+- **139. `Packages/Shared/CMUXMobileCore/…/MobileStateSyncRecords.swift`** — `WorkspaceSyncRecord`
+  gains the four optional fields plus a nested `SupermuxPullRequest` (`Codable`, `Equatable`,
+  `Sendable`; `{number?, state?, url?, is_stale?}`) whose `init(from:)` is **lossy on purpose** —
+  a malformed additive field degrades to nil rather than failing the record, which would gap the
+  client's mirror. Memberwise-init params are defaulted nil so upstream call sites compile
+  unchanged and an upstream cmux Mac's records stay field-free; the `init(from:)` decodes use
+  `try?`; `CodingKeys` reuse the legacy snake_case wire names
+  (`supermux_project_id` / `supermux_activity` / `supermux_branch` / `supermux_pull_request`).
+  Re-apply: five fence blocks (stored lets + nested struct, init params, init assignments,
+  decode block, CodingKeys). Keep every field optional and every param defaulted.
+- **140. `Sources/Mobile/MobileStateSync.swift`** — in `MobileStateSyncHost.workspaceRow(...)`,
+  call `SupermuxMobileWorkspaceListAugmenter.augment([:], workspace: workspace)` (fork-owned,
+  `Sources/Supermux/SupermuxMobileWorkspaceListAugmenter.swift`) and read the four values back out
+  with the `SupermuxMobileWorkspaceFields.*Key` constants, mapping the PR dictionary into
+  `WorkspaceSyncRecord.SupermuxPullRequest`. A fenced `import SupermuxKit` supplies the key
+  constants. Re-apply requirement: **use the same augmenter as #99** — never recompute the fields
+  here, or the two transports drift.
+- **100 (cont.). `Packages/iOS/CmuxMobileRPC/…/MobileSyncWorkspaceListResponse.swift`** — the
+  existing decode fence now also carries defaulted-nil supermux params + assignments on upstream's
+  new memberwise `Workspace.init(...)` (added for locally-projected rows), and a **public**
+  memberwise `init(number:state:url:isStale:)` on the nested `SupermuxPullRequest`. That init is
+  load-bearing: declaring `init(from:)` suppresses the synthesized memberwise init, and a
+  synthesized one would be `internal`, so `CmuxMobileShell` could not construct the type
+  cross-module and #141 would not compile.
+- **141. `Packages/iOS/CmuxMobileShell/…/MobileShellComposite+StateSync.swift`** — in
+  `applyStateSyncProjection()`, pass `record.supermuxProjectID` / `…Activity` / `…Branch` and the
+  mapped `SupermuxPullRequest` into `MobileSyncWorkspaceListResponse.Workspace(...)`. The
+  projection then feeds `applyRemoteWorkspaceList`, the same apply path the wire response uses, so
+  everything downstream (#101/#102 preview mapping, #103 hide filter and activity dot) works
+  unchanged.
+
+Verification after a merge: `git grep -n 'supermuxProjectID' Packages/Shared/CMUXMobileCore
+Packages/iOS/CmuxMobileShell Sources/Mobile` must show all four links in the chain. A break in the
+middle (record populated, projection not) is invisible on an upstream-paired phone and shows up
+only as "my fork fields disappeared on the phone" after v2 negotiates. See the freshness caveat in
+SUPERMUX.md "Known limitations" — under v2 the phone no longer refetches, so fork-field freshness
+depends on the fork's own observer poke.
 
 ### 104–105. XCUITest paired-Mac state hygiene (`uitest-clear-paired-mac-state` / `-launch`)
 
@@ -1771,16 +2100,15 @@ AND the host advertises its capability — `supermux.changes.v1` for Changes, `s
 for Files; an upstream Mac renders exactly today's UI) and `.sheet`s presenting
 `SupermuxChangesScreen` / `SupermuxFileBrowserScreen`; one store is built per presentation from
 the seam's `MobileCoreRPCClient` + capability snapshot (the file browser rooted
-`.workspace(id:)`). `.github/swift-file-length-budget.tsv` row for `WorkspaceDetailView.swift`
-raised by exactly the fenced growth (878 → 888, including the `rpcWorkspaceID` rationale comment).
-The m5-f2 Files entry changed only the fork-owned modifier — the upstream fence lines are
-byte-identical to m3.
+`.workspace(id:)`). (The former `.github/swift-file-length-budget.tsv` row bump for
+`WorkspaceDetailView.swift` is retired — see #4.) The m5-f2 Files entry changed only the
+fork-owned modifier — the upstream fence lines are byte-identical to m3.
 
 Re-apply note: if upstream rewrites `WorkspaceDetailView`, the requirement is: the modifier must
 sit on a view that (a) is inside the detail's `NavigationStack` context so the toolbar item lands
 in the nav bar, and (b) has `store` + `workspace` in scope, with `store.supermuxConnectionSeam`
 read inside `body` so Observation re-evaluates on (re)connect/capability arrival. Any placement
-satisfying that works; keep both fence lines and the budget row in sync.
+satisfying that works; keep both fence lines together.
 
 ### 109. `scripts/lint-ios-package-conventions.sh` — `lint-ios-conventions-fork-scopes`
 
@@ -1809,22 +2137,33 @@ packages must be fixed or carry a reviewed inline `lint:allow` justification —
 
 ### 110. `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` — `supermux-mobile-hide-search`
 
-Removes the main workspace list's search bar (iOS 26 places `.searchable` in the bottom
-toolbar on iPhone) per direct user feedback on the shipped app. The fence is comment-only: it
-REPLACES upstream's single `.searchable(text: $searchText)` modifier line on the `List` (right
-after `.mobileInlineNavigationTitle()`), leaving nothing between begin/end. All of upstream's
-search plumbing (`@State searchText`, `trimmedQuery`, `matchesQuery`, the search branch of
-`rendersGroupedSections`, and the #103 hide-filter's `trimmedQuery.isEmpty` gate) stays
-untouched and compiles; with `searchText` permanently empty it is simply inert.
+⚠️ **INERT since the 0.64.21 merge — the fork behavior is GONE and phone search is LIVE again.**
+This is an OPEN DECISION for the fork owner, not a working touchpoint. See SUPERMUX.md
+"Known limitations".
 
-Recorded trade-off: the search field was the only free-text way to find a workspace across
-groups on the phone; the Unread filter, machine filter, and group sections remain. If the user
-later wants search back, delete this fence and restore the one upstream line.
+Original intent: remove the main workspace list's search bar (iOS 26 places `.searchable` in the
+bottom toolbar on iPhone) per direct user feedback on the shipped app. The fence was comment-only:
+it REPLACED upstream's single `.searchable(text: $searchText)` modifier line on the `List` (right
+after `.mobileInlineNavigationTitle()`), leaving nothing between begin/end, and with `@State
+searchText` permanently `""` all of upstream's search plumbing (`trimmedQuery`, `matchesQuery`,
+the search branch of `rendersGroupedSections`, the #103 hide-filter's `trimmedQuery.isEmpty` gate)
+compiled but was inert.
 
-Re-apply note: after an upstream merge, find the workspace `List`'s `.searchable(text:
-$searchText)` (or successor search-scope API) in `WorkspaceListView.body` and replace exactly
-that modifier line with this fence. If upstream ever makes other behavior depend on a non-empty
-`searchText` being reachable, re-evaluate with the user before keeping the removal.
+What upstream changed: search moved out of this view into **two new files** —
+`Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListSearchHost.swift` (pre-iOS
+26: `.searchable(text:placement:)` on the wrapped content; macOS: plain `.searchable(text:)`) and
+`…/MobilePrimaryTabScaffold.swift` (iOS 26+: a `Tab(value: .search, role: .search)` carrying
+`.searchable(text:isPresented:prompt:)`). `WorkspaceListView.searchText` is now an **injected
+property** (`var searchText = ""`, set by the caller), not `@State`, so the query is live and the
+list filters on it again. `git grep -n '\.searchable(' -- Packages/iOS/CmuxMobileShellUI` shows no
+hit in `WorkspaceListView.swift` — there is nothing left in this file to remove, and the fence
+survives only as a comment-only marker pointing at the new hosts.
+
+Decision needed: either (a) re-apply the removal at the new host(s) — note that would now suppress
+search in the iOS 26 **search Tab** as well, which is a more visible amputation than the old
+bottom-bar field; (b) accept upstream's search and RETIRE this touchpoint (delete the fence and
+the row); or (c) keep the marker as-is, documenting that the fork intentionally no longer removes
+search. The fork currently ships (c) by default. Do not resolve this from a merge.
 
 ### 116–117. `Sources/Workspace.swift` + `cmuxTests/TabManagerUnitTests.swift` — `workspace-geometry-snapshot-dedup`
 
@@ -1920,6 +2259,155 @@ Re-apply note: upstream edits to translation bodies merge cleanly under the bann
 above the first heading). On a conflict, take upstream's file and re-prepend the banner —
 recover the localized text with `git show <our-side>:README.<lang>.md | head -3`. If upstream
 adds a new `README.<lang>.md`, prepend a banner in that language and add it to the list above.
+
+### 130. `Sources/FeatureFlags.swift` — `appkit-sidebar-default-off`
+
+Pins upstream's `sidebar-appkit-list-experiment` OFF on the fork. **Five fenced regions** since
+the 0.64.21 merge (it was two — upstream added a production control-plane ingestion path, and an
+automerge would have left the fork's gate covering only the now-test-only site):
+
+1. **The default.** `private static let appKitSidebarListDefault = false` (upstream: `= true`).
+2. **The gate.** `private static func supermuxIngestibleRemoteValue(_ value: Bool?, for key: String) -> Bool?`
+   — `guard key == appKitSidebarListFlag.key else { return value }` then
+   `return value == false ? false : nil`. Keying off `appKitSidebarListFlag.key` (not a string
+   literal) means an upstream key rename cannot silently disarm it.
+3. **`init`**, remote-cache seeding: wraps `Self.storedBoolValue(forKey: Self.remoteCacheKey(for:), …)`.
+4. **`applyRemoteFlagValues(_:)`**, the PostHog control-plane loader (**the production path since
+   this merge**): wraps `values[definition.key]`. Filtering to `nil` falls into upstream's `else`,
+   which also evicts the cached value from `defaults`.
+5. **`applyLoadedFlags()`**, the PostHog-SDK path (now reached only from tests): wraps
+   `Self.coerceBoolFlagValue(remoteFlagValueProvider(definition.key))`. Filtering to `nil` falls
+   into upstream's `else if`, which evicts a cached `true`.
+
+**Invariants a re-applier must preserve:**
+
+- A remote `true` for `sidebar-appkit-list-experiment` is **never** ingested at ANY site; a cached
+  `true` is evicted.
+- A remote `false` **still ingests** — that is upstream's kill-switch direction, so a Debug opt-in
+  cannot outlive an upstream emergency disable.
+- Every other flag passes through untouched.
+- **Any NEW writer of `remoteValuesByKey` must route through `supermuxIngestibleRemoteValue`.**
+  Find them with `git grep -n 'remoteValuesByKey\[' Sources/FeatureFlags.swift` after every merge;
+  each assignment must sit inside a fence or behind the gate.
+
+Why it matters: a remote rollout outranks both the flipped default and the user's local override
+(`setOverride` refuses to shadow a remote value), and `appKitWorkspaceScrollArea` then renders
+`SidebarWorkspaceTableView` directly — bypassing the SwiftUI list that hosts every supermux
+sidebar feature.
+
+Known gaps (both recorded in SUPERMUX.md "Known limitations"): three tests in
+`cmuxTests/PostHogAnalyticsPropertiesTests.swift` assert upstream's contract and contradict this
+fence, and **nothing asserts the ingestion invariant** — this merge is proof an upstream refactor
+can defeat it with a clean automerge.
+
+### 142. `cmuxTests/SSHPTYAttachNoProgressRetryTests.swift` — `upstream-expect-comment-fix`
+
+**Temporary. This is an upstream bug the fork is carrying, not a fork behavior.**
+
+Upstream `84f5755b56` ("Fix cmux ssh startup script syntax error in no-progress retry loop",
+cmux #9425) shipped a compile break into `cmuxTests`:
+
+```swift
+// upstream:
+#expect(execution.status == 0, execution.stderr)
+```
+
+`#expect(_:_:)`'s second parameter is a `Comment?`. A string *literal* converts through
+`ExpressibleByStringInterpolation`, but a `String` **variable** does not — so this does not
+compile, and neither does the whole `cmuxTests` target. Every other `#expect` in the same file
+already wraps with `Comment(rawValue:)`. The fork's fence does the same:
+
+```swift
+// SUPERMUX:begin upstream-expect-comment-fix
+// … (upstream: `#expect(execution.status == 0, execution.stderr)`) …
+#expect(execution.status == 0, Comment(rawValue: execution.stderr))
+// SUPERMUX:end upstream-expect-comment-fix
+```
+
+Verified at this merge: the file is byte-identical to upstream apart from this fence, upstream had
+NOT fixed it as of `06bc29603c`, and with the fix `xcodebuild build-for-testing -scheme cmux-unit`
+succeeds.
+
+Re-apply / retirement: **delete the fence and take upstream's line as soon as upstream fixes it.**
+A merge conflict on exactly these lines is the expected signal that they did — resolve it by
+taking upstream and removing this row, not by re-applying the fence. If upstream instead
+restructures the assertion, the only requirement is that the second argument be a `Comment?`
+(wrap any `String` variable in `Comment(rawValue:)`).
+
+### 143. `Packages/macOS/CmuxSettingsUI/.../Sections/SupermuxAISettingsCard.swift` — unfenced
+
+Pre-existing registry gap, surfaced (not caused) by the 0.64.21 merge: the file is byte-identical
+to pre-merge `HEAD`. It is a **whole fork-owned file inside an upstream package**, the same
+situation as #68 and #69, and it is registered for the same reason — so
+`supermux-check-touchpoints.sh` fails if an upstream package restructure drops it.
+
+Why it lives there at all: `SettingsWindowScene.sectionStack` in `CmuxSettingsUI` is a closed,
+hard-coded section list with no app-side injection seam, and the package cannot import
+`SupermuxKit` (that would be a reverse dependency). So the card is self-contained, depending only
+on `CmuxSettings`/SwiftUI, and shares two literals with `SupermuxKit.SupermuxAIConfig`: the secret
+file name (`supermux-ai-gateway-key`) and the model-override UserDefaults key
+(`supermux.ai.model`). Mounted by the #18 `ai-settings` fences in `AutomationSection.swift`.
+
+Re-apply: keep the file compiled into the `CmuxSettingsUI` target. If upstream ever opens the
+section stack to injection, move the card into `Sources/Supermux/` and retire both this row and
+#18.
+
+### 144. `scripts/cleanup-dev-builds.sh` — unfenced (**fence still to be added**)
+
+Pre-existing unfenced fork edit, surfaced (not caused) by the 0.64.21 merge: the file is
+byte-identical to pre-merge `HEAD`. Registered so the check at least guards the file's existence.
+
+**Action still outstanding:** unlike `project.pbxproj` or a plist, this file is a shell script and
+the surrounding lines already carry comments, so it **is** fenceable and should carry a real
+`SUPERMUX:begin/end` pair rather than an `unfenced` row. Whoever owns
+`scripts/cleanup-dev-builds.sh` should wrap the edit and change this row's fence-id cell from
+`unfenced` to the new id.
+
+The edit, in the running-tag detection loop (`# Running cmux DEV processes by tag`):
+
+```bash
+# upstream:
+if [[ "$line" =~ cmux\ DEV\ ([A-Za-z0-9._-]+) ]]; then
+# fork:
+if [[ "$line" =~ cmux\ DEV\ ([A-Za-z0-9-]+)\.app ]]; then
+```
+
+Why: the running process path is `.../cmux DEV <slug>.app/Contents/MacOS/cmux DEV`, and the
+captured slug must match the `cmux-<slug>` DerivedData directory name. Upstream's char class
+includes `.` and has no anchor, so the greedy match ate the bundle suffix and captured
+`<slug>.app` — which never matched a DerivedData dir, silently defeating the running-app
+protection and letting cleanup delete DerivedData for a tag that was still running. Excluding `.`
+from the class and anchoring on the literal `.app` stops the match at the bundle suffix.
+
+Re-apply: restore the fork regex (both the class change AND the `\.app` anchor — either alone is
+wrong) and keep the explanatory comment block above it.
+
+### 145. `cmuxTests/PostHogAnalyticsPropertiesTests.swift` — unfenced (**debt placeholder, file not yet modified**)
+
+Registered so the fork's outstanding test debt against #130 is visible in the manifest rather than
+only in a review thread. **Nothing has been changed in this file** — the row exists to stop the
+problem being rediscovered from scratch at the next merge, and to guard the file's existence.
+
+Three upstream tests assert upstream's flag contract and therefore contradict the fork's
+`appkit-sidebar-default-off` pinning:
+
+| Test | Asserts | Why it fails on the fork |
+|---|---|---|
+| `appKitSidebarFeatureFlagDefaultsOn` | `flag.defaultWhenUnavailable` is true for `sidebar-appkit-list-experiment` | #130 flips `appKitSidebarListDefault` to `false` |
+| `featureFlagResolutionPrecedence` | after a remote `true` for that key, `flags.remoteValue(for: flag) == true` | #130's gate filters a remote `true` to `nil` at every ingestion site |
+| `remoteControlledFlagsRejectNewLocalOverrideWrites` | after a remote `true` for that key, `setOverride(false, …)` is rejected | there is no ingested remote value to reject against |
+
+Verified with `git show HEAD:cmuxTests/PostHogAnalyticsPropertiesTests.swift` that all three method
+bodies are byte-identical to pre-merge `HEAD`: this is **standing fork debt, not 0.64.21 merge
+damage**.
+
+OPEN DECISION (see SUPERMUX.md "Known limitations"): the cleanest fix is probably to **retarget**
+the three tests onto a flag key the fork does not pin — they are testing the generic
+default/override/remote precedence machinery, not the sidebar experiment specifically — which
+keeps upstream's coverage intact behind a small fence. The alternative is to fence the three
+expectations to the fork's values, which is a larger fence and loses upstream's own assertions. Do
+not pick one from inside a merge. When it is resolved, replace this row's `unfenced` cell with the
+real fence id.
 
 ### 134–138. Upstream conventions-lint debt at the 0.64.20 merge — `lint-allow-upstream-debt`
 

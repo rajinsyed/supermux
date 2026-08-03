@@ -38,9 +38,6 @@ import XCTest
 ///     observable after creating ≥2 workspaces and inspecting sidebar
 ///     order; requires workspace scaffolding the fresh UI-test launch
 ///     does not have (CMUX_UI_TEST_MODE skips session restore).
-///   - Inherit CWD effect on a real new workspace (the *subtitle* swap is
-///     TIER 1 below; the actual working-directory inheritance needs a
-///     spawned terminal to inspect, which is a terminal-surface seam).
 ///   - Keep Workspace Open When Closing Last Surface
 ///     (closeWorkspaceOnLastSurfaceShortcut): only observable by closing
 ///     the last surface of a real workspace and checking whether the
@@ -209,7 +206,7 @@ final class SettingsAppBehaviorUITests: SettingsUITestCase {
 
         XCTAssertTrue(
             poll(timeout: 4.0) { subtitleText(window, Subtitle.inheritOff).exists },
-            "Disabling inherit should show the unset-working-directory subtitle"
+            "Disabling inherit should show the Ghostty working-directory subtitle"
         )
         XCTAssertTrue(
             poll(timeout: 4.0) { !subtitleText(window, Subtitle.inheritOn).exists },

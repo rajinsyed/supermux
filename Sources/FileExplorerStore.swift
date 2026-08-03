@@ -704,9 +704,8 @@ enum FileExplorerSelectionRestoration {
 
 // MARK: - Store
 
-/// All access must happen on the main thread. Properties are not marked @MainActor
-/// because NSOutlineView data source/delegate methods are called on the main thread
-/// but are not annotated @MainActor.
+/// Main-actor store for file-explorer presentation and loading state.
+@MainActor
 final class FileExplorerStore: ObservableObject {
     @Published var rootPath: String = ""
     @Published var rootNodes: [FileExplorerNode] = []
@@ -779,8 +778,8 @@ final class FileExplorerStore: ObservableObject {
     /// Cache of path -> node for quick lookup
     private var nodesByPath: [String: FileExplorerNode] = [:]
 
-    /// Prefetch debounce: path -> work item
-    private var prefetchWorkItems: [String: DispatchWorkItem] = [:]
+    /// Prefetch debounce schedulers keyed by path.
+    private var prefetchSchedulers: [String: MainActorDeferredActionScheduler] = [:]
 
     private var remoteHomeResolutionTask: Task<Void, Never>?
     private var remoteHomeResolutionKey: String?
@@ -1040,21 +1039,20 @@ final class FileExplorerStore: ObservableObject {
         guard node.isDirectory, node.children == nil, !loadingPaths.contains(node.path) else { return }
         // Debounce: only prefetch if hover persists for 200ms
         let path = node.path
-        prefetchWorkItems[path]?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
+        let scheduler = prefetchSchedulers[path] ?? MainActorDeferredActionScheduler()
+        prefetchSchedulers[path] = scheduler
+        scheduler.schedule(after: .milliseconds(200)) { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, node.children == nil, !self.loadingPaths.contains(path) else { return }
                 // Silent prefetch: don't show loading indicator
                 await self.loadChildren(for: node, at: path, silent: true)
             }
         }
-        prefetchWorkItems[path] = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
     }
 
     func cancelPrefetch(for node: FileExplorerNode) {
-        prefetchWorkItems[node.path]?.cancel()
-        prefetchWorkItems.removeValue(forKey: node.path)
+        prefetchSchedulers[node.path]?.cancel()
+        prefetchSchedulers.removeValue(forKey: node.path)
     }
 
     /// Called when SSH provider becomes available after being unavailable.
@@ -1148,10 +1146,10 @@ final class FileExplorerStore: ObservableObject {
         loadTasks.removeAll()
         loadingPaths.removeAll()
         pendingDescendIntoFirstChildPath = nil
-        for (_, item) in prefetchWorkItems {
-            item.cancel()
+        for scheduler in prefetchSchedulers.values {
+            scheduler.cancel()
         }
-        prefetchWorkItems.removeAll()
+        prefetchSchedulers.removeAll()
         isRootLoading = false
     }
 
@@ -1327,7 +1325,7 @@ final class FileExplorerStore: ObservableObject {
     }
 
     deinit {
-        cancelRemoteHomeResolution()
+        remoteHomeResolutionTask?.cancel()
         directoryWatchTask?.cancel()
     }
 }
