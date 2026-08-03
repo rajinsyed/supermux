@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **145**. Numbers **4, 19, 52, 89, 106, 121** are unused;
+- Numbering: the highest number in use is **145**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -165,7 +165,6 @@ Rules for adding a touchpoint:
 | 139 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileStateSyncRecords.swift` | `supermux-mobile-workspace-fields` | State sync v2 (`docs/mobile-state-sync-v2.md`) bypasses the legacy `mobile.workspace.list` payload, so the four additive §6 fields are mirrored onto `WorkspaceSyncRecord`. Five fence blocks: the optional `supermuxProjectID`/`supermuxActivity`/`supermuxBranch`/`supermuxPullRequest` stored lets plus the nested lossy-decoding `SupermuxPullRequest` (`{number?, state?, url?, is_stale?}`, `Codable`+`Equatable`+`Sendable`, with a defaulted public memberwise init); defaulted-nil memberwise `init` params; their assignments; lenient `try?` decodes in `init(from:)` (a malformed additive field degrades to nil instead of gapping the client's mirror); and the snake_case `CodingKeys` matching the legacy wire names |
 | 140 | `Sources/Mobile/MobileStateSync.swift` | `supermux-mobile-workspace-fields` | Three fence blocks in the Mac-side v2 host: a fenced `import SupermuxKit` (wire-key constants), and in `workspaceRow(...)` a call to the SAME `SupermuxMobileWorkspaceListAugmenter.augment(_:workspace:)` the legacy `mobile.workspace.list` path uses (#99) — augmenting an EMPTY dictionary yields just the additive fields — plus the four `supermux*` arguments on the `WorkspaceSyncRecord(...)` construction. One augmenter for both transports, so v2 and the legacy list can never disagree on project nesting, activity, branch, or PR badge |
 | 141 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+StateSync.swift` | `supermux-mobile-workspace-fields` | One fence block in `applyStateSyncProjection()`: passes the record's four supermux fields (mapping `WorkspaceSyncRecord.SupermuxPullRequest` → `MobileSyncWorkspaceListResponse.Workspace.SupermuxPullRequest` through the public memberwise init added in #100) into `MobileSyncWorkspaceListResponse.Workspace(...)`. Without it, project nesting, activity dots, the branch subtitle, and PR badges vanish the moment v2 negotiates |
-| 142 | `cmuxTests/SSHPTYAttachNoProgressRetryTests.swift` | `upstream-expect-comment-fix` | **TEMPORARY — upstream bug, not fork behavior.** Upstream `84f5755b56` (cmux #9425) shipped a compile break: `#expect(execution.status == 0, execution.stderr)` passes a plain `String` where `#expect(_:_:)` takes a `Comment?` (only string *literals* convert, via `ExpressibleByStringInterpolation`). Every other `#expect` in the same file already wraps with `Comment(rawValue:)`. One fenced line does the same so the `cmuxTests` target compiles at all. The file is byte-identical to upstream apart from this fence; upstream had not fixed it as of `06bc29603c`. DELETE the fence and take upstream’s line the moment they fix it |
 | 143 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` | `unfenced` | **Pre-existing registry gap, surfaced (not caused) by the 0.64.21 merge.** Whole fork-owned file living inside the upstream `CmuxSettingsUI` package — the Vercel AI Gateway key + model card mounted by #18. It sits in the upstream package only because `SettingsWindowScene.sectionStack` is a closed, hard-coded list with no app-side injection seam, and that package cannot import `SupermuxKit` (reverse dependency). #18's prose mentioned the file in passing but it had no row, so the check did not guard its existence. Registered on the #68/#69 precedent: an upstream restructure of the package that drops it would otherwise pass silently |
 | 144 | `scripts/cleanup-dev-builds.sh` | `unfenced` | **Pre-existing UNFENCED fork edit, surfaced (not caused) by the 0.64.21 merge — a real fence still needs to be ADDED to the file** (see the #144 re-apply note; this row is a placeholder until then). The running-app tag regex is `cmux\ DEV\ ([A-Za-z0-9-]+)\.app` instead of upstream's `cmux\ DEV\ ([A-Za-z0-9._-]+)`, so the captured slug matches the `cmux-<slug>` DerivedData directory name. Upstream's greedy class ate the `.app` suffix and yielded `<slug>.app`, silently defeating the running-app protection (cleanup could delete DerivedData for a tag that is still running) |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
@@ -2300,39 +2299,18 @@ Known gaps (both recorded in SUPERMUX.md "Known limitations"): three tests in
 fence, and **nothing asserts the ingestion invariant** — this merge is proof an upstream refactor
 can defeat it with a clean automerge.
 
-### 142. `cmuxTests/SSHPTYAttachNoProgressRetryTests.swift` — `upstream-expect-comment-fix`
+### 142. `cmuxTests/SSHPTYAttachNoProgressRetryTests.swift` — RETIRED (0.64.22 merge)
 
-**Temporary. This is an upstream bug the fork is carrying, not a fork behavior.**
+Existed for exactly one merge. Upstream `84f5755b56` (cmux #9425) shipped a compile break into
+`cmuxTests` — `#expect(execution.status == 0, execution.stderr)`, where `#expect(_:_:)`'s second
+parameter is a `Comment?` and a `String` **variable** does not convert (only a string *literal*
+does, through `ExpressibleByStringInterpolation`). That broke the whole `cmuxTests` target, so the
+0.64.21 merge carried a one-line fence wrapping it in `Comment(rawValue:)`.
 
-Upstream `84f5755b56` ("Fix cmux ssh startup script syntax error in no-progress retry loop",
-cmux #9425) shipped a compile break into `cmuxTests`:
-
-```swift
-// upstream:
-#expect(execution.status == 0, execution.stderr)
-```
-
-`#expect(_:_:)`'s second parameter is a `Comment?`. A string *literal* converts through
-`ExpressibleByStringInterpolation`, but a `String` **variable** does not — so this does not
-compile, and neither does the whole `cmuxTests` target. Every other `#expect` in the same file
-already wraps with `Comment(rawValue:)`. The fork's fence does the same:
-
-```swift
-// SUPERMUX:begin upstream-expect-comment-fix
-// … (upstream: `#expect(execution.status == 0, execution.stderr)`) …
-#expect(execution.status == 0, Comment(rawValue: execution.stderr))
-// SUPERMUX:end upstream-expect-comment-fix
-```
-
-Verified at this merge: the file is byte-identical to upstream apart from this fence, upstream had
-NOT fixed it as of `06bc29603c`, and with the fix `xcodebuild build-for-testing -scheme cmux-unit`
-succeeds.
-
-Re-apply / retirement: **delete the fence and take upstream's line as soon as upstream fixes it.**
-A merge conflict on exactly these lines is the expected signal that they did — resolve it by
-taking upstream and removing this row, not by re-applying the fence. If upstream instead
-restructures the assertion, the only requirement is that the second argument be a `Comment?`
-(wrap any `String` variable in `Comment(rawValue:)`).
+Upstream fixed it in `b0b96e7b34` ("Fix Swift Testing diagnostic type") with
+`#expect(execution.status == 0, "\(execution.stderr)")`. Exactly as the retirement note predicted,
+that produced a conflict on these lines at the 0.64.22 merge; it was resolved by taking upstream
+and deleting the fence. Nothing to re-apply — the file is byte-identical to upstream again.
 
 ### 143. `Packages/macOS/CmuxSettingsUI/.../Sections/SupermuxAISettingsCard.swift` — unfenced
 
