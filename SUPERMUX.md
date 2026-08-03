@@ -237,6 +237,11 @@ git submodule update --init --recursive
 # run the supermux unit tests too (see Building below)
 
 # 7. Commit the merge, summarize for the user what came in and what needed manual resolution.
+
+# 8. Add a section to SUPERMUX-UPGRADES.md: what a supermux USER notices after this update
+#    (changed shortcut defaults, changed behavior, new upstream features, fixes they will feel,
+#    what should feel identical, watch-outs, and any open decision the merge surfaced).
+#    Mechanical detail stays in SUPERMUX-TOUCHPOINTS.md; this is the human-readable log.
 ```
 
 Conflict heuristics:
@@ -257,6 +262,7 @@ Conflict heuristics:
 |------|---------|
 | `SUPERMUX.md` | This file — fork context, rules, merge playbook |
 | `SUPERMUX-TOUCHPOINTS.md` | Registry of every modified upstream file |
+| `SUPERMUX-UPGRADES.md` | User-facing "what changes for you" notes, one section per upstream merge |
 | `Packages/SupermuxKit/` | Supermux macOS domain package (models, services, persistence) |
 | `Sources/Supermux/` | App-target UI and glue code (new files only) |
 | `Packages/Shared/SupermuxMobileCore/` | `mobile.supermux.*` wire contract shared by Mac + phone |
