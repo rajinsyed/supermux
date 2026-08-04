@@ -14882,7 +14882,9 @@ struct SidebarFooterButtons: View {
                         SidebarMobileConnectButton()
                     }
                     if shows(.help) {
-                        SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
+                        // SUPERMUX:begin sidebar-usage-button
+                        SupermuxUsageMenuButton(onSendFeedback: onSendFeedback)
+                        // SUPERMUX:end sidebar-usage-button
                     }
                 }
             }
