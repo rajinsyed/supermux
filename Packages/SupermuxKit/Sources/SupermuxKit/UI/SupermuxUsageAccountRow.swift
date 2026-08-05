@@ -32,14 +32,17 @@ struct SupermuxUsageAccountRow: View {
                 if isSwitching {
                     ProgressView()
                         .controlSize(.mini)
+                        .transition(.opacity)
                 } else {
                     if !isExpanded {
                         tightestPercent
+                            .transition(.opacity)
                     }
                     switchButton
                 }
             }
             .frame(height: 20)
+            .animation(.smooth(duration: 0.2), value: isSwitching)
             .contextMenu {
                 if let onSetEnabled {
                     if account.isDisabled {
@@ -55,12 +58,13 @@ struct SupermuxUsageAccountRow: View {
             }
             if isExpanded, hasWindows {
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
-                        SupermuxUsageBarRow(window: window)
+                    ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { index, window in
+                        SupermuxUsageBarRow(window: window, appearDelay: Double(index) * 0.04)
                     }
                 }
                 .padding(.leading, 14)
                 .padding(.bottom, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }
@@ -70,7 +74,7 @@ struct SupermuxUsageAccountRow: View {
     private var disclosureButton: some View {
         Button {
             guard hasWindows else { return }
-            withAnimation(.easeOut(duration: 0.12)) {
+            withAnimation(.snappy(duration: 0.25, extraBounce: 0)) {
                 isExpanded.toggle()
             }
         } label: {
@@ -127,7 +131,7 @@ struct SupermuxUsageAccountRow: View {
                     .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.accentColor.opacity(0.12)))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SupermuxPressEffectButtonStyle())
             .disabled(switchDisabled)
             .help(String(
                 format: String(localized: "supermux.usage.switch.accessibility", defaultValue: "Switch to %@"),

@@ -126,7 +126,7 @@ struct SupermuxUsageMenuButton: View {
             .foregroundStyle(.secondary)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SupermuxPressEffectButtonStyle())
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 }

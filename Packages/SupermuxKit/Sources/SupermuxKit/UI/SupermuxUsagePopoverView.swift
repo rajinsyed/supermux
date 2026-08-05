@@ -18,6 +18,11 @@ public struct SupermuxUsagePopoverView: View {
     /// Host hook for `cswap enable/disable <slot>`.
     private let onSetAccountEnabled: (Int, Bool) -> Void
 
+    /// Whole turns completed by the refresh glyph; each refresh start adds
+    /// one, so the icon spins exactly once per refresh and never snaps back.
+    @State private var refreshTurns = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     public init(
         model: SupermuxUsageModel,
         onRefresh: @escaping () -> Void,
@@ -61,9 +66,17 @@ public struct SupermuxUsagePopoverView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
                     .opacity(model.isRefreshing ? 0.4 : 1)
+                    .animation(.easeOut(duration: 0.2), value: model.isRefreshing)
+                    .rotationEffect(.degrees(Double(refreshTurns) * 360))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SupermuxPressEffectButtonStyle())
             .disabled(model.isRefreshing)
+            .onChange(of: model.isRefreshing) { _, refreshing in
+                guard refreshing, !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.7)) {
+                    refreshTurns += 1
+                }
+            }
             .help(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
             .accessibilityLabel(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
         }
@@ -102,9 +115,11 @@ public struct SupermuxUsagePopoverView: View {
                 }
                 if let error = model.lastSwitchError {
                     switchErrorRow(error)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 }
             }
         }
+        .animation(.smooth(duration: 0.25), value: model.lastSwitchError)
     }
 
     private func switchErrorRow(_ message: String) -> some View {
@@ -124,7 +139,7 @@ public struct SupermuxUsagePopoverView: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SupermuxPressEffectButtonStyle())
             .accessibilityLabel(String(localized: "supermux.usage.switch.dismissError", defaultValue: "Dismiss"))
         }
         .padding(6)
@@ -162,11 +177,12 @@ public struct SupermuxUsagePopoverView: View {
         }
     }
 
-    /// A provider's meter rows as one tight block.
+    /// A provider's meter rows as one tight block; the appear sweep staggers
+    /// top-to-bottom so the popover settles in one quick cascade.
     private func windowRows(_ windows: [SupermuxUsageWindow]) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
-                SupermuxUsageBarRow(window: window)
+            ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.offset) { index, window in
+                SupermuxUsageBarRow(window: window, appearDelay: Double(index) * 0.05)
             }
         }
     }
@@ -186,6 +202,7 @@ public struct SupermuxUsagePopoverView: View {
                 Spacer(minLength: 4)
                 switchToBestButton
             }
+            .animation(.smooth(duration: 0.2), value: model.isSwitchingToBest)
             ForEach(accounts) { account in
                 SupermuxUsageAccountRow(
                     account: account,
@@ -223,7 +240,7 @@ public struct SupermuxUsagePopoverView: View {
                 .background(Capsule().fill(Color.accentColor.opacity(0.14)))
                 .foregroundStyle(Color.accentColor)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SupermuxPressEffectButtonStyle())
             .disabled(model.switchingToSlot != nil)
             .help(String(localized: "supermux.usage.switchBest.help", defaultValue: "Switch to the account with the most quota left"))
             .accessibilityLabel(String(localized: "supermux.usage.switchBest.help", defaultValue: "Switch to the account with the most quota left"))
@@ -334,8 +351,17 @@ public struct SupermuxUsagePopoverView: View {
 /// One usage window as a single-line "meter" row: the progress fill sits
 /// behind the text (label left, reset countdown and percent right), so each
 /// window costs one compact line instead of a label line plus a bar line.
+///
+/// The fill sweeps in from zero on first appearance (rows stagger via
+/// `appearDelay`) and live percent changes animate both the fill and the
+/// rolling percent digits. Decorative motion is skipped under Reduce Motion.
 struct SupermuxUsageBarRow: View {
     let window: SupermuxUsageWindow
+    /// Per-row stagger for the appear sweep; 0 means no extra delay.
+    var appearDelay: TimeInterval = 0
+
+    @State private var hasAppeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 6) {
@@ -367,11 +393,23 @@ struct SupermuxUsageBarRow: View {
                 .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Self.color(for: window.severity))
                 .frame(minWidth: 28, alignment: .trailing)
+                .contentTransition(.numericText(value: clampedPercent))
+                .animation(.smooth(duration: 0.45), value: clampedPercent)
         }
         .padding(.horizontal, 7)
         .frame(height: 21)
         .background(meterFill)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onAppear {
+            guard !hasAppeared else { return }
+            if reduceMotion {
+                hasAppeared = true
+            } else {
+                withAnimation(.smooth(duration: 0.55).delay(appearDelay)) {
+                    hasAppeared = true
+                }
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
@@ -386,10 +424,16 @@ struct SupermuxUsageBarRow: View {
                 if clampedPercent > 0 {
                     Rectangle()
                         .fill(Self.color(for: window.severity).opacity(0.3))
-                        .frame(width: max(6, proxy.size.width * clampedPercent / 100))
+                        .frame(width: max(6, proxy.size.width * displayedPercent / 100))
+                        .animation(.smooth(duration: 0.5), value: clampedPercent)
                 }
             }
         }
+    }
+
+    /// Zero until the appear sweep starts, then the live value.
+    private var displayedPercent: Double {
+        hasAppeared ? clampedPercent : 0
     }
 
     private var clampedPercent: Double {

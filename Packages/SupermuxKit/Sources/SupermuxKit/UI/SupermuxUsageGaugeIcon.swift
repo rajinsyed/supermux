@@ -29,5 +29,7 @@ public struct SupermuxUsageGaugeIcon: View {
             }
         }
         .frame(width: pointSize, height: pointSize)
+        // Poll updates ease the ring to its new fill instead of jumping.
+        .animation(.smooth(duration: 0.6), value: window?.percent)
     }
 }
