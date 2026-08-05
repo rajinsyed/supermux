@@ -856,3 +856,43 @@ struct SupermuxUsageEnableToggleStalenessTests {
         #expect(shown?.fetchedAt == now)
     }
 }
+
+@Suite
+@MainActor
+struct SupermuxUsageNoOpSwitchStalenessTests {
+    private nonisolated static func claudeState(
+        measured: Date
+    ) -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot> {
+        .ready(SupermuxClaudeUsageSnapshot(
+            source: .cswap,
+            accounts: [SupermuxClaudeAccountUsage(
+                slot: 1, email: "same@example.com", displayName: nil, isActive: true,
+                status: .ok, windows: [], fetchedAt: measured
+            )],
+            fetchedAt: Date()
+        ))
+    }
+
+    /// A no-op switch (.alreadyActive) leaves the active account unchanged,
+    /// so the forced refresh must keep the staleness gate: an older cached
+    /// snapshot must not regress the gauge.
+    @Test func alreadyActiveSwitchKeepsStalenessGate() async {
+        let now = Date()
+        let fetches = SupermuxUsageModelThrottleTests.Counter()
+        let model = SupermuxUsageModel(
+            claudeFetch: {
+                fetches.increment()
+                return fetches.count == 1
+                    ? Self.claudeState(measured: now)
+                    : Self.claudeState(measured: now.addingTimeInterval(-3600))
+            },
+            codexFetch: { .notConfigured },
+            claudeSwitch: { _ in .alreadyActive(email: "same@example.com") },
+            minimumRefreshInterval: 3600
+        )
+        await model.refresh()
+        await model.switchClaudeAccount(toSlot: 1)
+        #expect(fetches.count == 2)
+        #expect(model.claude.snapshot?.activeAccount?.fetchedAt == now)
+    }
+}

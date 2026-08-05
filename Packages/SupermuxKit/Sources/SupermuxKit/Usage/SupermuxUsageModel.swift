@@ -236,8 +236,11 @@ public final class SupermuxUsageModel {
             // The floor exists to protect the usage endpoint from UI spam; a
             // completed switch is a real state change, and the cswap path
             // (the only way to get here) serves from cswap's cache anyway.
+            // Only a REAL switch bypasses the staleness gate: .alreadyActive
+            // left the active account in place, so the gate's same-account
+            // comparison stays valid and must keep stale cache out.
             accountStateGeneration &+= 1
-            await refresh(forced: true, activeAccountChanged: true)
+            await refresh(forced: true, activeAccountChanged: result.didChangeActiveAccount)
         case .failed(let message):
             lastSwitchError = message
         }
@@ -260,7 +263,7 @@ public final class SupermuxUsageModel {
         case .switched, .alreadyActive:
             lastSwitchError = nil
             accountStateGeneration &+= 1
-            await refresh(forced: true, activeAccountChanged: true)
+            await refresh(forced: true, activeAccountChanged: result.didChangeActiveAccount)
         case .failed(let message):
             lastSwitchError = message
         }

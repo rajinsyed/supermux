@@ -9,6 +9,14 @@ public enum SupermuxCswapSwitchResult: Sendable, Equatable {
     /// cswap refused or failed; `message` is its human-readable reason.
     case failed(message: String)
 
+    /// Whether the active Claude Code login actually changed — only a real
+    /// `.switched` may bypass the model's cross-account staleness gate;
+    /// `.alreadyActive` left the same account in place.
+    public var didChangeActiveAccount: Bool {
+        if case .switched = self { return true }
+        return false
+    }
+
     /// Parses cswap's switch JSON envelope
     /// (`{"switched": Bool, "to": {"number", "email"}, "reason", "message"}`),
     /// or its error envelope (`{"error": {"type", "message"}}`).
