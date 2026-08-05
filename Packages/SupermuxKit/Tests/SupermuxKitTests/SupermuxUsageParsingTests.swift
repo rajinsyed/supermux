@@ -115,7 +115,7 @@ struct SupermuxCodexUsageParserTests {
         #expect(snapshot.planType == "pro")
     }
 
-    @Test func parsesBothWindowsAndIgnoresPromotionalPools() throws {
+    @Test func parsesScopedPoolsButHidesCodexSpark() throws {
         let full = Data("""
         {
           "plan_type": "pro",
@@ -129,16 +129,23 @@ struct SupermuxCodexUsageParserTests {
               "rate_limit": {
                 "primary_window": {"used_percent": 12, "limit_window_seconds": 604800, "reset_at": 1786449899}
               }
+            },
+            {
+              "limit_name": "Some-Future-Pool",
+              "rate_limit": {
+                "primary_window": {"used_percent": 55, "limit_window_seconds": 604800, "reset_at": 1786449899}
+              }
             }
           ]
         }
         """.utf8)
         let snapshot = try #require(SupermuxCodexUsageParser.parseAPIResponse(jsonData: full))
-        // Promotional per-model pools (additional_rate_limits) are dropped:
-        // only the real 5h + weekly windows render.
-        #expect(snapshot.windows.count == 2)
+        // Codex Spark is on the hidden list; other scoped pools still render.
+        #expect(snapshot.windows.count == 3)
         #expect(snapshot.windows.first { $0.kind == .session }?.percent == 6)
         #expect(snapshot.windows.first { $0.kind == .weekly }?.percent == 42)
+        #expect(snapshot.windows.first { $0.kind == .scoped("Some-Future-Pool") }?.percent == 55)
+        #expect(snapshot.windows.contains { $0.kind == .scoped("GPT-5.3-Codex-Spark") } == false)
     }
 
     @Test func rejectsPayloadWithoutWindows() {

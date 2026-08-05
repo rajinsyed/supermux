@@ -9,6 +9,10 @@ import Foundation
 /// return only that window as `primary_window` (observed live: a weekly
 /// window at 86% served as primary with `secondary_window: null`).
 enum SupermuxCodexUsageParser {
+    /// Scoped pools excluded from display (lowercased `limit_name`s).
+    /// Currently just the promotional Codex Spark pool.
+    static let hiddenScopedLimitNames: Set<String> = ["gpt-5.3-codex-spark"]
+
     /// Seconds in the ~5-hour session window (REST: `limit_window_seconds`).
     private static let sessionWindowSeconds = 18000.0
     /// The session window in minutes (session logs: `window_minutes`).
@@ -25,10 +29,22 @@ enum SupermuxCodexUsageParser {
                 .compactMap { $0 }
                 .map { window(fromAPI: $0) }
         }
-        // `additional_rate_limits` (promotional per-model pools like
-        // "GPT-5.3-Codex-Spark") are deliberately NOT rendered: they don't
-        // gate normal Codex use and just add noise next to the real 5h/weekly
-        // windows.
+        for extra in payload.additionalRateLimits ?? [] {
+            guard let name = extra.limitName, !name.isEmpty else { continue }
+            // The promotional Codex Spark pool is hidden by user request; other
+            // scoped pools keep rendering (surfacing only their tightest window).
+            if Self.hiddenScopedLimitNames.contains(name.lowercased()) { continue }
+            let candidates = [extra.rateLimit?.primaryWindow, extra.rateLimit?.secondaryWindow]
+                .compactMap { $0 }
+                .map { window(fromAPI: $0) }
+            if let tightest = candidates.tightest {
+                windows.append(SupermuxUsageWindow(
+                    kind: .scoped(name),
+                    percent: tightest.percent,
+                    resetsAt: tightest.resetsAt
+                ))
+            }
+        }
         guard !windows.isEmpty else { return nil }
         return SupermuxCodexUsageSnapshot(
             source: .api,
@@ -91,9 +107,12 @@ enum SupermuxCodexUsageParser {
     private struct APIPayload: Decodable {
         let planType: String?
         let rateLimit: RateLimit?
+        let additionalRateLimits: [AdditionalRateLimit]?
+
         enum CodingKeys: String, CodingKey {
             case planType = "plan_type"
             case rateLimit = "rate_limit"
+            case additionalRateLimits = "additional_rate_limits"
         }
 
         struct RateLimit: Decodable {
@@ -103,6 +122,16 @@ enum SupermuxCodexUsageParser {
             enum CodingKeys: String, CodingKey {
                 case primaryWindow = "primary_window"
                 case secondaryWindow = "secondary_window"
+            }
+        }
+
+        struct AdditionalRateLimit: Decodable {
+            let limitName: String?
+            let rateLimit: RateLimit?
+
+            enum CodingKeys: String, CodingKey {
+                case limitName = "limit_name"
+                case rateLimit = "rate_limit"
             }
         }
 

@@ -82,7 +82,15 @@ struct SupermuxUsageAccountRow: View {
 
     @ViewBuilder
     private var tightestPercent: some View {
-        if let tightest = account.windows.tightest, case .ok = account.status {
+        if let problem = SupermuxUsageAccountStatusLabel.text(for: account.status) {
+            // Credential problems read like cswap's TUI: a short amber label
+            // ("token expired", "re-login needed") instead of a percent. The
+            // windows shown on expand may be last-good data.
+            Text(problem)
+                .font(.system(size: 9.5))
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+        } else if let tightest = account.windows.tightest {
             Text(verbatim: SupermuxUsageBarRow.percentText(tightest.percent))
                 .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(SupermuxUsageBarRow.color(for: tightest.severity))

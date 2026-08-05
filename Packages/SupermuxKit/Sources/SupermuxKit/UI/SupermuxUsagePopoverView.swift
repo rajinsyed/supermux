@@ -121,11 +121,25 @@ public struct SupermuxUsagePopoverView: View {
 
     @ViewBuilder
     private func accountWindows(_ account: SupermuxClaudeAccountUsage) -> some View {
+        // Credential problems on the ACTIVE account get an amber note above
+        // whatever (possibly last-good) windows exist — mirroring cswap's TUI.
+        if let problem = SupermuxUsageAccountStatusLabel.text(for: account.status) {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.orange)
+                Text(problem)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+            }
+        }
         if account.windows.isEmpty {
-            noteRow(String(
-                localized: "supermux.usage.noData",
-                defaultValue: "No usage data yet"
-            ))
+            if account.status == .ok {
+                noteRow(String(
+                    localized: "supermux.usage.noData",
+                    defaultValue: "No usage data yet"
+                ))
+            }
         } else {
             ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
                 SupermuxUsageBarRow(window: window)
