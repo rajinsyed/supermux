@@ -175,6 +175,7 @@ public final class SupermuxUsageModel {
         defer { isRefreshing = false }
         // repeat, not recursion: recursing would re-enter before the defer
         // clears isRefreshing and trip the guard above.
+        var mutationDriven = forced
         repeat {
             pendingForcedRefresh = false
             lastPassStartedAt = Date()
@@ -194,9 +195,19 @@ public final class SupermuxUsageModel {
             // Results measured before a completed cswap mutation describe
             // the old active/enabled state; drop them rather than paint them.
             if generation == accountStateGeneration {
-                claude = Self.merging(current: claude, incoming: newClaude)
+                // A mutation-driven pass bypasses the Claude staleness gate:
+                // the ACTIVE ACCOUNT just changed, so comparing the new
+                // account's (possibly older) cached measurement against the
+                // previous account's is meaningless — the switched-to
+                // account must be shown regardless.
+                claude = Self.merging(
+                    current: claude, incoming: newClaude, preferIncoming: mutationDriven
+                )
                 codex = Self.merging(current: codex, incoming: newCodex)
             }
+            // A queued follow-up only exists because a mutation completed
+            // mid-pass, so the next iteration is mutation-driven too.
+            mutationDriven = pendingForcedRefresh
         } while pendingForcedRefresh
         return .refreshed
     }
@@ -265,14 +276,20 @@ public final class SupermuxUsageModel {
         }
     }
 
+    /// `preferIncoming` skips the staleness gate for mutation-driven passes:
+    /// after an account switch the incoming snapshot describes a DIFFERENT
+    /// active account, so cross-account measurement-time comparison would
+    /// wrongly discard it whenever the switched-to account's cache is older.
     static func merging<Snapshot: SupermuxTimestampedUsageSnapshot>(
         current: SupermuxUsageProviderState<Snapshot>,
-        incoming: SupermuxUsageProviderState<Snapshot>
+        incoming: SupermuxUsageProviderState<Snapshot>,
+        preferIncoming: Bool = false
     ) -> SupermuxUsageProviderState<Snapshot> {
         switch (current, incoming) {
         case (.ready, .failed):
             return current
-        case (.ready(let held), .ready(let fresh)) where fresh.measuredAt < held.measuredAt:
+        case (.ready(let held), .ready(let fresh))
+            where !preferIncoming && fresh.measuredAt < held.measuredAt:
             // A degraded pass can serve an OLDER measurement (Codex falls
             // back to the last session log on transient API trouble; a cswap
             // pass can carry only cached lastGoodUsage). Compare measurement

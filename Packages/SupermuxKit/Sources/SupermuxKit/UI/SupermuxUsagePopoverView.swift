@@ -107,18 +107,23 @@ public struct SupermuxUsagePopoverView: View {
         .animation(.easeOut(duration: 0.2), value: showUpToDate)
     }
 
-    /// Whether everything on display is genuinely current: every provider is
-    /// either `.ready` or legitimately absent (`.notConfigured` — a user
-    /// without that CLI shouldn't block the acknowledgement). `.failed`,
-    /// `.needsLogin`, and `.loading` all mean "not up to date".
+    /// Whether everything on display is genuinely current — not merely
+    /// `.ready`, since ready can hold a stale or degraded fallback. Claude is
+    /// fresh when its active account's credentials are healthy; Codex when the
+    /// snapshot came from the live API under a valid login. `.notConfigured`
+    /// doesn't block (a user without that CLI has nothing to be stale).
     private var isDisplayedDataFresh: Bool {
-        func isFresh<Snapshot>(_ state: SupermuxUsageProviderState<Snapshot>) -> Bool {
-            switch state {
-            case .ready, .notConfigured: true
-            case .failed, .needsLogin, .loading: false
-            }
+        let claudeFresh: Bool = switch model.claude {
+        case .notConfigured: true
+        case .ready(let snapshot): snapshot.activeAccount?.status == .ok
+        case .failed, .needsLogin, .loading: false
         }
-        return isFresh(model.claude) && isFresh(model.codex)
+        let codexFresh: Bool = switch model.codex {
+        case .notConfigured: true
+        case .ready(let snapshot): snapshot.source == .api && !snapshot.needsRelogin
+        case .failed, .needsLogin, .loading: false
+        }
+        return claudeFresh && codexFresh
     }
 
     /// Flashes the "Up to date" note for a couple of seconds.

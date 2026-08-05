@@ -770,3 +770,45 @@ struct SupermuxUsageModelConcurrencyRegressionTests {
         }
     }
 }
+
+@Suite
+@MainActor
+struct SupermuxUsageSwitchStalenessGateTests {
+    private nonisolated static func claudeState(
+        email: String, measured: Date
+    ) -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot> {
+        .ready(SupermuxClaudeUsageSnapshot(
+            source: .cswap,
+            accounts: [SupermuxClaudeAccountUsage(
+                slot: 1, email: email, displayName: nil, isActive: true,
+                status: .ok, windows: [], fetchedAt: measured
+            )],
+            fetchedAt: Date()
+        ))
+    }
+
+    /// Switching to an account whose cswap cache is OLDER than the previous
+    /// account's must still show the switched-to account: the mutation-driven
+    /// pass bypasses the cross-account staleness gate.
+    @Test func switchToAccountWithOlderCacheStillLandsOnScreen() async {
+        let now = Date()
+        let fetches = SupermuxUsageModelThrottleTests.Counter()
+        let model = SupermuxUsageModel(
+            claudeFetch: {
+                fetches.increment()
+                // Pass 1: currently-active account, freshly measured.
+                // Pass 2 (post-switch): new active account, older cache.
+                return fetches.count == 1
+                    ? Self.claudeState(email: "fresh@example.com", measured: now)
+                    : Self.claudeState(email: "older-cache@example.com", measured: now.addingTimeInterval(-3600))
+            },
+            codexFetch: { .notConfigured },
+            claudeSwitch: { _ in .switched(toEmail: "older-cache@example.com") },
+            minimumRefreshInterval: 3600
+        )
+        await model.refresh()
+        #expect(model.claude.snapshot?.activeAccount?.email == "fresh@example.com")
+        await model.switchClaudeAccount(toSlot: 2)
+        #expect(model.claude.snapshot?.activeAccount?.email == "older-cache@example.com")
+    }
+}
