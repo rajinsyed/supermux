@@ -4,6 +4,11 @@ public import SwiftUI
 /// compact bars with reset countdowns, extra cswap accounts collapsed below
 /// the active one, and a freshness footer.
 ///
+/// Visual language: each provider is a soft rounded card with a brand-colored
+/// dot, a single type scale (11 semibold headers, 10 labels, 9 metadata), a
+/// fixed-width right-aligned percent column so every row lines up, and
+/// hairline separators inside cards instead of full-width dividers.
+///
 /// Purely presentational — reads the shared ``SupermuxUsageModel`` and calls
 /// back into the host for refresh. Kept in the package so previews and tests
 /// exercise it without the app target.
@@ -32,15 +37,14 @@ public struct SupermuxUsagePopoverView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             header
-            claudeSection
-            Divider()
-            codexSection
+            card { claudeSection }
+            card { codexSection }
             footer
         }
         .padding(12)
-        .frame(width: 264, alignment: .leading)
+        .frame(width: 272, alignment: .leading)
     }
 
     private var header: some View {
@@ -48,17 +52,48 @@ public struct SupermuxUsagePopoverView: View {
             Text(String(localized: "supermux.usage.title", defaultValue: "Usage Limits"))
                 .font(.system(size: 12, weight: .semibold))
             Spacer(minLength: 0)
-            Button(action: onRefresh) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .opacity(model.isRefreshing ? 0.4 : 1)
+            if model.isRefreshing {
+                ProgressView()
+                    .controlSize(.mini)
+            } else {
+                Button(action: onRefresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
+                .accessibilityLabel(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
             }
-            .buttonStyle(.plain)
-            .disabled(model.isRefreshing)
-            .help(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
-            .accessibilityLabel(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
         }
+        .frame(height: 16)
+        .padding(.horizontal, 2)
+    }
+
+    /// One provider card: quiet fill, hairline border, continuous corners.
+    private func card(@ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            content()
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06))
+        )
+    }
+
+    /// Hairline used INSIDE cards (a full `Divider` reads too heavy there).
+    private var hairline: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.06))
+            .frame(height: 1)
     }
 
     // MARK: - Claude
@@ -67,6 +102,7 @@ public struct SupermuxUsagePopoverView: View {
     private var claudeSection: some View {
         providerHeader(
             title: String(localized: "supermux.usage.claude", defaultValue: "Claude Code"),
+            dotColor: Self.claudeBrandColor,
             detail: claudeDetail
         )
         switch model.claude {
@@ -90,6 +126,8 @@ public struct SupermuxUsagePopoverView: View {
             }
             let others = snapshot.accounts.filter { $0.id != snapshot.activeAccount?.id }
             if !others.isEmpty {
+                hairline
+                    .padding(.top, 1)
                 otherAccounts(others)
             }
             if let error = model.lastSwitchError {
@@ -114,12 +152,15 @@ public struct SupermuxUsagePopoverView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.tertiary)
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(String(localized: "supermux.usage.switch.dismissError", defaultValue: "Dismiss"))
         }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 5).fill(Color.orange.opacity(0.08)))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.orange.opacity(0.09)))
     }
 
     private var claudeDetail: String? {
@@ -149,26 +190,35 @@ public struct SupermuxUsagePopoverView: View {
                 ))
             }
         } else {
-            ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
+            windowBars(account.windows)
+        }
+    }
+
+    /// A provider's bars as one block with consistent internal spacing.
+    private func windowBars(_ windows: [SupermuxUsageWindow]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
                 SupermuxUsageBarRow(window: window)
             }
         }
     }
 
     /// Non-active cswap accounts, one compact line each: the tightest window
-    /// percent plus the account label, with a switch action on hover — the
-    /// cswap `switch <slot>` feature, one click from the tracker.
+    /// percent plus the account label, with a one-click switch action — the
+    /// cswap `switch <slot>` feature inside the tracker.
     @ViewBuilder
     private func otherAccounts(_ accounts: [SupermuxClaudeAccountUsage]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(String(localized: "supermux.usage.otherAccounts", defaultValue: "Other accounts"))
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .kerning(0.4)
                     .foregroundStyle(.tertiary)
                     .textCase(.uppercase)
                 Spacer(minLength: 4)
                 switchToBestButton
             }
+            .frame(height: 16)
             ForEach(accounts) { account in
                 SupermuxUsageAccountRow(
                     account: account,
@@ -183,7 +233,6 @@ public struct SupermuxUsagePopoverView: View {
                 )
             }
         }
-        .padding(.top, 2)
     }
 
     /// cswap's `switch --strategy best`: jump to the account with the most
@@ -197,14 +246,15 @@ public struct SupermuxUsagePopoverView: View {
             Button(action: onSwitchToBest) {
                 HStack(spacing: 3) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 7.5))
+                        .font(.system(size: 7))
                     Text(String(localized: "supermux.usage.switchBest", defaultValue: "Best"))
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 8.5, weight: .semibold))
                 }
                 .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+                .padding(.vertical, 2.5)
+                .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                 .foregroundStyle(Color.accentColor)
+                .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .disabled(model.switchingToSlot != nil)
@@ -213,13 +263,13 @@ public struct SupermuxUsagePopoverView: View {
         }
     }
 
-
     // MARK: - Codex
 
     @ViewBuilder
     private var codexSection: some View {
         providerHeader(
             title: String(localized: "supermux.usage.codex", defaultValue: "Codex"),
+            dotColor: Self.codexBrandColor,
             detail: codexDetail
         )
         switch model.codex {
@@ -238,9 +288,7 @@ public struct SupermuxUsagePopoverView: View {
         case .failed(let message):
             noteRow(message)
         case .ready(let snapshot):
-            ForEach(Array(snapshot.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
-                SupermuxUsageBarRow(window: window)
-            }
+            windowBars(snapshot.windows)
             if snapshot.source == .sessionLog {
                 noteRow(String(
                     localized: "supermux.usage.codex.fromSessionLog",
@@ -257,34 +305,42 @@ public struct SupermuxUsagePopoverView: View {
 
     // MARK: - Shared pieces
 
-    private func providerHeader(title: String, detail: String?) -> some View {
+    /// Anthropic's clay orange — identifies the Claude card at a glance.
+    static let claudeBrandColor = Color(red: 0.85, green: 0.47, blue: 0.34)
+    /// OpenAI's green-teal — identifies the Codex card.
+    static let codexBrandColor = Color(red: 0.06, green: 0.64, blue: 0.50)
+
+    private func providerHeader(title: String, dotColor: Color, detail: String?) -> some View {
         HStack(spacing: 6) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 6, height: 6)
             Text(title)
                 .font(.system(size: 11, weight: .semibold))
+            Spacer(minLength: 6)
             if let detail {
                 Text(detail)
-                    .font(.system(size: 10))
+                    .font(.system(size: 9.5))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            Spacer(minLength: 0)
         }
     }
 
     private var loadingRow: some View {
         HStack(spacing: 6) {
             ProgressView()
-                .controlSize(.small)
+                .controlSize(.mini)
             Text(String(localized: "supermux.usage.loading", defaultValue: "Loading…"))
-                .font(.system(size: 10.5))
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
     }
 
     private func noteRow(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10.5))
+            .font(.system(size: 10))
             .foregroundStyle(.secondary)
             .lineLimit(2)
     }
@@ -311,29 +367,35 @@ public struct SupermuxUsagePopoverView: View {
                 .font(.system(size: 9).monospacedDigit())
                 .foregroundStyle(.tertiary)
             }
+            .padding(.horizontal, 2)
         }
     }
 }
 
 /// One labeled usage bar: window name, percent, progress track, reset countdown.
+///
+/// The percent sits in a fixed-width trailing column so stacked bars align
+/// into a clean grid; the countdown right-aligns against it.
 struct SupermuxUsageBarRow: View {
     let window: SupermuxUsageWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 3.5) {
+            HStack(spacing: 5) {
                 Text(label)
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 // cswap's "(ahead)" pace marker: usage is outrunning the
                 // elapsed fraction of the weekly window.
                 if window.aheadOfPace == true {
                     Text(String(localized: "supermux.usage.aheadOfPace", defaultValue: "ahead of pace"))
-                        .font(.system(size: 8.5, weight: .medium))
+                        .font(.system(size: 8, weight: .medium))
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.orange.opacity(0.14)))
+                        .background(Capsule().fill(Color.orange.opacity(0.13)))
                         .foregroundStyle(.orange)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if let resetsAt = window.resetsAt, resetsAt > Date() {
@@ -343,10 +405,12 @@ struct SupermuxUsageBarRow: View {
                     ))
                     .font(.system(size: 9).monospacedDigit())
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
                 }
                 Text(verbatim: Self.percentText(clampedPercent))
                     .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
                     .foregroundStyle(Self.color(for: window.severity))
+                    .frame(minWidth: 30, alignment: .trailing)
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
@@ -354,7 +418,7 @@ struct SupermuxUsageBarRow: View {
                         .fill(Color.primary.opacity(0.08))
                     Capsule()
                         .fill(Self.color(for: window.severity))
-                        .frame(width: max(3, proxy.size.width * clampedPercent / 100))
+                        .frame(width: max(4, proxy.size.width * clampedPercent / 100))
                 }
             }
             .frame(height: 4)
