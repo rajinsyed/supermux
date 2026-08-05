@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// One non-active cswap account line in the usage popover: label, tightest
-/// window percent, and a hover-revealed Switch action (cswap's account swap,
-/// one click away). Disabled (out-of-rotation) accounts render dimmed but
-/// stay explicitly switchable, matching `cswap switch <slot>` semantics.
+/// One non-active cswap account in the usage popover.
+///
+/// Collapsed: a single line — disclosure chevron, label, tightest-window
+/// percent, and an always-visible switch button (hover-revealed controls are
+/// deliberately avoided: NSPopover-hosted SwiftUI hover regions track with a
+/// vertical offset, making them unreliable). Expanding the row shows every
+/// limit window as the same compact bars the active account uses.
 struct SupermuxUsageAccountRow: View {
     let account: SupermuxClaudeAccountUsage
     /// A switch to THIS account is in flight (row shows a spinner).
@@ -13,46 +16,72 @@ struct SupermuxUsageAccountRow: View {
     /// `nil` when the account has no slot number (cannot be targeted).
     let onSwitch: (() -> Void)?
 
-    @State private var isHovering = false
+    @State private var isExpanded = false
+
+    private var label: String { account.displayName ?? account.email }
+    private var hasWindows: Bool { !account.windows.isEmpty }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(account.displayName ?? account.email)
-                .font(.system(size: 10.5))
-                .foregroundStyle(account.isDisabled ? .tertiary : .secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 4)
-            if isSwitching {
-                ProgressView()
-                    .controlSize(.mini)
-            } else if isHovering, let onSwitch {
-                Button(action: onSwitch) {
-                    Text(String(localized: "supermux.usage.switch", defaultValue: "Switch"))
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.accentColor.opacity(0.16)))
-                        .foregroundStyle(Color.accentColor)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                disclosureButton
+                Spacer(minLength: 4)
+                if isSwitching {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    if !isExpanded {
+                        tightestPercent
+                    }
+                    switchButton
                 }
-                .buttonStyle(.plain)
-                .disabled(switchDisabled)
-                .accessibilityLabel(String(
-                    format: String(localized: "supermux.usage.switch.accessibility", defaultValue: "Switch to %@"),
-                    account.displayName ?? account.email
-                ))
-            } else {
-                status
+            }
+            .frame(height: 18)
+            if isExpanded, hasWindows {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
+                        SupermuxUsageBarRow(window: window)
+                    }
+                }
+                .padding(.leading, 14)
+                .padding(.bottom, 2)
             }
         }
-        .frame(height: 18)
-        .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
-        .accessibilityElement(children: .combine)
+    }
+
+    /// The chevron + label toggle the expansion together, so the whole
+    /// leading side is one generous click target.
+    private var disclosureButton: some View {
+        Button {
+            guard hasWindows else { return }
+            withAnimation(.easeOut(duration: 0.12)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 7, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .opacity(hasWindows ? 1 : 0)
+                Text(label)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(account.isDisabled ? .tertiary : .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!hasWindows)
+        .accessibilityLabel(label)
+        .accessibilityValue(isExpanded
+            ? String(localized: "supermux.usage.account.expanded", defaultValue: "expanded")
+            : String(localized: "supermux.usage.account.collapsed", defaultValue: "collapsed"))
     }
 
     @ViewBuilder
-    private var status: some View {
+    private var tightestPercent: some View {
         if let tightest = account.windows.tightest, case .ok = account.status {
             Text(verbatim: SupermuxUsageBarRow.percentText(tightest.percent))
                 .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
@@ -61,6 +90,29 @@ struct SupermuxUsageAccountRow: View {
             Text(String(localized: "supermux.usage.account.unavailable", defaultValue: "—"))
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
+        }
+    }
+
+    @ViewBuilder
+    private var switchButton: some View {
+        if let onSwitch {
+            Button(action: onSwitch) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(Color.accentColor.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+            .disabled(switchDisabled)
+            .help(String(
+                format: String(localized: "supermux.usage.switch.accessibility", defaultValue: "Switch to %@"),
+                label
+            ))
+            .accessibilityLabel(String(
+                format: String(localized: "supermux.usage.switch.accessibility", defaultValue: "Switch to %@"),
+                label
+            ))
         }
     }
 }
