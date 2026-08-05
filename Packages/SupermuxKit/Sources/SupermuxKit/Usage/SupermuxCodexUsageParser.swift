@@ -25,20 +25,10 @@ enum SupermuxCodexUsageParser {
                 .compactMap { $0 }
                 .map { window(fromAPI: $0) }
         }
-        for extra in payload.additionalRateLimits ?? [] {
-            guard let name = extra.limitName, !name.isEmpty else { continue }
-            // Scoped limits (per-model pools) surface only their tightest window.
-            let candidates = [extra.rateLimit?.primaryWindow, extra.rateLimit?.secondaryWindow]
-                .compactMap { $0 }
-                .map { window(fromAPI: $0) }
-            if let tightest = candidates.tightest {
-                windows.append(SupermuxUsageWindow(
-                    kind: .scoped(name),
-                    percent: tightest.percent,
-                    resetsAt: tightest.resetsAt
-                ))
-            }
-        }
+        // `additional_rate_limits` (promotional per-model pools like
+        // "GPT-5.3-Codex-Spark") are deliberately NOT rendered: they don't
+        // gate normal Codex use and just add noise next to the real 5h/weekly
+        // windows.
         guard !windows.isEmpty else { return nil }
         return SupermuxCodexUsageSnapshot(
             source: .api,
@@ -101,12 +91,9 @@ enum SupermuxCodexUsageParser {
     private struct APIPayload: Decodable {
         let planType: String?
         let rateLimit: RateLimit?
-        let additionalRateLimits: [AdditionalRateLimit]?
-
         enum CodingKeys: String, CodingKey {
             case planType = "plan_type"
             case rateLimit = "rate_limit"
-            case additionalRateLimits = "additional_rate_limits"
         }
 
         struct RateLimit: Decodable {
@@ -116,16 +103,6 @@ enum SupermuxCodexUsageParser {
             enum CodingKeys: String, CodingKey {
                 case primaryWindow = "primary_window"
                 case secondaryWindow = "secondary_window"
-            }
-        }
-
-        struct AdditionalRateLimit: Decodable {
-            let limitName: String?
-            let rateLimit: RateLimit?
-
-            enum CodingKeys: String, CodingKey {
-                case limitName = "limit_name"
-                case rateLimit = "rate_limit"
             }
         }
 

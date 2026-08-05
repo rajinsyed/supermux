@@ -115,7 +115,7 @@ struct SupermuxCodexUsageParserTests {
         #expect(snapshot.planType == "pro")
     }
 
-    @Test func parsesBothWindowsAndScopedLimits() throws {
+    @Test func parsesBothWindowsAndIgnoresPromotionalPools() throws {
         let full = Data("""
         {
           "plan_type": "pro",
@@ -134,10 +134,11 @@ struct SupermuxCodexUsageParserTests {
         }
         """.utf8)
         let snapshot = try #require(SupermuxCodexUsageParser.parseAPIResponse(jsonData: full))
-        #expect(snapshot.windows.count == 3)
+        // Promotional per-model pools (additional_rate_limits) are dropped:
+        // only the real 5h + weekly windows render.
+        #expect(snapshot.windows.count == 2)
         #expect(snapshot.windows.first { $0.kind == .session }?.percent == 6)
         #expect(snapshot.windows.first { $0.kind == .weekly }?.percent == 42)
-        #expect(snapshot.windows.first { $0.kind == .scoped("GPT-5.3-Codex-Spark") }?.percent == 12)
     }
 
     @Test func rejectsPayloadWithoutWindows() {
