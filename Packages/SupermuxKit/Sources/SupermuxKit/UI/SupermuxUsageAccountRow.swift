@@ -15,6 +15,9 @@ struct SupermuxUsageAccountRow: View {
     let switchDisabled: Bool
     /// `nil` when the account has no slot number (cannot be targeted).
     let onSwitch: (() -> Void)?
+    /// Context-menu Enable/Disable (cswap auto-rotation hold); `nil` when the
+    /// account has no slot.
+    var onSetEnabled: ((Bool) -> Void)?
 
     @State private var isExpanded = false
 
@@ -37,6 +40,19 @@ struct SupermuxUsageAccountRow: View {
                 }
             }
             .frame(height: 18)
+            .contextMenu {
+                if let onSetEnabled {
+                    if account.isDisabled {
+                        Button(String(localized: "supermux.usage.account.enable", defaultValue: "Enable in Rotation")) {
+                            onSetEnabled(true)
+                        }
+                    } else {
+                        Button(String(localized: "supermux.usage.account.disable", defaultValue: "Hold Out of Rotation")) {
+                            onSetEnabled(false)
+                        }
+                    }
+                }
+            }
             if isExpanded, hasWindows {
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in

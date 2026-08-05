@@ -19,11 +19,17 @@ public struct SupermuxUsageWindow: Sendable, Equatable {
     public let percent: Double
     /// When the window resets, when the provider reported it.
     public let resetsAt: Date?
+    /// cswap's linear pace verdict for weekly windows: `true` when usage is
+    /// meaningfully ahead of the elapsed fraction of the window (you'd run
+    /// out before reset at this rate). `nil` when the source computes no pace
+    /// (5h windows, Codex, direct API, or early in a fresh window).
+    public let aheadOfPace: Bool?
 
-    public init(kind: Kind, percent: Double, resetsAt: Date?) {
+    public init(kind: Kind, percent: Double, resetsAt: Date?, aheadOfPace: Bool? = nil) {
         self.kind = kind
         self.percent = percent
         self.resetsAt = resetsAt
+        self.aheadOfPace = aheadOfPace
     }
 
     /// Severity bucket for coloring bars and the footer gauge.

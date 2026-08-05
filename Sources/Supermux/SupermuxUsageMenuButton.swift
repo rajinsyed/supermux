@@ -72,6 +72,12 @@ struct SupermuxUsageMenuButton: View {
                 },
                 onSwitchAccount: { slot in
                     Task { await SupermuxComposition.usageModel.switchClaudeAccount(toSlot: slot) }
+                },
+                onSwitchToBest: {
+                    Task { await SupermuxComposition.usageModel.switchClaudeToBest() }
+                },
+                onSetAccountEnabled: { slot, enabled in
+                    Task { await SupermuxComposition.usageModel.setClaudeAccountEnabled(enabled, slot: slot) }
                 }
             )
             Divider()

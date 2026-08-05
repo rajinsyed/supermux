@@ -453,6 +453,59 @@ struct SupermuxCswapSwitchResultTests {
 
 @Suite
 @MainActor
+struct SupermuxUsageModelBestAndEnableTests {
+    @Test func switchToBestRefreshesOnSuccess() async {
+        let fetches = SupermuxUsageModelThrottleTests.Counter()
+        let model = SupermuxUsageModel(
+            claudeFetch: {
+                fetches.increment()
+                return .notConfigured
+            },
+            codexFetch: { .notConfigured },
+            claudeSwitchBest: { .switched(toEmail: "best@example.com") },
+            minimumRefreshInterval: 3600
+        )
+        await model.refresh()
+        await model.switchClaudeToBest()
+        #expect(fetches.count == 2)
+        #expect(model.lastSwitchError == nil)
+        #expect(model.isSwitchingToBest == false)
+    }
+
+    @Test func setEnabledFailureSurfacesError() async {
+        let model = SupermuxUsageModel(
+            claudeFetch: { .notConfigured },
+            codexFetch: { .notConfigured },
+            claudeSetEnabled: { _, _ in .failed(message: "unknown account") },
+            minimumRefreshInterval: 3600
+        )
+        await model.setClaudeAccountEnabled(false, slot: 3)
+        #expect(model.lastSwitchError == "unknown account")
+    }
+}
+
+@Suite
+struct SupermuxCswapPaceParsingTests {
+    @Test func weeklyPaceFieldsCarryThrough() throws {
+        let json = Data("""
+        {"schemaVersion":1,"accounts":[{"number":1,"email":"a@b.c","active":true,"usageStatus":"ok",
+          "usage":{
+            "fiveHour":{"pct":10.0},
+            "sevenDay":{"pct":80.0,"aheadOfPace":true,"expectedPct":40.0},
+            "scoped":[{"pct":20.0,"name":"Fable","aheadOfPace":false}]
+          }}]}
+        """.utf8)
+        let snapshot = try #require(SupermuxCswapUsageParser.parse(jsonData: json))
+        let account = try #require(snapshot.activeAccount)
+        #expect(account.windows.first { $0.kind == .weekly }?.aheadOfPace == true)
+        #expect(account.windows.first { $0.kind == .scoped("Fable") }?.aheadOfPace == false)
+        // 5h windows never carry pace.
+        #expect(account.windows.first { $0.kind == .session }?.aheadOfPace == nil)
+    }
+}
+
+@Suite
+@MainActor
 struct SupermuxUsageModelSwitchTests {
     @Test func successfulSwitchRefreshesBypassingFloor() async {
         let fetches = SupermuxUsageModelThrottleTests.Counter()

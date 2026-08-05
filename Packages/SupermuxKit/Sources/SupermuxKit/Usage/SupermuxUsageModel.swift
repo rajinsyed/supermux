@@ -36,6 +36,8 @@ public final class SupermuxUsageModel {
     @ObservationIgnored private let claudeFetch: @Sendable () async -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot>
     @ObservationIgnored private let codexFetch: @Sendable () async -> SupermuxUsageProviderState<SupermuxCodexUsageSnapshot>
     @ObservationIgnored private let claudeSwitch: @Sendable (Int) async -> SupermuxCswapSwitchResult
+    @ObservationIgnored private let claudeSwitchBest: @Sendable () async -> SupermuxCswapSwitchResult
+    @ObservationIgnored private let claudeSetEnabled: @Sendable (Bool, Int) async -> SupermuxCswapSwitchResult
     @ObservationIgnored private let pollInterval: Duration
     /// Hard floor between passes — applied to EVERY refresh entry point, so
     /// neither the poll loop, popover opens, nor the manual refresh button can
@@ -56,6 +58,8 @@ public final class SupermuxUsageModel {
         self.claudeFetch = { await claudeSource.fetch() }
         self.codexFetch = { await codexSource.fetch() }
         self.claudeSwitch = { await claudeSource.switchAccount(toSlot: $0) }
+        self.claudeSwitchBest = { await claudeSource.switchToBestAccount() }
+        self.claudeSetEnabled = { await claudeSource.setAccountEnabled($0, slot: $1) }
         self.pollInterval = pollInterval
         self.minimumRefreshInterval = minimumRefreshInterval
     }
@@ -65,12 +69,16 @@ public final class SupermuxUsageModel {
         claudeFetch: @escaping @Sendable () async -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot>,
         codexFetch: @escaping @Sendable () async -> SupermuxUsageProviderState<SupermuxCodexUsageSnapshot>,
         claudeSwitch: @escaping @Sendable (Int) async -> SupermuxCswapSwitchResult = { _ in .failed(message: "unavailable") },
+        claudeSwitchBest: @escaping @Sendable () async -> SupermuxCswapSwitchResult = { .failed(message: "unavailable") },
+        claudeSetEnabled: @escaping @Sendable (Bool, Int) async -> SupermuxCswapSwitchResult = { _, _ in .failed(message: "unavailable") },
         pollInterval: Duration = .seconds(120),
         minimumRefreshInterval: TimeInterval = 30
     ) {
         self.claudeFetch = claudeFetch
         self.codexFetch = codexFetch
         self.claudeSwitch = claudeSwitch
+        self.claudeSwitchBest = claudeSwitchBest
+        self.claudeSetEnabled = claudeSetEnabled
         self.pollInterval = pollInterval
         self.minimumRefreshInterval = minimumRefreshInterval
     }
@@ -163,6 +171,44 @@ public final class SupermuxUsageModel {
     /// Clears an inline switch-failure note.
     public func dismissSwitchError() {
         lastSwitchError = nil
+    }
+
+    /// `cswap switch --strategy best`: switch to the account with the most
+    /// remaining quota. Uses slot marker -1 for the in-flight indicator
+    /// (no specific target row spins; the Best button itself does).
+    public func switchClaudeToBest() async {
+        guard switchingToSlot == nil else { return }
+        switchingToSlot = -1
+        defer { switchingToSlot = nil }
+        let result = await claudeSwitchBest()
+        switch result {
+        case .switched, .alreadyActive:
+            lastSwitchError = nil
+            lastPassStartedAt = nil
+            await refresh()
+        case .failed(let message):
+            lastSwitchError = message
+        }
+    }
+
+    /// Whether the switch-to-best action is currently in flight.
+    public var isSwitchingToBest: Bool { switchingToSlot == -1 }
+
+    /// `cswap enable/disable <slot>`. Refreshes on success so the row's
+    /// dimmed state follows immediately.
+    public func setClaudeAccountEnabled(_ enabled: Bool, slot: Int) async {
+        guard switchingToSlot == nil else { return }
+        switchingToSlot = slot
+        defer { switchingToSlot = nil }
+        let result = await claudeSetEnabled(enabled, slot)
+        switch result {
+        case .switched, .alreadyActive:
+            lastSwitchError = nil
+            lastPassStartedAt = nil
+            await refresh()
+        case .failed(let message):
+            lastSwitchError = message
+        }
     }
 
     static func merging<Snapshot>(

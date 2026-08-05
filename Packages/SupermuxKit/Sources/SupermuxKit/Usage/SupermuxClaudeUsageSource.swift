@@ -68,6 +68,38 @@ public actor SupermuxClaudeUsageSource {
     /// only shells out and interprets the envelope. On success the caller
     /// should force a usage refresh so the popover re-labels the active row.
     public func switchAccount(toSlot slot: Int) async -> SupermuxCswapSwitchResult {
+        await runSwitch(arguments: ["switch", String(slot), "--json"])
+    }
+
+    /// `cswap switch --strategy best --json`: cswap picks the account with
+    /// the most remaining quota and switches to it (a no-op envelope when the
+    /// current account is already best).
+    public func switchToBestAccount() async -> SupermuxCswapSwitchResult {
+        await runSwitch(arguments: ["switch", "--strategy", "best", "--json"])
+    }
+
+    /// `cswap enable/disable <slot>`: hold an account out of auto-rotation or
+    /// return it. No JSON envelope for these verbs; exit status is the result.
+    public func setAccountEnabled(_ enabled: Bool, slot: Int) async -> SupermuxCswapSwitchResult {
+        let verb = enabled ? "enable" : "disable"
+        let result = await runner.run(
+            directory: homeDirectory.path,
+            executable: "cswap",
+            arguments: [verb, String(slot)],
+            timeout: 30
+        )
+        if result.executionError != nil || result.exitStatus == 127 || result.exitStatus == 126 {
+            return .failed(message: "cswap not found")
+        }
+        guard !result.timedOut, result.exitStatus == 0 else {
+            let detail = result.stderr?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .failed(message: detail?.isEmpty == false ? detail! : "cswap \(verb) failed")
+        }
+        // Reuse the switched case as the generic "state changed" success.
+        return .switched(toEmail: "")
+    }
+
+    private func runSwitch(arguments: [String]) async -> SupermuxCswapSwitchResult {
         // Invalidate the direct-path cache: after a switch the active
         // credential changes, so a cached single-account result is stale.
         lastDirectResult = nil
@@ -75,7 +107,7 @@ public actor SupermuxClaudeUsageSource {
         let result = await runner.run(
             directory: homeDirectory.path,
             executable: "cswap",
-            arguments: ["switch", String(slot), "--json"],
+            arguments: arguments,
             timeout: 60
         )
         if result.executionError != nil || result.exitStatus == 127 || result.exitStatus == 126 {

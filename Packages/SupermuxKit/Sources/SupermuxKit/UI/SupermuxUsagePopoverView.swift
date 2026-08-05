@@ -12,15 +12,23 @@ public struct SupermuxUsagePopoverView: View {
     private let onRefresh: () -> Void
     /// Host hook for switching the active cswap account by slot number.
     private let onSwitchAccount: (Int) -> Void
+    /// Host hook for `cswap switch --strategy best`.
+    private let onSwitchToBest: () -> Void
+    /// Host hook for `cswap enable/disable <slot>`.
+    private let onSetAccountEnabled: (Int, Bool) -> Void
 
     public init(
         model: SupermuxUsageModel,
         onRefresh: @escaping () -> Void,
-        onSwitchAccount: @escaping (Int) -> Void = { _ in }
+        onSwitchAccount: @escaping (Int) -> Void = { _ in },
+        onSwitchToBest: @escaping () -> Void = {},
+        onSetAccountEnabled: @escaping (Int, Bool) -> Void = { _, _ in }
     ) {
         self.model = model
         self.onRefresh = onRefresh
         self.onSwitchAccount = onSwitchAccount
+        self.onSwitchToBest = onSwitchToBest
+        self.onSetAccountEnabled = onSetAccountEnabled
     }
 
     public var body: some View {
@@ -153,10 +161,14 @@ public struct SupermuxUsagePopoverView: View {
     @ViewBuilder
     private func otherAccounts(_ accounts: [SupermuxClaudeAccountUsage]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(String(localized: "supermux.usage.otherAccounts", defaultValue: "Other accounts"))
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
+            HStack(spacing: 6) {
+                Text(String(localized: "supermux.usage.otherAccounts", defaultValue: "Other accounts"))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                Spacer(minLength: 4)
+                switchToBestButton
+            }
             ForEach(accounts) { account in
                 SupermuxUsageAccountRow(
                     account: account,
@@ -164,11 +176,41 @@ public struct SupermuxUsagePopoverView: View {
                     switchDisabled: model.switchingToSlot != nil,
                     onSwitch: account.slot.map { slot in
                         { onSwitchAccount(slot) }
+                    },
+                    onSetEnabled: account.slot.map { slot in
+                        { enabled in onSetAccountEnabled(slot, enabled) }
                     }
                 )
             }
         }
         .padding(.top, 2)
+    }
+
+    /// cswap's `switch --strategy best`: jump to the account with the most
+    /// remaining quota, no picking required.
+    @ViewBuilder
+    private var switchToBestButton: some View {
+        if model.isSwitchingToBest {
+            ProgressView()
+                .controlSize(.mini)
+        } else {
+            Button(action: onSwitchToBest) {
+                HStack(spacing: 3) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 7.5))
+                    Text(String(localized: "supermux.usage.switchBest", defaultValue: "Best"))
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+                .foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.switchingToSlot != nil)
+            .help(String(localized: "supermux.usage.switchBest.help", defaultValue: "Switch to the account with the most quota left"))
+            .accessibilityLabel(String(localized: "supermux.usage.switchBest.help", defaultValue: "Switch to the account with the most quota left"))
+        }
     }
 
 
@@ -283,6 +325,16 @@ struct SupermuxUsageBarRow: View {
                 Text(label)
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
+                // cswap's "(ahead)" pace marker: usage is outrunning the
+                // elapsed fraction of the weekly window.
+                if window.aheadOfPace == true {
+                    Text(String(localized: "supermux.usage.aheadOfPace", defaultValue: "ahead of pace"))
+                        .font(.system(size: 8.5, weight: .medium))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.orange.opacity(0.14)))
+                        .foregroundStyle(.orange)
+                }
                 Spacer(minLength: 4)
                 if let resetsAt = window.resetsAt, resetsAt > Date() {
                     Text(String(

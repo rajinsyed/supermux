@@ -78,7 +78,8 @@ enum SupermuxCswapUsageParser {
             windows.append(SupermuxUsageWindow(
                 kind: .weekly,
                 percent: window.pct ?? 0,
-                resetsAt: window.resetsAt.flatMap(Self.parseISODate)
+                resetsAt: window.resetsAt.flatMap(Self.parseISODate),
+                aheadOfPace: window.aheadOfPace
             ))
         }
         for scoped in usage.scoped ?? [] {
@@ -86,7 +87,8 @@ enum SupermuxCswapUsageParser {
             windows.append(SupermuxUsageWindow(
                 kind: .scoped(name),
                 percent: scoped.pct ?? 0,
-                resetsAt: scoped.resetsAt.flatMap(Self.parseISODate)
+                resetsAt: scoped.resetsAt.flatMap(Self.parseISODate),
+                aheadOfPace: scoped.aheadOfPace
             ))
         }
         return windows
@@ -132,12 +134,14 @@ enum SupermuxCswapUsageParser {
         struct Window: Decodable {
             let pct: Double?
             let resetsAt: String?
+            let aheadOfPace: Bool?
         }
 
         struct ScopedWindow: Decodable {
             let pct: Double?
             let resetsAt: String?
             let name: String?
+            let aheadOfPace: Bool?
         }
     }
 }
