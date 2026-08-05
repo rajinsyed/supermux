@@ -722,6 +722,27 @@ struct SupermuxUsageModelConcurrencyRegressionTests {
         #expect(SupermuxUsageModel.merging(current: older, incoming: newer) == newer)
     }
 
+    /// A degraded cswap pass carrying only cached lastGoodUsage parses "now"
+    /// but MEASURED old; it must not overwrite fresher displayed data.
+    @Test func staleCswapLastGoodNeverReplacesNewerMeasurement() {
+        func claudeState(measured: Date, parsed: Date) -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot> {
+            .ready(SupermuxClaudeUsageSnapshot(
+                source: .cswap,
+                accounts: [SupermuxClaudeAccountUsage(
+                    slot: 1, email: "a@b.c", displayName: nil, isActive: true,
+                    status: .unavailable(reason: nil), windows: [], fetchedAt: measured
+                )],
+                fetchedAt: parsed
+            ))
+        }
+        let now = Date()
+        let fresh = claudeState(measured: now.addingTimeInterval(-60), parsed: now.addingTimeInterval(-60))
+        // Parsed just now, but the accounts' data is a day old.
+        let staleLastGood = claudeState(measured: now.addingTimeInterval(-86400), parsed: now)
+        #expect(SupermuxUsageModel.merging(current: fresh, incoming: staleLastGood) == fresh)
+        #expect(SupermuxUsageModel.merging(current: staleLastGood, incoming: fresh) == fresh)
+    }
+
     /// The throttled outcome is reported so the UI can acknowledge the click.
     @Test func throttledRefreshReportsOutcome() async {
         let model = SupermuxUsageModel(

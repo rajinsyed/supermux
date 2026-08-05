@@ -59,6 +59,14 @@ public enum SupermuxUsageSeverity: Sendable, Equatable, Comparable {
 /// refuse to replace newer displayed data with an older fallback snapshot.
 public protocol SupermuxTimestampedUsageSnapshot: Sendable, Equatable {
     var fetchedAt: Date { get }
+    /// When the newest data in this snapshot was actually MEASURED. Defaults
+    /// to `fetchedAt`; sources whose parse time says nothing about data age
+    /// (cswap serves cached measurements) override it.
+    var measuredAt: Date { get }
+}
+
+extension SupermuxTimestampedUsageSnapshot {
+    public var measuredAt: Date { fetchedAt }
 }
 
 /// Claude usage for one account (cswap manages several; the direct fallback
@@ -147,6 +155,13 @@ public struct SupermuxClaudeUsageSnapshot: SupermuxTimestampedUsageSnapshot {
     /// The account whose limits gate the user's current Claude Code session.
     public var activeAccount: SupermuxClaudeAccountUsage? {
         accounts.first(where: \.isActive) ?? accounts.first
+    }
+
+    /// The newest per-account measurement time, not the parse time: a
+    /// degraded cswap pass serving only `lastGoodUsage` must compare as OLD
+    /// so it never overwrites fresher data already on display.
+    public var measuredAt: Date {
+        accounts.compactMap(\.fetchedAt).max() ?? fetchedAt
     }
 }
 

@@ -76,7 +76,10 @@ public struct SupermuxUsagePopoverView: View {
             Button {
                 Task {
                     let outcome = await onRefresh()
-                    guard outcome == .throttled else { return }
+                    // "Up to date" only when the throttled click landed on
+                    // data that actually loaded — a failed provider must not
+                    // be acknowledged as fresh.
+                    guard outcome == .throttled, !hasFailedProvider else { return }
                     acknowledgeUpToDate()
                 }
             } label: {
@@ -102,6 +105,13 @@ public struct SupermuxUsagePopoverView: View {
             .accessibilityLabel(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
         }
         .animation(.easeOut(duration: 0.2), value: showUpToDate)
+    }
+
+    /// Whether either provider column is currently in a failed state.
+    private var hasFailedProvider: Bool {
+        if case .failed = model.claude { return true }
+        if case .failed = model.codex { return true }
+        return false
     }
 
     /// Flashes the "Up to date" note for a couple of seconds.

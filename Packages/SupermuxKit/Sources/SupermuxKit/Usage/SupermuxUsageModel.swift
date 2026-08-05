@@ -272,10 +272,11 @@ public final class SupermuxUsageModel {
         switch (current, incoming) {
         case (.ready, .failed):
             return current
-        case (.ready(let held), .ready(let fresh)) where fresh.fetchedAt < held.fetchedAt:
+        case (.ready(let held), .ready(let fresh)) where fresh.measuredAt < held.measuredAt:
             // A degraded pass can serve an OLDER measurement (Codex falls
-            // back to the last session log on transient API trouble); never
-            // let it replace newer data already on display.
+            // back to the last session log on transient API trouble; a cswap
+            // pass can carry only cached lastGoodUsage). Compare measurement
+            // times, not parse times — never replace newer displayed data.
             return current
         default:
             return incoming
