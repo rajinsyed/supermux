@@ -37,6 +37,7 @@ enum SupermuxCswapUsageParser {
             email: row.email ?? "",
             displayName: displayName(for: row),
             isActive: row.active ?? false,
+            isDisabled: row.disabled ?? false,
             status: status(for: row),
             windows: windows,
             fetchedAt: fetchedAt
@@ -114,6 +115,7 @@ enum SupermuxCswapUsageParser {
             let alias: String?
             let organizationName: String?
             let active: Bool?
+            let disabled: Bool?
             let usageStatus: String?
             let usage: Usage?
             let lastGoodUsage: Usage?

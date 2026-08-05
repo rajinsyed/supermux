@@ -65,9 +65,15 @@ struct SupermuxUsageMenuButton: View {
 
     private var popoverContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SupermuxUsagePopoverView(model: SupermuxComposition.usageModel) {
-                Task { await SupermuxComposition.usageModel.refresh() }
-            }
+            SupermuxUsagePopoverView(
+                model: SupermuxComposition.usageModel,
+                onRefresh: {
+                    Task { await SupermuxComposition.usageModel.refresh() }
+                },
+                onSwitchAccount: { slot in
+                    Task { await SupermuxComposition.usageModel.switchClaudeAccount(toSlot: slot) }
+                }
+            )
             Divider()
                 .padding(.horizontal, 12)
             footerRow

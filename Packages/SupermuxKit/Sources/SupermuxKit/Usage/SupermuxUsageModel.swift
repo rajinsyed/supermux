@@ -26,9 +26,16 @@ public final class SupermuxUsageModel {
     public private(set) var codex: SupermuxUsageProviderState<SupermuxCodexUsageSnapshot> = .loading
     /// Whether a pass is currently in flight (drives the refresh spinner).
     public private(set) var isRefreshing = false
+    /// Slot currently being switched to via cswap, `nil` when idle. Drives
+    /// the per-row spinner and disables other switch buttons meanwhile.
+    public private(set) var switchingToSlot: Int?
+    /// The last switch failure, cleared on the next successful switch or
+    /// explicit dismissal. Rendered inline in the popover's Claude section.
+    public private(set) var lastSwitchError: String?
 
     @ObservationIgnored private let claudeFetch: @Sendable () async -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot>
     @ObservationIgnored private let codexFetch: @Sendable () async -> SupermuxUsageProviderState<SupermuxCodexUsageSnapshot>
+    @ObservationIgnored private let claudeSwitch: @Sendable (Int) async -> SupermuxCswapSwitchResult
     @ObservationIgnored private let pollInterval: Duration
     /// Hard floor between passes — applied to EVERY refresh entry point, so
     /// neither the poll loop, popover opens, nor the manual refresh button can
@@ -48,19 +55,22 @@ public final class SupermuxUsageModel {
     ) {
         self.claudeFetch = { await claudeSource.fetch() }
         self.codexFetch = { await codexSource.fetch() }
+        self.claudeSwitch = { await claudeSource.switchAccount(toSlot: $0) }
         self.pollInterval = pollInterval
         self.minimumRefreshInterval = minimumRefreshInterval
     }
 
-    /// Test seam: inject fetch closures directly.
+    /// Test seam: inject fetch/switch closures directly.
     init(
         claudeFetch: @escaping @Sendable () async -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot>,
         codexFetch: @escaping @Sendable () async -> SupermuxUsageProviderState<SupermuxCodexUsageSnapshot>,
+        claudeSwitch: @escaping @Sendable (Int) async -> SupermuxCswapSwitchResult = { _ in .failed(message: "unavailable") },
         pollInterval: Duration = .seconds(120),
         minimumRefreshInterval: TimeInterval = 30
     ) {
         self.claudeFetch = claudeFetch
         self.codexFetch = codexFetch
+        self.claudeSwitch = claudeSwitch
         self.pollInterval = pollInterval
         self.minimumRefreshInterval = minimumRefreshInterval
     }
@@ -127,6 +137,32 @@ public final class SupermuxUsageModel {
         // replaces a ready state with failure when we never had data.
         claude = Self.merging(current: claude, incoming: newClaude)
         codex = Self.merging(current: codex, incoming: newCodex)
+    }
+
+    /// Switches the active Claude Code login to a cswap slot, then forces a
+    /// refresh (bypassing the floor — the data legitimately just changed) so
+    /// the popover re-labels the active account and its windows.
+    public func switchClaudeAccount(toSlot slot: Int) async {
+        guard switchingToSlot == nil else { return }
+        switchingToSlot = slot
+        defer { switchingToSlot = nil }
+        let result = await claudeSwitch(slot)
+        switch result {
+        case .switched, .alreadyActive:
+            lastSwitchError = nil
+            // The floor exists to protect the usage endpoint from UI spam; a
+            // completed switch is a real state change, and the cswap path
+            // (the only way to get here) serves from cswap's cache anyway.
+            lastPassStartedAt = nil
+            await refresh()
+        case .failed(let message):
+            lastSwitchError = message
+        }
+    }
+
+    /// Clears an inline switch-failure note.
+    public func dismissSwitchError() {
+        lastSwitchError = nil
     }
 
     static func merging<Snapshot>(

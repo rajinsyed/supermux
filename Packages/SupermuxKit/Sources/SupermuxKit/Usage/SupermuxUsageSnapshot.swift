@@ -74,6 +74,9 @@ public struct SupermuxClaudeAccountUsage: Sendable, Equatable, Identifiable {
     public let displayName: String?
     /// Whether this is the account Claude Code is currently logged in as.
     public let isActive: Bool
+    /// Held out of cswap's rotation (`cswap disable`); still switchable-to
+    /// explicitly, but rendered dimmed.
+    public let isDisabled: Bool
     public let status: Status
     /// Session + weekly + scoped windows, in render order.
     public let windows: [SupermuxUsageWindow]
@@ -85,6 +88,7 @@ public struct SupermuxClaudeAccountUsage: Sendable, Equatable, Identifiable {
         email: String,
         displayName: String?,
         isActive: Bool,
+        isDisabled: Bool = false,
         status: Status,
         windows: [SupermuxUsageWindow],
         fetchedAt: Date?
@@ -93,6 +97,7 @@ public struct SupermuxClaudeAccountUsage: Sendable, Equatable, Identifiable {
         self.email = email
         self.displayName = displayName
         self.isActive = isActive
+        self.isDisabled = isDisabled
         self.status = status
         self.windows = windows
         self.fetchedAt = fetchedAt

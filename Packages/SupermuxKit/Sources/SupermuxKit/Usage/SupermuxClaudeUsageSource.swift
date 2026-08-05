@@ -62,6 +62,39 @@ public actor SupermuxClaudeUsageSource {
 
     // MARK: - cswap
 
+    /// Switches the active Claude Code login to the given cswap slot by
+    /// running `cswap switch <slot> --json`. cswap owns the whole mutation
+    /// (credential backup/restore under Claude Code's own locks); this method
+    /// only shells out and interprets the envelope. On success the caller
+    /// should force a usage refresh so the popover re-labels the active row.
+    public func switchAccount(toSlot slot: Int) async -> SupermuxCswapSwitchResult {
+        // Invalidate the direct-path cache: after a switch the active
+        // credential changes, so a cached single-account result is stale.
+        lastDirectResult = nil
+        lastDirectFetchAt = nil
+        let result = await runner.run(
+            directory: homeDirectory.path,
+            executable: "cswap",
+            arguments: ["switch", String(slot), "--json"],
+            timeout: 60
+        )
+        if result.executionError != nil || result.exitStatus == 127 || result.exitStatus == 126 {
+            return .failed(message: "cswap not found")
+        }
+        if result.timedOut {
+            return .failed(message: "cswap switch timed out")
+        }
+        // cswap emits its JSON envelope on stdout for success AND handled
+        // errors (error_envelope); parse whatever came back before falling
+        // back to stderr.
+        if let stdout = result.stdout, let data = stdout.data(using: .utf8),
+           let parsed = SupermuxCswapSwitchResult.parse(jsonData: data) {
+            return parsed
+        }
+        let detail = result.stderr?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return .failed(message: detail?.isEmpty == false ? detail! : "cswap switch failed")
+    }
+
     /// `nil` when cswap is not installed (falls through to the direct path);
     /// any other outcome is terminal for this attempt.
     private func fetchViaCswap() async -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot>? {

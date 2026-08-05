@@ -270,7 +270,7 @@ struct SupermuxUsageModelMergeTests {
 @Suite
 @MainActor
 struct SupermuxUsageModelThrottleTests {
-    private final class Counter: @unchecked Sendable {
+    final class Counter: @unchecked Sendable {
         private let lock = NSLock()
         private var value = 0
         func increment() { lock.lock(); value += 1; lock.unlock() }
@@ -369,6 +369,93 @@ struct SupermuxClaudeCswapFallthroughTests {
         let snapshot = try? #require(state.snapshot)
         #expect(snapshot?.source == .cswap)
         #expect(snapshot?.activeAccount?.email == "a@b.c")
+    }
+}
+
+@Suite
+struct SupermuxCswapSwitchResultTests {
+    @Test func parsesSwitchedEnvelope() {
+        let json = Data("""
+        {"schemaVersion":1,"switched":true,"from":{"number":2,"email":"a@b.c"},
+         "to":{"number":4,"email":"d@e.f"},"strategy":null,"reason":"switched",
+         "message":"Switched to Account-4 (d@e.f)","warnings":[]}
+        """.utf8)
+        #expect(SupermuxCswapSwitchResult.parse(jsonData: json) == .switched(toEmail: "d@e.f"))
+    }
+
+    @Test func parsesAlreadyActiveEnvelope() {
+        let json = Data("""
+        {"schemaVersion":1,"switched":false,"from":{"number":2,"email":"a@b.c"},
+         "to":{"number":2,"email":"a@b.c"},"reason":"already-active",
+         "message":"Already on Account-2 (a@b.c)","warnings":[]}
+        """.utf8)
+        #expect(SupermuxCswapSwitchResult.parse(jsonData: json) == .alreadyActive(email: "a@b.c"))
+    }
+
+    @Test func parsesErrorEnvelope() {
+        let json = Data("""
+        {"schemaVersion":1,"error":{"type":"SwitchError","message":"Account-9 has no stored credentials."}}
+        """.utf8)
+        #expect(SupermuxCswapSwitchResult.parse(jsonData: json)
+            == .failed(message: "Account-9 has no stored credentials."))
+    }
+
+    @Test func notSwitchedForOtherReasonSurfacesMessage() {
+        let json = Data("""
+        {"schemaVersion":1,"switched":false,"to":{"number":3,"email":"x@y.z"},
+         "reason":"rate-limited","message":"Target is rate limited","warnings":[]}
+        """.utf8)
+        #expect(SupermuxCswapSwitchResult.parse(jsonData: json)
+            == .failed(message: "Target is rate limited"))
+    }
+
+    @Test func garbageYieldsNil() {
+        #expect(SupermuxCswapSwitchResult.parse(jsonData: Data("nope".utf8)) == nil)
+        #expect(SupermuxCswapSwitchResult.parse(jsonData: Data("{}".utf8)) == nil)
+    }
+}
+
+@Suite
+@MainActor
+struct SupermuxUsageModelSwitchTests {
+    @Test func successfulSwitchRefreshesBypassingFloor() async {
+        let fetches = SupermuxUsageModelThrottleTests.Counter()
+        let model = SupermuxUsageModel(
+            claudeFetch: {
+                fetches.increment()
+                return .notConfigured
+            },
+            codexFetch: { .notConfigured },
+            claudeSwitch: { _ in .switched(toEmail: "d@e.f") },
+            minimumRefreshInterval: 3600
+        )
+        await model.refresh()
+        #expect(fetches.count == 1)
+        // The hour-long floor would normally block this second pass; a
+        // completed switch must force it through.
+        await model.switchClaudeAccount(toSlot: 4)
+        #expect(fetches.count == 2)
+        #expect(model.lastSwitchError == nil)
+        #expect(model.switchingToSlot == nil)
+    }
+
+    @Test func failedSwitchSurfacesErrorWithoutRefreshing() async {
+        let fetches = SupermuxUsageModelThrottleTests.Counter()
+        let model = SupermuxUsageModel(
+            claudeFetch: {
+                fetches.increment()
+                return .notConfigured
+            },
+            codexFetch: { .notConfigured },
+            claudeSwitch: { _ in .failed(message: "no stored credentials") },
+            minimumRefreshInterval: 3600
+        )
+        await model.refresh()
+        await model.switchClaudeAccount(toSlot: 9)
+        #expect(fetches.count == 1)
+        #expect(model.lastSwitchError == "no stored credentials")
+        model.dismissSwitchError()
+        #expect(model.lastSwitchError == nil)
     }
 }
 

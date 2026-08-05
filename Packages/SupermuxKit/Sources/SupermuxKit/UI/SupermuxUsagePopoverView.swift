@@ -10,10 +10,17 @@ public import SwiftUI
 public struct SupermuxUsagePopoverView: View {
     @Bindable private var model: SupermuxUsageModel
     private let onRefresh: () -> Void
+    /// Host hook for switching the active cswap account by slot number.
+    private let onSwitchAccount: (Int) -> Void
 
-    public init(model: SupermuxUsageModel, onRefresh: @escaping () -> Void) {
+    public init(
+        model: SupermuxUsageModel,
+        onRefresh: @escaping () -> Void,
+        onSwitchAccount: @escaping (Int) -> Void = { _ in }
+    ) {
         self.model = model
         self.onRefresh = onRefresh
+        self.onSwitchAccount = onSwitchAccount
     }
 
     public var body: some View {
@@ -77,7 +84,34 @@ public struct SupermuxUsagePopoverView: View {
             if !others.isEmpty {
                 otherAccounts(others)
             }
+            if let error = model.lastSwitchError {
+                switchErrorRow(error)
+            }
         }
+    }
+
+    private func switchErrorRow(_ message: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+            Spacer(minLength: 4)
+            Button {
+                model.dismissSwitchError()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "supermux.usage.switch.dismissError", defaultValue: "Dismiss"))
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 5).fill(Color.orange.opacity(0.08)))
     }
 
     private var claudeDetail: String? {
@@ -100,43 +134,29 @@ public struct SupermuxUsagePopoverView: View {
     }
 
     /// Non-active cswap accounts, one compact line each: the tightest window
-    /// percent plus the account label — enough to answer "is my other account
-    /// free?" without expanding the popover into a dashboard.
+    /// percent plus the account label, with a switch action on hover — the
+    /// cswap `switch <slot>` feature, one click from the tracker.
     @ViewBuilder
     private func otherAccounts(_ accounts: [SupermuxClaudeAccountUsage]) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(String(localized: "supermux.usage.otherAccounts", defaultValue: "Other accounts"))
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .textCase(.uppercase)
             ForEach(accounts) { account in
-                HStack(spacing: 6) {
-                    let label = account.displayName ?? account.email
-                    Text(label)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 4)
-                    otherAccountStatus(account)
-                }
+                SupermuxUsageAccountRow(
+                    account: account,
+                    isSwitching: model.switchingToSlot != nil && model.switchingToSlot == account.slot,
+                    switchDisabled: model.switchingToSlot != nil,
+                    onSwitch: account.slot.map { slot in
+                        { onSwitchAccount(slot) }
+                    }
+                )
             }
         }
         .padding(.top, 2)
     }
 
-    @ViewBuilder
-    private func otherAccountStatus(_ account: SupermuxClaudeAccountUsage) -> some View {
-        if let tightest = account.windows.tightest, case .ok = account.status {
-            Text(verbatim: SupermuxUsageBarRow.percentText(tightest.percent))
-                .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
-                .foregroundStyle(SupermuxUsageBarRow.color(for: tightest.severity))
-        } else {
-            Text(String(localized: "supermux.usage.account.unavailable", defaultValue: "—"))
-                .font(.system(size: 10.5))
-                .foregroundStyle(.tertiary)
-        }
-    }
 
     // MARK: - Codex
 
