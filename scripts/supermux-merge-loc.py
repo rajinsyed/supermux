@@ -108,10 +108,14 @@ def main():
             added += 1
 
     if new_entries:
-        # Append at the end of "strings": the catalog ends `    }\n  }\n}\n`
-        # (last entry, strings dict, root). Insert before the strings close.
-        tail = "  }\n}\n"
-        if not text.endswith(tail):
+        # Append at the end of "strings". Observed catalog tails: the
+        # original `  }\n}\n` (strings dict last) and, since Xcode re-sorted
+        # top-level keys, `  },\n  "version" : "1.0"\n}\n` (version last,
+        # with or without a space before the colon).
+        for tail in ('  }\n}\n', '  },\n  "version" : "1.0"\n}\n', '  },\n  "version": "1.0"\n}\n'):
+            if text.endswith(tail):
+                break
+        else:
             print("ERROR: unexpected catalog tail; not appending", file=sys.stderr)
             sys.exit(1)
         body = text[: -len(tail)].rstrip("\n")
