@@ -77,9 +77,9 @@ public struct SupermuxUsagePopoverView: View {
                 Task {
                     let outcome = await onRefresh()
                     // "Up to date" only when the throttled click landed on
-                    // data that actually loaded — a failed provider must not
-                    // be acknowledged as fresh.
-                    guard outcome == .throttled, !hasFailedProvider else { return }
+                    // data that actually loaded — a failed or sign-in-needed
+                    // provider must not be acknowledged as fresh.
+                    guard outcome == .throttled, isDisplayedDataFresh else { return }
                     acknowledgeUpToDate()
                 }
             } label: {
@@ -107,11 +107,18 @@ public struct SupermuxUsagePopoverView: View {
         .animation(.easeOut(duration: 0.2), value: showUpToDate)
     }
 
-    /// Whether either provider column is currently in a failed state.
-    private var hasFailedProvider: Bool {
-        if case .failed = model.claude { return true }
-        if case .failed = model.codex { return true }
-        return false
+    /// Whether everything on display is genuinely current: every provider is
+    /// either `.ready` or legitimately absent (`.notConfigured` — a user
+    /// without that CLI shouldn't block the acknowledgement). `.failed`,
+    /// `.needsLogin`, and `.loading` all mean "not up to date".
+    private var isDisplayedDataFresh: Bool {
+        func isFresh<Snapshot>(_ state: SupermuxUsageProviderState<Snapshot>) -> Bool {
+            switch state {
+            case .ready, .notConfigured: true
+            case .failed, .needsLogin, .loading: false
+            }
+        }
+        return isFresh(model.claude) && isFresh(model.codex)
     }
 
     /// Flashes the "Up to date" note for a couple of seconds.

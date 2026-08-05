@@ -157,11 +157,15 @@ public struct SupermuxClaudeUsageSnapshot: SupermuxTimestampedUsageSnapshot {
         accounts.first(where: \.isActive) ?? accounts.first
     }
 
-    /// The newest per-account measurement time, not the parse time: a
-    /// degraded cswap pass serving only `lastGoodUsage` must compare as OLD
-    /// so it never overwrites fresher data already on display.
+    /// The ACTIVE account's measurement time, not the parse time: a degraded
+    /// cswap pass serving only `lastGoodUsage` must compare as OLD so it
+    /// never overwrites fresher data on display — and a freshly-measured
+    /// SECONDARY account must not vouch for a stale active one, since the
+    /// active account is what drives the gauge and the primary rows.
+    /// Falls back to the parse time when the active row carries no timestamp
+    /// (cswap payloads without fetched-at fields).
     public var measuredAt: Date {
-        accounts.compactMap(\.fetchedAt).max() ?? fetchedAt
+        activeAccount?.fetchedAt ?? fetchedAt
     }
 }
 
