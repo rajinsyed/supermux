@@ -64,7 +64,7 @@ struct SupermuxUsageMenuButton: View {
     }
 
     private var popoverContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
             SupermuxUsagePopoverView(
                 model: SupermuxComposition.usageModel,
                 onRefresh: {
@@ -81,8 +81,10 @@ struct SupermuxUsageMenuButton: View {
                 }
             )
             Divider()
+                .padding(.horizontal, 12)
             footerRow
         }
+        .padding(.bottom, 8)
     }
 
     private var footerRow: some View {
@@ -106,7 +108,6 @@ struct SupermuxUsageMenuButton: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     private func footerLink(

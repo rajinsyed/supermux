@@ -7,10 +7,6 @@ import SwiftUI
 /// deliberately avoided: NSPopover-hosted SwiftUI hover regions track with a
 /// vertical offset, making them unreliable). Expanding the row shows every
 /// limit window as the same compact bars the active account uses.
-///
-/// Layout matches ``SupermuxUsageBarRow``'s grid: the tightest percent uses
-/// the same fixed-width trailing column, so collapsed rows line up with the
-/// active account's bars above them.
 struct SupermuxUsageAccountRow: View {
     let account: SupermuxClaudeAccountUsage
     /// A switch to THIS account is in flight (row shows a spinner).
@@ -29,7 +25,7 @@ struct SupermuxUsageAccountRow: View {
     private var hasWindows: Bool { !account.windows.isEmpty }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 disclosureButton
                 Spacer(minLength: 4)
@@ -43,8 +39,7 @@ struct SupermuxUsageAccountRow: View {
                     switchButton
                 }
             }
-            .frame(height: 20)
-            .contentShape(Rectangle())
+            .frame(height: 18)
             .contextMenu {
                 if let onSetEnabled {
                     if account.isDisabled {
@@ -59,13 +54,13 @@ struct SupermuxUsageAccountRow: View {
                 }
             }
             if isExpanded, hasWindows {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 3) {
                     ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
                         SupermuxUsageBarRow(window: window)
                     }
                 }
-                .padding(.leading, 13)
-                .padding(.bottom, 3)
+                .padding(.leading, 14)
+                .padding(.bottom, 2)
             }
         }
     }
@@ -85,19 +80,11 @@ struct SupermuxUsageAccountRow: View {
                     .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .opacity(hasWindows ? 1 : 0)
-                    .frame(width: 9)
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10.5))
                     .foregroundStyle(account.isDisabled ? .tertiary : .secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if account.isDisabled {
-                    // Held out of cswap's rotation — a quiet pause glyph
-                    // beside the dimmed label, no words needed.
-                    Image(systemName: "pause.circle")
-                        .font(.system(size: 8.5))
-                        .foregroundStyle(.tertiary)
-                }
             }
             .contentShape(Rectangle())
         }
@@ -116,19 +103,17 @@ struct SupermuxUsageAccountRow: View {
             // ("token expired", "re-login needed") instead of a percent. The
             // windows shown on expand may be last-good data.
             Text(problem)
-                .font(.system(size: 9))
+                .font(.system(size: 9.5))
                 .foregroundStyle(.orange)
                 .lineLimit(1)
         } else if let tightest = account.windows.tightest {
             Text(verbatim: SupermuxUsageBarRow.percentText(tightest.percent))
                 .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(SupermuxUsageBarRow.color(for: tightest.severity))
-                .frame(minWidth: 30, alignment: .trailing)
         } else {
             Text(String(localized: "supermux.usage.account.unavailable", defaultValue: "—"))
                 .font(.system(size: 10.5))
-                .foregroundStyle(.quaternary)
-                .frame(minWidth: 30, alignment: .trailing)
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -137,13 +122,10 @@ struct SupermuxUsageAccountRow: View {
         if let onSwitch {
             Button(action: onSwitch) {
                 Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 8.5, weight: .semibold))
-                    .foregroundStyle(switchDisabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.accentColor))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 18, height: 18)
-                    .background(
-                        Circle().fill(Color.accentColor.opacity(switchDisabled ? 0.05 : 0.1))
-                    )
-                    .contentShape(Circle())
+                    .background(Circle().fill(Color.accentColor.opacity(0.12)))
             }
             .buttonStyle(.plain)
             .disabled(switchDisabled)
