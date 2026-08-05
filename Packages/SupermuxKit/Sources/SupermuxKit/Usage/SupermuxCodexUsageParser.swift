@@ -27,7 +27,7 @@ enum SupermuxCodexUsageParser {
         if let rateLimit = payload.rateLimit {
             windows += [rateLimit.primaryWindow, rateLimit.secondaryWindow]
                 .compactMap { $0 }
-                .map { window(fromAPI: $0) }
+                .compactMap { window(fromAPI: $0) }
         }
         for extra in payload.additionalRateLimits ?? [] {
             guard let name = extra.limitName, !name.isEmpty else { continue }
@@ -36,7 +36,7 @@ enum SupermuxCodexUsageParser {
             if Self.hiddenScopedLimitNames.contains(name.lowercased()) { continue }
             let candidates = [extra.rateLimit?.primaryWindow, extra.rateLimit?.secondaryWindow]
                 .compactMap { $0 }
-                .map { window(fromAPI: $0) }
+                .compactMap { window(fromAPI: $0) }
             if let tightest = candidates.tightest {
                 windows.append(SupermuxUsageWindow(
                     kind: .scoped(name),
@@ -54,11 +54,14 @@ enum SupermuxCodexUsageParser {
         )
     }
 
-    private static func window(fromAPI wire: APIPayload.Window) -> SupermuxUsageWindow {
+    /// `nil` when the wire window carries no usable percentage — a missing
+    /// value must not render as 0% ("unknown" is not "unused").
+    private static func window(fromAPI wire: APIPayload.Window) -> SupermuxUsageWindow? {
+        guard let percent = SupermuxUsagePercent.normalized(wire.usedPercent) else { return nil }
         let isSession = wire.limitWindowSeconds.map { $0 <= sessionWindowSeconds } ?? false
         return SupermuxUsageWindow(
             kind: isSession ? .session : .weekly,
-            percent: wire.usedPercent ?? 0,
+            percent: percent,
             resetsAt: wire.resetAt.map { Date(timeIntervalSince1970: $0) }
         )
     }
@@ -70,34 +73,36 @@ enum SupermuxCodexUsageParser {
     /// unreachable or the token is expired — data is only as fresh as the
     /// last Codex turn.
     static func parseSessionLog(jsonlContent: String) -> SupermuxCodexUsageSnapshot? {
-        var newest: (rateLimits: LogRateLimits, timestamp: Date?)?
+        // Scan from the end until an event yields renderable windows: the
+        // newest rate_limits event can be credits-only (its `primary`/
+        // `secondary` absent), and stopping there would discard an older but
+        // perfectly usable snapshot further up the file.
         for line in jsonlContent.split(separator: "\n").reversed() {
             guard line.contains("rate_limits") else { continue }
             guard let data = line.data(using: .utf8),
                   let event = try? JSONDecoder().decode(LogEvent.self, from: data),
                   let rateLimits = event.payload?.rateLimits else { continue }
-            newest = (rateLimits, event.timestamp.flatMap(SupermuxCswapUsageParser.parseISODate))
-            break
+            let windows: [SupermuxUsageWindow] = [rateLimits.primary, rateLimits.secondary]
+                .compactMap { $0 }
+                .compactMap { window(fromLog: $0) }
+            guard !windows.isEmpty else { continue }
+            return SupermuxCodexUsageSnapshot(
+                source: .sessionLog,
+                planType: rateLimits.planType,
+                windows: windows,
+                fetchedAt: event.timestamp.flatMap(SupermuxCswapUsageParser.parseISODate) ?? Date()
+            )
         }
-        guard let found = newest else { return nil }
-        var windows: [SupermuxUsageWindow] = [found.rateLimits.primary, found.rateLimits.secondary]
-            .compactMap { $0 }
-            .map { window(fromLog: $0) }
-        windows = windows.filter { $0.percent >= 0 }
-        guard !windows.isEmpty else { return nil }
-        return SupermuxCodexUsageSnapshot(
-            source: .sessionLog,
-            planType: found.rateLimits.planType,
-            windows: windows,
-            fetchedAt: found.timestamp ?? Date()
-        )
+        return nil
     }
 
-    private static func window(fromLog wire: LogWindow) -> SupermuxUsageWindow {
+    /// `nil` when the log window carries no usable percentage.
+    private static func window(fromLog wire: LogWindow) -> SupermuxUsageWindow? {
+        guard let percent = SupermuxUsagePercent.normalized(wire.usedPercent) else { return nil }
         let isSession = wire.windowMinutes.map { $0 <= sessionWindowMinutes } ?? false
         return SupermuxUsageWindow(
             kind: isSession ? .session : .weekly,
-            percent: wire.usedPercent ?? 0,
+            percent: percent,
             resetsAt: wire.resetsAt.map { Date(timeIntervalSince1970: $0) }
         )
     }

@@ -89,11 +89,11 @@ public actor SupermuxClaudeUsageSource {
             timeout: 30
         )
         if result.executionError != nil || result.exitStatus == 127 || result.exitStatus == 126 {
-            return .failed(message: "cswap not found")
+            return .failed(message: SupermuxUsageErrorMessage.cswapNotFound)
         }
         guard !result.timedOut, result.exitStatus == 0 else {
             let detail = result.stderr?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return .failed(message: detail?.isEmpty == false ? detail! : "cswap \(verb) failed")
+            return .failed(message: detail?.isEmpty == false ? detail! : SupermuxUsageErrorMessage.cswapCommandFailed(verb))
         }
         // Reuse the switched case as the generic "state changed" success.
         return .switched(toEmail: "")
@@ -111,10 +111,10 @@ public actor SupermuxClaudeUsageSource {
             timeout: 60
         )
         if result.executionError != nil || result.exitStatus == 127 || result.exitStatus == 126 {
-            return .failed(message: "cswap not found")
+            return .failed(message: SupermuxUsageErrorMessage.cswapNotFound)
         }
         if result.timedOut {
-            return .failed(message: "cswap switch timed out")
+            return .failed(message: SupermuxUsageErrorMessage.cswapSwitchTimedOut)
         }
         // cswap emits its JSON envelope on stdout for success AND handled
         // errors (error_envelope); parse whatever came back before falling
@@ -124,7 +124,7 @@ public actor SupermuxClaudeUsageSource {
             return parsed
         }
         let detail = result.stderr?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return .failed(message: detail?.isEmpty == false ? detail! : "cswap switch failed")
+        return .failed(message: detail?.isEmpty == false ? detail! : SupermuxUsageErrorMessage.cswapSwitchFailed)
     }
 
     /// `nil` when cswap is not installed (falls through to the direct path);
@@ -146,10 +146,10 @@ public actor SupermuxClaudeUsageSource {
               let stdout = result.stdout, !stdout.isEmpty,
               let data = stdout.data(using: .utf8) else {
             let detail = result.stderr?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return .failed(message: detail?.isEmpty == false ? detail! : "cswap list failed")
+            return .failed(message: detail?.isEmpty == false ? detail! : SupermuxUsageErrorMessage.cswapListFailed)
         }
         guard let snapshot = SupermuxCswapUsageParser.parse(jsonData: data) else {
-            return .failed(message: "cswap returned an unexpected format")
+            return .failed(message: SupermuxUsageErrorMessage.cswapUnexpectedFormat)
         }
         guard !snapshot.accounts.isEmpty else { return .notConfigured }
         return .ready(snapshot)
@@ -157,17 +157,34 @@ public actor SupermuxClaudeUsageSource {
 
     // MARK: - Direct API fallback
 
+    /// Preflight failures (`.notConfigured`, locally-detected expiry) never
+    /// spent endpoint budget, so caching them for the full TTL only delays
+    /// recovery after the user signs in. A small floor still avoids re-running
+    /// the keychain probe on every UI event.
+    private static let preflightServeTTL: TimeInterval = 15
+
     private func fetchDirect() async -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot> {
         // Serve the previous direct result while inside the TTL: this is the
         // hard bound on raw endpoint spend, independent of UI cadence.
         if let cached = lastDirectResult, let at = lastDirectFetchAt,
-           Date().timeIntervalSince(at) < directServeTTL {
+           Date().timeIntervalSince(at) < serveTTL(for: cached) {
             return cached
         }
         let fresh = await fetchDirectUncached()
         lastDirectResult = fresh
         lastDirectFetchAt = Date()
         return fresh
+    }
+
+    private func serveTTL(
+        for state: SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot>
+    ) -> TimeInterval {
+        switch state {
+        case .notConfigured, .needsLogin(detail: nil):
+            return min(directServeTTL, Self.preflightServeTTL)
+        default:
+            return directServeTTL
+        }
     }
 
     private func fetchDirectUncached() async -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot> {
@@ -184,19 +201,19 @@ public actor SupermuxClaudeUsageSource {
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                return .failed(message: "invalid response")
+                return .failed(message: SupermuxUsageErrorMessage.invalidResponse)
             }
             if http.statusCode == 401 || http.statusCode == 403 {
                 return .needsLogin(detail: "HTTP \(http.statusCode)")
             }
             guard (200..<300).contains(http.statusCode) else {
-                return .failed(message: "HTTP \(http.statusCode)")
+                return .failed(message: SupermuxUsageErrorMessage.httpStatus(http.statusCode))
             }
             guard let account = Self.parseDirectUsage(
                 jsonData: data,
                 email: credential.email
             ) else {
-                return .failed(message: "unexpected usage format")
+                return .failed(message: SupermuxUsageErrorMessage.unexpectedUsageFormat)
             }
             return .ready(SupermuxClaudeUsageSnapshot(
                 source: .directAPI,
@@ -274,25 +291,30 @@ public actor SupermuxClaudeUsageSource {
             return nil
         }
         var windows: [SupermuxUsageWindow] = []
-        if let window = payload.fiveHour {
+        // Missing percentages drop the window instead of rendering 0%:
+        // "unknown" must never read as "unused".
+        if let window = payload.fiveHour,
+           let pct = SupermuxUsagePercent.normalized(window.utilization) {
             windows.append(SupermuxUsageWindow(
                 kind: .session,
-                percent: window.utilization ?? 0,
+                percent: pct,
                 resetsAt: window.resetsAt.flatMap(SupermuxCswapUsageParser.parseISODate)
             ))
         }
-        if let window = payload.sevenDay {
+        if let window = payload.sevenDay,
+           let pct = SupermuxUsagePercent.normalized(window.utilization) {
             windows.append(SupermuxUsageWindow(
                 kind: .weekly,
-                percent: window.utilization ?? 0,
+                percent: pct,
                 resetsAt: window.resetsAt.flatMap(SupermuxCswapUsageParser.parseISODate)
             ))
         }
-        for limit in payload.limits ?? [] where limit.kind == "weekly_scoped" {
-            guard let name = limit.scope?.model?.displayName, !name.isEmpty else { continue }
+        for limit in (payload.limits ?? []).compactMap(\.value) where limit.kind == "weekly_scoped" {
+            guard let name = limit.scope?.model?.displayName, !name.isEmpty,
+                  let pct = SupermuxUsagePercent.normalized(limit.percent) else { continue }
             windows.append(SupermuxUsageWindow(
                 kind: .scoped(name),
-                percent: limit.percent ?? 0,
+                percent: pct,
                 resetsAt: limit.resetsAt.flatMap(SupermuxCswapUsageParser.parseISODate)
             ))
         }
@@ -329,12 +351,31 @@ public actor SupermuxClaudeUsageSource {
     struct DirectUsagePayload: Decodable {
         let fiveHour: DirectWindow?
         let sevenDay: DirectWindow?
-        let limits: [DirectLimit]?
+        let limits: [LossyLimit]?
 
         enum CodingKeys: String, CodingKey {
             case fiveHour = "five_hour"
             case sevenDay = "seven_day"
             case limits
+        }
+
+        // Each key decodes independently: one malformed scoped row (or a
+        // type change in a window we filter out anyway) must not discard the
+        // still-usable base windows by failing the whole payload.
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            fiveHour = try? container.decodeIfPresent(DirectWindow.self, forKey: .fiveHour)
+            sevenDay = try? container.decodeIfPresent(DirectWindow.self, forKey: .sevenDay)
+            limits = try? container.decodeIfPresent([LossyLimit].self, forKey: .limits)
+        }
+    }
+
+    /// Lossy wrapper: a `limits[]` element that fails to decode becomes
+    /// `nil` instead of failing the array.
+    struct LossyLimit: Decodable {
+        let value: DirectLimit?
+        init(from decoder: any Decoder) {
+            value = try? DirectLimit(from: decoder)
         }
     }
 

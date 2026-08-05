@@ -41,7 +41,7 @@ struct SupermuxUsageMenuButton: View {
             SupermuxUsagePopoverView(
                 model: SupermuxComposition.usageModel,
                 onRefresh: {
-                    Task { await SupermuxComposition.usageModel.refresh() }
+                    await SupermuxComposition.usageModel.refresh()
                 },
                 onSwitchAccount: { slot in
                     Task { await SupermuxComposition.usageModel.switchClaudeAccount(toSlot: slot) }

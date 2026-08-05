@@ -16,8 +16,10 @@ public struct SupermuxUsageGaugeIcon: View {
     public var body: some View {
         let lineWidth = max(1.5, pointSize / 8)
         ZStack {
+            // Track opacity steps up while empty so the pre-data button reads
+            // as an icon (like the neighboring footer glyphs), not a blank slot.
             Circle()
-                .stroke(Color.primary.opacity(0.16), lineWidth: lineWidth)
+                .stroke(Color.primary.opacity(window == nil ? 0.35 : 0.16), lineWidth: lineWidth)
             if let window {
                 Circle()
                     .trim(from: 0, to: max(0.02, min(1, window.percent / 100)))

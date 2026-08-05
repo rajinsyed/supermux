@@ -108,9 +108,10 @@ def main():
             added += 1
 
     if new_entries:
-        # Append at the end of "strings". Two observed catalog tails: the
+        # Append at the end of "strings". Observed catalog tails: the
         # original `  }\n}\n` (strings dict last) and, since Xcode re-sorted
-        # top-level keys, `  },\n  "version" : "1.0"\n}\n` (version last).
+        # top-level keys, `  },\n  "version" : "1.0"\n}\n` (version last,
+        # with or without a space before the colon).
         for tail in ('  }\n}\n', '  },\n  "version" : "1.0"\n}\n', '  },\n  "version": "1.0"\n}\n'):
             if text.endswith(tail):
                 break

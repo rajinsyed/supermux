@@ -21,7 +21,20 @@ struct SupermuxUsageAccountRow: View {
 
     @State private var isExpanded = false
 
-    private var label: String { account.displayName ?? account.email }
+    /// Never blank: a malformed cswap row with no alias/email still needs a
+    /// readable name for the row, its Switch tooltip, and accessibility.
+    private var label: String {
+        if let displayName = account.displayName, !displayName.isEmpty { return displayName }
+        if !account.email.isEmpty { return account.email }
+        if let slot = account.slot {
+            return String(
+                format: String(localized: "supermux.usage.account.slotFallback", defaultValue: "Account %lld"),
+                slot
+            )
+        }
+        return String(localized: "supermux.usage.account.unknown", defaultValue: "Unknown account")
+    }
+
     private var hasWindows: Bool { !account.windows.isEmpty }
 
     var body: some View {
@@ -49,16 +62,18 @@ struct SupermuxUsageAccountRow: View {
                         Button(String(localized: "supermux.usage.account.enable", defaultValue: "Enable in Rotation")) {
                             onSetEnabled(true)
                         }
+                        .disabled(switchDisabled)
                     } else {
                         Button(String(localized: "supermux.usage.account.disable", defaultValue: "Hold Out of Rotation")) {
                             onSetEnabled(false)
                         }
+                        .disabled(switchDisabled)
                     }
                 }
             }
             if isExpanded, hasWindows {
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { index, window in
+                    ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.element.kind) { index, window in
                         SupermuxUsageBarRow(window: window, appearDelay: Double(index) * 0.04)
                     }
                 }
@@ -127,9 +142,13 @@ struct SupermuxUsageAccountRow: View {
             Button(action: onSwitch) {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    // .plain-derived styles never auto-dim on disable; do it
+                    // explicitly so inert buttons read as inert mid-switch.
+                    .foregroundStyle(switchDisabled ? Color.secondary : Color.accentColor)
                     .frame(width: 18, height: 18)
-                    .background(Circle().fill(Color.accentColor.opacity(0.12)))
+                    .background(Circle().fill(
+                        (switchDisabled ? Color.secondary : Color.accentColor).opacity(0.12)
+                    ))
             }
             .buttonStyle(SupermuxPressEffectButtonStyle())
             .disabled(switchDisabled)

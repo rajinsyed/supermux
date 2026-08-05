@@ -3,8 +3,10 @@ public import Foundation
 /// One provider rate-limit window (Claude's 5-hour/7-day, Codex's 5-hour/weekly,
 /// or a scoped/per-model weekly limit) as rendered by the usage tracker.
 public struct SupermuxUsageWindow: Sendable, Equatable {
-    /// Which window this is, driving the row label and sort order.
-    public enum Kind: Sendable, Equatable {
+    /// Which window this is, driving the row label and sort order. Hashable
+    /// so a window's kind can serve as its SwiftUI identity — a row must not
+    /// morph into a different window when the set changes order or length.
+    public enum Kind: Sendable, Equatable, Hashable {
         /// The rolling ~5-hour session window.
         case session
         /// The rolling 7-day window across all models.
@@ -53,6 +55,12 @@ public enum SupermuxUsageSeverity: Sendable, Equatable, Comparable {
     }
 }
 
+/// A provider snapshot carrying its own measurement time, so the model can
+/// refuse to replace newer displayed data with an older fallback snapshot.
+public protocol SupermuxTimestampedUsageSnapshot: Sendable, Equatable {
+    var fetchedAt: Date { get }
+}
+
 /// Claude usage for one account (cswap manages several; the direct fallback
 /// yields exactly one).
 public struct SupermuxClaudeAccountUsage: Sendable, Equatable, Identifiable {
@@ -71,10 +79,14 @@ public struct SupermuxClaudeAccountUsage: Sendable, Equatable, Identifiable {
     }
 
     /// Stable per-row identity. cswap's parser tolerates malformed rows, so
-    /// `email` alone could collide on `""`; the slot number disambiguates.
-    public var id: String { "\(slot.map(String.init) ?? "-")|\(email)" }
+    /// `email` alone could collide on `""`; the slot number disambiguates,
+    /// and the source-row ordinal covers rows missing both slot and email.
+    public var id: String { "\(slot.map(String.init) ?? "#\(ordinal)")|\(email)" }
     /// cswap slot number (`nil` for the direct-API single account).
     public let slot: Int?
+    /// Position of this row in the source payload; only used to keep the
+    /// identity unique when both `slot` and `email` are absent.
+    public let ordinal: Int
     public let email: String
     /// Display alias/organization when it reads better than the raw email.
     public let displayName: String?
@@ -91,6 +103,7 @@ public struct SupermuxClaudeAccountUsage: Sendable, Equatable, Identifiable {
 
     public init(
         slot: Int? = nil,
+        ordinal: Int = 0,
         email: String,
         displayName: String?,
         isActive: Bool,
@@ -100,6 +113,7 @@ public struct SupermuxClaudeAccountUsage: Sendable, Equatable, Identifiable {
         fetchedAt: Date?
     ) {
         self.slot = slot
+        self.ordinal = ordinal
         self.email = email
         self.displayName = displayName
         self.isActive = isActive
@@ -111,7 +125,7 @@ public struct SupermuxClaudeAccountUsage: Sendable, Equatable, Identifiable {
 }
 
 /// A full Claude-side snapshot: every known account, active one first.
-public struct SupermuxClaudeUsageSnapshot: Sendable, Equatable {
+public struct SupermuxClaudeUsageSnapshot: SupermuxTimestampedUsageSnapshot {
     /// Where the data came from, shown as a footnote and used to pick refresh
     /// cadence (cswap enforces its own API politeness; the direct path must
     /// self-throttle).
@@ -137,7 +151,7 @@ public struct SupermuxClaudeUsageSnapshot: Sendable, Equatable {
 }
 
 /// Codex (ChatGPT-subscription) usage snapshot.
-public struct SupermuxCodexUsageSnapshot: Sendable, Equatable {
+public struct SupermuxCodexUsageSnapshot: SupermuxTimestampedUsageSnapshot {
     public enum Source: Sendable, Equatable {
         /// Live response from the ChatGPT usage endpoint.
         case api
@@ -150,12 +164,23 @@ public struct SupermuxCodexUsageSnapshot: Sendable, Equatable {
     public let planType: String?
     public let windows: [SupermuxUsageWindow]
     public let fetchedAt: Date
+    /// `true` when this snapshot was served from the session log BECAUSE the
+    /// stored credential is expired/rejected — the data renders, but the user
+    /// needs to know live refresh is broken until they sign in again.
+    public let needsRelogin: Bool
 
-    public init(source: Source, planType: String?, windows: [SupermuxUsageWindow], fetchedAt: Date) {
+    public init(
+        source: Source,
+        planType: String?,
+        windows: [SupermuxUsageWindow],
+        fetchedAt: Date,
+        needsRelogin: Bool = false
+    ) {
         self.source = source
         self.planType = planType
         self.windows = windows
         self.fetchedAt = fetchedAt
+        self.needsRelogin = needsRelogin
     }
 }
 

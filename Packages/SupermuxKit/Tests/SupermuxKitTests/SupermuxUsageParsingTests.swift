@@ -564,3 +564,188 @@ struct SupermuxClaudeAccountIdentityTests {
         #expect(ids.count == 2)
     }
 }
+
+@Suite
+struct SupermuxUsageReviewRegressionTests {
+    /// A malformed account row (wrong-typed field) degrades to a stub instead
+    /// of discarding every other account.
+    @Test func malformedCswapRowDoesNotDropTheSnapshot() throws {
+        let json = Data("""
+        {"schemaVersion":1,"accounts":[
+          {"number":1,"email":"good@example.com","active":true,"usageStatus":"ok",
+           "usage":{"fiveHour":{"pct":10.0}}},
+          {"number":"not-a-number","email":42}
+        ]}
+        """.utf8)
+        let snapshot = try #require(SupermuxCswapUsageParser.parse(jsonData: json))
+        #expect(snapshot.accounts.count == 2)
+        #expect(snapshot.activeAccount?.email == "good@example.com")
+        let stub = try #require(snapshot.accounts.first { $0.email.isEmpty })
+        #expect(stub.status == .unavailable(reason: nil))
+    }
+
+    /// Future schema majors must not be silently rendered as v1.
+    @Test func rejectsFutureCswapSchemaVersion() {
+        let json = Data("""
+        {"schemaVersion":2,"accounts":[{"number":1,"email":"a@b.c","active":true,
+         "usage":{"fiveHour":{"pct":10.0}}}]}
+        """.utf8)
+        #expect(SupermuxCswapUsageParser.parse(jsonData: json) == nil)
+    }
+
+    /// Rows with neither slot nor email keep distinct identities via ordinal.
+    @Test func slotlessEmaillessRowsKeepDistinctIdentities() throws {
+        let json = Data("""
+        {"schemaVersion":1,"accounts":[
+          {"active":false,"usageStatus":"unavailable"},
+          {"active":false,"usageStatus":"unavailable"}
+        ]}
+        """.utf8)
+        let snapshot = try #require(SupermuxCswapUsageParser.parse(jsonData: json))
+        #expect(Set(snapshot.accounts.map(\.id)).count == 2)
+    }
+
+    /// A missing percentage is "unknown", never 0%.
+    @Test func missingPercentDropsTheWindowInsteadOfZero() throws {
+        let json = Data("""
+        {"schemaVersion":1,"accounts":[{"number":1,"email":"a@b.c","active":true,"usageStatus":"ok",
+          "usage":{"fiveHour":{"resetsAt":"2026-08-04T19:30:00Z"},"sevenDay":{"pct":40.0}}}]}
+        """.utf8)
+        let snapshot = try #require(SupermuxCswapUsageParser.parse(jsonData: json))
+        let account = try #require(snapshot.activeAccount)
+        #expect(account.windows.count == 1)
+        #expect(account.windows.first?.kind == .weekly)
+    }
+
+    /// A credits-only newest rate_limits event must not hide an older usable
+    /// snapshot further up the session log.
+    @Test func sessionLogScanSkipsCreditsOnlyEvents() throws {
+        let log = """
+        {"timestamp":"2026-08-04T14:00:00.000Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":33.0,"window_minutes":300,"resets_at":1786000000},"plan_type":"pro"}}}
+        {"timestamp":"2026-08-04T15:00:00.000Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"credits":{"balance":12}}}}
+        """
+        let snapshot = try #require(SupermuxCodexUsageParser.parseSessionLog(jsonlContent: log))
+        #expect(snapshot.windows.first?.percent == 33.0)
+    }
+
+    /// One malformed scoped limits[] row must not discard valid base windows
+    /// in the direct OAuth payload.
+    @Test func malformedScopedLimitKeepsDirectBaseWindows() throws {
+        let body = Data("""
+        {
+          "five_hour": {"utilization": 27.0, "resets_at": "2026-08-04T19:30:00Z"},
+          "seven_day": {"utilization": 23.0, "resets_at": "2026-08-10T18:00:00Z"},
+          "limits": [
+            {"kind": "weekly_scoped", "percent": "not-a-number",
+             "scope": {"model": {"display_name": "Broken"}}}
+          ]
+        }
+        """.utf8)
+        let account = try #require(SupermuxClaudeUsageSource.parseDirectUsage(jsonData: body, email: "x@y.z"))
+        #expect(account.windows.count == 2)
+    }
+
+    @Test func percentNormalization() {
+        #expect(SupermuxUsagePercent.normalized(nil) == nil)
+        #expect(SupermuxUsagePercent.normalized(-1) == nil)
+        #expect(SupermuxUsagePercent.normalized(0) == 0)
+        #expect(SupermuxUsagePercent.normalized(150) == 100)
+    }
+}
+
+@Suite
+@MainActor
+struct SupermuxUsageModelConcurrencyRegressionTests {
+    /// A switch completing while a poll pass is in flight must still deliver
+    /// the post-switch refresh, and the in-flight pass's pre-switch snapshot
+    /// must not be published over the post-switch one.
+    @Test func switchDuringInFlightPassStillRefreshes() async {
+        let gate = AsyncGate()
+        let fetches = SupermuxUsageModelThrottleTests.Counter()
+        let preSwitch = SupermuxClaudeUsageSnapshot(
+            source: .cswap,
+            accounts: [SupermuxClaudeAccountUsage(
+                slot: 2, email: "old@example.com", displayName: nil,
+                isActive: true, status: .ok, windows: [], fetchedAt: nil
+            )],
+            fetchedAt: Date(timeIntervalSinceNow: -10)
+        )
+        let postSwitch = SupermuxClaudeUsageSnapshot(
+            source: .cswap,
+            accounts: [SupermuxClaudeAccountUsage(
+                slot: 4, email: "new@example.com", displayName: nil,
+                isActive: true, status: .ok, windows: [], fetchedAt: nil
+            )],
+            fetchedAt: Date()
+        )
+        let model = SupermuxUsageModel(
+            claudeFetch: {
+                fetches.increment()
+                if fetches.count == 1 {
+                    // First (pre-switch) pass: block until the switch is done.
+                    await gate.wait()
+                    return .ready(preSwitch)
+                }
+                return .ready(postSwitch)
+            },
+            codexFetch: { .notConfigured },
+            claudeSwitch: { _ in .switched(toEmail: "new@example.com") },
+            minimumRefreshInterval: 3600
+        )
+        // Start the pass; it suspends inside claudeFetch.
+        let pass = Task { await model.refresh() }
+        // Let the pass actually start before switching.
+        while fetches.count == 0 { await Task.yield() }
+        let switchTask = Task { await model.switchClaudeAccount(toSlot: 4) }
+        _ = await switchTask.value
+        await gate.open()
+        _ = await pass.value
+        // The queued forced follow-up runs inside the original pass.
+        while model.isRefreshing { await Task.yield() }
+        #expect(fetches.count == 2)
+        #expect(model.claude.snapshot?.activeAccount?.email == "new@example.com")
+    }
+
+    /// An incoming ready snapshot older than the displayed one (degraded
+    /// session-log fallback) must not replace it.
+    @Test func olderReadySnapshotNeverReplacesNewer() {
+        let newer = SupermuxUsageProviderState<SupermuxCodexUsageSnapshot>.ready(
+            SupermuxCodexUsageSnapshot(source: .api, planType: "pro", windows: [], fetchedAt: Date())
+        )
+        let older = SupermuxUsageProviderState<SupermuxCodexUsageSnapshot>.ready(
+            SupermuxCodexUsageSnapshot(
+                source: .sessionLog, planType: "pro", windows: [],
+                fetchedAt: Date(timeIntervalSinceNow: -86400)
+            )
+        )
+        #expect(SupermuxUsageModel.merging(current: newer, incoming: older) == newer)
+        #expect(SupermuxUsageModel.merging(current: older, incoming: newer) == newer)
+    }
+
+    /// The throttled outcome is reported so the UI can acknowledge the click.
+    @Test func throttledRefreshReportsOutcome() async {
+        let model = SupermuxUsageModel(
+            claudeFetch: { .notConfigured },
+            codexFetch: { .notConfigured },
+            minimumRefreshInterval: 3600
+        )
+        #expect(await model.refresh() == .refreshed)
+        #expect(await model.refresh() == .throttled)
+    }
+
+    actor AsyncGate {
+        private var isOpen = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func wait() async {
+            if isOpen { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+
+        func open() {
+            isOpen = true
+            waiters.forEach { $0.resume() }
+            waiters.removeAll()
+        }
+    }
+}

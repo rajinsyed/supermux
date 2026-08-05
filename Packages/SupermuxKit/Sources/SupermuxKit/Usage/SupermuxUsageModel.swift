@@ -44,6 +44,13 @@ public final class SupermuxUsageModel {
     /// drive more than one pass per floor interval.
     @ObservationIgnored private let minimumRefreshInterval: TimeInterval
     @ObservationIgnored private var lastPassStartedAt: Date?
+    /// Set when a mutation completes while a pass is in flight; the running
+    /// pass immediately runs one more (its own results describe the
+    /// pre-mutation world and are discarded via `accountStateGeneration`).
+    @ObservationIgnored private var pendingForcedRefresh = false
+    /// Bumped on every successful cswap mutation. A pass that started under
+    /// an older generation measured pre-mutation state and must not publish.
+    @ObservationIgnored private var accountStateGeneration = 0
     /// Identity of the view instance currently driving the poll loop, so
     /// N mounted sidebars run one loop, and the loop migrates when its owner
     /// unmounts.
@@ -100,11 +107,19 @@ public final class SupermuxUsageModel {
     /// "updated X ago" for the popover footer. A pass that failed and kept
     /// last-good snapshots does NOT advance this (the snapshots keep their
     /// original `fetchedAt`), so stale data never masquerades as fresh.
+    ///
+    /// For Claude the per-account measurement times are used, not the
+    /// snapshot's parse time: cswap serves cached measurements, so the parse
+    /// moment says nothing about how old the displayed numbers are.
     public var oldestDisplayedDataAge: Date? {
-        let dates = [
-            claude.snapshot.map(\.fetchedAt),
-            codex.snapshot.map(\.fetchedAt),
-        ].compactMap { $0 }
+        var dates: [Date] = []
+        if let claudeSnapshot = claude.snapshot {
+            let accountDates = claudeSnapshot.accounts.compactMap(\.fetchedAt)
+            dates.append(accountDates.min() ?? claudeSnapshot.fetchedAt)
+        }
+        if let codexSnapshot = codex.snapshot {
+            dates.append(codexSnapshot.fetchedAt)
+        }
         return dates.min()
     }
 
@@ -127,24 +142,63 @@ public final class SupermuxUsageModel {
         if pollLoopOwner == me { pollLoopOwner = nil }
     }
 
+    /// What a `refresh()` call actually did, so the UI can acknowledge a
+    /// throttled click ("Up to date") instead of silently doing nothing.
+    public enum RefreshOutcome: Sendable, Equatable {
+        case refreshed
+        case throttled
+        case alreadyRefreshing
+    }
+
     /// One pass over both providers, concurrently. The floor applies here —
     /// to every caller — so repeated popover opens or refresh-button clicks
     /// coalesce into at most one pass per `minimumRefreshInterval`.
-    public func refresh() async {
-        guard !isRefreshing else { return }
-        if let last = lastPassStartedAt, Date().timeIntervalSince(last) < minimumRefreshInterval {
-            return
+    @discardableResult
+    public func refresh() async -> RefreshOutcome {
+        await refresh(forced: false)
+    }
+
+    /// `forced` passes (post-mutation) bypass the floor, and when a pass is
+    /// already in flight they queue exactly one follow-up instead of being
+    /// dropped — the in-flight pass measured pre-mutation state.
+    @discardableResult
+    private func refresh(forced: Bool) async -> RefreshOutcome {
+        guard !isRefreshing else {
+            if forced { pendingForcedRefresh = true }
+            return .alreadyRefreshing
+        }
+        if !forced, let last = lastPassStartedAt,
+           Date().timeIntervalSince(last) < minimumRefreshInterval {
+            return .throttled
         }
         isRefreshing = true
-        lastPassStartedAt = Date()
         defer { isRefreshing = false }
-        async let claudeResult = claudeFetch()
-        async let codexResult = codexFetch()
-        let (newClaude, newCodex) = await (claudeResult, codexResult)
-        // Keep last-good data on transient failures: a failed pass only
-        // replaces a ready state with failure when we never had data.
-        claude = Self.merging(current: claude, incoming: newClaude)
-        codex = Self.merging(current: codex, incoming: newCodex)
+        // repeat, not recursion: recursing would re-enter before the defer
+        // clears isRefreshing and trip the guard above.
+        repeat {
+            pendingForcedRefresh = false
+            lastPassStartedAt = Date()
+            let generation = accountStateGeneration
+            async let claudeResult = claudeFetch()
+            async let codexResult = codexFetch()
+            let (newClaude, newCodex) = await (claudeResult, codexResult)
+            // A cancelled pass (the owning sidebar unmounted mid-fetch)
+            // measured nothing trustworthy — CommandRunner reports the
+            // cancellation as a generic failure the sources can't tell from
+            // a real one. Don't publish it, and let the next owner re-run
+            // immediately instead of waiting out the floor.
+            if Task.isCancelled {
+                lastPassStartedAt = nil
+                return .refreshed
+            }
+            // Results measured before a completed cswap mutation describe
+            // the old active/enabled state; drop them rather than paint them.
+            if generation == accountStateGeneration {
+                claude = Self.merging(current: claude, incoming: newClaude)
+                codex = Self.merging(current: codex, incoming: newCodex)
+            }
+        } while pendingForcedRefresh
+        return .refreshed
     }
 
     /// Switches the active Claude Code login to a cswap slot, then forces a
@@ -161,8 +215,8 @@ public final class SupermuxUsageModel {
             // The floor exists to protect the usage endpoint from UI spam; a
             // completed switch is a real state change, and the cswap path
             // (the only way to get here) serves from cswap's cache anyway.
-            lastPassStartedAt = nil
-            await refresh()
+            accountStateGeneration &+= 1
+            await refresh(forced: true)
         case .failed(let message):
             lastSwitchError = message
         }
@@ -184,8 +238,8 @@ public final class SupermuxUsageModel {
         switch result {
         case .switched, .alreadyActive:
             lastSwitchError = nil
-            lastPassStartedAt = nil
-            await refresh()
+            accountStateGeneration &+= 1
+            await refresh(forced: true)
         case .failed(let message):
             lastSwitchError = message
         }
@@ -204,19 +258,24 @@ public final class SupermuxUsageModel {
         switch result {
         case .switched, .alreadyActive:
             lastSwitchError = nil
-            lastPassStartedAt = nil
-            await refresh()
+            accountStateGeneration &+= 1
+            await refresh(forced: true)
         case .failed(let message):
             lastSwitchError = message
         }
     }
 
-    static func merging<Snapshot>(
+    static func merging<Snapshot: SupermuxTimestampedUsageSnapshot>(
         current: SupermuxUsageProviderState<Snapshot>,
         incoming: SupermuxUsageProviderState<Snapshot>
     ) -> SupermuxUsageProviderState<Snapshot> {
         switch (current, incoming) {
         case (.ready, .failed):
+            return current
+        case (.ready(let held), .ready(let fresh)) where fresh.fetchedAt < held.fetchedAt:
+            // A degraded pass can serve an OLDER measurement (Codex falls
+            // back to the last session log on transient API trouble); never
+            // let it replace newer data already on display.
             return current
         default:
             return incoming

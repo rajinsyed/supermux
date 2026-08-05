@@ -40,7 +40,7 @@ public actor SupermuxCodexUsageSource {
             return .notConfigured
         }
         if let expiry = Self.jwtExpiry(auth.accessToken), expiry <= Date() {
-            if let fromLog = readNewestSessionLogSnapshot() {
+            if let fromLog = readNewestSessionLogSnapshot(needsRelogin: true) {
                 return .ready(fromLog)
             }
             return .needsLogin(detail: nil)
@@ -55,19 +55,19 @@ public actor SupermuxCodexUsageSource {
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                return degrade(message: "invalid response")
+                return degrade(message: SupermuxUsageErrorMessage.invalidResponse)
             }
             if http.statusCode == 401 || http.statusCode == 403 {
-                if let fromLog = readNewestSessionLogSnapshot() {
+                if let fromLog = readNewestSessionLogSnapshot(needsRelogin: true) {
                     return .ready(fromLog)
                 }
                 return .needsLogin(detail: "HTTP \(http.statusCode)")
             }
             guard (200..<300).contains(http.statusCode) else {
-                return degrade(message: "HTTP \(http.statusCode)")
+                return degrade(message: SupermuxUsageErrorMessage.httpStatus(http.statusCode))
             }
             guard let snapshot = SupermuxCodexUsageParser.parseAPIResponse(jsonData: data) else {
-                return degrade(message: "unexpected usage format")
+                return degrade(message: SupermuxUsageErrorMessage.unexpectedUsageFormat)
             }
             return .ready(snapshot)
         } catch {
@@ -120,13 +120,23 @@ public actor SupermuxCodexUsageSource {
 
     // MARK: - Session-log fallback
 
-    private func readNewestSessionLogSnapshot() -> SupermuxCodexUsageSnapshot? {
+    private func readNewestSessionLogSnapshot(needsRelogin: Bool = false) -> SupermuxCodexUsageSnapshot? {
         guard let newest = newestRolloutFile() else { return nil }
         // Rollout files grow with the session; reading the whole file is fine
         // (they are line-delimited JSON, typically well under a few MB) and the
         // parser scans from the end for the last rate_limits event.
         guard let content = try? String(contentsOf: newest, encoding: .utf8) else { return nil }
-        return SupermuxCodexUsageParser.parseSessionLog(jsonlContent: content)
+        guard let snapshot = SupermuxCodexUsageParser.parseSessionLog(jsonlContent: content) else {
+            return nil
+        }
+        guard needsRelogin else { return snapshot }
+        return SupermuxCodexUsageSnapshot(
+            source: snapshot.source,
+            planType: snapshot.planType,
+            windows: snapshot.windows,
+            fetchedAt: snapshot.fetchedAt,
+            needsRelogin: true
+        )
     }
 
     /// The lexicographically-last rollout file in the lexicographically-last

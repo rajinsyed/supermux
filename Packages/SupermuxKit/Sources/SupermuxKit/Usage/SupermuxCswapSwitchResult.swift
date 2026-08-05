@@ -15,7 +15,7 @@ public enum SupermuxCswapSwitchResult: Sendable, Equatable {
     public static func parse(jsonData: Data) -> SupermuxCswapSwitchResult? {
         guard let payload = try? JSONDecoder().decode(Payload.self, from: jsonData) else { return nil }
         if let error = payload.error {
-            return .failed(message: error.message ?? error.type ?? "cswap switch failed")
+            return .failed(message: error.message ?? error.type ?? SupermuxUsageErrorMessage.cswapSwitchFailed)
         }
         guard let switched = payload.switched else { return nil }
         let email = payload.to?.email ?? ""
@@ -27,7 +27,7 @@ public enum SupermuxCswapSwitchResult: Sendable, Equatable {
         }
         // Not switched for any other reason (rate-limited target under a
         // strategy, no-op guard, …): surface cswap's message.
-        return .failed(message: payload.message ?? "cswap did not switch")
+        return .failed(message: payload.message ?? SupermuxUsageErrorMessage.cswapDidNotSwitch)
     }
 
     private struct Payload: Decodable {

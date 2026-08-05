@@ -10,7 +10,9 @@ public import SwiftUI
 /// exercise it without the app target.
 public struct SupermuxUsagePopoverView: View {
     @Bindable private var model: SupermuxUsageModel
-    private let onRefresh: () -> Void
+    /// Runs a refresh and reports what happened, so a throttled click can be
+    /// acknowledged instead of silently ignored.
+    private let onRefresh: () async -> SupermuxUsageModel.RefreshOutcome
     /// Host hook for switching the active cswap account by slot number.
     private let onSwitchAccount: (Int) -> Void
     /// Host hook for `cswap switch --strategy best`.
@@ -21,11 +23,15 @@ public struct SupermuxUsagePopoverView: View {
     /// Whole turns completed by the refresh glyph; each refresh start adds
     /// one, so the icon spins exactly once per refresh and never snaps back.
     @State private var refreshTurns = 0
+    /// Briefly true after a refresh click landed inside the floor — the data
+    /// is already fresh, so acknowledge with "Up to date" instead of nothing.
+    @State private var showUpToDate = false
+    @State private var upToDateDismissTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
         model: SupermuxUsageModel,
-        onRefresh: @escaping () -> Void,
+        onRefresh: @escaping () async -> SupermuxUsageModel.RefreshOutcome,
         onSwitchAccount: @escaping (Int) -> Void = { _ in },
         onSwitchToBest: @escaping () -> Void = {},
         onSetAccountEnabled: @escaping (Int, Bool) -> Void = { _, _ in }
@@ -61,13 +67,28 @@ public struct SupermuxUsagePopoverView: View {
             Text(String(localized: "supermux.usage.title", defaultValue: "Usage Limits"))
                 .font(.system(size: 12, weight: .semibold))
             Spacer(minLength: 0)
-            Button(action: onRefresh) {
+            if showUpToDate {
+                Text(String(localized: "supermux.usage.upToDate", defaultValue: "Up to date"))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .transition(.opacity)
+            }
+            Button {
+                Task {
+                    let outcome = await onRefresh()
+                    guard outcome == .throttled else { return }
+                    acknowledgeUpToDate()
+                }
+            } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
                     .opacity(model.isRefreshing ? 0.4 : 1)
                     .animation(.easeOut(duration: 0.2), value: model.isRefreshing)
                     .rotationEffect(.degrees(Double(refreshTurns) * 360))
+                    // Keep the glyph small but give the click a 20pt target.
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(SupermuxPressEffectButtonStyle())
             .disabled(model.isRefreshing)
@@ -79,6 +100,18 @@ public struct SupermuxUsagePopoverView: View {
             }
             .help(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
             .accessibilityLabel(String(localized: "supermux.usage.refresh", defaultValue: "Refresh now"))
+        }
+        .animation(.easeOut(duration: 0.2), value: showUpToDate)
+    }
+
+    /// Flashes the "Up to date" note for a couple of seconds.
+    private func acknowledgeUpToDate() {
+        upToDateDismissTask?.cancel()
+        showUpToDate = true
+        upToDateDismissTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            showUpToDate = false
         }
     }
 
@@ -138,6 +171,8 @@ public struct SupermuxUsagePopoverView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.tertiary)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(SupermuxPressEffectButtonStyle())
             .accessibilityLabel(String(localized: "supermux.usage.switch.dismissError", defaultValue: "Dismiss"))
@@ -181,7 +216,10 @@ public struct SupermuxUsagePopoverView: View {
     /// top-to-bottom so the popover settles in one quick cascade.
     private func windowRows(_ windows: [SupermuxUsageWindow]) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.offset) { index, window in
+            // Identity is the window's kind (unique within one block), not the
+            // index: index identity would morph a row into a different window
+            // when the set changes, animating percent between unrelated limits.
+            ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.element.kind) { index, window in
                 SupermuxUsageBarRow(window: window, appearDelay: Double(index) * 0.05)
             }
         }
@@ -273,7 +311,21 @@ public struct SupermuxUsagePopoverView: View {
                 noteRow(message)
             case .ready(let snapshot):
                 windowRows(snapshot.windows)
-                if snapshot.source == .sessionLog {
+                if snapshot.needsRelogin {
+                    // Stale-but-renderable data served because the credential
+                    // is expired/rejected: say so, or stale reads as live.
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.orange)
+                        Text(String(
+                            localized: "supermux.usage.needsLogin",
+                            defaultValue: "Sign in again to see usage"
+                        ))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                    }
+                } else if snapshot.source == .sessionLog {
                     noteRow(String(
                         localized: "supermux.usage.codex.fromSessionLog",
                         defaultValue: "From last Codex session (offline)"
@@ -393,8 +445,8 @@ struct SupermuxUsageBarRow: View {
                 .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Self.color(for: window.severity))
                 .frame(minWidth: 28, alignment: .trailing)
-                .contentTransition(.numericText(value: clampedPercent))
-                .animation(.smooth(duration: 0.45), value: clampedPercent)
+                .contentTransition(reduceMotion ? .identity : .numericText(value: clampedPercent))
+                .animation(reduceMotion ? nil : .smooth(duration: 0.45), value: clampedPercent)
         }
         .padding(.horizontal, 7)
         .frame(height: 21)
@@ -425,7 +477,7 @@ struct SupermuxUsageBarRow: View {
                     Rectangle()
                         .fill(Self.color(for: window.severity).opacity(0.3))
                         .frame(width: max(6, proxy.size.width * displayedPercent / 100))
-                        .animation(.smooth(duration: 0.5), value: clampedPercent)
+                        .animation(reduceMotion ? nil : .smooth(duration: 0.5), value: clampedPercent)
                 }
             }
         }

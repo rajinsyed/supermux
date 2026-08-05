@@ -12,12 +12,18 @@ import Foundation
 /// account rows degrade to `.unavailable` instead of failing the snapshot, and
 /// `lastGoodUsage` backfills windows when live `usage` is null.
 enum SupermuxCswapUsageParser {
+    /// The one schema major this parser understands.
+    static let supportedSchemaVersion = 1
+
     /// Decodes the `cswap list --json` payload. Returns `nil` when the data is
-    /// not the expected schema (schemaVersion missing or a future major shape).
+    /// not the expected schema (schemaVersion missing or not v1).
     static func parse(jsonData: Data, now: Date = Date()) -> SupermuxClaudeUsageSnapshot? {
         guard let payload = try? JSONDecoder().decode(Payload.self, from: jsonData) else { return nil }
-        let accounts = payload.accounts.map { row in
-            account(from: row)
+        guard payload.schemaVersion == supportedSchemaVersion else { return nil }
+        // Rows decode lossily and individually: one malformed row must not
+        // discard the other accounts (it degrades to an unavailable stub).
+        let accounts = payload.accounts.enumerated().map { index, row in
+            account(from: row.value, ordinal: index)
         }
         // Active account first, then cswap's slot order.
         let ordered = accounts.sorted { lhs, rhs in
@@ -27,13 +33,25 @@ enum SupermuxCswapUsageParser {
         return SupermuxClaudeUsageSnapshot(source: .cswap, accounts: ordered, fetchedAt: now)
     }
 
-    private static func account(from row: Payload.Account) -> SupermuxClaudeAccountUsage {
+    private static func account(from row: Payload.Account?, ordinal: Int) -> SupermuxClaudeAccountUsage {
+        guard let row else {
+            return SupermuxClaudeAccountUsage(
+                ordinal: ordinal,
+                email: "",
+                displayName: nil,
+                isActive: false,
+                status: .unavailable(reason: nil),
+                windows: [],
+                fetchedAt: nil
+            )
+        }
         let usage = row.usage ?? row.lastGoodUsage
         let windows = usage.map(windows(from:)) ?? []
         let fetchedAt = (row.usageFetchedAt ?? row.lastGoodFetchedAt)
             .flatMap(Self.parseISODate)
         return SupermuxClaudeAccountUsage(
             slot: row.number,
+            ordinal: ordinal,
             email: row.email ?? "",
             displayName: displayName(for: row),
             isActive: row.active ?? false,
@@ -67,26 +85,29 @@ enum SupermuxCswapUsageParser {
 
     private static func windows(from usage: Payload.Usage) -> [SupermuxUsageWindow] {
         var windows: [SupermuxUsageWindow] = []
-        if let window = usage.fiveHour {
+        // A window with no reported percentage is dropped, never rendered as
+        // 0% — "no quota used" and "unknown" must stay distinguishable.
+        if let window = usage.fiveHour, let pct = SupermuxUsagePercent.normalized(window.pct) {
             windows.append(SupermuxUsageWindow(
                 kind: .session,
-                percent: window.pct ?? 0,
+                percent: pct,
                 resetsAt: window.resetsAt.flatMap(Self.parseISODate)
             ))
         }
-        if let window = usage.sevenDay {
+        if let window = usage.sevenDay, let pct = SupermuxUsagePercent.normalized(window.pct) {
             windows.append(SupermuxUsageWindow(
                 kind: .weekly,
-                percent: window.pct ?? 0,
+                percent: pct,
                 resetsAt: window.resetsAt.flatMap(Self.parseISODate),
                 aheadOfPace: window.aheadOfPace
             ))
         }
         for scoped in usage.scoped ?? [] {
-            guard let name = scoped.name, !name.isEmpty else { continue }
+            guard let name = scoped.name, !name.isEmpty,
+                  let pct = SupermuxUsagePercent.normalized(scoped.pct) else { continue }
             windows.append(SupermuxUsageWindow(
                 kind: .scoped(name),
-                percent: scoped.pct ?? 0,
+                percent: pct,
                 resetsAt: scoped.resetsAt.flatMap(Self.parseISODate),
                 aheadOfPace: scoped.aheadOfPace
             ))
@@ -109,7 +130,7 @@ enum SupermuxCswapUsageParser {
 
     private struct Payload: Decodable {
         let schemaVersion: Int
-        let accounts: [Account]
+        let accounts: [LossyAccount]
 
         struct Account: Decodable {
             let number: Int?
@@ -142,6 +163,15 @@ enum SupermuxCswapUsageParser {
             let resetsAt: String?
             let name: String?
             let aheadOfPace: Bool?
+        }
+    }
+
+    /// Decodes one account row, swallowing per-row type mismatches so a
+    /// single malformed row degrades to a stub instead of failing the list.
+    private struct LossyAccount: Decodable {
+        let value: Payload.Account?
+        init(from decoder: any Decoder) {
+            value = try? Payload.Account(from: decoder)
         }
     }
 }
