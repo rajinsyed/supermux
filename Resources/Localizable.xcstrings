@@ -266480,23 +266480,6 @@
         }
       }
     },
-    "supermux.usage.helpRow" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Help"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ヘルプ"
-          }
-        }
-      }
-    },
     "supermux.usage.loading" : {
       "extractionState" : "manual",
       "localizations" : {

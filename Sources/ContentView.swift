@@ -14883,8 +14883,9 @@ struct SidebarFooterButtons: View {
                     }
                     if shows(.help) {
                         // SUPERMUX:begin sidebar-usage-button
-                        SupermuxUsageMenuButton(onSendFeedback: onSendFeedback)
+                        SupermuxUsageMenuButton()
                         // SUPERMUX:end sidebar-usage-button
+                        SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
                     }
                 }
             }
