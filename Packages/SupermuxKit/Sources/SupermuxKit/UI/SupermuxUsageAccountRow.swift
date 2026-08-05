@@ -39,7 +39,7 @@ struct SupermuxUsageAccountRow: View {
                     switchButton
                 }
             }
-            .frame(height: 18)
+            .frame(height: 20)
             .contextMenu {
                 if let onSetEnabled {
                     if account.isDisabled {

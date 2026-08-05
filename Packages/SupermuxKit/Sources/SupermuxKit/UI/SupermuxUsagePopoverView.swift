@@ -1,8 +1,9 @@
 public import SwiftUI
 
 /// The unified usage popover: Claude Code and Codex rate-limit windows as
-/// compact bars with reset countdowns, extra cswap accounts collapsed below
-/// the active one, and a freshness footer.
+/// single-line meter rows (progress fill behind the text) with reset
+/// countdowns, extra cswap accounts collapsed below the active one, and a
+/// freshness footer.
 ///
 /// Purely presentational — reads the shared ``SupermuxUsageModel`` and calls
 /// back into the host for refresh. Kept in the package so previews and tests
@@ -35,12 +36,19 @@ public struct SupermuxUsagePopoverView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             claudeSection
-            Divider()
+            hairline
             codexSection
             footer
         }
         .padding(12)
         .frame(width: 264, alignment: .leading)
+    }
+
+    /// Section separator quieter than a full `Divider`.
+    private var hairline: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.06))
+            .frame(height: 1)
     }
 
     private var header: some View {
@@ -63,37 +71,38 @@ public struct SupermuxUsagePopoverView: View {
 
     // MARK: - Claude
 
-    @ViewBuilder
     private var claudeSection: some View {
-        providerHeader(
-            title: String(localized: "supermux.usage.claude", defaultValue: "Claude Code"),
-            detail: claudeDetail
-        )
-        switch model.claude {
-        case .loading:
-            loadingRow
-        case .notConfigured:
-            noteRow(String(
-                localized: "supermux.usage.claude.notConfigured",
-                defaultValue: "Claude Code login not found"
-            ))
-        case .needsLogin:
-            noteRow(String(
-                localized: "supermux.usage.needsLogin",
-                defaultValue: "Sign in again to see usage"
-            ))
-        case .failed(let message):
-            noteRow(message)
-        case .ready(let snapshot):
-            if let active = snapshot.activeAccount {
-                accountWindows(active)
-            }
-            let others = snapshot.accounts.filter { $0.id != snapshot.activeAccount?.id }
-            if !others.isEmpty {
-                otherAccounts(others)
-            }
-            if let error = model.lastSwitchError {
-                switchErrorRow(error)
+        VStack(alignment: .leading, spacing: 6) {
+            providerHeader(
+                title: String(localized: "supermux.usage.claude", defaultValue: "Claude Code"),
+                detail: claudeDetail
+            )
+            switch model.claude {
+            case .loading:
+                loadingRow
+            case .notConfigured:
+                noteRow(String(
+                    localized: "supermux.usage.claude.notConfigured",
+                    defaultValue: "Claude Code login not found"
+                ))
+            case .needsLogin:
+                noteRow(String(
+                    localized: "supermux.usage.needsLogin",
+                    defaultValue: "Sign in again to see usage"
+                ))
+            case .failed(let message):
+                noteRow(message)
+            case .ready(let snapshot):
+                if let active = snapshot.activeAccount {
+                    accountWindows(active)
+                }
+                let others = snapshot.accounts.filter { $0.id != snapshot.activeAccount?.id }
+                if !others.isEmpty {
+                    otherAccounts(others)
+                }
+                if let error = model.lastSwitchError {
+                    switchErrorRow(error)
+                }
             }
         }
     }
@@ -149,7 +158,14 @@ public struct SupermuxUsagePopoverView: View {
                 ))
             }
         } else {
-            ForEach(Array(account.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
+            windowRows(account.windows)
+        }
+    }
+
+    /// A provider's meter rows as one tight block.
+    private func windowRows(_ windows: [SupermuxUsageWindow]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
                 SupermuxUsageBarRow(window: window)
             }
         }
@@ -160,10 +176,11 @@ public struct SupermuxUsagePopoverView: View {
     /// cswap `switch <slot>` feature, one click from the tracker.
     @ViewBuilder
     private func otherAccounts(_ accounts: [SupermuxClaudeAccountUsage]) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(String(localized: "supermux.usage.otherAccounts", defaultValue: "Other accounts"))
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .kerning(0.3)
                     .foregroundStyle(.tertiary)
                     .textCase(.uppercase)
                 Spacer(minLength: 4)
@@ -216,36 +233,35 @@ public struct SupermuxUsagePopoverView: View {
 
     // MARK: - Codex
 
-    @ViewBuilder
     private var codexSection: some View {
-        providerHeader(
-            title: String(localized: "supermux.usage.codex", defaultValue: "Codex"),
-            detail: codexDetail
-        )
-        switch model.codex {
-        case .loading:
-            loadingRow
-        case .notConfigured:
-            noteRow(String(
-                localized: "supermux.usage.codex.notConfigured",
-                defaultValue: "Codex login not found"
-            ))
-        case .needsLogin:
-            noteRow(String(
-                localized: "supermux.usage.needsLogin",
-                defaultValue: "Sign in again to see usage"
-            ))
-        case .failed(let message):
-            noteRow(message)
-        case .ready(let snapshot):
-            ForEach(Array(snapshot.windows.sortedForDisplay().enumerated()), id: \.offset) { _, window in
-                SupermuxUsageBarRow(window: window)
-            }
-            if snapshot.source == .sessionLog {
+        VStack(alignment: .leading, spacing: 6) {
+            providerHeader(
+                title: String(localized: "supermux.usage.codex", defaultValue: "Codex"),
+                detail: codexDetail
+            )
+            switch model.codex {
+            case .loading:
+                loadingRow
+            case .notConfigured:
                 noteRow(String(
-                    localized: "supermux.usage.codex.fromSessionLog",
-                    defaultValue: "From last Codex session (offline)"
+                    localized: "supermux.usage.codex.notConfigured",
+                    defaultValue: "Codex login not found"
                 ))
+            case .needsLogin:
+                noteRow(String(
+                    localized: "supermux.usage.needsLogin",
+                    defaultValue: "Sign in again to see usage"
+                ))
+            case .failed(let message):
+                noteRow(message)
+            case .ready(let snapshot):
+                windowRows(snapshot.windows)
+                if snapshot.source == .sessionLog {
+                    noteRow(String(
+                        localized: "supermux.usage.codex.fromSessionLog",
+                        defaultValue: "From last Codex session (offline)"
+                    ))
+                }
             }
         }
     }
@@ -315,52 +331,65 @@ public struct SupermuxUsagePopoverView: View {
     }
 }
 
-/// One labeled usage bar: window name, percent, progress track, reset countdown.
+/// One usage window as a single-line "meter" row: the progress fill sits
+/// behind the text (label left, reset countdown and percent right), so each
+/// window costs one compact line instead of a label line plus a bar line.
 struct SupermuxUsageBarRow: View {
     let window: SupermuxUsageWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-                // cswap's "(ahead)" pace marker: usage is outrunning the
-                // elapsed fraction of the weekly window.
-                if window.aheadOfPace == true {
-                    Text(String(localized: "supermux.usage.aheadOfPace", defaultValue: "ahead of pace"))
-                        .font(.system(size: 8.5, weight: .medium))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.orange.opacity(0.14)))
-                        .foregroundStyle(.orange)
-                }
-                Spacer(minLength: 4)
-                if let resetsAt = window.resetsAt, resetsAt > Date() {
-                    Text(String(
-                        format: String(localized: "supermux.usage.resets", defaultValue: "resets %@"),
-                        SupermuxUsageCountdown.text(until: resetsAt)
-                    ))
-                    .font(.system(size: 9).monospacedDigit())
-                    .foregroundStyle(.tertiary)
-                }
-                Text(verbatim: Self.percentText(clampedPercent))
-                    .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Self.color(for: window.severity))
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 10.5, weight: .medium))
+                .lineLimit(1)
+            // cswap's "(ahead)" pace marker: usage is outrunning the
+            // elapsed fraction of the weekly window.
+            if window.aheadOfPace == true {
+                Text(String(localized: "supermux.usage.aheadOfPace", defaultValue: "ahead of pace"))
+                    .font(.system(size: 8, weight: .medium))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.orange.opacity(0.16)))
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
             }
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.primary.opacity(0.08))
-                    Capsule()
-                        .fill(Self.color(for: window.severity))
-                        .frame(width: max(3, proxy.size.width * clampedPercent / 100))
-                }
+            Spacer(minLength: 4)
+            if let resetsAt = window.resetsAt, resetsAt > Date() {
+                Text(String(
+                    format: String(localized: "supermux.usage.resets", defaultValue: "resets %@"),
+                    SupermuxUsageCountdown.text(until: resetsAt)
+                ))
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
-            .frame(height: 4)
+            Text(verbatim: Self.percentText(clampedPercent))
+                .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Self.color(for: window.severity))
+                .frame(minWidth: 28, alignment: .trailing)
         }
+        .padding(.horizontal, 7)
+        .frame(height: 21)
+        .background(meterFill)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
+    }
+
+    /// Quiet track with a severity-tinted fill proportional to usage; text
+    /// stays legible because the tint stays under ~30% opacity.
+    private var meterFill: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.07))
+                if clampedPercent > 0 {
+                    Rectangle()
+                        .fill(Self.color(for: window.severity).opacity(0.3))
+                        .frame(width: max(6, proxy.size.width * clampedPercent / 100))
+                }
+            }
+        }
     }
 
     private var clampedPercent: Double {
