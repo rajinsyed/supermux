@@ -65,6 +65,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 APP_ENT="${REPO_ROOT}/supermux.release.entitlements"
 HELPER_ENT="${REPO_ROOT}/cmux-helper.entitlements"
+BUILT_APP="${DERIVED_DATA}/Build/Products/Release/${BASE_APP_NAME}.app"
+EXPLICIT_MODULE_CACHE="${DERIVED_DATA}/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules"
+BUILD_LOG_DIR="${SUPERMUX_RELEASE_LOG_DIR:-${HOME}/Library/Logs/Supermux}"
+mkdir -p "${BUILD_LOG_DIR}"
+BUILD_LOG="${BUILD_LOG_DIR}/release-build-$(date +%Y%m%d-%H%M%S)-$$.log"
+BUILD_HEAD="$(git rev-parse HEAD 2>/dev/null || printf 'unknown')"
 
 if ! security find-identity -v -p codesigning | grep -qF "${SIGN_IDENTITY}"; then
   echo "error: signing identity not found in keychain: ${SIGN_IDENTITY}" >&2
@@ -72,8 +78,29 @@ if ! security find-identity -v -p codesigning | grep -qF "${SIGN_IDENTITY}"; the
   exit 1
 fi
 
+echo "==> Ensuring GhosttyKit matches the current submodule"
+"${REPO_ROOT}/scripts/ensure-ghosttykit.sh"
+
 echo "==> Building Release (unsigned, native ids)"
-xcodebuild \
+echo "    HEAD: ${BUILD_HEAD}"
+echo "    Log:  ${BUILD_LOG}"
+{
+  printf 'HEAD=%s\n' "${BUILD_HEAD}"
+  printf 'Started=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  xcodebuild -version
+} > "${BUILD_LOG}"
+
+# External xcframework headers can change without invalidating Xcode's explicit
+# module cache. Reusing that cache then fails with "file ... has been modified
+# since the module file ... was built". Preserve the rest of DerivedData, but
+# rebuild these small precompiled modules against the current headers.
+rm -rf "${EXPLICIT_MODULE_CACHE}"
+# A previous product must never satisfy the post-build check after an interrupted
+# or failed xcodebuild invocation.
+rm -rf "${BUILT_APP}"
+
+set +e
+NSUnbufferedIO=YES xcodebuild \
   -project cmux.xcodeproj \
   -scheme cmux \
   -configuration Release \
@@ -82,10 +109,23 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CMUX_SIDEBAR_EXTENSION_POINT_ID="${SIDEBAR_EXTENSION_POINT_ID}" \
-  build
+  build 2>&1 | tee -a "${BUILD_LOG}"
+pipeline_status=("${PIPESTATUS[@]}")
+build_status=${pipeline_status[0]}
+tee_status=${pipeline_status[1]}
+set -e
+printf 'Finished=%s status=%s\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${build_status}" | tee -a "${BUILD_LOG}"
+if [[ "${build_status}" -ne 0 ]]; then
+  exit "${build_status}"
+fi
+if [[ "${tee_status}" -ne 0 ]]; then
+  echo "error: failed to write Release build log: ${BUILD_LOG}" >&2
+  exit "${tee_status}"
+fi
 
-BUILT_APP="${DERIVED_DATA}/Build/Products/Release/${BASE_APP_NAME}.app"
-[[ -d "${BUILT_APP}" ]] || { echo "error: built app not found at ${BUILT_APP}" >&2; exit 1; }
+[[ -x "${BUILT_APP}/Contents/MacOS/${BASE_APP_NAME}" ]] \
+  || { echo "error: newly built app executable not found at ${BUILT_APP}" >&2; exit 1; }
 
 if [[ -d "${REPO_ROOT}/cmuxd" ]]; then
   echo "==> Building cmuxd (ReleaseFast)"

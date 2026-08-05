@@ -228,6 +228,11 @@ jobs:
       - name: Validate release-build timeout guard
         run: ./tests/test_ci_release_build_timeout.sh
 
+      # SUPERMUX:begin local-release-script-guard
+      - name: Validate supermux local Release script
+        run: ./tests/test_supermux_release_stale_artifact.sh
+      # SUPERMUX:end local-release-script-guard
+
       - name: Validate markdown viewer asset compression
         run: ./tests/test_compress_markdown_viewer_assets.sh
 
