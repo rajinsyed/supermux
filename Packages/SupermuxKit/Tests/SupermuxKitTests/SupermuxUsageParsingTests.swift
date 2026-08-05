@@ -812,3 +812,47 @@ struct SupermuxUsageSwitchStalenessGateTests {
         #expect(model.claude.snapshot?.activeAccount?.email == "older-cache@example.com")
     }
 }
+
+@Suite
+@MainActor
+struct SupermuxUsageEnableToggleStalenessTests {
+    private nonisolated static func claudeState(
+        activeEmail: String, measured: Date
+    ) -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot> {
+        .ready(SupermuxClaudeUsageSnapshot(
+            source: .cswap,
+            accounts: [SupermuxClaudeAccountUsage(
+                slot: 1, email: activeEmail, displayName: nil, isActive: true,
+                status: .ok, windows: [], fetchedAt: measured
+            )],
+            fetchedAt: Date()
+        ))
+    }
+
+    /// Enable/disable toggles do NOT change the active account, so the
+    /// post-toggle pass must keep honoring the staleness gate: a pass that
+    /// comes back with an OLDER measurement for the SAME active account must
+    /// not overwrite the fresher one on display.
+    @Test func enableToggleDoesNotBypassStalenessGate() async {
+        let now = Date()
+        let fetches = SupermuxUsageModelThrottleTests.Counter()
+        let model = SupermuxUsageModel(
+            claudeFetch: {
+                fetches.increment()
+                // Pass 2 (post-toggle) serves an older cached measurement.
+                return fetches.count == 1
+                    ? Self.claudeState(activeEmail: "same@example.com", measured: now)
+                    : Self.claudeState(activeEmail: "same@example.com", measured: now.addingTimeInterval(-3600))
+            },
+            codexFetch: { .notConfigured },
+            claudeSetEnabled: { _, _ in .switched(toEmail: "") },
+            minimumRefreshInterval: 3600
+        )
+        await model.refresh()
+        await model.setClaudeAccountEnabled(false, slot: 3)
+        #expect(fetches.count == 2)
+        // The stale post-toggle snapshot must not replace the fresh one.
+        let shown = model.claude.snapshot?.activeAccount
+        #expect(shown?.fetchedAt == now)
+    }
+}

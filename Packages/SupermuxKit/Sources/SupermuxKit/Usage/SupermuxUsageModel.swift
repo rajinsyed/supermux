@@ -48,6 +48,9 @@ public final class SupermuxUsageModel {
     /// pass immediately runs one more (its own results describe the
     /// pre-mutation world and are discarded via `accountStateGeneration`).
     @ObservationIgnored private var pendingForcedRefresh = false
+    /// Whether the queued follow-up came from an account SWITCH (bypasses
+    /// the Claude staleness gate) rather than an enable/disable toggle.
+    @ObservationIgnored private var pendingActiveAccountChanged = false
     /// Bumped on every successful cswap mutation. A pass that started under
     /// an older generation measured pre-mutation state and must not publish.
     @ObservationIgnored private var accountStateGeneration = 0
@@ -161,10 +164,16 @@ public final class SupermuxUsageModel {
     /// `forced` passes (post-mutation) bypass the floor, and when a pass is
     /// already in flight they queue exactly one follow-up instead of being
     /// dropped — the in-flight pass measured pre-mutation state.
+    /// `activeAccountChanged` marks a pass whose incoming Claude snapshot
+    /// describes a different active account (a switch), which additionally
+    /// bypasses the staleness gate; enable/disable toggles do not set it.
     @discardableResult
-    private func refresh(forced: Bool) async -> RefreshOutcome {
+    private func refresh(forced: Bool, activeAccountChanged: Bool = false) async -> RefreshOutcome {
         guard !isRefreshing else {
-            if forced { pendingForcedRefresh = true }
+            if forced {
+                pendingForcedRefresh = true
+                pendingActiveAccountChanged = pendingActiveAccountChanged || activeAccountChanged
+            }
             return .alreadyRefreshing
         }
         if !forced, let last = lastPassStartedAt,
@@ -175,9 +184,10 @@ public final class SupermuxUsageModel {
         defer { isRefreshing = false }
         // repeat, not recursion: recursing would re-enter before the defer
         // clears isRefreshing and trip the guard above.
-        var mutationDriven = forced
+        var switchDriven = activeAccountChanged
         repeat {
             pendingForcedRefresh = false
+            pendingActiveAccountChanged = false
             lastPassStartedAt = Date()
             let generation = accountStateGeneration
             async let claudeResult = claudeFetch()
@@ -195,19 +205,19 @@ public final class SupermuxUsageModel {
             // Results measured before a completed cswap mutation describe
             // the old active/enabled state; drop them rather than paint them.
             if generation == accountStateGeneration {
-                // A mutation-driven pass bypasses the Claude staleness gate:
+                // A switch-driven pass bypasses the Claude staleness gate:
                 // the ACTIVE ACCOUNT just changed, so comparing the new
                 // account's (possibly older) cached measurement against the
                 // previous account's is meaningless — the switched-to
-                // account must be shown regardless.
+                // account must be shown regardless. Enable/disable toggles
+                // do NOT bypass it (the active account is unchanged, so the
+                // gate's same-account comparison stays valid).
                 claude = Self.merging(
-                    current: claude, incoming: newClaude, preferIncoming: mutationDriven
+                    current: claude, incoming: newClaude, preferIncoming: switchDriven
                 )
                 codex = Self.merging(current: codex, incoming: newCodex)
             }
-            // A queued follow-up only exists because a mutation completed
-            // mid-pass, so the next iteration is mutation-driven too.
-            mutationDriven = pendingForcedRefresh
+            switchDriven = pendingActiveAccountChanged
         } while pendingForcedRefresh
         return .refreshed
     }
@@ -227,7 +237,7 @@ public final class SupermuxUsageModel {
             // completed switch is a real state change, and the cswap path
             // (the only way to get here) serves from cswap's cache anyway.
             accountStateGeneration &+= 1
-            await refresh(forced: true)
+            await refresh(forced: true, activeAccountChanged: true)
         case .failed(let message):
             lastSwitchError = message
         }
@@ -250,7 +260,7 @@ public final class SupermuxUsageModel {
         case .switched, .alreadyActive:
             lastSwitchError = nil
             accountStateGeneration &+= 1
-            await refresh(forced: true)
+            await refresh(forced: true, activeAccountChanged: true)
         case .failed(let message):
             lastSwitchError = message
         }
@@ -258,6 +268,32 @@ public final class SupermuxUsageModel {
 
     /// Whether the switch-to-best action is currently in flight.
     public var isSwitchingToBest: Bool { switchingToSlot == -1 }
+
+    /// Whether everything on display is genuinely current: each provider is
+    /// `.ready` with healthy credentials AND a measurement no older than one
+    /// poll period plus cswap's serve TTL — cswap can serve hours-old cache
+    /// with `.ok` status, which must not be acknowledged as fresh.
+    /// `.notConfigured` doesn't block (nothing to be stale). Drives the
+    /// popover's "Up to date" flash on throttled refresh clicks.
+    public var isDisplayedDataFresh: Bool {
+        // Poll cadence (120s) + cswap's ~180s serve TTL, with slack.
+        let tolerance: TimeInterval = 360
+        let claudeFresh: Bool = switch claude {
+        case .notConfigured: true
+        case .ready(let snapshot):
+            snapshot.activeAccount?.status == .ok
+                && Date().timeIntervalSince(snapshot.measuredAt) < tolerance
+        case .failed, .needsLogin, .loading: false
+        }
+        let codexFresh: Bool = switch codex {
+        case .notConfigured: true
+        case .ready(let snapshot):
+            snapshot.source == .api && !snapshot.needsRelogin
+                && Date().timeIntervalSince(snapshot.measuredAt) < tolerance
+        case .failed, .needsLogin, .loading: false
+        }
+        return claudeFresh && codexFresh
+    }
 
     /// `cswap enable/disable <slot>`. Refreshes on success so the row's
     /// dimmed state follows immediately.
