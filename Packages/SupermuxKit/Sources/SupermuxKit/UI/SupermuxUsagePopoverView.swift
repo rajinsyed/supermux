@@ -273,7 +273,7 @@ struct SupermuxUsageBarRow: View {
                 if let resetsAt = window.resetsAt, resetsAt > Date() {
                     Text(String(
                         format: String(localized: "supermux.usage.resets", defaultValue: "resets %@"),
-                        resetsAt.formatted(.relative(presentation: .numeric))
+                        SupermuxUsageCountdown.text(until: resetsAt)
                     ))
                     .font(.system(size: 9).monospacedDigit())
                     .foregroundStyle(.tertiary)
