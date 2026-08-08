@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **147**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **148**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -169,6 +169,7 @@ Rules for adding a touchpoint:
 | 144 | `scripts/cleanup-dev-builds.sh` | `unfenced` | **Pre-existing UNFENCED fork edit, surfaced (not caused) by the 0.64.21 merge — a real fence still needs to be ADDED to the file** (see the #144 re-apply note; this row is a placeholder until then). The running-app tag regex is `cmux\ DEV\ ([A-Za-z0-9-]+)\.app` instead of upstream's `cmux\ DEV\ ([A-Za-z0-9._-]+)`, so the captured slug matches the `cmux-<slug>` DerivedData directory name. Upstream's greedy class ate the `.app` suffix and yielded `<slug>.app`, silently defeating the running-app protection (cleanup could delete DerivedData for a tag that is still running) |
 | 146 | `Sources/ContentView.swift` | `sidebar-usage-button` | In `SidebarFooterButtons`, the `shows(.help)` branch mounts the fork's `SupermuxUsageMenuButton()` (`Sources/Supermux/SupermuxUsageMenuButton.swift`, pbxproj ids `50BE0001…00FD`/`…00FE` under #3) **immediately before** upstream's untouched `SidebarHelpMenuButton(onSendFeedback:)` — a purely additive one-line insert. The button is a usage-gauge ring opening the unified Claude Code + Codex usage-limits popover (SupermuxKit `Usage/` + `SupermuxUsagePopoverView`; Claude via `cswap list --json` when installed, else the OAuth usage endpoint read-only; Codex via the ChatGPT usage endpoint with `~/.codex/auth.json`, session-log fallback) |
 | 147 | `.github/workflows/ci.yml` | `local-release-script-guard` | Runs the fork-owned `tests/test_supermux_release_stale_artifact.sh` in Linux preflight so the local Release script must refresh GhosttyKit, clear stale explicit-module caches and DerivedData products, preserve xcodebuild's status, and persist diagnostics without reaching signing or installation |
+| 148 | `Sources/ContentView.swift` | `sidebar-usage-analytics-button` | In `SidebarFooterButtons`, the `shows(.help)` branch mounts the fork's `SupermuxUsageAnalyticsMenuButton()` (`Sources/Supermux/SupermuxUsageAnalyticsMenuButton.swift`, pbxproj ids `50BE0001…00FF`/`…0100` under #3) **immediately after** the usage-limits button of #146 and before upstream's untouched `SidebarHelpMenuButton(onSendFeedback:)` — a purely additive one-line insert. The button opens a token-spend popover (SupermuxKit `UsageAnalytics/` + `UI/SupermuxUsageAnalyticsPopoverView.swift` + `UI/SupermuxUsageAnalyticsChart.swift`) computing per-day, per-model cost from Claude Code's `~/.claude/projects/**/*.jsonl` transcripts and Codex's `~/.codex/sessions/**/rollout-*.jsonl` logs, read-only, with a per-file scan cache in Application Support |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
@@ -208,6 +209,34 @@ button metrics and `SidebarFooterIconButtonStyle`, and never replaces or wraps a
 button. The button's pbxproj wiring is `50BE0001…00FD`/`…00FE` (see #3); everything else lives
 in `Packages/SupermuxKit/Sources/SupermuxKit/Usage/` and `UI/SupermuxUsagePopoverView.swift` /
 `UI/SupermuxUsageGaugeIcon.swift` (package files, no wiring).
+
+### 148. `Sources/ContentView.swift` — `sidebar-usage-analytics-button`
+
+In `SidebarFooterButtons.body`, the `shows(.help)` branch mounts the fork's analytics button
+directly after the usage-limits button of #146, with upstream's help button still last and
+unchanged:
+
+```swift
+if shows(.help) {
+    // SUPERMUX:begin sidebar-usage-button
+    SupermuxUsageMenuButton()
+    // SUPERMUX:end sidebar-usage-button
+    // SUPERMUX:begin sidebar-usage-analytics-button
+    SupermuxUsageAnalyticsMenuButton()
+    // SUPERMUX:end sidebar-usage-analytics-button
+    SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
+}
+```
+
+If upstream restructures the footer, the requirement is: mount `SupermuxUsageAnalyticsMenuButton()`
+(no arguments) next to the #146 button — it uses the same 22pt `SidebarFooterButtonMetrics` and
+`SidebarFooterIconButtonStyle`, and never replaces or wraps any upstream button. Where #146
+answers "how much quota is left", this answers "what have I spent": it reads Claude Code and
+Codex session logs read-only and never writes to, refreshes, or deletes them. The button's
+pbxproj wiring is `50BE0001…00FF`/`…0100` (see #3); everything else lives in
+`Packages/SupermuxKit/Sources/SupermuxKit/UsageAnalytics/` and
+`UI/SupermuxUsageAnalyticsPopoverView.swift` / `UI/SupermuxUsageAnalyticsChart.swift`
+(package files, no wiring).
 
 ### 2. `Sources/ContentView.swift` — `sidebar-projects-section` + `sidebar-hide-project-workspaces`
 
@@ -452,7 +481,13 @@ same reserved prefix: file reference `50BE0001…00FD` and build file `50BE0001�
 `SupermuxUsageMenuButton.swift` (listed in the `Supermux` group's `children` and the `cmux`
 target's Sources phase, mirroring the rows above).
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `101`.
+The usage-analytics button (touchpoint #148) adds one more file under the same prefix: file
+reference `50BE0001…00FF` and build file `50BE0001…0100` for
+`SupermuxUsageAnalyticsMenuButton.swift`, wired in the same four places. The `…00FF` suffix
+exhausts the two-hex-digit range, so subsequent files continue into the wider zero-padded form
+(`…0101`, `…0102`, …).
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `105`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
