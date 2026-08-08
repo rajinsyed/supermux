@@ -57,28 +57,24 @@ public struct SupermuxProjectsMobileSection: View {
     @ViewBuilder
     private var sectionRows: some View {
         if !section.hasLoaded {
-            HStack(spacing: 8) {
-                ProgressView()
-                Text(String(
-                    localized: "supermux.projects.loading",
-                    defaultValue: "Loading projects…",
-                    bundle: .module
-                ))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            // Skeleton rows in the real row's shape, not a spinner: the list
+            // keeps its geometry, so rows land in place instead of the section
+            // snapping from one line to full height when the fetch returns.
+            ForEach(0..<3, id: \.self) { index in
+                SupermuxProjectSkeletonRow(index: index)
+                    .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
+                    .listRowSeparator(.hidden)
             }
-            .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
-            .listRowSeparator(.hidden)
-        } else if section.rows.isEmpty {
-            Text(String(
-                localized: "supermux.projects.empty",
-                defaultValue: "No projects yet",
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(String(
+                localized: "supermux.projects.loading",
+                defaultValue: "Loading projects…",
                 bundle: .module
             ))
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
-            .listRowSeparator(.hidden)
+        } else if section.rows.isEmpty {
+            SupermuxProjectsEmptyState(editing: actions.editing)
+                .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
+                .listRowSeparator(.hidden)
         } else {
             ForEach(section.rows) { row in
                 SupermuxProjectMobileRow(
@@ -158,89 +154,5 @@ struct SupermuxProjectsSectionHeader: View {
     }
 }
 
-/// Project avatar, in the §7 display order: fetched custom icon → SF symbol
-/// → letter, the latter two tinted by the project's accent color.
-struct SupermuxProjectMobileAvatar: View {
-    let row: SupermuxProjectRowSnapshot
-    let size: CGFloat
-    let iconPNGData: @Sendable (_ projectID: String) async -> Data?
-
-    @State private var customIcon: Image?
-
-    private var accent: Color {
-        row.avatarRGB.map { Color(red: $0.red, green: $0.green, blue: $0.blue) } ?? .secondary
-    }
-
-    var body: some View {
-        ZStack {
-            if let customIcon {
-                customIcon
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                    .fill(accent.opacity(0.22))
-                if let symbol = row.iconSymbol {
-                    Image(systemName: symbol)
-                        .font(.system(size: size * 0.48, weight: .medium))
-                        .foregroundStyle(accent)
-                } else {
-                    Text(row.avatarLetter)
-                        .font(.system(size: size * 0.48, weight: .semibold))
-                        .foregroundStyle(accent)
-                }
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
-        .task(id: iconIdentity) {
-            guard row.hasCustomIcon else {
-                customIcon = nil
-                return
-            }
-            guard let data = await iconPNGData(row.id) else { return }
-            customIcon = Self.decodeImage(data)
-        }
-        .accessibilityHidden(true)
-    }
-
-    /// The avatar's icon-refetch identity: only the fields that actually
-    /// change which bytes must be fetched/decoded. Keying `.task(id:)` on the
-    /// FULL row snapshot re-issues `project.icon` and re-decodes the PNG on
-    /// EVERY unrelated row change (branch subtitle, expansion, counts,
-    /// run state, …); keying on just the project id + custom-icon flag +
-    /// content etag re-fetches only when the project changes, its custom-icon
-    /// flag flips, or the icon's CONTENT changes (a Mac-side icon replacement
-    /// keeps the flag `true` but moves the etag — without the etag in the
-    /// identity that change would never re-run the task and the stale icon
-    /// would render forever).
-    private var iconIdentity: SupermuxProjectIconIdentity {
-        SupermuxProjectIconIdentity(
-            projectID: row.id,
-            hasCustomIcon: row.hasCustomIcon,
-            iconETag: row.iconETag
-        )
-    }
-
-    private static func decodeImage(_ data: Data) -> Image? {
-        #if canImport(UIKit)
-        UIImage(data: data).map { Image(uiImage: $0) }
-        #elseif canImport(AppKit)
-        NSImage(data: data).map { Image(nsImage: $0) }
-        #else
-        nil
-        #endif
-    }
-}
-
-/// See ``SupermuxProjectMobileAvatar/iconIdentity``. Internal (not private)
-/// so a focused unit test can pin the equality semantics without a SwiftUI
-/// test harness.
-struct SupermuxProjectIconIdentity: Equatable {
-    let projectID: String
-    let hasCustomIcon: Bool
-    /// The icon's content etag (`nil` while the wire doesn't surface one) —
-    /// the signal that re-keys the fetch when the icon's BYTES change while
-    /// `hasCustomIcon` stays `true`.
-    let iconETag: String?
-}
+/// The project avatar now lives in `SupermuxProjectAvatar.swift`
+/// (``SupermuxProjectAvatar``), which draws the accent-gradient chip.

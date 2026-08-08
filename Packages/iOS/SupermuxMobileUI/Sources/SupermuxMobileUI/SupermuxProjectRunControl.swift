@@ -155,6 +155,10 @@ public struct SupermuxProjectRunControl: View {
     }
 
     /// Runs one start/stop request with the busy gate and the error alert.
+    ///
+    /// Start/stop takes a Mac round-trip, so the only confirmation the phone
+    /// can give is the state flip. A success haptic makes that legible without
+    /// the user having to watch the indicator.
     private func perform(_ operation: @escaping @MainActor () async throws -> Void) {
         guard !isBusy else { return }
         isBusy = true
@@ -162,6 +166,7 @@ public struct SupermuxProjectRunControl: View {
             defer { isBusy = false }
             do {
                 try await operation()
+                SupermuxHaptics.success()
             } catch {
                 errorMessage = error.localizedDescription
             }

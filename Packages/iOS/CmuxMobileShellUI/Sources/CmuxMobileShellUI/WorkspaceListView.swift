@@ -158,7 +158,9 @@ struct WorkspaceListView: View {
         workspaceGroupDestructiveRequest.action
     }
     // SUPERMUX:begin supermux-mobile-projects-section (fork-owned section model; rows below the List get value snapshots + closures only)
-    @State private var supermuxProjects = SupermuxProjectsSectionModel()
+    // Internal (not private): the iOS table builder in the `+Table.swift`
+    // extension projects this into the Projects chrome row's payload.
+    @State var supermuxProjects = SupermuxProjectsSectionModel()
     // SUPERMUX:end supermux-mobile-projects-section
     @State var optimisticFlatState = MobileWorkspaceOptimisticOrderReconciler()
     @State var optimisticGroupedState = MobileWorkspaceOptimisticOrderReconciler()
@@ -321,8 +323,16 @@ struct WorkspaceListView: View {
             visibleSelection: currentVisibleMacSelection
         )
         #if os(iOS)
+        // SUPERMUX:begin supermux-mobile-projects-section (session driver on the iOS list; the rows themselves render inside the UIKit table via the #97b Projects chrome row)
+        // The driver MUST sit on this stable view, never inside a table cell:
+        // it owns the session `.task`, the project-detail `navigationDestination`,
+        // and the nested-open error alert. Without it the section never loads,
+        // so every Projects affordance stays unreachable even though the row
+        // renders.
         let baseList = workspaceTable
+            .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) })
             .modifier(WorkspaceListBarUnderlap())
+        // SUPERMUX:end supermux-mobile-projects-section
         #else
         let baseList = List {
             switch connectionChrome {

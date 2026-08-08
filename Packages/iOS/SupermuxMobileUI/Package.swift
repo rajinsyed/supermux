@@ -26,6 +26,13 @@ let package = Package(
         // hide-filter and the nested-workspace mapping can name
         // `MobileWorkspacePreview` in their public APIs.
         .package(path: "../CmuxMobileShellModel"),
+        // Already in the graph transitively; declared directly for the app's
+        // gated haptic entry point (`MobileHapticFeedback`), which every
+        // cmux-owned haptic must route through.
+        .package(path: "../../Shared/CMUXMobileCore"),
+        // Already in the graph transitively; declared directly for the shared
+        // glass/material modifiers so fork surfaces match the app's chrome.
+        .package(path: "../CmuxMobileSupport"),
     ],
     targets: [
         .target(
@@ -35,6 +42,8 @@ let package = Package(
                 "SupermuxMobileKit",
                 "CmuxMobileRPC",
                 "CmuxMobileShellModel",
+                "CMUXMobileCore",
+                "CmuxMobileSupport",
             ],
             resources: [.process("Resources")],
             swiftSettings: [

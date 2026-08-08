@@ -1,6 +1,9 @@
 #if os(iOS)
 import CmuxMobileShell
 import CmuxMobileShellModel
+// SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects section hosted in one table row — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-projects-table-row
 import SwiftUI
 import UIKit
 
@@ -25,6 +28,9 @@ struct WorkspaceListTable: UIViewControllerRepresentable {
     let workspaceChangeChipsByWorkspaceID: [String: MobileWorkspaceChangesChip]
     let openWorkspaceChanges: (@MainActor (MobileWorkspacePreview) -> Void)?
 
+    // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects payload; nil = section hidden, so an upstream Mac renders exactly today's list)
+    var supermuxProjects: SupermuxProjectsTableRowConfiguration? = nil
+    // SUPERMUX:end supermux-mobile-projects-table-row
     let connectionRequiresReauth: Bool
     let connectionError: String?
     let host: String

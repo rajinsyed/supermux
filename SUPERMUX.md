@@ -67,11 +67,27 @@ JSON-RPC methods (wire contract in `Packages/Shared/SupermuxMobileCore`; phone s
 `Packages/iOS/SupermuxMobileKit`; screens in `Packages/iOS/SupermuxMobileUI`; Mac handlers in
 `Sources/Supermux/SupermuxMobileHost+*.swift`). The Mac stays the sole source of truth (projects
 file, git, AI keys). Every iOS entry point is capability-gated (`supermux.*.v1`), so a fork phone
-paired with an upstream cmux Mac renders exactly upstream's UI. Status per fork feature area:
+paired with an upstream cmux Mac renders exactly upstream's UI.
+
+> **Where the Projects UI is mounted on iPhone (read before touching the workspace list).**
+> The iPhone renders the workspace list through a UIKit `UITableView`
+> (`WorkspaceListTable`), not the SwiftUI `List`. The Projects section therefore renders as one
+> table row — touchpoints #148–#151 — while the SwiftUI `SupermuxProjectsMobileSection` mount is
+> macOS-only. The session driver lives on the iOS `workspaceTable` (#97).
+>
+> This is the fork's most dangerous known failure mode, because it fails **silently and
+> compiling**: upstream 0.64.20 moved the iOS list behind `#if os(iOS)` and left the fork's mount
+> in the `#else` arm, which took the ENTIRE Projects surface — the section, project detail,
+> worktrees, presets, run actions, custom actions and the project editor — off the phone from
+> 2026-07-25 until it was restored. Nothing failed to build and no test went red; the parity table
+> below simply kept claiming "✅ on iOS". After any upstream merge that touches
+> `WorkspaceListView`, verify Projects on a real phone rather than trusting this table.
+
+Status per fork feature area:
 
 | # | Fork feature area | Mobile status | How / where |
 |---|-------------------|---------------|-------------|
-| 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsMobileSection` + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
+| 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsTableSection` (iPhone, hosted in the #148 table row) / `SupermuxProjectsMobileSection` (macOS `List`) + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
 | 2 | Project icons & colors | ✅ on iOS | custom icon via `project.icon` (base64 PNG, etag-cached `SupermuxProjectIconCache`) → SF Symbol → letter avatar tinted by `color_hex` |
 | 3 | Worktrees (create/open/remove, AI branch suggest) | ✅ on iOS | `SupermuxNewWorktreeSheet` + project-detail worktree rows over `worktrees.list` / `worktree.suggest_branch/create/open/remove` (dirty removals require `force` after a phone-side confirm) |
 | 4 | Worktree PR badges | ✅ on iOS | `SupermuxPullRequestDTO` (number/state/url; title optional-nil, matching the desktop probe) on `worktrees.list` rows |

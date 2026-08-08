@@ -2,6 +2,9 @@
 import CmuxMobileDiagnostics
 import CmuxMobileShellModel
 import CmuxMobileSupport
+// SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects section hosted in one table row — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-projects-table-row
 import SwiftUI
 import UIKit
 
@@ -28,6 +31,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
         case recoveryBanner(String)
         case macStatus(String)
         case filterEmpty(MobileWorkspaceListFilter)
+        // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects row height identity)
+        case supermuxProjects(String)
+        // SUPERMUX:end supermux-mobile-projects-table-row
     }
 
     private struct HeightCacheKey: Hashable {
@@ -950,6 +956,12 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                 .margins(.leading, 32)
                 .margins(.trailing, 12)
                 .minSize(width: 0, height: 0)
+        // SUPERMUX:begin supermux-mobile-projects-table-row (the Projects row owns its own horizontal insets and internal spacing; the banner/status 8/12 margins would double them)
+        case .chrome(.supermuxProjects):
+            hosting = hosting
+                .margins(.all, 0)
+                .minSize(width: 0, height: 0)
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .chrome:
             hosting = hosting
                 .margins(.top, 8)
@@ -1082,6 +1094,18 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                     rendersInline: true
                 )
             )
+        // SUPERMUX:begin supermux-mobile-projects-table-row (hosts the fork's whole Projects subtree in this one row)
+        case .chrome(.supermuxProjects):
+            guard let projects = configuration.supermuxProjects else {
+                return AnyView(EmptyView())
+            }
+            return AnyView(
+                SupermuxProjectsTableSection(
+                    section: projects.section,
+                    actions: projects.actions
+                )
+            )
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .chrome(.macStatusRow):
             return AnyView(
                 MobileMacConnectionStatusRow(
@@ -1149,6 +1173,12 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                 configuration.connectionError ?? "",
                 String(configuration.signOut != nil),
             ].joined(separator: "|"))
+        // SUPERMUX:begin supermux-mobile-projects-table-row (height keyed on the fork's LAYOUT identity, not its full snapshot: live activity/PR/run repaints must not re-measure the whole section)
+        case .chrome(.supermuxProjects):
+            kind = .supermuxProjects(
+                configuration.supermuxProjects?.heightIdentity ?? "hidden"
+            )
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .chrome(.macStatusRow):
             kind = .macStatus([
                 configuration.host,
@@ -1261,6 +1291,13 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
             return previous.connectionRequiresReauth != next.connectionRequiresReauth
                 || previous.connectionError != next.connectionError
                 || (previous.signOut != nil) != (next.signOut != nil)
+        // SUPERMUX:begin supermux-mobile-projects-table-row (repaint on snapshot/seam changes; the closure bundles themselves are not Equatable and change identity every projection)
+        case .chrome(.supermuxProjects):
+            return SupermuxProjectsTableRowConfiguration.renderChanged(
+                previous: previous.supermuxProjects,
+                next: next.supermuxProjects
+            )
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .chrome(.macStatusRow):
             return previous.host != next.host
                 || previous.connectionStatus != next.connectionStatus
