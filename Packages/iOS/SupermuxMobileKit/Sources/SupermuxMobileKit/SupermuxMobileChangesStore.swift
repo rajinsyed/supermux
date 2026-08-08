@@ -40,6 +40,13 @@ public final class SupermuxMobileChangesStore {
     /// (rows disable their actions while `true`; mutations are serialized).
     public internal(set) var isMutating = false
 
+    /// FIFO waiters for the one flow that must not silently lose its mutation:
+    /// a generated commit waiting behind an operation that started mid-generation.
+    @ObservationIgnored private var mutationSlotWaiters: [(
+        id: UUID,
+        continuation: CheckedContinuation<Bool, Never>
+    )] = []
+
     // MARK: Commit / sync / history state (actions in …Store+Sync.swift)
 
     /// The commit-composer draft. Screen-bindable; cleared on a successful
@@ -241,10 +248,13 @@ public final class SupermuxMobileChangesStore {
     /// without waiting for the Mac's poke. Failures surface in
     /// ``lastErrorDescription`` — never a silent no-op. Internal so the
     /// commit/sync actions in `…Store+Sync.swift` share the same gate.
-    func mutate(_ operation: @MainActor () async throws -> Void) async {
-        guard !isMutating else { return }
-        isMutating = true
-        defer { isMutating = false }
+    func mutate(
+        waitForSlot: Bool = false,
+        _ operation: @MainActor () async throws -> Void
+    ) async {
+        guard await acquireMutationSlot(waitIfBusy: waitForSlot) else { return }
+        defer { releaseMutationSlot() }
+        guard !waitForSlot || !Task.isCancelled else { return }
         do {
             try await operation()
             await refetchStatus()
@@ -261,15 +271,47 @@ public final class SupermuxMobileChangesStore {
         }
     }
 
-    /// Waits until no mutation is on the wire. Used by
-    /// ``generateAndCommit(stageAll:)`` so its final `commit()` never hits
-    /// the mutation gate and silently no-ops against a stage/unstage/discard
-    /// that landed while generation was in flight — the store's "never a
-    /// silent no-op" contract. A no-op when nothing is mutating.
-    func waitForMutationSlot() async {
-        while isMutating {
-            await Task.yield()
+    /// Claims the mutation slot immediately, or parks a generated commit in
+    /// FIFO order until the current mutation hands ownership directly to it.
+    func acquireMutationSlot(waitIfBusy: Bool) async -> Bool {
+        if waitIfBusy, Task.isCancelled { return false }
+        guard isMutating else {
+            isMutating = true
+            return true
         }
+        guard waitIfBusy else { return false }
+
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                mutationSlotWaiters.append((waiterID, continuation))
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelMutationSlotWaiter(id: waiterID)
+            }
+        }
+    }
+
+    /// Releases the slot, transferring ownership directly to the oldest waiter
+    /// so `isMutating` never exposes an actionable gap between operations.
+    func releaseMutationSlot() {
+        guard !mutationSlotWaiters.isEmpty else {
+            isMutating = false
+            return
+        }
+        mutationSlotWaiters.removeFirst().continuation.resume(returning: true)
+    }
+
+    private func cancelMutationSlotWaiter(id: UUID) {
+        guard let index = mutationSlotWaiters.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        mutationSlotWaiters.remove(at: index).continuation.resume(returning: false)
     }
 
     private func followEvents() async {

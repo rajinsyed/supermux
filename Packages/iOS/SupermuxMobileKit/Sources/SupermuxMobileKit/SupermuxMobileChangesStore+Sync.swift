@@ -13,10 +13,16 @@ extension SupermuxMobileChangesStore {
     /// draft clears, the status refetches, and the history invalidates.
     /// - Parameter stageAll: Whether the Mac stages everything first.
     public func commit(stageAll: Bool = false) async {
+        await commit(stageAll: stageAll, waitsForMutationSlot: false)
+    }
+
+    /// Runs the shared commit path, optionally queueing behind an in-flight
+    /// mutation when generation already produced a message that must not drop.
+    private func commit(stageAll: Bool, waitsForMutationSlot: Bool) async {
         let submittedDraft = commitMessage
         let message = submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
-        await mutate {
+        await mutate(waitForSlot: waitsForMutationSlot) {
             // Cleared here, once the commit has actually passed `mutate`'s
             // gate — clearing it unconditionally (before the gate) would
             // wipe a valid prior confirmation even when this call no-ops
@@ -68,10 +74,9 @@ extension SupermuxMobileChangesStore {
         // (the screen also disables those affordances during generation —
         // see SupermuxChangesScreen's `actionsDisabled` — but the store
         // itself must never silently drop this commit) may still be on the
-        // wire. Wait for it instead of letting `commit()` hit the mutation
-        // gate and no-op.
-        await waitForMutationSlot()
-        await commit(stageAll: stageAll)
+        // wire. Queue through the shared mutation slot instead of polling the
+        // main actor or letting `commit()` hit the immediate no-op gate.
+        await commit(stageAll: stageAll, waitsForMutationSlot: true)
     }
 
     private func surfaceGenerationFailure(_ error: any Error) {
@@ -140,12 +145,11 @@ extension SupermuxMobileChangesStore {
         _ operation: SupermuxChangesSyncOperation,
         _ send: @MainActor () async throws -> SupermuxChangesSyncResponse
     ) async -> SupermuxChangesSyncLogEntry? {
-        guard !isMutating else { return nil }
-        isMutating = true
+        guard await acquireMutationSlot(waitIfBusy: false) else { return nil }
         activeSyncOperation = operation
         defer {
-            isMutating = false
             activeSyncOperation = nil
+            releaseMutationSlot()
         }
         do {
             let response = try await send()

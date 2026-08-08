@@ -296,9 +296,8 @@ public struct SupermuxChangesScreen: View {
         let untracked = SupermuxChangedFileRowSnapshot.rows(from: status?.untracked, area: .untracked)
         // Also disabled while generating: a stage/unstage landing mid
         // `generateAndCommit()` could otherwise still be on the wire when
-        // generation finishes, forcing the store to wait out the race
-        // instead of committing immediately (see the store's
-        // `waitForMutationSlot()`).
+        // generation finishes, forcing the store to queue through its shared
+        // mutation slot instead of committing immediately.
         let actionsDisabled = store.isMutating || store.isGeneratingMessage
         return List {
             SupermuxChangesSummarySection(

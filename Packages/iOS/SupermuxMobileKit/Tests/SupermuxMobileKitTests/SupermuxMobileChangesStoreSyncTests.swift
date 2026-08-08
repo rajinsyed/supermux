@@ -234,6 +234,72 @@ import Testing
         #expect(store.lastCommitShortSha != nil)
     }
 
+    @Test func cancelledOrdinaryMutationStillReachesTheMac() async throws {
+        let fake = FakeSupermuxMacClient()
+        fake.changesStatusResponse = Self.status
+        let store = makeStore(fake: fake)
+
+        let stageTask = Task { @MainActor in
+            await store.stage(paths: ["src/app.swift"])
+        }
+        stageTask.cancel()
+        await stageTask.value
+
+        #expect(fake.callLog.contains("changesStage"))
+        #expect(fake.changesStatusCallCount == 1)
+        #expect(!store.isMutating)
+    }
+
+    @Test func cancelledSyncStillReachesTheMac() async throws {
+        let fake = FakeSupermuxMacClient()
+        fake.changesStatusResponse = Self.status
+        let store = makeStore(fake: fake)
+
+        let pushTask = Task { @MainActor in
+            await store.push()
+        }
+        pushTask.cancel()
+        let entry = await pushTask.value
+
+        #expect(entry != nil)
+        #expect(fake.callLog.contains("changesPush"))
+        #expect(fake.changesStatusCallCount == 1)
+        #expect(!store.isMutating)
+    }
+
+    @Test func cancelledGenerateAndCommitDoesNotCommitAfterMutationFinishes() async throws {
+        let fake = FakeSupermuxMacClient()
+        fake.changesStatusResponse = Self.status
+        fake.generateCommitMessageResponse = SupermuxChangesGeneratedMessageResponse(
+            message: "feat: cancelled while waiting for a mutation"
+        )
+        fake.changesGenerateCommitMessageShouldHold = true
+        fake.changesStageShouldHold = true
+        let store = makeStore(fake: fake)
+
+        let generateTask = Task { await store.generateAndCommit() }
+        try await TestWait().until { fake.callLog.contains("changesGenerateCommitMessage") }
+
+        let stageTask = Task { await store.stage(paths: ["src/app.swift"]) }
+        try await TestWait().until { fake.callLog.contains("changesStage") }
+        #expect(store.isMutating)
+
+        fake.changesGenerateCommitMessageGate.release()
+        try await TestWait().until { !store.isGeneratingMessage }
+        generateTask.cancel()
+        fake.changesStageGate.release()
+
+        await stageTask.value
+        await generateTask.value
+
+        #expect(
+            !fake.callLog.contains("changesCommit"),
+            "cancelling a generated commit while it waits for the mutation slot must prevent the commit"
+        )
+        #expect(store.commitMessage == "feat: cancelled while waiting for a mutation")
+        #expect(!store.isMutating)
+    }
+
     @Test func commitNeverClearsThePriorConfirmationWhenItNoOpsAgainstAnInFlightMutation() async throws {
         // The store's OWN reentrancy guard (not generateAndCommit's wait):
         // a `commit()` call that no-ops against an in-flight mutation must

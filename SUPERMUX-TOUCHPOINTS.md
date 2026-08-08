@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **147**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **154**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -173,8 +173,54 @@ Rules for adding a touchpoint:
 | 149 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListTable.swift` | `supermux-mobile-projects-table-row` | Two fences: `import SupermuxMobileUI`, and the optional `supermuxProjects: SupermuxProjectsTableRowConfiguration?` payload (defaulted `nil`, so upstream call sites need no change). A `nil` payload means the table emits no Projects row at all — a fork phone paired with an upstream Mac renders exactly upstream's list. See #148 |
 | 150 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListTableCoordinator.swift` | `supermux-mobile-projects-table-row` | Six fences: `import SupermuxMobileUI`; `HeightKind.supermuxProjects(String)`; a dedicated zero-margin `configure` branch (the shared `.chrome` 8/12 banner margins would double the section's own insets — it must come BEFORE the general `case .chrome`); the `hostedView` branch mounting `SupermuxProjectsTableSection`; the `heightCacheKey` branch; and the `itemPayloadChanged` branch. Height is keyed on `SupermuxProjectsTableRowConfiguration.heightIdentity` — a LAYOUT identity, not the full snapshot — so live activity/PR/run/unread repaints never push the whole section through `systemLayoutSizeFitting`. See #148 |
 | 151 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Table.swift` | `supermux-mobile-projects-table-row` | Four fences: `import SupermuxMobileUI`; the `supermuxProjectsRowConfiguration` helper; the `items.append(.chrome(.supermuxProjects))` **inside the leading chrome run** (immediately after the connection-chrome switch, before groups/workspaces — see #148 on why the position is load-bearing); and the `supermuxProjects:` argument, bound to a `let` OUTSIDE the memberwise init because that expression already overwhelms the type checker. See #148 |
+| 152 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `mobile-event-liveness-observation`, `mobile-liveness-background-gate` | Keeps per-envelope liveness bookkeeping (`lastTerminalEventAt` and the consecutive-probe counter) out of Swift Observation, and makes the render-grid liveness watchdog foreground-only both before a probe starts and when an already-started probe completes. The timer deliberately stays on `.main`; only the recovery decision is gated. Regression coverage: #154 |
+| 153 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellRenderGridLivenessTestSupport.swift` | `mobile-liveness-background-gate` | Adds a delayed-success probe mode to the existing scripted liveness router so #154 can deterministically prove that a probe started just before backgrounding cannot publish a late recovery. The pre-existing held-probe mode still returns no response and remains unchanged |
+| 154 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellEventStreamPerformanceTests.swift` | `unfenced` | Whole fork-owned Swift package test file in the upstream `CmuxMobileShellTests` target. Proves high-frequency event liveness timestamps update without Observation notifications, backgrounded watchdog ticks start no probes, and an in-flight probe completing after background cannot publish recovery |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
+
+### 154. `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellEventStreamPerformanceTests.swift` — whole-file regression coverage
+
+Keep this whole fork-owned Swift Testing file compiled by the `CmuxMobileShellTests` SwiftPM target. It must exercise the real connected-store/liveness-router path and prove all three contracts:
+
+- consuming a pushed event still advances `lastTerminalEventAt` without publishing an Observation change;
+- a watchdog evaluation while `foregroundRefreshIsActive == false` starts no `mobile.events.probe` request;
+- a delayed successful probe that was already in flight when the app backgrounded cannot mark the visible connection healthy afterward.
+
+The tests reuse `makeConnectedStore`, `LivenessHostRouter`, `TestClock`, `TransportBox`, and the render-grid frame fixtures. Do not replace them with source-text assertions or wall-clock-only benchmarks.
+
+### 153. `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellRenderGridLivenessTestSupport.swift` — `mobile-liveness-background-gate`
+
+Add a delayed-success probe mode alongside the existing held-failure mode in `LivenessHostRouter`:
+
+```swift
+// SUPERMUX:begin mobile-liveness-background-gate
+private var delayedProbeRequestNumbers: Set<Int> = []
+// SUPERMUX:end mobile-liveness-background-gate
+```
+
+Expose `delayProbeRequest(number:)`, clear its set from `releaseAllHeld()`, and in the `mobile.events.probe` response path park matching requests before returning the ordinary healthy response. Keep each addition inside the same fence id. A `holdProbeRequest` must still resume to `nil`; only the delayed mode resumes to a valid result, which is what lets #154 test the late-success race.
+
+### 152. `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` — mobile liveness performance and lifecycle guards
+
+**`mobile-event-liveness-observation`:** the event timestamp and failure counter are internal watchdog bookkeeping with no SwiftUI readers, so keep them out of the Observation registrar:
+
+```swift
+// SUPERMUX:begin mobile-event-liveness-observation
+@ObservationIgnored private var renderGridLivenessConsecutiveProbeFailures = 0
+@ObservationIgnored var lastTerminalEventAt: Date?
+// SUPERMUX:end mobile-event-liveness-observation
+```
+
+**`mobile-liveness-background-gate`:** at the start of `checkRenderGridLiveness(listenerID:)`, return unless `foregroundRefreshIsActive`. In the probe task, after clearing that probe's single-flight slot and before applying its result, re-check the same flag. Both guards must stay fenced:
+
+```swift
+// SUPERMUX:begin mobile-liveness-background-gate
+guard foregroundRefreshIsActive else { return }
+// SUPERMUX:end mobile-liveness-background-gate
+```
+
+The second site uses `self.foregroundRefreshIsActive`. Do not move the `DispatchSourceTimer` off `.main`, suspend/resume it, or add another timer/draw loop: upstream's comment documents the Swift 6 executor trap that the main-queue timer avoids. The intended behavior is only that background ticks and late probe completions become no-ops; foreground dead-stream recovery remains unchanged.
 
 ### 147. `.github/workflows/ci.yml` — `local-release-script-guard`
 

@@ -889,8 +889,10 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// in-flight slot.
     private var renderGridLivenessProbeTask: Task<Void, Never>?
     private var renderGridLivenessProbeID: UUID?
-    private var renderGridLivenessConsecutiveProbeFailures = 0
-    var lastTerminalEventAt: Date?
+    // SUPERMUX:begin mobile-event-liveness-observation
+    @ObservationIgnored private var renderGridLivenessConsecutiveProbeFailures = 0
+    @ObservationIgnored var lastTerminalEventAt: Date?
+    // SUPERMUX:end mobile-event-liveness-observation
     @ObservationIgnored var terminalInputAckResubscribeRetryTask: Task<Void, Never>?
     @ObservationIgnored var terminalInputAckResubscribeRetryTaskID: UUID?
     @ObservationIgnored var terminalInputAckResubscribeRetrySurfaceID: String?
@@ -10709,6 +10711,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// subscribe and replay; an older host that lacks the probe verb falls
     /// back to the former idempotent subscribe behavior.
     private func checkRenderGridLiveness(listenerID: UUID) {
+        // SUPERMUX:begin mobile-liveness-background-gate
+        guard foregroundRefreshIsActive else { return }
+        // SUPERMUX:end mobile-liveness-background-gate
         guard renderGridLivenessListenerID == listenerID else { return }
         guard let client = remoteClient, connectionState == .connected else { return }
         guard terminalSubscriptionHandoffFenceClientID
@@ -10739,6 +10744,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             guard self.renderGridLivenessProbeID == probeID else { return }
             self.renderGridLivenessProbeTask = nil
             self.renderGridLivenessProbeID = nil
+            // SUPERMUX:begin mobile-liveness-background-gate
+            guard self.foregroundRefreshIsActive else { return }
+            // SUPERMUX:end mobile-liveness-background-gate
             guard !Task.isCancelled,
                   self.renderGridLivenessListenerID == listenerID,
                   self.terminalEventListenerID == listenerID,
