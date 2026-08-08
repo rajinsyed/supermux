@@ -170,6 +170,28 @@ import Testing
         #expect(model.report.tokens.output == 1000)
     }
 
+    /// A scan in flight must not report the *previous* complete snapshot's
+    /// progress. `snapshot.scanProgress` returns 1 while `isComplete`, so the
+    /// popover opened cold on a full bar reading 100%, then jumped backwards
+    /// once the first partial landed.
+    @Test func progressStartsAtZeroWhileAScanHasNotPublishedYet() async {
+        let gate = ScanGate()
+        let model = SupermuxUsageAnalyticsModel(
+            scan: { _, _ in
+                await gate.waitUntilObserved()
+                return SupermuxUsageAnalyticsSnapshot(entries: [], isComplete: true)
+            },
+            minimumRefreshInterval: 0
+        )
+        #expect(model.scanProgress == 1)
+        let refresh = Task { await model.refresh() }
+        while !model.isScanning { await Task.yield() }
+        #expect(model.scanProgress == 0)
+        await gate.release()
+        _ = await refresh.value
+        #expect(model.scanProgress == 1)
+    }
+
     @Test func refreshHonorsTheFloorAfterTheFirstScan() async {
         let model = SupermuxUsageAnalyticsModel(
             scan: { _, _ in SupermuxUsageAnalyticsSnapshot(entries: [], isComplete: true) },
@@ -221,6 +243,21 @@ import Testing
         await model.refresh()
         await model.refresh()
         #expect(seeded.lastCount == 1)
+    }
+}
+
+/// Holds a fake scan open until the test has observed the in-flight state.
+private actor ScanGate {
+    private var isReleased = false
+
+    func release() {
+        isReleased = true
+    }
+
+    func waitUntilObserved() async {
+        while !isReleased {
+            await Task.yield()
+        }
     }
 }
 

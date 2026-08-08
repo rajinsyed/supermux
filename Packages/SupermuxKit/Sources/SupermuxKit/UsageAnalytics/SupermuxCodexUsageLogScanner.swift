@@ -5,11 +5,6 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
     private static let tokenCountNeedle = Array("token_count".utf8)
     private static let turnContextNeedle = Array("turn_context".utf8)
     private static let unknownModel = "unknown"
-    private static let resourceKeys: Set<URLResourceKey> = [
-        .contentModificationDateKey,
-        .fileSizeKey,
-        .isRegularFileKey,
-    ]
 
     private let sessionsDirectory: URL
     private let cacheStore: SupermuxUsageAnalyticsCacheStore
@@ -38,12 +33,18 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
         self.calendar = calendar
     }
 
-    /// Whether the Codex sessions directory exists.
+    /// Whether either directory the scanner reads exists.
+    ///
+    /// Both are checked because ``rolloutFiles()`` reads both: a user whose
+    /// current sessions were all archived still has data, and reporting Codex
+    /// as "no logs found" while its rows render would contradict the popover.
     public var isAvailable: Bool {
-        var isDirectory = ObjCBool(false)
-        let path = sessionsDirectory.appendingPathComponent("sessions", isDirectory: true).path
-        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-            && isDirectory.boolValue
+        ["sessions", "archived_sessions"].contains { name in
+            var isDirectory = ObjCBool(false)
+            let path = sessionsDirectory.appendingPathComponent(name, isDirectory: true).path
+            return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }
     }
 
     /// Scans all current and archived rollout logs, reusing unchanged per-file cache entries.
@@ -55,6 +56,11 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
         onProgress: (@Sendable (Int, Int, [SupermuxUsageAnalyticsEntry]) -> Void)? = nil
     ) -> [SupermuxUsageAnalyticsEntry] {
         let files = rolloutFiles()
+        // No files at all almost always means the directory is gone or
+        // unreadable, not that the user's history vanished. Persisting the
+        // empty map would destroy a cache that took minutes to build and can
+        // never be rebuilt from logs that are no longer there.
+        guard !files.isEmpty else { return [] }
         let cached = cacheStore.load(.codex)
         var updatedFiles: [String: SupermuxScannedFile] = [:]
         updatedFiles.reserveCapacity(files.count)
@@ -71,18 +77,22 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
             // A cold pass reads gigabytes; give up promptly when the caller
             // has, rather than finishing the walk in the background.
             if Task.isCancelled { break }
-            let path = file.standardizedFileURL.path
-            guard let signature = fileSignature(for: file) else {
-                if let prior = cached.files[path] {
-                    updatedFiles[path] = prior
-                }
-                publishProgress(
+            defer {
+                // Every file publishes, including the ones skipped below, or a
+                // run whose tail is all skips never reports `scanned == total`.
+                SupermuxUsageLogScanSupport.publishProgress(
                     onProgress,
                     scanned: index + 1,
                     total: files.count,
                     files: updatedFiles,
                     lastPublishedAt: &lastPublishedAt
                 )
+            }
+            let path = file.standardizedFileURL.path
+            guard let signature = SupermuxUsageLogScanSupport.fileSignature(for: file) else {
+                if let prior = cached.files[path] {
+                    updatedFiles[path] = prior
+                }
                 continue
             }
             // Older than every range the popover offers: nothing in it could
@@ -112,14 +122,6 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
             } else if let prior = cached.files[path] {
                 updatedFiles[path] = prior
             }
-
-            publishProgress(
-                onProgress,
-                scanned: index + 1,
-                total: files.count,
-                files: updatedFiles,
-                lastPublishedAt: &lastPublishedAt
-            )
         }
 
         // A cancelled pass stopped partway through the file list, so its map is
@@ -130,7 +132,7 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
             cache.prune(earliestRelevant: earliestRelevant)
             cacheStore.save(cache, for: .codex)
         }
-        return Self.sortedEntries(in: updatedFiles)
+        return SupermuxUsageLogScanSupport.sortedEntries(in: updatedFiles)
     }
 
     private func rolloutFiles() -> [URL] {
@@ -140,7 +142,7 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
         let sessions = sessionsDirectory.appendingPathComponent("sessions", isDirectory: true)
         if let enumerator = fileManager.enumerator(
             at: sessions,
-            includingPropertiesForKeys: Array(Self.resourceKeys),
+            includingPropertiesForKeys: Array(SupermuxUsageLogScanSupport.resourceKeys),
             options: [.skipsHiddenFiles]
         ) {
             for case let file as URL in enumerator where Self.isRolloutFile(file) {
@@ -151,7 +153,7 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
         let archived = sessionsDirectory.appendingPathComponent("archived_sessions", isDirectory: true)
         if let archivedFiles = try? fileManager.contentsOfDirectory(
             at: archived,
-            includingPropertiesForKeys: Array(Self.resourceKeys),
+            includingPropertiesForKeys: Array(SupermuxUsageLogScanSupport.resourceKeys),
             options: [.skipsHiddenFiles]
         ) {
             for file in archivedFiles where Self.isRolloutFile(file) {
@@ -165,17 +167,6 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
     private static func isRolloutFile(_ url: URL) -> Bool {
         let name = url.lastPathComponent
         return name.hasPrefix("rollout-") && name.hasSuffix(".jsonl")
-    }
-
-    private func fileSignature(for url: URL) -> FileSignature? {
-        guard let values = try? url.resourceValues(forKeys: Self.resourceKeys),
-              values.isRegularFile == true,
-              let size = values.fileSize,
-              let modifiedAt = values.contentModificationDate
-        else {
-            return nil
-        }
-        return FileSignature(size: Int64(size), modifiedAt: modifiedAt)
     }
 
     private func scanFile(
@@ -237,7 +228,7 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
                     tokens: tokens
                 )
             }
-            .sorted(by: Self.entriesSortBefore)
+            .sorted(by: SupermuxUsageLogScanSupport.entriesSortBefore)
     }
 
     private static func parseDate(
@@ -246,46 +237,6 @@ public struct SupermuxCodexUsageLogScanner: Sendable {
         standardDateFormatter: ISO8601DateFormatter
     ) -> Date? {
         fractionalDateFormatter.date(from: value) ?? standardDateFormatter.date(from: value)
-    }
-
-    private static func sortedEntries(
-        in files: [String: SupermuxScannedFile]
-    ) -> [SupermuxUsageAnalyticsEntry] {
-        files.values.flatMap(\.entries).sorted(by: entriesSortBefore)
-    }
-
-    private static func entriesSortBefore(
-        _ lhs: SupermuxUsageAnalyticsEntry,
-        _ rhs: SupermuxUsageAnalyticsEntry
-    ) -> Bool {
-        if lhs.day != rhs.day { return lhs.day < rhs.day }
-        if lhs.model != rhs.model { return lhs.model < rhs.model }
-        return lhs.provider < rhs.provider
-    }
-
-    /// Publishes progress at most four times a second.
-    ///
-    /// Each publish flattens and sorts every entry found so far, so calling it
-    /// once per file made a full scan re-sort thousands of entries a thousand
-    /// times. A quarter second is well under the threshold where a filling
-    /// progress bar stops looking live.
-    private func publishProgress(
-        _ callback: (@Sendable (Int, Int, [SupermuxUsageAnalyticsEntry]) -> Void)?,
-        scanned: Int,
-        total: Int,
-        files: [String: SupermuxScannedFile],
-        lastPublishedAt: inout Date
-    ) {
-        guard let callback else { return }
-        let now = Date()
-        guard scanned == total || now.timeIntervalSince(lastPublishedAt) > 0.25 else { return }
-        lastPublishedAt = now
-        callback(scanned, total, Self.sortedEntries(in: files))
-    }
-
-    private struct FileSignature {
-        var size: Int64
-        var modifiedAt: Date
     }
 
     private struct BucketKey: Hashable {

@@ -216,6 +216,49 @@ import Testing
         #expect(entries.first?.tokens.output == 12)
     }
 
+    /// An empty walk almost always means the directory went missing, not that
+    /// the history did. Overwriting the cache with the empty result destroyed
+    /// a scan that cost minutes and could not be rebuilt.
+    @Test func anEmptyWalkLeavesThePreviousCacheIntact() throws {
+        let sandbox = try makeSandbox()
+        let url = try write([assistantLine(id: "msg_1", output: 100)], to: sandbox.projects)
+        let scanner = scanner(projects: sandbox.projects, cache: sandbox.cache)
+        #expect(scanner.scan().first?.tokens.output == 100)
+
+        // Simulate the directory disappearing (unmounted volume, revoked
+        // permission) rather than the user deleting their history.
+        try FileManager.default.removeItem(at: url)
+        #expect(scanner.scan().isEmpty)
+
+        // Restoring the file must not require a full cold reparse of history
+        // the cache already held for every *other* file.
+        let reloaded = SupermuxUsageAnalyticsCache(files: sandbox.cache.load(.claudeCode).files)
+        #expect(reloaded.files.count == 1)
+    }
+
+    /// Progress has to reach `scanned == total` even when the final files are
+    /// all skipped, or the popover's bar freezes short of full.
+    @Test func progressReachesTotalWhenTrailingFilesAreSkipped() throws {
+        let sandbox = try makeSandbox()
+        _ = try write([assistantLine(id: "msg_0", output: 10)], to: sandbox.projects, named: "a.jsonl")
+        // Two files whose mtime is far outside the scan window: both are
+        // skipped, and the last one used to publish nothing at all.
+        for name in ["y.jsonl", "z.jsonl"] {
+            let old = try write([assistantLine(id: "old-\(name)", output: 5)], to: sandbox.projects, named: name)
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date().addingTimeInterval(-200 * 24 * 60 * 60)],
+                ofItemAtPath: old.path
+            )
+        }
+
+        let observed = ProgressRecorder()
+        _ = scanner(projects: sandbox.projects, cache: sandbox.cache).scan { scanned, total, _ in
+            observed.record(scanned: scanned, total: total)
+        }
+        #expect(observed.lastTotal == 3)
+        #expect(observed.lastScanned == 3)
+    }
+
     @Test func reportsProgressWhileScanning() throws {
         let sandbox = try makeSandbox()
         for index in 0..<3 {

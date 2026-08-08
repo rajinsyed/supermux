@@ -40,7 +40,7 @@ struct SupermuxUsageAnalyticsMenuButton: View {
             SupermuxUsageAnalyticsPopoverView(
                 report: model.report,
                 isScanning: model.isScanning,
-                scanProgress: model.snapshot.scanProgress,
+                scanProgress: model.scanProgress,
                 missingProviders: model.snapshot.missingProviders,
                 generatedAt: model.lastScanFinishedAt,
                 selectedRange: $model.selectedRange,

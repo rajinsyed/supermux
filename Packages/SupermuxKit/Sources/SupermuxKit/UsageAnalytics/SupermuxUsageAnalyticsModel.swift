@@ -135,6 +135,18 @@ public final class SupermuxUsageAnalyticsModel {
     public var lastScanFinishedAt: Date? {
         snapshot.isComplete && hasScannedOnce ? snapshot.generatedAt : nil
     }
+
+    /// 0…1 progress for the popover's bar.
+    ///
+    /// A scan that has not published its first file count yet is at zero, not
+    /// at the `1` the still-complete previous snapshot reports — otherwise
+    /// opening the popover cold shows a full bar reading "100%" for the second
+    /// before the first partial lands, then jumps backwards.
+    public var scanProgress: Double {
+        guard isScanning else { return 1 }
+        guard !snapshot.isComplete else { return 0 }
+        return snapshot.scanProgress
+    }
 }
 
 /// Runs both scanners off the main actor and merges their output.
@@ -161,14 +173,21 @@ enum SupermuxUsageAnalyticsScanCoordinator {
         )
 
         let claudeTask = Task.detached(priority: .utility) {
-            claudeScanner.scan { scanned, total, entries in
+            let entries = claudeScanner.scan { scanned, total, entries in
                 box.update(provider: .claudeCode, scanned: scanned, total: total, entries: entries)
             }
+            // A scanner that finishes with nothing must clear its seeded rows;
+            // its progress callbacks alone never fire for an empty walk, so the
+            // previous pass's entries would linger in the partial snapshots.
+            box.finish(provider: .claudeCode, entries: entries)
+            return entries
         }
         let codexTask = Task.detached(priority: .utility) {
-            codexScanner.scan { scanned, total, entries in
+            let entries = codexScanner.scan { scanned, total, entries in
                 box.update(provider: .codex, scanned: scanned, total: total, entries: entries)
             }
+            box.finish(provider: .codex, entries: entries)
+            return entries
         }
         // Detached tasks do not inherit cancellation; without this the scans
         // keep reading gigabytes after the caller has given up.
@@ -208,6 +227,14 @@ private final class ProgressBox: @unchecked Sendable {
         self.missingProviders = missingProviders
         self.publish = publish
         self.entries = Dictionary(grouping: seed, by: \.provider)
+    }
+
+    /// Replaces a provider's rows with its final result without publishing —
+    /// the completed snapshot follows immediately and would only be duplicated.
+    func finish(provider: SupermuxAnalyticsProvider, entries: [SupermuxUsageAnalyticsEntry]) {
+        lock.lock()
+        self.entries[provider] = entries
+        lock.unlock()
     }
 
     func update(

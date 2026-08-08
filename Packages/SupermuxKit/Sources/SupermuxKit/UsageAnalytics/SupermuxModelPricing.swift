@@ -117,6 +117,10 @@ public enum SupermuxModelPricing {
         ("gpt-5.6", .openAICaching(input: 5, output: 30)),
     ]
 
+    /// Provider/gateway decorations stripped off the front of a model id. They
+    /// nest, so ``normalize(_:)`` peels repeatedly rather than once.
+    static let routingPrefixes = ["us.", "eu.", "apac.", "anthropic.", "openai.", "bedrock/", "vertex/"]
+
     /// Strips the decorations harnesses add to a model id: provider prefixes
     /// (`anthropic.claude-opus-5`), context-window suffixes (`[1m]`), version
     /// tags (`:latest`), and trailing snapshot dates (`-20251001`).
@@ -128,8 +132,18 @@ public enum SupermuxModelPricing {
         if let colon = id.firstIndex(of: ":") {
             id = String(id[id.startIndex..<colon])
         }
-        for prefix in ["anthropic.", "openai.", "us.anthropic.", "bedrock/", "vertex/"] where id.hasPrefix(prefix) {
-            id = String(id.dropFirst(prefix.count))
+        // Routed ids stack their decorations (`bedrock/us.anthropic.claude-…`),
+        // so strip until nothing matches. A single ordered pass would leave the
+        // inner prefix behind whenever the outer one sorts later in the list,
+        // and the leftover `us.` defeated even the family fallback.
+        var didStrip = true
+        while didStrip {
+            didStrip = false
+            for prefix in Self.routingPrefixes where id.hasPrefix(prefix) {
+                id = String(id.dropFirst(prefix.count))
+                didStrip = true
+                break
+            }
         }
         // Trailing 8-digit snapshot date: claude-haiku-4-5-20251001.
         let parts = id.split(separator: "-")
@@ -141,41 +155,66 @@ public enum SupermuxModelPricing {
 
     /// The rate for a model id, or `nil` when nothing in the table matches.
     public static func rate(for model: String) -> SupermuxModelRate? {
-        let id = normalize(model)
+        rate(forNormalized: normalize(model))
+    }
+
+    /// `rate(for:)` on an id that is already normalized — the hot path, so the
+    /// longest-prefix search walks the table instead of allocating a filtered
+    /// copy of it per lookup.
+    private static func rate(forNormalized id: String) -> SupermuxModelRate? {
         if let exact = rates[id] { return exact }
-        return familyPrefixes
-            .filter { id.hasPrefix($0.prefix) }
-            .max { $0.prefix.count < $1.prefix.count }?
-            .rate
+        var best: (length: Int, rate: SupermuxModelRate)?
+        for candidate in familyPrefixes where id.hasPrefix(candidate.prefix) {
+            if best == nil || candidate.prefix.count > best!.length {
+                best = (candidate.prefix.count, candidate.rate)
+            }
+        }
+        return best?.rate
     }
 
     /// Whether a model id is a CLI placeholder rather than a real API call.
     /// Claude Code writes `<synthetic>` entries for interrupts and local
     /// errors; they carry zero usage and never cost anything.
     public static func isSynthetic(_ model: String) -> Bool {
-        let id = normalize(model)
-        return id.isEmpty || id == "<synthetic>" || id == "synthetic"
+        isSyntheticNormalized(normalize(model))
+    }
+
+    private static func isSyntheticNormalized(_ id: String) -> Bool {
+        id.isEmpty || id == "<synthetic>" || id == "synthetic"
     }
 
     /// Cost of `tokens` at `model`'s list rate. Unknown models contribute no
     /// dollars and report their tokens as unpriced.
     public static func cost(of tokens: SupermuxTokenCounts, model: String) -> SupermuxUsageCost {
-        guard !isSynthetic(model) else { return .zero }
-        guard let rate = rate(for: model) else {
-            return SupermuxUsageCost(unpricedTokens: tokens.total)
+        priced(tokens, model: model).cost
+    }
+
+    /// What the cached reads would have cost at the full input rate minus what
+    /// they actually cost — the "cache savings" headline.
+    public static func cacheSavings(of tokens: SupermuxTokenCounts, model: String) -> Double {
+        priced(tokens, model: model).cacheSavings
+    }
+
+    /// Cost and cache savings from one rate lookup.
+    ///
+    /// The aggregator needs both figures for every entry; resolving them
+    /// separately normalized the same id four times per entry, which is the
+    /// whole per-entry cost over a 90-day range.
+    public static func priced(
+        _ tokens: SupermuxTokenCounts,
+        model: String
+    ) -> (cost: SupermuxUsageCost, cacheSavings: Double) {
+        let id = normalize(model)
+        guard !isSyntheticNormalized(id) else { return (.zero, 0) }
+        guard let rate = rate(forNormalized: id) else {
+            return (SupermuxUsageCost(unpricedTokens: tokens.total), 0)
         }
         let millions = 1_000_000.0
         let priced = Double(tokens.uncachedInput) / millions * rate.input
             + Double(tokens.cacheWrite) / millions * rate.cacheWrite
             + Double(tokens.cacheRead) / millions * rate.cacheRead
             + Double(tokens.output) / millions * rate.output
-        return SupermuxUsageCost(priced: priced)
-    }
-
-    /// What the cached reads would have cost at the full input rate minus what
-    /// they actually cost — the "cache savings" headline.
-    public static func cacheSavings(of tokens: SupermuxTokenCounts, model: String) -> Double {
-        guard !isSynthetic(model), let rate = rate(for: model) else { return 0 }
-        return Double(tokens.cacheRead) / 1_000_000.0 * (rate.input - rate.cacheRead)
+        let savings = Double(tokens.cacheRead) / millions * (rate.input - rate.cacheRead)
+        return (SupermuxUsageCost(priced: priced), savings)
     }
 }

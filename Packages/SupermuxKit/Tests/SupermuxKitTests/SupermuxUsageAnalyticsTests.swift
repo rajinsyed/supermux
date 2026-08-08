@@ -36,6 +36,32 @@ import Testing
         #expect(sol.cacheWrite == sol.input * 1.25)
     }
 
+    /// Routing prefixes nest. A single ordered pass stripped `anthropic.` first
+    /// and left `us.` in front, which missed both the exact table and the
+    /// family fallback and dropped a real Bedrock model into the unpriced
+    /// bucket.
+    @Test func stripsNestedRoutingPrefixes() throws {
+        #expect(SupermuxModelPricing.normalize("us.anthropic.claude-opus-5") == "claude-opus-5")
+        #expect(SupermuxModelPricing.normalize("bedrock/us.anthropic.claude-sonnet-5") == "claude-sonnet-5")
+        #expect(try #require(SupermuxModelPricing.rate(for: "us.anthropic.claude-opus-5")).input == 5)
+    }
+
+    /// Cost and cache savings must agree with the one-shot lookup the
+    /// aggregator uses, or the footer's savings figure drifts from the total.
+    @Test func combinedPricingMatchesTheIndividualEntryPoints() {
+        let tokens = SupermuxTokenCounts(
+            uncachedInput: 1_000_000,
+            cacheWrite: 500_000,
+            cacheRead: 4_000_000,
+            output: 250_000
+        )
+        for model in ["claude-fable-5", "gpt-5.2-codex", "some-future-model-9", "<synthetic>"] {
+            let combined = SupermuxModelPricing.priced(tokens, model: model)
+            #expect(combined.cost == SupermuxModelPricing.cost(of: tokens, model: model))
+            #expect(combined.cacheSavings == SupermuxModelPricing.cacheSavings(of: tokens, model: model))
+        }
+    }
+
     @Test func fallsBackToFamilyRateForUnknownPointReleases() throws {
         let rate = try #require(SupermuxModelPricing.rate(for: "claude-opus-5-3"))
         #expect(rate.input == 5)
@@ -187,6 +213,38 @@ import Testing
         )
         // Output tokens must not dilute the rate: 800 / (100+100+800).
         #expect(abs(report.cacheHitRate - 0.8) < 0.0001)
+    }
+
+    /// Entries carrying a mid-day instant (a snapshot built under a different
+    /// calendar, or a cache written before a timezone change) used to pass the
+    /// raw `<= endDay` filter and then key a bucket the `daily` walk never
+    /// visits — the tokens counted toward the total but no bar ever showed
+    /// them, and an entry later than `endDay`'s midnight vanished entirely.
+    @Test func normalizesEntryDaysBeforeFilteringAndBucketing() {
+        let noon = calendar.date(byAdding: .hour, value: 12, to: calendar.startOfDay(for: now))!
+        let snapshot = SupermuxUsageAnalyticsSnapshot(entries: [
+            .init(day: noon, provider: .claudeCode, model: "claude-fable-5",
+                  tokens: SupermuxTokenCounts(output: 1_000_000)),
+        ])
+        let report = SupermuxUsageAnalyticsAggregator.report(
+            from: snapshot, range: .week, now: now, calendar: calendar
+        )
+        #expect(report.tokens.output == 1_000_000)
+        // The tokens must land on a real bar, not in a bucket off the axis.
+        #expect(report.activeDayCount == 1)
+        #expect(report.daily.last?.tokens.output == 1_000_000)
+        #expect(abs(report.peakDailyCost - 50) < 0.0001)
+    }
+
+    /// Every day the walk emits must be a normalized local midnight, so bucket
+    /// keys and axis days cannot disagree.
+    @Test func everyDailyBucketIsALocalMidnight() {
+        let report = SupermuxUsageAnalyticsAggregator.report(
+            from: .empty, range: .quarter, now: now, calendar: calendar
+        )
+        #expect(report.daily.count == 90)
+        #expect(report.daily.allSatisfy { $0.day == calendar.startOfDay(for: $0.day) })
+        #expect(Set(report.daily.map(\.day)).count == 90)
     }
 
     @Test func emptySnapshotProducesAnEmptyButWellFormedReport() {

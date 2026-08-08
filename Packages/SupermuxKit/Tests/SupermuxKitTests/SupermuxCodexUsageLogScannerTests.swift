@@ -244,6 +244,26 @@ struct SupermuxCodexUsageLogScannerTests {
         #expect(entry.tokens.total == 8)
     }
 
+    /// `rolloutFiles()` reads `archived_sessions` too, so a user whose current
+    /// sessions were all archived still has data. Reporting Codex as "no logs
+    /// found" while its rows render contradicted the popover's own footer.
+    @Test func archivedOnlyInstallIsStillAvailable() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try write(
+            Data("""
+            {"timestamp":"2026-08-04T10:00:00.000Z","type":"turn_context","payload":{"model":"gpt-archived"}}
+            {"timestamp":"2026-08-04T10:01:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":7,"cached_input_tokens":2,"output_tokens":1,"reasoning_output_tokens":0}}}}
+            """.utf8),
+            to: "archived_sessions/rollout-archived-only.jsonl",
+            under: root
+        )
+
+        let scanner = scanner(root: root)
+        #expect(scanner.isAvailable)
+        #expect(scanner.scan().first?.model == "gpt-archived")
+    }
+
     @Test func missingSessionsDirectoryIsUnavailableAndYieldsNoEntries() throws {
         let root = try makeRoot()
         defer { try? FileManager.default.removeItem(at: root) }

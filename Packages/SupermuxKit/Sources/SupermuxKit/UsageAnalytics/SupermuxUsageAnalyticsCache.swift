@@ -52,6 +52,78 @@ enum SupermuxUsageScanWindow {
     }
 }
 
+/// The file-walking plumbing both log scanners share.
+///
+/// The two scanners parse completely different formats but walk their files
+/// identically, so this is the single place that decides what a file's stat
+/// signature is, how entries are ordered, and when progress is published.
+enum SupermuxUsageLogScanSupport {
+    static let resourceKeys: Set<URLResourceKey> = [
+        .contentModificationDateKey,
+        .fileSizeKey,
+        .isRegularFileKey,
+    ]
+
+    struct FileSignature {
+        var size: Int64
+        var modifiedAt: Date
+    }
+
+    static func fileSignature(for url: URL) -> FileSignature? {
+        guard let values = try? url.resourceValues(forKeys: resourceKeys),
+              values.isRegularFile == true,
+              let size = values.fileSize,
+              let modifiedAt = values.contentModificationDate
+        else {
+            return nil
+        }
+        return FileSignature(size: Int64(size), modifiedAt: modifiedAt)
+    }
+
+    static func entriesSortBefore(
+        _ lhs: SupermuxUsageAnalyticsEntry,
+        _ rhs: SupermuxUsageAnalyticsEntry
+    ) -> Bool {
+        if lhs.day != rhs.day { return lhs.day < rhs.day }
+        if lhs.model != rhs.model { return lhs.model < rhs.model }
+        return lhs.provider < rhs.provider
+    }
+
+    static func sortedEntries(
+        in files: [String: SupermuxScannedFile]
+    ) -> [SupermuxUsageAnalyticsEntry] {
+        files.values.flatMap(\.entries).sorted(by: entriesSortBefore)
+    }
+
+    /// Entries as found, unordered. Progress consumers fold everything into
+    /// dictionaries and never read the order, so a cold scan must not re-sort
+    /// tens of thousands of entries four times a second just to publish them.
+    static func flattenedEntries(
+        in files: [String: SupermuxScannedFile]
+    ) -> [SupermuxUsageAnalyticsEntry] {
+        files.values.flatMap(\.entries)
+    }
+
+    /// Publishes at most four times a second, and always on the final file.
+    ///
+    /// Every file must reach here — including ones skipped as too old or
+    /// unreadable — or a run whose last files are all skipped never publishes
+    /// `scanned == total` and the popover's bar stops short of full.
+    static func publishProgress(
+        _ callback: (@Sendable (Int, Int, [SupermuxUsageAnalyticsEntry]) -> Void)?,
+        scanned: Int,
+        total: Int,
+        files: [String: SupermuxScannedFile],
+        lastPublishedAt: inout Date
+    ) {
+        guard let callback else { return }
+        let now = Date()
+        guard scanned >= total || now.timeIntervalSince(lastPublishedAt) > 0.25 else { return }
+        lastPublishedAt = now
+        callback(scanned, total, flattenedEntries(in: files))
+    }
+}
+
 /// The persisted index for one provider's logs.
 struct SupermuxUsageAnalyticsCache: Codable, Sendable {
     /// Bumped when the parsing rules change in a way that invalidates stored
@@ -64,10 +136,6 @@ struct SupermuxUsageAnalyticsCache: Codable, Sendable {
     init(version: Int = Self.currentVersion, files: [String: SupermuxScannedFile] = [:]) {
         self.version = version
         self.files = files
-    }
-
-    var allEntries: [SupermuxUsageAnalyticsEntry] {
-        files.values.flatMap(\.entries)
     }
 
     /// Drops files that have aged out of the scan window or no longer exist,

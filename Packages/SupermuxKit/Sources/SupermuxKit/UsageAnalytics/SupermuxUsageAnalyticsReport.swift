@@ -157,7 +157,16 @@ public enum SupermuxUsageAnalyticsAggregator {
             return .empty(range: range)
         }
 
-        let entries = snapshot.entries.filter { $0.day >= startDay && $0.day <= endDay }
+        // Filter on the same normalized day the bucket is keyed by. The
+        // scanners emit local midnights, but a snapshot built under a different
+        // calendar (or a DST shift) can carry a mid-day instant, which would
+        // pass a raw `<= endDay` test and then key a bucket outside the window
+        // that the `daily` walk never visits — silently losing today's usage.
+        let entries = snapshot.entries.compactMap { entry -> (day: Date, entry: SupermuxUsageAnalyticsEntry)? in
+            let day = calendar.startOfDay(for: entry.day)
+            guard day >= startDay, day <= endDay else { return nil }
+            return (day, entry)
+        }
 
         var totalTokens = SupermuxTokenCounts.zero
         var totalCost = SupermuxUsageCost.zero
@@ -166,11 +175,12 @@ public enum SupermuxUsageAnalyticsAggregator {
         var byModel: [String: SupermuxModelUsage] = [:]
         var byDay: [Date: (SupermuxTokenCounts, SupermuxUsageCost, [SupermuxAnalyticsProvider: Double], [SupermuxAnalyticsProvider: Int])] = [:]
 
-        for entry in entries {
-            let cost = SupermuxModelPricing.cost(of: entry.tokens, model: entry.model)
+        for (dayKey, entry) in entries {
+            let priced = SupermuxModelPricing.priced(entry.tokens, model: entry.model)
+            let cost = priced.cost
             totalTokens += entry.tokens
             totalCost += cost
-            cacheSavings += SupermuxModelPricing.cacheSavings(of: entry.tokens, model: entry.model)
+            cacheSavings += priced.cacheSavings
 
             var provider = byProvider[entry.provider] ?? (.zero, .zero)
             provider.0 += entry.tokens
@@ -191,7 +201,6 @@ public enum SupermuxUsageAnalyticsAggregator {
                 )
             }
 
-            let dayKey = calendar.startOfDay(for: entry.day)
             var day = byDay[dayKey] ?? (.zero, .zero, [:], [:])
             day.0 += entry.tokens
             day.1 += cost
@@ -212,7 +221,10 @@ public enum SupermuxUsageAnalyticsAggregator {
                 tokensByProvider: bucket.3
             ))
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
-            cursor = next
+            // Re-normalize: in zones whose DST transition deletes midnight the
+            // added day lands at 01:00, which would no longer match a bucket
+            // key and would drop that day's bars.
+            cursor = calendar.startOfDay(for: next)
         }
 
         let providers = byProvider
@@ -237,7 +249,7 @@ public enum SupermuxUsageAnalyticsAggregator {
             tokens: totalTokens,
             cost: totalCost,
             providers: providers,
-            models: Array(models),
+            models: models,
             daily: daily,
             cacheSavings: cacheSavings
         )

@@ -466,7 +466,10 @@ public struct SupermuxUsageAnalyticsPopoverView: View {
                 SupermuxUsageAnalyticsFormat.percent(report.cacheHitRate)
             ))
         }
-        if report.cost.unpricedTokens > 0 {
+        // Only a caveat while a dollar total is on screen; when the hero is
+        // already showing tokens with "no list price known", repeating that
+        // those tokens are missing from a total there isn't reads as a bug.
+        if report.cost.unpricedTokens > 0, !isFullyUnpriced {
             notes.append(String(
                 format: String(
                     localized: "supermux.analytics.unpriced",
