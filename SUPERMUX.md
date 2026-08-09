@@ -348,7 +348,11 @@ Constraints inherited from upstream that supermux code MUST follow:
 - New code follows `skills/cmux-architecture/SKILL.md`: Swift 6 concurrency (`actor`,
   `@Observable`, `async/await`), no singletons, constructor injection, one major type per file,
   packages form a DAG.
-- Never run bare `xcodebuild` to launch; always tagged `reload.sh` builds.
+- Never run bare `xcodebuild` to launch; always tagged `reload.sh` builds. **Exception: the iOS
+  app on the user's physical iPhone.** A tagged DEV iOS build pairs only with the same-tag Mac DEV
+  build, which the user cannot sign in to, so phone dogfood is a Release build with `CMUX_DEV_TAG=`
+  empty — see the `ios-dogfood-release-build` fence in `CLAUDE.md` (touchpoint #244) for the exact
+  invocation and the build settings never to pass on it.
 
 ## Known limitations / deliberate deviations
 
