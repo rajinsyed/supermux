@@ -7,6 +7,9 @@ import CmuxMobileShellModel
 import CmuxMobileSupport
 import CmuxMobileTerminal
 import SwiftUI
+// SUPERMUX:begin agent-chat-presentation-seam
+import SupermuxMobileUI
+// SUPERMUX:end agent-chat-presentation-seam
 import UIKit
 
 /// The agent chat rendered inline in the workspace detail, in place of the
@@ -41,6 +44,13 @@ struct WorkspaceChatPane: View {
                 onOpenTerminal: openTerminal
             )
             .environment(\.chatArtifactLoader, artifactLoader)
+            // SUPERMUX:begin agent-chat-presentation-seam
+            // Installs the fork's agent-chat design. Everything below this
+            // modifier still runs upstream's keyboard container, transcript
+            // table, artifact viewer, history paging, and detail sheets;
+            // only the row visuals and the composer are fork-owned.
+            .supermuxAgentChat()
+            // SUPERMUX:end agent-chat-presentation-seam
         }
         .sheet(isPresented: $isShowingShortcutSettings) {
             TerminalShortcutsSettingsView(scope: .agentChat)

@@ -15,6 +15,9 @@ import UIKit
 /// (drafts, attachments).
 public struct ChatScreen: View {
     @Environment(ToastCenter.self) private var toasts
+    // SUPERMUX:begin agent-chat-presentation-seam
+    @Environment(\.chatPresentation) private var presentation
+    // SUPERMUX:end agent-chat-presentation-seam
     @State private var store: ChatConversationStore
     @State private var renderer = ChatMarkdownRenderer()
     @State private var contentCache = ChatContentCache()
@@ -207,6 +210,32 @@ public struct ChatScreen: View {
         // A past/ended coding-agent session is read-only: keep the transcript
         // history but drop the text field and control buttons.
         if store.agentState != .ended {
+            // SUPERMUX:begin agent-chat-presentation-seam
+            if let presentation {
+                presentation.composer(
+                    ChatComposerContext(
+                        agentState: store.agentState,
+                        agentKind: store.descriptor.agentKind,
+                        isTerminal: store.descriptor.kind == .terminal,
+                        isConnected: store.isConnected,
+                        accessoryLeadingShortcuts: accessoryLeadingShortcuts,
+                        accessoryShortcuts: accessoryShortcuts,
+                        draft: $draft,
+                        onSend: { text, attachments in
+                            Task { await store.send(text: text, attachments: attachments) }
+                        },
+                        onInterrupt: { hard in
+                            Task { await store.interrupt(hard: hard) }
+                        },
+                        onOpenTerminal: onOpenTerminal
+                    )
+                )
+                #if os(iOS)
+                .layoutPriority(1)
+                #endif
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+            // SUPERMUX:end agent-chat-presentation-seam
             ChatComposerView(
                 agentState: store.agentState,
                 agentKind: store.descriptor.agentKind,
@@ -227,6 +256,9 @@ public struct ChatScreen: View {
             .layoutPriority(1)
             #endif
             .transition(.move(edge: .bottom).combined(with: .opacity))
+            // SUPERMUX:begin agent-chat-presentation-seam
+            }
+            // SUPERMUX:end agent-chat-presentation-seam
         }
     }
 

@@ -262,6 +262,12 @@ Rules for adding a touchpoint:
 | 241 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Wires the ROOT `AppIcon.icon` + `AppIcon-Demo.icon` Icon Composer bundles into the iOS app target's Resources phase (ids `IC1000*`, `sourceTree = SOURCE_ROOT`, `path = ../AppIcon*.icon`) and deletes the upstream `AppIcon.appiconset` / `AppIcon-Demo.appiconset` PNG sets. iOS now renders from the same single source of truth as macOS (#17); no PNG icon art exists in the fork. `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` was already correct and is unchanged |
 | 242 | `ios/cmux/Assets.xcassets/CmuxLogo.imageset` | `unfenced` | The in-app brand logo (sign-in header, restoring-session screen) re-sourced from the supermux mark, squircle-masked, as a base64-PNG-in-SVG at the same path/name so no Swift call site changes |
 | 243 | `.github/workflows/ios-testflight.yml` | `ios-supermux-brand` | The "Use DEMO-badged app icon" step replaces the whole `AppIcon.icon` directory with `AppIcon-Demo.icon` instead of copying three PNGs into `AppIcon.appiconset`, which no longer exists |
+| 244 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/ChatPresentation+Supermux.swift` | `agent-chat-presentation-seam` | **Whole-file fork addition inside an upstream package** (same pattern as the other whole-file rows here). Declares `ChatPresentation` (row / placeholder / composer builders + a visual `identity`), `ChatComposerContext`, `ChatTranscriptPlaceholder`, the `chatPresentation` environment value, and the `.chatPresentation(_:)` modifier. A `nil` presentation renders upstream byte-for-byte, so demos, previews, tests, and an upstream-paired phone are unaffected. New file — cannot conflict on merge |
+| 245 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/Transcript/ChatTranscriptTableView.swift` | `agent-chat-presentation-seam` | Six fences: the `@Environment(\.chatPresentation)` read; the `presentation:` field on `ChatTranscriptTableConfiguration` and the argument that fills it; a **re-injection of `chatPresentation` inside `view(for:tableWidth:)`** (load-bearing — `UIHostingConfiguration` starts a FRESH environment, so without this the seam compiles and silently renders upstream rows); the `.row` branch calling `presentation.row`; a `supermuxPlaceholder(for:)` mapper plus the `itemView`/`upstreamItemView` split so the synthetic empty/loading/failure/truncated/typing items are themeable too; and `presentationIdentity` folded into `shouldReload` (without it a restyle leaves every item value-identical and the table keeps stale cells). `@MainActor` was added to the three view factories because the builders close over `ChatRowActions` |
+| 246 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/Screen/ChatScreen.swift` | `agent-chat-presentation-seam` | Three fences: the `@Environment(\.chatPresentation)` read, and an `if let presentation { … } else { …upstream ChatComposerView… }` branch in `composerContent` that builds a `ChatComposerContext` from the same store values upstream passes. `showsComposer`/ended-session handling stays upstream-owned |
+| 247 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/Theme/ChatBubbleMaxWidthKey.swift` | `agent-chat-bubble-width-public` | One fence (a comment) plus `extension` → `public extension`. Lets fork rows behind the seam read the transcript-resolved bubble width instead of a per-row `GeometryReader`, which would discard `ChatContainerWidth`'s first-render fix (width reports 0 on the first pass, so a proportional cap snaps from full-width to narrow) and add layout work to the streaming path |
+| 248 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceChatPane.swift` | `agent-chat-presentation-seam` | Two fences: `import SupermuxMobileUI`, and the `.supermuxAgentChat()` modifier on the `ChatScreen` group. **This is the only line that turns the redesign on**; remove it and the phone renders upstream's chat UI unchanged |
+| 249 | `Packages/iOS/SupermuxMobileUI/Package.swift` | `unfenced` | Fork-owned manifest: adds `../../Shared/CmuxAgentChat` and `../CmuxAgentChatUI` package + target dependencies so the fork's rows can name `ChatTranscriptRow` / `ChatRowActions` and install the presentation. Acyclic — `CmuxMobileShellUI` already depends on both |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
@@ -2930,3 +2936,48 @@ the `SUPERMUX:end` line. Verify with `./scripts/lint-ios-package-conventions.sh`
 "OK: no unjustified convention violations."). Drop any of these fences as soon as an upstream
 merge brings the real fix for (or upstream's own `lint:allow` at) that site — these fences are
 pure grandfathering and may only shrink.
+
+### 244–249. Agent-chat redesign — `agent-chat-presentation-seam` + `agent-chat-bubble-width-public`
+
+The iOS agent-chat pane is re-skinned in the fork's own design language (borderless activity
+rows, full-bleed agent prose, one user bubble, a composer that rests as a floating capsule).
+The redesign is ~2,000 lines, and **all of it lives in fork-owned files** under
+`Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/AgentChat/`. Upstream keeps owning
+every hard part: the UIKit keyboard-tracking controller, the transcript `UITableView` (anchor
+restoration, at-bottom tracking, streaming heights), the artifact viewer, history paging,
+scroll-to-bottom, and the block-detail sheets.
+
+**The seam.** `ChatPresentation` (#244, a new fork-owned file inside the upstream package) is a
+value of three builders — `row`, `placeholder`, `composer` — plus a visual `identity`. It is
+carried in a new environment value. When it is `nil` upstream renders exactly as before, so this
+is inert for any host that does not opt in.
+
+**Three things about this are load-bearing and easy to get wrong on a re-apply:**
+
+1. **The presentation MUST be re-injected inside `ChatTranscriptTableConfiguration.view(for:tableWidth:)`** (#245).
+   Cells are hosted through `UIHostingConfiguration`, which starts a *fresh* SwiftUI
+   environment; a value set above `ChatScreen` does not reach them. Upstream already
+   re-injects five values there for exactly this reason. Omit this line and the seam still
+   compiles, still type-checks, and silently renders upstream's rows.
+2. **`presentation.identity` MUST stay in `shouldReload`** (#245). Swapping or re-theming the
+   renderers leaves every `ChatTranscriptTableItem` value-identical, so without it the table
+   skips `reloadData()` and keeps the previously rendered cells.
+3. **The fork composer MUST honor `ChatAccessoryShortcut.semanticAction`.** The host passes
+   deliberately empty actions for Hide-Keyboard and Paste (see `WorkspaceChatPane`), because only
+   the composer owns focus and the text field; upstream's composer rebinds them. A fork composer
+   that just calls `perform()` leaves those two buttons dead.
+
+**To re-apply after an upstream merge:**
+
+- If upstream reshapes `ChatTranscriptTableView`, re-add the six fences from #245. The row branch
+  and the placeholder mapper follow whatever item taxonomy upstream now has; keep the mapper
+  returning `nil` for `.row` and `.bottomAnchor`.
+- If upstream reshapes `composerContent`, re-add the #246 branch, rebuilding `ChatComposerContext`
+  from whatever values upstream now passes to `ChatComposerView`.
+- If upstream re-privatizes `chatBubbleMaxWidth`, re-apply #247 (`extension` → `public extension`).
+- Verify the redesign is actually live, not just compiling: open a Claude session on the phone and
+  confirm activity rows are borderless one-liners with tensed verbs ("Reading…" → "Read"). If rows
+  look like upstream's bordered cards, item 1 above was dropped.
+
+`SupermuxChatPresentationFactory.visualRevision` is the identity string; bump it whenever the fork's
+visual configuration changes in a way that leaves row values identical.

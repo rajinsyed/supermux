@@ -33,6 +33,14 @@ let package = Package(
         // Already in the graph transitively; declared directly for the shared
         // glass/material modifiers so fork surfaces match the app's chrome.
         .package(path: "../CmuxMobileSupport"),
+        // The agent-chat redesign renders upstream's transcript model
+        // (`ChatTranscriptRow` and friends) with fork-owned views, so the
+        // wire/model package is named directly rather than transitively.
+        .package(path: "../../Shared/CmuxAgentChat"),
+        // Reuses upstream's keyboard container, transcript table, artifact
+        // viewer, and detail sheets; only the row/composer visuals are
+        // replaced, through the fenced render seams.
+        .package(path: "../CmuxAgentChatUI"),
     ],
     targets: [
         .target(
@@ -44,6 +52,8 @@ let package = Package(
                 "CmuxMobileShellModel",
                 "CMUXMobileCore",
                 "CmuxMobileSupport",
+                "CmuxAgentChat",
+                "CmuxAgentChatUI",
             ],
             resources: [.process("Resources")],
             swiftSettings: [

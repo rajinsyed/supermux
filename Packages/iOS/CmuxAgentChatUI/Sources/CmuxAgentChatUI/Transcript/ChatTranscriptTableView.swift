@@ -25,6 +25,9 @@ struct ChatTranscriptTableView: UIViewRepresentable {
     @Environment(\.chatMarkdownRenderer) private var markdownRenderer
     @Environment(\.chatContentCache) private var contentCache
     @Environment(\.chatArtifactLoader) private var artifactLoader
+    // SUPERMUX:begin agent-chat-presentation-seam
+    @Environment(\.chatPresentation) private var presentation
+    // SUPERMUX:end agent-chat-presentation-seam
 
     func makeCoordinator() -> Coordinator {
         Coordinator(isAtBottom: $isAtBottom)
@@ -66,7 +69,10 @@ struct ChatTranscriptTableView: UIViewRepresentable {
                 theme: theme,
                 markdownRenderer: markdownRenderer,
                 contentCache: contentCache,
-                artifactLoader: artifactLoader
+                artifactLoader: artifactLoader,
+                // SUPERMUX:begin agent-chat-presentation-seam
+                presentation: presentation
+                // SUPERMUX:end agent-chat-presentation-seam
             ),
             in: tableView,
             scrollToBottomRequest: scrollToBottomRequest
@@ -78,6 +84,9 @@ struct ChatTranscriptTableView: UIViewRepresentable {
         private var items: [ChatTranscriptTableItem] = []
         private var agentState: ChatAgentState = .idle
         private var topRequestKey: String?
+        // SUPERMUX:begin agent-chat-presentation-seam
+        private var presentationIdentity: String?
+        // SUPERMUX:end agent-chat-presentation-seam
         private var lastScrollToBottomRequest = 0
         private var isHandlingLayout = false
         private var isApplyingDataUpdate = false
@@ -118,8 +127,19 @@ struct ChatTranscriptTableView: UIViewRepresentable {
         ) {
             self.configuration = configuration
             let nextItems = configuration.makeItems()
+            // SUPERMUX:begin agent-chat-presentation-seam
+            // Fold the presentation identity into the reload decision: swapping
+            // renderers (or re-theming them) leaves every item value-identical,
+            // so without this the table would keep the previously rendered cells.
+            let nextPresentationIdentity = configuration.presentation?.identity
+            let presentationChanged = nextPresentationIdentity != presentationIdentity
+            presentationIdentity = nextPresentationIdentity
+            // SUPERMUX:end agent-chat-presentation-seam
             let shouldReload = nextItems != items
                 || configuration.agentState != agentState
+                // SUPERMUX:begin agent-chat-presentation-seam
+                || presentationChanged
+                // SUPERMUX:end agent-chat-presentation-seam
             let shouldScrollToBottom = scrollToBottomRequest != lastScrollToBottomRequest
             lastScrollToBottomRequest = scrollToBottomRequest
             let wasAtBottom = distanceFromBottom(in: tableView) <= chatTranscriptAtBottomThreshold
@@ -366,6 +386,9 @@ private struct ChatTranscriptTableConfiguration {
     let markdownRenderer: ChatMarkdownRenderer?
     let contentCache: ChatContentCache?
     let artifactLoader: ChatArtifactLoader
+    // SUPERMUX:begin agent-chat-presentation-seam
+    let presentation: ChatPresentation?
+    // SUPERMUX:end agent-chat-presentation-seam
 
     func makeItems() -> [ChatTranscriptTableItem] {
         var items: [ChatTranscriptTableItem] = []
@@ -391,6 +414,13 @@ private struct ChatTranscriptTableConfiguration {
         return items
     }
 
+    // SUPERMUX:begin agent-chat-presentation-seam
+    // The presentation's builders are `@MainActor` (they close over
+    // `ChatRowActions`, which already is); this factory only ever runs from
+    // `cellForRowAt`, so stating the isolation here is accurate and avoids
+    // touching the upstream type's own declaration.
+    @MainActor
+    // SUPERMUX:end agent-chat-presentation-seam
     @ViewBuilder
     func view(for item: ChatTranscriptTableItem, tableWidth: CGFloat) -> some View {
         itemView(for: item)
@@ -399,14 +429,53 @@ private struct ChatTranscriptTableConfiguration {
             .environment(\.chatMarkdownRenderer, markdownRenderer)
             .environment(\.chatContentCache, contentCache)
             .environment(\.chatArtifactLoader, artifactLoader)
+            // SUPERMUX:begin agent-chat-presentation-seam
+            // `UIHostingConfiguration` starts a fresh environment, so the
+            // presentation has to be re-injected here alongside the four
+            // values above or fork rows lose it.
+            .environment(\.chatPresentation, presentation)
+            // SUPERMUX:end agent-chat-presentation-seam
             .environment(
                 \.chatBubbleMaxWidth,
                 tableWidth > 0 ? tableWidth * theme.bubbleMaxWidthFraction : .infinity
             )
     }
 
+    @MainActor
     @ViewBuilder
     private func itemView(for item: ChatTranscriptTableItem) -> some View {
+        // SUPERMUX:begin agent-chat-presentation-seam
+        if let presentation, let placeholder = supermuxPlaceholder(for: item) {
+            presentation.placeholder(placeholder)
+        } else {
+            upstreamItemView(for: item)
+        }
+        // SUPERMUX:end agent-chat-presentation-seam
+    }
+
+    // SUPERMUX:begin agent-chat-presentation-seam
+    /// Maps the synthetic (non-`.row`) table items onto the fork's placeholder
+    /// vocabulary. `.row` and `.bottomAnchor` return nil: rows go through the
+    /// row closure, and the anchor is layout, not presentation.
+    @MainActor
+    private func supermuxPlaceholder(
+        for item: ChatTranscriptTableItem
+    ) -> ChatTranscriptPlaceholder? {
+        switch item {
+        case .loadingMore: return .loadingMore
+        case .historyTruncated: return .historyTruncated
+        case .loadFailed: return .loadFailed(retry: onRetryInitialLoad)
+        case .empty: return .empty
+        case .initialLoading: return .initialLoading
+        case .typing: return .typing(agentState)
+        case .row, .bottomAnchor: return nil
+        }
+    }
+    // SUPERMUX:end agent-chat-presentation-seam
+
+    @MainActor
+    @ViewBuilder
+    private func upstreamItemView(for item: ChatTranscriptTableItem) -> some View {
         switch item {
         case .loadingMore:
             ProgressView()
@@ -460,11 +529,17 @@ private struct ChatTranscriptTableConfiguration {
                 .controlSize(.regular)
                 .padding(.vertical, 48)
         case .row(let row):
-            ChatTranscriptRowView(
-                row: row,
-                actions: actions
-            )
-            .equatable()
+            // SUPERMUX:begin agent-chat-presentation-seam
+            if let presentation {
+                presentation.row(row, actions)
+            } else {
+                ChatTranscriptRowView(
+                    row: row,
+                    actions: actions
+                )
+                .equatable()
+            }
+            // SUPERMUX:end agent-chat-presentation-seam
         case .typing:
             ChatTypingIndicatorView(agentState: agentState)
                 .padding(.top, theme.intraGroupSpacing)
