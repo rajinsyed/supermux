@@ -50,6 +50,56 @@ Every phone build requires the same-tag Mac dev build (the iOS app is unusable w
 
 If the iPhone is unreachable at build time, the reload still completes: the signed build is parked in the offline install queue (`scripts/iphone-install-queue.sh`, persistent under `~/Library/Application Support/cmux-dev/iphone-install-queue`), and a LaunchAgent auto-installs and launches it within seconds of the phone being plugged back in or reappearing on the network, then sends a `cmux notify` with the installed tags. The LaunchAgent is a one-time per-Mac setup: `scripts/install-iphone-queue-agent.sh install`; it runs a stable copy of the queue script, so re-run the installer after changing that script. In the handoff, report the queued state (`scripts/iphone-install-queue.sh list`) instead of treating an unreachable phone as a failure; `drain` retries manually, `clear` abandons a queued build.
 
+<!-- SUPERMUX:begin ios-dogfood-release-build -->
+### Supermux: phone dogfood uses a Release build, not `reload.sh --tag`
+
+The section above is upstream's workflow and does not work on this fork's phone. `reload.sh --tag`
+builds **Debug** with `CMUX_DEV_TAG=<tag>`, and a tagged DEV iOS build may pair only with the
+same-tag Mac **DEV** build — which the user cannot sign in to. That build installs fine and is then
+unusable. `ios/scripts/reload-cloud.sh` does not exist in this checkout either.
+
+So for anything the user must actually open on their iPhone, build Release against production auth:
+
+```bash
+xcodebuild -workspace ios/cmux.xcworkspace -scheme cmux-ios \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -derivedDataPath "$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-<tag>" \
+  -allowProvisioningUpdates \
+  PRODUCT_BUNDLE_IDENTIFIER=dev.cmux.ios.<tag> \
+  CMUX_GIT_SHA="$(git rev-parse --short=10 HEAD)" \
+  CMUX_DEV_TAG= CMUX_PRESENCE_BASE_URL= CMUX_IOS_AUTH_ENV=production \
+  EXCLUDED_SOURCE_FILE_NAMES=Info.plist \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic \
+  DEVELOPMENT_TEAM=NRGUG8GVV4 CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
+  build
+
+APP="$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-<tag>/Build/Products/Release-iphoneos/cmux.app"
+xcrun devicectl device install app --device <device-id> "$APP"
+xcrun devicectl device process launch --terminate-existing --device <device-id> dev.cmux.ios.<tag>
+```
+
+- `CMUX_DEV_TAG=` **empty** is what makes it official-compatible; the distinct
+  `PRODUCT_BUNDLE_IDENTIFIER` is what keeps it beside the user's main install instead of replacing
+  it. Reuse the same bundle id across rebuilds so app data survives.
+- `DEVELOPMENT_TEAM=NRGUG8GVV4` is the personal team, which is also why
+  `CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` is required (touchpoint #53 strips the
+  capabilities that team lacks).
+- Resolve `<device-id>` from `CMUX_IPHONE_DEVICE_ID`, `~/.config/cmux/iphone-device-id`, or
+  `xcrun devicectl list devices`. `install` works with the phone locked; `launch` fails with
+  `BSErrorCodeDescription = Locked` — report that as "installed, tap to open", not as a failure.
+
+**Never pass `PRODUCT_DISPLAY_NAME` on this command line.** A command-line build setting overrides
+the xcconfig, so the app installs under whatever ad-hoc name the agent invented (this shipped a
+build literally named "cmux Mobile Fix" and cost a round trip). The name comes from
+`ios/Config/*.xcconfig`, where the fork already sets **Supermux**; leave it alone. Same rule for
+`ASSETCATALOG_COMPILER_APPICON_NAME` — a command-line override applies to every target in the
+workspace and fails actool in the SwiftPM resource bundles.
+
+A simulator leg is still worth building for a compile check, but target a concrete simulator
+(`-destination 'platform=iOS Simulator,name=iPhone 17 Pro'`). `generic/platform=iOS Simulator`
+fails to link: GhosttyKit ships no x86_64 simulator slice.
+<!-- SUPERMUX:end ios-dogfood-release-build -->
+
 ## iOS dev auth
 
 `ios/scripts/reload.sh` and `scripts/mobile-dev-launch.sh` auto-sign-in from `~/.secrets/cmuxterm-dev.env`. If the phone lands on the login screen or the helper reports missing credentials, do not ask the user to authenticate every build. Tell them to run `scripts/setup-team-dev.sh` once; it verifies their Stack login and writes the file chmod 600. Manual fallback: create it with `CMUX_DOGFOOD_STACK_EMAIL=...` and `CMUX_DOGFOOD_STACK_PASSWORD=...`.

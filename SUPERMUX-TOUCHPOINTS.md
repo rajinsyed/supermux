@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **243**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **244**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -25,6 +25,7 @@ Rules for adding a touchpoint:
 | # | File | Fence id | What it does |
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
+| 244 | `CLAUDE.md` | `ios-dogfood-release-build` | Overrides upstream's "iOS builds open on the iPhone by default" section for this fork: `reload.sh --tag` ships a tagged DEV build the user cannot sign in to, so physical-phone dogfood uses a Release build with `CMUX_DEV_TAG=` empty and `CMUX_IOS_AUTH_ENV=production`. Records the exact invocation and the two overrides never to pass on it (`PRODUCT_DISPLAY_NAME`, `ASSETCATALOG_COMPILER_APPICON_NAME`) |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges (`selectWorkspaceRow`) and the actions-bundle Close Other/Below/Above closures exclude project-hidden workspaces (via a fenced parent-level `supermuxProjectHiddenWorkspaceIds()` helper — since upstream's 0.65 snapshot-boundary refactor moved row actions from `TabItemView` to the sidebar owner, the fenced logic lives in those parent functions; Move Up/Down stepping lives in the SHARED entrypoint, #131, so `moveWorkspaceRow` is back to the upstream one-liner), the actions bundle gets a fenced `supermuxMenuVisibility` provider (keyed by workspace id; consumed by #114, declared in #129, move enablement via the #131 stepped-plan check) so the four Move/Close menu items disable on real reachability instead of raw full-list indices, a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`, the row-input construction computes fenced `supermuxVisibleIndex`/`supermuxVisibleCount` (#132/#133) and `TabItemView.accessibilityTitle` announces "workspace N of M" against the visible list; renders the agent-activity indicator on flat-list workspace rows (indicator overlay in `TabItemView`; snapshot resolution moved to #128); gives the flat-list selection the faint accent tint used by nested project rows in `backgroundColor(for:)` (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06 via `isPointerHovering`); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, and `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
@@ -1032,6 +1033,38 @@ modified upstream files). Supermux code lives in `Packages/SupermuxKit/` and `So
 keep edits to upstream files inside `SUPERMUX:begin/end` fences and registered in the manifest.
 <!-- SUPERMUX:end claude-md-pointer -->
 ```
+
+### 244. `CLAUDE.md` — `ios-dogfood-release-build`
+
+Inserted as a `###` subsection immediately **after** upstream's "## iOS builds open on the iPhone
+by default" section and before "## iOS dev auth", so an agent reads the upstream rule and its fork
+override together. It exists because upstream's rule is actively wrong here:
+
+- `ios/scripts/reload.sh --tag <tag>` builds **Debug** with `CMUX_DEV_TAG=<tag>`, and a tagged DEV
+  iOS build may pair only with the same-tag Mac DEV build. The user cannot sign in to those, so the
+  phone gets an app that installs and is then unusable.
+- `ios/scripts/reload-cloud.sh`, which the upstream section names first, does not exist in this
+  checkout.
+
+The fenced text records the Release invocation used for real phone dogfood (`CMUX_DEV_TAG=` empty,
+`CMUX_IOS_AUTH_ENV=production`, personal team `NRGUG8GVV4` plus the #53 entitlements file, distinct
+`PRODUCT_BUNDLE_IDENTIFIER` so it sits beside the user's main install).
+
+Two hard "never pass this" rules are part of the fence, both learned from real failures:
+
+- **`PRODUCT_DISPLAY_NAME`** — a command-line build setting beats the xcconfig, so an agent that
+  passes one ships the app under an invented name. A build actually went to the user's phone named
+  "cmux Mobile Fix" and was reported as a bug against the repo; the name belongs to
+  `ios/Config/*.xcconfig` (#238/#239), which already says Supermux.
+- **`ASSETCATALOG_COMPILER_APPICON_NAME`** — command-line build settings apply to every target in
+  the workspace, so SwiftPM resource-bundle targets fail actool with a missing icon set. This is
+  the same reason `.github/workflows/ios-testflight.yml` swaps icon files instead (#243).
+
+Also records that the simulator leg must target a concrete simulator: `generic/platform=iOS
+Simulator` fails to link because GhosttyKit ships no x86_64 simulator slice.
+
+If an upstream merge rewrites the iOS build section, re-apply this fence beneath it rather than
+merging the two — the upstream instructions stay accurate for upstream and should not be edited.
 
 ### 18. `Packages/macOS/CmuxSettingsUI/.../Sections/AutomationSection.swift` — `ai-settings`
 
