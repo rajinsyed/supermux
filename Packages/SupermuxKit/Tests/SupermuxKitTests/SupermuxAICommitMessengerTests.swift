@@ -96,4 +96,17 @@ struct SupermuxAICommitMessengerTests {
         let messenger = SupermuxAICommitMessenger(client: fake)
         #expect(await messenger.generateMessage(forDiff: "diff") == nil)
     }
+
+    /// Regression: reasoning models (e.g. `openai/gpt-5.6-luna`) spend
+    /// completion tokens on hidden reasoning before emitting any text, and a
+    /// large diff can push that well past the old 400-token budget, yielding
+    /// an empty reply (`finish_reason: "length"`) and a spurious generation
+    /// failure. The budget must leave generous headroom for reasoning; the
+    /// cap is a safety bound, not a billed amount.
+    @Test func tokenBudgetLeavesRoomForReasoningModels() async {
+        let fake = FakeAICompleting(response: .success("feat: x"))
+        let messenger = SupermuxAICommitMessenger(client: fake)
+        _ = await messenger.generateMessage(forDiff: "diff --git a b")
+        #expect(await fake.lastMaxTokens ?? 0 >= 1024)
+    }
 }
