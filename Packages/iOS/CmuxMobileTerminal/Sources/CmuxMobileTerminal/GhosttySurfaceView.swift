@@ -1023,6 +1023,20 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
         }
         #endif
         keyboardVisible = willBeVisible
+        // SUPERMUX:begin ios-terminal-host-keyboard-sync
+        // Fallback keyboard-height source for devices where the host's
+        // UIKeyboardLayoutGuide never arms (observed live: the guide's
+        // layoutFrame stays a zero-size rect for the whole time the software
+        // keyboard is up, so guide-derived overlap is 0 and the grid never
+        // shrinks). The notification's end frame is authoritative for a
+        // docked keyboard; `keyboardOverlapFromLayoutGuide` only consults
+        // this when the guide yields nothing, so a working guide keeps
+        // sole authority.
+        keyboardNotificationOverlap = willBeVisible ? transition.overlap(in: self) : 0
+        // The dock rides the same dead guide, so compensate its constraint in
+        // sync with the keyboard's own animation curve.
+        updateDockKeyboardFallbackConstant(transition: transition)
+        // SUPERMUX:end ios-terminal-host-keyboard-sync
         inputProxy.setKeyboardShown(willBeVisible)
         // Round 8 removes the `composerPresented ⇒ keyboardUp` enforcement: the
         // toolbar is ALWAYS visible and the composer band survives a keyboard-down, so
@@ -1152,6 +1166,11 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
     @discardableResult
     private func synchronizeKeyboardGeometryFromLayoutGuide() -> Bool {
         let nextHeight = keyboardOverlapFromLayoutGuide
+        // SUPERMUX:begin ios-terminal-host-keyboard-sync
+        // Keep the dock's dead-guide compensation converged with the live
+        // guide state (no-op — constant already 0 — whenever the guide works).
+        updateDockKeyboardFallbackConstant()
+        // SUPERMUX:end ios-terminal-host-keyboard-sync
         guard abs(nextHeight - keyboardHeight) > 0.25 else { return false }
         keyboardHeight = nextHeight
         #if DEBUG
@@ -1166,6 +1185,48 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
         return true
     }
 
+
+    // SUPERMUX:begin ios-terminal-host-keyboard-sync
+    /// Keyboard overlap from the last `keyboardWillChangeFrame` notification's
+    /// end frame; 0 while the keyboard is down. Fallback authority only: it is
+    /// consulted exclusively when the layout guide yields no keyboard (see
+    /// `keyboardOverlapFromLayoutGuide`). Physically traced on iPhone 17 Pro:
+    /// the host's `UIKeyboardLayoutGuide.layoutFrame` stayed a zero-size rect
+    /// for the entire keyboard-up period, so guide-derived overlap was 0 and
+    /// the grid never shrank under the keyboard.
+    private var keyboardNotificationOverlap: CGFloat = 0
+
+    /// Compensates the dock-to-guide constraint when the guide is dead.
+    ///
+    /// The dock's bottom is pinned to the host guide's top anchor. With a dead
+    /// guide that anchor stays at the safe-area fallback, leaving the dock
+    /// (and the composer) behind the keyboard. The constant is derived so it
+    /// SELF-NEUTRALIZES on a healthy guide: it subtracts whatever gap the
+    /// guide already reserves, so when the guide tracks the keyboard the
+    /// desired constant is 0 and UIKit's own guide motion stays the sole
+    /// authority. Re-evaluated every display-link frame (see
+    /// `synchronizeKeyboardGeometryFromLayoutGuide`), so a guide that arms
+    /// mid-animation smoothly takes over.
+    private func updateDockKeyboardFallbackConstant(
+        transition: MobileKeyboardTransition? = nil
+    ) {
+        guard let constraint = bottomDockToKeyboardConstraint,
+              let host = bottomDockHostView else { return }
+        let hostBounds = host.bounds
+        guard hostBounds.height > 0 else { return }
+        let guideTop = host.keyboardLayoutGuide.layoutFrame.minY
+        let guideGap = max(0, hostBounds.maxY - guideTop)
+        let desired = -max(0, keyboardNotificationOverlap - guideGap)
+        guard abs(constraint.constant - desired) > 0.5 else { return }
+        constraint.constant = desired
+        if let transition {
+            transition.animate { host.layoutIfNeeded() }
+        } else {
+            host.setNeedsLayout()
+        }
+    }
+    // SUPERMUX:end ios-terminal-host-keyboard-sync
+
     /// Keyboard overlap represented by the system guide, excluding its safe-area fallback.
     private var keyboardOverlapFromLayoutGuide: CGFloat {
         #if DEBUG
@@ -1175,14 +1236,39 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
         #endif
         guard window != nil, bounds.height > 0 else { return 0 }
         let guideFrame = keyboardGuideFrameInSurface
+        // SUPERMUX:begin ios-terminal-host-keyboard-sync
+        // A zero-size guide frame means UIKit never armed keyboard tracking on
+        // the guide at all (distinct from the transient unseated case below):
+        // the guide is reporting nothing, so the notification overlap is the
+        // only real keyboard signal. Observed live on device — layoutFrame
+        // stayed 0×0 through the whole keyboard presentation.
+        guard guideFrame.width > 0 else {
+            return keyboardNotificationOverlap
+        }
+        // SUPERMUX:end ios-terminal-host-keyboard-sync
         // A guide frame is usable only after UIKit has seated it against this view's
         // bottom edge. During first attachment or rotation, keep the prior overlap for
         // that transient pass instead of interpreting CGRect.zero as a full-screen
         // keyboard.
-        guard abs(guideFrame.maxY - bounds.maxY) <= 1 else { return keyboardHeight }
+        // SUPERMUX:begin ios-terminal-host-keyboard-sync
+        // (fallback: while unseated, an active notification overlap outranks
+        // the possibly stale prior height)
+        guard abs(guideFrame.maxY - bounds.maxY) <= 1 else {
+            return max(keyboardHeight, keyboardNotificationOverlap)
+        }
+        // SUPERMUX:end ios-terminal-host-keyboard-sync
         let guideTop = min(max(0, guideFrame.minY), bounds.maxY)
         let occupancy = max(0, bounds.maxY - guideTop)
-        return occupancy > safeAreaInsetsBottom + 0.5 ? occupancy : 0
+        // SUPERMUX:begin ios-terminal-host-keyboard-sync
+        // A seated guide showing only the safe-area fallback while the
+        // notification reports a bigger keyboard means the guide is armed but
+        // not tracking (the traced failure had it zero-size; this covers the
+        // safe-area-only flavor of the same dead guide).
+        if occupancy > safeAreaInsetsBottom + 0.5 {
+            return occupancy
+        }
+        return keyboardNotificationOverlap
+        // SUPERMUX:end ios-terminal-host-keyboard-sync
     }
 
     private var keyboardGuideFrameInSurface: CGRect {
