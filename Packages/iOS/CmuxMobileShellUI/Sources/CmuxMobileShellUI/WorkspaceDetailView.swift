@@ -50,7 +50,9 @@ struct WorkspaceDetailView: View {
     @Environment(BrowserStreamStore.self) var browserStreamStore
     @Environment(MobileSimulatorStreamStore.self) var simulatorStreamStore
     @Environment(MobileDisplaySettings.self) private var displaySettings
-    @Environment(ToastCenter.self) private var toasts
+    // SUPERMUX:begin ios-pane-actions
+    @Environment(ToastCenter.self) var toasts
+    // SUPERMUX:end ios-pane-actions
     /// Drives the destructive close-workspace confirmation dialog.
     @State var isConfirmingClose = false
     #if canImport(UIKit)
@@ -73,7 +75,13 @@ struct WorkspaceDetailView: View {
     /// Identity of the in-flight New Browser creation. A late RPC result must
     /// not activate its panel over a selection the user made in the meantime,
     /// so completion applies only while its request is still current.
-    @State private var browserCreateRequest: UUID?
+    // SUPERMUX:begin ios-pane-actions
+    @State var browserCreateRequest: UUID?
+    /// Identity of the in-flight native Simulator creation, guarded like the browser path.
+    @State var simulatorCreateRequest: UUID?
+    /// Pane captured before the destructive confirmation appears.
+    @State var pendingPaneCloseTarget: WorkspacePaneCloseTarget?
+    // SUPERMUX:end ios-pane-actions
     @State var terminalPickerRows: [TerminalPickerMenuRow] = []
     /// Chat-mode toggle for inline agent chat in place of the terminal.
     @State var isChatMode = false
@@ -144,7 +152,6 @@ struct WorkspaceDetailView: View {
         // parse workspace_id as a bare UUID. Sending the scoped row id fails
         // every request with invalid_params. rpcWorkspaceID is the Mac-local id.
         let content = Group { detailSurfaceContent }
-            .supermuxWorkspaceTools(connection: store.supermuxConnectionSeam, workspaceID: workspace.rpcWorkspaceID.rawValue, workspaceName: workspace.name)
         // SUPERMUX:end supermux-mobile-workspace-tools
 
         #if os(iOS)
@@ -179,6 +186,12 @@ struct WorkspaceDetailView: View {
                 isPresented: $isConfirmingClose,
                 confirm: confirmCloseWorkspaceFromMenu
             )
+            // SUPERMUX:begin ios-pane-actions
+            .supermuxPaneCloseConfirmation(
+                isPresented: paneCloseConfirmationIsPresented,
+                confirm: confirmClosePane
+            )
+            // SUPERMUX:end ios-pane-actions
             .sheet(isPresented: $isFeedbackComposerPresented) {
                 feedbackComposer
             }
@@ -238,21 +251,6 @@ struct WorkspaceDetailView: View {
                     displaySettings.showAltScreenNotice = false
                 }
             }
-        }
-        if workspaceChangesAreAvailable {
-            ToolbarItem(id: "workspace-changes", placement: .topBarTrailing) {
-                WorkspaceChangesToolbarButton(
-                    chip: workspaceChangesChip,
-                    workspaceID: workspace.rpcWorkspaceID.rawValue,
-                    action: openWorkspaceChanges
-                )
-                // The chrome sits on the terminal theme's background, not the
-                // system scheme; resolve the counts' green/red for that.
-                .environment(\.colorScheme, store.activeTerminalTheme.terminalColorScheme)
-            }
-        }
-        ToolbarItem(id: "workspace-trailing", placement: .topBarTrailing) {
-            toolbarTrailingCluster
         }
     }
 
@@ -644,7 +642,10 @@ struct WorkspaceDetailView: View {
                 activeBrowserStreamPanelID: activeBrowserStream?.id,
                 simulatorStreamRows: simulatorStreamStore.panels(in: workspace.rpcWorkspaceID.rawValue).map(SimulatorStreamPickerRow.init),
                 supportsSimulatorStream: store.supportsSimulatorStream,
-                activeSimulatorStreamPanelID: activeSimulatorStream?.id
+                // SUPERMUX:begin ios-pane-actions
+                canCreateSimulator: canCreateSimulatorPane,
+                canClosePane: canCloseActivePane
+                // SUPERMUX:end ios-pane-actions
             ),
             actions: TerminalPickerMenuActions(
                 selectTerminal: selectTerminalFromPicker,
@@ -653,6 +654,10 @@ struct WorkspaceDetailView: View {
                 openBrowser: openBrowserFromToolbar,
                 selectBrowserStream: { selectBrowserStreamFromToolbar($0) },
                 selectSimulatorStream: selectSimulatorStreamFromToolbar,
+                // SUPERMUX:begin ios-pane-actions
+                createSimulator: createSimulatorFromToolbar,
+                closePane: requestClosePane,
+                // SUPERMUX:end ios-pane-actions
                 openTextSheet: openTextSheetFromMenu,
                 copyDebugLogs: {
                     #if DEBUG
@@ -887,6 +892,9 @@ struct WorkspaceDetailView: View {
     private func createTerminalFromToolbar() {
         dismissTerminalKeyboardForChrome()
         browserCreateRequest = nil
+        // SUPERMUX:begin ios-pane-actions
+        simulatorCreateRequest = nil
+        // SUPERMUX:end ios-pane-actions
         // Creating a terminal from the (shared) chrome must surface it. If a
         // browser pane is up, close it so `body` leaves the browser branch and
         // shows the new terminal instead of staying on the browser.
@@ -898,6 +906,9 @@ struct WorkspaceDetailView: View {
 
     private func openBrowserFromToolbar() {
         dismissTerminalKeyboardForChrome()
+        // SUPERMUX:begin ios-pane-actions
+        simulatorCreateRequest = nil
+        // SUPERMUX:end ios-pane-actions
         // New Browser creates a real Mac browser pane and streams it, so it
         // shows the same surface as the Mac Browsers rows. The phone-local
         // WKWebView pane remains only as a fallback for Macs that cannot
@@ -935,6 +946,9 @@ struct WorkspaceDetailView: View {
             dismissTerminalKeyboardForChrome()
         }
         browserCreateRequest = nil
+        // SUPERMUX:begin ios-pane-actions
+        simulatorCreateRequest = nil
+        // SUPERMUX:end ios-pane-actions
         browserStore.closeBrowser(for: workspace.id.rawValue)
         stopActiveSimulatorStream()
         if let previous = activeBrowserStream, previous.id != panelID {
@@ -944,7 +958,12 @@ struct WorkspaceDetailView: View {
         Task { await store.startMobileBrowserStream(panelID: panelID) }
     }
 
-    private func selectSimulatorStreamFromToolbar(_ panelID: String) {
+    // SUPERMUX:begin ios-pane-actions
+    func selectSimulatorStreamFromToolbar(_ panelID: String) {
+        simulatorCreateRequest = nil
+        isChatMode = false
+        pinnedChatSessionID = nil
+    // SUPERMUX:end ios-pane-actions
         dismissTerminalKeyboardForChrome()
         browserStore.closeBrowser(for: workspace.id.rawValue)
         stopActiveBrowserStream()
@@ -996,6 +1015,9 @@ struct WorkspaceDetailView: View {
     private func selectTerminalFromPicker(_ terminalID: MobileTerminalPreview.ID) {
         dismissTerminalKeyboardForChrome()
         browserCreateRequest = nil
+        // SUPERMUX:begin ios-pane-actions
+        simulatorCreateRequest = nil
+        // SUPERMUX:end ios-pane-actions
         // Choosing a terminal returns from the browser pane (if up) to the
         // terminal. Closing the browser is enough to flip the detail view back.
         browserStore.closeBrowser(for: workspace.id.rawValue)

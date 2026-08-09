@@ -15,6 +15,7 @@ import Testing
         #expect(!capabilities.supportsRun)
         #expect(!capabilities.supportsActions)
         #expect(!capabilities.supportsFiles)
+        #expect(!capabilities.supportsPanes)
         for capability in SupermuxMobileCapability.all {
             #expect(!capabilities.contains(capability))
         }
@@ -46,6 +47,7 @@ import Testing
         #expect(!capabilities.supportsRun)
         #expect(!capabilities.supportsActions)
         #expect(!capabilities.supportsFiles)
+        #expect(!capabilities.supportsPanes)
     }
 
     @Test func everyAccessorMatchesItsWireString() {
@@ -60,6 +62,7 @@ import Testing
             (.runV1, \.supportsRun),
             (.actionsV1, \.supportsActions),
             (.filesV1, \.supportsFiles),
+            (.panesV1, \.supportsPanes),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {
@@ -81,5 +84,6 @@ import Testing
         ])
         #expect(capabilities.supportsProjects)
         #expect(!capabilities.supportsFiles)
+        #expect(!capabilities.supportsPanes)
     }
 }

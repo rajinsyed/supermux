@@ -1,5 +1,15 @@
 import Foundation
 
+// SUPERMUX:begin ios-pane-actions
+/// The pane captured when the iOS close action is requested.
+enum WorkspacePaneCloseTarget: Equatable {
+    /// The phone-local fallback browser owned by ``BrowserSurfaceStore``.
+    case localBrowser
+    /// A terminal, streamed browser, Simulator, or future Mac panel.
+    case remote(panelID: String)
+}
+// SUPERMUX:end ios-pane-actions
+
 enum WorkspaceActiveSurface: Equatable {
     case terminal
     case chat
@@ -28,6 +38,26 @@ enum WorkspaceActiveSurface: Equatable {
         }
         return .terminal
     }
+
+    // SUPERMUX:begin ios-pane-actions
+    /// Resolves the exact pane targeted by the shared iOS close action.
+    func paneCloseTarget(
+        selectedTerminalID: String?,
+        browserStreamPanelID: String?,
+        simulatorStreamPanelID: String?
+    ) -> WorkspacePaneCloseTarget? {
+        switch self {
+        case .terminal, .chat:
+            return selectedTerminalID.map { .remote(panelID: $0) }
+        case .browser:
+            return .localBrowser
+        case .browserStream:
+            return browserStreamPanelID.map { .remote(panelID: $0) }
+        case .simulatorStream:
+            return simulatorStreamPanelID.map { .remote(panelID: $0) }
+        }
+    }
+    // SUPERMUX:end ios-pane-actions
 
     /// The terminal to refocus when chrome (chat/browser) returns to the
     /// terminal surface, or nil when autofocus must stay suppressed.

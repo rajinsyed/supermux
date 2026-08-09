@@ -70,7 +70,9 @@ extension WorkspaceDetailView {
     func browserContent(_ browser: BrowserSurfaceState) -> some View {
         MobileBrowserPane(
             state: browser,
-            onClose: { browserStore.closeBrowser(for: workspace.id.rawValue) }
+            // SUPERMUX:begin ios-pane-actions
+            onClose: requestClosePane
+            // SUPERMUX:end ios-pane-actions
         )
         .id(browser.id.rawValue)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -14,6 +14,10 @@ struct TerminalPickerMenuValue: Equatable {
     let simulatorStreamRows: [SimulatorStreamPickerRow]
     let supportsSimulatorStream: Bool
     let activeSimulatorStreamPanelID: String?
+    // SUPERMUX:begin ios-pane-actions
+    let canCreateSimulator: Bool
+    let canClosePane: Bool
+    // SUPERMUX:end ios-pane-actions
 
     init(
         liveTerminals: [MobileTerminalPreview],
@@ -27,7 +31,11 @@ struct TerminalPickerMenuValue: Equatable {
         activeBrowserStreamPanelID: String? = nil,
         simulatorStreamRows: [SimulatorStreamPickerRow] = [],
         supportsSimulatorStream: Bool = false,
-        activeSimulatorStreamPanelID: String? = nil
+        activeSimulatorStreamPanelID: String? = nil,
+        // SUPERMUX:begin ios-pane-actions
+        canCreateSimulator: Bool = false,
+        canClosePane: Bool = false
+        // SUPERMUX:end ios-pane-actions
     ) {
         rows = snapshotRows.isEmpty
             ? liveTerminals.map(TerminalPickerMenuRow.init)
@@ -44,5 +52,9 @@ struct TerminalPickerMenuValue: Equatable {
         self.simulatorStreamRows = simulatorStreamRows
         self.supportsSimulatorStream = supportsSimulatorStream
         self.activeSimulatorStreamPanelID = activeSimulatorStreamPanelID
+        // SUPERMUX:begin ios-pane-actions
+        self.canCreateSimulator = canCreateSimulator
+        self.canClosePane = canClosePane
+        // SUPERMUX:end ios-pane-actions
     }
 }

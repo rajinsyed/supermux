@@ -21,6 +21,8 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     case actionsV1 = "supermux.actions.v1"
     /// File-browser methods are served.
     case filesV1 = "supermux.files.v1"
+    /// Workspace pane close and Simulator creation methods are served.
+    case panesV1 = "supermux.panes.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

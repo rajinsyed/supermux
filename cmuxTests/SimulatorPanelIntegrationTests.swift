@@ -39,6 +39,22 @@ struct SimulatorPanelIntegrationTests {
         #expect(workspace.bonsplitController.tab(surfaceID)?.kind == SurfaceKind.simulator.rawValue)
     }
 
+    // SUPERMUX:begin ios-pane-actions
+    @Test("The shared workspace close path closes Simulator panels")
+    func sharedClosePathClosesSimulatorPanels() throws {
+        let workspace = Workspace()
+        let terminalPanelID = try #require(workspace.focusedPanelId)
+        let paneID = try #require(workspace.bonsplitController.focusedPaneId)
+        let simulator = try #require(
+            workspace.newSimulatorSurface(inPane: paneID, focus: false)
+        )
+
+        #expect(workspace.closePanel(simulator.id, force: true))
+        #expect(workspace.panels[simulator.id] == nil)
+        #expect(workspace.panels[terminalPanelID] != nil)
+    }
+    // SUPERMUX:end ios-pane-actions
+
     @Test("Creating an unfocused Simulator split preserves the source focus")
     func splitCreationPreservesFocus() throws {
         let workspace = Workspace()
