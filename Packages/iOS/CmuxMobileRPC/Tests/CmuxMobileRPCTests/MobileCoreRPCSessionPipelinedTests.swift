@@ -27,6 +27,38 @@ struct MobileCoreRPCSessionPipelinedTests {
         await session.tearDown(error: .connectionClosed)
     }
 
+    // SUPERMUX:begin mobile-rpc-client-work-quota (regression: the phone must not overflow the Mac host's 16-request admission window — see SUPERMUX-TOUCHPOINTS.md)
+    @Test
+    func writerKeepsOneConnectionWithinHostRPCWorkQuota() async throws {
+        let limit = max(
+            1,
+            MobileHostRPCWorkQuota.recommendedMaximumConcurrentRequestCount - 1
+        )
+        let transport = ControllableResponseTransport(closeEndsReceive: true)
+        let session = MobileCoreRPCSession(makeTransport: { transport })
+
+        for index in 0...limit {
+            let requestID = "quota-\(index)"
+            try await session.beginSend(
+                payload: try Self.request(id: requestID),
+                requestID: requestID,
+                deadlineUptimeNanoseconds: Self.deadline()
+            )
+        }
+
+        await transport.waitUntilSent(count: limit)
+        for _ in 0..<100 {
+            await Task.yield()
+        }
+        #expect(await transport.sentIDs().count == limit)
+
+        try await transport.deliverResponse(id: "quota-0", status: "ok")
+        await transport.waitUntilSent(count: limit + 1)
+        #expect(await transport.sentIDs().count == limit + 1)
+        await session.tearDown(error: .connectionClosed)
+    }
+    // SUPERMUX:end mobile-rpc-client-work-quota
+
     @Test
     func responseCanSettleBeforeAwait() async throws {
         let transport = ControllableResponseTransport(closeEndsReceive: true)

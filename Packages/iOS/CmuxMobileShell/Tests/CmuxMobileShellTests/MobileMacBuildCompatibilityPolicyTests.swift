@@ -30,6 +30,19 @@ import Testing
         #expect(!policy.allows(instanceTag: nil))
     }
 
+    // SUPERMUX:begin official-ios-persistence-scope (regression: a sideloaded Release bundle may look tagged but must persist official Mac instances — see SUPERMUX-TOUCHPOINTS.md)
+    @Test func officialPolicyDiscardsDetectedDevelopmentPersistenceScope() throws {
+        let detectedScope = try #require(MobileIOSBuildScope("fix-mobile-ui"))
+
+        #expect(MobileMacBuildCompatibilityPolicy.official.persistenceScope(
+            from: detectedScope
+        ) == nil)
+        #expect(MobileMacBuildCompatibilityPolicy.development(
+            expectedInstanceTag: "fix-mobile-ui"
+        ).persistenceScope(from: detectedScope) == detectedScope)
+    }
+    // SUPERMUX:end official-ios-persistence-scope
+
     @Test func scopedStoreHidesAndRejectsIncompatibleRows() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

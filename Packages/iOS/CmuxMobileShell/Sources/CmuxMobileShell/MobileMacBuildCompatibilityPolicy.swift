@@ -29,6 +29,28 @@ public enum MobileMacBuildCompatibilityPolicy: Equatable, Sendable {
         #endif
     }
 
+    // SUPERMUX:begin official-ios-persistence-scope (Release policy, not a sideload bundle-id suffix, owns the paired-Mac storage partition — see SUPERMUX-TOUCHPOINTS.md)
+    /// Resolves the tagged storage scope that is compatible with this policy.
+    ///
+    /// Sideloaded Release builds may use a `dev.cmux.ios.<suffix>` bundle id for
+    /// personal-team signing while still carrying the official compatibility
+    /// policy. Those builds must use official storage rather than wrapping it in
+    /// an exact-development-tag filter that rejects Stable and Nightly Macs.
+    ///
+    /// - Parameter detectedScope: The tag inferred from bundle metadata.
+    /// - Returns: The detected scope for development policy, or `nil` for official policy.
+    public func persistenceScope(
+        from detectedScope: MobileIOSBuildScope?
+    ) -> MobileIOSBuildScope? {
+        switch self {
+        case .development:
+            return detectedScope
+        case .official:
+            return nil
+        }
+    }
+    // SUPERMUX:end official-ios-persistence-scope
+
     /// Returns whether an authenticated Mac instance belongs to this policy.
     ///
     /// Missing tags fail closed because they cannot distinguish two app

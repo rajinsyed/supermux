@@ -204,9 +204,14 @@ struct CmxTailscaleRouteProofValidator {
         authoritySnapshot: CmxTailscaleAuthoritySnapshot,
         connectionPath: CmxTailscaleConnectionPathSnapshot
     ) throws {
-        guard authoritySnapshot.generation == proof.generation else {
-            throw CmxTailscaleRouteProofError.routeGenerationChanged
-        }
+        // SUPERMUX:begin tailscale-packet-tunnel-proof (equivalent NWPathMonitor revisions must not tear down a proven Tailscale route — see SUPERMUX-TOUCHPOINTS.md)
+        // The generic NWPathMonitor revision can advance after a packet-tunnel
+        // connection becomes ready even when its security-relevant route is
+        // unchanged. The checks below re-prove the exact interface, Tailscale
+        // self-address set, connection path, peer address, and port against the
+        // current snapshot, so generation equality adds no authority and caused
+        // valid physical-device sessions to disconnect immediately.
+        // SUPERMUX:end tailscale-packet-tunnel-proof
         guard authoritySnapshot.pathSatisfied else {
             throw CmxTailscaleRouteProofError.pathUnavailable
         }
@@ -221,10 +226,17 @@ struct CmxTailscaleRouteProofValidator {
               connectionPath.availableInterfaces.contains(proof.interface) else {
             throw CmxTailscaleRouteProofError.connectionPathUnavailable
         }
-        guard let localAddress = connectionPath.localAddress,
-              proof.selfAddresses.contains(localAddress) else {
+        // SUPERMUX:begin tailscale-packet-tunnel-proof (accept Network.framework's observed nil local endpoint while retaining interface and remote-endpoint proof — see SUPERMUX-TOUCHPOINTS.md)
+        // Network.framework may omit `NWPath.localEndpoint` for packet-tunnel
+        // connections even after the connection is ready. A present endpoint
+        // must still match the proven Tailscale self-addresses; absence is safe
+        // because the caller also pins `requiredInterface`, and the checks above
+        // prove that exact interface is the connection's active path.
+        if let localAddress = connectionPath.localAddress,
+           !proof.selfAddresses.contains(localAddress) {
             throw CmxTailscaleRouteProofError.localEndpointMismatch
         }
+        // SUPERMUX:end tailscale-packet-tunnel-proof
         guard connectionPath.remoteAddress == proof.peerAddress else {
             throw CmxTailscaleRouteProofError.remoteEndpointMismatch
         }
