@@ -1633,6 +1633,57 @@
         }
       }
     },
+    "supermux.newWorktree.base.default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository HEAD"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リポジトリの HEAD"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.base.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Includes committed changes from the selected branch. Uncommitted changes aren’t copied."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したブランチのコミット済みの変更が含まれます。未コミットの変更はコピーされません。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.base.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始元"
+          }
+        }
+      }
+    },
     "supermux.newWorktree.branch.hint": {
       "extractionState": "manual",
       "localizations": {

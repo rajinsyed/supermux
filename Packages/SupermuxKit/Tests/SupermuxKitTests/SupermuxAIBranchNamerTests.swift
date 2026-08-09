@@ -66,4 +66,29 @@ struct SupermuxAIBranchNamerTests {
         let namer = SupermuxAIBranchNamer(client: fake)
         #expect(await namer.suggestBranchName(forWorkspaceName: "x") == nil)
     }
+
+    /// Regression: reasoning models (e.g. `openai/gpt-5.6-luna`) spend
+    /// completion tokens on hidden reasoning before emitting any text. The old
+    /// 24-token budget was consumed entirely by reasoning, the gateway
+    /// returned an empty reply with `finish_reason: "length"`, and every AI
+    /// branch name silently fell back to a random name — "the AI stuff don't
+    /// work". The budget must leave generous headroom for reasoning; the cap
+    /// is a safety bound, not a billed amount.
+    @Test func tokenBudgetLeavesRoomForReasoningModels() async {
+        let fake = FakeAICompleting(response: .success("fix-login"))
+        let namer = SupermuxAIBranchNamer(client: fake)
+        _ = await namer.suggestBranchName(forWorkspaceName: "x")
+        #expect(await fake.lastMaxTokens ?? 0 >= 512)
+    }
+
+    /// The workspace name is often a free-form problem description ("the app
+    /// freezes when I drag a tab"), not an imperative task. The prompt must
+    /// tell the model to name the branch after the fix so those inputs yield
+    /// a proper slug instead of a literal restatement.
+    @Test func systemPromptDirectsProblemDescriptionsTowardTheFix() async {
+        let fake = FakeAICompleting(response: .success("fix-login"))
+        let namer = SupermuxAIBranchNamer(client: fake)
+        _ = await namer.suggestBranchName(forWorkspaceName: "x")
+        #expect(await fake.lastSystem?.contains("name the branch after the fix") == true)
+    }
 }

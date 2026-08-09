@@ -24,6 +24,18 @@ public struct SupermuxAICommitMessenger: SupermuxAICommitMessaging {
     /// Largest diff (in characters) sent to the model; longer diffs are clipped.
     static let maxDiffCharacters = 12000
 
+    /// Upper bound on the reply length.
+    ///
+    /// The cap is a safety bound, not a billed amount — only tokens actually
+    /// produced are charged. Reasoning models on the gateway
+    /// (`openai/gpt-5.6-luna` and friends) spend completion tokens on hidden
+    /// reasoning *before* emitting any text, and reasoning over a 12k-character
+    /// diff easily outruns a message-sized cap: the gateway then returns empty
+    /// content with `finish_reason: "length"`, which the UI reported as a
+    /// generation failure. The budget must clear the reasoning burst plus the
+    /// message itself.
+    static let maxOutputTokens = 4096
+
     /// Creates the messenger.
     /// - Parameters:
     ///   - client: Completion backend.
@@ -49,7 +61,7 @@ public struct SupermuxAICommitMessenger: SupermuxAICommitMessaging {
                 model: modelProvider(),
                 system: Self.systemPrompt,
                 user: Self.clip(trimmed),
-                maxOutputTokens: 400
+                maxOutputTokens: Self.maxOutputTokens
             )
             let cleaned = Self.cleanup(raw)
             return cleaned.isEmpty ? nil : cleaned

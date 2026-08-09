@@ -9,6 +9,7 @@ import SwiftUI
 struct SupermuxWorktreesSection: View {
     let hasLoaded: Bool
     let rows: [SupermuxWorktreeRowSnapshot]
+    let isPreparingNewWorktree: Bool
     let newWorktree: @MainActor () -> Void
     let openWorktree: @MainActor (_ row: SupermuxWorktreeRowSnapshot) -> Void
     let requestRemoval: @MainActor (_ row: SupermuxWorktreeRowSnapshot) -> Void
@@ -52,10 +53,16 @@ struct SupermuxWorktreesSection: View {
                 ))
                 Spacer(minLength: 0)
                 Button(action: newWorktree) {
-                    Image(systemName: "plus")
-                        .font(.footnote.weight(.semibold))
+                    if isPreparingNewWorktree {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "plus")
+                            .font(.footnote.weight(.semibold))
+                    }
                 }
                 .buttonStyle(.borderless)
+                .disabled(isPreparingNewWorktree)
                 .accessibilityLabel(String(
                     localized: "supermux.worktrees.new",
                     defaultValue: "New Worktree",

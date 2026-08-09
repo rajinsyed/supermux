@@ -413,9 +413,11 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
 
     /// Local branches of the project's repository (for base-branch pickers).
     /// - Parameter projectId: Project to inspect.
-    public func localBranches(projectId: UUID) async -> [String] {
+    /// - Returns: Local branch names, most recently committed first.
+    /// - Throws: ``SupermuxGitError`` when git cannot read the refs.
+    public func localBranches(projectId: UUID) async throws -> [String] {
         guard let project = projects.first(where: { $0.id == projectId }) else { return [] }
-        return await worktreeService.localBranches(repoRoot: project.rootPath)
+        return try await worktreeService.localBranches(repoRoot: project.rootPath)
     }
 
     // MARK: - Persistence

@@ -1,8 +1,11 @@
-public import Foundation
+import Foundation
 internal import SupermuxMobileCore
 
-/// Builds the `mobile.supermux.worktrees.list` result payload
-/// (`{worktrees: [SupermuxWorktreeDTO]}`).
+/// Builds the `mobile.supermux.worktrees.list` result payload.
+///
+/// The always-present shape is `{worktrees: [SupermuxWorktreeDTO]}`. A caller
+/// explicitly preparing the starting-branch picker may also include
+/// `branches: [String]`; ordinary list/count refreshes omit it.
 ///
 /// Lives in SupermuxKit (not the app target) so the wire shape — including
 /// the pull-request fold and open-workspace matching — is package-unit-testable;
@@ -21,14 +24,17 @@ public struct SupermuxMobileWorktreesPayloadBuilder: Sendable {
     /// Encodes the worktrees-list result payload.
     /// - Parameters:
     ///   - worktrees: The project's worktrees in `git worktree list` order.
+    ///   - branches: Local branches available as starting points, or `nil` to
+    ///     omit branch discovery from this response.
     ///   - openWorkspaces: Snapshots of every open workspace (all windows);
     ///     matched to worktrees by standardized directory.
     ///   - pullRequestsByWorktreePath: The unopened-worktree PR badge map
     ///     (``SupermuxWorktreePullRequestModel/pullRequestsByWorktreePath``).
-    /// - Returns: The RPC result object (`worktrees`).
+    /// - Returns: The RPC result object (`worktrees`, plus `branches` when requested).
     /// - Throws: Any encoding failure from the shared wire bridge.
     public func worktreesList(
         worktrees: [SupermuxProjectWorktree],
+        branches: [String]? = nil,
         openWorkspaces: [SupermuxOpenWorkspace],
         pullRequestsByWorktreePath: [String: SupermuxPullRequest]
     ) throws -> [String: Any] {
@@ -52,6 +58,10 @@ public struct SupermuxMobileWorktreesPayloadBuilder: Sendable {
                 pullRequest: pullRequest
             ))
         }
-        return ["worktrees": encoded]
+        var payload: [String: Any] = ["worktrees": encoded]
+        if let branches {
+            payload["branches"] = branches
+        }
+        return payload
     }
 }

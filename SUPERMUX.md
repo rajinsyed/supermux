@@ -13,7 +13,7 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    sidebar forever, even when no workspace for it is open (like piggycode workspaces). From a
    project row you can:
    - open the project **locally** (a workspace at the repo root), or
-   - **create a git worktree** (quick: name a branch, get an isolated checkout + workspace).
+   - **create a git worktree** (quick: name a branch, choose its starting branch, and get an isolated checkout + workspace).
    Projects have icons and colors: an avatar is auto-detected from the repo's logo/favicon, with
    a per-project **custom icon file** the user can pick in the editor to override detection (and a
    fallback SF Symbol or letter avatar). Worktrees created from a project are listed under it and
@@ -46,7 +46,7 @@ building a parallel system.
 | Goal | Status | Where |
 |------|--------|-------|
 | Sticky Projects (sidebar section, icons, colors, persisted) | ✅ | `SupermuxProjectsModel`, `SupermuxProjectStore`, `SupermuxProjectsSectionView`; mounted via the `sidebar-projects-section` touchpoint |
-| Open local / create worktree from a project | ✅ | `SupermuxGitWorktreeService` (piggycode semantics: `--no-track -b`, `push.autoSetupRemote`, `branch.<n>.base`, dedup, exclude) |
+| Open local / create worktree from a project | ✅ | `SupermuxGitWorktreeService` (selectable starting branch; piggycode semantics: `--no-track -b`, `push.autoSetupRemote`, `branch.<n>.base`, dedup, exclude) |
 | List / open / delete worktrees (dirty-checked) | ✅ | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, project row disclosure |
 | Worktree PR badges (clickable, state-colored) | ✅ | opened worktrees reuse cmux's per-workspace `SidebarPullRequestState` (carried on `SupermuxOpenWorkspace.pullRequest`); unopened ones via `SupermuxWorktreePullRequestModel` + `SupermuxPullRequestProbe` (wrapping `CmuxGit.PullRequestProbeService`); both render `SupermuxPullRequestBadge`. SupermuxKit now depends on `CmuxGit`. |
 | Changes (git) panel | ✅ | right-sidebar `changes` mode (`right-sidebar-changes-mode-*` touchpoints) → `SupermuxChangesPanelView` / `SupermuxChangesModel` / `SupermuxGitChangesService` |
@@ -89,7 +89,7 @@ Status per fork feature area:
 |---|-------------------|---------------|-------------|
 | 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsTableSection` (iPhone, hosted in the #148 table row) / `SupermuxProjectsMobileSection` (macOS `List`) + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
 | 2 | Project icons & colors | ✅ on iOS | custom icon via `project.icon` (base64 PNG, etag-cached `SupermuxProjectIconCache`) → SF Symbol → letter avatar tinted by `color_hex` |
-| 3 | Worktrees (create/open/remove, AI branch suggest) | ✅ on iOS | `SupermuxNewWorktreeSheet` + project-detail worktree rows over `worktrees.list` / `worktree.suggest_branch/create/open/remove` (dirty removals require `force` after a phone-side confirm) |
+| 3 | Worktrees (create/open/remove, starting branch, AI branch suggest) | ✅ on iOS | `SupermuxNewWorktreeSheet` + project-detail worktree rows over lazy `worktrees.list` branch snapshots (`include_branches`) / `worktree.suggest_branch/create/open/remove` (dirty removals require `force` after a phone-side confirm) |
 | 4 | Worktree PR badges | ✅ on iOS | `SupermuxPullRequestDTO` (number/state/url; title optional-nil, matching the desktop probe) on `worktrees.list` rows |
 | 5 | Changes (git) panel | ✅ on iOS | `SupermuxChangesScreen` / `SupermuxDiffScreen`: status, diffs, stage/unstage/discard, commit, AI commit message, push/pull, stash/pop, history over `changes.*` |
 | 6 | Run actions | ✅ on iOS | project-row run menu + running indicator over `run.state/start/stop` |

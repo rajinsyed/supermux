@@ -23,7 +23,8 @@ public protocol SupermuxMacCalling: Sendable {
     func projectIcon(projectID: String, etag: String?) async throws -> SupermuxProjectIconResponse
 
     /// `mobile.supermux.worktrees.list`: one project's worktrees (with
-    /// open-workspace state and PR data when available).
+    /// open-workspace state and PR data when available), plus local branch
+    /// choices only when the request explicitly asks for them.
     /// - Parameter request: The typed request (owns the exact wire shape).
     func worktreesList(_ request: SupermuxWorktreesListRequest) async throws -> SupermuxWorktreesListResponse
 

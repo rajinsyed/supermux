@@ -1,4 +1,4 @@
-public import SupermuxMobileCore
+internal import SupermuxMobileCore
 
 /// Typed request values for the `mobile.supermux.worktree(s).*` methods.
 ///
@@ -8,23 +8,33 @@ public import SupermuxMobileCore
 /// exactly). Optional params are omitted — never sent as empty strings — to
 /// match the Mac handlers' expectations.
 
-/// `mobile.supermux.worktrees.list`: `{project_id}`.
+/// `mobile.supermux.worktrees.list`: `{project_id, include_branches?}`.
 public struct SupermuxWorktreesListRequest: Equatable, Sendable {
     /// The project's UUID string.
     public let projectID: String
+    /// Whether the response should include local branch choices. Omitted from
+    /// ordinary list/count refreshes so they do not launch an extra git probe.
+    public let includeBranches: Bool
 
     /// Creates the request.
-    /// - Parameter projectID: The project's UUID string.
-    public init(projectID: String) {
+    /// - Parameters:
+    ///   - projectID: The project's UUID string.
+    ///   - includeBranches: Whether to include local starting-branch choices.
+    public init(projectID: String, includeBranches: Bool = false) {
         self.projectID = projectID
+        self.includeBranches = includeBranches
     }
 
     /// The exact wire method string.
     public var wireMethod: String { SupermuxMobileMethod.worktreesList.rawValue }
 
-    /// The exact wire params.
+    /// The exact wire params (`include_branches` is present only when true).
     public var wireParams: [String: Any] {
-        ["project_id": projectID]
+        var params: [String: Any] = ["project_id": projectID]
+        if includeBranches {
+            params["include_branches"] = true
+        }
+        return params
     }
 }
 
@@ -53,7 +63,7 @@ public struct SupermuxWorktreeSuggestBranchRequest: Equatable, Sendable {
 }
 
 /// `mobile.supermux.worktree.create`:
-/// `{project_id, workspace_name?, branch_name?, open}`.
+/// `{project_id, workspace_name?, branch_name?, base_branch?, open}`.
 public struct SupermuxWorktreeCreateRequest: Equatable, Sendable {
     /// The project's UUID string.
     public let projectID: String
@@ -62,6 +72,9 @@ public struct SupermuxWorktreeCreateRequest: Equatable, Sendable {
     /// Explicit branch name; absent lets the Mac name the branch (AI when
     /// configured, friendly-random otherwise).
     public let branchName: String?
+    /// Local branch to start from; absent uses the project's configured default
+    /// or repository `HEAD`.
+    public let baseBranch: String?
     /// Whether the Mac opens a workspace in the new worktree.
     public let open: Bool
 
@@ -70,11 +83,19 @@ public struct SupermuxWorktreeCreateRequest: Equatable, Sendable {
     ///   - projectID: The project's UUID string.
     ///   - workspaceName: Optional workspace title.
     ///   - branchName: Optional explicit branch name.
+    ///   - baseBranch: Optional local branch to start from.
     ///   - open: Whether to open a workspace after creating.
-    public init(projectID: String, workspaceName: String?, branchName: String?, open: Bool) {
+    public init(
+        projectID: String,
+        workspaceName: String?,
+        branchName: String?,
+        baseBranch: String? = nil,
+        open: Bool
+    ) {
         self.projectID = projectID
         self.workspaceName = workspaceName
         self.branchName = branchName
+        self.baseBranch = baseBranch
         self.open = open
     }
 
@@ -89,6 +110,9 @@ public struct SupermuxWorktreeCreateRequest: Equatable, Sendable {
         }
         if let branchName {
             params["branch_name"] = branchName
+        }
+        if let baseBranch {
+            params["base_branch"] = baseBranch
         }
         return params
     }

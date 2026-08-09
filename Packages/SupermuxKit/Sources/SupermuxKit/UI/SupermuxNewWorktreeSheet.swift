@@ -3,10 +3,12 @@ import Foundation
 
 /// Modal sheet for creating a git worktree (with a fresh branch) in a project.
 ///
-/// Kept deliberately minimal — a workspace name and an optional branch name —
-/// to mirror piggycode's frictionless flow. Leaving the branch blank generates
-/// a friendly random name; the base branch is the project's default. Presented
-/// via `.sheet(item:)` from ``SupermuxProjectsSectionView``, so it owns no
+/// Kept deliberately minimal — a workspace name, an optional branch name, and
+/// a starting-branch picker — to mirror piggycode's frictionless flow. Leaving
+/// the branch blank generates a friendly random name; the starting branch
+/// defaults to the project's configured branch, otherwise `main` when available
+/// or the repository `HEAD`. The sheet is presented via `.sheet(item:)` from
+/// ``SupermuxProjectsSectionView``, so it owns no
 /// presentation binding and dismisses itself through the environment. Creation
 /// is delegated to ``SupermuxProjectsModel/createWorktree(projectId:branchName:baseBranch:)``;
 /// the new worktree and chosen workspace name are handed back through a callback
@@ -20,6 +22,14 @@ public struct SupermuxNewWorktreeSheet: View {
     @FocusState private var focusedField: Field?
     @State private var workspaceName = ""
     @State private var branchInput = ""
+    @State private var baseBranch = ""
+    @State private var localBranches: [String] = []
+    /// Distinguishes the untouched default from the user deliberately choosing
+    /// the repository `HEAD` option after branches load.
+    @State private var baseBranchWasEdited = false
+    @State private var branchesLoaded = false
+    @State private var isLoadingBranches = false
+    @State private var branchLoadError: String?
     @State private var errorMessage: String?
     /// Transient progress text shown while AI names the branch / git creates it.
     @State private var statusMessage: String?
@@ -59,6 +69,10 @@ public struct SupermuxNewWorktreeSheet: View {
         self.model = model
         self.project = project
         self.onCreated = onCreated
+        _baseBranch = State(initialValue: Self.initialBaseBranch(
+            configuredDefault: project.defaultBranch,
+            branches: []
+        ))
     }
 
     /// The sheet content.
@@ -67,6 +81,7 @@ public struct SupermuxNewWorktreeSheet: View {
             header
             workspaceField
             branchField
+            basePicker
             if let statusMessage {
                 Text(statusMessage)
                     .font(.system(size: 11))
@@ -85,7 +100,14 @@ public struct SupermuxNewWorktreeSheet: View {
         .frame(width: 380)
         .onAppear {
             focusedField = .workspace
-            Task { aiNamingConfigured = await model.isAIBranchNamingConfigured() }
+            Task { await load() }
+        }
+        .onChange(of: configuredDefaultBranch) { _, configuredDefault in
+            guard branchesLoaded, !baseBranchWasEdited else { return }
+            baseBranch = Self.initialBaseBranch(
+                configuredDefault: configuredDefault,
+                branches: localBranches
+            )
         }
         // If the sheet goes away while the (possibly slow) AI-naming phase is in
         // flight, abort it so no worktree is created behind the user's back.
@@ -139,6 +161,51 @@ public struct SupermuxNewWorktreeSheet: View {
         }
     }
 
+    private var basePicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker(
+                String(localized: "supermux.newWorktree.base.label", defaultValue: "Start from"),
+                selection: Binding(
+                    get: { baseBranch },
+                    set: {
+                        baseBranch = $0
+                        baseBranchWasEdited = true
+                    }
+                )
+            ) {
+                Text(String(localized: "supermux.newWorktree.base.default", defaultValue: "Repository HEAD"))
+                    .tag("")
+                ForEach(baseBranchOptions, id: \.self) { branch in
+                    Text(branch).tag(branch)
+                }
+            }
+            .disabled(phase != .idle || !branchesLoaded)
+            Text(String(
+                localized: "supermux.newWorktree.base.hint",
+                defaultValue: "Includes committed changes from the selected branch. Uncommitted changes aren’t copied."
+            ))
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            if isLoadingBranches {
+                ProgressView()
+                    .controlSize(.small)
+            } else if let branchLoadError {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(branchLoadError)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button(String(localized: "common.retry", defaultValue: "Retry")) {
+                        Task { await loadBranches() }
+                    }
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
     private var buttons: some View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
@@ -161,15 +228,48 @@ public struct SupermuxNewWorktreeSheet: View {
                 }
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(phase != .idle)
+            .disabled(!canCreate)
         }
     }
 
     // MARK: - State
 
-    /// The branch field is optional, so creation is only blocked while a
-    /// create is already in flight.
-    private var canCreate: Bool { phase == .idle }
+    /// The model's current configured default, falling back to the presentation
+    /// snapshot only if the project is no longer in the model.
+    private var configuredDefaultBranch: String? {
+        if let current = model.projects.first(where: { $0.id == project.id }) {
+            return current.defaultBranch
+        }
+        return project.defaultBranch
+    }
+
+    /// Configured project default first, followed by every local branch, with
+    /// duplicates removed while preserving order.
+    private var baseBranchOptions: [String] {
+        var seen: Set<String> = []
+        return ([configuredDefaultBranch].compactMap { $0 } + localBranches).filter {
+            !$0.isEmpty && seen.insert($0).inserted
+        }
+    }
+
+    static func initialBaseBranch(configuredDefault: String?, branches: [String]) -> String {
+        if let configuredDefault, !configuredDefault.isEmpty {
+            return configuredDefault
+        }
+        return branches.contains("main") ? "main" : ""
+    }
+
+    /// An untouched picker defers to the service's fresh default resolution;
+    /// only an explicit user choice becomes an override.
+    static func requestedBaseBranch(selection: String, wasEdited: Bool) -> String? {
+        guard wasEdited else { return nil }
+        let trimmed = selection.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "HEAD" : trimmed
+    }
+
+    /// The branch field is optional, but the starting-branch snapshot must be
+    /// authoritative before creation can begin.
+    private var canCreate: Bool { phase == .idle && branchesLoaded }
 
     /// Subtitle under the branch field: a sanitized preview when the typed name
     /// differs from what git will use, or a note that a name will be generated.
@@ -200,12 +300,43 @@ public struct SupermuxNewWorktreeSheet: View {
 
     // MARK: - Actions
 
+    private func load() async {
+        async let configured = model.isAIBranchNamingConfigured()
+        await loadBranches()
+        aiNamingConfigured = await configured
+    }
+
+    private func loadBranches() async {
+        guard !isLoadingBranches else { return }
+        isLoadingBranches = true
+        branchLoadError = nil
+        defer { isLoadingBranches = false }
+        do {
+            let branches = try await model.localBranches(projectId: project.id)
+            localBranches = branches
+            branchesLoaded = true
+            if !baseBranchWasEdited {
+                baseBranch = Self.initialBaseBranch(
+                    configuredDefault: configuredDefaultBranch,
+                    branches: branches
+                )
+            }
+        } catch {
+            branchesLoaded = false
+            branchLoadError = error.localizedDescription
+        }
+    }
+
     private func create() {
         guard canCreate else { return }
         phase = .naming
         errorMessage = nil
         let trimmedName = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBranch = branchInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selectedBase = Self.requestedBaseBranch(
+            selection: baseBranch,
+            wasEdited: baseBranchWasEdited
+        )
         createTask = Task {
             var branchToUse = branchInput
             // Only invoke AI when the user left the branch blank but named the
@@ -237,7 +368,7 @@ public struct SupermuxNewWorktreeSheet: View {
                 let worktree = try await model.createWorktree(
                     projectId: project.id,
                     branchName: branchToUse,
-                    baseBranch: nil
+                    baseBranch: selectedBase
                 )
                 // Cancellation here can only come from programmatic sheet
                 // teardown (Cancel is disabled). The worktree exists either
