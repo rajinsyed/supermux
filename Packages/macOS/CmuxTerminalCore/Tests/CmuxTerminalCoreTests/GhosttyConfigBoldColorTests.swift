@@ -27,4 +27,14 @@ import Testing
 
         #expect(config.boldColor == "#000000")
     }
+
+    // SUPERMUX:begin ghostty-bold-is-bright-mobile-theme
+    @Test func parsesLegacyBoldIsBrightCompatibilityAlias() {
+        var config = GhosttyConfig()
+
+        config.parse("bold-is-bright = true")
+
+        #expect(config.boldColor == "bright")
+    }
+    // SUPERMUX:end ghostty-bold-is-bright-mobile-theme
 }

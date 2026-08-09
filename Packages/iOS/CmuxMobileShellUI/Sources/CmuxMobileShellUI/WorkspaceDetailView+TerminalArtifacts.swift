@@ -29,6 +29,9 @@ extension WorkspaceDetailView {
         // scrollback survives a theme change.
         configThemeGeneration: store.terminalConfigThemeGeneration,
         artifactFilesEnabled: store.supportsTerminalArtifacts,
+        // SUPERMUX:begin ios-terminal-scroll-speed
+        terminalScrollSpeed: terminalScrollSpeed,
+        // SUPERMUX:end ios-terminal-scroll-speed
         terminalFolderTapEnabled: terminalFolderTapEnabled,
         terminalFilesChipEnabled: terminalFilesChipEnabled,
         showMissingFiles: showMissingFiles,

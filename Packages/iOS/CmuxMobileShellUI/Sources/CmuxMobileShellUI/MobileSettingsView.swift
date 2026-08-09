@@ -1,4 +1,7 @@
 #if os(iOS)
+// SUPERMUX:begin ios-terminal-scroll-speed
+import CMUXMobileCore
+// SUPERMUX:end ios-terminal-scroll-speed
 import CmuxAuthRuntime
 import CmuxMobileShell
 import CmuxMobileShellModel
@@ -373,6 +376,45 @@ struct MobileSettingsView: View {
                         Text(L10n.string("mobile.settings.terminalScrollback", defaultValue: "Terminal Scrollback"))
                     }
                     .accessibilityIdentifier("MobileSettingsTerminalScrollback")
+
+                    // SUPERMUX:begin ios-terminal-scroll-speed
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(L10n.string(
+                                "mobile.settings.terminalScrollSpeed",
+                                defaultValue: "Terminal Scroll Speed"
+                            ))
+                            Spacer()
+                            Text(verbatim: String(
+                                format: "%.2f×",
+                                displaySettings.terminalScrollSpeed
+                            ))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        }
+                        Slider(
+                            value: $displaySettings.terminalScrollSpeed,
+                            in: MobileTerminalScrollSpeedPreference.range,
+                            step: 0.05
+                        ) {
+                            Text(L10n.string(
+                                "mobile.settings.terminalScrollSpeed",
+                                defaultValue: "Terminal Scroll Speed"
+                            ))
+                        } minimumValueLabel: {
+                            Image(systemName: "tortoise")
+                        } maximumValueLabel: {
+                            Image(systemName: "hare")
+                        }
+                        Text(L10n.string(
+                            "mobile.settings.terminalScrollSpeed.footer",
+                            defaultValue: "How fast terminal apps scroll per swipe. Scrollback history always tracks your finger directly."
+                        ))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
+                    .accessibilityIdentifier("MobileSettingsTerminalScrollSpeed")
+                    // SUPERMUX:end ios-terminal-scroll-speed
                 }
 
                 Section(L10n.string("mobile.settings.notifications", defaultValue: "Push Alerts")) {

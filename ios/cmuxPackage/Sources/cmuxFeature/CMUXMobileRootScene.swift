@@ -331,6 +331,10 @@ public struct CMUXMobileRootScene: View {
             MobileRecoveryStressView(configuration: recoveryStress)
         } else if ProcessInfo.processInfo.environment["CMUX_ZOOM_STRESS"] == "1" {
             MobileZoomStressView()
+        // SUPERMUX:begin ios-terminal-native-scroll
+        } else if ProcessInfo.processInfo.environment["CMUX_NATIVE_SCROLL_STRESS"] == "1" {
+            MobileBottomScrollStressView(nativeScrollOnly: true)
+        // SUPERMUX:end ios-terminal-native-scroll
         } else if ProcessInfo.processInfo.environment["CMUX_BOTTOM_SCROLL_STRESS"] == "1" {
             MobileBottomScrollStressView()
         } else if ProcessInfo.processInfo.environment["CMUX_TOAST_GALLERY"] == "1" {
@@ -370,10 +374,15 @@ public struct CMUXMobileRootScene: View {
         browserStreamEvents: (any BrowserStreamEventReceiving)? = nil
     ) -> CMUXMobileShellStore {
         let coordinator = auth.coordinator
-        let buildScope = MobileIOSBuildScope.current()
+        // SUPERMUX:begin official-ios-persistence-scope (a personal-team Release bundle may have a dev-style id without owning a development storage partition — see SUPERMUX-TOUCHPOINTS.md)
+        let detectedBuildScope = MobileIOSBuildScope.current()
         let buildCompatibilityPolicy = MobileMacBuildCompatibilityPolicy.current(
-            buildScope: buildScope
+            buildScope: detectedBuildScope
         )
+        let buildScope = buildCompatibilityPolicy.persistenceScope(
+            from: detectedBuildScope
+        )
+        // SUPERMUX:end official-ios-persistence-scope
         let identityProvider = AuthCoordinatorIdentityProvider(
             coordinator: auth.coordinator,
             isDevelopmentAuthEnvironment: auth.authEnvironment == .development

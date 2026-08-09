@@ -111,6 +111,13 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     static let terminalReplayCapability = "terminal.replay.v1"
     static let terminalInputOrderedCapability = "terminal.input.ordered.v1"
     static let maxTerminalReplayBarrierDroppedOutputBeforeFailOpen: UInt64 = 256
+    // SUPERMUX:begin ios-terminal-output-backlog-coalesce
+    /// Pending render-grid frames tolerated before the whole backlog is
+    /// replaced by one authoritative replay. Roughly half a second of 60 Hz
+    /// frames: deep enough that steady output never trips it, shallow enough
+    /// that a scroll-gesture backlog cannot replay for seconds after touch-up.
+    static let maxTerminalOutputPendingBeforeReplayCoalesce = 24
+    // SUPERMUX:end ios-terminal-output-backlog-coalesce
     static let workspaceActionsCapability = "workspace.actions.v1"
     static let workspaceChangesCapability = "workspace.changes.v1"
     static let workspaceMetadataCapability = "workspace.metadata.v1"
@@ -1167,6 +1174,18 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     var terminalScrollQueueTokensBySurfaceID: [String: UUID]
     var terminalScrollQueuesBySurfaceID: [String: TerminalScrollDeliveryQueue]
     var terminalScrollbackPrefetchStatesBySurfaceID: [String: TerminalScrollbackPrefetchState]
+    // SUPERMUX:begin ios-terminal-alt-scroll-budget
+    var terminalAlternateScrollBudgetsBySurfaceID: [String: TerminalAlternateScrollBudget]
+    // SUPERMUX:end ios-terminal-alt-scroll-budget
+    // SUPERMUX:begin ios-terminal-alt-scroll-direct-apply
+    /// Uptime of the last alternate-screen scroll input per surface; deltas
+    /// inside `TerminalAltScrollDirectApplyPolicy.activityWindow` skip the
+    /// verified per-frame fence so gesture repaints stay smooth.
+    var terminalAlternateScrollLastInputAtBySurfaceID: [String: TimeInterval]
+    // SUPERMUX:end ios-terminal-alt-scroll-direct-apply
+    // SUPERMUX:begin ios-terminal-alt-scroll-quantize
+    var terminalAlternateScrollQuantizersBySurfaceID: [String: TerminalAlternateScrollLineQuantizer]
+    // SUPERMUX:end ios-terminal-alt-scroll-quantize
     /// Per-surface continuations for the Mac-pushed live font-size signal. A
     /// mounted surface obtains ``terminalLiveFontStream(surfaceID:)`` and applies
     /// each yielded point size; the Mac emits `terminal.set_font` to drive a live
@@ -1499,6 +1518,15 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         self.terminalScrollQueueTokensBySurfaceID = [:]
         self.terminalScrollQueuesBySurfaceID = [:]
         self.terminalScrollbackPrefetchStatesBySurfaceID = [:]
+        // SUPERMUX:begin ios-terminal-alt-scroll-budget
+        self.terminalAlternateScrollBudgetsBySurfaceID = [:]
+        // SUPERMUX:end ios-terminal-alt-scroll-budget
+        // SUPERMUX:begin ios-terminal-alt-scroll-direct-apply
+        self.terminalAlternateScrollLastInputAtBySurfaceID = [:]
+        // SUPERMUX:end ios-terminal-alt-scroll-direct-apply
+        // SUPERMUX:begin ios-terminal-alt-scroll-quantize
+        self.terminalAlternateScrollQuantizersBySurfaceID = [:]
+        // SUPERMUX:end ios-terminal-alt-scroll-quantize
         self.terminalLiveFontContinuationsBySurfaceID = [:]
         self.terminalLiveFontTokensBySurfaceID = [:]
         self.rawTerminalInputBuffer = MobileTerminalInputSendBuffer()
@@ -9000,6 +9028,15 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         terminalScrollQueueTokensBySurfaceID = [:]
         terminalScrollQueuesBySurfaceID = [:]
         terminalScrollbackPrefetchStatesBySurfaceID = [:]
+        // SUPERMUX:begin ios-terminal-alt-scroll-budget
+        terminalAlternateScrollBudgetsBySurfaceID = [:]
+        // SUPERMUX:end ios-terminal-alt-scroll-budget
+        // SUPERMUX:begin ios-terminal-alt-scroll-direct-apply
+        terminalAlternateScrollLastInputAtBySurfaceID = [:]
+        // SUPERMUX:end ios-terminal-alt-scroll-direct-apply
+        // SUPERMUX:begin ios-terminal-alt-scroll-quantize
+        terminalAlternateScrollQuantizersBySurfaceID = [:]
+        // SUPERMUX:end ios-terminal-alt-scroll-quantize
         terminalOutputTransport = .rawBytes
         deactivateAllTerminalLanes()
         supportedHostCapabilities = []
@@ -11142,6 +11179,15 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         terminalScrollQueueTokensBySurfaceID.removeValue(forKey: surfaceID)
         terminalScrollQueuesBySurfaceID.removeValue(forKey: surfaceID)
         terminalScrollbackPrefetchStatesBySurfaceID.removeValue(forKey: surfaceID)
+        // SUPERMUX:begin ios-terminal-alt-scroll-budget
+        terminalAlternateScrollBudgetsBySurfaceID.removeValue(forKey: surfaceID)
+        // SUPERMUX:end ios-terminal-alt-scroll-budget
+        // SUPERMUX:begin ios-terminal-alt-scroll-direct-apply
+        terminalAlternateScrollLastInputAtBySurfaceID.removeValue(forKey: surfaceID)
+        // SUPERMUX:end ios-terminal-alt-scroll-direct-apply
+        // SUPERMUX:begin ios-terminal-alt-scroll-quantize
+        terminalAlternateScrollQuantizersBySurfaceID.removeValue(forKey: surfaceID)
+        // SUPERMUX:end ios-terminal-alt-scroll-quantize
         effectiveViewportSizesBySurfaceID.removeValue(forKey: surfaceID); reportedTerminalViewportSizesBySurfaceID.removeValue(forKey: surfaceID)
         terminalViewportReplayBarrierPendingAckTokensBySurfaceID.removeValue(forKey: surfaceID)
         // Drop the letterbox dimension cache too: piggybacks attach the

@@ -114,6 +114,21 @@ public final class MobileDisplaySettings {
         }
     }
 
+    // SUPERMUX:begin ios-terminal-scroll-speed
+    /// Multiplier applied to terminal wheel-scroll sensitivity (TUIs and other
+    /// unbounded scroll paths). Defaults to
+    /// ``MobileTerminalScrollSpeedPreference/defaultSpeed`` (1.0). Mutating
+    /// this clamps to the supported range and writes through to the injected
+    /// ``UserDefaults`` under the shared key mounted surfaces read live.
+    public var terminalScrollSpeed: Double {
+        didSet {
+            let clamped = MobileTerminalScrollSpeedPreference.clamped(terminalScrollSpeed)
+            if clamped != terminalScrollSpeed { terminalScrollSpeed = clamped }
+            defaults.set(clamped, forKey: MobileTerminalScrollSpeedPreference.defaultsKey)
+        }
+    }
+    // SUPERMUX:end ios-terminal-scroll-speed
+
     /// How many lines a workspace row's activity preview shows (1 or 2).
     /// Defaults to 2. Mutating this clamps to the supported range and writes
     /// through to the injected ``UserDefaults``.
@@ -168,6 +183,9 @@ public final class MobileDisplaySettings {
         self.hapticFeedbackEnabled = haptics.isEnabled
         self.terminalFilesChipEnabled = defaults.bool(forKey: Self.terminalFilesChipEnabledKey)
         self.terminalScrollbackRows = MobileTerminalScrollbackPreference.resolve(from: defaults)
+        // SUPERMUX:begin ios-terminal-scroll-speed
+        self.terminalScrollSpeed = MobileTerminalScrollSpeedPreference.resolve(from: defaults)
+        // SUPERMUX:end ios-terminal-scroll-speed
         self.taskComposerEnabled = defaults.bool(forKey: Self.taskComposerEnabledKey)
         let storedPreviewLines = defaults.object(forKey: Self.workspacePreviewLineCountKey) as? Int
         self.workspacePreviewLineCount = Self.clampedWorkspacePreviewLineCount(

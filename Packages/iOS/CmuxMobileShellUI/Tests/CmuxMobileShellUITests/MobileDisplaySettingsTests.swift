@@ -224,4 +224,31 @@ import Testing
         let reloaded = MobileDisplaySettings(defaults: defaults)
         #expect(reloaded.unreadIndicatorLeftShift == 0)
     }
+
+    @Test func terminalScrollSpeedDefaultsToUnscaledWithoutAWrite() throws {
+        let defaults = try makeDefaults("scrollSpeedDefaults")
+        let settings = MobileDisplaySettings(defaults: defaults)
+        #expect(settings.terminalScrollSpeed == 1.0)
+        #expect(defaults.object(forKey: "cmux.mobile.terminalScrollSpeed") == nil)
+    }
+
+    @Test func terminalScrollSpeedPersistsAcrossInstances() throws {
+        let defaults = try makeDefaults("scrollSpeedPersists")
+        let settings = MobileDisplaySettings(defaults: defaults)
+        settings.terminalScrollSpeed = 0.5
+        #expect(MobileDisplaySettings(defaults: defaults).terminalScrollSpeed == 0.5)
+    }
+
+    @Test func terminalScrollSpeedClampsToSupportedRange() throws {
+        let defaults = try makeDefaults("scrollSpeedClamps")
+        let settings = MobileDisplaySettings(defaults: defaults)
+        settings.terminalScrollSpeed = 9
+        #expect(settings.terminalScrollSpeed == 1.5)
+        settings.terminalScrollSpeed = 0.01
+        #expect(settings.terminalScrollSpeed == 0.25)
+
+        defaults.set(Double.nan, forKey: "cmux.mobile.terminalScrollSpeed")
+        let reloaded = MobileDisplaySettings(defaults: defaults)
+        #expect(reloaded.terminalScrollSpeed == 1.0)
+    }
 }

@@ -2779,6 +2779,173 @@ final class cmuxUITests: XCTestCase {
         )
     }
 
+    // SUPERMUX:begin ios-terminal-native-scroll
+    @MainActor
+    func testTerminalNativeScrollUsesBoundedPrimaryHistory() throws {
+        let app = launchApp(mockData: false, environment: [
+            "CMUX_NATIVE_SCROLL_STRESS": "1",
+        ])
+        let surface = app.otherElements["MobileTerminalSurface"]
+        XCTAssertTrue(surface.waitForExistence(timeout: 8))
+
+        let initial = waitForDock(in: app, timeout: 8, describe: "bounded terminal scroll ready") {
+            guard $0["nativeScrollScreen"] == "primary",
+                  $0["scrollAtBottom"] == "1",
+                  let rawOffset = Double($0["nativeScrollRawOffset"] ?? ""),
+                  let maximumOffset = Double($0["nativeScrollMaxOffset"] ?? "") else {
+                return false
+            }
+            return maximumOffset > 100 && abs(rawOffset - maximumOffset) < 1
+        }
+        let initialOffset = try XCTUnwrap(Double(initial["nativeScrollRawOffset"] ?? ""))
+        let initialHistoryOffset = try XCTUnwrap(Int(initial["scrollOffset"] ?? ""))
+
+        let upperTerminal = surface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)
+        )
+        let lowerTerminal = surface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)
+        )
+        lowerTerminal.press(
+            forDuration: 0.05,
+            thenDragTo: upperTerminal,
+            withVelocity: .slow,
+            thenHoldForDuration: 0
+        )
+
+        let bottomSettled = waitForDock(in: app, timeout: 3, describe: "native terminal bottom stayed bounded") {
+            guard let rawOffset = Double($0["nativeScrollRawOffset"] ?? ""),
+                  let maximumOffset = Double($0["nativeScrollMaxOffset"] ?? ""),
+                  let historyOffset = Int($0["scrollOffset"] ?? ""),
+                  let translation = Double($0["nativeScrollTranslation"] ?? "") else {
+                return false
+            }
+            return abs(rawOffset - maximumOffset) < 1
+                && historyOffset == initialHistoryOffset
+                && abs(translation) < 0.5
+        }
+        XCTAssertEqual(bottomSettled["nativeScrollScreen"], "primary")
+
+        let fastDragStart = surface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42)
+        )
+        let fastDragEnd = surface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.57)
+        )
+        let fastDragDistance = surface.frame.height * 0.15
+        fastDragStart.press(
+            forDuration: 0.05,
+            thenDragTo: fastDragEnd,
+            withVelocity: .fast,
+            thenHoldForDuration: 0
+        )
+
+        let fastRelease = surfaceDock(in: app)
+        XCTAssertEqual(
+            fastRelease["nativeScrollDecelerating"],
+            "0",
+            "A fast terminal drag must stop when the finger lifts. dock=\(fastRelease)"
+        )
+
+        let moved = waitForDock(in: app, timeout: 3, describe: "fast native terminal drag moved into history") {
+            guard let rawOffset = Double($0["nativeScrollRawOffset"] ?? ""),
+                  let historyOffset = Int($0["scrollOffset"] ?? "") else { return false }
+            let movement = initialOffset - rawOffset
+            return movement > 20
+                && movement <= fastDragDistance + 30
+                && historyOffset < initialHistoryOffset
+        }
+        XCTAssertEqual(moved["nativeScrollScreen"], "primary")
+
+        let settled = waitForDock(in: app, timeout: 4, describe: "fast native terminal drag settled") {
+            guard $0["nativeScrollDecelerating"] == "0",
+                  let rawOffset = Double($0["nativeScrollRawOffset"] ?? ""),
+                  let translation = Double($0["nativeScrollTranslation"] ?? "") else {
+                return false
+            }
+            let movement = initialOffset - rawOffset
+            return movement > 20
+                && movement <= fastDragDistance + 30
+                && abs(translation) < 0.5
+        }
+        XCTAssertEqual(settled["nativeScrollTracking"], "0")
+        let dockProbe = app.descendants(matching: .any)[Composer.surfaceProbe]
+        let fastReleasedOffset = try XCTUnwrap(Double(settled["nativeScrollRawOffset"] ?? ""))
+        let fastDriftExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { [weak self] object, _ in
+                guard let self, let element = object as? XCUIElement,
+                      let rawOffset = Double(
+                        self.parseProbe(element.value as? String ?? "")["nativeScrollRawOffset"] ?? ""
+                      ) else {
+                    return false
+                }
+                return abs(rawOffset - fastReleasedOffset) > 2
+            },
+            object: dockProbe
+        )
+        fastDriftExpectation.isInverted = true
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [fastDriftExpectation], timeout: 0.75),
+            .completed,
+            "A fast terminal drag continued moving after the finger lifted. released=\(fastReleasedOffset) current=\(surfaceDock(in: app))"
+        )
+
+        let beforeSlowDragOffset = try XCTUnwrap(Double(settled["nativeScrollRawOffset"] ?? ""))
+        let slowDragStart = surface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42)
+        )
+        let slowDragEnd = surface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.57)
+        )
+        let slowDragDistance = surface.frame.height * 0.15
+        slowDragStart.press(
+            forDuration: 0.25,
+            thenDragTo: slowDragEnd,
+            withVelocity: .slow,
+            thenHoldForDuration: 0
+        )
+
+        let slowRelease = surfaceDock(in: app)
+        XCTAssertEqual(
+            slowRelease["nativeScrollDecelerating"],
+            "0",
+            "A slow terminal drag must not start inertial scrolling. dock=\(slowRelease)"
+        )
+
+        let slowSettled = waitForDock(in: app, timeout: 2, describe: "slow terminal drag stopped at release") {
+            guard $0["nativeScrollTracking"] == "0",
+                  $0["nativeScrollDecelerating"] == "0",
+                  let rawOffset = Double($0["nativeScrollRawOffset"] ?? ""),
+                  let translation = Double($0["nativeScrollTranslation"] ?? "") else {
+                return false
+            }
+            let movement = beforeSlowDragOffset - rawOffset
+            return movement > 20
+                && movement <= slowDragDistance + 30
+                && abs(translation) < 0.5
+        }
+        let slowReleasedOffset = try XCTUnwrap(Double(slowSettled["nativeScrollRawOffset"] ?? ""))
+        let driftExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { [weak self] object, _ in
+                guard let self, let element = object as? XCUIElement,
+                      let rawOffset = Double(
+                        self.parseProbe(element.value as? String ?? "")["nativeScrollRawOffset"] ?? ""
+                      ) else {
+                    return false
+                }
+                return abs(rawOffset - slowReleasedOffset) > 2
+            },
+            object: dockProbe
+        )
+        driftExpectation.isInverted = true
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [driftExpectation], timeout: 0.75),
+            .completed,
+            "A slow terminal drag continued moving after the finger lifted. released=\(slowReleasedOffset) current=\(surfaceDock(in: app))"
+        )
+    }
+    // SUPERMUX:end ios-terminal-native-scroll
+
     @MainActor
     func testWorkspaceToolbarCreatesWorkspaceAndTerminal() async throws {
         let server = try MobileSyncMockHostServer(createdWorkspaceTerminalDelay: 1.5)

@@ -30,7 +30,16 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
     /// reverse-video and OSC colors used by surrounding UIKit chrome.
     public var terminalConfigTheme: TerminalTheme = .monokai
     /// Verified sessions keep the Mac as the sole owner of terminal scroll state.
-    public var scrollPresentationAuthority: TerminalScrollPresentationAuthority = .legacyMirror
+    // SUPERMUX:begin ios-terminal-native-scroll
+    public var scrollPresentationAuthority: TerminalScrollPresentationAuthority = .legacyMirror {
+        didSet {
+            guard scrollPresentationAuthority != oldValue else { return }
+            lastScrollMechanicsOffsetY = nil
+            lastScrollMechanicsEffectiveOffsetY = nil
+            configureScrollMechanicsView(syncToAuthoritativeOffset: true)
+        }
+    }
+    // SUPERMUX:end ios-terminal-native-scroll
     private var appliedTerminalConfigTheme: TerminalTheme?
     weak var delegate: GhosttySurfaceViewDelegate?
     private let fontSize: Float32
@@ -242,7 +251,27 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
     private static let scrollMechanicsContentHeight: CGFloat = 1_000_000
     private var scrollMechanicsIsRecentering = false
     private var lastScrollMechanicsOffsetY: CGFloat?
+    // SUPERMUX:begin ios-terminal-native-scroll
+    private var lastScrollMechanicsEffectiveOffsetY: CGFloat?
+    // SUPERMUX:end ios-terminal-native-scroll
     private var lastScrollMechanicsTouchPoint: CGPoint = .zero
+    // SUPERMUX:begin ios-terminal-native-scroll
+    private var nativeScrollScreen: MobileTerminalRenderGridFrame.Screen?
+    private var nativeScrollBoundary: TerminalNativeScrollGeometry.Boundary?
+    /// Internal for `GhosttySurfaceView+VerifiedReplayFrozenPresentation.swift`:
+    /// a freshly frozen container initializes its transform from the live
+    /// native-scroll translation.
+    var nativeScrollContentTranslationY: CGFloat = 0
+    /// User-tuned wheel-line sensitivity from Settings (see
+    /// `MobileTerminalScrollSpeedPreference`). Applied only to unbounded
+    /// wheel delivery (`enqueueScrollMechanicsDelta`), never to bounded
+    /// primary-history geometry, which maps positions 1:1.
+    public var scrollSpeedMultiplier: Double = 1.0 {
+        didSet {
+            if !(scrollSpeedMultiplier > 0) { scrollSpeedMultiplier = 1.0 }
+        }
+    }
+    // SUPERMUX:end ios-terminal-native-scroll
     private lazy var scrollMechanicsView: UIScrollView = {
         let view = UIScrollView()
         view.backgroundColor = .clear
@@ -252,7 +281,11 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
         view.alwaysBounceVertical = true
         view.alwaysBounceHorizontal = false
         view.bounces = true
-        view.decelerationRate = .normal
+        // SUPERMUX:begin ios-terminal-native-scroll
+        // A zero rate disables inertial travel. Terminal history must move only
+        // while the user's finger is actively moving it.
+        view.decelerationRate = UIScrollView.DecelerationRate(rawValue: 0)
+        // SUPERMUX:end ios-terminal-native-scroll
         view.delaysContentTouches = false
         view.canCancelContentTouches = true
         view.scrollsToTop = false
@@ -337,6 +370,11 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
         // here, or a large `surfaceMinXInWindow`, points at the displacement source.
         let surfaceMinXInWindow = window.map { Int(convert(bounds, to: $0).minX) } ?? -1
         let toolbarOriginX = dockedToolbar.map { Int($0.frame.minX) } ?? -1
+        // SUPERMUX:begin ios-terminal-native-scroll
+        let pointValue: (CGFloat) -> String = {
+            String(format: "%.3f", Double($0))
+        }
+        // SUPERMUX:end ios-terminal-native-scroll
         return [
             "chromeHidden=\(chromeHidden ? 1 : 0)",
             "composerActive=\(composerActive ? 1 : 0)",
@@ -362,6 +400,14 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
             "boundsHeight=\(Int(bounds.height))",
             "scrollTotal=\(debugLastScrollbar?.total ?? -1)", "scrollOffset=\(debugLastScrollbar?.offset ?? -1)",
             "scrollLen=\(debugLastScrollbar?.len ?? -1)", "scrollAtBottom=\(debugScrollbarAtBottomForTesting ? 1 : 0)",
+            // SUPERMUX:begin ios-terminal-native-scroll
+            "nativeScrollScreen=\(nativeScrollScreen.map { $0 == .primary ? "primary" : "alternate" } ?? "unknown")",
+            "nativeScrollRawOffset=\(pointValue(scrollMechanicsView.contentOffset.y))",
+            "nativeScrollMaxOffset=\(pointValue(terminalNativeScrollGeometry?.maximumContentOffsetY ?? -1))",
+            "nativeScrollTranslation=\(pointValue(nativeScrollContentTranslationY))",
+            "nativeScrollTracking=\(scrollMechanicsView.isTracking ? 1 : 0)",
+            "nativeScrollDecelerating=\(scrollMechanicsView.isDecelerating ? 1 : 0)",
+            // SUPERMUX:end ios-terminal-native-scroll
             "staleViewportObserved=\(debugBottomViewportMismatchObserved ? 1 : 0)",
             inputProxy.accessoryLayoutDiagnostics,
         ].joined(separator: ";")
@@ -1865,13 +1911,167 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
 
     private var pinchAccumulatedScale: CGFloat = 1.0
 
+    // SUPERMUX:begin ios-terminal-native-scroll
     private func layoutScrollMechanicsView() {
         scrollMechanicsView.frame = bounds
+        configureScrollMechanicsView(syncToAuthoritativeOffset: lastScrollMechanicsOffsetY == nil)
+    }
+
+    private func configureScrollMechanicsView(
+        syncToAuthoritativeOffset: Bool,
+        interactionEnded: Bool = false
+    ) {
+        guard usesBoundedNativeScroll,
+              let geometry = terminalNativeScrollGeometry else {
+            configureUnboundedScrollMechanicsView()
+            return
+        }
+
+        let hasPendingScroll = pendingScrollLines != 0
+            || pendingLocalScrollLines != 0
+            || localScrollApplyInFlight
+        // UIKit still reports isDragging/isDecelerating true INSIDE the
+        // gesture-end delegate callbacks, so those callers assert the end
+        // explicitly; pending-scroll deferral still applies and the drained
+        // pump retries the sync.
+        let shouldSync = TerminalNativeScrollGeometry.shouldSynchronize(
+            explicitlyRequested: syncToAuthoritativeOffset,
+            isInteracting: isScrollMechanicsInteracting && !interactionEnded,
+            hasPendingScroll: hasPendingScroll
+        )
+        scrollMechanicsIsRecentering = true
+        scrollMechanicsView.contentSize = CGSize(
+            width: max(bounds.width, 1),
+            height: max(geometry.contentHeight, scrollMechanicsView.bounds.height)
+        )
+        if shouldSync {
+            let offset = geometry.authoritativeContentOffsetY
+            scrollMechanicsView.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+            lastScrollMechanicsOffsetY = offset
+            lastScrollMechanicsEffectiveOffsetY = offset
+            applyNativeScrollContentTranslation(0)
+        } else {
+            let effective = min(
+                max(scrollMechanicsView.contentOffset.y, 0),
+                geometry.maximumContentOffsetY
+            )
+            lastScrollMechanicsOffsetY = scrollMechanicsView.contentOffset.y
+            lastScrollMechanicsEffectiveOffsetY = effective
+            if isScrollMechanicsInteracting {
+                // A row flip applied under a stationary finger must refresh
+                // the sub-row compensation, or content holds a one-row skew
+                // until the next scroll delegate callback.
+                applyNativeScrollContentTranslation(
+                    geometry.presentationTranslation(
+                        rawOffsetY: scrollMechanicsView.contentOffset.y,
+                        effectiveOffsetY: effective
+                    )
+                )
+            }
+        }
+        scrollMechanicsIsRecentering = false
+    }
+
+    private func configureUnboundedScrollMechanicsView() {
+        scrollMechanicsIsRecentering = true
         scrollMechanicsView.contentSize = CGSize(
             width: max(bounds.width, 1),
             height: max(Self.scrollMechanicsContentHeight, bounds.height * 8)
         )
+        scrollMechanicsIsRecentering = false
         recenterScrollMechanicsViewIfNeeded(force: lastScrollMechanicsOffsetY == nil)
+        lastScrollMechanicsEffectiveOffsetY = lastScrollMechanicsOffsetY
+        applyNativeScrollContentTranslation(0)
+    }
+
+    private var terminalNativeScrollGeometry: TerminalNativeScrollGeometry? {
+        let cellHeight = cellPixelSize.height / max(preferredScreenScale, 1)
+        let viewportHeight = max(scrollMechanicsView.bounds.height, 1)
+        guard let nativeScrollBoundary, cellHeight > 0 else {
+            // A confirmed primary screen without authoritative bounds fails
+            // closed: zero-range rubber band, never unbounded wheel deltas.
+            return TerminalNativeScrollGeometry.zeroRange(
+                cellHeight: cellHeight,
+                viewportHeight: viewportHeight
+            )
+        }
+        return TerminalNativeScrollGeometry(
+            totalRows: nativeScrollBoundary.totalRows,
+            viewportOffsetRows: nativeScrollBoundary.viewportOffsetRows,
+            visibleRows: nativeScrollBoundary.visibleRows,
+            cellHeight: cellHeight,
+            viewportHeight: viewportHeight
+        )
+    }
+
+    private var isScrollMechanicsInteracting: Bool {
+        scrollMechanicsView.isTracking
+            || scrollMechanicsView.isDragging
+            || scrollMechanicsView.isDecelerating
+    }
+
+    /// Whether the local mirror has authority to present bounded primary history.
+    var usesBoundedNativeScroll: Bool {
+        nativeScrollScreen == .primary && scrollPresentationAuthority.appliesLocally
+    }
+
+    /// Selects bounded primary-screen scrolling or unbounded TUI wheel delivery.
+    ///
+    /// - Parameter screen: The active screen from the authoritative render-grid frame.
+    public func setNativeScrollScreen(_ screen: MobileTerminalRenderGridFrame.Screen) {
+        guard nativeScrollScreen != screen else { return }
+        // The boundary is kept: the scrollbar action for the output that
+        // triggered this flip can land on the main actor one hop before the
+        // flip itself, and discarding it here would fail the primary screen
+        // closed until the next output.
+        nativeScrollScreen = screen
+        lastScrollMechanicsOffsetY = nil
+        lastScrollMechanicsEffectiveOffsetY = nil
+        configureScrollMechanicsView(syncToAuthoritativeOffset: true)
+    }
+
+    func updateNativeScrollBoundary(total: UInt64, offset: UInt64, len: UInt64) {
+        // Stored regardless of screen mode so boundary/flip arrival order
+        // never drops authoritative bounds; only a confirmed primary screen
+        // reconfigures the bounded scroll view from them.
+        nativeScrollBoundary = TerminalNativeScrollGeometry.Boundary(
+            totalRows: total,
+            viewportOffsetRows: offset,
+            visibleRows: len
+        )
+        guard usesBoundedNativeScroll else { return }
+        configureScrollMechanicsView(syncToAuthoritativeOffset: false)
+    }
+
+    private func applyNativeScrollContentTranslation(_ translationY: CGFloat) {
+        guard abs(nativeScrollContentTranslationY - translationY) > 0.01 else { return }
+        nativeScrollContentTranslationY = translationY
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let transform = CATransform3DMakeTranslation(0, translationY, 0)
+        for sublayer in layer.sublayers ?? [] where isGhosttyRendererLayer(sublayer) {
+            sublayer.transform = transform
+        }
+        // Only the frozen CONTAINER carries the scroll translation; its content
+        // child is a sublayer, so writing both would apply the offset twice.
+        verifiedReplayFrozenPresentationLayer?.transform = transform
+        CATransaction.commit()
+        snapshotFallbackView.transform = CGAffineTransform(translationX: 0, y: translationY)
+    }
+
+    /// Internal for `GhosttySurfaceView+LocalScrollbackScroll.swift`: a drained
+    /// local-apply pump re-runs the idle resync its in-flight flag deferred.
+    /// Gesture-end callbacks pass `interactionEnded: true` because UIKit's
+    /// isDragging/isDecelerating are still true inside those callbacks.
+    func settleBoundedScrollMechanicsIfPossible(interactionEnded: Bool = false) {
+        guard usesBoundedNativeScroll,
+              let geometry = terminalNativeScrollGeometry else { return }
+        let rawOffset = scrollMechanicsView.contentOffset.y
+        guard rawOffset >= 0, rawOffset <= geometry.maximumContentOffsetY else { return }
+        configureScrollMechanicsView(
+            syncToAuthoritativeOffset: false,
+            interactionEnded: interactionEnded
+        )
     }
 
     private func recenterScrollMechanicsViewIfNeeded(force: Bool = false) {
@@ -1887,22 +2087,34 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
         scrollMechanicsIsRecentering = true
         scrollMechanicsView.setContentOffset(CGPoint(x: 0, y: centeredY), animated: false)
         lastScrollMechanicsOffsetY = centeredY
+        lastScrollMechanicsEffectiveOffsetY = centeredY
         scrollMechanicsIsRecentering = false
     }
 
     private func enqueueScrollMechanicsDelta(_ deltaY: CGFloat, touchPoint: CGPoint) {
-        // The transparent UIScrollView supplies native iOS tracking,
-        // deceleration, and momentum. The Mac still owns terminal semantics:
+        // The transparent UIScrollView supplies native iOS finger tracking and
+        // rubber-band geometry. The Mac still owns terminal semantics:
         // normal-screen scrollback and alt-screen mouse-wheel delivery.
-        guard deltaY != 0 else { return }
+        let cellHeightPt = cellPixelSize.height / max(preferredScreenScale, 1)
+        let divisor = cellHeightPt > 1 ? Double(cellHeightPt) : 14
+        // Wheel-line delivery is a sensitivity mapping (each line is a
+        // discrete input for the TUI), so the user's scroll-speed preference
+        // scales it. Bounded primary history stays 1:1 direct manipulation.
+        enqueueScrollMechanicsLines(
+            -Double(deltaY) / divisor * scrollSpeedMultiplier,
+            touchPoint: touchPoint
+        )
+    }
+
+    private func enqueueScrollMechanicsLines(_ lines: Double, touchPoint: CGPoint) {
+        guard lines != 0 else { return }
         // User-driven movement reveals the chip; this is guard-only work per
         // frame (the linger is armed by the gesture-end callbacks).
         noteArtifactChipScrollActivity()
-        let cellHeightPt = cellPixelSize.height / max(preferredScreenScale, 1)
-        let divisor = cellHeightPt > 1 ? Double(cellHeightPt) * 3 : 42
-        pendingScrollLines += -Double(deltaY) / divisor
+        pendingScrollLines += lines
         pendingScrollCell = scrollCell(at: touchPoint)
     }
+    // SUPERMUX:end ios-terminal-native-scroll
 
     /// Coalesced native scroll forwarded to the Mac once per display-link frame.
     private var pendingScrollLines: Double = 0
@@ -1916,6 +2128,13 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
         pendingScrollLines = 0
         pendingLocalScrollLines = 0
         localScrollApplyInFlight = false
+        // SUPERMUX:begin ios-terminal-native-scroll
+        nativeScrollScreen = nil
+        nativeScrollBoundary = nil
+        lastScrollMechanicsOffsetY = nil
+        lastScrollMechanicsEffectiveOffsetY = nil
+        applyNativeScrollContentTranslation(0)
+        // SUPERMUX:end ios-terminal-native-scroll
     }
 
     /// Map a touch point to a grid cell (shared effective grid with the Mac), so
@@ -2989,13 +3208,16 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
         bumpUserViewportInteractionGeneration()
         resetCursorBlink()
         // A flick still decelerating would fight the snap: deltas already in
-        // `pendingScrollLines` flush on the display-link frame AFTER the snap
-        // below, and UIScrollView momentum keeps producing more. Drop the
-        // pending deltas and freeze the scroll mechanics at the current offset
+        // `pendingScrollLines` can flush on the display-link frame AFTER the
+        // snap below, and UIKit may already have committed a deceleration. Drop
+        // the pending deltas and freeze the scroll mechanics at the current offset
         // (kill-deceleration idiom) so typed input lands at the bottom.
         pendingScrollLines = 0
         pendingLocalScrollLines = 0
         scrollMechanicsView.setContentOffset(scrollMechanicsView.contentOffset, animated: false)
+        // SUPERMUX:begin ios-terminal-native-scroll
+        applyNativeScrollContentTranslation(0)
+        // SUPERMUX:end ios-terminal-native-scroll
         enqueueScrollToBottom()
     }
 
@@ -4260,20 +4482,14 @@ extension GhosttySurfaceView: UIGestureRecognizerDelegate {
 }
 
 extension GhosttySurfaceView: UIScrollViewDelegate {
+    // SUPERMUX:begin ios-terminal-native-scroll
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard scrollView === scrollMechanicsView,
               !scrollMechanicsIsRecentering else {
             return
         }
 
-        let offsetY = scrollView.contentOffset.y
-        guard let previousOffsetY = lastScrollMechanicsOffsetY else {
-            lastScrollMechanicsOffsetY = offsetY
-            return
-        }
-
-        let deltaY = offsetY - previousOffsetY
-        lastScrollMechanicsOffsetY = offsetY
+        let rawOffsetY = scrollView.contentOffset.y
         if scrollView.isTracking || scrollView.isDragging {
             lastScrollMechanicsTouchPoint = scrollView.panGestureRecognizer.location(in: self)
         }
@@ -4281,8 +4497,42 @@ extension GhosttySurfaceView: UIScrollViewDelegate {
         let touchPoint = bounds.contains(lastScrollMechanicsTouchPoint)
             ? lastScrollMechanicsTouchPoint
             : fallbackPoint
-        enqueueScrollMechanicsDelta(deltaY, touchPoint: touchPoint)
-        recenterScrollMechanicsViewIfNeeded()
+
+        if usesBoundedNativeScroll,
+           let geometry = terminalNativeScrollGeometry {
+            let previousEffectiveOffsetY = lastScrollMechanicsEffectiveOffsetY
+                ?? min(max(rawOffsetY, 0), geometry.maximumContentOffsetY)
+            let sample = geometry.sample(
+                rawOffsetY: rawOffsetY,
+                previousEffectiveOffsetY: previousEffectiveOffsetY
+            )
+            lastScrollMechanicsOffsetY = rawOffsetY
+            lastScrollMechanicsEffectiveOffsetY = sample.effectiveOffsetY
+            // While the finger owns the viewport, translate the render layer
+            // by the sub-row remainder so movement is pixel
+            // continuous between row-quantized grid flips.
+            let translation = isScrollMechanicsInteracting
+                ? geometry.presentationTranslation(
+                    rawOffsetY: rawOffsetY,
+                    effectiveOffsetY: sample.effectiveOffsetY
+                )
+                : sample.contentTranslationY
+            applyNativeScrollContentTranslation(translation)
+            if sample.rowDelta != 0 {
+                enqueueScrollMechanicsLines(sample.rowDelta, touchPoint: touchPoint)
+            }
+        } else {
+            guard let previousOffsetY = lastScrollMechanicsOffsetY else {
+                lastScrollMechanicsOffsetY = rawOffsetY
+                lastScrollMechanicsEffectiveOffsetY = rawOffsetY
+                return
+            }
+            let deltaY = rawOffsetY - previousOffsetY
+            lastScrollMechanicsOffsetY = rawOffsetY
+            lastScrollMechanicsEffectiveOffsetY = rawOffsetY
+            enqueueScrollMechanicsDelta(deltaY, touchPoint: touchPoint)
+            recenterScrollMechanicsViewIfNeeded()
+        }
     }
 
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
@@ -4293,20 +4543,51 @@ extension GhosttySurfaceView: UIScrollViewDelegate {
         revealArtifactChipForScroll()
     }
 
+    public func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView,
+        withVelocity _: CGPoint,
+        targetContentOffset: UnsafeMutablePointer<CGPoint>
+    ) {
+        guard scrollView === scrollMechanicsView else { return }
+        // Terminal scrolling follows the finger exactly. UIKit momentum made
+        // both deliberate flicks and measured slow releases feel delayed after
+        // touch-up, so every release pins to the position the user chose.
+        targetContentOffset.pointee = scrollView.contentOffset
+    }
+
     public func scrollViewDidEndDragging(
         _ scrollView: UIScrollView,
-        willDecelerate decelerate: Bool
+        willDecelerate _: Bool
     ) {
-        guard scrollView === scrollMechanicsView, !decelerate,
-              artifactChipScrollRevealed else { return }
-        armArtifactChipRevealLinger()
+        guard scrollView === scrollMechanicsView else { return }
+        // Resetting the pan recognizer cancels UIKit's physics state. Merely
+        // assigning the current offset is insufficient on physical iOS 26:
+        // the already-committed deceleration can resume after the delegate
+        // callback and keep generating scroll deltas.
+        scrollView.panGestureRecognizer.isEnabled = false
+        scrollView.panGestureRecognizer.isEnabled = true
+        scrollMechanicsIsRecentering = true
+        scrollView.setContentOffset(scrollView.contentOffset, animated: false)
+        scrollMechanicsIsRecentering = false
+        // The per-frame flush rides the render tick, which can idle exactly at
+        // gesture end; flushing here guarantees the tail deltas reach the
+        // terminal so the drained-pump settle can complete the resync.
+        flushPendingScrollIfNeeded()
+        settleBoundedScrollMechanicsIfPossible(interactionEnded: true)
+        if artifactChipScrollRevealed {
+            armArtifactChipRevealLinger()
+        }
     }
 
     public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        guard scrollView === scrollMechanicsView,
-              artifactChipScrollRevealed else { return }
-        armArtifactChipRevealLinger()
+        guard scrollView === scrollMechanicsView else { return }
+        flushPendingScrollIfNeeded()
+        settleBoundedScrollMechanicsIfPossible(interactionEnded: true)
+        if artifactChipScrollRevealed {
+            armArtifactChipRevealLinger()
+        }
     }
+    // SUPERMUX:end ios-terminal-native-scroll
 }
 
 /// Internal for `GhosttySurfaceView+RenderRecovery.swift` replay decisions.

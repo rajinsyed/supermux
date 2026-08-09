@@ -17953,6 +17953,40 @@
         }
       }
     },
+    "mobile.settings.terminalScrollSpeed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal Scroll Speed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルのスクロール速度"
+          }
+        }
+      }
+    },
+    "mobile.settings.terminalScrollSpeed.footer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How fast terminal apps scroll per swipe. Scrollback history always tracks your finger directly."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スワイプごとにターミナルアプリがスクロールする速さです。スクロールバック履歴は常に指の動きに直接追従します。"
+          }
+        }
+      }
+    },
     "mobile.settings.terminalScrollback": {
       "extractionState": "manual",
       "localizations": {

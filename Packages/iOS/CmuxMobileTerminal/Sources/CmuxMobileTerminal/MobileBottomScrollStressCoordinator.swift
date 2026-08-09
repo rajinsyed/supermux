@@ -8,6 +8,13 @@ import UIKit
 final class MobileBottomScrollStressCoordinator: NSObject, GhosttySurfaceViewDelegate {
     weak var surfaceView: GhosttySurfaceView?
     private var task: Task<Void, Never>?
+    // SUPERMUX:begin ios-terminal-native-scroll
+    private let nativeScrollOnly: Bool
+
+    init(nativeScrollOnly: Bool = false) {
+        self.nativeScrollOnly = nativeScrollOnly
+    }
+    // SUPERMUX:end ios-terminal-native-scroll
 
     deinit {
         task?.cancel()
@@ -49,6 +56,17 @@ final class MobileBottomScrollStressCoordinator: NSObject, GhosttySurfaceViewDel
         _ = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
             view.isBottomScrollStressAtBottom
         }
+        // SUPERMUX:begin ios-terminal-native-scroll
+        // The harness drives a primary-screen scrollback session on the local
+        // mirror alone; no paired Mac exists to deliver the render-grid frame
+        // that normally confirms the screen, so declare it explicitly to put
+        // native bounded scrolling under test.
+        view.setNativeScrollScreen(.primary)
+        if nativeScrollOnly {
+            view.setBottomScrollStressPhase("done")
+            return
+        }
+        // SUPERMUX:end ios-terminal-native-scroll
         guard let initialTargetHeight = probeInt("targetViewportHeight", in: view.composerDockProbeValue) else {
             view.setBottomScrollStressPhase("timeout")
             return

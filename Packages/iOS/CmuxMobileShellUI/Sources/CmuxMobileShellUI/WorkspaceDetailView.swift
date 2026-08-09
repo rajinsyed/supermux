@@ -114,6 +114,11 @@ struct WorkspaceDetailView: View {
     var terminalFolderTapEnabled: Bool {
         displaySettings.terminalFolderTapEnabled
     }
+    // SUPERMUX:begin ios-terminal-scroll-speed
+    var terminalScrollSpeed: Double {
+        displaySettings.terminalScrollSpeed
+    }
+    // SUPERMUX:end ios-terminal-scroll-speed
     var activeSurface: WorkspaceActiveSurface {
         WorkspaceActiveSurface.derive(
             isChatMode: isChatMode,

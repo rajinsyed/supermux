@@ -121,6 +121,12 @@ extension GhosttySurfaceView {
         frozenLayer.zPosition = 2_000
         frozenLayer.masksToBounds = false
         frozenLayer.actions = Self.verifiedReplayDisabledLayerActions
+        // SUPERMUX:begin ios-terminal-native-scroll
+        // The container owns the scroll translation (its content child stays
+        // untransformed), so the snapshot aligns with the live renderer's
+        // current offset from the moment of the freeze.
+        frozenLayer.transform = CATransform3DMakeTranslation(0, nativeScrollContentTranslationY, 0)
+        // SUPERMUX:end ios-terminal-native-scroll
         return frozenLayer
     }
 
@@ -154,7 +160,12 @@ extension GhosttySurfaceView {
         copy.anchorPoint = renderer.anchorPoint
         copy.bounds = renderer.bounds
         copy.position = renderer.position
-        copy.transform = renderer.transform
+        // SUPERMUX:begin ios-terminal-native-scroll
+        // The renderer's transform is exclusively the native-scroll
+        // translation, which the frozen CONTAINER carries; copying it here
+        // too would apply the offset twice. Do not restore upstream's
+        // `copy.transform = renderer.transform` inside this fence.
+        // SUPERMUX:end ios-terminal-native-scroll
         copy.opacity = renderer.opacity
         copy.actions = Self.verifiedReplayDisabledLayerActions
         copy.zPosition = 1

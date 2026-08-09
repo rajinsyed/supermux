@@ -35,6 +35,11 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
     /// Ghostty config update without remounting or changing another scene.
     var configThemeGeneration: UInt64 = 0
     var artifactFilesEnabled: Bool = false
+    // SUPERMUX:begin ios-terminal-scroll-speed
+    /// User-tuned wheel-scroll sensitivity from Settings; applied live to the
+    /// mounted surface on every update pass.
+    var terminalScrollSpeed: Double = 1.0
+    // SUPERMUX:end ios-terminal-scroll-speed
     var terminalFolderTapEnabled: Bool = true
     var terminalFilesChipEnabled: Bool = false
     var showMissingFiles: Bool = false
@@ -87,6 +92,9 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         )
         view.autoFocusOnWindowAttach = autoFocusOnWindowAttach
         view.artifactFilesEnabled = artifactFilesEnabled
+        // SUPERMUX:begin ios-terminal-scroll-speed
+        view.scrollSpeedMultiplier = terminalScrollSpeed
+        // SUPERMUX:end ios-terminal-scroll-speed
         // Screen-anchored sessions scroll the local mirror's own scrollback
         // immediately (the Mac never repaints for a primary-screen scroll), so
         // they keep the low-latency local authority even under verified replay.
@@ -125,6 +133,9 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         // state write, so it is safe in `updateUIView`.
         guard let surfaceView = uiView as? GhosttySurfaceView else { return }
         surfaceView.autoFocusOnWindowAttach = autoFocusOnWindowAttach
+        // SUPERMUX:begin ios-terminal-scroll-speed
+        surfaceView.scrollSpeedMultiplier = terminalScrollSpeed
+        // SUPERMUX:end ios-terminal-scroll-speed
         surfaceView.terminalTheme = terminalTheme
         surfaceView.terminalConfigTheme = terminalConfigTheme
         context.coordinator.onArtifactFilesRequested = onArtifactFilesRequested
@@ -357,6 +368,9 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
                             store: store
                         )
                         if applied {
+                            // SUPERMUX:begin ios-terminal-native-scroll
+                            surfaceView.setNativeScrollScreen(frame.activeScreen)
+                            // SUPERMUX:end ios-terminal-native-scroll
                             #if DEBUG
                             MobileLatencyTrace.stampElapsed(
                                 "ap.done",
@@ -458,6 +472,11 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
                             "path=legacy us=\($0)"
                     }
                     #endif
+                    // SUPERMUX:begin ios-terminal-native-scroll
+                    if let frame = chunk.sourceRenderGridFrame {
+                        surfaceView.setNativeScrollScreen(frame.activeScreen)
+                    }
+                    // SUPERMUX:end ios-terminal-native-scroll
                     store.terminalOutputDidProcess(
                         surfaceID: surfaceID,
                         streamToken: chunk.streamToken
