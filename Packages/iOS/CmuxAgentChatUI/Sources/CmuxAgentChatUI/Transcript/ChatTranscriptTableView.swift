@@ -25,6 +25,9 @@ struct ChatTranscriptTableView: UIViewRepresentable {
     @Environment(\.chatMarkdownRenderer) private var markdownRenderer
     @Environment(\.chatContentCache) private var contentCache
     @Environment(\.chatArtifactLoader) private var artifactLoader
+    // SUPERMUX:begin agent-chat-focus-mode
+    @Environment(\.chatTranscriptGrouping) private var grouping
+    // SUPERMUX:end agent-chat-focus-mode
 
     func makeCoordinator() -> Coordinator {
         Coordinator(isAtBottom: $isAtBottom)
@@ -66,7 +69,11 @@ struct ChatTranscriptTableView: UIViewRepresentable {
                 theme: theme,
                 markdownRenderer: markdownRenderer,
                 contentCache: contentCache,
-                artifactLoader: artifactLoader
+                artifactLoader: artifactLoader,
+                // SUPERMUX:begin agent-chat-focus-mode
+                grouping: grouping,
+                groupedEntries: grouping.map { $0.entries(rows, actions, agentState) }
+                // SUPERMUX:end agent-chat-focus-mode
             ),
             in: tableView,
             scrollToBottomRequest: scrollToBottomRequest
@@ -78,6 +85,9 @@ struct ChatTranscriptTableView: UIViewRepresentable {
         private var items: [ChatTranscriptTableItem] = []
         private var agentState: ChatAgentState = .idle
         private var topRequestKey: String?
+        // SUPERMUX:begin agent-chat-focus-mode
+        private var groupingIdentity: String?
+        // SUPERMUX:end agent-chat-focus-mode
         private var lastScrollToBottomRequest = 0
         private var isHandlingLayout = false
         private var isApplyingDataUpdate = false
@@ -118,8 +128,21 @@ struct ChatTranscriptTableView: UIViewRepresentable {
         ) {
             self.configuration = configuration
             let nextItems = configuration.makeItems()
+            // SUPERMUX:begin agent-chat-focus-mode
+            // Expanding a work group, or flipping the Focus Mode setting, can
+            // leave the item ids identical (same groups, different contents) or
+            // change the grouping wholesale. Fold both the grouping identity
+            // and the entry-id list into the reload decision so the table never
+            // keeps stale cells.
+            let nextGroupingIdentity = configuration.groupingReloadIdentity
+            let groupingChanged = nextGroupingIdentity != groupingIdentity
+            groupingIdentity = nextGroupingIdentity
+            // SUPERMUX:end agent-chat-focus-mode
             let shouldReload = nextItems != items
                 || configuration.agentState != agentState
+                // SUPERMUX:begin agent-chat-focus-mode
+                || groupingChanged
+                // SUPERMUX:end agent-chat-focus-mode
             let shouldScrollToBottom = scrollToBottomRequest != lastScrollToBottomRequest
             lastScrollToBottomRequest = scrollToBottomRequest
             let wasAtBottom = distanceFromBottom(in: tableView) <= chatTranscriptAtBottomThreshold
@@ -366,6 +389,32 @@ private struct ChatTranscriptTableConfiguration {
     let markdownRenderer: ChatMarkdownRenderer?
     let contentCache: ChatContentCache?
     let artifactLoader: ChatArtifactLoader
+    // SUPERMUX:begin agent-chat-focus-mode
+    let grouping: ChatTranscriptGrouping?
+
+    /// The fork's regrouped entries, computed ONCE per update (in
+    /// `updateUIView`) and shared by `makeItems()` and the cell factory, so the
+    /// two cannot disagree about what entry N is and the grouping closure does
+    /// not re-run per visible cell while the transcript streams.
+    let groupedEntries: [ChatTranscriptGrouping.Entry]?
+
+    /// What the coordinator compares to decide whether the grouping changed.
+    ///
+    /// Combines the grouping's own configuration identity (the Focus Mode
+    /// setting) with the ordered entry ids, so both "the setting flipped" and
+    /// "a group expanded, so its rows moved" force a reload.
+    var groupingReloadIdentity: String? {
+        guard let grouping else { return nil }
+        let ids = (groupedEntries ?? []).map(\.id).joined(separator: "|")
+        return "\(grouping.identity)#\(ids)"
+    }
+
+    /// Entry lookup for the cell factory.
+    var groupedEntriesByID: [String: ChatTranscriptGrouping.Entry] {
+        guard let groupedEntries else { return [:] }
+        return Dictionary(groupedEntries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+    // SUPERMUX:end agent-chat-focus-mode
 
     func makeItems() -> [ChatTranscriptTableItem] {
         var items: [ChatTranscriptTableItem] = []
@@ -383,7 +432,17 @@ private struct ChatTranscriptTableConfiguration {
                 items.append(.initialLoading)
             }
         }
-        items.append(contentsOf: rows.map(ChatTranscriptTableItem.row))
+        // SUPERMUX:begin agent-chat-focus-mode
+        // With a grouping installed the transcript body is the fork's entries
+        // (a run of work rows collapses to one), keyed by entry id so the table
+        // diffs and caches heights exactly as it does for plain rows. Without
+        // one, this is upstream's `rows.map(.row)`.
+        if let entries = groupedEntries {
+            items.append(contentsOf: entries.map { ChatTranscriptTableItem.groupedEntry($0.id) })
+        } else {
+            items.append(contentsOf: rows.map(ChatTranscriptTableItem.row))
+        }
+        // SUPERMUX:end agent-chat-focus-mode
         if case .working = agentState {
             items.append(.typing)
         }
@@ -465,6 +524,10 @@ private struct ChatTranscriptTableConfiguration {
                 actions: actions
             )
             .equatable()
+        // SUPERMUX:begin agent-chat-focus-mode
+        case .groupedEntry(let id):
+            groupedEntriesByID[id]?.view
+        // SUPERMUX:end agent-chat-focus-mode
         case .typing:
             ChatTypingIndicatorView(agentState: agentState)
                 .padding(.top, theme.intraGroupSpacing)
@@ -482,6 +545,10 @@ private enum ChatTranscriptTableItem: Equatable {
     case empty
     case initialLoading
     case row(ChatTranscriptRow)
+    // SUPERMUX:begin agent-chat-focus-mode
+    /// One fork-grouped entry, identified by its stable entry id.
+    case groupedEntry(String)
+    // SUPERMUX:end agent-chat-focus-mode
     case typing
     case bottomAnchor
 
@@ -499,6 +566,10 @@ private enum ChatTranscriptTableItem: Equatable {
             return "initial-loading"
         case .row(let row):
             return row.id
+        // SUPERMUX:begin agent-chat-focus-mode
+        case .groupedEntry(let id):
+            return id
+        // SUPERMUX:end agent-chat-focus-mode
         case .typing:
             return "typing"
         case .bottomAnchor:

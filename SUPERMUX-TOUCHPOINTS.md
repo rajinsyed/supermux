@@ -263,6 +263,13 @@ Rules for adding a touchpoint:
 | 241 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Wires the ROOT `AppIcon.icon` + `AppIcon-Demo.icon` Icon Composer bundles into the iOS app target's Resources phase (ids `IC1000*`, `sourceTree = SOURCE_ROOT`, `path = ../AppIcon*.icon`) and deletes the upstream `AppIcon.appiconset` / `AppIcon-Demo.appiconset` PNG sets. iOS now renders from the same single source of truth as macOS (#17); no PNG icon art exists in the fork. `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` was already correct and is unchanged |
 | 242 | `ios/cmux/Assets.xcassets/CmuxLogo.imageset` | `unfenced` | The in-app brand logo (sign-in header, restoring-session screen) re-sourced from the supermux mark, squircle-masked, as a base64-PNG-in-SVG at the same path/name so no Swift call site changes |
 | 243 | `.github/workflows/ios-testflight.yml` | `ios-supermux-brand` | The "Use DEMO-badged app icon" step replaces the whole `AppIcon.icon` directory with `AppIcon-Demo.icon` instead of copying three PNGs into `AppIcon.appiconset`, which no longer exists |
+| 244 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/ChatFocusMode+Supermux.swift` | `agent-chat-focus-mode` | **Whole-file fork addition inside an upstream package** (same pattern as the other whole-file rows here). Declares `ChatTranscriptGrouping` (a row-array → entry-array regrouper plus a configuration `identity`), its `Entry` type, the `chatTranscriptGrouping` environment value, and the `.chatTranscriptGrouping(_:)` modifier. A `nil` grouping renders upstream byte-for-byte, so demos, previews, tests, and an upstream-paired phone are unaffected. New file — cannot conflict on merge |
+| 245 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/Transcript/ChatTranscriptTableView.swift` | `agent-chat-focus-mode` | Seven fences: the `@Environment(\.chatTranscriptGrouping)` read; the `grouping` + `groupedEntries` fields on `ChatTranscriptTableConfiguration` and the arguments that fill them (**entries are computed ONCE in `updateUIView`**, not per cell, or the closure re-runs for every visible row while the transcript streams); `groupingReloadIdentity` + `groupedEntriesByID`; the `.groupedEntry(String)` item case and its `id`; the `makeItems()` branch emitting entries instead of rows; the cell-factory branch; and `groupingChanged` folded into `shouldReload`. **The reload fold is load-bearing**: expanding a group or flipping the setting can leave item ids identical, and without it the table keeps stale cells |
+| 246 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobileDisplaySettings.swift` | `ios-agent-chat-focus-mode` | Three fences: the `agentChatFocusModeKey` constant, the `agentChatFocusMode` observed property with write-through, and its seed in `init` (absent key reads as **true** — focus mode is the intended default, so a fresh install gets the quiet transcript without visiting Settings). Key is `supermux.mobile.agentChatFocusMode` |
+| 247 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobileSettingsView.swift` | `ios-agent-chat-focus-mode` | One fence at the top of the existing Display section: the **Focus Mode** toggle plus its explanatory footer, bound to `displaySettings.agentChatFocusMode`. Accessibility id `MobileSettingsAgentChatFocusMode`. The same file's terminal-scroll-speed slider remains registered as #199 |
+| 248 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceChatPane.swift` | `ios-agent-chat-focus-mode` | Three fences: `import SupermuxMobileUI`, the `@Environment(MobileDisplaySettings.self)` read, and the `.supermuxChatFocusMode(isEnabled:)` modifier on the `ChatScreen` group. **This is the only line that turns focus mode on**; remove it and the phone renders upstream's transcript unchanged |
+| 249 | `Packages/iOS/SupermuxMobileUI/Package.swift` | `unfenced` | Fork-owned manifest: adds `../../Shared/CmuxAgentChat` and `../CmuxAgentChatUI` package + target dependencies so the fork can name `ChatTranscriptRow` / `ChatRowActions` and re-render expanded rows with upstream's own `ChatTranscriptRowView`. Acyclic — `CmuxMobileShellUI` already depends on both |
+| 250 | `ios/cmux/Resources/Localizable.xcstrings` | `unfenced` | Two `supermux.settings.agentChatFocusMode*` keys (en + ja) for the Settings toggle and its footer. The shell package resolves `L10n` against the **app** bundle, so these belong here, NOT in the `SupermuxMobileUI` package catalog (which carries the four `supermux.chat.focus.*` keys) |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
@@ -2963,3 +2970,48 @@ the `SUPERMUX:end` line. Verify with `./scripts/lint-ios-package-conventions.sh`
 "OK: no unjustified convention violations."). Drop any of these fences as soon as an upstream
 merge brings the real fix for (or upstream's own `lint:allow` at) that site — these fences are
 pure grandfathering and may only shrink.
+
+### 244–250. Agent chat Focus Mode — `agent-chat-focus-mode` + `ios-agent-chat-focus-mode`
+
+A coding-agent session is mostly tool calls. Rendered one row each, they bury the handful of
+sentences the agent actually said — which is what the user opened the phone to read. Focus Mode
+folds each consecutive run of work rows behind a single tappable "Working · N steps" summary.
+
+**What folds:** `toolUse`, `thought`, `terminal`, `fileEdit`.
+**What never folds:** prose, user prompts, `question`, `permissionRequest`, `status`, `attachment`,
+date headers, the unread separator, and pending outbound prompts. Questions and permission requests
+BLOCK the agent — hiding them behind a disclosure would strand the session. `SupermuxChatFocusGroupingTests`
+pins both lists, plus the invariant that grouping never drops or reorders a row.
+
+Runs shorter than `minimumGroupSize` (2) stay expanded: folding a single call costs a tap and saves
+nothing.
+
+**Where the code lives.** All of it is fork-owned under
+`Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/AgentChat/`
+(`SupermuxChatFocusGrouping` — the pure fold; `SupermuxChatFocusMode` — the modifier that owns
+expanded state; `SupermuxChatWorkGroupRow` — the summary; `SupermuxChatShimmerText`). Upstream keeps
+owning the table, keyboard tracking, paging, and every individual row view — expanded runs call
+straight back into `ChatTranscriptRowView`.
+
+**Three things are load-bearing and easy to lose on a re-apply:**
+
+1. **Entries are computed once per update, in `updateUIView`** (#245), and shared by `makeItems()`
+   and the cell factory. Computing them inside the factory instead re-runs the fold for every
+   visible cell on every streamed delta, and lets the two disagree about what entry N is.
+2. **`groupingReloadIdentity` must stay in `shouldReload`** (#245). It combines the grouping's
+   configuration identity with the ordered entry ids, so both "the setting flipped" and "a group
+   expanded, so its rows moved" force a reload. Without it the table keeps stale cells.
+3. **Expanded state lives in `SupermuxChatFocusModifier`, above the transcript** — deliberately not
+   in `SupermuxChatWorkGroupRow`. The transcript is a `UITableView` that decides to reload by
+   comparing item identity; a tap that only flipped a child view's private `@State` would resize a
+   cell the table does not know changed (self-sizing drift). Keeping it above means a tap changes
+   the grouping identity, which forces a clean reload.
+
+**To re-apply after an upstream merge:**
+
+- If upstream reshapes `ChatTranscriptTableView`, re-add the seven fences from #245. The
+  `.groupedEntry` case follows whatever item taxonomy upstream now has.
+- If upstream reshapes the Display settings section, re-add the #247 toggle.
+- Verify it is actually live, not just compiling: open a Claude session with Focus Mode on and
+  confirm runs of tool calls appear as one "Working · N steps" row that expands on tap. If every
+  tool call still renders individually, the #248 modifier or item 1 above was dropped.
