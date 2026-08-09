@@ -29,6 +29,12 @@ public struct SupermuxUsagePopoverView: View {
     @State private var upToDateDismissTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Width shared by every intrinsic and height-capped presentation state.
+    static let popoverWidth: CGFloat = 264
+    /// Keeps several expanded account-limit groups inside the visible screen;
+    /// overflow scrolls instead of extending the popover past the display edge.
+    static let maximumPopoverHeight: CGFloat = 480
+
     public init(
         model: SupermuxUsageModel,
         onRefresh: @escaping () async -> SupermuxUsageModel.RefreshOutcome,
@@ -44,15 +50,19 @@ public struct SupermuxUsagePopoverView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header
-            claudeSection
-            hairline
-            codexSection
-            footer
+        SupermuxUsagePopoverScrollContainer(
+            width: Self.popoverWidth,
+            maximumHeight: Self.maximumPopoverHeight
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                claudeSection
+                hairline
+                codexSection
+                footer
+            }
+            .padding(12)
         }
-        .padding(12)
-        .frame(width: 264, alignment: .leading)
     }
 
     /// Section separator quieter than a full `Divider`.

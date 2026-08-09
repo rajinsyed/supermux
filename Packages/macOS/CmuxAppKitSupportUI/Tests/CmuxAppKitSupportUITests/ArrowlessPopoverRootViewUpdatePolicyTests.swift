@@ -1,6 +1,9 @@
 #if canImport(AppKit)
 
 import Testing
+// SUPERMUX:begin popover-dynamic-height-reanchor
+import SwiftUI
+// SUPERMUX:end popover-dynamic-height-reanchor
 @testable import CmuxAppKitSupportUI
 
 @Suite struct ArrowlessPopoverRootViewUpdatePolicyTests {
@@ -29,6 +32,42 @@ import Testing
         ) == .deferredVisible)
     }
 }
+
+// SUPERMUX:begin popover-dynamic-height-reanchor
+@MainActor
+@Suite struct ArrowlessPopoverVisibleLayoutMutationPlanTests {
+    private typealias Coordinator = ArrowlessPopoverAnchor<EmptyView>.Coordinator
+
+    @Test func visibleHeightChangeResizesAndReanchors() {
+        #expect(Coordinator.visibleLayoutMutationPlan(
+            currentContentSize: NSSize(width: 264, height: 180),
+            fittingSize: NSSize(width: 264, height: 244),
+            popoverIsShown: true
+        ) == .resizeAndReanchor(NSSize(width: 264, height: 244)))
+    }
+
+    @Test func subpixelFittingJitterThatRoundsToCurrentSizeDoesNothing() {
+        #expect(Coordinator.visibleLayoutMutationPlan(
+            currentContentSize: NSSize(width: 264, height: 244),
+            fittingSize: NSSize(width: 263.2, height: 243.4),
+            popoverIsShown: true
+        ) == .none)
+    }
+
+    @Test func hiddenOrInvalidPopoverDoesNotRequestVisibleReanchor() {
+        #expect(Coordinator.visibleLayoutMutationPlan(
+            currentContentSize: NSSize(width: 264, height: 180),
+            fittingSize: NSSize(width: 264, height: 244),
+            popoverIsShown: false
+        ) == .none)
+        #expect(Coordinator.visibleLayoutMutationPlan(
+            currentContentSize: NSSize(width: 264, height: 180),
+            fittingSize: .zero,
+            popoverIsShown: true
+        ) == .none)
+    }
+}
+// SUPERMUX:end popover-dynamic-height-reanchor
 
 @MainActor
 @Suite struct CmuxPopoverVisibleUpdateSchedulerTests {
