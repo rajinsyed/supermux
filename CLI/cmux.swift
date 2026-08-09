@@ -28656,6 +28656,9 @@ struct CMUXCLI {
                 sessionId: normalizedSessionId,
                 executablePath: launchCommand?.executablePath,
                 arguments: launchCommand?.arguments ?? [],
+                // SUPERMUX:begin ccx-resume-launcher
+                environment: environment,
+                // SUPERMUX:end ccx-resume-launcher
                 observedPermissionMode: observedPermissionMode
             )
         }
