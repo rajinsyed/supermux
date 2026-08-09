@@ -430,6 +430,10 @@ def main() -> int:
     previous_graph: dict[str, PackageNode] = {}
 
     if merge_base is not None:
+        # SUPERMUX:begin fix-resolved-policy-path-deps
+        # Shared memo for the fenced path-dep remote-pin closure checks below.
+        current_remote_memo: dict[str, bool] = {}
+        # SUPERMUX:end fix-resolved-policy-path-deps
         previous_manifests = tracked_package_manifests_at_ref(
             merge_base,
             include_allowed_vendor=True,

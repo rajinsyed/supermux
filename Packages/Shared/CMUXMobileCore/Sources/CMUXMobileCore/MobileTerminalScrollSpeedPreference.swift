@@ -7,6 +7,11 @@ import Foundation
 /// input for the running program, so gesture-to-line sensitivity is a feel
 /// preference rather than a geometric mapping. Bounded primary-screen history
 /// keeps 1:1 direct manipulation and is deliberately not scaled.
+///
+/// Pure schema declaration (key/range/default) and two pure functions;
+/// `UserDefaults` is already an injected parameter of `resolve(from:)`,
+/// so instantiation would add no test seam.
+/// lint:allow namespace-enum namespace-type — declaration-only, seamless.
 public enum MobileTerminalScrollSpeedPreference {
     /// UserDefaults key, written by Settings and read at surface mount time.
     public static let defaultsKey = "cmux.mobile.terminalScrollSpeed"
