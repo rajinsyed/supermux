@@ -16,6 +16,12 @@ Add a section here as the last step of every upstream merge.
 
 ## cmux 0.64.22 → main @ `6d37f62a47` (2026-08-09)
 
+> Follow-up on the same branch: fork `origin/main` (PRs #21 + #22 — AI token headroom for
+> reasoning models, and the compact AI usage-analytics button beside the usage gauge) was merged
+> in right after. The registry row PR #22 claimed as #148 was refiled as **#146b** (this branch
+> had already assigned #148–#151 to the iPhone Projects-table restoration); the fence id
+> `sidebar-usage-analytics-button` is unchanged.
+
 Merged `manaflow-ai/cmux` main — **~397 commits, ~1,450 files**, the largest update since the
 fork began. This is a pre-release snapshot of upstream main (no version tag yet), taken to pick
 up a big batch of iOS reliability work.
