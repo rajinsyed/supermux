@@ -311,7 +311,13 @@ fi
 WORKSPACE="$IOS_DIR/cmux.xcworkspace"
 SCHEME="cmux-ios"
 TAG_SLUG="$(sanitize_tag "$TAG")"
-DISPLAY_NAME="cmux DEV $TAG"
+# SUPERMUX:begin ios-supermux-brand
+# Fork rebrand of the tagged dev build's home-screen name. The tag suffix stays
+# so side-by-side tagged installs remain tellable apart; only the brand word
+# changes. PRODUCT_NAME (and therefore the built cmux.app path this script
+# resolves below) is deliberately untouched.
+DISPLAY_NAME="Supermux DEV $TAG"
+# SUPERMUX:end ios-supermux-brand
 BUNDLE_ID="dev.cmux.ios.$TAG_SLUG"
 DERIVED_DATA="$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-$TAG_SLUG"
 QUEUE_SCRIPT="$IOS_DIR/../scripts/iphone-install-queue.sh"

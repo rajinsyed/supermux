@@ -498,17 +498,20 @@ jobs:
         if: needs.decide.outputs.variant == 'demo'
         run: |
           set -euo pipefail
-          # Swap the AppIcon PNGs in the CI checkout instead of overriding
+          # SUPERMUX:begin ios-supermux-brand
+          # Swap the icon in the CI checkout instead of overriding
           # ASSETCATALOG_COMPILER_APPICON_NAME on the xcodebuild command line:
           # command-line build settings apply to every target in the workspace,
           # and SwiftPM resource-bundle targets with their own asset catalogs
           # would fail actool with a missing "AppIcon-Demo" icon set.
-          SRC="ios/cmux/Assets.xcassets/AppIcon-Demo.appiconset"
-          DST="ios/cmux/Assets.xcassets/AppIcon.appiconset"
-          for f in AppIcon.png AppIconDark.png AppIconTinted.png; do
-            cp "$SRC/$f" "$DST/$f"
-          done
-          echo "Installed DEMO-badged icon variants into AppIcon.appiconset"
+          #
+          # The fork ships Icon Composer bundles, not PNG appiconsets, so this
+          # replaces the whole AppIcon.icon directory with the DEMO-badged one
+          # (see SUPERMUX-TOUCHPOINTS.md #241-243) rather than copying three PNGs.
+          rm -rf AppIcon.icon
+          cp -R AppIcon-Demo.icon AppIcon.icon
+          echo "Installed DEMO-badged AppIcon.icon"
+          # SUPERMUX:end ios-supermux-brand
 
       - name: Archive, export, and upload to TestFlight
         id: upload

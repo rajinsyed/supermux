@@ -7,7 +7,14 @@
 // Project Identity
 // ==========================================
 PRODUCT_NAME = cmux
-PRODUCT_DISPLAY_NAME = cmux
+// SUPERMUX:begin ios-supermux-brand
+// Home-screen name of the fork's iOS app. PRODUCT_NAME stays `cmux` — it names
+// the built product (cmux.app) that every reload/install script resolves by
+// path, so renaming it would break them. Only the user-visible
+// CFBundleDisplayName is rebranded. Release.xcconfig overrides this again for
+// its own channel suffix.
+PRODUCT_DISPLAY_NAME = Supermux
+// SUPERMUX:end ios-supermux-brand
 PRODUCT_BUNDLE_IDENTIFIER = dev.cmux.ios
 // User-visible versions (CFBundleShortVersionString). Keep beta and production
 // independent: TestFlight can stay on the already-approved beta version while
