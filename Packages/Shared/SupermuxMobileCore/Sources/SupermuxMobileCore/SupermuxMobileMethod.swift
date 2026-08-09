@@ -99,6 +99,13 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Moves a file or folder to the Trash (never a permanent delete).
     case filesTrash = "mobile.supermux.files.trash"
 
+    // MARK: Workspace panes
+
+    /// Closes one panel of any kind in a workspace.
+    case paneClose = "mobile.supermux.pane.close"
+    /// Creates a native Simulator panel in a workspace.
+    case simulatorCreate = "mobile.supermux.simulator.create"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 

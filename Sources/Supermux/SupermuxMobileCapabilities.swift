@@ -38,6 +38,10 @@ enum SupermuxMobileCapabilities {
             // files.rename / files.duplicate / files.trash (root-confined,
             // trash-only deletion).
             SupermuxMobileCapability.filesV1.rawValue,
+            // Generic workspace-panel close and native Simulator creation are
+            // served. The latter still checks the upstream Simulator feature
+            // flag and capability at request/UI time.
+            SupermuxMobileCapability.panesV1.rawValue,
         ]
     }
 }

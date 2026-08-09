@@ -16,6 +16,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../Shared/SupermuxMobileCore"),
+        .package(path: "../../Shared/CMUXMobileCore"),
         .package(path: "../CmuxMobileRPC"),
     ],
     targets: [
@@ -23,6 +24,7 @@ let package = Package(
             name: "SupermuxMobileKit",
             dependencies: [
                 "SupermuxMobileCore",
+                "CMUXMobileCore",
                 "CmuxMobileRPC",
             ],
             swiftSettings: [

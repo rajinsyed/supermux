@@ -8,9 +8,12 @@ import SupermuxMobileCore
 /// `MobileHostService.ticketAuthorizationError` delegates the whole namespace
 /// here through the `mobile-supermux-authz` fence. Scoping rules:
 ///
-/// - `changes.*` and `files.*` are **workspace-scoped-permitted**: a ticket
-///   pinned to a workspace passes when the request's `workspace_id` matches
-///   the pin (and no `project_id` widens the request to a project root).
+/// - `changes.*`, `files.*`, and Simulator creation are
+///   **workspace-scoped-permitted**: a ticket pinned to a workspace passes
+///   when the request's `workspace_id` matches the pin (and no `project_id`
+///   widens the request to a project root).
+/// - Pane close is panel-scoped: a terminal-pinned ticket may close only that
+///   terminal, while a workspace ticket may close any panel in its workspace.
 /// - Everything else (projects, worktrees, presets, run, actions, icon)
 ///   requires a **Mac-wide** ticket; scoped tickets are rejected.
 /// - Any `mobile.supermux.*` method missing from
@@ -27,6 +30,9 @@ enum SupermuxMobileAuthorization {
         /// A workspace-pinned ticket may call the method for its own
         /// workspace; Mac-wide tickets always pass.
         case workspaceScopedPermitted
+        /// A workspace-pinned ticket may close a pane in its workspace; a
+        /// terminal-pinned ticket may close only that exact terminal panel.
+        case paneScopedPermitted
     }
 
     /// The namespace this table owns (`mobile.supermux.`).
@@ -42,8 +48,10 @@ enum SupermuxMobileAuthorization {
              .changesGenerateCommitMessage, .changesPush, .changesPull,
              .changesStash, .changesStashPop, .changesHistory,
              .filesList, .filesCreate, .filesRename, .filesDuplicate,
-             .filesTrash:
+             .filesTrash, .simulatorCreate:
             return .workspaceScopedPermitted
+        case .paneClose:
+            return .paneScopedPermitted
         case .projectsList, .projectCreate, .projectUpdate, .projectDelete,
              .projectOpen, .projectIcon, .projectsSetSectionCollapsed,
              .worktreesList, .worktreeSuggestBranch, .worktreeCreate,
@@ -99,6 +107,18 @@ enum SupermuxMobileAuthorization {
                 return scopedTicketError
             }
             return requested == ticketWorkspaceID ? nil : scopedTicketError
+        case .paneScopedPermitted:
+            guard let requestedWorkspace = trimmedString(params["workspace_id"]),
+                  !requestedWorkspace.isEmpty,
+                  requestedWorkspace == ticketWorkspaceID,
+                  let requestedPanel = trimmedString(params["panel_id"]),
+                  !requestedPanel.isEmpty else {
+                return scopedTicketError
+            }
+            let ticketTerminalID = ticket.terminalID?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !ticketTerminalID.isEmpty else { return nil }
+            return requestedPanel == ticketTerminalID ? nil : scopedTicketError
         }
     }
 

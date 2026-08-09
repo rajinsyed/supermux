@@ -27,11 +27,12 @@ import Testing
         #expect(SupermuxMobileCapability.runV1.rawValue == "supermux.run.v1")
         #expect(SupermuxMobileCapability.actionsV1.rawValue == "supermux.actions.v1")
         #expect(SupermuxMobileCapability.filesV1.rawValue == "supermux.files.v1")
+        #expect(SupermuxMobileCapability.panesV1.rawValue == "supermux.panes.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 8)
-        #expect(Set(SupermuxMobileCapability.all).count == 8)
+        #expect(SupermuxMobileCapability.all.count == 9)
+        #expect(Set(SupermuxMobileCapability.all).count == 9)
     }
 }

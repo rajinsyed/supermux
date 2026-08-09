@@ -3641,6 +3641,41 @@ final class cmuxUITests: XCTestCase {
         assertTerminalMenuItemExists("workspace-3-terminal-2", in: app)
     }
 
+    // SUPERMUX:begin ios-pane-actions
+    @MainActor
+    func testWorkspaceSurfacePickerClosesTheLocalBrowserThroughSharedPaneAction() throws {
+        let app = launchWorkspaceDetailDelayedTerminalPreviewApp()
+        let terminalDropdown = app.buttons["MobileTerminalDropdown"]
+
+        tap(terminalDropdown, in: app)
+        tapMenuItem(app.buttons["MobileNewBrowserMenuItem"], in: app)
+
+        let browserCloseButton = app.buttons["MobileBrowserCloseButton"]
+        XCTAssertTrue(browserCloseButton.waitForExistence(timeout: 4))
+
+        // The existing browser × and the new picker command share the same
+        // captured-target confirmation path.
+        tap(browserCloseButton, in: app)
+        let cancel = app.buttons["MobileClosePaneCancelButton"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 4))
+        tap(cancel, in: app)
+        XCTAssertTrue(browserCloseButton.exists)
+
+        tap(terminalDropdown, in: app)
+        let closePane = app.buttons["MobileClosePaneMenuItem"]
+        XCTAssertTrue(closePane.waitForExistence(timeout: 4))
+        tapMenuItem(closePane, in: app)
+
+        let confirm = app.buttons["MobileClosePaneConfirmButton"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 4))
+        tap(confirm, in: app)
+        XCTAssertTrue(
+            browserCloseButton.waitForNonExistence(timeout: 4),
+            "The shared pane action should dismiss the phone-local browser."
+        )
+    }
+    // SUPERMUX:end ios-pane-actions
+
     @MainActor
     func testWorkspaceDetailToolbarSurvivesDelayedTerminalLifecycle() throws {
         let app = launchWorkspaceDetailDelayedTerminalPreviewApp()

@@ -41,4 +41,6 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     public var supportsActions: Bool { contains(.actionsV1) }
     /// `supermux.files.v1`: file-browser methods are served.
     public var supportsFiles: Bool { contains(.filesV1) }
+    /// `supermux.panes.v1`: pane close and Simulator creation are served.
+    public var supportsPanes: Bool { contains(.panesV1) }
 }

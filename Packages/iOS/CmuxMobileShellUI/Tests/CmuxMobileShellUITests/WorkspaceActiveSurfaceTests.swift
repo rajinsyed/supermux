@@ -45,6 +45,54 @@ import Testing
         ) == .simulatorStream)
     }
 
+    // SUPERMUX:begin ios-pane-actions
+    @Test func paneCloseTargetsTheVisibleSurfaceKind() {
+        #expect(WorkspaceActiveSurface.terminal.paneCloseTarget(
+            selectedTerminalID: "terminal-1",
+            browserStreamPanelID: nil,
+            simulatorStreamPanelID: nil
+        ) == .remote(panelID: "terminal-1"))
+        #expect(WorkspaceActiveSurface.chat.paneCloseTarget(
+            selectedTerminalID: "terminal-1",
+            browserStreamPanelID: nil,
+            simulatorStreamPanelID: nil
+        ) == .remote(panelID: "terminal-1"))
+        #expect(WorkspaceActiveSurface.browser.paneCloseTarget(
+            selectedTerminalID: "terminal-1",
+            browserStreamPanelID: nil,
+            simulatorStreamPanelID: nil
+        ) == .localBrowser)
+        #expect(WorkspaceActiveSurface.browserStream.paneCloseTarget(
+            selectedTerminalID: "terminal-1",
+            browserStreamPanelID: "browser-1",
+            simulatorStreamPanelID: nil
+        ) == .remote(panelID: "browser-1"))
+        #expect(WorkspaceActiveSurface.simulatorStream.paneCloseTarget(
+            selectedTerminalID: "terminal-1",
+            browserStreamPanelID: nil,
+            simulatorStreamPanelID: "simulator-1"
+        ) == .remote(panelID: "simulator-1"))
+    }
+
+    @Test func paneCloseRequiresAnIDForRemoteSurfaces() {
+        #expect(WorkspaceActiveSurface.terminal.paneCloseTarget(
+            selectedTerminalID: nil,
+            browserStreamPanelID: nil,
+            simulatorStreamPanelID: nil
+        ) == nil)
+        #expect(WorkspaceActiveSurface.browserStream.paneCloseTarget(
+            selectedTerminalID: nil,
+            browserStreamPanelID: nil,
+            simulatorStreamPanelID: nil
+        ) == nil)
+        #expect(WorkspaceActiveSurface.simulatorStream.paneCloseTarget(
+            selectedTerminalID: nil,
+            browserStreamPanelID: nil,
+            simulatorStreamPanelID: nil
+        ) == nil)
+    }
+    // SUPERMUX:end ios-pane-actions
+
     @Test func chromeReturnRefocusesTheSelectedTerminal() {
         #expect(WorkspaceActiveSurface.chromeReturnRefocusTerminalID(
             selectedTerminalID: "terminal-1",

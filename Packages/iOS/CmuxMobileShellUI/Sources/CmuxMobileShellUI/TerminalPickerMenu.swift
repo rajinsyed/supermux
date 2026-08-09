@@ -1,5 +1,8 @@
 import CMUXMobileCore
 import CmuxMobileSupport
+// SUPERMUX:begin ios-pane-actions
+import SupermuxMobileUI
+// SUPERMUX:end ios-pane-actions
 import SwiftUI
 
 /// Snapshot-isolated native menu for switching the active workspace surface.
@@ -125,6 +128,15 @@ struct TerminalPickerMenu: View, Equatable {
             }
             .accessibilityIdentifier("MobileNewBrowserMenuItem")
         }
+
+        // SUPERMUX:begin ios-pane-actions
+        SupermuxPaneMenuControls(
+            canCreateSimulator: value.canCreateSimulator,
+            canClosePane: value.canClosePane,
+            createSimulator: actions.createSimulator,
+            closePane: actions.closePane
+        )
+        // SUPERMUX:end ios-pane-actions
 
         #if canImport(UIKit)
         Section {
