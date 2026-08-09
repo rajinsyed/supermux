@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **217**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **218**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -236,10 +236,13 @@ Rules for adding a touchpoint:
 | 215 | `Packages/macOS/CmuxAppKitSupportUI/Sources/CmuxAppKitSupportUI/Popover/ArrowlessPopoverAnchor.swift` | `popover-dynamic-height-reanchor` | When an already-visible arrowless popover's SwiftUI content changes intrinsic size, updates `contentSize` and re-shows the existing popover against its original synthetic anchor rect so the anchored edge stays fixed. The visible update remains deferred/coalesced outside the representable update turn, and identical rounded sizes do no work. This fixes the Usage Limits and Token Usage popovers drifting whenever loading, error, range, or scan states change their height |
 | 216 | `Packages/macOS/CmuxAppKitSupportUI/Tests/CmuxAppKitSupportUITests/ArrowlessPopoverRootViewUpdatePolicyTests.swift` | `popover-dynamic-height-reanchor` | Focused policy coverage: a visible rounded size change plans a resize-and-reanchor, subpixel fitting jitter that rounds to the current size is ignored, and hidden/invalid popovers request no visible reanchor |
 | 217 | `ios/cmuxUITests/cmuxUITests.swift` | `ios-workspace-toolbar-persistent-actions` | Reverses upstream's no-session expectation in the long-title workspace-toolbar preview: the Agent Chat button and terminal picker must both remain present without a chat descriptor, the unavailable chat action stays disabled, and native toolbar overflow must not replace the stable action cluster |
+| 218 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+AgentChat.swift` | `ios-workspace-toolbar-persistent-actions` | Makes `shouldShowChatToggle` structurally true so the trailing workspace toolbar always keeps the preferred Agent Chat + terminal-picker cluster. Existing action gating remains intact: Agent Chat is disabled until the selected terminal has an openable session, then becomes active without changing the toolbar's shape |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
-### 217. Persistent iOS workspace toolbar regression — `ios-workspace-toolbar-persistent-actions`
+### 217–218. Persistent iOS workspace toolbar actions — `ios-workspace-toolbar-persistent-actions`
+
+In `WorkspaceDetailView+AgentChat.swift`, keep `shouldShowChatToggle` structurally true. The existing `.disabled(!isChatMode && chatToggleSession == nil)` remains the authority for whether the Agent Chat action can open, but session/activity churn must never remove the button, shrink the trailing cluster, or let iOS replace the preferred Agent Chat + terminal-picker shape with an overflow-only toolbar.
 
 In `testWorkspaceDetailToolbarKeepsPersistentActionsVisibleWithLongTitleWithoutChatSession`, keep the no-chat-session preview and assert that `MobileWorkspaceAgentChatButton` still exists but is disabled, `MobileTerminalDropdown` remains visible and usable, and no native overflow button replaces those controls. This intentionally overrides upstream's old assertion that the chat button should disappear when no descriptor is available.
 

@@ -44,9 +44,13 @@ extension WorkspaceDetailView {
         return visibleChatSessions.first { $0.terminalID == terminalID }
     }
 
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+    /// Keeps the preferred two-button toolbar cluster structurally stable.
+    /// The chat action remains disabled until this terminal has a session.
     var shouldShowChatToggle: Bool {
-        isChatMode || chatToggleSession != nil
+        true
     }
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
 
     /// The session chat mode opens: the visible tab's session, or the pinned
     /// session while chat mode is on.
