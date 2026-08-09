@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **237**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **243**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -40,7 +40,7 @@ Rules for adding a touchpoint:
 | 14 | `web/data/cmux.schema.json` | `unfenced` | Adds all five supermux ids — `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, `supermuxWorkspaceSwitcherPrevious`, `supermuxCommit`, and `supermuxCommitAccelerator` — to the shortcut-action enum so cmux.json validation accepts rebinding them; also rewrites the `workspaceInheritWorkingDirectory` description for the #80 fork behavior (off = always home directory) and gives it a `descriptionKey` (`schemaDescriptions.app.workspaceInheritWorkingDirectory`, messages under #86/#87) so the docs page localizes it |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits inside a single `VStack` wrapper that keeps upstream's `WorkspaceContentMinimalModeSafeAreaModifier` — one structural identity. The minimal-mode hide moved INTO the supermux-owned mount (v0.64.19 merge): upstream's `WorkspaceContentViewVisibilityTests` asserts mode toggles re-evaluate neither `ContentView` nor `WorkspaceContentView` bodies, so the fence must not read the presentation mode |
-| 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + byte-identical `AppIcon-Debug.icon` + `AppIcon-Nightly.icon` (no DEV/NIGHTLY bands — all three channels share one mark); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered icon. Wiring lives in touchpoint #3. |
+| 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + byte-identical `AppIcon-Debug.icon` + `AppIcon-Nightly.icon` (no DEV/NIGHTLY bands — all three channels share one mark); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered icon. macOS wiring lives in touchpoint #3; iOS renders from the same bundles via #241, and `AppIcon-Demo.icon` (iOS demo lane only) is a fourth sibling. |
 | 18 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AutomationSection.swift` | `ai-settings` | Renders `SupermuxAISettingsCard` (Vercel AI Gateway API key + model) at the end of the Automation section, and stores the `secretStore` + `errorLog` the card needs. The card itself is a new supermux-owned file, `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxAISettingsCard.swift` (no conflict on merge; lives in the upstream package only because the section stack is closed to app injection and cannot import `SupermuxKit`). **Upstream relocated this package under `Packages/macOS/`; the new card moved with it (git rename detection placed it at the new path).** |
 | 20 | `Sources/Workspace+TerminalLinkOpening.swift` | `browser-link-new-tab` | When a Command-clicked terminal link — a web URL, or a local `.html`/`.htm` file routed through `Sources/TerminalHTMLFileBrowserAction.swift` — opens in the embedded browser and there is no existing right-side browser pane to reuse, open it as a new browser tab in the current pane (and switch to it) instead of creating a horizontal split. Upstream (0.65) deleted `GhosttyTerminalView.openEmbeddedBrowserLink(...)` and replaced it with the `TerminalLinkOpenContainer` protocol; the fence moved into `Workspace.openTerminalBrowserLink(url:sourcePanelId:)`. The SECOND conformance, `Sources/DockSplitStore+TerminalLinkOpening.swift`, is deliberately NOT fenced (known deviation — dock terminals keep upstream's split fallback) |
 | 21 | `Sources/App/ShortcutRoutingSupport.swift` | `run-toggle-shortcut-dispatch` | ⌘G (the supermux Run/Stop toggle, shared with Find Next) is never ceded to a focused browser's native find, so cmux always owns the chord (otherwise WebKit swallows ⌘G and it is a dead key in the browser) |
@@ -246,8 +246,6 @@ Rules for adding a touchpoint:
 | 225 | `Packages/iOS/CmuxMobileShellUI/Tests/CmuxMobileShellUITests/TerminalPickerMenuValueTests.swift` | `ios-pane-actions` | Verifies pane action availability participates in the menu’s equatable identity and defaults hidden against unsupported/upstream hosts |
 | 226 | `ios/cmuxUITests/cmuxUITests.swift` | `ios-pane-actions` | End-to-end UI coverage on the local-browser fallback: the existing browser × opens the shared confirmation, cancel preserves the browser, and the new picker Close Pane action confirms and dismisses the same captured pane |
 | 227 | `cmuxTests/SimulatorPanelIntegrationTests.swift` | `ios-pane-actions` | Pins the Mac-side generic close invariant for Simulator panels: `Workspace.closePanel(force:)` removes the Simulator while preserving the sibling terminal, matching the RPC handler’s type-agnostic mutation path |
-| 228 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `ios-workspace-toolbar-persistent-actions` | Consolidates the workspace-detail toolbar so UIKit's native overflow ("More") can never trigger: ONE trailing `ToolbarItem` with the fixed [Agent Chat][terminal picker] cluster, and the lower-frequency actions moved into the workspace TITLE menu via `workspaceTitleToolMenuEntries` — upstream Changes (id `MobileChangesButton`, title carries live +N/−M), the fork rows via `SupermuxWorkspaceToolsMenuEntries` (#108 bindings), and the alt-screen notice row presenting the shared explanation popover (anchored on the detail body). Replaces the conditional `workspace-altscreen-notice` / `workspace-changes` items (and the fork's former separate entries) whose state-varying widths made iOS evict a varying subset into a native ••• per pane. Also fences: the widened title-menu `isEnabled` gate + `toolEntriesFingerprint` plumbing (`WorkspaceTitleMenuValue.swift`, same id — defeats `.equatable()` pinning a stale menu closure), the `isSupermuxChangesSheetPresented`/`isSupermuxFilesSheetPresented`/`isAltScreenExplanationPresented` state, `onChange` keyboard-dismiss parity for the fork sheets, the deferred-one-turn presentation in `openWorkspaceChanges` (menu-dismissal race), and the badge-headroom reserves (`backButtonReserve` 44→60, `floor` 96→80) in `MobileLeadingToolbarTitleWidth.swift` (same fence id) |
-| 229 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+AgentChat.swift` | `ios-workspace-toolbar-persistent-actions` | Makes `shouldShowChatToggle` structurally true and fixes `toolbarTrailingCluster` at two 44pt controls (96pt frame): the Agent Chat button is always mounted, merely disabled (with an accessibility hint) until the visible tab has a session, so agent/pane churn never changes the bar's shape. Companion fence in `AltScreenNoticeButton.swift` (same id) extracts `AltScreenNoticeExplanationContent` + `altScreenNoticeExplanationPopover(isPresented:dismissNotice:)` so the standalone notice button and #228's title-menu row present identical content |
 | 230 | `Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/AgentLaunchEnvironmentPolicy.swift` | `ccx-resume-launcher` | Adds the non-secret `CMUX_CLAUDE_RESUME_LAUNCHER` capture key, accepts only the current user's standardized `~/.local/bin/ccx`, retains it only for Claude restores, and keeps arbitrary launcher paths and secrets outside the replay environment |
 | 231 | `Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/AgentResumeArgv.swift` | `ccx-resume-launcher` | When a captured Claude launch carries the validated ccx marker, builds `<ccx> --resume <session-id>` instead of replaying expanded ccx-generated Claude arguments; plain Claude keeps the upstream wrapper-routed argv |
 | 232 | `Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/AgentRestorePlanner.swift` | `ccx-resume-launcher` | Threads captured launch environment into resume argv resolution and preserves the direct ccx executable while attaching the provider/session-bound one-shot restore authorization |
@@ -255,27 +253,17 @@ Rules for adding a touchpoint:
 | 234 | `CLI/cmux.swift` | `ccx-resume-launcher` | Threads the selected replay environment through hook-side resume argv generation so `surface.resume.set` publishes the same ccx-aware command as app-side restore planning |
 | 235 | `Sources/SurfaceResumeCommandCanonicalizer+PortableAgentExecutable.swift` | `ccx-resume-launcher` | Recognizes a validated ccx executable in inline stored restore commands and attaches restore authorization without rewriting ccx to the ordinary Claude wrapper |
 | 236 | `Packages/macOS/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/SupermuxCCXResumeLauncherTests.swift` | `unfenced` | Whole-file headless regression coverage for direct ccx restore, one-shot authorization, secret exclusion, Claude-only marker isolation, and invalid-marker fallback to ordinary Claude |
+| 228 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `ios-workspace-toolbar-persistent-actions` | Consolidates the workspace-detail toolbar so UIKit's native overflow ("More") can never trigger: ONE trailing `ToolbarItem` with the fixed [Agent Chat][terminal picker] cluster, and the lower-frequency actions moved into the workspace TITLE menu via `workspaceTitleToolMenuEntries` — upstream Changes (id `MobileChangesButton`, title carries live +N/−M), the fork rows via `SupermuxWorkspaceToolsMenuEntries` (#108 bindings), and the alt-screen notice row presenting the shared explanation popover (anchored on the detail body). Replaces the conditional `workspace-altscreen-notice` / `workspace-changes` items (and the fork's former separate entries) whose state-varying widths made iOS evict a varying subset into a native ••• per pane. Also fences: the widened title-menu `isEnabled` gate + `toolEntriesFingerprint` plumbing (`WorkspaceTitleMenuValue.swift`, same id — defeats `.equatable()` pinning a stale menu closure), the `isSupermuxChangesSheetPresented`/`isSupermuxFilesSheetPresented`/`isAltScreenExplanationPresented` state, `onChange` keyboard-dismiss parity for the fork sheets, the deferred-one-turn presentation in `openWorkspaceChanges` (menu-dismissal race), and the badge-headroom reserves (`backButtonReserve` 44→60, `floor` 96→80) in `MobileLeadingToolbarTitleWidth.swift` (same fence id) |
+| 229 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+AgentChat.swift` | `ios-workspace-toolbar-persistent-actions` | Makes `shouldShowChatToggle` structurally true and fixes `toolbarTrailingCluster` at two 44pt controls (96pt frame): the Agent Chat button is always mounted, merely disabled (with an accessibility hint) until the visible tab has a session, so agent/pane churn never changes the bar's shape. Companion fence in `AltScreenNoticeButton.swift` (same id) extracts `AltScreenNoticeExplanationContent` + `altScreenNoticeExplanationPopover(isPresented:dismissNotice:)` so the standalone notice button and #228's title-menu row present identical content |
 | 237 | `ios/cmuxUITests/cmuxUITests.swift` | `ios-workspace-toolbar-persistent-actions` | Reverses upstream's no-session expectation in the long-title workspace-toolbar preview: the Agent Chat button must remain present-but-disabled without a chat descriptor, and native toolbar overflow (`More`) must not replace the stable action cluster |
+| 238 | `ios/Config/Shared.xcconfig` | `ios-supermux-brand` | `PRODUCT_DISPLAY_NAME` = `Supermux` (was `cmux`), the iOS app's home-screen name. `PRODUCT_NAME` stays `cmux` on purpose — it names the built product (`cmux.app`), which every reload/install/queue script resolves by path |
+| 239 | `ios/Config/Release.xcconfig` | `ios-supermux-brand` | Local Release builds display `Supermux` (was `cmux BETA`). The TestFlight/App Store lanes pass `PRODUCT_DISPLAY_NAME` on the xcodebuild command line (`ios/scripts/upload-testflight.sh`, `ios/scripts/resolve_testflight_distribution.py`), so upstream channel names and `tests/test_ios_testflight_pro_distribution.py` are untouched |
+| 240 | `ios/scripts/reload.sh` | `ios-supermux-brand` | Tagged dev builds display `Supermux DEV <tag>` (was `cmux DEV <tag>`). The tag suffix is kept so parallel tagged installs stay tellable apart; the `cmux.app` product path this script resolves is unchanged |
+| 241 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Wires the ROOT `AppIcon.icon` + `AppIcon-Demo.icon` Icon Composer bundles into the iOS app target's Resources phase (ids `IC1000*`, `sourceTree = SOURCE_ROOT`, `path = ../AppIcon*.icon`) and deletes the upstream `AppIcon.appiconset` / `AppIcon-Demo.appiconset` PNG sets. iOS now renders from the same single source of truth as macOS (#17); no PNG icon art exists in the fork. `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` was already correct and is unchanged |
+| 242 | `ios/cmux/Assets.xcassets/CmuxLogo.imageset` | `unfenced` | The in-app brand logo (sign-in header, restoring-session screen) re-sourced from the supermux mark, squircle-masked, as a base64-PNG-in-SVG at the same path/name so no Swift call site changes |
+| 243 | `.github/workflows/ios-testflight.yml` | `ios-supermux-brand` | The "Use DEMO-badged app icon" step replaces the whole `AppIcon.icon` directory with `AppIcon-Demo.icon` instead of copying three PNGs into `AppIcon.appiconset`, which no longer exists |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
-
-### 217–227. iOS pane close + Simulator creation — `ios-pane-actions`
-
-Keep the Mac mutation surface in the existing fork namespace rather than adding more upstream dispatch cases: `SupermuxMobileMethod.paneClose` / `.simulatorCreate`, `SupermuxMobileCapability.panesV1`, the matching authorization classifications, and the handlers in `Sources/Supermux/TerminalController+SupermuxMobile.swift`. Close must resolve an explicit `workspace_id` + `panel_id`, verify the panel belongs to that workspace, mark it history-eligible, and call the single generic `Workspace.closePanel(force: true)` path — never branch by terminal/browser/Simulator type. Simulator creation must reuse `Workspace.newSimulatorSurface(inPane:focus: false)`, remain gated by the upstream Simulator feature/capability, and return the normal `MobileSimulatorPanelDescriptor` so the phone can activate it immediately without stealing Mac focus.
-
-On iOS, keep one captured-target confirmation path. `WorkspaceActiveSurface.paneCloseTarget` maps terminal and Agent Chat to the selected terminal id, the phone-local browser to local close, and streamed browser/Simulator to their panel ids. `WorkspaceDetailView+SupermuxPaneActions.swift` owns the action: the local fallback closes through `BrowserSurfaceStore`; remote panes call the capability-gated fork client and wait for authoritative workspace/browser/Simulator events instead of mutating optimistic copies. The existing browser × and the surface-picker Close Pane item must both call `requestClosePane`. New Simulator uses a request UUID exactly like New Browser so a late response cannot override a newer user selection; install the returned descriptor into `MobileSimulatorStreamStore` before selecting it.
-
-The native surface picker carries only two availability booleans and two closures; localized menu/confirmation UI lives in fork-owned `SupermuxMobileUI` (`supermux.panes.*`, en + ja). Against an upstream Mac or an older fork host without `supermux.panes.v1`, remote close and New Simulator stay hidden; the phone-local browser remains closable. Re-run the headless SupermuxMobileCore/Kit/UI package tests, compile the app-hosted suites, and preserve the focused coverage in #224–227.
-
-
-### 230–236. ccx-specific Claude session restore — `ccx-resume-launcher`
-
-`ccx` ends with `exec ... claude`, so process capture sees the real Claude binary and expanded ccx-generated flags but loses the launcher identity, proxy-key discovery, current model fleet, and system-prompt construction. Keep the contract explicit and narrow: `~/.local/bin/ccx` exports `CMUX_CLAUDE_RESUME_LAUNCHER` with its absolute path before `exec`; `AgentLaunchEnvironmentPolicy` retains that non-secret marker only when it standardizes to the current user's exact `~/.local/bin/ccx`, and only for kind `claude`. Never allowlist `ANTHROPIC_AUTH_TOKEN` or accept raw shell commands/arbitrary executable paths.
-
-Thread the captured environment through all three resume-argv entrypoints: `AgentRestorePlanner`, app-side `AgentResumeCommandBuilder` in `RestorableAgentSession.swift`, and hook-side `agentSurfaceResumeCommand` in `CLI/cmux.swift`. `AgentResumeArgv` must return only `[ccxPath, "--resume", sessionID]` for a valid marker so ccx dynamically rediscovers credentials and rebuilds its generated settings/agents/prompt; do not replay the expanded captured ccx arguments into ccx because that duplicates its own flags. With no valid marker, retain upstream's bare `claude --resume ...` wrapper route unchanged.
-
-For structured restore, `AgentRestorePlanner.routeManagedWrapper` leaves the validated ccx path direct but still adds `CMUX_AGENT_RESTORE_LAUNCH=claude:<session-id>`, which ccx passes through to the cmux Claude wrapper it invokes. For inline fallback commands, `AgentRestoreLaunch.applying(toStoredCommand:)` likewise recognizes the validated ccx executable and adds authorization without replacing it with the ordinary Claude wrapper token. Keep `SupermuxCCXResumeLauncherTests` as a whole-file package test and run `swift test --package-path Packages/macOS/CMUXAgentLaunch`; the suite must cover direct ccx argv, authorization, marker persistence without token persistence, kind isolation, and invalid-marker fallback.
-
 
 ### 228–229, 237. Persistent iOS workspace toolbar actions — `ios-workspace-toolbar-persistent-actions`
 
@@ -312,6 +300,22 @@ In `ios/cmuxUITests`, `testWorkspaceDetailToolbarKeepsPersistentActionsVisibleWi
 keeps the no-chat-session preview and asserts `MobileWorkspaceAgentChatButton` exists but is
 disabled and no native overflow button replaces the controls. This intentionally overrides
 upstream's old assertion that the chat button disappears without a descriptor.
+
+### 217–227. iOS pane close + Simulator creation — `ios-pane-actions`
+
+Keep the Mac mutation surface in the existing fork namespace rather than adding more upstream dispatch cases: `SupermuxMobileMethod.paneClose` / `.simulatorCreate`, `SupermuxMobileCapability.panesV1`, the matching authorization classifications, and the handlers in `Sources/Supermux/TerminalController+SupermuxMobile.swift`. Close must resolve an explicit `workspace_id` + `panel_id`, verify the panel belongs to that workspace, mark it history-eligible, and call the single generic `Workspace.closePanel(force: true)` path — never branch by terminal/browser/Simulator type. Simulator creation must reuse `Workspace.newSimulatorSurface(inPane:focus: false)`, remain gated by the upstream Simulator feature/capability, and return the normal `MobileSimulatorPanelDescriptor` so the phone can activate it immediately without stealing Mac focus.
+
+On iOS, keep one captured-target confirmation path. `WorkspaceActiveSurface.paneCloseTarget` maps terminal and Agent Chat to the selected terminal id, the phone-local browser to local close, and streamed browser/Simulator to their panel ids. `WorkspaceDetailView+SupermuxPaneActions.swift` owns the action: the local fallback closes through `BrowserSurfaceStore`; remote panes call the capability-gated fork client and wait for authoritative workspace/browser/Simulator events instead of mutating optimistic copies. The existing browser × and the surface-picker Close Pane item must both call `requestClosePane`. New Simulator uses a request UUID exactly like New Browser so a late response cannot override a newer user selection; install the returned descriptor into `MobileSimulatorStreamStore` before selecting it.
+
+The native surface picker carries only two availability booleans and two closures; localized menu/confirmation UI lives in fork-owned `SupermuxMobileUI` (`supermux.panes.*`, en + ja). Against an upstream Mac or an older fork host without `supermux.panes.v1`, remote close and New Simulator stay hidden; the phone-local browser remains closable. Re-run the headless SupermuxMobileCore/Kit/UI package tests, compile the app-hosted suites, and preserve the focused coverage in #224–227.
+
+### 230–236. ccx-specific Claude session restore — `ccx-resume-launcher`
+
+`ccx` ends with `exec ... claude`, so process capture sees the real Claude binary and expanded ccx-generated flags but loses the launcher identity, proxy-key discovery, current model fleet, and system-prompt construction. Keep the contract explicit and narrow: `~/.local/bin/ccx` exports `CMUX_CLAUDE_RESUME_LAUNCHER` with its absolute path before `exec`; `AgentLaunchEnvironmentPolicy` retains that non-secret marker only when it standardizes to the current user's exact `~/.local/bin/ccx`, and only for kind `claude`. Never allowlist `ANTHROPIC_AUTH_TOKEN` or accept raw shell commands/arbitrary executable paths.
+
+Thread the captured environment through all three resume-argv entrypoints: `AgentRestorePlanner`, app-side `AgentResumeCommandBuilder` in `RestorableAgentSession.swift`, and hook-side `agentSurfaceResumeCommand` in `CLI/cmux.swift`. `AgentResumeArgv` must return only `[ccxPath, "--resume", sessionID]` for a valid marker so ccx dynamically rediscovers credentials and rebuilds its generated settings/agents/prompt; do not replay the expanded captured ccx arguments into ccx because that duplicates its own flags. With no valid marker, retain upstream's bare `claude --resume ...` wrapper route unchanged.
+
+For structured restore, `AgentRestorePlanner.routeManagedWrapper` leaves the validated ccx path direct but still adds `CMUX_AGENT_RESTORE_LAUNCH=claude:<session-id>`, which ccx passes through to the cmux Claude wrapper it invokes. For inline fallback commands, `AgentRestoreLaunch.applying(toStoredCommand:)` likewise recognizes the validated ccx executable and adds authorization without replacing it with the ordinary Claude wrapper token. Keep `SupermuxCCXResumeLauncherTests` as a whole-file package test and run `swift test --package-path Packages/macOS/CMUXAgentLaunch`; the suite must cover direct ccx argv, authorization, marker persistence without token persistence, kind isolation, and invalid-marker fallback.
 
 ### 215–216. Dynamic arrowless-popover reanchoring — `popover-dynamic-height-reanchor`
 
@@ -934,8 +938,85 @@ it. `ASSETCATALOG_COMPILER_APPICON_NAME` selects the name only: `AppIcon` (Relea
 errors on the duplicate), which is why the appiconsets were removed. actool auto-generates
 the legacy `.icns`/Assets.car fallbacks from the `.icon` for the 14.0 deployment target.
 
-iOS (`ios/cmux/Assets.xcassets/AppIcon.appiconset/`) is intentionally left to the iOS
-target and not rebranded here.
+iOS now renders from these same `.icon` bundles — see #238–243 below (this note previously said
+iOS was intentionally left on its own PNG appiconsets, which is no longer true). A fourth sibling,
+`AppIcon-Demo.icon`, exists for the iOS TestFlight demo lane only; macOS does not use it.
+
+### 238–243. iOS name and icon rebrand — `ios-supermux-brand` + unfenced assets
+
+The iOS app shipped as "cmux" with upstream's blue chevron. The fork ships it as **Supermux**
+with the supermux mark. Two independent halves:
+
+**Name (`ios-supermux-brand`, three fenced xcconfig/shell sites).** `CFBundleDisplayName` is
+`$(PRODUCT_DISPLAY_NAME)` in `ios/Config/Info.plist` (upstream, unfenced), so only that variable
+had to move:
+- `ios/Config/Shared.xcconfig` (#238) → `Supermux` (Debug and any build not overriding it).
+- `ios/Config/Release.xcconfig` (#239) → `Supermux` (was `cmux BETA`).
+- `ios/scripts/reload.sh` (#240) → `DISPLAY_NAME="Supermux DEV $TAG"`.
+
+**Do not touch `PRODUCT_NAME`.** It stays `cmux` because it names the built product; `cmux.app`
+is hard-coded in `ios/scripts/reload.sh`, `scripts/iphone-install-queue.sh`,
+`.github/workflows/reload-build.yml`, and the CI iOS test jobs. Renaming it breaks install and
+queue paths for zero user-visible gain.
+
+The TestFlight/App Store lanes are deliberately NOT rebranded: `ios/scripts/upload-testflight.sh`
+and `ios/scripts/resolve_testflight_distribution.py` pass `PRODUCT_DISPLAY_NAME` on the xcodebuild
+command line, which beats the xcconfig, and `tests/test_ios_testflight_pro_distribution.py`
+asserts `cmux BETA` / `cmux DEMO` / `cmux INTERNAL`. Rebranding those means editing the helper
+and its test together.
+
+**Icon (#241, unfenced pbxproj wiring).** iOS renders from the SAME root Icon Composer bundle as
+macOS. There is no PNG icon art anywhere in the fork: upstream's
+`ios/cmux/Assets.xcassets/AppIcon.appiconset` and `AppIcon-Demo.appiconset` are **deleted**, and
+`ios/cmux-ios.xcodeproj/project.pbxproj` gains file references to the root `AppIcon.icon` and
+`AppIcon-Demo.icon` (ids `IC100001`/`IC100002`, build files `IC100011`/`IC100012`) with
+
+```
+lastKnownFileType = folder.iconcomposer.icon;
+name = AppIcon.icon; path = ../AppIcon.icon; sourceTree = SOURCE_ROOT;
+```
+
+and membership in the app target's `PBXResourcesBuildPhase` — same three-part recipe as the macOS
+wiring (#3/#17); without the Resources membership actool ignores the bundle.
+`ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` was already correct and is unchanged. A same-named
+`.appiconset` must NOT be re-introduced: actool errors on the duplicate, which is the other reason
+the appiconsets are gone rather than merely unused.
+
+`AppIcon.icon`'s existing `scale: 1.85` transform needs **no iOS-specific tuning** — verified by
+compiling it with `xcrun actool AppIcon.icon --compile <dir> --app-icon AppIcon --platform
+iphoneos`: the mark occupies 82% of the rendered canvas, matching a hand-cropped PNG, because the
+source art is a pre-rendered squircle that the system mask crops cleanly at that scale.
+
+`AppIcon-Demo.icon` is a fork-owned sibling for the TestFlight demo lane: the same
+`supermux.jpg` layer with a **second, lower** layer `demo-band.png` (a transparent 1024² PNG whose
+bottom 26% is `#FF7A00` with a white "DEMO" label) — reproducing upstream's badge without
+flattening it into the art. Regenerate the band with:
+
+```python
+from PIL import Image, ImageDraw, ImageFont
+band = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
+d = ImageDraw.Draw(band)
+d.rectangle([0, 758, 1023, 1023], fill=(255, 122, 0, 255))
+d.text(..., "DEMO", font=ImageFont.truetype(".../Arial Bold.ttf", 165), fill="white")
+```
+
+Verify any icon change by compiling it standalone with `xcrun actool … --platform iphoneos` and
+looking at the emitted `AppIcon76x76@2x~ipad.png`; do not trust the source art alone, since the
+system mask crops it.
+
+**Logo (#242).** `CmuxLogo.imageset` is the in-app brand lockup (`SignInView.brandHeader`,
+`RestoringSessionView`). It keeps its upstream name and path — a base64-PNG-in-SVG at 1024×1024 —
+so no Swift call site changes; only the embedded image is replaced, squircle-masked (superellipse
+n=5) so it reads as an app mark at 28–30pt. The paired string `mobile.signIn.title`
+(`ios/cmux/Resources/Localizable.xcstrings`, en + ja) is `Supermux`; it is the one exception to
+that catalog's "never edit non-`supermux.*` keys" rule, taken because the key IS the brand word.
+
+**Demo lane (#243).** `.github/workflows/ios-testflight.yml`'s "Use DEMO-badged app icon" step
+copied three PNGs into `AppIcon.appiconset`; it now `rm -rf AppIcon.icon && cp -R
+AppIcon-Demo.icon AppIcon.icon`. It still swaps files in the checkout rather than overriding
+`ASSETCATALOG_COMPILER_APPICON_NAME`, for upstream's original reason: a command-line build setting
+applies to every target in the workspace, and SwiftPM resource-bundle targets would fail actool
+with a missing icon set.
 
 ### 1. `CLAUDE.md` — `claude-md-pointer`
 
@@ -2516,37 +2597,42 @@ hand after any merge that touches the script.
 
 ### 108. `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` — `supermux-mobile-workspace-tools`
 
-The iOS Changes AND Files screens' mount point (architecture §7: workspace-detail toolbar
-entries). All logic is fork-owned in `Packages/iOS/SupermuxMobileUI`
-(`SupermuxWorkspaceTools.swift` — the `supermuxWorkspaceTools` view modifier + capability gates
-— plus `SupermuxChangesScreen` / `SupermuxDiffScreen` / `SupermuxFileBrowserScreen` and their
-`SupermuxMobileKit` stores `SupermuxMobileChangesStore` / `SupermuxMobileFileBrowserStore`). Two
-1-line fences, same fence id:
+The iOS Changes AND Files screens' mount point (architecture §7: workspace-detail entries). All
+logic is fork-owned in `Packages/iOS/SupermuxMobileUI` (`SupermuxWorkspaceTools.swift` — the
+`supermuxWorkspaceTools` view modifier, the capability gates, and
+`SupermuxWorkspaceToolsMenuEntries` — plus `SupermuxChangesScreen` / `SupermuxDiffScreen` /
+`SupermuxFileBrowserScreen` and their `SupermuxMobileKit` stores `SupermuxMobileChangesStore` /
+`SupermuxMobileFileBrowserStore`). Two fences, same fence id:
 
 - the `import SupermuxMobileUI` in the import block;
 - `.supermuxWorkspaceTools(connection: store.supermuxConnectionSeam, workspaceID:
-  workspace.rpcWorkspaceID.rawValue, workspaceName: workspace.name)` on the outer `Group` in
-  `body`, BEFORE `.mobileConnectionRecoveryOverlay` — the outer Group so the toolbar entry rides
-  every detail branch (terminal / browser / chat) and survives upstream reshuffles of the inner
-  `.toolbar` blocks. IMPORTANT: pass `workspace.rpcWorkspaceID.rawValue`, NOT `workspace.id.rawValue`.
-  With two+ Macs paired, aggregation scopes `workspace.id` to `<macID>\u{1F}<uuid>`, but the Mac's
-  `changes.*`/`files.*` RPCs parse `workspace_id` as a bare UUID, so the scoped id fails every
-  request with `invalid_params`. `rpcWorkspaceID` is the Mac-local (unscoped) id the host expects.
+  workspace.rpcWorkspaceID.rawValue, workspaceName: workspace.name, showingChanges:
+  $isSupermuxChangesSheetPresented, showingFiles: $isSupermuxFilesSheetPresented)` on the outer
+  `Group` in `body`, BEFORE `.mobileConnectionRecoveryOverlay` — the outer Group so the sheets
+  ride every detail branch (terminal / browser / chat) and survive upstream reshuffles of the
+  inner `.toolbar` blocks. IMPORTANT: pass `workspace.rpcWorkspaceID.rawValue`, NOT
+  `workspace.id.rawValue`. With two+ Macs paired, aggregation scopes `workspace.id` to
+  `<macID>\u{1F}<uuid>`, but the Mac's `changes.*`/`files.*` RPCs parse `workspace_id` as a bare
+  UUID, so the scoped id fails every request with `invalid_params`. `rpcWorkspaceID` is the
+  Mac-local (unscoped) id the host expects.
 
-The modifier adds `topBarTrailing` toolbar buttons (each hidden unless the #96 seam is connected
-AND the host advertises its capability — `supermux.changes.v1` for Changes, `supermux.files.v1`
-for Files; an upstream Mac renders exactly today's UI) and `.sheet`s presenting
-`SupermuxChangesScreen` / `SupermuxFileBrowserScreen`; one store is built per presentation from
-the seam's `MobileCoreRPCClient` + capability snapshot (the file browser rooted
-`.workspace(id:)`). (The former `.github/swift-file-length-budget.tsv` row bump for
-`WorkspaceDetailView.swift` is retired — see #4.) The m5-f2 Files entry changed only the
-fork-owned modifier — the upstream fence lines are byte-identical to m3.
+Since the #228 toolbar consolidation the modifier mounts ONLY the two `.sheet`s presenting
+`SupermuxChangesScreen` / `SupermuxFileBrowserScreen`; it adds no `ToolbarItem`s. The visible
+entries are `SupermuxWorkspaceToolsMenuEntries` rows inside #228's explicit trailing overflow
+menu, which flip the two `@State` bindings (fenced under #228) that this modifier receives.
+Each row hides unless the #96 seam is connected AND the host advertises its capability —
+`supermux.changes.v1` for Changes, `supermux.files.v1` for Files; an upstream Mac renders
+exactly today's UI. One store is built per presentation from the seam's `MobileCoreRPCClient`
++ capability snapshot (the file browser rooted `.workspace(id:)`). (The former
+`.github/swift-file-length-budget.tsv` row bump for `WorkspaceDetailView.swift` is retired —
+see #4.)
 
 Re-apply note: if upstream rewrites `WorkspaceDetailView`, the requirement is: the modifier must
-sit on a view that (a) is inside the detail's `NavigationStack` context so the toolbar item lands
-in the nav bar, and (b) has `store` + `workspace` in scope, with `store.supermuxConnectionSeam`
-read inside `body` so Observation re-evaluates on (re)connect/capability arrival. Any placement
-satisfying that works; keep both fence lines together.
+sit on a view that (a) is inside the detail's `NavigationStack` context, and (b) has `store` +
+`workspace` in scope, with `store.supermuxConnectionSeam` read inside `body` so Observation
+re-evaluates on (re)connect/capability arrival. Any placement satisfying that works; keep both
+fence lines together, and keep the two presentation bindings owned by the view that hosts the
+overflow menu (#228).
 
 ### 109. `scripts/lint-ios-package-conventions.sh` — `lint-ios-conventions-fork-scopes`
 

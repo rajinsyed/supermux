@@ -9,7 +9,14 @@ DEVELOPMENT_TEAM = 7WLXT3NR37
 
 // Distinguish the TestFlight beta on-device from a future App Store "cmux"
 // (overrides PRODUCT_DISPLAY_NAME = cmux from Shared.xcconfig). Debug stays "cmux".
-PRODUCT_DISPLAY_NAME = cmux BETA
+// SUPERMUX:begin ios-supermux-brand
+// Fork rebrand (see Shared.xcconfig). The upstream TestFlight/App Store lanes
+// pass PRODUCT_DISPLAY_NAME on the xcodebuild command line
+// (ios/scripts/upload-testflight.sh), so they still ship "cmux BETA"/"cmux" and
+// tests/test_ios_testflight_pro_distribution.py is unaffected; this value only
+// covers local Release builds, which is what fork dogfood installs.
+PRODUCT_DISPLAY_NAME = Supermux
+// SUPERMUX:end ios-supermux-brand
 
 // TestFlight/App Store builds use production APNs. Debug keeps
 // Config/cmux.entitlements from Shared.xcconfig.

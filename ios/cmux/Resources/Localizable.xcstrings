@@ -9051,13 +9051,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "Supermux"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "Supermux"
           }
         }
       }
@@ -13141,6 +13141,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "エージェントチャット"
+          }
+        }
+      }
+    },
+    "mobile.workspace.agentChat.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available while a coding agent session is running in this tab"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタブでコーディングエージェントのセッションが実行中に利用できます"
           }
         }
       }

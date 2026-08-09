@@ -11,6 +11,8 @@
 		8B8A10F02DF5000000A66F90 /* CmuxAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10F12DF5000000A66F90 /* CmuxAppDelegate.swift */; };
 		8B8A10AA2DF5000000A66F90 /* AppCompositionRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10AB2DF5000000A66F90 /* AppCompositionRoot.swift */; };
 		8B8A10022DF5000000A66F90 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A10192DF5000000A66F90 /* Assets.xcassets */; };
+		IC100011 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = IC100001 /* AppIcon.icon */; };
+		IC100012 /* AppIcon-Demo.icon in Resources */ = {isa = PBXBuildFile; fileRef = IC100002 /* AppIcon-Demo.icon */; };
 		8B8A10032DF5000000A66F90 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A101A2DF5000000A66F90 /* InfoPlist.xcstrings */; };
 		8B8A10042DF5000000A66F90 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A101B2DF5000000A66F90 /* Localizable.xcstrings */; };
 		FCAB10042DF5000000A66F90 /* LocalConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = FCAB101B2DF5000000A66F90 /* LocalConfig.plist */; };
@@ -52,6 +54,8 @@
 		8B8A10AB2DF5000000A66F90 /* AppCompositionRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCompositionRoot.swift; sourceTree = "<group>"; };
 		8B8A10182DF5000000A66F90 /* cmux.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = file; path = cmux.xctestplan; sourceTree = "<group>"; };
 		8B8A10192DF5000000A66F90 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		IC100001 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = AppIcon.icon; path = ../AppIcon.icon; sourceTree = SOURCE_ROOT; };
+		IC100002 /* AppIcon-Demo.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = "AppIcon-Demo.icon"; path = "../AppIcon-Demo.icon"; sourceTree = SOURCE_ROOT; };
 		8B8A101A2DF5000000A66F90 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		8B8A101B2DF5000000A66F90 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		FCAB101B2DF5000000A66F90 /* LocalConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = LocalConfig.plist; sourceTree = "<group>"; };
@@ -91,6 +95,8 @@
 			isa = PBXGroup;
 			children = (
 				8B8A10192DF5000000A66F90 /* Assets.xcassets */,
+				IC100001 /* AppIcon.icon */,
+				IC100002 /* AppIcon-Demo.icon */,
 				8B8A10E12DF5000000A66F90 /* PrivacyInfo.xcprivacy */,
 				8B8A10212DF5000000A66F90 /* Resources */,
 				8B8A10172DF5000000A66F90 /* cmuxApp.swift */,
@@ -256,6 +262,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				8B8A10022DF5000000A66F90 /* Assets.xcassets in Resources */,
+				IC100011 /* AppIcon.icon in Resources */,
+				IC100012 /* AppIcon-Demo.icon in Resources */,
 				8B8A10032DF5000000A66F90 /* InfoPlist.xcstrings in Resources */,
 				8B8A10042DF5000000A66F90 /* Localizable.xcstrings in Resources */,
 				FCAB10042DF5000000A66F90 /* LocalConfig.plist in Resources */,
