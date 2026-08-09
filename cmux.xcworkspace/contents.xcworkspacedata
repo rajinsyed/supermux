@@ -142,6 +142,9 @@
          location = "group:CMUXDebugLog">
       </FileRef>
       <FileRef
+         location = "group:CmuxDiffComments">
+      </FileRef>
+      <FileRef
          location = "group:CmuxExtensionKit">
       </FileRef>
       <FileRef

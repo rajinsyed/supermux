@@ -1,3 +1,4 @@
+public import CMUXMobileCore
 public import Foundation
 
 /// Typed decoder for the `workspace.list` / `mobile.workspace.list` RPC result.
@@ -47,6 +48,8 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         public let hasUnread: Bool?
         /// Terminals belonging to this workspace.
         public let terminals: [Terminal]
+        /// Simulator panes belonging to this workspace.
+        public let simulators: [MobileSimulatorPanelDescriptor]
         // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields; absent on upstream Macs — see SUPERMUX-TOUCHPOINTS.md)
         /// The supermux project owning this workspace (UUID string); `nil` when unassociated or from upstream cmux.
         public let supermuxProjectID: String?
@@ -121,6 +124,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case lastActivityAt = "last_activity_at"
             case hasUnread = "has_unread"
             case terminals
+            case simulators
             // SUPERMUX:begin supermux-mobile-workspace-fields
             case supermuxProjectID = "supermux_project_id"
             case supermuxActivity = "supermux_activity"
@@ -148,6 +152,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             lastActivityAt: Double?,
             hasUnread: Bool?,
             terminals: [Terminal],
+            simulators: [MobileSimulatorPanelDescriptor] = [],
             // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields on upstream's
             // memberwise init; defaulted to nil so upstream call sites compile unchanged and an
             // upstream Mac's rows stay field-free — see SUPERMUX-TOUCHPOINTS.md)
@@ -172,11 +177,44 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             self.lastActivityAt = lastActivityAt
             self.hasUnread = hasUnread
             self.terminals = terminals
+            self.simulators = simulators
             // SUPERMUX:begin supermux-mobile-workspace-fields
             self.supermuxProjectID = supermuxProjectID
             self.supermuxActivity = supermuxActivity
             self.supermuxBranch = supermuxBranch
             self.supermuxPullRequest = supermuxPullRequest
+            // SUPERMUX:end supermux-mobile-workspace-fields
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            windowID = try container.decodeIfPresent(String.self, forKey: .windowID)
+            title = try container.decode(String.self, forKey: .title)
+            customDescription = try container.decodeIfPresent(String.self, forKey: .customDescription)
+            customDescriptionIsTruncated = try container.decodeIfPresent(Bool.self, forKey: .customDescriptionIsTruncated)
+            customColorHex = try container.decodeIfPresent(String.self, forKey: .customColorHex)
+            currentDirectory = try container.decodeIfPresent(String.self, forKey: .currentDirectory)
+            isSelected = try container.decode(Bool.self, forKey: .isSelected)
+            isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned)
+            groupID = try container.decodeIfPresent(String.self, forKey: .groupID)
+            preview = try container.decodeIfPresent(String.self, forKey: .preview)
+            previewAt = try container.decodeIfPresent(Double.self, forKey: .previewAt)
+            lastActivityAt = try container.decodeIfPresent(Double.self, forKey: .lastActivityAt)
+            hasUnread = try container.decodeIfPresent(Bool.self, forKey: .hasUnread)
+            terminals = try container.decode([Terminal].self, forKey: .terminals)
+            simulators = try container.decodeIfPresent(
+                [MobileSimulatorPanelDescriptor].self,
+                forKey: .simulators
+            ) ?? []
+            // SUPERMUX:begin supermux-mobile-workspace-fields (lenient: a malformed additive
+            // field degrades to nil — "no badge / no fold" — and never fails the row decode)
+            supermuxProjectID = (try? container.decodeIfPresent(String.self, forKey: .supermuxProjectID)) ?? nil
+            supermuxActivity = (try? container.decodeIfPresent(String.self, forKey: .supermuxActivity)) ?? nil
+            supermuxBranch = (try? container.decodeIfPresent(String.self, forKey: .supermuxBranch)) ?? nil
+            supermuxPullRequest = (
+                try? container.decodeIfPresent(SupermuxPullRequest.self, forKey: .supermuxPullRequest)
+            ) ?? nil
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
     }
@@ -270,9 +308,13 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
 
     /// The full workspace list.
     public let workspaces: [Workspace]
-    /// Group sections, in section order. Empty on Macs old enough not to emit
-    /// groups (the field is decoded with `decodeIfPresent`).
+    /// Group sections, in section order. Empty when the Mac reports no groups or
+    /// when an older payload omits the field.
     public let groups: [Group]
+    /// Whether the decoded payload carried a `groups` field at all. Older or
+    /// partial responses omit the field, and callers use that to preserve the
+    /// last authoritative group headers across reconnect churn.
+    public let groupsFieldWasPresent: Bool
     /// Identifier of a workspace created by the request, if any.
     public let createdWorkspaceID: String?
     /// Identifier of a terminal created by the request, if any.
@@ -293,6 +335,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         workspaces = try container.decode([Workspace].self, forKey: .workspaces)
+        groupsFieldWasPresent = container.contains(.groups)
         groups = try container.decodeIfPresent([Group].self, forKey: .groups) ?? []
         createdWorkspaceID = try container.decodeIfPresent(String.self, forKey: .createdWorkspaceID)
         createdTerminalID = try container.decodeIfPresent(String.self, forKey: .createdTerminalID)
@@ -316,11 +359,13 @@ extension MobileSyncWorkspaceListResponse {
     public init(
         workspaces: [Workspace],
         groups: [Group],
+        groupsFieldWasPresent: Bool = true,
         createdWorkspaceID: String?,
         createdTerminalID: String?
     ) {
         self.workspaces = workspaces
         self.groups = groups
+        self.groupsFieldWasPresent = groupsFieldWasPresent
         self.createdWorkspaceID = createdWorkspaceID
         self.createdTerminalID = createdTerminalID
     }

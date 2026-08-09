@@ -104,6 +104,8 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     public let sortIndex: Int
     /// Terminal rows belonging to this workspace, in spatial order.
     public let terminals: [Terminal]
+    /// Simulator panes belonging to this workspace, in spatial order.
+    public let simulators: [MobileSimulatorPanelDescriptor]
     // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields mirrored from the legacy
     // list payload so state sync v2 does not drop them — see SUPERMUX-TOUCHPOINTS.md)
     /// The `supermux_pull_request` object: the same `{number, state, url, is_stale}`
@@ -191,6 +193,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         hasUnread: Bool,
         sortIndex: Int,
         terminals: [Terminal],
+        simulators: [MobileSimulatorPanelDescriptor] = [],
         // SUPERMUX:begin supermux-mobile-workspace-fields (defaulted to nil so upstream call sites
         // compile unchanged and an upstream Mac's records stay field-free)
         supermuxProjectID: String? = nil,
@@ -215,6 +218,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.hasUnread = hasUnread
         self.sortIndex = sortIndex
         self.terminals = terminals
+        self.simulators = simulators
         // SUPERMUX:begin supermux-mobile-workspace-fields
         self.supermuxProjectID = supermuxProjectID
         self.supermuxActivity = supermuxActivity
@@ -244,6 +248,10 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         hasUnread = try container.decode(Bool.self, forKey: .hasUnread)
         sortIndex = try container.decode(Int.self, forKey: .sortIndex)
         terminals = try container.decode([Terminal].self, forKey: .terminals)
+        simulators = try container.decodeIfPresent(
+            [MobileSimulatorPanelDescriptor].self,
+            forKey: .simulators
+        ) ?? []
         // SUPERMUX:begin supermux-mobile-workspace-fields (lenient: a malformed additive field
         // degrades to nil instead of failing the record, which would gap the client's mirror;
         // an upstream Mac omits all four and every one decodes nil)
@@ -273,6 +281,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case hasUnread = "has_unread"
         case sortIndex = "sort_index"
         case terminals
+        case simulators
         // SUPERMUX:begin supermux-mobile-workspace-fields (same snake_case wire names the legacy
         // `mobile.workspace.list` payload uses)
         case supermuxProjectID = "supermux_project_id"

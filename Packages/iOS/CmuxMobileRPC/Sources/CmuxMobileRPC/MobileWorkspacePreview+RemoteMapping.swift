@@ -21,7 +21,8 @@ extension MobileWorkspacePreview {
             hasUnread: remote.hasUnread ?? false,
             terminals: remote.terminals.map { terminal in
                 MobileTerminalPreview(remote: terminal)
-            }
+            },
+            simulators: remote.simulators
         )
         // SUPERMUX:begin supermux-mobile-workspace-fields (carry the additive §6 fields into the preview — see SUPERMUX-TOUCHPOINTS.md)
         self.supermuxProjectID = remote.supermuxProjectID

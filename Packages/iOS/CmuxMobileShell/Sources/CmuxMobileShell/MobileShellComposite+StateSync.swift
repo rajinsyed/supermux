@@ -366,6 +366,7 @@ extension MobileShellComposite {
                         isReady: terminal.isReady
                     )
                 },
+                simulators: record.simulators,
                 // SUPERMUX:begin supermux-mobile-workspace-fields (carry the additive §6 fields
                 // through the v2 projection; without them project nesting, activity dots, the
                 // branch subtitle, and PR badges vanish the moment v2 negotiates —
