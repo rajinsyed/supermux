@@ -55,6 +55,15 @@ struct WorkspaceDetailView: View {
     // SUPERMUX:end ios-pane-actions
     /// Drives the destructive close-workspace confirmation dialog.
     @State var isConfirmingClose = false
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+    /// Presentation state for the fork's Changes/Files sheets, flipped by the
+    /// trailing overflow menu's entries. Outside the UIKit block because the
+    /// `supermuxWorkspaceTools` sheet mount is shared with the macOS branch.
+    @State var isSupermuxChangesSheetPresented = false
+    @State var isSupermuxFilesSheetPresented = false
+    /// Presents the alt-screen sizing explanation from its overflow-menu row.
+    @State var isAltScreenExplanationPresented = false
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
     #if canImport(UIKit)
     @State private var isFeedbackComposerPresented = false
     @State private var feedbackText = ""
@@ -152,6 +161,13 @@ struct WorkspaceDetailView: View {
         // parse workspace_id as a bare UUID. Sending the scoped row id fails
         // every request with invalid_params. rpcWorkspaceID is the Mac-local id.
         let content = Group { detailSurfaceContent }
+            .supermuxWorkspaceTools(
+                connection: store.supermuxConnectionSeam,
+                workspaceID: workspace.rpcWorkspaceID.rawValue,
+                workspaceName: workspace.name,
+                showingChanges: $isSupermuxChangesSheetPresented,
+                showingFiles: $isSupermuxFilesSheetPresented
+            )
         // SUPERMUX:end supermux-mobile-workspace-tools
 
         #if os(iOS)
@@ -182,6 +198,23 @@ struct WorkspaceDetailView: View {
             .onChange(of: store.supportsChatArtifactGallery) { _, _ in
                 visibleArtifactCount = 0
             }
+            // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+            // The fork Changes/Files rows flip these bindings from inside the
+            // title menu; give them the same keyboard behavior as the
+            // upstream Changes entry (one shared chrome policy).
+            .onChange(of: isSupermuxChangesSheetPresented) { _, isPresented in
+                if isPresented { dismissTerminalKeyboardForChrome() }
+            }
+            .onChange(of: isSupermuxFilesSheetPresented) { _, isPresented in
+                if isPresented { dismissTerminalKeyboardForChrome() }
+            }
+            // The title menu's alt-screen row presents the shared explanation
+            // here (the menu row itself cannot host a popover anchor).
+            .altScreenNoticeExplanationPopover(isPresented: $isAltScreenExplanationPresented) {
+                displaySettings.showAltScreenNotice = false
+                isAltScreenExplanationPresented = false
+            }
+            // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             .closeWorkspaceConfirmation(
                 isPresented: $isConfirmingClose,
                 confirm: confirmCloseWorkspaceFromMenu
@@ -243,16 +276,96 @@ struct WorkspaceDetailView: View {
         ToolbarItem(id: "workspace-title", placement: .topBarLeading) {
             workspaceTitleToolbarMenu
         }
-        if let selectedTerminalID,
-           store.isAlternateScreen(surfaceID: selectedTerminalID),
-           displaySettings.showAltScreenNotice {
-            ToolbarItem(id: "workspace-altscreen-notice", placement: .topBarTrailing) {
-                AltScreenNoticeButton {
-                    displaySettings.showAltScreenNotice = false
+        // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+        // ONE trailing item, always the same three controls. Every extra
+        // trailing ToolbarItem risks UIKit's native overflow ("More") button
+        // evicting a varying subset of items — the bar then looks different
+        // per pane/state. The alt-screen notice and both Changes entries live
+        // inside the explicit overflow menu instead of as separate items.
+        ToolbarItem(id: "workspace-trailing", placement: .topBarTrailing) {
+            toolbarTrailingCluster
+        }
+        // SUPERMUX:end ios-workspace-toolbar-persistent-actions
+    }
+
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+    /// Whether the alt-screen sizing notice row shows in the title menu.
+    var showsAltScreenNoticeMenuEntry: Bool {
+        guard let selectedTerminalID else { return false }
+        return store.isAlternateScreen(surfaceID: selectedTerminalID)
+            && displaySettings.showAltScreenNotice
+    }
+
+    /// The workspace-tool rows hosted inside the title menu: upstream
+    /// Changes, the fork's Changes/Files, and the alt-screen sizing notice.
+    /// Living in the title menu (not their own ToolbarItems, not a dedicated
+    /// ••• button) keeps the trailing side down to two fixed controls so
+    /// UIKit's native overflow ("More") never triggers.
+    @ViewBuilder
+    private var workspaceTitleToolMenuEntries: some View {
+        if workspaceChangesAreAvailable || showsAltScreenNoticeMenuEntry {
+            Section {
+                if workspaceChangesAreAvailable {
+                    Button(action: openWorkspaceChanges) {
+                        Label {
+                            Text(workspaceChangesMenuTitle)
+                        } icon: {
+                            Image(systemName: "plus.forwardslash.minus")
+                        }
+                    }
+                    .accessibilityIdentifier("MobileChangesButton")
+                }
+                if showsAltScreenNoticeMenuEntry {
+                    Button {
+                        // Deferred a turn so the popover presentation does not
+                        // race the menu's own dismissal transition.
+                        Task { @MainActor in
+                            isAltScreenExplanationPresented = true
+                        }
+                    } label: {
+                        Label(
+                            AltScreenNoticeExplanationContent.title,
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                    }
+                    .accessibilityIdentifier("MobileTerminalAltScreenNoticeButton")
                 }
             }
         }
+        SupermuxWorkspaceToolsMenuEntries(
+            hostCapabilities: store.supermuxConnectionSeam?.hostCapabilities,
+            showingChanges: $isSupermuxChangesSheetPresented,
+            showingFiles: $isSupermuxFilesSheetPresented
+        )
     }
+
+    /// The menu-row title, carrying the live +N/−M summary the old dedicated
+    /// toolbar chip showed at a glance.
+    private var workspaceChangesMenuTitle: String {
+        let base = String(
+            localized: "workspace.changes.title",
+            defaultValue: "Changes",
+            bundle: .module
+        )
+        guard let chip = workspaceChangesChip, chip.filesChanged > 0 else { return base }
+        return "\(base)  +\(chip.additions) −\(chip.deletions)"
+    }
+
+    /// Fingerprint of everything the tool entries render from. Folded into
+    /// `WorkspaceTitleMenuValue` so `.equatable()` cannot pin a stale menu
+    /// closure (Menu content is captured at the last accepted update).
+    private var workspaceTitleToolEntriesFingerprint: String {
+        let seam = store.supermuxConnectionSeam
+        let changes = workspaceChangesAreAvailable ? workspaceChangesMenuTitle : ""
+        let supermuxChanges = SupermuxWorkspaceTools.showsChangesEntry(
+            hostCapabilities: seam?.hostCapabilities
+        )
+        let supermuxFiles = SupermuxWorkspaceTools.showsFilesEntry(
+            hostCapabilities: seam?.hostCapabilities
+        )
+        return "\(changes)|\(supermuxChanges)|\(supermuxFiles)|\(showsAltScreenNoticeMenuEntry)"
+    }
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
 
     private var workspaceTitleToolbarMenu: some View {
         let value = WorkspaceTitleMenuValue(
@@ -260,13 +373,23 @@ struct WorkspaceDetailView: View {
             hasBackButton: backButtonConfiguration != nil,
             hasTrailingCluster: true,
             hasChatToggle: shouldShowChatToggle,
-            isEnabled: hasTitleMenuActions,
+            // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+            isEnabled: hasTitleMenuActions
+                || workspaceChangesAreAvailable
+                || showsAltScreenNoticeMenuEntry
+                || SupermuxWorkspaceTools.showsAnyEntry(
+                    hostCapabilities: store.supermuxConnectionSeam?.hostCapabilities
+                ),
+            // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             workspaceName: workspace.name,
             hasUnread: workspace.hasUnread,
             canCustomizeWorkspace: customizeWorkspace != nil,
             canRenameWorkspace: renameWorkspace != nil,
             canToggleReadState: setWorkspaceUnread != nil,
             canCloseWorkspace: closeWorkspace != nil,
+            // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+            toolEntriesFingerprint: workspaceTitleToolEntriesFingerprint,
+            // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             labelToken: toolbarTitleLabelToken,
             terminalTheme: store.activeTerminalTheme
         )
@@ -285,6 +408,9 @@ struct WorkspaceDetailView: View {
                     toggleReadState: toggleWorkspaceReadStateFromMenu,
                     requestClose: requestCloseWorkspaceFromMenu
                 )
+                // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+                workspaceTitleToolMenuEntries
+                // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             },
             label: {
                 switch value.labelToken {
@@ -642,6 +768,7 @@ struct WorkspaceDetailView: View {
                 activeBrowserStreamPanelID: activeBrowserStream?.id,
                 simulatorStreamRows: simulatorStreamStore.panels(in: workspace.rpcWorkspaceID.rawValue).map(SimulatorStreamPickerRow.init),
                 supportsSimulatorStream: store.supportsSimulatorStream,
+                activeSimulatorStreamPanelID: activeSimulatorStream?.id,
                 // SUPERMUX:begin ios-pane-actions
                 canCreateSimulator: canCreateSimulatorPane,
                 canClosePane: canCloseActivePane

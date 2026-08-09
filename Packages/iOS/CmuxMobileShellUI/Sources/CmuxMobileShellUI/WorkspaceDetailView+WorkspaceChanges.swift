@@ -40,7 +40,14 @@ extension WorkspaceDetailView {
         dismissTerminalKeyboardForChrome()
         store.dismissWorkspaceChangesHint(workspaceID: workspaceID)
         workspaceChangesHint = nil
-        isWorkspaceChangesSheetPresented = true
+        // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+        // Fired from the overflow menu, setting the flag in the same turn as
+        // the keyboard dismissal can overlap the menu's dismissal transition
+        // and swallow the presentation; defer it one main-actor turn.
+        Task { @MainActor in
+            isWorkspaceChangesSheetPresented = true
+        }
+        // SUPERMUX:end ios-workspace-toolbar-persistent-actions
         Task {
             await store.fetchWorkspaceChangesSummaries(
                 workspaceIDs: [workspaceID],
