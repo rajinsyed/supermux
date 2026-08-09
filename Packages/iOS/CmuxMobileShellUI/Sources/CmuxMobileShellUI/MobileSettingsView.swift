@@ -357,6 +357,24 @@ struct MobileSettingsView: View {
                 #endif
 
                 Section(L10n.string("mobile.settings.display", defaultValue: "Display")) {
+                    // SUPERMUX:begin ios-agent-chat-focus-mode
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(isOn: $displaySettings.agentChatFocusMode) {
+                            Text(L10n.string(
+                                "supermux.settings.agentChatFocusMode",
+                                defaultValue: "Focus Mode"
+                            ))
+                        }
+                        .accessibilityIdentifier("MobileSettingsAgentChatFocusMode")
+                        Text(L10n.string(
+                            "supermux.settings.agentChatFocusMode.footer",
+                            defaultValue: "Collapse tool calls in agent chat behind a “Working” summary you can tap to expand. Messages, questions, and permission requests always stay visible."
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    // SUPERMUX:end ios-agent-chat-focus-mode
+
                     Toggle(isOn: $displaySettings.showMissingFiles) {
                         Text(L10n.string(
                             "mobile.settings.showMissingFiles",
