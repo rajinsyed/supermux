@@ -3674,13 +3674,15 @@ final class cmuxUITests: XCTestCase {
         assertTerminalMenuItemExists("terminal-delayed", in: app)
     }
 
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
     @MainActor
-    func testWorkspaceDetailToolbarKeepsTerminalPickerVisibleWithLongTitle() throws {
+    func testWorkspaceDetailToolbarKeepsPersistentActionsVisibleWithLongTitleWithoutChatSession() throws {
         let app = launchWorkspaceDetailDelayedTerminalPreviewApp(environment: [
             "CMUX_UITEST_WORKSPACE_DETAIL_LONG_TITLE": "1",
         ])
         let backButton = app.buttons["MobileWorkspaceBackButton"]
         let titleMenu = workspaceTitleElement(in: app)
+        let chatButton = app.buttons["MobileWorkspaceAgentChatButton"]
         let terminalDropdown = app.buttons["MobileTerminalDropdown"]
 
         RunLoop.current.run(until: Date().addingTimeInterval(2.5))
@@ -3689,13 +3691,15 @@ final class cmuxUITests: XCTestCase {
             titleMenu: titleMenu,
             terminalDropdown: terminalDropdown,
             in: app,
-            context: "long workspace title without chat toggle"
+            context: "long workspace title without a chat session"
         )
-        XCTAssertFalse(app.buttons["MobileWorkspaceAgentChatButton"].exists)
+        XCTAssertTrue(chatButton.waitForExistence(timeout: 4))
+        XCTAssertFalse(chatButton.isEnabled)
         assertToolbarOverflowButtonDoesNotExist(in: app)
         tap(terminalDropdown, in: app)
         assertTerminalMenuItemExists("terminal-delayed", in: app)
     }
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
 
     @MainActor
     func testWorkspaceDetailToolbarKeepsTerminalPickerVisibleWithLongTitleAndChatToggle() throws {
