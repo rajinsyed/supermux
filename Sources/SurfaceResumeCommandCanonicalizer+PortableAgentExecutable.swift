@@ -109,6 +109,18 @@ extension AgentRestoreLaunch {
         ) else { return command }
         let wrapperToken = wrapperShellExecutableToken
         let executable = words[executableIndex].value
+        // SUPERMUX:begin ccx-resume-launcher
+        if executableName == "claude",
+           AgentLaunchEnvironmentPolicy().claudeResumeLauncherPath(
+               from: [AgentLaunchEnvironmentPolicy.claudeResumeLauncherEnvironmentKey: executable]
+           ) != nil {
+            let executableStart = words[executableIndex].range.lowerBound
+            return authorizing(
+                leadingShell: String(command[..<executableStart]),
+                routedCommand: String(command[executableStart...])
+            )
+        }
+        // SUPERMUX:end ccx-resume-launcher
         guard command.contains(wrapperToken) || (executable as NSString).lastPathComponent == executableName else {
             return command
         }

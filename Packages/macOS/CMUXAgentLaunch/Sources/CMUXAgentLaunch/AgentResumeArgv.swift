@@ -293,6 +293,7 @@ public struct AgentResumeArgv: Sendable, Equatable {
         }
     }
 
+    // SUPERMUX:begin ccx-resume-launcher
     /// Builds the resume argv for a built-in agent kind, or `nil` if the kind is unknown or its launch
     /// arguments cannot be preserved.
     ///
@@ -301,6 +302,8 @@ public struct AgentResumeArgv: Sendable, Equatable {
     ///   - sessionId: the session/thread id to resume.
     ///   - executablePath: the captured executable path, if any.
     ///   - arguments: the captured launch arguments (argv, including the executable as element 0).
+    ///   - environment: the captured replay-safe launch environment. A validated ccx marker makes
+    ///     Claude resume through ccx so the launcher can recreate its current runtime configuration.
     ///   - observedPermissionMode: the hook-observed Claude permission mode the session last ran
     ///     in, re-applied via ``claudeArgvApplyingObservedPermissionMode(_:observedPermissionMode:)``
     ///     for user-owned claude restore; ignored for every other kind.
@@ -309,14 +312,19 @@ public struct AgentResumeArgv: Sendable, Equatable {
         sessionId: String,
         executablePath: String?,
         arguments: [String],
+        environment: [String: String]? = nil,
         observedPermissionMode: String? = nil
     ) -> [String]? {
+        // SUPERMUX:end ccx-resume-launcher
         switch kind {
         case "claude":
             guard let argv = claudeResumeArgv(
                 sessionId: sessionId,
                 executablePath: executablePath,
-                arguments: arguments
+                arguments: arguments,
+                // SUPERMUX:begin ccx-resume-launcher
+                environment: environment
+                // SUPERMUX:end ccx-resume-launcher
             ) else { return nil }
             return Self.claudeArgvApplyingObservedPermissionMode(
                 argv,
@@ -384,6 +392,7 @@ public struct AgentResumeArgv: Sendable, Equatable {
         }
     }
 
+    // SUPERMUX:begin ccx-resume-launcher
     /// Builds the claude resume argv, routing it through cmux's `claude` wrapper
     /// so cmux hooks fire on the resumed session.
     ///
@@ -403,17 +412,27 @@ public struct AgentResumeArgv: Sendable, Equatable {
     /// (https://github.com/manaflow-ai/cmux/issues/5639). The captured executable is
     /// intentionally ignored for claude; the wrapper resolves the real binary
     /// (honouring `CMUX_CUSTOM_CLAUDE_PATH`).
+    ///
+    /// A validated ccx marker is the one exception: resume re-enters ccx with only
+    /// `--resume`, allowing the wrapper to rediscover its proxy credential and rebuild
+    /// its model fleet, settings, and prompt without replaying stale generated arguments.
     private func claudeResumeArgv(
         sessionId: String,
         executablePath: String?,
-        arguments: [String]
+        arguments: [String],
+        environment: [String: String]?
     ) -> [String]? {
+        if let launcherPath = AgentLaunchEnvironmentPolicy()
+            .claudeResumeLauncherPath(from: environment) {
+            return [launcherPath, "--resume", sessionId]
+        }
         let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "claude")
         guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "claude", args: parts.tail) else {
             return nil
         }
         return ["claude", "--resume", sessionId] + preserved
     }
+    // SUPERMUX:end ccx-resume-launcher
 
     private func withOption(
         _ kind: String,

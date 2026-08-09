@@ -140,6 +140,9 @@ public struct AgentRestorePlanner: Sendable {
                     sessionId: checkpointID,
                     executablePath: launch?.executablePath,
                     arguments: launch?.arguments ?? [],
+                    // SUPERMUX:begin ccx-resume-launcher
+                    environment: launch?.environment,
+                    // SUPERMUX:end ccx-resume-launcher
                     observedPermissionMode: request.observedPermissionMode
                 ) {
                     return (arguments, true)
@@ -207,14 +210,25 @@ public struct AgentRestorePlanner: Sendable {
         kind: String,
         environment: inout [String: String]
     ) -> [String] {
+        // SUPERMUX:begin ccx-resume-launcher
         guard let first = arguments.first,
               let restoreLaunch = AgentRestoreLaunch(
                   kind: kind,
                   sessionID: request.checkpointID
-              ),
-              (first as NSString).lastPathComponent == restoreLaunch.executableName else {
+              ) else {
             return arguments
         }
+        if kind == "claude",
+           AgentLaunchEnvironmentPolicy().claudeResumeLauncherPath(
+               from: [AgentLaunchEnvironmentPolicy.claudeResumeLauncherEnvironmentKey: first]
+           ) != nil {
+            environment["CMUX_AGENT_RESTORE_LAUNCH"] = restoreLaunch.authorizationEnvironmentValue
+            return arguments
+        }
+        guard (first as NSString).lastPathComponent == restoreLaunch.executableName else {
+            return arguments
+        }
+        // SUPERMUX:end ccx-resume-launcher
 
         if first != restoreLaunch.executableName {
             environment[restoreLaunch.customExecutablePathEnvironmentKey] = first

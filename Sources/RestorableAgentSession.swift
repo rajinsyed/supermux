@@ -554,6 +554,9 @@ enum AgentResumeCommandBuilder {
             sessionId: sessionId,
             executablePath: launchCommand?.executablePath,
             arguments: launchCommand?.arguments ?? [],
+            // SUPERMUX:begin ccx-resume-launcher
+            environment: launchCommand?.environment,
+            // SUPERMUX:end ccx-resume-launcher
             observedPermissionMode: observedPermissionMode
         )
     }
