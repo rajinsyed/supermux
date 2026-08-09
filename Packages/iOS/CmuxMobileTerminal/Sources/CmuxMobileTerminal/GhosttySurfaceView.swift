@@ -1046,11 +1046,23 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
     /// terminal renderer is not Auto Layout-backed, so its display-link pass reads the
     /// constrained toolbar's presentation frame until it reaches the model target.
     private func advanceBottomDockTransition() {
+        // SUPERMUX:begin ios-terminal-host-keyboard-sync
+        // The keyboard guide lives on GhosttySurfaceHostView, but this
+        // renderer's frame never changes when that guide moves, so UIKit does
+        // not guarantee a surface layoutSubviews after the host seats the new
+        // guide target — keyboardHeight can stay stale at 0 and the keyboard
+        // covers the grid. Re-sample the host guide on the display link (the
+        // one place that already runs every frame while the dock animates) so
+        // a target change re-derives the viewport even without a layout pass.
+        let keyboardGeometryChanged = synchronizeKeyboardGeometryFromLayoutGuide()
+        // SUPERMUX:end ios-terminal-host-keyboard-sync
         let isTransitioning = bottomDockTransitionInFlight
         #if DEBUG
         sampleInternalDockPresentationGap()
         #endif
-        guard isTransitioning || bottomDockTransitionObserved else { return }
+        // SUPERMUX:begin ios-terminal-host-keyboard-sync
+        guard keyboardGeometryChanged || isTransitioning || bottomDockTransitionObserved else { return }
+        // SUPERMUX:end ios-terminal-host-keyboard-sync
         bottomDockTransitionObserved = isTransitioning
         layoutRenderedTerminalForCurrentViewport()
         layoutZoomOverlay()

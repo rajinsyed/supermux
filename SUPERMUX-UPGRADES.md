@@ -16,6 +16,15 @@ Add a section here as the last step of every upstream merge.
 
 ## cmux 0.64.22 → main @ `6d37f62a47` (2026-08-09)
 
+> **Post-merge dogfood regression, fixed on this branch (touchpoints #213/#214):** upstream's
+> keyboard rework in `ba47b1dc0d` ("Keep the iOS terminal dock pinned during keyboard
+> reversals") moved the keyboard layout guide onto a new host view, but the renderer only
+> re-reads keyboard height in its own `layoutSubviews` — which UIKit no longer guarantees to
+> run when the host's guide moves. Result on device: the keyboard opened OVER the terminal
+> instead of shrinking it. Fixed by re-sampling the host guide on the existing display-link
+> pass. This is an upstream bug (stock cmux iOS at `6d37f62a47` has it too) — worth offering
+> upstream.
+>
 > Follow-up on the same branch: fork `origin/main` (PRs #21 + #22 — AI token headroom for
 > reasoning models, and the compact AI usage-analytics button beside the usage gauge) was merged
 > in right after. The registry row PR #22 claimed as #148 was refiled as **#146b** (this branch

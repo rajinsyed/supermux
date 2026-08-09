@@ -7369,6 +7369,43 @@ final class cmuxUITests: XCTestCase {
             file: file,
             line: line
         )
+        // SUPERMUX:begin ios-terminal-host-keyboard-sync
+        // The renderer's keyboard model must match the guide, not merely the
+        // dock chrome. After ba47b1dc0d moved the guide onto the host view,
+        // the surface could keep keyboardHeight=0 (grid full height, keyboard
+        // covering it) while every dock-edge assertion above still passed —
+        // renderMaxY and viewportHeight are derived from the same stale
+        // height, so they agree even when both are wrong. Assert the two
+        // invariants that stale height breaks: the modeled keyboard overlap
+        // resolves to the guide's actual occupancy, and the keyboard-up
+        // viewport is materially shorter than the surface.
+        if let keyboardHeight = dock["keyboardHeight"].flatMap(Double.init),
+           let boundsHeight = dock["boundsHeight"].flatMap(Double.init),
+           let viewportHeight = dock["viewportHeight"].flatMap(Double.init),
+           boundsHeight > 0 {
+            XCTAssertEqual(
+                keyboardHeight,
+                boundsHeight - guideTop,
+                accuracy: 3,
+                "Renderer keyboardHeight must track the host keyboard guide for \(context). dock=\(dock)",
+                file: file,
+                line: line
+            )
+            XCTAssertLessThan(
+                viewportHeight,
+                boundsHeight - 120,
+                "Keyboard-up terminal viewport must shrink below the surface height for \(context). dock=\(dock)",
+                file: file,
+                line: line
+            )
+        } else {
+            XCTFail(
+                "Missing renderer keyboard geometry for \(context). dock=\(dock)",
+                file: file,
+                line: line
+            )
+        }
+        // SUPERMUX:end ios-terminal-host-keyboard-sync
         XCTAssertEqual(
             Double(surface.frame.minY) + guideTop,
             Double(keyboard.frame.minY),
