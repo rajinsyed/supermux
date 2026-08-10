@@ -529,6 +529,25 @@ def main() -> int:
         )
         & changed_dependency_roots
     )
+    # SUPERMUX:begin fix-resolved-policy-path-deps
+    # Same unsatisfiable case as the per-package gate below: the workspace
+    # lockfile records REMOTE pins, so a graph change that leaves the union of
+    # remote dependency calls across workspace members identical gives Xcode
+    # nothing to rewrite (verified: pins and originHash byte-identical after a
+    # real `-resolvePackageDependencies`). Only demand a diff when the
+    # workspace's own remote closure actually moved.
+    if ios_workspace_dependencies_changed:
+        current_ios_remote_calls: set[str] = set()
+        for member in current_ios_workspace_roots:
+            current_ios_remote_calls |= closure_remote_dependency_calls(member, graph)
+        previous_ios_remote_calls: set[str] = set()
+        for member in previous_ios_workspace_roots:
+            previous_ios_remote_calls |= closure_remote_dependency_calls(
+                member, previous_graph
+            )
+        if current_ios_remote_calls == previous_ios_remote_calls:
+            ios_workspace_dependencies_changed = False
+    # SUPERMUX:end fix-resolved-policy-path-deps
     changed_ios_workspace_members = (
         current_ios_workspace_roots ^ previous_ios_workspace_roots
     )
@@ -599,6 +618,19 @@ def main() -> int:
             continue
         if expected_lockfile in changed_files:
             continue
+        # SUPERMUX:begin fix-resolved-policy-path-deps
+        # A dependency change further down the graph only reaches THIS root's
+        # lockfile if it changes the set of remote pins this root resolves.
+        # Adding a path dep onto a package whose remote pins this root already
+        # resolved leaves `swift package resolve` with nothing to write here —
+        # the pins and the originHash come back byte-identical — so demanding a
+        # diff is unsatisfiable. The root whose OWN closure grew is still
+        # caught: it lands in `changed_dependency_roots` above.
+        if closure_remote_dependency_calls(root, graph) == closure_remote_dependency_calls(
+            root, previous_graph
+        ):
+            continue
+        # SUPERMUX:end fix-resolved-policy-path-deps
         changed_manifests = ", ".join(
             all_manifests[changed_root].as_posix()
             for changed_root in sorted(affected_dependency_roots)

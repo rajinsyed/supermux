@@ -29,6 +29,9 @@ public final class MobileDisplaySettings {
     private static let terminalFolderTapEnabledKey = "cmux.mobile.terminalFolderTapEnabled"
     private static let terminalFilesChipEnabledKey = "cmux.mobile.terminalFilesChipEnabled"
     private static let taskComposerEnabledKey = "cmux.mobile.taskComposerEnabled"
+    // SUPERMUX:begin ios-agent-chat-focus-mode
+    private static let agentChatFocusModeKey = "supermux.mobile.agentChatFocusMode"
+    // SUPERMUX:end ios-agent-chat-focus-mode
     private static let workspacePreviewLineCountKey = "cmux.mobile.workspacePreviewLineCount"
     private static let unreadIndicatorLeftShiftKey = "cmux.mobile.debug.unreadIndicatorLeftShift.v2"
     #if DEBUG
@@ -116,6 +119,17 @@ public final class MobileDisplaySettings {
             defaults.set(clamped, forKey: MobileTerminalScrollbackPreference.defaultsKey)
         }
     }
+
+    // SUPERMUX:begin ios-agent-chat-focus-mode
+    /// Whether the agent chat folds runs of tool calls behind an expandable
+    /// "Working" summary, leaving prose, prompts, questions, and permission
+    /// requests always visible. Defaults to `true` — a phone-sized transcript
+    /// is mostly tool calls, and the conversation is what the user opened it
+    /// for. Mutating this writes through to the injected ``UserDefaults``.
+    public var agentChatFocusMode: Bool {
+        didSet { defaults.set(agentChatFocusMode, forKey: Self.agentChatFocusModeKey) }
+    }
+    // SUPERMUX:end ios-agent-chat-focus-mode
 
     // SUPERMUX:begin ios-terminal-scroll-speed
     /// Multiplier applied to terminal wheel-scroll sensitivity (TUIs and other
@@ -219,6 +233,11 @@ public final class MobileDisplaySettings {
         // SUPERMUX:begin ios-terminal-scroll-speed
         self.terminalScrollSpeed = MobileTerminalScrollSpeedPreference.resolve(from: defaults)
         // SUPERMUX:end ios-terminal-scroll-speed
+        // SUPERMUX:begin ios-agent-chat-focus-mode
+        // Absent key reads as ON: focus mode is the intended default, so a
+        // fresh install gets the quiet transcript without visiting Settings.
+        self.agentChatFocusMode = defaults.object(forKey: Self.agentChatFocusModeKey) as? Bool ?? true
+        // SUPERMUX:end ios-agent-chat-focus-mode
         self.taskComposerEnabled = defaults.bool(forKey: Self.taskComposerEnabledKey)
         let storedPreviewLines = defaults.object(forKey: Self.workspacePreviewLineCountKey) as? Int
         self.workspacePreviewLineCount = Self.clampedWorkspacePreviewLineCount(

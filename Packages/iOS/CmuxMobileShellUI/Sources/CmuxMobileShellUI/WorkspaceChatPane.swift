@@ -6,6 +6,9 @@ import CmuxMobileShell
 import CmuxMobileShellModel
 import CmuxMobileSupport
 import CmuxMobileTerminal
+// SUPERMUX:begin ios-agent-chat-focus-mode
+import SupermuxMobileUI
+// SUPERMUX:end ios-agent-chat-focus-mode
 import SwiftUI
 import UIKit
 
@@ -23,6 +26,9 @@ struct WorkspaceChatPane: View {
     let onExitChat: () -> Void
 
     @Environment(BrowserSurfaceStore.self) private var browserStore
+    // SUPERMUX:begin ios-agent-chat-focus-mode
+    @Environment(MobileDisplaySettings.self) private var displaySettings
+    // SUPERMUX:end ios-agent-chat-focus-mode
 
     @State private var accessoryConfiguration = TerminalAccessoryConfiguration.shared
     @State private var isShowingShortcutSettings = false
@@ -41,6 +47,12 @@ struct WorkspaceChatPane: View {
                 onOpenTerminal: openTerminal
             )
             .environment(\.chatArtifactLoader, artifactLoader)
+            // SUPERMUX:begin ios-agent-chat-focus-mode
+            // Folds runs of tool calls behind an expandable summary. Upstream
+            // still owns the table, keyboard tracking, paging, and every row
+            // view; with the setting off this renders exactly as upstream.
+            .supermuxChatFocusMode(isEnabled: displaySettings.agentChatFocusMode)
+            // SUPERMUX:end ios-agent-chat-focus-mode
         }
         .sheet(isPresented: $isShowingShortcutSettings) {
             TerminalShortcutsSettingsView(scope: .agentChat)

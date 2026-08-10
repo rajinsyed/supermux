@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **251**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **258**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -130,7 +130,7 @@ Rules for adding a touchpoint:
 | 103 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-project-workspaces`, `supermux-mobile-row-activity` | Hide filter: a fenced `supermuxFlatWorkspaces` helper (`workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)`), where `supermuxShownProjectIDs` is non-empty only while `snapshot.isVisible && snapshot.hasLoaded && trimmedQuery.isEmpty && !filter.isActive` — i.e. the hide is active only when the Projects section is visible AND loaded AND no search/filter, plus two fenced swaps where upstream read `workspaces` — one in `filteredWorkspaces` (a one-line `let workspaces = supermuxFlatWorkspaces` rebind) and one in `groupedWorkspaces` (the fence wraps only the `return`; upstream's `parsedMachines` precompute sits above it, unfenced). Row dot: one fenced `.supermuxWorkspaceActivityDot(rawActivity:)` modifier on `WorkspaceNavigationRow` in `workspaceRow` |
 | 104 | `ios/cmux/AppCompositionRoot.swift` | `uitest-clear-paired-mac-state` | When `UITestConfig.mockDataEnabled` and the harness sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1`, deletes `Application Support/cmux/` (the `MobilePairedMacStore` sqlite + WAL/SHM) once at composition-root init, before `CMUXMobileRootScene` opens the store. Fixes cross-test pairing-state leakage on the shared simulator: since #89 made pairing actually complete, a persisted paired Mac from a prior test/run auto-navigated past `MobileAddDeviceForm` and its dead-host reconnect churn broke 3 cmuxUITests (cmuxUITests.swift:245/:586). No-op for real installs: the mock gate is DEBUG-only and the env var is only set by the XCUITest harness (#105) |
 | 105 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-clear-paired-mac-launch` | `launchApp` sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1` on every harness launch so each test starts from an unpaired slate (consumed by #104) |
-| 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base. **FIVE fence blocks** (previous notes said three/four): helper `lockfile_recorded_dependency_calls`, `path_dependency_remote_pin_roots`, the `current_remote_memo` declaration in `main` (upstream's refactor deleted the surrounding line the memo used to piggyback on, so it is now its own fenced block — a merge that drops it makes the script crash with `NameError: current_remote_memo`), the changed-roots skip in `main`, and `file_text_at` |
+| 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base. **FIVE fence blocks** (previous notes said three/four): helper `lockfile_recorded_dependency_calls`, `path_dependency_remote_pin_roots`, the `current_remote_memo` declaration in `main` (upstream's refactor deleted the surrounding line the memo used to piggyback on, so it is now its own fenced block — a merge that drops it makes the script crash with `NameError: current_remote_memo`), the changed-roots skip in `main`, and `file_text_at`. **Since Focus Mode (#244–250), SEVEN**: two more skips close the same unsatisfiable-demand hole one level up, where a path dep is added onto a package whose remote pins the depender ALREADY resolved. The per-package loop and the iOS-workspace gate both then demanded a lockfile diff that SwiftPM/Xcode will not write, because the recorded remote pins and the `originHash` come back byte-identical (verified against a real `-resolvePackageDependencies`). Both new skips compare the *remote* dependency closure before and after and bail only when it is unchanged, so adding a genuine `.package(url:)` still fails the check |
 | 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:showingChanges:showingFiles:)` modifier on the detail `body`'s outer `Group`. Since the #228 toolbar consolidation the modifier mounts ONLY the two sheets (`SupermuxChangesScreen` / `SupermuxFileBrowserScreen`), driven by the `isSupermuxChangesSheetPresented` / `isSupermuxFilesSheetPresented` bindings that #228's explicit overflow menu flips via the fork-owned `SupermuxWorkspaceToolsMenuEntries`; it no longer adds `ToolbarItem`s of its own. Fed by the #96 `supermuxConnectionSeam`; each menu entry hides without its capability (`supermux.changes.v1` / `supermux.files.v1`). Note upstream now ships its OWN mobile diff viewer behind `workspace.changes.v1`; both are advertised whenever `CmuxFeatureFlags.mobileWorkspaceChangesFlag` is on — see SUPERMUX.md "Known limitations", open decision 2 |
 | 109 | `scripts/lint-ios-package-conventions.sh` | `lint-ios-conventions-fork-scopes` | Adds the fork mobile packages (`Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobile*`) to the lint's SCOPES so the iOS conventions lint (CI job `package-conventions-lint` in `.github/workflows/test-ios.yml`) mechanically enforces its per-line rules on them; deliberate constant/text namespace holders in the fork packages carry inline `lint:allow` justifications |
 | 110 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-search` | ⚠️ **INERT since the 0.64.21 merge — comment-only marker, the fork behavior is gone.** It used to replace upstream's `.searchable(text: $searchText)` on the workspace `List` so the phone had no main-list search bar. Upstream moved search into two NEW files (`…/WorkspaceListSearchHost.swift` pre-iOS 26, `…/MobilePrimaryTabScaffold.swift` for the iOS 26 search Tab) and `searchText` is now an injected property rather than `@State`, so **phone search is LIVE again** and there is nothing left in this file to remove. OPEN DECISION — re-apply at the new hosts, retire the touchpoint, or accept upstream's search (current default). See SUPERMUX.md "Known limitations" |
@@ -270,12 +270,64 @@ Rules for adding a touchpoint:
 | 249 | `Packages/iOS/CmuxMobileTerminal/Tests/CmuxMobileTerminalTests/MobileTerminalZoomControlTests.swift` | `unfenced` | Whole-file regression coverage for the 12 pt built-in, saved-default persistence/clearing, and all three floating zoom buttons dispatching their actions |
 | 250 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Toolbar.swift` | `supermux-mobile-list-toolbar-identity` | Moves the `showsNavigationToolbar` condition INSIDE the `.toolbar` builder instead of branching around `content`. Upstream's `if showsNavigationToolbar { content.toolbar {…} } else { content }` gave `content` a different structural identity per branch, so every workspace push/pop tore down and rebuilt `WorkspaceListTable` (a `UIViewControllerRepresentable`) — resetting scroll to zero, forcing a full `structureChanged` rebuild of every cell, and re-firing every hosted `.task`. Measured: push+pop built the representable 3× and moved the offset 1200 → 0 |
 | 251 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListTableCoordinator.swift` | `supermux-mobile-list-reconfigure-rows` | Splits the non-structural update path: rows whose height changed go through `reconfigureRows(at:)` (same cell instance, hosted SwiftUI state preserved, height still re-queried), while only rows with a changed native-action payload keep `reloadRows` (UIKit caches swipe-derived accessibility actions on the cell and reconfiguring does not invalidate them). Previously every height change reloaded, destroying the hosted subtree — which blanked the fork's project avatars, since the whole Projects section is one hosted cell and its decoded icons live in `@State`. Distinct from #150, which fences the same file for the Projects row itself |
+| 252 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/ChatFocusMode+Supermux.swift` | `agent-chat-focus-mode` | **Whole-file fork addition inside an upstream package** (same pattern as the other whole-file rows here). Declares `ChatTranscriptGrouping` (a row-array → entry-array regrouper plus a configuration `identity`), its `Entry` type, the `chatTranscriptGrouping` environment value, and the `.chatTranscriptGrouping(_:)` modifier. A `nil` grouping renders upstream byte-for-byte, so demos, previews, tests, and an upstream-paired phone are unaffected. New file — cannot conflict on merge |
+| 253 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/Transcript/ChatTranscriptTableView.swift` | `agent-chat-focus-mode` | Seven fences: the `@Environment(\.chatTranscriptGrouping)` read; the `grouping` + `groupedEntries` fields on `ChatTranscriptTableConfiguration` and the arguments that fill them (**entries are computed ONCE in `updateUIView`**, not per cell, or the closure re-runs for every visible row while the transcript streams); `groupingReloadIdentity` + `groupedEntriesByID`; the `.groupedEntry(String)` item case and its `id`; the `makeItems()` branch emitting entries instead of rows; the cell-factory branch; and `groupingChanged` folded into `shouldReload`. **The reload fold is load-bearing**: expanding a group or flipping the setting can leave item ids identical, and without it the table keeps stale cells |
+| 254 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobileDisplaySettings.swift` | `ios-agent-chat-focus-mode` | Three fences: the `agentChatFocusModeKey` constant, the `agentChatFocusMode` observed property with write-through, and its seed in `init` (absent key reads as **true** — focus mode is the intended default, so a fresh install gets the quiet transcript without visiting Settings). Key is `supermux.mobile.agentChatFocusMode` |
+| 255 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobileSettingsView.swift` | `ios-agent-chat-focus-mode` | One fence at the top of the existing Display section: the **Focus Mode** toggle plus its explanatory footer, bound to `displaySettings.agentChatFocusMode`. Accessibility id `MobileSettingsAgentChatFocusMode`. The same file's terminal-scroll-speed slider remains registered as #199 |
+| 256 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceChatPane.swift` | `ios-agent-chat-focus-mode` | Three fences: `import SupermuxMobileUI`, the `@Environment(MobileDisplaySettings.self)` read, and the `.supermuxChatFocusMode(isEnabled:)` modifier on the `ChatScreen` group. **This is the only line that turns focus mode on**; remove it and the phone renders upstream's transcript unchanged |
+| 257 | `Packages/iOS/SupermuxMobileUI/Package.swift` | `unfenced` | Fork-owned manifest: adds `../../Shared/CmuxAgentChat` and `../CmuxAgentChatUI` package + target dependencies so the fork can name `ChatTranscriptRow` / `ChatRowActions` and re-render expanded rows with upstream's own `ChatTranscriptRowView`. Acyclic — `CmuxMobileShellUI` already depends on both |
+| 258 | `ios/cmux/Resources/Localizable.xcstrings` | `unfenced` | Two `supermux.settings.agentChatFocusMode*` keys (en + ja) for the Settings toggle and its footer. The shell package resolves `L10n` against the **app** bundle, so these belong here, NOT in the `SupermuxMobileUI` package catalog (which carries the four `supermux.chat.focus.*` keys) |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
 ### 245–249. iOS terminal default zoom — `ios-terminal-default-zoom`
 
 Keep `MobileTerminalFontPreference.defaultSize` at 12 pt and make every defaulted `GhosttySurfaceView` initializer reference that constant rather than duplicating a number. `MobileTerminalZoomPreference.resolvedFontSize` must return the explicitly saved size when present and the built-in 12 pt size otherwise. The production terminal mount in `WorkspaceDetailView+TerminalArtifacts.swift` must pass that resolved value into `GhosttySurfaceRepresentable`; passing the built-in constant directly recreates the bug where tapping the floating "Set as default" button persists a value that no newly selected terminal ever reads. The floating Reset action continues to apply the resolved value, while Restore built-in clears the explicit preference and applies 12 pt. Keep `MobileTerminalZoomControlTests` in the package test target to cover persistence/clearing and dispatch from all three floating buttons.
+
+### 252–258. Agent chat Focus Mode — `agent-chat-focus-mode` + `ios-agent-chat-focus-mode`
+
+A coding-agent session is mostly tool calls. Rendered one row each, they bury the handful of
+sentences the agent actually said — which is what the user opened the phone to read. Focus Mode
+folds each consecutive run of work rows behind a single tappable "Working · N steps" summary.
+
+**What folds:** `toolUse`, `thought`, `terminal`, `fileEdit`.
+**What never folds:** prose, user prompts, `question`, `permissionRequest`, `status`, `attachment`,
+date headers, the unread separator, and pending outbound prompts. Questions and permission requests
+BLOCK the agent — hiding them behind a disclosure would strand the session. `SupermuxChatFocusGroupingTests`
+pins both lists, plus the invariant that grouping never drops or reorders a row.
+
+Runs shorter than `minimumGroupSize` (2) stay expanded: folding a single call costs a tap and saves
+nothing.
+
+**Where the code lives.** All of it is fork-owned under
+`Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/AgentChat/`
+(`SupermuxChatFocusGrouping` — the pure fold; `SupermuxChatFocusMode` — the modifier that owns
+expanded state; `SupermuxChatWorkGroupRow` — the summary; `SupermuxChatShimmerText`). Upstream keeps
+owning the table, keyboard tracking, paging, and every individual row view — expanded runs call
+straight back into `ChatTranscriptRowView`.
+
+**Three things are load-bearing and easy to lose on a re-apply:**
+
+1. **Entries are computed once per update, in `updateUIView`** (#245), and shared by `makeItems()`
+   and the cell factory. Computing them inside the factory instead re-runs the fold for every
+   visible cell on every streamed delta, and lets the two disagree about what entry N is.
+2. **`groupingReloadIdentity` must stay in `shouldReload`** (#245). It combines the grouping's
+   configuration identity with the ordered entry ids, so both "the setting flipped" and "a group
+   expanded, so its rows moved" force a reload. Without it the table keeps stale cells.
+3. **Expanded state lives in `SupermuxChatFocusModifier`, above the transcript** — deliberately not
+   in `SupermuxChatWorkGroupRow`. The transcript is a `UITableView` that decides to reload by
+   comparing item identity; a tap that only flipped a child view's private `@State` would resize a
+   cell the table does not know changed (self-sizing drift). Keeping it above means a tap changes
+   the grouping identity, which forces a clean reload.
+
+**To re-apply after an upstream merge:**
+
+- If upstream reshapes `ChatTranscriptTableView`, re-add the seven fences from #245. The
+  `.groupedEntry` case follows whatever item taxonomy upstream now has.
+- If upstream reshapes the Display settings section, re-add the #247 toggle.
+- Verify it is actually live, not just compiling: open a Claude session with Focus Mode on and
+  confirm runs of tool calls appear as one "Working · N steps" row that expands on tap. If every
+  tool call still renders individually, the #248 modifier or item 1 above was dropped.
 
 ### 250. Workspace-list toolbar identity — `supermux-mobile-list-toolbar-identity`
 
@@ -2997,3 +3049,48 @@ the `SUPERMUX:end` line. Verify with `./scripts/lint-ios-package-conventions.sh`
 "OK: no unjustified convention violations."). Drop any of these fences as soon as an upstream
 merge brings the real fix for (or upstream's own `lint:allow` at) that site — these fences are
 pure grandfathering and may only shrink.
+
+### 244–250. Agent chat Focus Mode — `agent-chat-focus-mode` + `ios-agent-chat-focus-mode`
+
+A coding-agent session is mostly tool calls. Rendered one row each, they bury the handful of
+sentences the agent actually said — which is what the user opened the phone to read. Focus Mode
+folds each consecutive run of work rows behind a single tappable "Working · N steps" summary.
+
+**What folds:** `toolUse`, `thought`, `terminal`, `fileEdit`.
+**What never folds:** prose, user prompts, `question`, `permissionRequest`, `status`, `attachment`,
+date headers, the unread separator, and pending outbound prompts. Questions and permission requests
+BLOCK the agent — hiding them behind a disclosure would strand the session. `SupermuxChatFocusGroupingTests`
+pins both lists, plus the invariant that grouping never drops or reorders a row.
+
+Runs shorter than `minimumGroupSize` (2) stay expanded: folding a single call costs a tap and saves
+nothing.
+
+**Where the code lives.** All of it is fork-owned under
+`Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/AgentChat/`
+(`SupermuxChatFocusGrouping` — the pure fold; `SupermuxChatFocusMode` — the modifier that owns
+expanded state; `SupermuxChatWorkGroupRow` — the summary; `SupermuxChatShimmerText`). Upstream keeps
+owning the table, keyboard tracking, paging, and every individual row view — expanded runs call
+straight back into `ChatTranscriptRowView`.
+
+**Three things are load-bearing and easy to lose on a re-apply:**
+
+1. **Entries are computed once per update, in `updateUIView`** (#245), and shared by `makeItems()`
+   and the cell factory. Computing them inside the factory instead re-runs the fold for every
+   visible cell on every streamed delta, and lets the two disagree about what entry N is.
+2. **`groupingReloadIdentity` must stay in `shouldReload`** (#245). It combines the grouping's
+   configuration identity with the ordered entry ids, so both "the setting flipped" and "a group
+   expanded, so its rows moved" force a reload. Without it the table keeps stale cells.
+3. **Expanded state lives in `SupermuxChatFocusModifier`, above the transcript** — deliberately not
+   in `SupermuxChatWorkGroupRow`. The transcript is a `UITableView` that decides to reload by
+   comparing item identity; a tap that only flipped a child view's private `@State` would resize a
+   cell the table does not know changed (self-sizing drift). Keeping it above means a tap changes
+   the grouping identity, which forces a clean reload.
+
+**To re-apply after an upstream merge:**
+
+- If upstream reshapes `ChatTranscriptTableView`, re-add the seven fences from #245. The
+  `.groupedEntry` case follows whatever item taxonomy upstream now has.
+- If upstream reshapes the Display settings section, re-add the #247 toggle.
+- Verify it is actually live, not just compiling: open a Claude session with Focus Mode on and
+  confirm runs of tool calls appear as one "Working · N steps" row that expands on tap. If every
+  tool call still renders individually, the #248 modifier or item 1 above was dropped.
