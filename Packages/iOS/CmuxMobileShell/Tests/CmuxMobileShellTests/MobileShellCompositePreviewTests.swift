@@ -575,6 +575,60 @@ import Testing
         #expect(store.shouldAutoFocusTerminalSurface("terminal-agent") == false)
     }
 
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    @Test(arguments: [
+        MobileWorkspaceFocusedPanel.browserKind,
+        MobileWorkspaceFocusedPanel.simulatorKind,
+    ])
+    func chromeTerminalSelectionReclaimsFocusFromStreamedPanel(
+        streamedPanelKind: String
+    ) throws {
+        let store = MobileShellComposite.preview()
+        store.signIn()
+        store.pairingCode = "debug"
+        store.connectPreviewHost()
+
+        let current = try #require(store.selectedTerminalID)
+        store.selectedWorkspaceFocusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: "streamed-panel",
+            kind: streamedPanelKind
+        )
+        #expect(store.selectedTerminalID == current)
+
+        // The terminal id did not change while browser/Simulator chrome was up,
+        // but choosing it is still an effective-panel navigation that must be
+        // mirrored to the Mac.
+        store.selectTerminalFromChrome(current)
+
+        #expect(store.selectedWorkspaceFocusedPanel == MobileWorkspaceFocusedPanel(
+            panelID: current.rawValue,
+            kind: MobileWorkspaceFocusedPanel.terminalKind
+        ))
+        #expect(store.shouldAutoFocusTerminalSurface(current.rawValue) == false)
+    }
+
+    @Test func sameTerminalDeepLinkReclaimsFocusFromStreamedPanel() throws {
+        let store = MobileShellComposite.preview()
+        store.signIn()
+        store.pairingCode = "debug"
+        store.connectPreviewHost()
+
+        let current = try #require(store.selectedTerminalID)
+        store.selectedWorkspaceFocusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: "browser-panel",
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        )
+
+        store.selectTerminal(current)
+
+        #expect(store.selectedWorkspaceFocusedPanel == MobileWorkspaceFocusedPanel(
+            panelID: current.rawValue,
+            kind: MobileWorkspaceFocusedPanel.terminalKind
+        ))
+        #expect(store.shouldAutoFocusTerminalSurface(current.rawValue) == true)
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
+
     @Test func selectingWorkspaceReconcilesTerminalSelection() {
         let store = MobileShellComposite.preview()
         store.signIn()

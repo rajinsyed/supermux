@@ -14552,6 +14552,16 @@ class TerminalController {
         ) else {
             return .err(code: "internal_error", message: "Failed to create terminal", data: nil)
         }
+        // SUPERMUX:begin supermux-mobile-create-focus
+        if v2Bool(params, "focus") == true,
+           let focusError = v2SupermuxCreatedPanelFocusError(
+               workspaceID: workspace.id,
+               panelID: terminal.id
+           ) {
+            _ = workspace.closePanel(terminal.id, force: true)
+            return focusError
+        }
+        // SUPERMUX:end supermux-mobile-create-focus
         // workspace.updated emit is handled by MobileWorkspaceListObserver.
         return v2MobileWorkspaceList(
             params: params,

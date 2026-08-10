@@ -18,6 +18,7 @@ import Testing
         #expect(!capabilities.supportsSelectionSync)
         #expect(!capabilities.supportsPanelSelectionSync)
         #expect(!capabilities.supportsPanes)
+        #expect(!capabilities.supportsPhonePush)
         for capability in SupermuxMobileCapability.all {
             #expect(!capabilities.contains(capability))
         }
@@ -52,6 +53,7 @@ import Testing
         #expect(!capabilities.supportsSelectionSync)
         #expect(!capabilities.supportsPanelSelectionSync)
         #expect(!capabilities.supportsPanes)
+        #expect(!capabilities.supportsPhonePush)
     }
 
     @Test func everyAccessorMatchesItsWireString() {
@@ -69,6 +71,7 @@ import Testing
             (.selectionSyncV1, \.supportsSelectionSync),
             (.selectionSyncV2, \.supportsPanelSelectionSync),
             (.panesV1, \.supportsPanes),
+            (.phonePushV1, \.supportsPhonePush),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {
@@ -97,5 +100,6 @@ import Testing
         #expect(!capabilities.supportsSelectionSync)
         #expect(!capabilities.supportsPanelSelectionSync)
         #expect(!capabilities.supportsPanes)
+        #expect(!capabilities.supportsPhonePush)
     }
 }

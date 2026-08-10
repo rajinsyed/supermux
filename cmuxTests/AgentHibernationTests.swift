@@ -346,6 +346,64 @@ struct AgentHibernationTests {
     }
     // SUPERMUX:end panel-scoped-shared-agent-lifecycle-clear
 
+    // SUPERMUX:begin panel-agent-liveness-evidence
+    @MainActor
+    @Test
+    func testStaleSweepRetiresDeadNonOwnerPanelLifecycleForSharedKey() throws {
+        let workspace = Workspace()
+        let firstPanelId = try #require(workspace.focusedPanelId)
+        let paneId = try #require(workspace.paneId(forPanelId: firstPanelId))
+        let secondPanelId = try #require(workspace.newTerminalSurface(inPane: paneId, focus: false)).id
+
+        // First Claude reports with a PID that is certainly dead by now
+        // (recorded identity is nil because no such process exists), then a
+        // sibling steals the shared key's single PID slot with a live PID.
+        workspace.recordAgentPID(key: "claude_code", pid: 999_999, panelId: firstPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: firstPanelId, lifecycle: .running)
+        workspace.recordAgentPID(
+            key: "claude_code",
+            pid: ProcessInfo.processInfo.processIdentifier,
+            panelId: secondPanelId,
+            refreshPorts: false
+        )
+        workspace.setAgentLifecycle(key: "claude_code", panelId: secondPanelId, lifecycle: .running)
+
+        // The first panel owns no PID key anymore, so before the evidence
+        // sweep its dead agent's `running` entry was unreachable forever.
+        expectTrue((workspace.agentPIDKeysByPanelId[firstPanelId] ?? []).isEmpty)
+
+        expectTrue(workspace.clearStaleAgentPIDs(panelId: firstPanelId, refreshPorts: false))
+
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .unknown)
+        // The live sibling is untouched: lifecycle, PID, and ownership stay.
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
+        expectEqual(workspace.agentPIDPanelIdsByKey["claude_code"], secondPanelId)
+    }
+
+    @MainActor
+    @Test
+    func testStaleSweepKeepsNonOwnerLifecycleWhoseProcessIsAlive() throws {
+        let workspace = Workspace()
+        let firstPanelId = try #require(workspace.focusedPanelId)
+        let paneId = try #require(workspace.paneId(forPanelId: firstPanelId))
+        let secondPanelId = try #require(workspace.newTerminalSurface(inPane: paneId, focus: false)).id
+
+        // Both Claudes are "alive" (this test process stands in for each);
+        // the second steals the shared PID slot from the first.
+        let livePid = ProcessInfo.processInfo.processIdentifier
+        workspace.recordAgentPID(key: "claude_code", pid: livePid, panelId: firstPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: firstPanelId, lifecycle: .running)
+        workspace.recordAgentPID(key: "claude_code", pid: livePid, panelId: secondPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: secondPanelId, lifecycle: .running)
+
+        _ = workspace.clearStaleAgentPIDs(panelId: firstPanelId, refreshPorts: false)
+
+        // A live process is never retired just because ownership moved on.
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .running)
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
+    }
+    // SUPERMUX:end panel-agent-liveness-evidence
+
     @Test
     func testSessionIndexLoadsAgentLifecycleFromHookStore() throws {
         let home = FileManager.default.temporaryDirectory

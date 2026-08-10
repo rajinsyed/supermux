@@ -11,9 +11,9 @@ import AppKit
 /// no rendering of its own.
 ///
 /// What this replaced: a flat accent circle, which reads as a sticker pasted
-/// onto the row. Depth that survives at 16pt is what makes it read as part of
-/// the app instead — see `SupermuxUnreadBadgeStyle` for the values and why each
-/// is deliberately small.
+/// onto the row. Depth that survives at compact sizes is what makes it read as
+/// part of the app instead — see `SupermuxUnreadBadgeStyle` for the values and
+/// why each is deliberately small.
 public struct SupermuxUnreadBadgeView: View {
     private let count: Int?
     private let fontSize: CGFloat

@@ -152,7 +152,9 @@ final class MobileHostIrohRuntime {
         diagnosticLog = Self.hostDiagnosticLog
         appInstances = CmxIrohAppInstanceRepository(store: installState)
         brokerBackpressureGate = CmxIrohBrokerBackpressureGate(store: installState)
-        #if DEBUG
+        // SUPERMUX:begin profileless-release-iroh-storage
+        #if DEBUG || SUPERMUX_LOCAL_RELEASE
+        // SUPERMUX:end profileless-release-iroh-storage
         identities = CmxIrohIdentityRepository(
             secureStore: CmxIrohDevelopmentFileIdentityStore(
                 directory: Self.developmentStoreDirectory(service: "identity")

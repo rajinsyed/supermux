@@ -22,6 +22,84 @@ import Testing
 
         #expect(store.selectedWorkspaceID?.rawValue == "workspace-b")
         #expect(store.selectedWorkspaceFocusedPanel == browserPanel("browser-b1"))
+        #expect(store.supermuxAllowsStreamStart(
+            panelID: "browser-b1",
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        ))
+    }
+
+    @Test func optimisticPanelSelectionBlocksStreamUntilFocusIsReady() {
+        let store = makeStore()
+        store.supportedHostCapabilities = ["supermux.selection_sync.v2"]
+        store.setSelectedWorkspaceID("workspace-b")
+
+        _ = store.selectWorkspacePanel(
+            panelID: "browser-b1",
+            kind: MobileWorkspaceFocusedPanel.browserKind,
+            workspaceID: "workspace-b"
+        )
+
+        #expect(!store.supermuxAllowsStreamStart(
+            panelID: "browser-b1",
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        ))
+
+        store.supermuxStreamFocusReadiness = SupermuxMobileStreamFocusReadiness(
+            workspaceID: "workspace-b",
+            focusedPanel: browserPanel("browser-b1")
+        )
+        #expect(store.supermuxAllowsStreamStart(
+            panelID: "browser-b1",
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        ))
+
+        store.selectedWorkspaceFocusedPanel = simulatorPanel("simulator-b1")
+        #expect(!store.supermuxAllowsStreamStart(
+            panelID: "browser-b1",
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        ))
+    }
+
+    @Test func macConfirmationOutracingTheFocusReplyStillCountsAsSuccess() {
+        let store = makeStore()
+        store.supportedHostCapabilities = ["supermux.selection_sync.v2"]
+        store.setSelectedWorkspaceID("workspace-b")
+
+        let intent = SupermuxMobileSelectionSyncIntent(
+            requestID: UUID(),
+            workspaceID: "workspace-b",
+            focusedPanel: browserPanel("browser-b1")
+        )
+        store.pendingSupermuxSelectionSyncIntent = intent
+        store.selectedWorkspaceFocusedPanel = browserPanel("browser-b1")
+
+        // While the mutation is still pending, the reply path must rely on
+        // the request id, not on optimistic state equality.
+        #expect(!store.supermuxSelectionAlreadyConfirmed(intent))
+
+        // The Mac applies focus and pushes its updated frame BEFORE the focus
+        // RPC reply lands; reconciliation confirms and clears the intent.
+        store.applyRemoteWorkspaceList(response(
+            selectedWorkspaceID: "workspace-b",
+            focusedPanelByWorkspaceID: [
+                "workspace-a": terminalPanel("terminal-a1"),
+                "workspace-b": browserPanel("browser-b1"),
+            ]
+        ))
+        #expect(store.pendingSupermuxSelectionSyncIntent == nil)
+
+        // The late reply for the exact confirmed selection is success, so the
+        // UI must not abandon the surface the Mac just focused.
+        #expect(store.supermuxSelectionAlreadyConfirmed(intent))
+
+        // A genuinely superseded selection still fails.
+        #expect(!store.supermuxSelectionAlreadyConfirmed(
+            SupermuxMobileSelectionSyncIntent(
+                requestID: UUID(),
+                workspaceID: "workspace-b",
+                focusedPanel: simulatorPanel("simulator-b1")
+            )
+        ))
     }
 
     @Test func advertisedV2FollowsMacSimulatorFocus() {

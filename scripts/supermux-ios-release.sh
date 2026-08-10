@@ -8,11 +8,19 @@
 #   - Release configuration (official Mac compatibility policy)
 #   - fixed bundle id com.supermux.ios (preserves app data across releases)
 #   - empty CMUXDevTag and production auth/API settings
-#   - automatic device signing under SUPERMUX_IOS_DEVELOPMENT_TEAM
+#   - explicit Ad Hoc distribution signing under SUPERMUX_IOS_DEVELOPMENT_TEAM
 #
-# Personal-team direct installs cannot use the App Store app's production push
-# capabilities, so this intentionally signs with Config/cmux.entitlements. It
-# still runs the production Release code path and production authentication.
+# The fixed-identity build ships Ad Hoc with the production APNs entitlement:
+# the sandbox environment is best-effort and silently dropped pushes to the
+# backgrounded app. Its device token is mirrored to the paired Mac, which sends
+# through the production APNs host with the owner's local provider key.
+# Authentication and compatibility still run through the production Release path.
+#
+# Signing is two-stage: xcodebuild signs with the Apple Development profile
+# (workspace-wide manual distribution settings leak into SwiftPM package
+# targets, which cannot take a provisioning profile), then the built app is
+# RE-SIGNED with the Apple Distribution identity, the Ad Hoc profile, and the
+# production APNs entitlement before verification and install.
 #
 # Usage:
 #   ./scripts/supermux-ios-release.sh
@@ -25,6 +33,9 @@ APP_NAME="Supermux"
 BUNDLE_ID="com.supermux.ios"
 BASE_APP_NAME="cmux"
 DEVELOPMENT_TEAM="${SUPERMUX_IOS_DEVELOPMENT_TEAM:-NRGUG8GVV4}"
+DEV_PROFILE_SPECIFIER="${SUPERMUX_IOS_DEV_PROFILE_SPECIFIER:-Supermux iPhone Development}"
+ADHOC_PROFILE_NAME="${SUPERMUX_IOS_PROVISIONING_PROFILE_SPECIFIER:-Supermux iPhone Ad Hoc}"
+DISTRIBUTION_IDENTITY="${SUPERMUX_IOS_DISTRIBUTION_IDENTITY:-Apple Distribution}"
 DERIVED_DATA="${SUPERMUX_IOS_DERIVED_DATA:-${HOME}/Library/Developer/Xcode/DerivedData/cmux-ios-supermux-release}"
 LAUNCH=1
 DEVICE_ID="${SUPERMUX_IOS_DEVICE_ID:-${CMUX_IPHONE_DEVICE_ID:-}}"
@@ -157,6 +168,8 @@ echo "==> Ensuring GhosttyKit matches the current submodule"
 echo "==> Building iOS production Release for ${APP_NAME}"
 echo "    Bundle: ${BUNDLE_ID}"
 echo "    Team:   ${DEVELOPMENT_TEAM}"
+echo "    Build profile:   ${DEV_PROFILE_SPECIFIER}"
+echo "    Re-sign profile: ${ADHOC_PROFILE_NAME}"
 echo "    Device: ${DEVICE_ID}"
 echo "    HEAD:   ${BUILD_HEAD}"
 echo "    Log:    ${BUILD_LOG}"
@@ -188,9 +201,10 @@ NSUnbufferedIO=YES "${XCODEBUILD}" \
   EXCLUDED_SOURCE_FILE_NAMES=Info.plist \
   CODE_SIGNING_ALLOWED=YES \
   CODE_SIGNING_REQUIRED=YES \
-  CODE_SIGN_STYLE=Automatic \
+  CODE_SIGN_STYLE=Manual \
+  PROVISIONING_PROFILE_SPECIFIER="${DEV_PROFILE_SPECIFIER}" \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
-  CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
+  CODE_SIGN_ENTITLEMENTS=Config/supermux.entitlements \
   build 2>&1 | tee -a "${BUILD_LOG}"
 pipeline_status=("${PIPESTATUS[@]}")
 build_status=${pipeline_status[0]}
@@ -214,6 +228,45 @@ plist_value() {
   "${PLISTBUDDY}" -c "Print :$1" "$2" 2>/dev/null || true
 }
 
+resolve_adhoc_profile() {
+  local dir="${HOME}/Library/MobileDevice/Provisioning Profiles"
+  local candidate name decoded
+  decoded="$(mktemp "${TMPDIR:-/tmp}/supermux-profile-scan.XXXXXX")"
+  for candidate in "${dir}"/*.mobileprovision; do
+    [[ -f "${candidate}" ]] || continue
+    "${SECURITY}" cms -D -i "${candidate}" > "${decoded}" 2>/dev/null || continue
+    name="$("${PLISTBUDDY}" -c 'Print :Name' "${decoded}" 2>/dev/null || true)"
+    if [[ "${name}" == "${ADHOC_PROFILE_NAME}" ]]; then
+      rm -f "${decoded}"
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  rm -f "${decoded}"
+  return 1
+}
+
+echo "==> Re-signing with ${DISTRIBUTION_IDENTITY} + ${ADHOC_PROFILE_NAME}"
+ADHOC_PROFILE_FILE="$(resolve_adhoc_profile)" \
+  || die "Ad Hoc profile '${ADHOC_PROFILE_NAME}' not installed under ~/Library/MobileDevice/Provisioning Profiles"
+RESIGN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/supermux-ios-resign.XXXXXX")"
+trap 'rm -rf "${RESIGN_DIR}"' EXIT
+ADHOC_PROFILE_PLIST="${RESIGN_DIR}/adhoc-profile.plist"
+RESIGN_ENTITLEMENTS="${RESIGN_DIR}/entitlements.plist"
+"${SECURITY}" cms -D -i "${ADHOC_PROFILE_FILE}" > "${ADHOC_PROFILE_PLIST}"
+# Sign with exactly the entitlements the Ad Hoc profile authorizes
+# (application-identifier, team-identifier, aps-environment=production,
+# get-task-allow=false), so signature and profile can never disagree.
+"${PLISTBUDDY}" -x -c 'Print :Entitlements' "${ADHOC_PROFILE_PLIST}" > "${RESIGN_ENTITLEMENTS}"
+cp "${ADHOC_PROFILE_FILE}" "${BUILT_APP}/embedded.mobileprovision"
+while IFS= read -r -d '' nested; do
+  "${CODESIGN}" --force --sign "${DISTRIBUTION_IDENTITY}" --timestamp=none "${nested}" \
+    || die "failed to re-sign ${nested}"
+done < <(find "${BUILT_APP}/Frameworks" \( -name '*.framework' -o -name '*.dylib' \) -maxdepth 1 -print0 2>/dev/null)
+"${CODESIGN}" --force --sign "${DISTRIBUTION_IDENTITY}" --timestamp=none \
+  --entitlements "${RESIGN_ENTITLEMENTS}" "${BUILT_APP}" \
+  || die "failed to re-sign ${BUILT_APP}"
+
 actual_bundle_id="$(plist_value CFBundleIdentifier "${INFO_PLIST}")"
 actual_display_name="$(plist_value CFBundleDisplayName "${INFO_PLIST}")"
 actual_dev_tag="$(plist_value CMUXDevTag "${INFO_PLIST}")"
@@ -229,7 +282,7 @@ actual_auth_environment="$(plist_value CMUXAuthEnvironment "${INFO_PLIST}")"
   || die "built iOS auth environment is '${actual_auth_environment:-<absent>}', expected production"
 
 VERIFY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/supermux-ios-verify.XXXXXX")"
-trap 'rm -rf "${VERIFY_DIR}"' EXIT
+trap 'rm -rf "${VERIFY_DIR}" "${RESIGN_DIR}"' EXIT
 PROFILE_PLIST="${VERIFY_DIR}/profile.plist"
 SIGNED_ENTITLEMENTS="${VERIFY_DIR}/signed-entitlements.plist"
 
@@ -240,8 +293,10 @@ SIGNED_ENTITLEMENTS="${VERIFY_DIR}/signed-entitlements.plist"
 expected_application_id="${DEVELOPMENT_TEAM}.${BUNDLE_ID}"
 profile_team="$(plist_value TeamIdentifier:0 "${PROFILE_PLIST}")"
 profile_application_id="$(plist_value Entitlements:application-identifier "${PROFILE_PLIST}")"
+profile_aps_environment="$(plist_value Entitlements:aps-environment "${PROFILE_PLIST}")"
 signed_team="$(plist_value com.apple.developer.team-identifier "${SIGNED_ENTITLEMENTS}")"
 signed_application_id="$(plist_value application-identifier "${SIGNED_ENTITLEMENTS}")"
+signed_aps_environment="$(plist_value aps-environment "${SIGNED_ENTITLEMENTS}")"
 
 [[ "${profile_team}" == "${DEVELOPMENT_TEAM}" ]] \
   || die "provisioning profile team is '${profile_team:-<absent>}', expected ${DEVELOPMENT_TEAM}"
@@ -251,8 +306,12 @@ signed_application_id="$(plist_value application-identifier "${SIGNED_ENTITLEMEN
   || die "signed app team is '${signed_team:-<absent>}', expected ${DEVELOPMENT_TEAM}"
 [[ "${signed_application_id}" == "${expected_application_id}" ]] \
   || die "signed app id is '${signed_application_id:-<absent>}', expected ${expected_application_id}"
+[[ "${profile_aps_environment}" == "production" ]] \
+  || die "provisioning profile APNs environment is '${profile_aps_environment:-<absent>}', expected production"
+[[ "${signed_aps_environment}" == "production" ]] \
+  || die "signed app APNs environment is '${signed_aps_environment:-<absent>}', expected production"
 
-echo "==> Verified iOS signature for team ${DEVELOPMENT_TEAM}"
+echo "==> Verified iOS signature and production APNs entitlement for team ${DEVELOPMENT_TEAM}"
 echo "==> Installing ${APP_NAME} on iPhone ${DEVICE_ID}"
 "${XCRUN}" devicectl device install app --device "${DEVICE_ID}" "${BUILT_APP}"
 echo "==> Installed ${APP_NAME} (${BUNDLE_ID})"

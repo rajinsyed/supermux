@@ -55,7 +55,27 @@ extension MobileShellComposite {
         }
     }
 
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    /// Whether the panel is both phone-visible and confirmed focused on the Mac.
+    func supermuxAllowsBrowserStreamStart(panelID: String) -> Bool {
+        browserStreamEvents?.activeBrowserStreamSelections().contains(where: {
+            $0.panelID == panelID
+        }) == true && supermuxAllowsStreamStart(
+            panelID: panelID,
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        )
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
+
     private func performStartMobileBrowserStream(panelID: String) async {
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        guard supermuxAllowsBrowserStreamStart(panelID: panelID) else {
+            MobileDebugLog.anchormux(
+                "browser.stream start-deferred panel=\(panelID.prefix(8)) awaiting-active-focus"
+            )
+            return
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
         guard !startedMobileBrowserPanelIDs.contains(panelID),
               connectionState == .connected,
               supportsBrowserStream,

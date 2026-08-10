@@ -13,6 +13,12 @@ struct SupermuxMobileSelectionSyncIntent: Equatable, Sendable {
     let focusedPanel: MobileWorkspaceFocusedPanel?
 }
 
+/// The selected panel whose Mac focus is known to be ready for stream startup.
+struct SupermuxMobileStreamFocusReadiness: Equatable, Sendable {
+    let workspaceID: MobileWorkspacePreview.ID
+    let focusedPanel: MobileWorkspaceFocusedPanel
+}
+
 extension MobileShellComposite {
     /// Whether this Mac serves any version of bidirectional selection sync.
     /// An upstream or older Mac keeps the pre-existing phone-local behavior.
@@ -37,31 +43,83 @@ extension MobileShellComposite {
     ///   - panelID: Stable Mac panel UUID string.
     ///   - kind: Forward-compatible Mac panel-type wire value.
     ///   - workspaceID: Phone row identity of the owning workspace.
+    /// - Returns: A task that completes with the Mac focus acknowledgement,
+    ///   without waiting for the follow-up authoritative list reconciliation.
+    @discardableResult
     public func selectWorkspacePanel(
         panelID: String,
         kind: String,
         workspaceID: MobileWorkspacePreview.ID
-    ) {
+    ) -> Task<Bool, Never>? {
         let selection = MobileWorkspaceFocusedPanel(
             panelID: panelID,
             kind: kind
         )
-        guard selectedWorkspaceFocusedPanel != selection else { return }
+        if selectedWorkspaceFocusedPanel == selection {
+            let readiness = SupermuxMobileStreamFocusReadiness(
+                workspaceID: workspaceID,
+                focusedPanel: selection
+            )
+            if supermuxStreamFocusReadiness == readiness {
+                return nil
+            }
+            if pendingSupermuxSelectionSyncIntent?.workspaceID == workspaceID,
+               pendingSupermuxSelectionSyncIntent?.focusedPanel == selection {
+                return supermuxSelectionFocusTask
+            }
+        }
         selectedWorkspaceFocusedPanel = selection
-        enqueueSupermuxSelectionSync(
+        supermuxStreamFocusReadiness = nil
+        return enqueueSupermuxSelectionSync(
             workspaceID: workspaceID,
             focusedPanel: selection
         )
     }
 
-    /// Queues a phone selection behind earlier requests so rapid taps cannot
-    /// arrive at the Mac out of order. The local selection is already
-    /// optimistic; after the RPC, one authoritative list/sync fetch confirms it.
+    /// Whether an authoritative Mac frame already confirmed this exact intent.
+    ///
+    /// The Mac pushes its updated state after applying a focus mutation, and
+    /// that push can outrace the mutation's own RPC reply. Reconciliation then
+    /// clears the pending intent as confirmed before the reply lands; the
+    /// reply must read that as success, not as a superseded selection —
+    /// otherwise the UI abandons a surface the Mac just focused (the
+    /// flash-then-revert on re-entering a browser/Simulator tab).
+    func supermuxSelectionAlreadyConfirmed(
+        _ intent: SupermuxMobileSelectionSyncIntent
+    ) -> Bool {
+        pendingSupermuxSelectionSyncIntent == nil
+            && selectedWorkspaceID == intent.workspaceID
+            && selectedWorkspaceFocusedPanel == intent.focusedPanel
+    }
+
+    /// Whether the currently active streamed panel may start against the Mac.
+    /// Hosts without generic panel selection keep their legacy stream behavior.
+    func supermuxAllowsStreamStart(
+        panelID: String,
+        kind: String
+    ) -> Bool {
+        guard supportsSupermuxPanelSelectionSync else { return true }
+        guard let workspaceID = selectedWorkspaceID else { return false }
+        let focusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: panelID,
+            kind: kind
+        )
+        return selectedWorkspaceFocusedPanel == focusedPanel
+            && supermuxStreamFocusReadiness == SupermuxMobileStreamFocusReadiness(
+                workspaceID: workspaceID,
+                focusedPanel: focusedPanel
+            )
+    }
+
+    /// Queues a phone selection behind earlier focus mutations so rapid taps
+    /// cannot reach the Mac out of order. Reconciliation runs on a separate
+    /// serialized tail, allowing streamed panels to start after the focus reply
+    /// instead of waiting for an additional workspace-list round trip.
     @discardableResult
     func enqueueSupermuxSelectionSync(
         workspaceID: MobileWorkspacePreview.ID,
         focusedPanel: MobileWorkspaceFocusedPanel?
-    ) -> Task<Void, Never>? {
+    ) -> Task<Bool, Never>? {
         guard supportsSupermuxSelectionSync,
               connectionState == .connected,
               let client = remoteClient else {
@@ -94,18 +152,11 @@ extension MobileShellComposite {
         )
         pendingSupermuxSelectionSyncIntent = intent
 
-        let previous = supermuxSelectionSyncTask
-        let operationID = UUID()
+        let previousFocus = supermuxSelectionFocusTask
         let generation = connectionGeneration
-        let task = Task { @MainActor [weak self] in
-            await previous?.value
-            guard let self else { return }
-            defer {
-                if self.supermuxSelectionSyncOperationID == operationID {
-                    self.supermuxSelectionSyncTask = nil
-                    self.supermuxSelectionSyncOperationID = nil
-                }
-            }
+        let focusTask = Task { @MainActor [weak self] () -> Bool in
+            _ = await previousFocus?.value
+            guard let self else { return false }
             guard !Task.isCancelled,
                   self.isCurrentRemoteOperation(
                     client: client,
@@ -113,8 +164,9 @@ extension MobileShellComposite {
                   ) else {
                 if self.pendingSupermuxSelectionSyncIntent?.requestID == intent.requestID {
                     self.pendingSupermuxSelectionSyncIntent = nil
+                    self.supermuxStreamFocusReadiness = nil
                 }
-                return
+                return false
             }
 
             do {
@@ -126,33 +178,33 @@ extension MobileShellComposite {
                 guard self.isCurrentRemoteOperation(
                     client: client,
                     generation: generation
-                ), !Task.isCancelled else {
-                    return
-                }
-                guard self.pendingSupermuxSelectionSyncIntent?.requestID == intent.requestID else {
-                    return
+                ), !Task.isCancelled,
+                      self.pendingSupermuxSelectionSyncIntent?.requestID == intent.requestID
+                        || self.supermuxSelectionAlreadyConfirmed(intent) else {
+                    return false
                 }
 
-                _ = await self.reloadWorkspaceListFromMac()
-                // A successful selection is authoritative even if the follow-up
-                // fetch was lost. Keep the optimistic effective panel; the next
-                // pushed row change is free to reconcile normally.
-                if self.pendingSupermuxSelectionSyncIntent?.requestID == intent.requestID {
-                    self.pendingSupermuxSelectionSyncIntent = nil
+                if let focusedPanel {
+                    self.supermuxStreamFocusReadiness = SupermuxMobileStreamFocusReadiness(
+                        workspaceID: workspaceID,
+                        focusedPanel: focusedPanel
+                    )
                 }
+                return true
             } catch {
                 guard self.isCurrentRemoteOperation(
                     client: client,
                     generation: generation
-                ), !Task.isCancelled else {
-                    return
-                }
-                guard self.pendingSupermuxSelectionSyncIntent?.requestID == intent.requestID else {
-                    return
+                ), !Task.isCancelled,
+                      self.pendingSupermuxSelectionSyncIntent?.requestID == intent.requestID else {
+                    // A lost reply after the Mac's own push already confirmed
+                    // this exact selection is still a success.
+                    return self.supermuxSelectionAlreadyConfirmed(intent)
                 }
 
                 self.pendingSupermuxSelectionSyncIntent = nil
-                guard !self.disconnectForAuthorizationFailureIfNeeded(error) else { return }
+                self.supermuxStreamFocusReadiness = nil
+                guard !self.disconnectForAuthorizationFailureIfNeeded(error) else { return false }
                 self.handleMacAvailabilityFailureIfCurrent(
                     after: error,
                     expectedClient: client,
@@ -160,14 +212,48 @@ extension MobileShellComposite {
                 )
                 // Explicit rollback: after a rejected or failed selection, read
                 // the Mac's authoritative selection instead of leaving the
-                // optimistic phone state stranded.
+                // optimistic phone state stranded. Stream startup still receives
+                // `false` even when this recovery fetch also fails.
                 _ = await self.reloadWorkspaceListFromMac()
                 self.applyOperationalError(error)
+                return false
             }
         }
-        supermuxSelectionSyncTask = task
+        supermuxSelectionFocusTask = focusTask
+
+        let previousReconciliation = supermuxSelectionSyncTask
+        let operationID = UUID()
+        let reconciliationTask = Task { @MainActor [weak self] in
+            let focusSucceeded = await focusTask.value
+            await previousReconciliation?.value
+            guard let self else { return }
+            defer {
+                if self.supermuxSelectionSyncOperationID == operationID {
+                    self.supermuxSelectionSyncTask = nil
+                    self.supermuxSelectionSyncOperationID = nil
+                }
+            }
+            guard focusSucceeded,
+                  !Task.isCancelled,
+                  self.isCurrentRemoteOperation(
+                    client: client,
+                    generation: generation
+                  ),
+                  self.pendingSupermuxSelectionSyncIntent?.requestID == intent.requestID else {
+                return
+            }
+
+            _ = await self.reloadWorkspaceListFromMac()
+            // A successful selection is authoritative even if the follow-up
+            // fetch was lost. Keep the optimistic effective panel; the next
+            // pushed row change is free to reconcile normally.
+            if self.pendingSupermuxSelectionSyncIntent?.requestID == intent.requestID {
+                self.pendingSupermuxSelectionSyncIntent = nil
+            }
+        }
+        supermuxSelectionSyncTask = reconciliationTask
         supermuxSelectionSyncOperationID = operationID
-        return task
+        return focusTask
     }
 
     /// Applies the Mac's selected workspace and focused panel to the phone,
@@ -214,6 +300,14 @@ extension MobileShellComposite {
 
             pendingSupermuxSelectionSyncIntent = nil
             applyEffectiveSupermuxFocusedPanel(authoritativeFocusedPanel)
+            if let authoritativeFocusedPanel {
+                supermuxStreamFocusReadiness = SupermuxMobileStreamFocusReadiness(
+                    workspaceID: pending.workspaceID,
+                    focusedPanel: authoritativeFocusedPanel
+                )
+            } else {
+                supermuxStreamFocusReadiness = nil
+            }
             return
         }
 
@@ -239,6 +333,14 @@ extension MobileShellComposite {
             setSelectedWorkspaceID(workspaces.first?.id)
         }
         applyEffectiveSupermuxFocusedPanel(focusedPanel)
+        if let workspaceID = selectedWorkspaceID, let focusedPanel {
+            supermuxStreamFocusReadiness = SupermuxMobileStreamFocusReadiness(
+                workspaceID: workspaceID,
+                focusedPanel: focusedPanel
+            )
+        } else {
+            supermuxStreamFocusReadiness = nil
+        }
     }
 
     private func applyEffectiveSupermuxFocusedPanel(

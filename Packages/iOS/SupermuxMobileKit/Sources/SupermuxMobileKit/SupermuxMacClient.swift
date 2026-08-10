@@ -11,7 +11,7 @@ public import SupermuxMobileCore
 /// typed responses; events ride the shared `mobile.events.subscribe`
 /// pub/sub plane exactly like `MobileChatEventSource`. No state lives here
 /// — everything above this seam tests against a fake.
-public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling {
+public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, SupermuxPhonePushRegistering {
     private let client: MobileCoreRPCClient
 
     /// Creates the adapter.
@@ -203,6 +203,12 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling {
     public func createSimulatorPane(
         _ request: SupermuxSimulatorCreateRequest
     ) async throws -> MobileSimulatorPanelDescriptor {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func registerPhonePush(
+        _ request: SupermuxPhonePushRegistrationRequest
+    ) async throws -> SupermuxPhonePushRegistrationResponse {
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 

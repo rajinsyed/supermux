@@ -307,6 +307,11 @@ final class TerminalNotificationStore: ObservableObject {
         // Cold lane: mirror the dismiss through APNs for every registered
         // device, attached or not (no-op unless phone forwarding is on).
         PhonePushClient.shared.forwardDismissed(ids: ids, badgeCount: unreadCount)
+        // SUPERMUX:begin direct-phone-push
+        if PhonePushClient.shared.configuration().forwardingEnabled {
+            SupermuxComposition.directPhonePush.forwardDismissed(ids: ids, badgeCount: unreadCount)
+        }
+        // SUPERMUX:end direct-phone-push
     }
 
     /// A user-driven dismiss emit that also carries any stale superseded-banner
@@ -1369,6 +1374,21 @@ final class TerminalNotificationStore: ObservableObject {
                 badgeCount: indexes.unreadCount
             )
         }
+        // SUPERMUX:begin direct-phone-push
+        // The direct lane widens upstream's admission: focus suppression assumes
+        // a frontmost cmux means a watching user, but a phone remote-controlling
+        // this Mac keeps the app frontmost on the phone's workspace while nobody
+        // is at the keyboard. Deliver when upstream would (not suppressed) OR
+        // when lock/input-idle evidence says the user is physically away.
+        if PhonePushClient.shared.configuration().forwardingEnabled,
+           !shouldSuppressExternalDelivery || SupermuxMacAwayState.userIsAway() {
+            SupermuxComposition.directPhonePush.forward(
+                notification: notification,
+                badgeCount: indexes.unreadCount,
+                hideContent: PhonePushClient.shared.configuration().hideContent
+            )
+        }
+        // SUPERMUX:end direct-phone-push
         let superseded = supersededPhoneDismissBuffer.flush(forKey: key)
         if !superseded.isEmpty {
             // The replacement enqueue above and this dismissal enter the same

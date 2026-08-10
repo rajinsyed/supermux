@@ -562,7 +562,9 @@ extension MobileHostIrohRuntime {
         )
     }
 
-    #if DEBUG
+    // SUPERMUX:begin profileless-release-iroh-storage
+    #if DEBUG || SUPERMUX_LOCAL_RELEASE
+    // SUPERMUX:end profileless-release-iroh-storage
     static func developmentStoreDirectory(service: String) -> URL {
         let rawBundleScope = Bundle.main.bundleIdentifier
             ?? "com.cmuxterm.app.debug"

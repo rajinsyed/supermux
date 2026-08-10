@@ -61,6 +61,13 @@ public struct SupermuxSimulatorCreateRequest: Equatable, Sendable {
 
     /// The exact RPC method served by the supermux Mac host.
     public var wireMethod: String { SupermuxMobileMethod.simulatorCreate.rawValue }
-    /// The exact snake-case request payload.
-    public var wireParams: [String: Any] { ["workspace_id": workspaceID] }
+    /// The exact snake-case request payload. Simulator creation initiated from
+    /// the phone is an explicit navigation action, so the Mac focuses the new
+    /// panel before acknowledging it.
+    public var wireParams: [String: Any] {
+        [
+            "workspace_id": workspaceID,
+            "focus": true,
+        ]
+    }
 }

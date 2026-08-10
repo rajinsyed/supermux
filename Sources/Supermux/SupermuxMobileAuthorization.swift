@@ -64,7 +64,7 @@ enum SupermuxMobileAuthorization {
              .worktreeOpen, .worktreeRemove,
              .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch,
-             .actionRun:
+             .actionRun, .phonePushRegister:
             return .macWide
         }
     }

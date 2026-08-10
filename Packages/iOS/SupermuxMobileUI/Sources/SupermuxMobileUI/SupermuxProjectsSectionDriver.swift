@@ -70,6 +70,16 @@ extension View {
                 connectionID: connectionKey
             )
         }
+        .task(id: connectionKey) {
+            guard let connection else { return }
+            let capabilities = SupermuxMobileCapabilities(
+                hostCapabilities: connection.hostCapabilities
+            )
+            await SupermuxMobilePushRegistrationStore().run(
+                client: SupermuxMacClient(client: connection.rpcClient),
+                capabilities: capabilities
+            )
+        }
         .onChange(of: SupermuxProjectWorkspaceRowSnapshot.rows(from: workspaces), initial: true) { _, rows in
             model.updateWorkspaces(
                 rows,

@@ -44,6 +44,43 @@ extension TerminalController {
         }
     }
 
+    /// Focuses a newly created mobile panel through the shared control action.
+    ///
+    /// Creation handlers call this before returning when their additive `focus`
+    /// request flag is true, making create+focus atomic from the phone's point of
+    /// view and preventing browser/Simulator streams from starting against a
+    /// background Mac tab.
+    func v2SupermuxCreatedPanelFocusError(
+        workspaceID: UUID,
+        panelID: UUID
+    ) -> V2CallResult? {
+        let routing = ControlRoutingSelectors(
+            hasWindowIDParam: false,
+            windowID: nil,
+            groupID: nil,
+            workspaceID: workspaceID,
+            surfaceID: panelID,
+            paneID: nil
+        )
+        switch controlSurfaceFocus(routing: routing, surfaceID: panelID) {
+        case .focused:
+            return nil
+        case .tabManagerUnavailable:
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        case .workspaceNotFound:
+            return .err(code: "not_found", message: "Workspace not found", data: nil)
+        case .surfaceNotFound:
+            return .err(
+                code: "not_found",
+                message: "Created panel could not be focused",
+                data: [
+                    "workspace_id": workspaceID.uuidString,
+                    "panel_id": panelID.uuidString,
+                ]
+            )
+        }
+    }
+
     /// Selects one explicit panel of any kind and its owning workspace on behalf
     /// of the paired phone.
     func v2SupermuxPanelSelect(params: [String: Any]) -> V2CallResult {

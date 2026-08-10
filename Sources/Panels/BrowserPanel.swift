@@ -2745,6 +2745,10 @@ final class BrowserPanel: Panel, ObservableObject {
     var mobileBrowserStreamPreviousViewport: BrowserViewport?
     var mobileBrowserStreamPreviousViewportWasCaptured = false
     var mobileBrowserStreamViewport: MobileBrowserViewport?
+    // SUPERMUX:begin mac-browser-stream-teardown-grace
+    var mobileBrowserStreamViewportTeardownTask: Task<Void, Never>?
+    var mobileBrowserStreamViewportTeardownGrace: TimeInterval = 2.0
+    // SUPERMUX:end mac-browser-stream-teardown-grace
     let mobileBrowserDialogBroker: MobileBrowserDialogBroker
 
     /// Monotonic identity for the current WKWebView instance.

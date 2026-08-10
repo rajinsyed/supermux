@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Build-stage entitlement for the Apple Development profile. The final
+	     installed app is RE-SIGNED Ad Hoc with aps-environment=production by
+	     scripts/supermux-ios-release.sh; command-line distribution signing
+	     cannot be used directly because workspace-wide build settings leak
+	     into SwiftPM package targets, which cannot take a provisioning
+	     profile. -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

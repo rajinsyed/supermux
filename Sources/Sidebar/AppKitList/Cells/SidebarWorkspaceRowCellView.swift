@@ -1140,16 +1140,12 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
         // Measuring at all (rather than assuming a square) is what stops "12"
         // from being clipped to "1".
         //
-        // Height is floored at the old `16 * fontScale` square so row heights
-        // never shrink below what the measure pass has always returned, and
-        // takes the style's height when that is larger.
+        // Draw at the shared style's measured size so the badge stays
+        // proportional to the title. Row height is still floored at the old
+        // `16 * fontScale` square below, preserving the table's height contract.
         let badgeFont = NSFont.systemFont(ofSize: model.scaled(9), weight: .semibold)
-        let badgeSide: CGFloat = 16 * model.fontScale
-        let measuredBadge = SupermuxUnreadBadgeStyle.size(count: model.unreadCount, font: badgeFont)
-        let badgeSize = NSSize(
-            width: max(badgeSide, measuredBadge.width),
-            height: max(badgeSide, measuredBadge.height)
-        )
+        let badgeRowHeightFloor: CGFloat = 16 * model.fontScale
+        let badgeSize = SupermuxUnreadBadgeStyle.size(count: model.unreadCount, font: badgeFont)
         // SUPERMUX:end supermux-unread-badge-capsule
         let spinnerSide = max(10, 12 * model.fontScale)
         let firstLineCenter = model.scaled(12.5) * 0.6 + y
@@ -1248,7 +1244,7 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
                 }
             }
         }
-        y += max(titleHeight, leadingSlotActive ? badgeSide : 0)
+        y += max(titleHeight, leadingSlotActive ? badgeRowHeightFloor : 0)
 
         func placeBlock(_ view: SidebarRowTextView) {
             guard !view.isHidden else { return }

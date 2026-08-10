@@ -55,9 +55,10 @@ struct SupermuxUnreadBadgeStyleTests {
         #expect(large.height > small.height)
         #expect(large.horizontalPadding > small.horizontalPadding)
         #expect(small.cornerRadius == small.height / 2)
-        // The Mac sidebar was tuned around a 9pt numeral in a 16pt circle; the
-        // shared ratio has to keep landing there or every Mac row shifts.
-        #expect(small.height == 16)
+        // A 9pt sidebar numeral should stay subordinate to the 11.5pt title,
+        // while the phone's 10pt base still has a comfortable 16pt capsule.
+        #expect(small.height == 14)
+        #expect(SupermuxUnreadBadgeStyle(fontSize: 10).height == 16)
     }
 
     @Test("a non-positive font size cannot produce a zero-sized badge")

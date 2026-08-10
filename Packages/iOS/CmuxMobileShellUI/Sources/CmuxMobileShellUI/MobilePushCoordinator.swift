@@ -7,6 +7,9 @@ import CmuxMobileShellModel
 import Foundation
 import Observation
 import OSLog
+// SUPERMUX:begin ios-direct-apns-token
+import SupermuxMobileUI
+// SUPERMUX:end ios-direct-apns-token
 import UIKit
 import UserNotifications
 
@@ -336,6 +339,9 @@ public final class MobilePushCoordinator {
 
     /// Hand a freshly-registered APNs token to the network layer.
     public func handleDeviceToken(_ token: Data) async {
+        // SUPERMUX:begin ios-direct-apns-token
+        SupermuxMobilePushRegistrationStore(defaults: defaults).record(deviceToken: token)
+        // SUPERMUX:end ios-direct-apns-token
         await registration.register(deviceToken: token)
         registrationSnapshot = await registration.snapshot
     }

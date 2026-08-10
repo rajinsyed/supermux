@@ -17,6 +17,21 @@ import Testing
         #expect(params["panelID"] == nil)
     }
 
+    // SUPERMUX:begin supermux-mobile-create-focus
+    @Test func browserCreateRequestsMacFocusBeforeReply() throws {
+        let data = try MobileBrowserRPCRequestEncoder().requestData(
+            method: "mobile.browser.create",
+            parameters: MobileBrowserCreateParameters(workspaceID: "workspace-main")
+        )
+        let request = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let params = try #require(request["params"] as? [String: Any])
+
+        #expect(request["method"] as? String == "mobile.browser.create")
+        #expect(params["workspace_id"] as? String == "workspace-main")
+        #expect(params["focus"] as? Bool == true)
+    }
+    // SUPERMUX:end supermux-mobile-create-focus
+
     @Test func sharedScrollInputPreservesSnakeCaseWireShape() throws {
         let input = MobileBrowserScrollInput(
             panelID: "panel-2",

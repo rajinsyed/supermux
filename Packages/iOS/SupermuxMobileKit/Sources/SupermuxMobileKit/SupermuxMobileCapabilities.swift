@@ -49,4 +49,6 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     public var supportsPanelSelectionSync: Bool { contains(.selectionSyncV2) }
     /// `supermux.panes.v1`: pane close and Simulator creation are served.
     public var supportsPanes: Bool { contains(.panesV1) }
+    /// `supermux.phone_push.v1`: the paired Mac accepts this phone's APNs token.
+    public var supportsPhonePush: Bool { contains(.phonePushV1) }
 }

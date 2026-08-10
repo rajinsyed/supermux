@@ -39,11 +39,11 @@ public struct SupermuxUnreadBadgeStyle: Equatable, Sendable {
         )
     }
 
-    /// Badge height as a multiple of the badge font size. A capsule this tall
-    /// around a semibold numeral leaves the digit visually centered with room
-    /// on both sides, and reproduces the Mac's existing 9pt-text-in-16pt-circle
-    /// proportion that the sidebar was already tuned around.
-    private static let heightRatio: CGFloat = 1.8
+    /// Badge height as a multiple of the badge font size. This keeps the capsule
+    /// visually subordinate to the adjacent title while leaving a semibold digit
+    /// centered with enough breathing room. At the Mac sidebar's 9pt numeral the
+    /// badge lands at 14pt; the phone's 10pt base lands at 16pt.
+    private static let heightRatio: CGFloat = 1.6
 
     /// Horizontal padding either side of the numeral, as a multiple of the font
     /// size. Only wide enough to matter once the count reaches two digits: at

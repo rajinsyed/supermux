@@ -47,6 +47,9 @@ enum SupermuxMobileCapabilities {
             // served. The latter still checks the upstream Simulator feature
             // flag and capability at request/UI time.
             SupermuxMobileCapability.panesV1.rawValue,
+            // The fixed-identity Supermux phone can register its sandbox APNs
+            // token for direct, personal-team delivery from this Mac.
+            SupermuxMobileCapability.phonePushV1.rawValue,
         ]
     }
 }

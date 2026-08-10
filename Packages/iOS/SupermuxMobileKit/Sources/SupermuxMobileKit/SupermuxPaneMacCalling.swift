@@ -7,7 +7,7 @@ public protocol SupermuxPaneMacCalling: Sendable {
     /// - Returns: The Mac's close acknowledgement.
     func closePane(_ request: SupermuxPaneCloseRequest) async throws -> SupermuxPaneCloseResponse
 
-    /// Creates a native Simulator panel without stealing focus on the Mac.
+    /// Creates and focuses a native Simulator panel on the Mac.
     /// - Parameter request: The workspace-scoped creation request.
     /// - Returns: The created panel's stream descriptor.
     func createSimulatorPane(

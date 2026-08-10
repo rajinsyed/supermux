@@ -233,6 +233,13 @@ extension BrowserPanel {
         handler: @escaping (MobileBrowserPanelNativeSignal) -> Void
     ) {
         let wasInactive = mobileBrowserStreamSignalHandlers.isEmpty
+        // SUPERMUX:begin mac-browser-stream-teardown-grace
+        // A restart inside the grace window reuses the parked render host, so
+        // rapid phone-side switching does not reparent the live WKWebView or
+        // churn render windows at all.
+        mobileBrowserStreamViewportTeardownTask?.cancel()
+        mobileBrowserStreamViewportTeardownTask = nil
+        // SUPERMUX:end mac-browser-stream-teardown-grace
         mobileBrowserStreamSignalHandlers[handlerID] = handler
         if wasInactive {
             // A phone mirror is a visibility touch. A session-restored or
@@ -250,7 +257,16 @@ extension BrowserPanel {
         guard mobileBrowserStreamSignalHandlers.removeValue(forKey: handlerID) != nil else { return }
         guard mobileBrowserStreamSignalHandlers.isEmpty else { return }
         disableMobileBrowserDirtyBeacon()
-        clearMobileStreamViewport()
+        // SUPERMUX:begin mac-browser-stream-teardown-grace
+        // Park the offscreen render host briefly instead of tearing it down.
+        // Every teardown reparents the live WKWebView and closes a
+        // WebKit-hosting window mid-commit; rapid phone-side panel switching
+        // multiplied those hierarchy transitions and amplified a WebKit
+        // layer-tree crash on macOS 26/27 betas (segfault in
+        // RemoteLayerTreePropertyApplier during rapid switch dogfood). A
+        // restart inside the grace reuses the parked host with zero churn.
+        scheduleMobileStreamViewportTeardownAfterGrace()
+        // SUPERMUX:end mac-browser-stream-teardown-grace
         reevaluateHiddenWebViewDiscardScheduling(reason: "mobile_browser_stream_stopped")
     }
 
@@ -313,8 +329,42 @@ extension BrowserPanel {
 
     /// Restores the presentation hierarchy and viewport that preceded phone streaming.
     func clearMobileStreamViewport() {
+        // SUPERMUX:begin mac-browser-stream-teardown-grace
+        mobileBrowserStreamViewportTeardownTask?.cancel()
+        mobileBrowserStreamViewportTeardownTask = nil
+        // SUPERMUX:end mac-browser-stream-teardown-grace
         restoreMobileStreamPresentation(endingStream: true)
     }
+
+    // SUPERMUX:begin mac-browser-stream-teardown-grace
+    /// Defers the stream-ended render-host teardown by a short grace so a
+    /// rapid stop→start cycle reuses the parked host instead of reparenting
+    /// the live web view and closing/recreating its WebKit-hosting window.
+    ///
+    /// The delay is the intended behavior (a teardown grace), bounded and
+    /// cancellable: a restart cancels it via
+    /// ``addMobileBrowserStreamSignalHandler(id:handler:)``, panel close and
+    /// explicit teardown cancel it via ``clearMobileStreamViewport()``, and a
+    /// web-view replacement abandons the parked host in
+    /// ``mobileBrowserWebViewDidBind()``.
+    private func scheduleMobileStreamViewportTeardownAfterGrace() {
+        mobileBrowserStreamViewportTeardownTask?.cancel()
+        guard mobileBrowserStreamRenderHost != nil
+            || mobileBrowserStreamViewport != nil
+            || mobileBrowserStreamPreviousViewportWasCaptured else {
+            mobileBrowserStreamViewportTeardownTask = nil
+            return
+        }
+        let grace = mobileBrowserStreamViewportTeardownGrace
+        mobileBrowserStreamViewportTeardownTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, grace) * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.mobileBrowserStreamViewportTeardownTask = nil
+            guard self.mobileBrowserStreamSignalHandlers.isEmpty else { return }
+            self.clearMobileStreamViewport()
+        }
+    }
+    // SUPERMUX:end mac-browser-stream-teardown-grace
 
     /// Mirrors the latest streamed frame into the Mac pane so it is not blank while
     /// the live web view renders offscreen. No-op unless the offscreen host is active.
@@ -337,7 +387,23 @@ extension BrowserPanel {
     }
 
     func mobileBrowserWebViewDidBind() {
-        guard !mobileBrowserStreamSignalHandlers.isEmpty else { return }
+        // SUPERMUX:begin mac-browser-stream-teardown-grace
+        // A replacement during the teardown grace must not leave a parked
+        // host holding the dead web view's presentation tree: drop it now and
+        // reset stream viewport state instead of waiting for the grace timer.
+        guard !mobileBrowserStreamSignalHandlers.isEmpty else {
+            if mobileBrowserStreamViewportTeardownTask != nil {
+                mobileBrowserStreamViewportTeardownTask?.cancel()
+                mobileBrowserStreamViewportTeardownTask = nil
+                mobileBrowserStreamRenderHost?.abandon()
+                mobileBrowserStreamRenderHost = nil
+                mobileBrowserStreamPreviousViewport = nil
+                mobileBrowserStreamPreviousViewportWasCaptured = false
+                mobileBrowserStreamViewport = nil
+            }
+            return
+        }
+        // SUPERMUX:end mac-browser-stream-teardown-grace
         installMobileBrowserDirtyBeaconIfNeeded()
         mobileBrowserStreamRenderHost?.abandon()
         mobileBrowserStreamRenderHost = nil

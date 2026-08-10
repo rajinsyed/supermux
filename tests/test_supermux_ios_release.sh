@@ -47,6 +47,7 @@ printf 'binary\n' > "$app/cmux"
 chmod +x "$app/cmux"
 printf 'plist\n' > "$app/Info.plist"
 printf 'profile\n' > "$app/embedded.mobileprovision"
+mkdir -p "$app/Frameworks"
 printf 'fake iOS Release build\n'
 SH
 chmod +x "$BIN_DIR/xcodebuild"
@@ -78,7 +79,16 @@ cat > "$BIN_DIR/security" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == "cms" ]]; then
-  printf '%s\n' '<?xml version="1.0"?><plist version="1.0"><dict/></plist>'
+  cat <<'PLIST'
+<?xml version="1.0"?><plist version="1.0"><dict>
+<key>Name</key><string>Supermux iPhone Ad Hoc</string>
+<key>Entitlements</key><dict>
+<key>aps-environment</key><string>production</string>
+<key>application-identifier</key><string>ABCD123456.com.supermux.ios</string>
+<key>com.apple.developer.team-identifier</key><string>ABCD123456</string>
+</dict>
+</dict></plist>
+PLIST
   exit 0
 fi
 echo "unexpected security invocation: $*" >&2
@@ -89,6 +99,7 @@ chmod +x "$BIN_DIR/security"
 cat > "$BIN_DIR/plistbuddy" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == "-x" ]]; then shift; fi
 command="${2:-}"
 case "$command" in
   'Print :CFBundleIdentifier') printf 'com.supermux.ios\n' ;;
@@ -97,8 +108,13 @@ case "$command" in
   'Print :CMUXAuthEnvironment') printf 'production\n' ;;
   'Print :TeamIdentifier:0') printf 'ABCD123456\n' ;;
   'Print :Entitlements:application-identifier') printf 'ABCD123456.com.supermux.ios\n' ;;
+  'Print :Entitlements:aps-environment') printf 'production\n' ;;
   'Print :com.apple.developer.team-identifier') printf 'ABCD123456\n' ;;
   'Print :application-identifier') printf 'ABCD123456.com.supermux.ios\n' ;;
+  'Print :aps-environment') printf 'production\n' ;;
+  'Print :Name') printf 'Supermux iPhone Ad Hoc\n' ;;
+  'Print :Entitlements')
+    printf '%s\n' '<?xml version="1.0"?><plist version="1.0"><dict><key>aps-environment</key><string>production</string></dict></plist>' ;;
   *) echo "unexpected PlistBuddy command: $command" >&2; exit 2 ;;
 esac
 SH
@@ -108,6 +124,9 @@ DERIVED_DATA="$HOME_DIR/Library/Developer/Xcode/DerivedData/cmux-ios-supermux-re
 STALE_APP="$DERIVED_DATA/Build/Products/Release-iphoneos/cmux.app"
 STALE_PCM="$DERIVED_DATA/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/stale.pcm"
 mkdir -p "$STALE_APP" "$(dirname "$STALE_PCM")"
+PROFILES_DIR="$HOME_DIR/Library/MobileDevice/Provisioning Profiles"
+mkdir -p "$PROFILES_DIR"
+printf 'fake adhoc profile\n' > "$PROFILES_DIR/fake-adhoc.mobileprovision"
 printf 'stale\n' > "$STALE_APP/stale-product"
 printf 'stale module\n' > "$STALE_PCM"
 
@@ -145,8 +164,10 @@ grep -F -- 'CMUX_API_BASE_URL=' "$TMP_DIR/xcodebuild.log" >/dev/null
 grep -F -- 'CMUX_IROH_BROKER_BASE_URL=' "$TMP_DIR/xcodebuild.log" >/dev/null
 grep -F -- 'CMUX_IOS_AUTH_ENV=production' "$TMP_DIR/xcodebuild.log" >/dev/null
 grep -F -- 'DEVELOPMENT_TEAM=ABCD123456' "$TMP_DIR/xcodebuild.log" >/dev/null
-grep -F -- 'CODE_SIGN_STYLE=Automatic' "$TMP_DIR/xcodebuild.log" >/dev/null
-grep -F -- 'CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements' "$TMP_DIR/xcodebuild.log" >/dev/null
+grep -F -- 'CODE_SIGN_STYLE=Manual' "$TMP_DIR/xcodebuild.log" >/dev/null
+grep -F -- 'PROVISIONING_PROFILE_SPECIFIER=Supermux iPhone Development' "$TMP_DIR/xcodebuild.log" >/dev/null
+grep -F -- '--force --sign Apple Distribution' "$TMP_DIR/codesign.log" >/dev/null
+grep -F -- 'CODE_SIGN_ENTITLEMENTS=Config/supermux.entitlements' "$TMP_DIR/xcodebuild.log" >/dev/null
 if grep -F -- 'PRODUCT_DISPLAY_NAME=' "$TMP_DIR/xcodebuild.log" >/dev/null; then
   cat "$TMP_DIR/xcodebuild.log"
   echo 'FAIL: iOS release must inherit the Supermux display name from xcconfig' >&2
@@ -162,7 +183,7 @@ grep -F -- 'devicectl device info details --device test-phone' "$TMP_DIR/xcrun.l
 grep -F -- 'devicectl device install app --device test-phone ' "$TMP_DIR/xcrun.log" >/dev/null
 grep -F -- 'devicectl device process launch --terminate-existing --device test-phone com.supermux.ios' "$TMP_DIR/xcrun.log" >/dev/null
 grep -F -- '--verify --strict --verbose=2 ' "$TMP_DIR/codesign.log" >/dev/null
-grep -F -- '==> Verified iOS signature for team ABCD123456' "$OUTPUT_FILE" >/dev/null
+grep -F -- '==> Verified iOS signature and production APNs entitlement for team ABCD123456' "$OUTPUT_FILE" >/dev/null
 grep -F -- '==> Installed Supermux (com.supermux.ios)' "$OUTPUT_FILE" >/dev/null
 grep -F -- '==> Launched Supermux on iPhone' "$OUTPUT_FILE" >/dev/null
 

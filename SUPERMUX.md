@@ -97,13 +97,14 @@ Status per fork feature area:
 | 8 | Custom app actions | ✅ on iOS | `action.run`; `open_url`-classified actions return the URL and the phone opens it locally |
 | 9 | Worktree setup/teardown scripts | ✅ mac-side execution, phone-triggered | scripts always run on the Mac when worktrees are created/removed from the phone; script lists editable in the phone's project editor (config-imported projects render read-only) |
 | 10 | AI integration | ✅ mac-side only (by design) | the AI key/model never leave the Mac; the phone consumes results (`worktree.suggest_branch`, `changes.generate_commit_message`) and surfaces the `ai_unavailable` error when unconfigured |
-| 11 | Workspace switcher | ✅ covered by existing surface — **deliberate decision** | the existing iOS workspace list already is the mobile switcher; no new switcher UI was built. Workspace selection and the focused panel now sync bidirectionally with the Mac: v1 preserves terminal-only compatibility, while `supermux.selection_sync.v2` covers terminals, browser tabs, Simulator tabs, and forward-compatible future panel kinds |
+| 11 | Workspace switcher | ✅ covered by existing surface — **deliberate decision** | the existing iOS workspace list already is the mobile switcher; no new switcher UI was built. Workspace selection and the focused panel sync bidirectionally with the Mac: v1 preserves terminal-only compatibility, while `supermux.selection_sync.v2` covers terminals, browser tabs, Simulator tabs, and forward-compatible future panel kinds. Phone-created panels request atomic Mac focus before the create reply, and browser/Simulator streams wait for the ordered focus operation before starting, so a newly opened or selected tab is immediately visible and operable on both devices |
 | 12 | Agent activity indicators | ✅ on iOS | additive `supermux_activity` travels for project-associated and global workspaces; the real iPhone `UITableView` row mounts `SupermuxWorkspaceActivityDot` and shows the amber working spinner whenever any tab's agent is running |
 | 13 | File explorer ops | ✅ on iOS | `SupermuxFileBrowserScreen` (browse, new file/folder, rename, duplicate, trash — never `rm`) over root-confined `files.*`; doubles as the project editor's folder picker |
 | 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field folds loose project-owned rows under the Projects section; a project's open workspaces are listed in its detail screen |
 | 15 | Empty-home behavior | mac-side only — **deliberate decision** | pure macOS window behavior; the mobile close path is already handled by touchpoint #71. No iOS surface (recorded mission decision) |
 | 16 | Sidebar polish (font scale, switcher cards, list filter) | mac-side only | pure macOS sidebar cosmetics with no mobile analogue; the phone's Projects section has its own mobile-native styling |
 | 17 | Unread badge (one design, both devices) | ✅ on iOS | additive `supermux_unread_count` field + `SupermuxUnreadBadgeStyle`/`SupermuxUnreadBadgeContent` in `SupermuxMobileCore`, wrapped per platform (`SupermuxUnreadBadgeView` on the Mac, `SupermuxMobileUnreadBadge` on the phone) and mirrored by the AppKit sidebar's Core Graphics renderer. Both apps now draw the same gradient capsule with localized overflow; the phone wrapper follows Dynamic Type, and its old permanently reserved unread gutter is gone. Touchpoints #261–#284, #291, #297–#298 |
+| 18 | Agent-completion push notifications | ✅ on iOS | The fixed `com.supermux.ios` build mirrors its sandbox APNs token to the paired Mac over `mobile.supermux.phone_push.register`. The Mac signs topic-restricted ES256 provider requests from a local-only key and forwards through the same `TerminalNotificationStore` admission, focus-suppression, forwarding-mode, and hide-content policy as cloud push. Visible alerts work while the app is foregrounded, backgrounded, locked, or terminated; the phone suppresses a foreground banner only when it already shows the exact target terminal. Touchpoints #331–#333 |
 
 **Recorded non-goals** (deliberate, may be revisited later):
 
@@ -354,6 +355,20 @@ Constraints inherited from upstream that supermux code MUST follow:
   build, which the user cannot sign in to, so phone dogfood is a Release build with `CMUX_DEV_TAG=`
   empty — see the `ios-dogfood-release-build` fence in `CLAUDE.md` (touchpoint #244) for the exact
   invocation and the build settings never to pass on it.
+- The fixed-identity phone build is built with the development profile, then RE-SIGNED Ad Hoc
+  (`Apple Distribution` + the `Supermux iPhone Ad Hoc` profile) so it carries
+  `aps-environment = production` — sandbox APNs proved best-effort and silently dropped pushes to
+  the backgrounded app. The paired Mac's direct provider reads
+  the production key `supermux-apns.json`/`supermux-apns-auth-key.p8` from the cmux state directory
+  (`~/.local/state/cmux`, via `CmuxStateDirectory` — NOT `~/Library/Application Support/cmux`);
+  both files must be mode `0600`, the directory `0700`, and the `.p8` must never be committed or
+  copied to the phone. `scripts/supermux-ios-release.sh` uses the installed `Supermux iPhone
+  Development` profile (name overrideable by environment) and verifies the profile and final app both
+  contain `aps-environment = development` before installing.
+- The local Mac Release is Developer ID-signed without a provisioning profile, so
+  `scripts/supermux-release.sh` defines `SUPERMUX_LOCAL_RELEASE` and reuses Iroh's bundle-scoped
+  `0600` file stores. Without that condition the data-protection Keychain rejects identity creation
+  with `errSecMissingEntitlement`, leaving the mobile host offline even though the app launches.
 
 ## Known limitations / deliberate deviations
 

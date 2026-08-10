@@ -171,8 +171,11 @@ extension TerminalController {
     }
 
     /// Creates a new browser panel in a workspace so the phone can stream it
-    /// immediately, mirroring `v2MobileTerminalCreate`. The panel is created
-    /// without stealing Mac focus; the caller starts the stream separately.
+    /// immediately, mirroring `v2MobileTerminalCreate`.
+    // SUPERMUX:begin supermux-mobile-create-focus
+    /// A caller sending `focus: true` receives a response only after the shared
+    /// Mac focus action selected the owning workspace and the new browser panel.
+    // SUPERMUX:end supermux-mobile-create-focus
     private func v2MobileBrowserCreate(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
@@ -190,6 +193,16 @@ extension TerminalController {
             mobileBrowserRecordDiagnostic(.browserPanelCreateResolved, panel: nil, a: 0)
             return .err(code: "unavailable", message: "Browser creation is unavailable", data: nil)
         }
+        // SUPERMUX:begin supermux-mobile-create-focus
+        if v2Bool(params, "focus") == true,
+           let focusError = v2SupermuxCreatedPanelFocusError(
+               workspaceID: workspace.id,
+               panelID: panel.id
+           ) {
+            _ = workspace.closePanel(panel.id, force: true)
+            return focusError
+        }
+        // SUPERMUX:end supermux-mobile-create-focus
         let encoder = MobileBrowserWireEncoder()
         guard let payload = encoder.object(encoder.descriptor(panel: panel)) else {
             mobileBrowserRecordDiagnostic(.browserPanelCreateResolved, panel: panel, a: 0)

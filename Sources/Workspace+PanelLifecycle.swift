@@ -180,6 +180,19 @@ extension Workspace {
         agentPIDs[key] = pid
         agentPIDProcessIdentitiesByKey[key] = processIdentity
         if let panelId { recordAgentPIDOwnership(key: key, panelId: panelId) } else { removeAgentPIDOwnership(key: key) }
+        // SUPERMUX:begin panel-agent-liveness-evidence
+        // Shared keys (claude_code) hold one PID workspace-wide, so a stolen
+        // panel loses all liveness evidence; keep a panel-scoped copy so the
+        // stale sweeps can retire lifecycle entries whose process died.
+        if let panelId {
+            SupermuxPanelAgentEvidence.shared.record(
+                workspaceId: id,
+                panelId: panelId,
+                statusKey: agentStatusKey(forAgentPIDKey: key),
+                identity: processIdentity
+            )
+        }
+        // SUPERMUX:end panel-agent-liveness-evidence
         if previous.pid != pid || previous.panelId != panelId || previous.identity != processIdentity {
             for changedPanelId in (previous.panelId == panelId ? [panelId] : [previous.panelId, panelId]).compactMap({ $0 }) {
                 AgentHibernationController.shared.recordAgentProcessChange(workspaceId: id, panelId: changedPanelId)
@@ -197,6 +210,11 @@ extension Workspace {
                 didChange = true
             }
         }
+        // SUPERMUX:begin panel-agent-liveness-evidence
+        // Companion pass for panels holding lifecycle under a shared key they
+        // no longer own — invisible to the owned-PID loop above.
+        supermuxSweepDeadAgentLifecycle()
+        // SUPERMUX:end panel-agent-liveness-evidence
         if didChange {
             if refreshPorts { refreshTrackedAgentPorts() }
             AppDelegate.shared?.notificationStore?.clearNotifications(forTabId: id)
@@ -220,6 +238,14 @@ extension Workspace {
                 didChange = true
             }
         }
+        // SUPERMUX:begin panel-agent-liveness-evidence
+        // The loop above sees only keys this panel still OWNS; a panel whose
+        // shared key (claude_code) was stolen by a sibling has none, so its
+        // dead agent's lifecycle would survive every sweep.
+        if supermuxClearDeadPanelAgentLifecycle(panelId: panelId) {
+            didChange = true
+        }
+        // SUPERMUX:end panel-agent-liveness-evidence
         if didChange {
             if refreshPorts { refreshTrackedAgentPorts() }
             AppDelegate.shared?.notificationStore?.clearNotifications(forTabId: id, surfaceId: panelId)

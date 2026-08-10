@@ -27,6 +27,8 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     case selectionSyncV2 = "supermux.selection_sync.v2"
     /// Workspace pane close and Simulator creation methods are served.
     case panesV1 = "supermux.panes.v1"
+    /// The paired Mac accepts this phone's APNs token for local push delivery.
+    case phonePushV1 = "supermux.phone_push.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

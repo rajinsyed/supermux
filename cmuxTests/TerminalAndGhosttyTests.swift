@@ -1798,6 +1798,120 @@ final class TerminalOffscreenStartupTests: XCTestCase {
             "Mobile background browser creation should not steal the Mac's workspace selection."
         )
     }
+
+    // SUPERMUX:begin supermux-mobile-create-focus
+    func testMobileTerminalCreateWithFocusSelectsCreatedPanelOnMac() async throws {
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = RecordingMobileTabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer { TerminalController.shared.setActiveTabManager(previousManager) }
+
+        let mobileWorkspace = manager.addWorkspace(
+            title: "Focused Mobile Terminal",
+            select: false,
+            eagerLoadTerminal: false,
+            autoRefreshMetadata: false
+        )
+        let response = await TerminalController.shared.mobileHostHandleRPC(
+            MobileHostRPCRequest(
+                id: "terminal-create-focus",
+                method: "terminal.create",
+                params: [
+                    "workspace_id": mobileWorkspace.id.uuidString,
+                    "focus": true,
+                ],
+                auth: nil
+            )
+        )
+
+        guard case let .ok(rawPayload) = response,
+              let payload = rawPayload as? [String: Any],
+              let createdID = payload["created_terminal_id"] as? String,
+              let createdUUID = UUID(uuidString: createdID) else {
+            XCTFail("Expected focused terminal creation to succeed")
+            return
+        }
+        XCTAssertEqual(manager.selectedWorkspace?.id, mobileWorkspace.id)
+        XCTAssertEqual(mobileWorkspace.focusedPanelId, createdUUID)
+        let workspaces = try XCTUnwrap(payload["workspaces"] as? [[String: Any]])
+        let row = try XCTUnwrap(workspaces.first)
+        let focusedPanel = try XCTUnwrap(row["focused_panel"] as? [String: Any])
+        XCTAssertEqual(focusedPanel["panel_id"] as? String, createdID)
+        XCTAssertEqual(focusedPanel["kind"] as? String, "terminal")
+    }
+
+    func testMobileBrowserCreateWithFocusSelectsCreatedPanelOnMac() async throws {
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = RecordingMobileTabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer { TerminalController.shared.setActiveTabManager(previousManager) }
+
+        let mobileWorkspace = manager.addWorkspace(
+            title: "Focused Mobile Browser",
+            select: false,
+            eagerLoadTerminal: false,
+            autoRefreshMetadata: false
+        )
+        let response = await TerminalController.shared.mobileHostHandleRPC(
+            MobileHostRPCRequest(
+                id: "browser-create-focus",
+                method: "mobile.browser.create",
+                params: [
+                    "workspace_id": mobileWorkspace.id.uuidString,
+                    "focus": true,
+                ],
+                auth: nil
+            )
+        )
+
+        guard case let .ok(rawPayload) = response,
+              let payload = rawPayload as? [String: Any],
+              let panelID = payload["panel_id"] as? String,
+              let panelUUID = UUID(uuidString: panelID) else {
+            XCTFail("Expected focused browser creation to succeed")
+            return
+        }
+        XCTAssertEqual(manager.selectedWorkspace?.id, mobileWorkspace.id)
+        XCTAssertEqual(mobileWorkspace.focusedPanelId, panelUUID)
+        XCTAssertNotNil(mobileWorkspace.browserPanel(for: panelUUID))
+    }
+
+    func testMobileSimulatorCreateWithFocusSelectsCreatedPanelOnMac() async throws {
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = RecordingMobileTabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer { TerminalController.shared.setActiveTabManager(previousManager) }
+
+        let mobileWorkspace = manager.addWorkspace(
+            title: "Focused Mobile Simulator",
+            select: false,
+            eagerLoadTerminal: false,
+            autoRefreshMetadata: false
+        )
+        let response = await TerminalController.shared.mobileHostHandleRPC(
+            MobileHostRPCRequest(
+                id: "simulator-create-focus",
+                method: "mobile.supermux.simulator.create",
+                params: [
+                    "workspace_id": mobileWorkspace.id.uuidString,
+                    "focus": true,
+                ],
+                auth: nil
+            )
+        )
+
+        guard case let .ok(rawPayload) = response,
+              let payload = rawPayload as? [String: Any],
+              let panelID = payload["panel_id"] as? String,
+              let panelUUID = UUID(uuidString: panelID) else {
+            XCTFail("Expected focused Simulator creation to succeed")
+            return
+        }
+        XCTAssertEqual(manager.selectedWorkspace?.id, mobileWorkspace.id)
+        XCTAssertEqual(mobileWorkspace.focusedPanelId, panelUUID)
+        XCTAssertEqual(mobileWorkspace.panelKind(panelId: panelUUID), "simulator")
+    }
+    // SUPERMUX:end supermux-mobile-create-focus
 #endif
 
     private func waitForMobileHostRoutesForTesting() async -> Bool {

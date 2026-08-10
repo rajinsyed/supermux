@@ -108,6 +108,8 @@ extension TerminalController {
             return v2SupermuxPaneClose(params: params)
         case .simulatorCreate:
             return v2SupermuxSimulatorCreate(params: params)
+        case .phonePushRegister:
+            return await v2SupermuxPhonePushRegister(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method
@@ -188,6 +190,14 @@ extension TerminalController {
                 message: "Simulator creation is unavailable",
                 data: ["workspace_id": workspaceID.uuidString]
             )
+        }
+        if v2Bool(params, "focus") == true,
+           let focusError = v2SupermuxCreatedPanelFocusError(
+               workspaceID: workspace.id,
+               panelID: panel.id
+           ) {
+            _ = workspace.closePanel(panel.id, force: true)
+            return focusError
         }
         let encoder = MobileSimulatorWireEncoder()
         guard let payload = encoder.object(encoder.descriptor(

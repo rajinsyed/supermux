@@ -42,6 +42,16 @@ enum SupermuxComposition {
     /// AI commit-message generator for the Changes panel.
     static let aiCommitMessenger: any SupermuxAICommitMessaging = SupermuxAICommitMessenger(client: aiClient)
 
+    /// Personal Mac-to-APNs delivery for the fixed-identity Supermux iPhone app.
+    static let phonePushService = SupermuxPhonePushService(
+        baseDirectory: CmuxSettings.CmuxStateDirectory.url(
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        )
+    )
+
+    /// Maps app-target terminal notifications onto the package-owned APNs service.
+    static let directPhonePush = SupermuxDirectPhonePush(service: phonePushService)
+
     /// App-wide projects model, shared by every window's sidebar.
     static let projectsModel: SupermuxProjectsModel = {
         let store = SupermuxProjectStore(fileURL: SupermuxPaths.defaultProjectsFileURL)

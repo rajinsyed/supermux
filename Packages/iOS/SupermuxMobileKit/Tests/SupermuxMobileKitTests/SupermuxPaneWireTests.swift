@@ -28,12 +28,13 @@ import Testing
         #expect(response.panelID == "panel-1")
     }
 
-    @Test func simulatorCreateRequestCarriesOnlyTheWorkspaceID() {
+    @Test func simulatorCreateRequestRequiresMacFocusBeforeReply() {
         let request = SupermuxSimulatorCreateRequest(workspaceID: "workspace-1")
 
         #expect(request.wireMethod == "mobile.supermux.simulator.create")
         #expect(request.wireParams as NSDictionary == [
             "workspace_id": "workspace-1",
+            "focus": true,
         ] as NSDictionary)
     }
 

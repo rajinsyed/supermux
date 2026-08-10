@@ -150,6 +150,7 @@ NSUnbufferedIO=YES xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CMUX_SIDEBAR_EXTENSION_POINT_ID="${SIDEBAR_EXTENSION_POINT_ID}" \
+  'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) SUPERMUX_LOCAL_RELEASE' \
   build 2>&1 | tee -a "${BUILD_LOG}"
 pipeline_status=("${PIPESTATUS[@]}")
 build_status=${pipeline_status[0]}

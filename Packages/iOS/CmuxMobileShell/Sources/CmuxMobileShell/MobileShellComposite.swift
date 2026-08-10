@@ -760,6 +760,7 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             // SUPERMUX:begin supermux-mobile-selection-sync
             if selectedWorkspaceID != oldValue {
                 selectedWorkspaceFocusedPanel = nil
+                supermuxStreamFocusReadiness = nil
             }
             // SUPERMUX:end supermux-mobile-selection-sync
             syncSelectedTerminalForWorkspace()
@@ -983,7 +984,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     // SUPERMUX:begin supermux-mobile-selection-sync (serialized optimistic workspace/terminal selection mutation + authoritative reconciliation)
     @ObservationIgnored var supermuxSelectionSyncTask: Task<Void, Never>?
     @ObservationIgnored var supermuxSelectionSyncOperationID: UUID?
+    @ObservationIgnored var supermuxSelectionFocusTask: Task<Bool, Never>?
     @ObservationIgnored var pendingSupermuxSelectionSyncIntent: SupermuxMobileSelectionSyncIntent?
+    @ObservationIgnored var supermuxStreamFocusReadiness: SupermuxMobileStreamFocusReadiness?
     // SUPERMUX:end supermux-mobile-selection-sync
     var terminalEventListenerTask: Task<Void, Never>?
     private var terminalEventListenerID: UUID?
@@ -7110,7 +7113,15 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
 
     /// Select the active terminal by id without changing workspace selection.
     public func selectTerminal(_ id: MobileTerminalPreview.ID?) {
-        let changed = selectedTerminalID != id
+        var changed = selectedTerminalID != id
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        if let id {
+            changed = changed || selectedWorkspaceFocusedPanel != MobileWorkspaceFocusedPanel(
+                panelID: id.rawValue,
+                kind: MobileWorkspaceFocusedPanel.terminalKind
+            )
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
         selectedTerminalID = id
         // SUPERMUX:begin supermux-mobile-selection-sync
         if changed, let id, let workspaceID = selectedWorkspaceID {
@@ -7135,8 +7146,18 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// link uses and which is allowed to autofocus) this suppresses the target
     /// surface's next autofocus. Re-confirming the already-selected terminal is
     /// a no-op suppression, since no surface re-attach happens.
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    /// When browser or Simulator chrome is effective, choosing that same terminal
+    /// id is a real panel transition and therefore still suppresses autofocus.
+    // SUPERMUX:end supermux-mobile-selection-sync
     public func selectTerminalFromChrome(_ id: MobileTerminalPreview.ID) {
-        let changed = id != selectedTerminalID
+        var changed = id != selectedTerminalID
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        changed = changed || selectedWorkspaceFocusedPanel != MobileWorkspaceFocusedPanel(
+            panelID: id.rawValue,
+            kind: MobileWorkspaceFocusedPanel.terminalKind
+        )
+        // SUPERMUX:end supermux-mobile-selection-sync
         if changed {
             terminalAutoFocusSuppressedSurfaceIDs.insert(id.rawValue)
         }
@@ -7254,7 +7275,7 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                 kind: MobileWorkspaceFocusedPanel.terminalKind
             )
         }
-        await enqueueSupermuxSelectionSync(
+        _ = await enqueueSupermuxSelectionSync(
             workspaceID: resolvedRowID,
             focusedPanel: focusedPanel
         )?.value
@@ -9323,7 +9344,10 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         supermuxSelectionSyncTask?.cancel()
         supermuxSelectionSyncTask = nil
         supermuxSelectionSyncOperationID = nil
+        supermuxSelectionFocusTask?.cancel()
+        supermuxSelectionFocusTask = nil
         pendingSupermuxSelectionSyncIntent = nil
+        supermuxStreamFocusReadiness = nil
         // SUPERMUX:end supermux-mobile-selection-sync
         cancelAllTerminalReplayTasks()
     }
@@ -10013,7 +10037,12 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             let resultData = try await client.sendRequest(
                 MobileCoreRPCClient.requestData(
                     method: "terminal.create",
-                    params: ["workspace_id": requestedWorkspaceID.rawValue]
+                    params: [
+                        "workspace_id": requestedWorkspaceID.rawValue,
+                        // SUPERMUX:begin supermux-mobile-create-focus
+                        "focus": true,
+                        // SUPERMUX:end supermux-mobile-create-focus
+                    ]
                 )
             )
             let response = try MobileSyncWorkspaceListResponse.decode(resultData)
@@ -10023,8 +10052,16 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             if selectedWorkspaceID == rowWorkspaceID,
                let createdID = response.createdTerminalID {
                 let createdTerminalID = MobileTerminalPreview.ID(rawValue: createdID)
-                selectedTerminalID = createdTerminalID
+                // SUPERMUX:begin supermux-mobile-create-focus
+                // Route creation through the same phone selection action as the
+                // picker so the new terminal becomes the effective local panel
+                // even if a version-skewed Mac omitted generic focus metadata.
+                selectTerminalFromChrome(createdTerminalID)
+                // The Mac's atomic create reply can already have reconciled this
+                // id, making the shared selection action a no-op. Preserve the
+                // create path's one-shot keyboard-autofocus suppression anyway.
                 suppressTerminalAutoFocusOnNextAttach(for: createdTerminalID)
+                // SUPERMUX:end supermux-mobile-create-focus
             }
         } catch {
             guard generation == connectionGeneration, !Task.isCancelled else { return }

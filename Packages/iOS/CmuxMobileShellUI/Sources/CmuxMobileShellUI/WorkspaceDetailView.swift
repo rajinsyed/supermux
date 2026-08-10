@@ -1102,18 +1102,49 @@ struct WorkspaceDetailView: View {
         // SUPERMUX:end ios-pane-actions
         browserStore.closeBrowser(for: workspace.id.rawValue)
         stopActiveSimulatorStream()
-        if let previous = activeBrowserStream, previous.id != panelID {
-            Task { await store.stopMobileBrowserStream(panelID: previous.id) }
+        let previousPanelID = activeBrowserStream.flatMap {
+            $0.id == panelID ? nil : $0.id
         }
         _ = browserStreamStore.activate(panelID: panelID, in: workspace.rpcWorkspaceID.rawValue)
-        if syncMacSelection {
-            store.selectWorkspacePanel(
+        let focusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: panelID,
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        )
+        let focusTask = syncMacSelection
+            ? store.selectWorkspacePanel(
                 panelID: panelID,
-                kind: MobileWorkspaceFocusedPanel.browserKind,
+                kind: focusedPanel.kind,
                 workspaceID: workspace.id
             )
+            : nil
+        Task {
+            // A Mac browser mirror is not operable while its source panel is in
+            // the background. Await the ordered focus mutation before starting
+            // the stream so its first frame and input target are the new tab.
+            await WorkspacePanelStreamActivationSequence.run(
+                focusTask: focusTask,
+                isSelectionCurrent: {
+                    store.selectedWorkspaceFocusedPanel == focusedPanel
+                },
+                stopPrevious: {
+                    if let previousPanelID {
+                        await store.stopMobileBrowserStream(panelID: previousPanelID)
+                    }
+                },
+                abandonCurrent: {
+                    if browserStreamStore.activeState(
+                        in: workspace.rpcWorkspaceID.rawValue
+                    )?.id == panelID {
+                        browserStreamStore.deactivate(
+                            in: workspace.rpcWorkspaceID.rawValue
+                        )
+                    }
+                },
+                startCurrent: {
+                    await store.startMobileBrowserStream(panelID: panelID)
+                }
+            )
         }
-        Task { await store.startMobileBrowserStream(panelID: panelID) }
     }
     // SUPERMUX:end supermux-mobile-selection-sync
 
@@ -1141,28 +1172,50 @@ struct WorkspaceDetailView: View {
         }
         _ = simulatorStreamStore.activate(panelID: panelID, in: workspaceID)
         // SUPERMUX:begin supermux-mobile-selection-sync
-        if syncMacSelection {
-            store.selectWorkspacePanel(
+        let focusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: panelID,
+            kind: MobileWorkspaceFocusedPanel.simulatorKind
+        )
+        let focusTask = syncMacSelection
+            ? store.selectWorkspacePanel(
                 panelID: panelID,
-                kind: MobileWorkspaceFocusedPanel.simulatorKind,
+                kind: focusedPanel.kind,
                 workspaceID: workspace.id
             )
-        }
+            : nil
         // SUPERMUX:end supermux-mobile-selection-sync
-        // One task, stop awaited before start: two independent tasks have no
-        // ordering guarantee, and the reversed order would tear down the new
-        // stream (or churn host sessions) right after it started.
+        // One task owns focus, stop, then start. Starting the Simulator stream
+        // before Mac focus settles leaves its control surface unavailable even
+        // though the phone has already mounted the new tab.
         Task {
-            if let previousPanelID {
-                await store.stopMobileSimulatorStream(
-                    panelID: previousPanelID,
-                    workspaceID: workspaceID
-                )
-            }
-            await store.startMobileSimulatorStream(
-                panelID: panelID,
-                workspaceID: workspaceID
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            await WorkspacePanelStreamActivationSequence.run(
+                focusTask: focusTask,
+                isSelectionCurrent: {
+                    store.selectedWorkspaceFocusedPanel == focusedPanel
+                },
+                stopPrevious: {
+                    if let previousPanelID {
+                        await store.stopMobileSimulatorStream(
+                            panelID: previousPanelID,
+                            workspaceID: workspaceID
+                        )
+                    }
+                },
+                abandonCurrent: {
+                    simulatorStreamStore.deactivate(
+                        panelID: panelID,
+                        in: workspaceID
+                    )
+                },
+                startCurrent: {
+                    await store.startMobileSimulatorStream(
+                        panelID: panelID,
+                        workspaceID: workspaceID
+                    )
+                }
             )
+            // SUPERMUX:end supermux-mobile-selection-sync
         }
     }
 
@@ -1189,12 +1242,14 @@ struct WorkspaceDetailView: View {
         case .browserStream(let panelID):
             isChatMode = false
             pinnedChatSessionID = nil
+            guard activeBrowserStream?.id != panelID else { break }
             selectBrowserStreamFromToolbar(
                 panelID,
                 dismissKeyboard: true,
                 syncMacSelection: false
             )
         case .simulatorStream(let panelID):
+            guard activeSimulatorStream?.id != panelID else { break }
             selectSimulatorStreamFromToolbar(
                 panelID,
                 syncMacSelection: false

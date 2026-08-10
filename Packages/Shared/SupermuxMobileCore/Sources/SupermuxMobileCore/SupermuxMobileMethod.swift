@@ -112,6 +112,11 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Creates a native Simulator panel in a workspace.
     case simulatorCreate = "mobile.supermux.simulator.create"
 
+    // MARK: Phone push
+
+    /// Registers or removes this phone's APNs token on the paired Mac.
+    case phonePushRegister = "mobile.supermux.phone_push.register"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 
