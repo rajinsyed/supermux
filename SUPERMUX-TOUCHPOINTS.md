@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **336**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **335**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -352,11 +352,10 @@ Rules for adding a touchpoint:
 | 329 | `Sources/Panels/BrowserPanel+MobileBrowserStreaming.swift` | `mac-browser-stream-teardown-grace` | Three fences: the last stream handler removal parks the offscreen render host behind a short cancellable grace instead of tearing it down synchronously; a restart inside the grace cancels the pending teardown and reuses the parked host with zero window/reparent churn; explicit `clearMobileStreamViewport` (panel close, forced teardown) and a web-view replacement during the grace cancel the timer and tear down or abandon immediately so a dead web view's presentation tree is never parked |
 | 330 | `cmuxTests/MobileBrowserStreamTeardownGraceTests.swift` | `mac-browser-stream-teardown-grace` | **Whole-file fork test.** Behavior coverage: a stopped stream parks the render host and a rapid restart reuses the same host with the teardown cancelled; grace expiry with no restart fully tears down; panel close during the grace skips the wait |
 | 331 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobilePushCoordinator.swift` | `ios-direct-apns-token` | Mirrors each successful APNs device token into fork-owned `SupermuxMobilePushRegistrationStore` before upstream's cloud registration runs. The store persists the hexadecimal token and, when `supermux.phone_push.v1` is advertised, registers or removes it over the paired Mac connection. The fixed bundle guard keeps upstream/tagged identities on their original cloud-only path |
-| 332 | `Sources/TerminalNotificationStore.swift` | `direct-phone-push` | Adds the topic-restricted personal APNs provider at the two existing notification chokepoints. Visible sends deliver when upstream's external-delivery gate would (not focus-suppressed) OR when `SupermuxMacAwayState.userIsAway()` says the user is physically away (screen locked, or ≥60 s without local keyboard/mouse input) — upstream's focus suppression assumes a frontmost cmux means a watching user, but a phone remote-controlling the Mac keeps the app frontmost on the phone's workspace while nobody is at the keyboard, which silently suppressed every agent push. Dismiss/badge synchronization runs beside the existing cold lane. Both lanes require phone forwarding enabled; hide-content is inherited. Transport stays in fork-owned `SupermuxDirectPhonePush`/`SupermuxPhonePushService`; the away policy is package-tested (`SupermuxMacAwayPolicyTests`) with host evidence in `Sources/Supermux/SupermuxMacAwayState.swift` (#336) |
+| 332 | `Sources/TerminalNotificationStore.swift` | `direct-phone-push` | Adds the topic-restricted personal APNs provider at the two existing notification chokepoints. Visible sends deliberately IGNORE upstream's Mac focus suppression: a phone remote-controlling this Mac keeps the app frontmost on the phone's workspace while nobody is at the Mac, so any Mac-side presence guess loses notifications. The Mac always sends while phone forwarding is enabled; the phone owns presentation (its foreground delegate suppresses the banner when it is showing the exact target terminal, so an always-send Mac cannot double-notify). Dismiss/badge synchronization runs beside the existing cold lane under the same forwarding preference; hide-content is inherited. Transport stays in fork-owned `SupermuxDirectPhonePush`/`SupermuxPhonePushService` |
 | 333 | `ios/Config/supermux.entitlements` | `unfenced` | **Fork-owned build-stage signing entitlement** (`aps-environment = development`, used only by the xcodebuild pass with the Apple Development profile — workspace-wide distribution settings leak into SwiftPM targets, which cannot take profiles). `scripts/supermux-ios-release.sh` then RE-SIGNS the built app with `Apple Distribution` + the `Supermux iPhone Ad Hoc` profile, using the entitlements extracted from that profile (`aps-environment = production`), and rejects a profile or final signature that is not production. Sandbox APNs accepted every send with 200 but silently dropped delivery to the backgrounded app |
 | 334 | `Sources/Mobile/MobileHostIrohRuntime.swift` | `profileless-release-iroh-storage` | Extends the existing DEBUG file-backed secure-store composition to `SUPERMUX_LOCAL_RELEASE`. The local Developer ID-signed Mac app has no provisioning profile/application-identifier entitlement, so the data-protection Keychain returns `errSecMissingEntitlement` and the entire mobile host remains offline; the release script's explicit condition uses the already hardened `0600` per-bundle file stores for identity and relay credentials without changing upstream production Release builds |
 | 335 | `Sources/Mobile/MobileHostIrohRuntime+Lifecycle.swift` | `profileless-release-iroh-storage` | Compiles the matching bundle-scoped `developmentStoreDirectory(service:)` helper for `SUPERMUX_LOCAL_RELEASE`, keeping every local-release identity/credential family under `Application Support/cmux/iroh-debug/com.supermux.app/`. Must use the same compilation condition as #334 or the Release build fails at compile time |
-| 336 | `Sources/Supermux/SupermuxMacAwayState.swift` | `unfenced` | **Fork-owned new file** behind #332's away carve-out: reads the login session's screen-lock flag and Quartz `secondsSinceLastEventType` input recency (minimum across key/mouse/scroll event classes, `.combinedSessionState`), then delegates the verdict to package-tested `SupermuxMacAwayPolicy` (`Packages/SupermuxKit/Sources/SupermuxKit/Push/`). Unknown input recency fails closed to upstream suppression. Wired via pbxproj ids `50BE0001…0105`/`…0106` under #3 |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
@@ -372,11 +371,15 @@ In `MobilePushCoordinator.handleDeviceToken`, preserve the fenced call to
 cloud registration call. The fork store sends the token only for the fixed bundle and only when the
 Mac advertises `supermux.phone_push.v1`; upstream and tagged app identities remain unchanged.
 
-In `TerminalNotificationStore`, preserve both `direct-phone-push` fences. Visible forwarding must
-stay inside the existing `shouldAttemptPhone` branch so Mac focus suppression, notification-policy
-effects, Always/Only When Away mode, and forwarding enablement remain one shared decision. Dismiss
-forwarding stays beside `PhonePushClient.forwardDismissed` and is gated by the same forwarding
-preference. Do not introduce a second notification admission path.
+In `TerminalNotificationStore`, preserve both `direct-phone-push` fences. Visible forwarding runs
+OUTSIDE the `shouldAttemptPhone` branch on purpose — the direct lane must ignore Mac focus
+suppression (a phone remote-controlling the Mac keeps it frontmost on the phone's workspace, so a
+focus-gated lane never fires while working from the phone) and is gated only on the forwarding
+preference. The phone owns presentation: its foreground delegate suppresses the banner when it is
+already showing the exact target terminal. Dismiss forwarding stays beside
+`PhonePushClient.forwardDismissed` under the same preference. Do not reintroduce a Mac-side
+presence/away heuristic — one was tried (`SupermuxMacAwayPolicy`) and removed because any Mac-side
+guess loses notifications for the remote-control workflow.
 
 Signing is two-stage. xcodebuild signs with the `Supermux iPhone Development` profile and the
 development entitlement in `ios/Config/supermux.entitlements` (workspace-wide distribution build
@@ -1091,10 +1094,8 @@ The direct phone-push adapter (touchpoint #332) adds file reference `50BE0001…
 `50BE0001…0104` for `SupermuxDirectPhonePush.swift`, wired in the same four places. Its package-owned
 APNs service is discovered automatically by SwiftPM and needs no pbxproj entry.
 
-The Mac away-state evidence reader (touchpoint #336) adds file reference `50BE0001…0105` and build
-file `50BE0001…0106` for `SupermuxMacAwayState.swift`, wired in the same four places.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `117`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `113`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 

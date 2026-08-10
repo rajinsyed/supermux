@@ -1375,13 +1375,13 @@ final class TerminalNotificationStore: ObservableObject {
             )
         }
         // SUPERMUX:begin direct-phone-push
-        // The direct lane widens upstream's admission: focus suppression assumes
-        // a frontmost cmux means a watching user, but a phone remote-controlling
-        // this Mac keeps the app frontmost on the phone's workspace while nobody
-        // is at the keyboard. Deliver when upstream would (not suppressed) OR
-        // when lock/input-idle evidence says the user is physically away.
-        if PhonePushClient.shared.configuration().forwardingEnabled,
-           !shouldSuppressExternalDelivery || SupermuxMacAwayState.userIsAway() {
+        // The direct lane ignores Mac focus suppression entirely: a phone
+        // remote-controlling this Mac keeps the app frontmost on the phone's
+        // workspace while nobody is at the Mac, so any Mac-side presence guess
+        // loses notifications. The phone owns presentation — its foreground
+        // delegate already suppresses the banner when it is showing the exact
+        // target terminal, so an always-send Mac cannot double-notify.
+        if PhonePushClient.shared.configuration().forwardingEnabled {
             SupermuxComposition.directPhonePush.forward(
                 notification: notification,
                 badgeCount: indexes.unreadCount,
