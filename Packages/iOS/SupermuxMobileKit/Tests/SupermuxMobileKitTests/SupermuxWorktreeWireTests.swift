@@ -40,6 +40,10 @@ import Testing
                 == ["project_id": "p"] as NSDictionary
         )
         #expect(
+            SupermuxWorktreesListRequest(projectID: "p", includeBranches: true).wireParams as NSDictionary
+                == ["project_id": "p", "include_branches": true] as NSDictionary
+        )
+        #expect(
             SupermuxWorktreeSuggestBranchRequest(workspaceName: "Fix login").wireParams as NSDictionary
                 == ["workspace_name": "Fix login"] as NSDictionary
         )
@@ -49,11 +53,16 @@ import Testing
         )
         #expect(
             SupermuxWorktreeCreateRequest(
-                projectID: "p", workspaceName: "Fix login", branchName: "fix-login", open: true
+                projectID: "p",
+                workspaceName: "Fix login",
+                branchName: "fix-login",
+                baseBranch: "experiment",
+                open: true
             ).wireParams as NSDictionary == [
                 "project_id": "p",
                 "workspace_name": "Fix login",
                 "branch_name": "fix-login",
+                "base_branch": "experiment",
                 "open": true,
             ] as NSDictionary
         )
@@ -78,6 +87,7 @@ import Testing
     @Test func worktreesListResponseDecodesMacResultShape() throws {
         let json = Data("""
         {
+          "branches": ["main", "experiment"],
           "worktrees": [
             {
               "path": "/Users/dev/alpha/.worktrees/fix-login",
@@ -94,6 +104,7 @@ import Testing
         """.utf8)
         let response = try JSONDecoder().decode(SupermuxWorktreesListResponse.self, from: json)
         #expect(response.worktrees.count == 1)
+        #expect(response.branches == ["main", "experiment"])
         #expect(response.worktrees.first?.branch == "fix-login")
         #expect(response.worktrees.first?.pullRequest?.number == 41)
         #expect(response.worktrees.first?.pullRequest?.state == "open")
@@ -103,6 +114,16 @@ import Testing
         let json = Data(#"{"future_field": 1}"#.utf8)
         let response = try JSONDecoder().decode(SupermuxWorktreesListResponse.self, from: json)
         #expect(response.worktrees.isEmpty)
+        #expect(response.branches == nil)
+    }
+
+    @Test func malformedOptionalBranchesDoNotDiscardValidWorktrees() throws {
+        let json = Data(#"{"worktrees":[{"path":"/w"}],"branches":["main",null]}"#.utf8)
+
+        let response = try JSONDecoder().decode(SupermuxWorktreesListResponse.self, from: json)
+
+        #expect(response.worktrees.map(\.path) == ["/w"])
+        #expect(response.branches == nil)
     }
 
     @Test func branchSuggestionResponseDecodesBothSources() throws {

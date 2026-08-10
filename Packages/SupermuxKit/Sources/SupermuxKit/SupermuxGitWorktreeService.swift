@@ -74,15 +74,22 @@ public actor SupermuxGitWorktreeService {
 
     /// All local branch names, most recently committed first.
     /// - Parameter repoRoot: Repository root path.
-    public func localBranches(repoRoot: String) async -> [String] {
+    /// - Returns: Local branch names relative to `refs/heads/`.
+    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
+    public func localBranches(repoRoot: String) async throws -> [String] {
         let result = await runner.run(
             directory: repoRoot,
             executable: "git",
-            arguments: ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads"],
+            arguments: ["for-each-ref", "--sort=-committerdate", "--format=%(refname:lstrip=2)", "refs/heads"],
             timeout: Self.gitTimeout
         )
-        guard result.exitStatus == 0, let stdout = result.stdout else { return [] }
-        return stdout.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        guard result.exitStatus == 0, let stdout = result.stdout else {
+            throw SupermuxGitError.gitFailed(
+                command: "for-each-ref",
+                message: Self.failureMessage(result)
+            )
+        }
+        return stdout.split(separator: "\n").map(String.init)
     }
 
     /// Lists the project's linked worktrees (the primary checkout is omitted).
@@ -151,7 +158,8 @@ public actor SupermuxGitWorktreeService {
     ///
     /// The branch name is sanitized and deduplicated; the worktree is created
     /// at `<root>/<worktreesDir>/<branch>` from `baseBranch` (local first,
-    /// then `origin/<baseBranch>`, defaulting to `HEAD`).
+    /// then `origin/<baseBranch>`). Without an explicit or configured base it
+    /// prefers local `main`, then falls back to repository `HEAD`.
     /// - Parameters:
     ///   - project: Target project; must be a git repository.
     ///   - requestedBranch: Raw branch name input from the user.
@@ -183,9 +191,14 @@ public actor SupermuxGitWorktreeService {
         // against `git worktree list` realpath output.
         let worktreesDir = SupermuxWorktreePath.worktreesDir(canonicalRoot: rootPath, project: project)
 
+        let explicitBase = baseBranch?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let configuredBase = project.defaultBranch?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedBase = (explicitBase?.isEmpty == false ? explicitBase : nil)
+            ?? (configuredBase?.isEmpty == false ? configuredBase : nil)
         let base = try await resolveBase(
             repoRoot: rootPath,
-            requested: baseBranch ?? project.defaultBranch
+            requested: requestedBase,
+            prefersMainWhenUnspecified: requestedBase == nil
         )
 
         try FileManager.default.createDirectory(atPath: worktreesDir, withIntermediateDirectories: true)
@@ -201,7 +214,12 @@ public actor SupermuxGitWorktreeService {
         var attemptsRemaining = 2
         while true {
             attemptsRemaining -= 1
-            let branch = await deduplicatedBranch(for: sanitized, project: project, rootPath: rootPath, worktreesDir: worktreesDir)
+            let branch = try await deduplicatedBranch(
+                for: sanitized,
+                project: project,
+                rootPath: rootPath,
+                worktreesDir: worktreesDir
+            )
             let directoryName = naming.directoryComponent(for: branch)
             let worktreePath = SupermuxWorktreePath.normalized((worktreesDir as NSString).appendingPathComponent(directoryName))
             guard worktreePath.hasPrefix(worktreesDir + "/") else {
@@ -240,7 +258,7 @@ public actor SupermuxGitWorktreeService {
                 await cleanUpTimedOutAdd(branch: branch, worktreePath: worktreePath, rootPath: rootPath)
             } else if attemptsRemaining > 0,
                       Self.isNameClaimRejection(add.stderr, branch: branch, worktreePath: worktreePath),
-                      await refExists(repoRoot: rootPath, ref: "refs/heads/\(branch)") {
+                      (try? await refExists(repoRoot: rootPath, ref: "refs/heads/\(branch)")) == true {
                 continue
             }
             throw SupermuxGitError.gitFailed(command: "worktree add", message: Self.failureMessage(add))
@@ -276,8 +294,8 @@ public actor SupermuxGitWorktreeService {
         project: SupermuxProject,
         rootPath: String,
         worktreesDir: String
-    ) async -> String {
-        let branches = await localBranches(repoRoot: rootPath)
+    ) async throws -> String {
+        let branches = try await localBranches(repoRoot: rootPath)
         var takenDirectories = Set(
             (try? FileManager.default.contentsOfDirectory(atPath: worktreesDir)) ?? []
         )
@@ -413,27 +431,45 @@ public actor SupermuxGitWorktreeService {
         var recordedName: String?
     }
 
-    private func resolveBase(repoRoot: String, requested: String?) async throws -> ResolvedBase {
-        guard let requested, !requested.isEmpty, requested != "HEAD" else {
+    private func resolveBase(
+        repoRoot: String,
+        requested: String?,
+        prefersMainWhenUnspecified: Bool
+    ) async throws -> ResolvedBase {
+        guard let requested, !requested.isEmpty else {
+            if prefersMainWhenUnspecified,
+               try await refExists(repoRoot: repoRoot, ref: "refs/heads/main") {
+                return ResolvedBase(startPoint: "main", recordedName: "main")
+            }
             return ResolvedBase(startPoint: "HEAD", recordedName: nil)
         }
-        if await refExists(repoRoot: repoRoot, ref: "refs/heads/\(requested)") {
+        guard requested != "HEAD" else {
+            return ResolvedBase(startPoint: "HEAD", recordedName: nil)
+        }
+        if try await refExists(repoRoot: repoRoot, ref: "refs/heads/\(requested)") {
             return ResolvedBase(startPoint: requested, recordedName: requested)
         }
-        if await refExists(repoRoot: repoRoot, ref: "refs/remotes/origin/\(requested)") {
+        if try await refExists(repoRoot: repoRoot, ref: "refs/remotes/origin/\(requested)") {
             return ResolvedBase(startPoint: "origin/\(requested)", recordedName: requested)
         }
         throw SupermuxGitError.unknownBaseBranch(name: requested)
     }
 
-    private func refExists(repoRoot: String, ref: String) async -> Bool {
+    private func refExists(repoRoot: String, ref: String) async throws -> Bool {
         let result = await runner.run(
             directory: repoRoot,
             executable: "git",
             arguments: ["show-ref", "--verify", "--quiet", ref],
             timeout: Self.gitTimeout
         )
-        return result.exitStatus == 0
+        if result.exitStatus == 0 { return true }
+        if result.executionError == nil, !result.timedOut, result.exitStatus == 1 {
+            return false
+        }
+        throw SupermuxGitError.gitFailed(
+            command: "show-ref --verify",
+            message: Self.failureMessage(result)
+        )
     }
 
     /// Appends the worktrees directory to `.git/info/exclude` so the

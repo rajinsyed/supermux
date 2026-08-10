@@ -45,6 +45,13 @@ public final class SupermuxMobileWorktreesStore {
     /// The project's worktrees, in the Mac's order.
     public private(set) var worktrees: [SupermuxWorktreeDTO] = []
 
+    /// Local branches available as starting points for a new worktree.
+    public private(set) var branches: [String] = []
+
+    /// Whether the host returned the additive branch-selection field. Older
+    /// `worktrees.v1` hosts omit it and keep the pre-picker create flow.
+    public private(set) var supportsStartingBranchSelection = false
+
     /// Whether at least one fetch has succeeded (drives placeholder vs list).
     public private(set) var hasLoaded = false
 
@@ -131,6 +138,26 @@ public final class SupermuxMobileWorktreesStore {
         }
     }
 
+    /// Refreshes local starting-branch choices immediately before presenting
+    /// the create sheet. This explicit request keeps ordinary worktree list and
+    /// count refreshes free of the extra git probe, while ensuring branch-only
+    /// repository changes are visible each time the picker opens.
+    ///
+    /// Older hosts omit the additive `branches` field; that is a successful
+    /// compatibility response with ``supportsStartingBranchSelection`` false.
+    /// - Throws: The Mac or transport error when the requested snapshot fails.
+    public func refreshBranches() async throws {
+        do {
+            let response = try await client.worktreesList(
+                SupermuxWorktreesListRequest(projectID: projectID, includeBranches: true)
+            )
+            apply(response, updatesBranches: true)
+        } catch {
+            lastErrorDescription = error.localizedDescription
+            throw error
+        }
+    }
+
     /// `mobile.supermux.worktree.suggest_branch`: asks the Mac to name a
     /// branch (AI when configured mac-side, friendly-random otherwise).
     /// - Parameter workspaceName: The typed workspace name, if any; blank is
@@ -149,17 +176,20 @@ public final class SupermuxMobileWorktreesStore {
     /// - Parameters:
     ///   - workspaceName: The workspace title, if any; blank is omitted.
     ///   - branchName: The explicit branch name, if any; blank is omitted.
+    ///   - baseBranch: The local branch to start from; blank is omitted.
     ///   - open: Whether the Mac opens a workspace in the new worktree.
     /// - Returns: The Mac's result (`worktree` + `workspaceId` when opened).
     public func createWorktree(
         workspaceName: String?,
         branchName: String?,
+        baseBranch: String? = nil,
         open: Bool
     ) async throws -> SupermuxWorktreeCreateResponse {
         let response = try await client.worktreeCreate(SupermuxWorktreeCreateRequest(
             projectID: projectID,
             workspaceName: normalized(workspaceName),
             branchName: normalized(branchName),
+            baseBranch: normalized(baseBranch),
             open: open
         ))
         await refetch()
@@ -236,13 +266,21 @@ public final class SupermuxMobileWorktreesStore {
             let response = try await client.worktreesList(
                 SupermuxWorktreesListRequest(projectID: projectID)
             )
-            worktrees = response.worktrees
-            hasLoaded = true
-            lastErrorDescription = nil
-            onWorktreesChanged?(projectID, worktrees)
+            apply(response, updatesBranches: false)
         } catch {
             lastErrorDescription = error.localizedDescription
         }
+    }
+
+    private func apply(_ response: SupermuxWorktreesListResponse, updatesBranches: Bool) {
+        worktrees = response.worktrees
+        if updatesBranches {
+            branches = response.branches ?? []
+            supportsStartingBranchSelection = response.branches != nil
+        }
+        hasLoaded = true
+        lastErrorDescription = nil
+        onWorktreesChanged?(projectID, worktrees)
     }
 
     /// Trims and blank-collapses an optional user-typed value so the wire

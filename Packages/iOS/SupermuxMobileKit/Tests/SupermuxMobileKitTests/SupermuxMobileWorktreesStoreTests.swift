@@ -60,6 +60,8 @@ import Testing
 
         try await TestWait().until { store.hasLoaded }
         #expect(store.worktrees == Self.fixturesA)
+        #expect(store.branches.isEmpty)
+        #expect(!store.supportsStartingBranchSelection)
         // Subscribe-before-fetch, on exactly the worktrees topic.
         #expect(fake.callLog.prefix(2) == ["events", "worktreesList"])
         #expect(fake.subscribedTopicSets.first == [.worktreesUpdated])
@@ -70,7 +72,63 @@ import Testing
         fake.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: Self.fixturesB)
         fake.emit(SupermuxMobileEvent(topic: .worktreesUpdated))
         try await TestWait().until { store.worktrees == Self.fixturesB }
+        #expect(store.branches.isEmpty)
         #expect(fake.worktreesListCallCount == 2)
+    }
+
+    @Test func refreshBranchesRequestsAndAppliesAFreshAuthoritativeSnapshot() async throws {
+        let fake = FakeSupermuxMacClient()
+        fake.worktreesListResponse = SupermuxWorktreesListResponse(
+            worktrees: Self.fixturesA,
+            branches: ["main", "experiment"]
+        )
+        let store = makeStore(fake: fake)
+
+        try await store.refreshBranches()
+
+        #expect(store.branches == ["main", "experiment"])
+        #expect(store.supportsStartingBranchSelection)
+        #expect(fake.recordedWireCalls[0].params == [
+            "project_id": Self.projectID,
+            "include_branches": true,
+        ] as NSDictionary)
+
+        fake.worktreesListResponse = SupermuxWorktreesListResponse(
+            worktrees: Self.fixturesA,
+            branches: ["main", "new-idea"]
+        )
+        try await store.refreshBranches()
+        #expect(store.branches == ["main", "new-idea"])
+    }
+
+    @Test func refreshBranchesRecognizesOlderHostsThatOmitTheAdditiveField() async throws {
+        let fake = FakeSupermuxMacClient()
+        fake.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: Self.fixturesA)
+        let store = makeStore(fake: fake)
+
+        try await store.refreshBranches()
+
+        #expect(store.branches.isEmpty)
+        #expect(!store.supportsStartingBranchSelection)
+    }
+
+    @Test func refreshBranchesFailureDoesNotPresentAStaleSnapshotAsFresh() async {
+        struct Boom: Error {}
+        let fake = FakeSupermuxMacClient()
+        fake.worktreesListResponse = SupermuxWorktreesListResponse(
+            worktrees: Self.fixturesA,
+            branches: ["main"]
+        )
+        let store = makeStore(fake: fake)
+        try? await store.refreshBranches()
+        fake.worktreesListError = Boom()
+
+        await #expect(throws: (any Error).self) {
+            try await store.refreshBranches()
+        }
+
+        #expect(store.branches == ["main"])
+        #expect(store.lastErrorDescription != nil)
     }
 
     @Test func fetchFailureSurfacesErrorAndNextEventRecovers() async throws {
@@ -156,6 +214,7 @@ import Testing
         let response = try await store.createWorktree(
             workspaceName: "Fix login",
             branchName: "fix-login-flow",
+            baseBranch: "experiment",
             open: true
         )
         #expect(response.workspaceId == "5D2C9A44-71B3-4F0E-8E0A-6C4D1F2B3A55")
@@ -164,6 +223,7 @@ import Testing
             "project_id": Self.projectID,
             "workspace_name": "Fix login",
             "branch_name": "fix-login-flow",
+            "base_branch": "experiment",
             "open": true,
         ] as NSDictionary)
         // The store refreshes its list right after a create so the new
@@ -175,7 +235,12 @@ import Testing
     @Test func createWorktreeOmitsBlankOptionalParams() async throws {
         let fake = FakeSupermuxMacClient()
         let store = makeStore(fake: fake)
-        _ = try await store.createWorktree(workspaceName: "", branchName: nil, open: false)
+        _ = try await store.createWorktree(
+            workspaceName: "",
+            branchName: nil,
+            baseBranch: "   ",
+            open: false
+        )
         #expect(fake.recordedWireCalls[0].params == [
             "project_id": Self.projectID,
             "open": false,

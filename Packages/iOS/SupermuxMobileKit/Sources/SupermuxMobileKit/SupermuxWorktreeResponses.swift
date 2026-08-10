@@ -4,24 +4,34 @@ public import SupermuxMobileCore
 /// as `SupermuxMobileHost+Worktrees.swift` emits them. Every non-essential
 /// field decodes leniently so old or partial hosts never break the phone.
 
-/// `mobile.supermux.worktrees.list` result: `{worktrees: [SupermuxWorktreeDTO]}`.
+/// `mobile.supermux.worktrees.list` result:
+/// `{worktrees: [SupermuxWorktreeDTO], branches?: [String]}`.
 public struct SupermuxWorktreesListResponse: Codable, Sendable, Equatable {
     /// The project's worktrees, in the Mac's order. Missing decodes as `[]`.
     public var worktrees: [SupermuxWorktreeDTO]
+    /// Local branches available as worktree starting points, most recently
+    /// committed first. `nil` means the host omitted or could not decode the
+    /// additive field (including older hosts without branch selection).
+    public var branches: [String]?
 
     /// Creates a response value (used by tests and fakes).
-    /// - Parameter worktrees: The project's worktrees.
-    public init(worktrees: [SupermuxWorktreeDTO]) {
+    /// - Parameters:
+    ///   - worktrees: The project's worktrees.
+    ///   - branches: Local branches available as starting points, when requested.
+    public init(worktrees: [SupermuxWorktreeDTO], branches: [String]? = nil) {
         self.worktrees = worktrees
+        self.branches = branches
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         worktrees = (try container.decodeIfPresent([SupermuxWorktreeDTO].self, forKey: .worktrees)) ?? []
+        branches = try? container.decode([String].self, forKey: .branches)
     }
 
     private enum CodingKeys: String, CodingKey {
         case worktrees
+        case branches
     }
 }
 

@@ -13,7 +13,8 @@ extension TerminalController {
     /// `mobile.supermux.worktrees.list`: the project's worktrees as
     /// `{worktrees: [SupermuxWorktreeDTO]}`, folding open-workspace state and
     /// pull-request badges (per-workspace probe for opened worktrees, the
-    /// shared ``SupermuxWorktreePullRequestModel`` for unopened ones).
+    /// shared ``SupermuxWorktreePullRequestModel`` for unopened ones). Local
+    /// `branches` are included only when `include_branches` is true.
     @MainActor
     func v2SupermuxWorktreesList(params: [String: Any]) async -> V2CallResult {
         let project: SupermuxProject
@@ -22,6 +23,13 @@ extension TerminalController {
         case let .success(resolved): project = resolved
         }
         let model = SupermuxComposition.projectsModel
+        let includeBranches = params["include_branches"] as? Bool == true
+        // Start branch discovery before the worktree refresh. Structured
+        // concurrency keeps both git commands within the phone's 30-second
+        // deadline and cancels the branch probe when the RPC is cancelled.
+        async let branchesResult: [String]? = includeBranches
+            ? model.localBranches(projectId: project.id)
+            : nil
         let refreshed = await model.refreshWorktreesReportingSuccess(for: project.id)
         let worktrees = model.worktreesByProjectId[project.id] ?? []
         // A transient git failure with nothing cached must not read as an
@@ -34,9 +42,20 @@ extension TerminalController {
                 data: ["project_id": project.id.uuidString]
             )
         }
+        let branches: [String]?
+        do {
+            branches = try await branchesResult
+        } catch {
+            return .err(
+                code: "unavailable",
+                message: "Could not read local branches",
+                data: ["project_id": project.id.uuidString]
+            )
+        }
         do {
             let payload = try SupermuxMobileWorktreesPayloadBuilder().worktreesList(
                 worktrees: worktrees,
+                branches: branches,
                 openWorkspaces: supermuxOpenWorkspaceSnapshots(),
                 pullRequestsByWorktreePath:
                     SupermuxComposition.worktreePullRequestModel.pullRequestsByWorktreePath
@@ -75,6 +94,7 @@ extension TerminalController {
         let model = SupermuxComposition.projectsModel
         let workspaceName = (params["workspace_name"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let baseBranch = params["base_branch"] as? String
         var branchName = params["branch_name"] as? String ?? ""
         // Mirror the desktop sheet: AI names the branch only when it was left
         // blank and a workspace name exists; a typed branch is respected
@@ -91,7 +111,7 @@ extension TerminalController {
             worktree = try await model.createWorktree(
                 projectId: project.id,
                 branchName: branchName,
-                baseBranch: nil
+                baseBranch: baseBranch
             )
         } catch let error as SupermuxGitError {
             return .err(
