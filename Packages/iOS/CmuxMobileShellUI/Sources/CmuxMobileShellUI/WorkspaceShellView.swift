@@ -537,20 +537,6 @@ struct WorkspaceShellView: View {
                         action: popCompactStack
                     )
                 )
-                    #if os(iOS)
-                    // SUPERMUX:begin supermux-mobile-compact-root-chrome
-                    // The hide request lives on the pushed destination, and the
-                    // destination stays mounted for the whole pop animation — so
-                    // a constant `.hidden` kept the tab bar suppressed until
-                    // SwiftUI finally retired it, which is the ~1s late arrival.
-                    // Driving it from the root-chrome predicate lets the outgoing
-                    // detail release the bar as the pop starts.
-                    .toolbarVisibility(
-                        showsCompactRootChrome ? .automatic : .hidden,
-                        for: .tabBar, .bottomBar
-                    )
-                    // SUPERMUX:end supermux-mobile-compact-root-chrome
-                    #endif
                     // Only on the pushed compact stack (where a back button
                     // exists): replace the system back button with a custom one
                     // that folds the unread-workspace count INTO the same button
@@ -568,6 +554,26 @@ struct WorkspaceShellView: View {
                     })
                     // SUPERMUX:end supermux-mobile-compact-root-chrome
             }
+            // SUPERMUX:begin supermux-mobile-compact-root-chrome
+            // Declared HERE, on the stack itself, and deliberately NOT on the
+            // pushed destination where upstream had it.
+            //
+            // A preference declared inside `navigationDestination` belongs to a
+            // view that is being torn down for the whole pop, and the tab bar
+            // does not pick up a change to it mid-transition — dogfood confirmed
+            // the bar still arrived late after the value was made dynamic there,
+            // while the navigation-bar items (declared on this same stack root)
+            // were fixed by the identical predicate. The stack is not going
+            // anywhere, so SwiftUI re-reads this one as the state flips.
+            //
+            // `.visible` rather than `.automatic`: automatic for content pushed
+            // inside a TabView resolves to hidden, which would make the true
+            // branch a no-op.
+            .toolbarVisibility(
+                showsCompactRootChrome ? .visible : .hidden,
+                for: .tabBar, .bottomBar
+            )
+            // SUPERMUX:end supermux-mobile-compact-root-chrome
         }
         .onChange(of: store.selectedWorkspaceID) { _, selectedWorkspaceID in
             if let createdPath = compactNavigationPolicy.pathForCreatedWorkspaceSelection(

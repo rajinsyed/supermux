@@ -4,6 +4,9 @@ import CmuxMobileShell
 import CmuxMobileShellModel
 import CmuxMobileSupport
 import Observation
+// SUPERMUX:begin supermux-mobile-compact-root-chrome
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-compact-root-chrome
 import SwiftUI
 
 /// Owns the mutable rows and live-update stimulus for the DEBUG preview.
@@ -176,6 +179,9 @@ public struct WorkspaceListLayoutPreviewView: View {
     }
 
     @State private var fixtureRoute: FixtureWorkspaceRoute?
+    // SUPERMUX:begin supermux-mobile-compact-root-chrome (fixture mirrors the shell so the tab bar's pop timing is testable)
+    @State private var fixtureRootChrome = SupermuxCompactRootChrome()
+    // SUPERMUX:end supermux-mobile-compact-root-chrome
     // Mirrors the shell: search results push onto the search tab's own stack.
     @State private var searchFixturePath: [MobileWorkspacePreview.ID] = []
     @State private var searchSelectionReturnsToWorkspaces = false
@@ -545,7 +551,31 @@ public struct WorkspaceListLayoutPreviewView: View {
                                     }
                                 }
                             }
+                            // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                            // Same wiring as `WorkspaceShellView.stackLayout`, so
+                            // a UI test can observe the tab bar's pop timing
+                            // without pairing a Mac.
+                            .background(SupermuxInteractivePopObserver { revealsRoot in
+                                if revealsRoot {
+                                    fixtureRootChrome.interactivePopBegan()
+                                } else {
+                                    fixtureRootChrome.interactivePopRolledBack()
+                                }
+                            })
+                            // SUPERMUX:end supermux-mobile-compact-root-chrome
                     }
+                    // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                    .onChange(of: fixtureRoute?.id) { _, _ in
+                        fixtureRootChrome.navigationPathChanged()
+                    }
+                    // Mirrors the shell: declared on the stack, not on the
+                    // pushed destination. See `WorkspaceShellView.stackLayout`.
+                    .toolbarVisibility(
+                        fixtureRootChrome.isVisible(pathIsEmpty: fixtureRoute == nil)
+                            ? .visible : .hidden,
+                        for: .tabBar, .bottomBar
+                    )
+                    // SUPERMUX:end supermux-mobile-compact-root-chrome
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if scrollMetricsEnabled {
@@ -662,7 +692,6 @@ public struct WorkspaceListLayoutPreviewView: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityIdentifier("FixtureWorkspaceDetail")
-        .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
     }
 }
 
