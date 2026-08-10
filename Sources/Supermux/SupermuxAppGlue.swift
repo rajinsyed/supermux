@@ -108,6 +108,11 @@ struct SupermuxProjectsMount: View {
     @AppStorage(SidebarWorkspaceDetailDefaults.watchGitStatusKey) private var watchGitStatus = true
     @AppStorage(SidebarCatalogSection().hideAllDetails.userDefaultsKey) private var hideAllDetails = false
 
+    // The user-settable badge color (Settings → workspace colors), read live so
+    // nested rows recolor with the flat rows. Empty means the default accent.
+    @AppStorage(SidebarCatalogSection().notificationBadgeColorHex.userDefaultsKey)
+    private var notificationBadgeColorHex = ""
+
     var body: some View {
         // Make the body's dependency on the observation token explicit (cmux
         // does the same with `extensionSidebarUpdateToken`): a token bump forces
@@ -127,6 +132,10 @@ struct SupermuxProjectsMount: View {
         // `associations.projectId` reads no longer happen here.
         let resolutionCache = SupermuxMainListFilter.resolutionCache(for: tabManager)
         let pullRequestsEnabled = watchGitStatus && showPullRequests && !hideAllDetails
+        // Reading the @Observable snapshot here subscribes the mount to unread
+        // publications, so a nested row's badge appears/clears live — the same
+        // per-workspace summary source cmux's flat rows read.
+        let unreadSnapshot = TerminalNotificationStore.shared.sidebarUnread.snapshot
         let openWorkspaces = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
             let isSelected = workspace.id == tabManager.selectedTabId
             // Full snapshots (branch/PR/activity, each walking the bonsplit
@@ -144,7 +153,8 @@ struct SupermuxProjectsMount: View {
                 isSelected: isSelected,
                 projectId: projectId,
                 isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id),
-                includePullRequest: pullRequestsEnabled
+                includePullRequest: pullRequestsEnabled,
+                unreadCount: unreadSnapshot.unreadCount(forWorkspaceId: workspace.id)
             )
         }
         SupermuxProjectsSectionView(
@@ -223,6 +233,12 @@ struct SupermuxProjectsMount: View {
             observation.observe(tabs: tabManager.tabs)
         }
         .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
+        // Nested rows honor the flat rows' user-settable badge color; empty
+        // hex (the default) resolves to cmux's accent, like the flat rows.
+        .environment(
+            \.supermuxUnreadBadgeFillColor,
+            NSColor(hex: notificationBadgeColorHex).map(Color.init(nsColor:)) ?? cmuxAccentColor()
+        )
         // Publish this section's height so the sidebar shrinks the empty area
         // below the rows by it (else the content overflows and the empty space
         // scrolls — see SupermuxProjectsSectionHeightPreferenceKey + cmux #3241).

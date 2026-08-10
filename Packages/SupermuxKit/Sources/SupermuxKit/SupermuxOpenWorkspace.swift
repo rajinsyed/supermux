@@ -35,6 +35,11 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     /// `Workspace.sidebarPullRequestsInDisplayOrder().first`), so no separate
     /// probe runs for opened worktrees.
     public let pullRequest: SupermuxPullRequest?
+    /// The workspace's displayed unread count — the same per-workspace value
+    /// cmux's flat sidebar rows badge (notification unread plus the
+    /// manual/panel-derived/restored indicator), so a workspace shows one
+    /// number whether it renders flat or nested under a project.
+    public let unreadCount: Int
 
     /// Creates a snapshot.
     /// - Parameters:
@@ -47,6 +52,7 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     ///   - activity: Agent activity state for the indicator.
     ///   - isRunning: Whether the project run command is active for this workspace.
     ///   - pullRequest: The workspace branch's pull request, if cmux probed one.
+    ///   - unreadCount: The row's displayed unread count (0 hides the badge).
     public init(
         id: UUID,
         title: String,
@@ -56,7 +62,8 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         projectId: UUID? = nil,
         activity: SupermuxWorkspaceActivity = .idle,
         isRunning: Bool = false,
-        pullRequest: SupermuxPullRequest? = nil
+        pullRequest: SupermuxPullRequest? = nil,
+        unreadCount: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -67,5 +74,6 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         self.activity = activity
         self.isRunning = isRunning
         self.pullRequest = pullRequest
+        self.unreadCount = unreadCount
     }
 }

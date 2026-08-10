@@ -22,6 +22,7 @@ struct SupermuxOpenWorkspaceRowView: View {
     var openPullRequest: (URL) -> Void = { _ in }
 
     @Environment(\.supermuxSidebarFontScale) private var fontScale
+    @Environment(\.supermuxUnreadBadgeFillColor) private var unreadBadgeFillColor
     @State private var isHovered = false
 
     var body: some View {
@@ -61,6 +62,17 @@ struct SupermuxOpenWorkspaceRowView: View {
             // working indicator per row, nothing when the agent is settled.
             if workspace.activity == .working {
                 SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
+            }
+            // The same numbered unread capsule cmux's flat rows draw, rightmost
+            // like the phone's nested rows, so a workspace shows its unread
+            // count whether it renders flat, nested, or on the phone.
+            if workspace.unreadCount > 0 {
+                SupermuxUnreadBadgeView(
+                    count: workspace.unreadCount,
+                    fontSize: 9 * fontScale,
+                    fillColor: unreadBadgeFillColor,
+                    textColor: .white
+                )
             }
             if isHovered {
                 Button(action: close) {
