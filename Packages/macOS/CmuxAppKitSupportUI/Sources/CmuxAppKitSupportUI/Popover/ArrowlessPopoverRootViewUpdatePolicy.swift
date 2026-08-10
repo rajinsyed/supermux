@@ -1,13 +1,17 @@
 struct ArrowlessPopoverRootViewUpdatePolicy {
     enum Strategy {
         case none
-        case immediate
+        // SUPERMUX:begin popover-dynamic-height-reanchor
+        case deferredPresentation
+        // SUPERMUX:end popover-dynamic-height-reanchor
         case deferredVisible
     }
 
     static func rootViewUpdateStrategy(isPresented: Bool, popoverIsShown: Bool) -> Strategy {
+        // SUPERMUX:begin popover-dynamic-height-reanchor
+        guard isPresented else { return .none }
         if popoverIsShown { return .deferredVisible }
-        if isPresented { return .immediate }
-        return .none
+        return .deferredPresentation
+        // SUPERMUX:end popover-dynamic-height-reanchor
     }
 }

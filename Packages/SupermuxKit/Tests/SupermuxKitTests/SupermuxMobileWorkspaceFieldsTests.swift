@@ -6,9 +6,8 @@ import Testing
 /// RPC-WSL-01: the workspace-list augmenter core. A workspace associated to a
 /// fixture project with a known activity state yields `supermux_project_id`
 /// equal to the project id and `supermux_activity` in
-/// `{working, needs_input, ready}`; a workspace with no association carries
-/// NEITHER field (per the validation contract, activity travels only for
-/// project-associated workspaces).
+/// `{working, needs_input, ready}`. Active global workspaces carry activity too,
+/// while project-specific branch/PR fields remain association-gated.
 @MainActor
 struct SupermuxMobileWorkspaceFieldsTests {
     private func fields(
@@ -91,18 +90,30 @@ struct SupermuxMobileWorkspaceFieldsTests {
         #expect(payload[SupermuxMobileWorkspaceFields.activityKey] == nil)
     }
 
-    @Test func unassociatedWorkspaceCarriesNeitherFieldEvenWhenActive() {
+    @Test func unassociatedWorkspaceCarriesWorkingActivityWithoutProjectID() {
         let store = SupermuxWorkspaceAssociationStore()
         let project = SupermuxProject(name: "Alpha", rootPath: "/repos/alpha")
 
-        // No association, directory unrelated to any project, agent working:
-        // the payload must stay empty (RPC-WSL-01's "neither field" clause).
         let payload = fields(
             workspaceID: UUID(),
             directory: "/elsewhere",
             activity: .working,
             projects: [project],
             associations: store
+        )
+
+        #expect(payload[SupermuxMobileWorkspaceFields.projectIDKey] == nil)
+        #expect(payload[SupermuxMobileWorkspaceFields.activityKey] as? String == "working")
+        #expect(payload.count == 1)
+    }
+
+    @Test func unassociatedIdleWorkspaceCarriesNoFields() {
+        let payload = fields(
+            workspaceID: UUID(),
+            directory: "/elsewhere",
+            activity: .idle,
+            projects: [],
+            associations: SupermuxWorkspaceAssociationStore()
         )
 
         #expect(payload.isEmpty)
@@ -237,12 +248,10 @@ struct SupermuxMobileWorkspaceFieldsTests {
         #expect(payload[SupermuxMobileWorkspaceFields.pullRequestKey] == nil)
     }
 
-    @Test func unassociatedWorkspaceCarriesNoParityFieldsEitherWay() throws {
+    @Test func unassociatedWorkspaceOmitsProjectParityFieldsButKeepsActivity() throws {
         let store = SupermuxWorkspaceAssociationStore()
         let project = SupermuxProject(name: "Alpha", rootPath: "/repos/alpha")
 
-        // Branch + PR present but no association: the payload must stay empty
-        // (the §6 rule — supermux fields travel only for associated workspaces).
         let payload = fields(
             workspaceID: UUID(),
             directory: "/elsewhere",
@@ -257,6 +266,10 @@ struct SupermuxMobileWorkspaceFieldsTests {
             associations: store
         )
 
-        #expect(payload.isEmpty)
+        #expect(payload[SupermuxMobileWorkspaceFields.projectIDKey] == nil)
+        #expect(payload[SupermuxMobileWorkspaceFields.activityKey] as? String == "working")
+        #expect(payload[SupermuxMobileWorkspaceFields.branchKey] == nil)
+        #expect(payload[SupermuxMobileWorkspaceFields.pullRequestKey] == nil)
+        #expect(payload.count == 1)
     }
 }

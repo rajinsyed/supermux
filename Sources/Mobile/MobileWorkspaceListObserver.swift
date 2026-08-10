@@ -26,6 +26,9 @@ final class MobileWorkspaceListObserver {
     private weak var configStore: CmuxConfigStore?
     private var tabsCancellable: AnyCancellable?
     private var selectionCancellable: AnyCancellable?
+    // SUPERMUX:begin supermux-mobile-selection-sync (focused panel of any kind is authoritative phone state)
+    private var focusedSurfaceCancellable: AnyCancellable?
+    // SUPERMUX:end supermux-mobile-selection-sync
     private var groupsCancellable: AnyCancellable?
     private var groupConfigCancellable: AnyCancellable?
     private var notificationsCancellable: AnyCancellable?
@@ -131,6 +134,9 @@ final class MobileWorkspaceListObserver {
         #endif
         tabsCancellable = nil
         selectionCancellable = nil
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        focusedSurfaceCancellable = nil
+        // SUPERMUX:end supermux-mobile-selection-sync
         groupsCancellable = nil
         groupConfigCancellable = nil
         notificationsCancellable = nil
@@ -172,6 +178,21 @@ final class MobileWorkspaceListObserver {
             .sink { [weak self] _ in
                 self?.emitIfNeeded(force: false)
             }
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        // The workspace's generic `focused_panel` is authoritative phone state.
+        // Bonsplit selection is not @Published, but every real panel-focus
+        // mutation flows through the deferred app-wide focus broadcaster.
+        focusedSurfaceCancellable = NotificationCenter.default
+            .publisher(for: .ghosttyDidFocusSurface)
+            .throttle(
+                for: .milliseconds(throttleMilliseconds),
+                scheduler: RunLoop.main,
+                latest: true
+            )
+            .sink { [weak self] _ in
+                self?.emitIfNeeded(force: false)
+            }
+        // SUPERMUX:end supermux-mobile-selection-sync
         // Group structure (order, name, collapse/pin, anchor, membership) is
         // iOS-facing: the phone renders collapsible group sections. A pure
         // collapse/expand or group rename need not change the tab set, so without
@@ -265,16 +286,21 @@ final class MobileWorkspaceListObserver {
     }
 
     /// A per-workspace signature of the notification-store state the mobile
-    /// payload serializes: the latest-notification preview (its id + timestamp)
-    /// and the workspace's unread flag. The hash changes when a new notification
-    /// arrives, the latest one is cleared, or the workspace flips between read
-    /// and unread (mark-read, manual mark-unread, panel-derived or restored
-    /// indicators). A workspace with no notification and no unread state is
-    /// absent from the map. Empty when no store is attached (tests, or a build
-    /// with notifications unavailable).
+    /// payload serializes: the latest-notification preview (its id + timestamp),
+    /// the workspace's unread flag, and its unread count. The hash changes when
+    /// a new notification arrives, the latest one is cleared, the workspace
+    /// flips between read and unread, or only the displayed count moves. A
+    /// workspace with no notification and no unread state is absent from the
+    /// map. Empty when no store is attached (tests, or a build with notifications
+    /// unavailable).
     static func previewSignatures(
         for tabs: [Workspace],
-        notificationStore: TerminalNotificationStore?
+        notificationStore: TerminalNotificationStore?,
+        // SUPERMUX:begin supermux-mobile-workspace-fields (test seam for a
+        // count-only transition that the policy-gated notification store cannot
+        // construct synchronously in a unit test)
+        supermuxUnreadCountForWorkspaceID: ((UUID) -> Int)? = nil
+        // SUPERMUX:end supermux-mobile-workspace-fields
     ) -> [UUID: Int] {
         let signpost = MobileWorkspaceObserverSignposts.begin("mobile-workspace-preview-signatures", "workspaces=\(tabs.count) hasStore=\(notificationStore != nil)"); defer { MobileWorkspaceObserverSignposts.end(signpost) }
         guard let notificationStore else { return [:] }
@@ -287,6 +313,19 @@ final class MobileWorkspaceListObserver {
             hasher.combine(latest?.id)
             hasher.combine(latest?.createdAt)
             hasher.combine(isUnread)
+            // SUPERMUX:begin supermux-mobile-workspace-fields (the unread COUNT
+            // moves independently of the boolean — see SUPERMUX-TOUCHPOINTS.md)
+            // The phone's badge now shows a numeral, so a count-only change is a
+            // visible change. Clearing one of two unread notifications leaves
+            // the latest notification and `isUnread` both untouched while the
+            // count goes 2 → 1; without this the observer suppresses the event
+            // and the phone keeps showing 2 until an unrelated poke or a v2
+            // refetch makes the numeral jump.
+            hasher.combine(
+                supermuxUnreadCountForWorkspaceID?(workspace.id)
+                    ?? notificationStore.unreadCount(forTabId: workspace.id)
+            )
+            // SUPERMUX:end supermux-mobile-workspace-fields
             signatures[workspace.id] = hasher.finalize()
         }
         return signatures
@@ -406,10 +445,10 @@ final class MobileWorkspaceListObserver {
     }
 
     /// Stable hash of the iOS-facing shape: workspace ids + titles + their
-    /// panels in spatial order + each panel's displayed (custom-aware) title and
-    /// directory. Mutations that don't show up on the mobile list (pane geometry,
-    /// scrollback content, focus only) don't trip the event, so we don't fan out
-    /// on every keystroke.
+    /// panels in spatial order + each panel's displayed (custom-aware) title,
+    /// directory, and generic focused-panel identity. Mutations that don't show up on the
+    /// mobile list (pane geometry, scrollback content) don't trip the event, so
+    /// we don't fan out on every keystroke.
     ///
     /// The panel ids are hashed in `orderedPanelIds` order (not the sorted set),
     /// so a pure drag-reorder, which changes the spatial order but not the id set,
@@ -508,6 +547,15 @@ final class MobileWorkspaceListObserver {
             // reorder of the same panel set changes the hash.
             let panelIDs = workspace.orderedPanelIds
             hasher.combine(panelIDs)
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            // The payload carries the focused panel of any kind. Focus-only tab
+            // changes must therefore invalidate the row even when two panels
+            // share the same title and working directory.
+            hasher.combine(workspace.focusedPanelId)
+            hasher.combine(workspace.focusedPanelId.flatMap {
+                workspace.panelKind(panelId: $0)
+            })
+            // SUPERMUX:end supermux-mobile-selection-sync
             for id in panelIDs {
                 hasher.combine(workspace.panelTitle(panelId: id))
                 hasher.combine(workspace.reportedPanelDirectory(panelId: id))

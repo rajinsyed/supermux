@@ -218,6 +218,16 @@ final class MobileStateSyncHost {
         } else {
             simulators = []
         }
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        let focusedPanel = workspace.focusedPanelId.flatMap { panelID in
+            workspace.panelKind(panelId: panelID).map { kind in
+                MobileWorkspaceFocusedPanel(
+                    panelID: panelID.uuidString,
+                    kind: kind
+                )
+            }
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
         let latestNotification = notificationStore?.latestNotification(forTabId: workspace.id)
         let preview = cachedPreview(workspaceID: workspace.id, latestNotification: latestNotification)
         let description = MobileWorkspaceMetadataLimits.projection(
@@ -252,6 +262,9 @@ final class MobileStateSyncHost {
             customColorHex: workspace.customColor,
             currentDirectory: workspace.presentedCurrentDirectory,
             isSelected: isSelected,
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            focusedPanel: focusedPanel,
+            // SUPERMUX:end supermux-mobile-selection-sync
             isPinned: workspace.isPinned,
             groupID: workspace.groupId?.uuidString,
             preview: preview?.text,
@@ -265,7 +278,13 @@ final class MobileStateSyncHost {
             supermuxProjectID: supermuxFields[SupermuxMobileWorkspaceFields.projectIDKey] as? String,
             supermuxActivity: supermuxFields[SupermuxMobileWorkspaceFields.activityKey] as? String,
             supermuxBranch: supermuxFields[SupermuxMobileWorkspaceFields.branchKey] as? String,
-            supermuxPullRequest: supermuxPullRequest
+            supermuxPullRequest: supermuxPullRequest,
+            // The unread COUNT behind `has_unread`, so the phone's badge can
+            // show the same numeral the Mac sidebar does. Not part of
+            // `supermuxFields` on purpose: those are gated on the workspace
+            // belonging to a project, and unread is a cmux concept that has to
+            // travel for every row.
+            supermuxUnreadCount: notificationStore?.unreadCount(forTabId: workspace.id)
             // SUPERMUX:end supermux-mobile-workspace-fields
         )
     }

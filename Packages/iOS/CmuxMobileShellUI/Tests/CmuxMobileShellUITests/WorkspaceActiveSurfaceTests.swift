@@ -1,3 +1,6 @@
+// SUPERMUX:begin supermux-mobile-selection-sync
+import CMUXMobileCore
+// SUPERMUX:end supermux-mobile-selection-sync
 import Testing
 @testable import CmuxMobileShellUI
 
@@ -124,4 +127,42 @@ import Testing
             isComposerPresented: false
         ) == nil)
     }
+
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    @Test func focusedPanelPresentationResolvesEveryStreamedSurfaceKind() {
+        #expect(WorkspaceFocusedPanelPresentationTarget.resolve(
+            focusedPanel: .init(panelID: "terminal-1", kind: "terminal"),
+            terminalIDs: ["terminal-1"],
+            browserPanelIDs: [],
+            simulatorPanelIDs: []
+        ) == .terminal("terminal-1"))
+        #expect(WorkspaceFocusedPanelPresentationTarget.resolve(
+            focusedPanel: .init(panelID: "browser-1", kind: "browser"),
+            terminalIDs: [],
+            browserPanelIDs: ["browser-1"],
+            simulatorPanelIDs: []
+        ) == .browserStream("browser-1"))
+        #expect(WorkspaceFocusedPanelPresentationTarget.resolve(
+            focusedPanel: .init(panelID: "simulator-1", kind: "simulator"),
+            terminalIDs: [],
+            browserPanelIDs: [],
+            simulatorPanelIDs: ["simulator-1"]
+        ) == .simulatorStream("simulator-1"))
+    }
+
+    @Test func focusedPanelPresentationRejectsUnknownOrUndiscoveredPanels() {
+        #expect(WorkspaceFocusedPanelPresentationTarget.resolve(
+            focusedPanel: .init(panelID: "browser-missing", kind: "browser"),
+            terminalIDs: [],
+            browserPanelIDs: ["browser-1"],
+            simulatorPanelIDs: []
+        ) == .unsupported)
+        #expect(WorkspaceFocusedPanelPresentationTarget.resolve(
+            focusedPanel: .init(panelID: "future-1", kind: "markdown"),
+            terminalIDs: [],
+            browserPanelIDs: [],
+            simulatorPanelIDs: []
+        ) == .unsupported)
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
 }

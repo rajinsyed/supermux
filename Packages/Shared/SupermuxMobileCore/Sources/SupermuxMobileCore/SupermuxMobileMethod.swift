@@ -99,8 +99,14 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Moves a file or folder to the Trash (never a permanent delete).
     case filesTrash = "mobile.supermux.files.trash"
 
-    // MARK: Workspace panes
+    // MARK: Workspace selection / panes
 
+    /// Selects one workspace on the Mac.
+    case workspaceSelect = "mobile.supermux.workspace.select"
+    /// Selects one terminal tab and its owning workspace on the Mac.
+    case terminalSelect = "mobile.supermux.terminal.select"
+    /// Selects one panel of any kind and its owning workspace on the Mac.
+    case panelSelect = "mobile.supermux.panel.select"
     /// Closes one panel of any kind in a workspace.
     case paneClose = "mobile.supermux.pane.close"
     /// Creates a native Simulator panel in a workspace.

@@ -1,5 +1,8 @@
 import AppKit
 import CmuxSidebar
+// SUPERMUX:begin sidebar-appkit-row-activity
+import SupermuxKit
+// SUPERMUX:end sidebar-appkit-row-activity
 import Testing
 @testable import cmux_DEV
 
@@ -12,7 +15,10 @@ struct SidebarAppKitRowCellTests {
         title: String = "Workspace",
         customDescription: String? = nil,
         isPinned: Bool = false,
-        metadataEntries: [SidebarStatusEntry] = []
+        metadataEntries: [SidebarStatusEntry] = [],
+        // SUPERMUX:begin sidebar-appkit-row-activity
+        supermuxActivity: SupermuxWorkspaceActivity = .idle
+        // SUPERMUX:end sidebar-appkit-row-activity
     ) -> SidebarWorkspaceSnapshotBuilder.Snapshot {
         SidebarWorkspaceSnapshotBuilder.Snapshot(
             presentationKey: SidebarWorkspaceSnapshotFactory.presentationKey(
@@ -49,7 +55,10 @@ struct SidebarAppKitRowCellTests {
             checklistItems: [],
             checklistCompletedCount: 0,
             checklistTotalCount: 0,
-            checklistFirstUncheckedText: nil
+            checklistFirstUncheckedText: nil,
+            // SUPERMUX:begin sidebar-appkit-row-activity
+            supermuxActivity: supermuxActivity
+            // SUPERMUX:end sidebar-appkit-row-activity
         )
     }
 
@@ -61,7 +70,11 @@ struct SidebarAppKitRowCellTests {
         settings: SidebarTabItemSettingsSnapshot? = nil,
         customDescription: String? = nil,
         metadataEntries: [SidebarStatusEntry] = [],
-        shortcutHintText: String? = nil
+        shortcutHintText: String? = nil,
+        // SUPERMUX:begin sidebar-appkit-row-activity
+        supermuxActivity: SupermuxWorkspaceActivity = .idle,
+        showsAgentActivity: Bool? = nil
+        // SUPERMUX:end sidebar-appkit-row-activity
     ) -> SidebarWorkspaceRowModel {
         let resolvedSettings = settings
             ?? SidebarTabItemSettingsSnapshot(defaults: UserDefaults(suiteName: UUID().uuidString)!)
@@ -71,7 +84,10 @@ struct SidebarAppKitRowCellTests {
             snapshot: makeSnapshot(
                 customDescription: customDescription,
                 isPinned: isPinned,
-                metadataEntries: metadataEntries
+                metadataEntries: metadataEntries,
+                // SUPERMUX:begin sidebar-appkit-row-activity
+                supermuxActivity: supermuxActivity
+                // SUPERMUX:end sidebar-appkit-row-activity
             ),
             settings: resolvedSettings,
             isActive: isActive,
@@ -81,7 +97,9 @@ struct SidebarAppKitRowCellTests {
             accessibilityWorkspaceCount: 1,
             unreadCount: 0,
             latestNotificationText: nil,
-            showsAgentActivity: resolvedSettings.details.showAgentActivity,
+            // SUPERMUX:begin sidebar-appkit-row-activity
+            showsAgentActivity: showsAgentActivity ?? resolvedSettings.details.showAgentActivity,
+            // SUPERMUX:end sidebar-appkit-row-activity
             rowSpacing: 8,
             isBeingDragged: false,
             topDropIndicatorVisible: false,
@@ -390,6 +408,20 @@ struct SidebarAppKitRowCellTests {
         )
         return textView.convert(localPoint, to: textView.superview)
     }
+
+    // SUPERMUX:begin sidebar-appkit-row-activity
+    @Test
+    func supermuxWorkingActivityShowsSpinnerWithoutUpstreamAgentFlag() {
+        let model = Self.makeModel(
+            supermuxActivity: .working,
+            showsAgentActivity: false
+        )
+
+        let cell = Self.configuredCell(model: model)
+
+        #expect(cell.visibleActivitySpinnerCountForTesting == 1)
+    }
+    // SUPERMUX:end sidebar-appkit-row-activity
 
     @Test(arguments: zip(["codex", "claude_code"], ["Running", "Needs input"]))
     func metadataStatusTextOmitsRawAgentKey(_ key: String, _ status: String) throws {

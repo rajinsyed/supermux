@@ -8,12 +8,13 @@ import SupermuxMobileCore
 /// `MobileHostService.ticketAuthorizationError` delegates the whole namespace
 /// here through the `mobile-supermux-authz` fence. Scoping rules:
 ///
-/// - `changes.*`, `files.*`, and Simulator creation are
+/// - `changes.*`, `files.*`, workspace selection, and Simulator creation are
 ///   **workspace-scoped-permitted**: a ticket pinned to a workspace passes
 ///   when the request's `workspace_id` matches the pin (and no `project_id`
 ///   widens the request to a project root).
-/// - Pane close is panel-scoped: a terminal-pinned ticket may close only that
-///   terminal, while a workspace ticket may close any panel in its workspace.
+/// - Terminal selection, generic panel selection, and pane close are
+///   terminal/panel-scoped: a terminal-pinned ticket may target only that panel,
+///   while a workspace ticket may target any panel in its workspace.
 /// - Everything else (projects, worktrees, presets, run, actions, icon)
 ///   requires a **Mac-wide** ticket; scoped tickets are rejected.
 /// - Any `mobile.supermux.*` method missing from
@@ -30,6 +31,9 @@ enum SupermuxMobileAuthorization {
         /// A workspace-pinned ticket may call the method for its own
         /// workspace; Mac-wide tickets always pass.
         case workspaceScopedPermitted
+        /// A workspace-pinned ticket may select any terminal in its workspace;
+        /// a terminal-pinned ticket may select only that exact terminal.
+        case terminalScopedPermitted
         /// A workspace-pinned ticket may close a pane in its workspace; a
         /// terminal-pinned ticket may close only that exact terminal panel.
         case paneScopedPermitted
@@ -48,9 +52,11 @@ enum SupermuxMobileAuthorization {
              .changesGenerateCommitMessage, .changesPush, .changesPull,
              .changesStash, .changesStashPop, .changesHistory,
              .filesList, .filesCreate, .filesRename, .filesDuplicate,
-             .filesTrash, .simulatorCreate:
+             .filesTrash, .workspaceSelect, .simulatorCreate:
             return .workspaceScopedPermitted
-        case .paneClose:
+        case .terminalSelect:
+            return .terminalScopedPermitted
+        case .panelSelect, .paneClose:
             return .paneScopedPermitted
         case .projectsList, .projectCreate, .projectUpdate, .projectDelete,
              .projectOpen, .projectIcon, .projectsSetSectionCollapsed,
@@ -107,6 +113,18 @@ enum SupermuxMobileAuthorization {
                 return scopedTicketError
             }
             return requested == ticketWorkspaceID ? nil : scopedTicketError
+        case .terminalScopedPermitted:
+            guard let requestedWorkspace = trimmedString(params["workspace_id"]),
+                  !requestedWorkspace.isEmpty,
+                  requestedWorkspace == ticketWorkspaceID,
+                  let requestedTerminal = trimmedString(params["terminal_id"]),
+                  !requestedTerminal.isEmpty else {
+                return scopedTicketError
+            }
+            let ticketTerminalID = ticket.terminalID?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !ticketTerminalID.isEmpty else { return nil }
+            return requestedTerminal == ticketTerminalID ? nil : scopedTicketError
         case .paneScopedPermitted:
             guard let requestedWorkspace = trimmedString(params["workspace_id"]),
                   !requestedWorkspace.isEmpty,

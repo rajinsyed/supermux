@@ -65,7 +65,7 @@ run_release() {
     FAKE_ENSURE_LOG="$TMP_DIR/ensure.log" \
     FAKE_XCODEBUILD_MODE="$mode" \
     FAKE_XCODEBUILD_SENTINEL="$sentinel" \
-    bash "$TEST_REPO/scripts/supermux-release.sh" --no-launch \
+    bash "$TEST_REPO/scripts/supermux-release.sh" --no-launch --no-ios \
       > "$output_file" 2>&1
   RELEASE_STATUS=$?
   set -e
@@ -148,4 +148,6 @@ if [[ "$(grep -c '^ensure$' "$TMP_DIR/ensure.log")" -ne 2 ]]; then
   exit 1
 fi
 
-echo "PASS: supermux release refreshes GhosttyKit, clears stale modules and products, preserves xcodebuild status, and logs failures"
+bash "$ROOT_DIR/tests/test_supermux_ios_release.sh"
+
+echo "PASS: supermux release refreshes GhosttyKit, clears stale modules and products, preserves xcodebuild status, logs failures, and validates the iOS production release path"

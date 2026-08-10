@@ -757,9 +757,20 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     @ObservationIgnored var signInGeneration = 0
     public var selectedWorkspaceID: MobileWorkspacePreview.ID? {
         didSet {
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            if selectedWorkspaceID != oldValue {
+                selectedWorkspaceFocusedPanel = nil
+            }
+            // SUPERMUX:end supermux-mobile-selection-sync
             syncSelectedTerminalForWorkspace()
         }
     }
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    /// The effective focused panel for the selected workspace. This stays
+    /// optimistic while a phone selection is in flight, then reconciles from the
+    /// Mac's generic `focused_panel` row state.
+    public internal(set) var selectedWorkspaceFocusedPanel: MobileWorkspaceFocusedPanel?
+    // SUPERMUX:end supermux-mobile-selection-sync
     /// The terminal whose surface (and composer draft) is currently shown.
     ///
     /// Changing it swaps the composer draft: `willSet` captures the outgoing
@@ -969,6 +980,11 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         connectionState == .connected ? remoteClient.map { ($0, supportedHostCapabilities) } : nil
     }
     // SUPERMUX:end supermux-mobile-client-mount
+    // SUPERMUX:begin supermux-mobile-selection-sync (serialized optimistic workspace/terminal selection mutation + authoritative reconciliation)
+    @ObservationIgnored var supermuxSelectionSyncTask: Task<Void, Never>?
+    @ObservationIgnored var supermuxSelectionSyncOperationID: UUID?
+    @ObservationIgnored var pendingSupermuxSelectionSyncIntent: SupermuxMobileSelectionSyncIntent?
+    // SUPERMUX:end supermux-mobile-selection-sync
     var terminalEventListenerTask: Task<Void, Never>?
     private var terminalEventListenerID: UUID?
     /// Recovers the Mac's identity post-handshake for tickets that arrived
@@ -7094,7 +7110,17 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
 
     /// Select the active terminal by id without changing workspace selection.
     public func selectTerminal(_ id: MobileTerminalPreview.ID?) {
+        let changed = selectedTerminalID != id
         selectedTerminalID = id
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        if changed, let id, let workspaceID = selectedWorkspaceID {
+            selectWorkspacePanel(
+                panelID: id.rawValue,
+                kind: MobileWorkspaceFocusedPanel.terminalKind,
+                workspaceID: workspaceID
+            )
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
     }
 
     /// One-shot "actually navigate" deep-link intent; API in
@@ -7110,10 +7136,20 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// surface's next autofocus. Re-confirming the already-selected terminal is
     /// a no-op suppression, since no surface re-attach happens.
     public func selectTerminalFromChrome(_ id: MobileTerminalPreview.ID) {
-        if id != selectedTerminalID {
+        let changed = id != selectedTerminalID
+        if changed {
             terminalAutoFocusSuppressedSurfaceIDs.insert(id.rawValue)
         }
         selectedTerminalID = id
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        if changed, let workspaceID = selectedWorkspaceID {
+            selectWorkspacePanel(
+                panelID: id.rawValue,
+                kind: MobileWorkspaceFocusedPanel.terminalKind,
+                workspaceID: workspaceID
+            )
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
     }
 
     /// Whether the surface for `terminalID` may grab the keyboard on its next
@@ -7208,6 +7244,21 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             "source": .string("list_tap"),
         ])
         setSelectedWorkspaceID(resolvedRowID)
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        // The phone's detail navigation is a real workspace/tab selection, not
+        // merely a local route. Send the workspace plus its currently chosen
+        // panel so returning later cannot snap back to the Mac's old focus.
+        let focusedPanel = selectedWorkspaceFocusedPanel ?? selectedTerminalID.map {
+            MobileWorkspaceFocusedPanel(
+                panelID: $0.rawValue,
+                kind: MobileWorkspaceFocusedPanel.terminalKind
+            )
+        }
+        await enqueueSupermuxSelectionSync(
+            workspaceID: resolvedRowID,
+            focusedPanel: focusedPanel
+        )?.value
+        // SUPERMUX:end supermux-mobile-selection-sync
         // Tapping into a workspace is a read receipt: clear its unread on the Mac
         // (like opening a thread marks it read), so it drops out of the unread
         // list and the back-button count. Only when the Mac advertises read-state
@@ -9268,6 +9319,12 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         foregroundWorkspaceMutationRefreshTask = nil
         foregroundWorkspaceMutationRefreshPending = false
         foregroundWorkspaceMutationRefreshGeneration = UUID()
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        supermuxSelectionSyncTask?.cancel()
+        supermuxSelectionSyncTask = nil
+        supermuxSelectionSyncOperationID = nil
+        pendingSupermuxSelectionSyncIntent = nil
+        // SUPERMUX:end supermux-mobile-selection-sync
         cancelAllTerminalReplayTasks()
     }
 
@@ -9751,17 +9808,61 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         }
     }
 
-    func syncSelectedTerminalForWorkspace() {
+    func syncSelectedTerminalForWorkspace(preferRemoteFocus: Bool = false) {
         guard let selectedWorkspace else {
             selectedTerminalID = nil
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            selectedWorkspaceFocusedPanel = nil
+            // SUPERMUX:end supermux-mobile-selection-sync
             return
         }
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        // v2 carries the focused panel of any kind. v1 carries only the focused
+        // terminal, so keep that fallback for version-skew compatibility.
+        if preferRemoteFocus,
+           let focusedPanel = selectedWorkspace.focusedPanel {
+            selectedWorkspaceFocusedPanel = focusedPanel
+            if focusedPanel.kind == MobileWorkspaceFocusedPanel.terminalKind,
+               let focusedTerminal = selectedWorkspace.terminals.first(where: {
+                   $0.id.rawValue == focusedPanel.panelID
+               }) {
+                selectedTerminalID = focusedTerminal.id
+            }
+            return
+        }
+        if preferRemoteFocus,
+           let focusedTerminal = selectedWorkspace.terminals.first(where: \.isFocused) {
+            selectedTerminalID = focusedTerminal.id
+            selectedWorkspaceFocusedPanel = MobileWorkspaceFocusedPanel(
+                panelID: focusedTerminal.id.rawValue,
+                kind: MobileWorkspaceFocusedPanel.terminalKind
+            )
+            return
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
         if let selectedTerminalID,
            let selectedTerminal = selectedWorkspace.terminals.first(where: { $0.id == selectedTerminalID }),
            selectedTerminal.isReady || !selectedWorkspace.hasReadyTerminal {
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            if selectedWorkspaceFocusedPanel == nil {
+                selectedWorkspaceFocusedPanel = MobileWorkspaceFocusedPanel(
+                    panelID: selectedTerminal.id.rawValue,
+                    kind: MobileWorkspaceFocusedPanel.terminalKind
+                )
+            }
+            // SUPERMUX:end supermux-mobile-selection-sync
             return
         }
         selectedTerminalID = selectedWorkspace.preferredTerminal?.id
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        if selectedWorkspaceFocusedPanel == nil,
+           let selectedTerminalID {
+            selectedWorkspaceFocusedPanel = MobileWorkspaceFocusedPanel(
+                panelID: selectedTerminalID.rawValue,
+                kind: MobileWorkspaceFocusedPanel.terminalKind
+            )
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
     }
 
     // MARK: - Per-terminal composer drafts
@@ -12564,6 +12665,12 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         if preferActiveTicketTarget, selectActiveTicketTargetIfAvailable() {
             return
         }
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        if supportsSupermuxSelectionSync {
+            reconcileSupermuxSelection(from: response)
+            return
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
         if let selectedWorkspaceID,
            workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
             syncSelectedTerminalForWorkspace()

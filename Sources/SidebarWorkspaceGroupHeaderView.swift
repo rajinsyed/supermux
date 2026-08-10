@@ -4,6 +4,9 @@ import CmuxFoundation
 import CmuxSidebar
 import SwiftUI
 import CmuxSettings
+// SUPERMUX:begin supermux-unread-badge-capsule (shared unread badge)
+import SupermuxKit
+// SUPERMUX:end supermux-unread-badge-capsule
 
 /// Collapsible group header that doubles as the anchor workspace row.
 struct SidebarWorkspaceGroupHeaderView: View, Equatable {
@@ -186,16 +189,21 @@ struct SidebarWorkspaceGroupHeaderView: View, Equatable {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if anchorUnreadCount > 0 {
-                    Text("\(anchorUnreadCount)")
-                        .cmuxFont(size: metrics.unreadFontSize, weight: .semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, metrics.unreadHorizontalPadding)
-                        .padding(.vertical, metrics.unreadVerticalPadding)
-                        .background(Capsule().fill(Color.accentColor))
-                        .accessibilityLabel(Text(String.localizedStringWithFormat(
-                            String(localized: "workspaceGroup.unread.a11y", defaultValue: "%lld unread"),
-                            anchorUnreadCount
-                        )))
+                    // SUPERMUX:begin supermux-unread-badge-capsule (upstream drew
+                    // its own flat accent capsule here — see SUPERMUX-TOUCHPOINTS.md)
+                    // Routed through the shared badge so a group header and the
+                    // workspace rows beneath it stop being two different badges.
+                    SupermuxUnreadBadgeView(
+                        count: anchorUnreadCount,
+                        fontSize: metrics.unreadFontSize,
+                        fillColor: Color.accentColor,
+                        textColor: .white
+                    )
+                    .accessibilityLabel(Text(String.localizedStringWithFormat(
+                        String(localized: "workspaceGroup.unread.a11y", defaultValue: "%lld unread"),
+                        anchorUnreadCount
+                    )))
+                    // SUPERMUX:end supermux-unread-badge-capsule
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

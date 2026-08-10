@@ -19,7 +19,8 @@ import Testing
         groupID: String? = nil,
         supermuxProjectID: String? = nil,
         supermuxActivity: String? = nil,
-        hasUnread: Bool = false
+        hasUnread: Bool = false,
+        supermuxUnreadCount: Int? = nil
     ) -> MobileWorkspacePreview {
         var preview = MobileWorkspacePreview(
             id: MobileWorkspacePreview.ID(rawValue: id),
@@ -30,6 +31,7 @@ import Testing
         )
         preview.supermuxProjectID = supermuxProjectID
         preview.supermuxActivity = supermuxActivity
+        preview.supermuxUnreadCount = supermuxUnreadCount
         return preview
     }
 
@@ -86,6 +88,20 @@ import Testing
         // Unknown future activity spellings degrade to "no dot", never a crash.
         #expect(rows[1].activity == nil)
         #expect(!rows[1].hasUnread)
+    }
+
+    @Test func nestedRowMappingCarriesTheUnreadCountAndSurvivesItsAbsence() {
+        let rows = SupermuxProjectWorkspaceRowSnapshot.rows(from: [
+            preview(id: "counted", supermuxProjectID: Self.projectID, hasUnread: true, supermuxUnreadCount: 7),
+            // What an UPSTREAM cmux Mac sends: the boolean with no count. The
+            // row must still read as unread, with a nil count so the badge
+            // draws its countless dot instead of inventing a number.
+            preview(id: "boolean-only", supermuxProjectID: Self.projectID, hasUnread: true),
+        ])
+
+        #expect(rows[0].unreadCount == 7)
+        #expect(rows[1].hasUnread)
+        #expect(rows[1].unreadCount == nil)
     }
 
     // MARK: Section model join

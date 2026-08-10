@@ -516,6 +516,55 @@ struct MobileWorkspaceListFidelityTests {
         )
     }
 
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    @Test func focusOnlyChangesAcrossTerminalAndBrowserRefreshGenericPanelPayload() throws {
+        let manager = TabManager(
+            initialWorkspaceTitle: "Focus Sync",
+            initialWorkingDirectory: "/tmp",
+            autoWelcomeIfNeeded: false
+        )
+        let workspace = try #require(manager.selectedWorkspace)
+        let firstPanelID = try #require(workspace.focusedPanelId)
+        let paneID = try #require(workspace.bonsplitController.focusedPaneId)
+        let browserPanel = try #require(
+            workspace.newBrowserSurface(inPane: paneID, focus: false)
+        )
+
+        let terminalHash = MobileWorkspaceListObserver.summaryHashForTesting(
+            tabs: manager.tabs,
+            selectedTabID: manager.selectedTabId
+        )
+        workspace.focusPanel(browserPanel.id)
+        let browserHash = MobileWorkspaceListObserver.summaryHashForTesting(
+            tabs: manager.tabs,
+            selectedTabID: manager.selectedTabId
+        )
+
+        #expect(terminalHash != browserHash, "focus-only browser selection must refresh mobile state")
+        let browserPayload = TerminalController.shared.mobileWorkspacePayload(
+            workspace: workspace,
+            isSelected: true,
+            requestedTerminalID: nil
+        )
+        let focusedBrowser = try #require(browserPayload["focused_panel"] as? [String: Any])
+        #expect(focusedBrowser["panel_id"] as? String == browserPanel.id.uuidString)
+        #expect(focusedBrowser["kind"] as? String == "browser")
+
+        workspace.focusPanel(firstPanelID)
+        let terminalPayload = TerminalController.shared.mobileWorkspacePayload(
+            workspace: workspace,
+            isSelected: true,
+            requestedTerminalID: nil
+        )
+        let focusedTerminal = try #require(terminalPayload["focused_panel"] as? [String: Any])
+        #expect(focusedTerminal["panel_id"] as? String == firstPanelID.uuidString)
+        #expect(focusedTerminal["kind"] as? String == "terminal")
+        let terminals = try #require(terminalPayload["terminals"] as? [[String: Any]])
+        let first = try #require(terminals.first(where: { $0["id"] as? String == firstPanelID.uuidString }))
+        #expect(first["is_focused"] as? Bool == true)
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
+
     @Test func localTerminalInRemoteWorkspaceKeepsDirectoryInMobilePayload() throws {
         let localDirectory = "/Users/alice/development"
         let manager = TabManager(
@@ -617,6 +666,57 @@ struct MobileWorkspaceListFidelityTests {
             "an unread flip must change the per-workspace signature so the observer re-emits"
         )
     }
+
+    // SUPERMUX:begin supermux-mobile-workspace-fields
+    /// The phone's badge shows a numeral, so the payload has to carry the count
+    /// the Mac sidebar draws and the observer has to re-emit when only that count
+    /// changes. The test seam supplies 2 then 1 while the real store keeps the
+    /// latest notification and unread boolean fixed, reproducing the transition
+    /// that a boolean-only signature would suppress.
+    @Test func workspaceUnreadCountTravelsOnPayloadAndInvalidatesSignature() throws {
+        let manager = TabManager()
+        let workspace = try #require(manager.selectedWorkspace)
+        let store = TerminalNotificationStore.shared
+        try #require(store.unreadCount(forTabId: workspace.id) == 0)
+
+        let readPayload = TerminalController.shared.mobileWorkspacePayload(
+            workspace: workspace,
+            isSelected: false,
+            requestedTerminalID: nil,
+            notificationStore: store
+        )
+        // Zero travels as 0, never absent: absent means "upstream cmux Mac,
+        // count unknown", which is a different badge (the countless dot).
+        #expect(readPayload["supermux_unread_count"] as? Int == 0)
+
+        #expect(store.setPanelDerivedUnread(true, forTabId: workspace.id))
+        defer { store.setPanelDerivedUnread(false, forTabId: workspace.id) }
+
+        let unreadPayload = TerminalController.shared.mobileWorkspacePayload(
+            workspace: workspace,
+            isSelected: false,
+            requestedTerminalID: nil,
+            notificationStore: store
+        )
+        #expect(unreadPayload["has_unread"] as? Bool == true)
+        #expect(unreadPayload["supermux_unread_count"] as? Int == 1)
+
+        let countTwoSignatures = MobileWorkspaceListObserver.previewSignatures(
+            for: [workspace],
+            notificationStore: store,
+            supermuxUnreadCountForWorkspaceID: { _ in 2 }
+        )
+        let countOneSignatures = MobileWorkspaceListObserver.previewSignatures(
+            for: [workspace],
+            notificationStore: store,
+            supermuxUnreadCountForWorkspaceID: { _ in 1 }
+        )
+        #expect(
+            countTwoSignatures[workspace.id] != countOneSignatures[workspace.id],
+            "a count-only change must invalidate the mobile workspace preview"
+        )
+    }
+    // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// The mobile preview line must flatten arbitrary notification text into one
     /// short plain-text line: ANSI escapes stripped, control characters and

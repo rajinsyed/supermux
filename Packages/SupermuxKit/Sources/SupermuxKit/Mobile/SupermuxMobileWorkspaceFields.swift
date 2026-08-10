@@ -30,9 +30,10 @@ extension SupermuxWorkspaceActivity {
 /// pokes on branch/PR-only mutations yet, so the phone sees a branch/PR
 /// change on the next `workspace.updated` poke or list refetch.
 ///
-/// All fields travel ONLY for project-associated workspaces (the validation
-/// contract's "workspaces with no association carry neither field"); an
-/// associated-but-idle workspace carries the project id alone.
+/// Activity travels for every workspace so the phone's global list has parity
+/// with the Mac sidebar. Project id, branch, and pull request remain gated on
+/// project association; an associated-but-idle workspace carries the project id
+/// alone, while an unassociated idle workspace carries no fields.
 @MainActor
 public enum SupermuxMobileWorkspaceFields {
     /// Wire key of the owning project's UUID string.
@@ -47,6 +48,16 @@ public enum SupermuxMobileWorkspaceFields {
     /// (`{number, state, url[, title]}`), so the phone's badge mapping is
     /// shared between worktree rows and nested workspace rows.
     public static let pullRequestKey = "supermux_pull_request"
+    /// Wire key of the workspace's unread notification count, which lets the
+    /// phone's badge show the Mac's numeral instead of a countless dot.
+    ///
+    /// Unlike activity, this field is NOT produced by ``fields(_:)``: unread is
+    /// a cmux concept sourced from the notification store, so the two transports
+    /// set it themselves next to their `augment` call. The key still lives here
+    /// so all three spellings (one sender per transport, two decoders) stay
+    /// anchored to one constant — a typo would decode as permanently-nil and
+    /// look exactly like "paired with upstream cmux".
+    public static let unreadCountKey = "supermux_unread_count"
 
     /// Computes the additive fields for one workspace.
     ///
@@ -62,8 +73,9 @@ public enum SupermuxMobileWorkspaceFields {
     ///     polling settings); `nil` is omitted.
     ///   - projects: All registered projects.
     ///   - associations: The app-wide workspace→project association store.
-    /// - Returns: The fields to merge into the workspace payload; empty when
-    ///   the workspace is not associated to any project.
+    /// - Returns: The fields to merge into the workspace payload. Active global
+    ///   workspaces carry activity without a project id; idle global workspaces
+    ///   return an empty dictionary.
     public static func fields(
         workspaceID: UUID,
         directory: String?,
@@ -73,17 +85,18 @@ public enum SupermuxMobileWorkspaceFields {
         projects: [SupermuxProject],
         associations: SupermuxWorkspaceAssociationStore
     ) -> [String: Any] {
+        var fields: [String: Any] = [:]
+        if let dto = activity.mobileWireDTO {
+            fields[activityKey] = dto.rawValue
+        }
         guard let projectID = associations.projectId(
             forWorkspace: workspaceID,
             directory: directory,
             in: projects
         ) else {
-            return [:]
+            return fields
         }
-        var fields: [String: Any] = [projectIDKey: projectID.uuidString]
-        if let dto = activity.mobileWireDTO {
-            fields[activityKey] = dto.rawValue
-        }
+        fields[projectIDKey] = projectID.uuidString
         if let branch = branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
             fields[branchKey] = branch
         }

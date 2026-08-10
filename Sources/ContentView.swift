@@ -15688,7 +15688,17 @@ struct TabItemView: View, Equatable {
             && canCloseWorkspace && !badgeOnTrailing && !spinnerOnTrailing
         // SUPERMUX:end sidebar-flatrow-activity
         let titleRowSpacing: CGFloat = spinnerOnLeading ? 6 : 8
-        let badgeFont = magnifiedFont(scaledFontSize(9), weight: .semibold)
+        // SUPERMUX:begin supermux-unread-badge-capsule
+        // The shared badge derives its whole geometry from the numeral's point
+        // size, so it needs the numeric size rather than an opaque `Font`.
+        // Compute it through the same magnification as the rendered numeral —
+        // deriving it from the badge's frame instead would silently drop the
+        // user's global font magnification.
+        let badgePointSize = GlobalFontMagnification.scaledSize(
+            scaledFontSize(9),
+            percent: globalFontMagnificationPercent
+        )
+        // SUPERMUX:end supermux-unread-badge-capsule
         let spinnerTooltip = SidebarWorkspaceLoadingTooltip.text(count: workspaceSnapshot.activeCodingAgentCount)
         let spinnerColor = usesInvertedActiveForeground ? selectedWorkspaceForegroundNSColor(opacity: 0.55) : .secondaryLabelColor
         // SUPERMUX:begin sidebar-unified-row-style
@@ -15699,7 +15709,9 @@ struct TabItemView: View, Equatable {
             HStack(alignment: .sidebarTitleFirstLineCenter, spacing: titleRowSpacing) {
 
                 if leadingSlotActive {
-                    SidebarWorkspaceLeadingStatusSlot(showsBadge: badgeOnLeading, showsSpinner: spinnerOnLeading, unreadCount: unreadCount, side: badgeOnLeading ? scaledUnreadBadgeSize : scaledLoadingSpinnerSize, spinnerSide: scaledLoadingSpinnerSize, badgeFont: badgeFont, badgeFillColor: activeUnreadBadgeFillColor, badgeTextColor: activeUnreadBadgeTextColor, spinnerColor: spinnerColor, spinnerTooltip: spinnerTooltip)
+                    // SUPERMUX:begin supermux-unread-badge-capsule
+                    SidebarWorkspaceLeadingStatusSlot(showsBadge: badgeOnLeading, showsSpinner: spinnerOnLeading, unreadCount: unreadCount, side: badgeOnLeading ? scaledUnreadBadgeSize : scaledLoadingSpinnerSize, spinnerSide: scaledLoadingSpinnerSize, badgePointSize: badgePointSize, badgeFillColor: activeUnreadBadgeFillColor, badgeTextColor: activeUnreadBadgeTextColor, spinnerColor: spinnerColor, spinnerTooltip: spinnerTooltip)
+                    // SUPERMUX:end supermux-unread-badge-capsule
                 }
 
                 if workspaceSnapshot.isPinned {
@@ -15798,7 +15810,9 @@ struct TabItemView: View, Equatable {
                 // SUPERMUX:end sidebar-flatrow-activity
 
                 if trailingStatusActive || canCloseWorkspace {
-                    SidebarWorkspaceTrailingStatusSlot(showsSpinner: spinnerOnTrailing, showsBadge: badgeOnTrailing, unreadCount: unreadCount, side: scaledUnreadBadgeSize, width: scaledCloseButtonWidth, height: scaledCloseButtonHitSize, badgeFont: badgeFont, badgeFillColor: activeUnreadBadgeFillColor, badgeTextColor: activeUnreadBadgeTextColor, spinnerColor: spinnerColor, spinnerTooltip: spinnerTooltip, canCloseWorkspace: canCloseWorkspace, showsCloseButton: showCloseButton, closeButtonTooltip: closeButtonTooltip, closeButtonColor: activeSecondaryColor(0.7), closeButtonFontSize: scaledFontSize(9), closeAction: actions.closeWorkspace)
+                    // SUPERMUX:begin supermux-unread-badge-capsule
+                    SidebarWorkspaceTrailingStatusSlot(showsSpinner: spinnerOnTrailing, showsBadge: badgeOnTrailing, unreadCount: unreadCount, side: scaledUnreadBadgeSize, width: scaledCloseButtonWidth, height: scaledCloseButtonHitSize, badgePointSize: badgePointSize, badgeFillColor: activeUnreadBadgeFillColor, badgeTextColor: activeUnreadBadgeTextColor, spinnerColor: spinnerColor, spinnerTooltip: spinnerTooltip, canCloseWorkspace: canCloseWorkspace, showsCloseButton: showCloseButton, closeButtonTooltip: closeButtonTooltip, closeButtonColor: activeSecondaryColor(0.7), closeButtonFontSize: scaledFontSize(9), closeAction: actions.closeWorkspace)
+                    // SUPERMUX:end supermux-unread-badge-capsule
                     // SUPERMUX:begin sidebar-flatrow-activity
                     // The activity indicator occupies the reserved close-button
                     // slot and yields to the close button on hover via opacity

@@ -4,16 +4,17 @@ import Testing
 /// Tests the priority and parsing of agent-activity resolution from cmux's
 /// per-agent lifecycle raw values.
 struct SupermuxWorkspaceActivityTests {
-    @Test func needsInputWinsOverEverything() {
-        #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["running", "needsInput", "idle"]) == .needsInput)
+    @Test func runningWinsWhenAnyAgentIsWorking() {
+        #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["running", "needsInput", "idle"]) == .working)
+        #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["idle", "running"]) == .working)
+        #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["Running"]) == .working)
+    }
+
+    @Test func needsInputWinsWhenNoAgentIsRunning() {
+        #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["idle", "needsInput"]) == .needsInput)
         // Order-independent and case/underscore tolerant (cmux uses "needsInput").
         #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["needs-input"]) == .needsInput)
         #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["NEEDSINPUT"]) == .needsInput)
-    }
-
-    @Test func runningBecomesWorkingWhenNoNeedsInput() {
-        #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["idle", "running"]) == .working)
-        #expect(SupermuxWorkspaceActivity.resolve(fromLifecycleRawValues: ["Running"]) == .working)
     }
 
     @Test func idleAgentBecomesReady() {

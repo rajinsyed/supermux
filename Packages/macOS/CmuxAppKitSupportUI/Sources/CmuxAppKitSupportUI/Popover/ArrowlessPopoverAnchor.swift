@@ -39,26 +39,29 @@ public struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
     public func updateNSView(_ nsView: NSView, context: Context) {
         let coordinator = context.coordinator
         coordinator.anchorView = nsView
+        // SUPERMUX:begin popover-dynamic-height-reanchor
+        // Never mutate an NSPopover or its hosted SwiftUI tree from inside this
+        // representable update. AppKit can synchronously order child windows and
+        // re-enter SwiftUI layout, corrupting the active Observation access list.
         switch ArrowlessPopoverRootViewUpdatePolicy.rootViewUpdateStrategy(
             isPresented: isPresented,
             popoverIsShown: coordinator.isPopoverShown
         ) {
         case .none:
             coordinator.cancelDeferredRootViewUpdate()
-        case .immediate:
-            coordinator.updateRootView(AnyView(content()))
-        case .deferredVisible:
-            coordinator.deferVisibleRootViewUpdate(AnyView(content()))
-        }
-
-        if isPresented {
-            coordinator.present(
+            coordinator.deferDismissal()
+        case .deferredPresentation:
+            coordinator.cancelDeferredRootViewUpdate()
+            coordinator.deferPresentation(
+                rootView: AnyView(content()),
                 preferredEdge: preferredEdge,
                 detachedGap: detachedGap
             )
-        } else {
-            coordinator.dismiss()
+        case .deferredVisible:
+            coordinator.cancelDeferredPresentationUpdate()
+            coordinator.deferVisibleRootViewUpdate(AnyView(content()))
         }
+        // SUPERMUX:end popover-dynamic-height-reanchor
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -76,6 +79,12 @@ public struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
         private var popover: NSPopover?
         private var pendingVisibleRootView: AnyView?
         // SUPERMUX:begin popover-dynamic-height-reanchor
+        typealias ShowPopover = @MainActor (NSPopover, NSRect, NSView, NSRectEdge) -> Void
+
+        private let presentationUpdateScheduler = CmuxPopoverVisibleUpdateScheduler()
+        private let layoutUpdateScheduler = CmuxPopoverVisibleUpdateScheduler()
+        private let showPopover: ShowPopover
+        private var pendingPresentationRootView: AnyView?
         private var currentPreferredEdge: NSRectEdge = .maxY
         private var currentDetachedGap: CGFloat = 0
 
@@ -102,17 +111,89 @@ public struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
         // SUPERMUX:end popover-dynamic-height-reanchor
         var isPopoverShown: Bool { popover?.isShown == true }
 
-        init(isPresented: Binding<Bool>) {
+        init(
+            isPresented: Binding<Bool>,
+            // SUPERMUX:begin popover-dynamic-height-reanchor
+            showPopover: @escaping ShowPopover = { popover, positioningRect, anchorView, preferredEdge in
+                popover.show(
+                    relativeTo: positioningRect,
+                    of: anchorView,
+                    preferredEdge: preferredEdge
+                )
+            }
+            // SUPERMUX:end popover-dynamic-height-reanchor
+        ) {
             _isPresented = isPresented
+            // SUPERMUX:begin popover-dynamic-height-reanchor
+            self.showPopover = showPopover
+            // SUPERMUX:end popover-dynamic-height-reanchor
         }
 
+        // SUPERMUX:begin popover-dynamic-height-reanchor
+        func deferPresentation(
+            rootView: AnyView,
+            preferredEdge: NSRectEdge,
+            detachedGap: CGFloat
+        ) {
+            pendingPresentationRootView = rootView
+            currentPreferredEdge = preferredEdge
+            currentDetachedGap = detachedGap
+            layoutUpdateScheduler.cancel()
+            presentationUpdateScheduler.schedule { [weak self] in
+                self?.flushDeferredPresentationRootUpdate()
+            }
+        }
+
+        func cancelDeferredPresentationUpdate() {
+            pendingPresentationRootView = nil
+            presentationUpdateScheduler.cancel()
+            layoutUpdateScheduler.cancel()
+        }
+
+        func deferDismissal() {
+            pendingPresentationRootView = nil
+            layoutUpdateScheduler.cancel()
+            guard popover != nil else {
+                presentationUpdateScheduler.cancel()
+                return
+            }
+            presentationUpdateScheduler.schedule { [weak self] in
+                self?.dismiss()
+            }
+        }
+
+        private func flushDeferredPresentationRootUpdate() {
+            guard isPresented, let pendingPresentationRootView else {
+                self.pendingPresentationRootView = nil
+                return
+            }
+            self.pendingPresentationRootView = nil
+            updateRootView(pendingPresentationRootView)
+            // Installing an NSHostingController root starts a SwiftUI render.
+            // Measure and order its popover on a later run-loop turn so AppKit
+            // cannot lay the hosting view out while that render is still active.
+            layoutUpdateScheduler.schedule { [weak self] in
+                self?.flushDeferredPresentationLayout()
+            }
+        }
+
+        private func flushDeferredPresentationLayout() {
+            guard isPresented else { return }
+            present(
+                preferredEdge: currentPreferredEdge,
+                detachedGap: currentDetachedGap
+            )
+        }
+        // SUPERMUX:end popover-dynamic-height-reanchor
+
+        // SUPERMUX:begin popover-dynamic-height-reanchor
         func updateRootView(_ rootView: AnyView) {
             CmuxPopoverMutation.performWithoutImplicitAnimation {
                 hostingController.rootView = AnyView(rootView.fixedSize())
                 hostingController.view.invalidateIntrinsicContentSize()
-                hostingController.view.layoutSubtreeIfNeeded()
             }
         }
+        // SUPERMUX:end popover-dynamic-height-reanchor
 
         func deferVisibleRootViewUpdate(_ rootView: AnyView) {
             pendingVisibleRootView = rootView
@@ -134,7 +215,9 @@ public struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
             self.pendingVisibleRootView = nil
             updateRootView(pendingVisibleRootView)
             // SUPERMUX:begin popover-dynamic-height-reanchor
-            resizeAndReanchorVisiblePopoverIfNeeded()
+            layoutUpdateScheduler.schedule { [weak self] in
+                self?.resizeAndReanchorVisiblePopoverIfNeeded()
+            }
             // SUPERMUX:end popover-dynamic-height-reanchor
         }
 
@@ -164,27 +247,33 @@ public struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
                 ), on: popover)
             }
 
-            popover.show(
-                relativeTo: positioningRect(
+            // SUPERMUX:begin popover-dynamic-height-reanchor
+            showPopover(
+                popover,
+                positioningRect(
                     for: anchorView.bounds,
                     preferredEdge: preferredEdge,
                     detachedGap: detachedGap
                 ),
-                of: anchorView,
-                preferredEdge: preferredEdge
+                anchorView,
+                preferredEdge
             )
+            // SUPERMUX:end popover-dynamic-height-reanchor
         }
 
         // SUPERMUX:begin popover-dynamic-height-reanchor
         private func resizeAndReanchorVisiblePopoverIfNeeded() {
             guard let popover,
                   let anchorView,
-                  anchorView.window != nil,
-                  case .resizeAndReanchor(let targetSize) = Self.visibleLayoutMutationPlan(
-                      currentContentSize: popover.contentSize,
-                      fittingSize: hostingController.view.fittingSize,
-                      popoverIsShown: popover.isShown
-                  ) else {
+                  anchorView.window != nil else {
+                return
+            }
+            hostingController.view.layoutSubtreeIfNeeded()
+            guard case .resizeAndReanchor(let targetSize) = Self.visibleLayoutMutationPlan(
+                currentContentSize: popover.contentSize,
+                fittingSize: hostingController.view.fittingSize,
+                popoverIsShown: popover.isShown
+            ) else {
                 return
             }
 
@@ -208,12 +297,18 @@ public struct ArrowlessPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
 
         func dismiss() {
             cancelDeferredRootViewUpdate()
+            // SUPERMUX:begin popover-dynamic-height-reanchor
+            cancelDeferredPresentationUpdate()
+            // SUPERMUX:end popover-dynamic-height-reanchor
             popover?.performClose(nil)
             popover = nil
         }
 
         public func popoverDidClose(_ notification: Notification) {
             cancelDeferredRootViewUpdate()
+            // SUPERMUX:begin popover-dynamic-height-reanchor
+            cancelDeferredPresentationUpdate()
+            // SUPERMUX:end popover-dynamic-height-reanchor
             popover = nil
             if isPresented {
                 isPresented = false

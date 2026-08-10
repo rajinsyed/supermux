@@ -302,7 +302,17 @@ extension Workspace {
             return false
         }
         if let panelId, let ownedPanelId, ownedPanelId != panelId {
-            return false
+            // SUPERMUX:begin panel-scoped-shared-agent-lifecycle-clear
+            // Structured hooks such as Claude Code intentionally reuse one
+            // status key across sibling panels, so PID ownership belongs to only
+            // the most recent reporter. A non-owner SessionEnd must not clear
+            // that reporter's PID, but it still owns its panel-scoped lifecycle.
+            guard !requireOwnedKey else { return false }
+            return clearAgentLifecycle(
+                key: agentStatusKey(forAgentPIDKey: key),
+                panelId: panelId
+            )
+            // SUPERMUX:end panel-scoped-shared-agent-lifecycle-clear
         }
         let statusKeyToClear = clearStatus ? agentStatusKey(forAgentPIDKey: key) : nil
 

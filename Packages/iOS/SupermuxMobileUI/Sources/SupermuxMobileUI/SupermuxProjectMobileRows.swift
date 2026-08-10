@@ -373,13 +373,14 @@ struct SupermuxSidebarWorkspaceRow: View {
         )
     }
 
-    /// Mac order exactly — PR badge, run, agent activity — and nothing else.
+    /// Mac order exactly — PR badge, run, agent activity, unread.
     ///
-    /// The phone used to add a blue unread dot after these. It is gone for the
-    /// same reason the Mac dropped its own red/green status dots: the rows sat
-    /// under a column of permanently-lit dots in three colors, which is what
-    /// made the section read as busy. Unread is already carried by the
-    /// workspace's own row in the list below.
+    /// The unread badge is back, but as the shared numbered capsule rather than
+    /// the bare blue dot removed earlier. That dot went because it was a third
+    /// permanently-lit color in a row that already had two, saying nothing the
+    /// Mac's own badge didn't say better. The capsule earns its place: it
+    /// carries a count, and it is the same badge the workspace list and the Mac
+    /// sidebar draw, so one workspace looks the same everywhere it appears.
     @ViewBuilder
     private var statusCluster: some View {
         HStack(spacing: 6) {
@@ -390,6 +391,9 @@ struct SupermuxSidebarWorkspaceRow: View {
                 SupermuxMobileRunIndicator()
             }
             SupermuxWorkspaceActivityDot(activity: workspace.activity, size: 7)
+            if workspace.hasUnread {
+                SupermuxMobileUnreadBadge(count: workspace.unreadCount, fontSize: 9)
+            }
         }
     }
 }

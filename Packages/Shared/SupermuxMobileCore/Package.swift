@@ -17,6 +17,7 @@ let package = Package(
     targets: [
         .target(
             name: "SupermuxMobileCore",
+            resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

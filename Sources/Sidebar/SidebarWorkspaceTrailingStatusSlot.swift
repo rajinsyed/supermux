@@ -8,7 +8,11 @@ struct SidebarWorkspaceTrailingStatusSlot: View {
     let side: CGFloat
     let width: CGFloat
     let height: CGFloat
-    let badgeFont: Font
+    // SUPERMUX:begin supermux-unread-badge-capsule (added parameter)
+    /// The numeral's point size. The shared badge builds its font and derives
+    /// every other dimension from this already-magnified value.
+    let badgePointSize: CGFloat
+    // SUPERMUX:end supermux-unread-badge-capsule
     let badgeFillColor: Color
     let badgeTextColor: Color
     let spinnerColor: NSColor
@@ -30,7 +34,7 @@ struct SidebarWorkspaceTrailingStatusSlot: View {
                 SidebarWorkspaceUnreadBadge(
                     unreadCount: unreadCount,
                     side: side,
-                    font: badgeFont,
+                    pointSize: badgePointSize,
                     fillColor: badgeFillColor,
                     textColor: badgeTextColor
                 )
@@ -51,6 +55,13 @@ struct SidebarWorkspaceTrailingStatusSlot: View {
                 .accessibilityHidden(!showsCloseButton)
             }
         }
-        .frame(width: width, height: height, alignment: .trailing)
+        // SUPERMUX:begin supermux-unread-badge-capsule (upstream fixed this slot
+        // at `width` — see SUPERMUX-TOUCHPOINTS.md)
+        // `width` is the close button's reserved width, which a two-digit
+        // capsule badge now exceeds. It becomes a minimum so the badge grows
+        // leftward into the row instead of being clipped; the close button and
+        // spinner still get exactly the width they always had.
+        .frame(minWidth: width, minHeight: height, alignment: .trailing)
+        // SUPERMUX:end supermux-unread-badge-capsule
     }
 }

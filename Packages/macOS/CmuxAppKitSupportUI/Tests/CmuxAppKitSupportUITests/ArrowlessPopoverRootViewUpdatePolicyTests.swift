@@ -14,18 +14,23 @@ import SwiftUI
         ) == .none)
     }
 
-    @Test func firstPresentationUpdatesHostedRootSynchronously() {
+    // SUPERMUX:begin popover-dynamic-height-reanchor
+    @Test func firstPresentationDefersHostedRootMutationOutsideRepresentableUpdate() {
         #expect(ArrowlessPopoverRootViewUpdatePolicy.rootViewUpdateStrategy(
             isPresented: true,
             popoverIsShown: false
-        ) == .immediate)
+        ) == .deferredPresentation)
     }
 
-    @Test func visiblePopoverDefersHostedRootRefreshOutsideRepresentableUpdate() {
+    @Test func dismissalSkipsHostedRootRefresh() {
         #expect(ArrowlessPopoverRootViewUpdatePolicy.rootViewUpdateStrategy(
             isPresented: false,
             popoverIsShown: true
-        ) == .deferredVisible)
+        ) == .none)
+    }
+    // SUPERMUX:end popover-dynamic-height-reanchor
+
+    @Test func visiblePopoverDefersHostedRootRefreshOutsideRepresentableUpdate() {
         #expect(ArrowlessPopoverRootViewUpdatePolicy.rootViewUpdateStrategy(
             isPresented: true,
             popoverIsShown: true
@@ -67,19 +72,82 @@ import SwiftUI
         ) == .none)
     }
 }
+
+@MainActor
+@Suite struct ArrowlessPopoverPresentationDeferralTests {
+    private typealias Coordinator = ArrowlessPopoverAnchor<EmptyView>.Coordinator
+
+    @Test func initialPresentationRunsAfterCurrentRepresentableUpdateTurn() async {
+        var presentationCount = 0
+        var coordinator: Coordinator?
+        var anchorView: NSView?
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            coordinator = Coordinator(
+                isPresented: .constant(true),
+                showPopover: { _, _, _, _ in
+                    presentationCount += 1
+                    continuation.resume()
+                }
+            )
+            anchorView = NSView(frame: NSRect(x: 0, y: 0, width: 22, height: 22))
+            coordinator?.anchorView = anchorView
+
+            coordinator?.deferPresentation(
+                rootView: AnyView(Text("Token Usage")),
+                preferredEdge: .maxY,
+                detachedGap: 4
+            )
+            #expect(presentationCount == 0)
+        }
+
+        #expect(presentationCount == 1)
+        _ = coordinator
+        _ = anchorView
+    }
+
+    @Test func dismissalBeforeDeferredPresentationCancelsTheShow() async {
+        var presentationCount = 0
+        let coordinator = Coordinator(
+            isPresented: .constant(true),
+            showPopover: { _, _, _, _ in presentationCount += 1 }
+        )
+        let anchorView = NSView(frame: NSRect(x: 0, y: 0, width: 22, height: 22))
+        coordinator.anchorView = anchorView
+
+        coordinator.deferPresentation(
+            rootView: AnyView(Text("Token Usage")),
+            preferredEdge: .maxY,
+            detachedGap: 4
+        )
+        coordinator.deferDismissal()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            RunLoop.main.perform(inModes: [.common]) {
+                continuation.resume()
+            }
+        }
+
+        #expect(presentationCount == 0)
+    }
+}
 // SUPERMUX:end popover-dynamic-height-reanchor
 
 @MainActor
 @Suite struct CmuxPopoverVisibleUpdateSchedulerTests {
-    @Test func visibleUpdatesRunAfterCurrentMainActorTurnAndCoalesce() async {
+    // SUPERMUX:begin popover-dynamic-height-reanchor
+    @Test func visibleUpdatesRunOnNextMainRunLoopTurnAndCoalesce() async {
         let scheduler = CmuxPopoverVisibleUpdateScheduler()
         var applied: [String] = []
 
         scheduler.schedule { applied.append("first") }
-        scheduler.schedule { applied.append("second") }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            scheduler.schedule {
+                applied.append("second")
+                continuation.resume()
+            }
+            #expect(applied.isEmpty)
+        }
 
-        #expect(applied.isEmpty)
-        await Task.yield()
         #expect(applied == ["second"])
     }
 
@@ -89,23 +157,31 @@ import SwiftUI
 
         scheduler.schedule { applied = true }
         scheduler.cancel()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            RunLoop.main.perform(inModes: [.common]) {
+                continuation.resume()
+            }
+        }
 
-        await Task.yield()
         #expect(applied == false)
     }
 
-    @Test func cancelledTaskDoesNotClearRescheduledVisibleUpdate() async {
+    @Test func cancelledCallbackDoesNotClearRescheduledVisibleUpdate() async {
         let scheduler = CmuxPopoverVisibleUpdateScheduler()
         var applied: [String] = []
 
         scheduler.schedule { applied.append("cancelled") }
         scheduler.cancel()
-        scheduler.schedule { applied.append("rescheduled") }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            scheduler.schedule {
+                applied.append("rescheduled")
+                continuation.resume()
+            }
+        }
 
-        await Task.yield()
-        await Task.yield()
         #expect(applied == ["rescheduled"])
     }
+    // SUPERMUX:end popover-dynamic-height-reanchor
 }
 
 #endif

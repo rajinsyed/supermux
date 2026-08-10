@@ -24,6 +24,10 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         public let currentDirectory: String?
         /// Whether the Mac currently has this workspace selected.
         public let isSelected: Bool
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        /// The focused terminal, browser, Simulator, or other panel in this workspace.
+        public let focusedPanel: MobileWorkspaceFocusedPanel?
+        // SUPERMUX:end supermux-mobile-selection-sync
         /// Whether this workspace is pinned, if the Mac reported it. `nil` when
         /// connected to a Mac old enough not to emit `is_pinned`.
         public let isPinned: Bool?
@@ -59,6 +63,11 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         public let supermuxBranch: String?
         /// The workspace branch's pull request; `nil` when none, unassociated, or from upstream cmux.
         public let supermuxPullRequest: SupermuxPullRequest?
+        /// How many unread notifications the workspace has, so the badge can show the same
+        /// numeral the Mac sidebar does. `nil` from an upstream cmux Mac (which sends only
+        /// `has_unread`); the badge then renders its countless dot form. Travels for EVERY
+        /// workspace, unlike the four project-gated fields above.
+        public let supermuxUnreadCount: Int?
         /// The `supermux_pull_request` object: same shape as the worktree DTO's `pull_request`
         /// (`{number, state, url, is_stale}`). Decoding is LOSSY on purpose: a malformed
         /// extension object (wrong types, not even an object) degrades to nil fields —
@@ -117,6 +126,9 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case customColorHex = "custom_color"
             case currentDirectory = "current_directory"
             case isSelected = "is_selected"
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            case focusedPanel = "focused_panel"
+            // SUPERMUX:end supermux-mobile-selection-sync
             case isPinned = "is_pinned"
             case groupID = "group_id"
             case preview
@@ -130,6 +142,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case supermuxActivity = "supermux_activity"
             case supermuxBranch = "supermux_branch"
             case supermuxPullRequest = "supermux_pull_request"
+            case supermuxUnreadCount = "supermux_unread_count"
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
 
@@ -145,6 +158,9 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             customColorHex: String? = nil,
             currentDirectory: String?,
             isSelected: Bool,
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            focusedPanel: MobileWorkspaceFocusedPanel? = nil,
+            // SUPERMUX:end supermux-mobile-selection-sync
             isPinned: Bool?,
             groupID: String?,
             preview: String?,
@@ -159,7 +175,8 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             supermuxProjectID: String? = nil,
             supermuxActivity: String? = nil,
             supermuxBranch: String? = nil,
-            supermuxPullRequest: SupermuxPullRequest? = nil
+            supermuxPullRequest: SupermuxPullRequest? = nil,
+            supermuxUnreadCount: Int? = nil
             // SUPERMUX:end supermux-mobile-workspace-fields
         ) {
             self.id = id
@@ -170,6 +187,9 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             self.customColorHex = customColorHex
             self.currentDirectory = currentDirectory
             self.isSelected = isSelected
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            self.focusedPanel = focusedPanel
+            // SUPERMUX:end supermux-mobile-selection-sync
             self.isPinned = isPinned
             self.groupID = groupID
             self.preview = preview
@@ -183,6 +203,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             self.supermuxActivity = supermuxActivity
             self.supermuxBranch = supermuxBranch
             self.supermuxPullRequest = supermuxPullRequest
+            self.supermuxUnreadCount = supermuxUnreadCount
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
 
@@ -196,6 +217,14 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             customColorHex = try container.decodeIfPresent(String.self, forKey: .customColorHex)
             currentDirectory = try container.decodeIfPresent(String.self, forKey: .currentDirectory)
             isSelected = try container.decode(Bool.self, forKey: .isSelected)
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            focusedPanel = (
+                try? container.decodeIfPresent(
+                    MobileWorkspaceFocusedPanel.self,
+                    forKey: .focusedPanel
+                )
+            ) ?? nil
+            // SUPERMUX:end supermux-mobile-selection-sync
             isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned)
             groupID = try container.decodeIfPresent(String.self, forKey: .groupID)
             preview = try container.decodeIfPresent(String.self, forKey: .preview)
@@ -215,6 +244,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             supermuxPullRequest = (
                 try? container.decodeIfPresent(SupermuxPullRequest.self, forKey: .supermuxPullRequest)
             ) ?? nil
+            supermuxUnreadCount = (try? container.decodeIfPresent(Int.self, forKey: .supermuxUnreadCount)) ?? nil
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
     }

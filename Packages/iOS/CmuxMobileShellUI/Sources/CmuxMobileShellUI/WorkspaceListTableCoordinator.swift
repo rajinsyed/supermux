@@ -24,7 +24,17 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
             hasDescription: Bool,
             isSelected: Bool,
             isIndented: Bool,
-            changesChipIdentity: WorkspaceChangesChipHeightKey?
+            changesChipIdentity: WorkspaceChangesChipHeightKey?,
+            // SUPERMUX:begin supermux-mobile-unread-badge (badge occupies title-row width)
+            // The unread badge sits INLINE with the title, so its presence and
+            // its width both steal room from a title that is allowed to wrap.
+            // A read → unread flip, or 9 → 10, can push a barely-fitting title
+            // onto another line; without these in the key the cached height
+            // stays stale and the extra line is clipped. The displayed text is
+            // the width-determining value, not the raw count — 100 and 4000
+            // both render "99+" and must share a cache entry.
+            unreadBadgeText: String?
+            // SUPERMUX:end supermux-mobile-unread-badge
         )
         case groupHeader
         case groupFooter
@@ -1028,6 +1038,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                     previewLineLimit: configuration.previewLineLimit,
                     unreadIndicatorLeftShift: configuration.unreadIndicatorLeftShift
                 )
+                // SUPERMUX:begin supermux-mobile-row-activity (the iPhone uses this UIKit table, not WorkspaceListView's SwiftUI List branch)
+                .supermuxWorkspaceActivityDot(rawActivity: workspace.supermuxActivity)
+                // SUPERMUX:end supermux-mobile-row-activity
                 .accessibilityElement(
                     children: onOpenChanges == nil ? .combine : .contain
                 )
@@ -1181,7 +1194,13 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                     isSelected: configuration.navigationStyle == .sidebar
                         && configuration.selectedWorkspaceID == id,
                     isIndented: item.isIndentedWorkspace,
-                    changesChipIdentity: changesChipIdentity
+                    changesChipIdentity: changesChipIdentity,
+                    // SUPERMUX:begin supermux-mobile-unread-badge
+                    unreadBadgeText: WorkspaceUnreadDot.heightIdentity(
+                        isUnread: workspace.hasUnread,
+                        unreadCount: workspace.supermuxUnreadCount
+                    )
+                    // SUPERMUX:end supermux-mobile-unread-badge
                 )
             } else {
                 kind = .workspaceUniform(

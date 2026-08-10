@@ -88,6 +88,10 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     public let currentDirectory: String?
     /// Whether the Mac currently has this workspace selected.
     public let isSelected: Bool
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    /// The focused panel of any kind inside this workspace.
+    public let focusedPanel: MobileWorkspaceFocusedPanel?
+    // SUPERMUX:end supermux-mobile-selection-sync
     /// Whether the workspace is pinned on the Mac.
     public let isPinned: Bool
     /// The owning group's identifier; nil for ungrouped workspaces.
@@ -168,6 +172,15 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     /// The workspace branch's pull request; `nil` when none, unassociated, or
     /// from an upstream cmux Mac.
     public let supermuxPullRequest: SupermuxPullRequest?
+    /// How many unread notifications the workspace has, so the phone's badge
+    /// can show the same numeral the Mac sidebar does instead of a countless
+    /// dot. `nil` from an upstream cmux Mac, which sends only `has_unread`;
+    /// the phone then falls back to the dot form.
+    ///
+    /// Unlike the four fields above, this one travels for EVERY workspace, not
+    /// just project-associated ones — unread is a cmux concept, not a projects
+    /// one, so it cannot ride the association-gated augmenter.
+    public let supermuxUnreadCount: Int?
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// ``MobileSyncRecord`` identity: the workspace id.
@@ -185,6 +198,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         customColorHex: String? = nil,
         currentDirectory: String?,
         isSelected: Bool,
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        focusedPanel: MobileWorkspaceFocusedPanel? = nil,
+        // SUPERMUX:end supermux-mobile-selection-sync
         isPinned: Bool,
         groupID: String?,
         preview: String?,
@@ -199,7 +215,8 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxProjectID: String? = nil,
         supermuxActivity: String? = nil,
         supermuxBranch: String? = nil,
-        supermuxPullRequest: SupermuxPullRequest? = nil
+        supermuxPullRequest: SupermuxPullRequest? = nil,
+        supermuxUnreadCount: Int? = nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     ) {
         self.id = id
@@ -210,6 +227,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.customColorHex = customColorHex
         self.currentDirectory = currentDirectory
         self.isSelected = isSelected
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        self.focusedPanel = focusedPanel
+        // SUPERMUX:end supermux-mobile-selection-sync
         self.isPinned = isPinned
         self.groupID = groupID
         self.preview = preview
@@ -224,6 +244,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.supermuxActivity = supermuxActivity
         self.supermuxBranch = supermuxBranch
         self.supermuxPullRequest = supermuxPullRequest
+        self.supermuxUnreadCount = supermuxUnreadCount
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -240,6 +261,14 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         customColorHex = try container.decodeIfPresent(String.self, forKey: .customColorHex)
         currentDirectory = try container.decodeIfPresent(String.self, forKey: .currentDirectory)
         isSelected = try container.decode(Bool.self, forKey: .isSelected)
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        focusedPanel = (
+            try? container.decodeIfPresent(
+                MobileWorkspaceFocusedPanel.self,
+                forKey: .focusedPanel
+            )
+        ) ?? nil
+        // SUPERMUX:end supermux-mobile-selection-sync
         isPinned = try container.decode(Bool.self, forKey: .isPinned)
         groupID = try container.decodeIfPresent(String.self, forKey: .groupID)
         preview = try container.decodeIfPresent(String.self, forKey: .preview)
@@ -261,6 +290,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxPullRequest = (
             try? container.decodeIfPresent(SupermuxPullRequest.self, forKey: .supermuxPullRequest)
         ) ?? nil
+        supermuxUnreadCount = (try? container.decodeIfPresent(Int.self, forKey: .supermuxUnreadCount)) ?? nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -273,6 +303,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case customColorHex = "custom_color"
         case currentDirectory = "current_directory"
         case isSelected = "is_selected"
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        case focusedPanel = "focused_panel"
+        // SUPERMUX:end supermux-mobile-selection-sync
         case isPinned = "is_pinned"
         case groupID = "group_id"
         case preview
@@ -288,6 +321,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case supermuxActivity = "supermux_activity"
         case supermuxBranch = "supermux_branch"
         case supermuxPullRequest = "supermux_pull_request"
+        case supermuxUnreadCount = "supermux_unread_count"
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }

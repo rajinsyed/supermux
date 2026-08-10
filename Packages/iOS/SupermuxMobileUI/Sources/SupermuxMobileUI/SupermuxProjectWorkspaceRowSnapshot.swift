@@ -26,6 +26,11 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
     public let activity: SupermuxWorkspaceActivityDTO?
     /// Whether the workspace has unread activity on the Mac.
     public let hasUnread: Bool
+    /// How many unread notifications the workspace has, so the badge shows the
+    /// same numeral the Mac sidebar does. `nil` when the paired Mac is upstream
+    /// cmux (which reports only ``hasUnread``); the badge then draws its
+    /// countless dot form.
+    public let unreadCount: Int?
     /// The workspace's git branch (the mac row's monospaced subtitle), when
     /// the Mac reported one.
     public let branch: String?
@@ -45,6 +50,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
     ///   - name: The workspace's display name.
     ///   - activity: The workspace's agent activity, if any.
     ///   - hasUnread: Whether the workspace has unread activity.
+    ///   - unreadCount: The unread count, when the Mac reports one.
     ///   - branch: The workspace's git branch, if known.
     ///   - pullRequest: The branch's PR badge, if known.
     ///   - isRunning: Whether the project's run command runs here.
@@ -55,6 +61,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
         name: String,
         activity: SupermuxWorkspaceActivityDTO?,
         hasUnread: Bool,
+        unreadCount: Int? = nil,
         branch: String? = nil,
         pullRequest: SupermuxPullRequestBadgeSnapshot? = nil,
         isRunning: Bool = false
@@ -65,6 +72,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
         self.name = name
         self.activity = activity
         self.hasUnread = hasUnread
+        self.unreadCount = unreadCount
         self.branch = branch
         self.pullRequest = pullRequest
         self.isRunning = isRunning
@@ -87,6 +95,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
                 name: preview.name,
                 activity: preview.supermuxActivity.flatMap(SupermuxWorkspaceActivityDTO.init(rawValue:)),
                 hasUnread: preview.hasUnread,
+                unreadCount: preview.supermuxUnreadCount,
                 branch: branch?.isEmpty == false ? branch : nil,
                 pullRequest: SupermuxPullRequestBadgeSnapshot(
                     number: preview.supermuxPullRequestNumber,
@@ -108,6 +117,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
             name: name,
             activity: activity,
             hasUnread: hasUnread,
+            unreadCount: unreadCount,
             branch: branch,
             pullRequest: pullRequest,
             isRunning: isRunning

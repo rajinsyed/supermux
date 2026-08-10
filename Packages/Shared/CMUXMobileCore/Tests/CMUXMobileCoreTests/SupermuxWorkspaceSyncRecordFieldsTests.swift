@@ -3,8 +3,8 @@ import Testing
 
 @testable import CMUXMobileCore
 
-/// Fork coverage for the additive supermux fields on ``WorkspaceSyncRecord``
-/// (`supermux-mobile-workspace-fields`). Mobile state sync v2 becomes
+/// Fork coverage for the additive supermux workspace metadata and focused-panel
+/// fields on ``WorkspaceSyncRecord``. Mobile state sync v2 becomes
 /// authoritative on any Mac that answers `mobile.sync.fetch`, so these four
 /// fields must survive the record wire round-trip or project nesting, the
 /// agent-activity dot, the branch subtitle, and the PR badge silently vanish on
@@ -15,7 +15,11 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         supermuxProjectID: String? = nil,
         supermuxActivity: String? = nil,
         supermuxBranch: String? = nil,
-        supermuxPullRequest: WorkspaceSyncRecord.SupermuxPullRequest? = nil
+        supermuxPullRequest: WorkspaceSyncRecord.SupermuxPullRequest? = nil,
+        supermuxUnreadCount: Int? = nil,
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        focusedPanel: MobileWorkspaceFocusedPanel? = nil
+        // SUPERMUX:end supermux-mobile-selection-sync
     ) -> WorkspaceSyncRecord {
         WorkspaceSyncRecord(
             id: "ws-1",
@@ -23,6 +27,9 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
             title: "build",
             currentDirectory: "/repo",
             isSelected: false,
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            focusedPanel: focusedPanel,
+            // SUPERMUX:end supermux-mobile-selection-sync
             isPinned: false,
             groupID: nil,
             preview: nil,
@@ -34,7 +41,8 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
             supermuxProjectID: supermuxProjectID,
             supermuxActivity: supermuxActivity,
             supermuxBranch: supermuxBranch,
-            supermuxPullRequest: supermuxPullRequest
+            supermuxPullRequest: supermuxPullRequest,
+            supermuxUnreadCount: supermuxUnreadCount
         )
     }
 
@@ -107,10 +115,16 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         )
 
         #expect(decoded.id == "ws-upstream")
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        #expect(decoded.focusedPanel == nil)
+        // SUPERMUX:end supermux-mobile-selection-sync
         #expect(decoded.supermuxProjectID == nil)
         #expect(decoded.supermuxActivity == nil)
         #expect(decoded.supermuxBranch == nil)
         #expect(decoded.supermuxPullRequest == nil)
+        // An upstream Mac reports `has_unread` but never a count, so the phone
+        // must fall back to the badge's countless dot rather than showing "0".
+        #expect(decoded.supermuxUnreadCount == nil)
     }
 
     @Test func recordWithoutSupermuxFieldsEmitsNoSupermuxKeys() throws {
@@ -120,6 +134,136 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(object["supermux_activity"] == nil)
         #expect(object["supermux_branch"] == nil)
         #expect(object["supermux_pull_request"] == nil)
+        #expect(object["supermux_unread_count"] == nil)
+    }
+
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    @Test func focusedPanelUsesTheGenericWireShapeAndRoundTrips() throws {
+        let focusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: "browser-1",
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        )
+        let record = makeRecord(focusedPanel: focusedPanel)
+        let coder = MobileSyncFrameCoder()
+        let object = try coder.jsonObject(from: record)
+        let wirePanel = try #require(object["focused_panel"] as? [String: Any])
+        #expect(wirePanel["panel_id"] as? String == "browser-1")
+        #expect(wirePanel["kind"] as? String == "browser")
+
+        let decoded = try coder.decode(
+            WorkspaceSyncRecord.self,
+            fromJSONObject: object
+        )
+        #expect(decoded.focusedPanel == focusedPanel)
+        #expect(decoded == record)
+    }
+
+    @Test func malformedFocusedPanelDegradesToNilInsteadOfFailingTheRecord() throws {
+        let decoded = try MobileSyncFrameCoder().decode(
+            WorkspaceSyncRecord.self,
+            fromJSONString: """
+            {
+              "id": "ws-bad-focus",
+              "window_id": "win-1",
+              "title": "bad focus",
+              "current_directory": null,
+              "is_selected": true,
+              "focused_panel": {"panel_id": 17, "kind": ["browser"]},
+              "is_pinned": false,
+              "group_id": null,
+              "preview": null,
+              "preview_at": null,
+              "last_activity_at": 1,
+              "has_unread": false,
+              "sort_index": 0,
+              "terminals": []
+            }
+            """
+        )
+
+        #expect(decoded.id == "ws-bad-focus")
+        #expect(decoded.focusedPanel == nil)
+    }
+
+    @Test func focusedPanelChangesAreVisibleToTheDiffsEqualityCheck() {
+        let browser = MobileWorkspaceFocusedPanel(
+            panelID: "panel-1",
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        )
+        let simulator = MobileWorkspaceFocusedPanel(
+            panelID: "panel-2",
+            kind: MobileWorkspaceFocusedPanel.simulatorKind
+        )
+        #expect(makeRecord(focusedPanel: browser) != makeRecord(focusedPanel: simulator))
+        #expect(makeRecord(focusedPanel: browser) == makeRecord(focusedPanel: browser))
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
+
+    @Test func theUnreadCountSurvivesTheRecordRoundTrip() throws {
+        // The count travels for EVERY workspace, not just project-associated
+        // ones, so it is asserted on a record carrying no other fork field.
+        let coder = MobileSyncFrameCoder()
+        let object = try coder.jsonObject(from: makeRecord(supermuxUnreadCount: 12))
+        #expect(object["supermux_unread_count"] as? Int == 12)
+
+        let decoded = try coder.decode(
+            WorkspaceSyncRecord.self,
+            fromJSONString: """
+            {
+              "id": "ws-counted",
+              "window_id": "win-1",
+              "title": "counted",
+              "current_directory": null,
+              "is_selected": false,
+              "is_pinned": false,
+              "group_id": null,
+              "preview": null,
+              "preview_at": null,
+              "last_activity_at": 1,
+              "has_unread": true,
+              "sort_index": 0,
+              "terminals": [],
+              "supermux_unread_count": 12
+            }
+            """
+        )
+        #expect(decoded.supermuxUnreadCount == 12)
+    }
+
+    @Test func aMalformedUnreadCountDegradesToNilInsteadOfFailingTheRecord() throws {
+        let decoded = try MobileSyncFrameCoder().decode(
+            WorkspaceSyncRecord.self,
+            fromJSONString: """
+            {
+              "id": "ws-bad-count",
+              "window_id": "win-1",
+              "title": "bad count",
+              "current_directory": null,
+              "is_selected": false,
+              "is_pinned": false,
+              "group_id": null,
+              "preview": null,
+              "preview_at": null,
+              "last_activity_at": 1,
+              "has_unread": true,
+              "sort_index": 0,
+              "terminals": [],
+              "supermux_unread_count": "seven"
+            }
+            """
+        )
+
+        #expect(decoded.id == "ws-bad-count")
+        #expect(decoded.hasUnread)
+        #expect(decoded.supermuxUnreadCount == nil)
+    }
+
+    @Test func anUnreadCountChangeIsVisibleToTheDiffsEqualityCheck() {
+        // Without this the badge would keep showing a stale numeral: the sync
+        // mirror skips records it considers unchanged, so a count that moves
+        // from 1 to 2 with nothing else changing must compare unequal.
+        #expect(makeRecord(supermuxUnreadCount: 1) != makeRecord(supermuxUnreadCount: 2))
+        #expect(makeRecord(supermuxUnreadCount: nil) != makeRecord(supermuxUnreadCount: 0))
     }
 
     @Test func malformedSupermuxFieldsDegradeToNilInsteadOfFailingTheRecord() throws {

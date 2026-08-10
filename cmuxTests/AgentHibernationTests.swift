@@ -316,6 +316,36 @@ struct AgentHibernationTests {
         expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
     }
 
+    // SUPERMUX:begin panel-scoped-shared-agent-lifecycle-clear
+    @MainActor
+    @Test
+    func testNonOwnerSessionEndClearsItsPanelLifecycleForSharedAgentKey() throws {
+        let workspace = Workspace()
+        let firstPanelId = try #require(workspace.focusedPanelId)
+        let paneId = try #require(workspace.paneId(forPanelId: firstPanelId))
+        let secondPanelId = try #require(workspace.newTerminalSurface(inPane: paneId, focus: false)).id
+
+        workspace.recordAgentPID(key: "claude_code", pid: 111, panelId: firstPanelId, refreshPorts: false)
+        workspace.recordAgentPID(key: "claude_code", pid: 222, panelId: secondPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: firstPanelId, lifecycle: .needsInput)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: secondPanelId, lifecycle: .running)
+
+        expectTrue(
+            workspace.clearAgentPID(
+                key: "claude_code",
+                panelId: firstPanelId,
+                clearStatus: true,
+                refreshPorts: false
+            )
+        )
+
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .unknown)
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
+        expectEqual(workspace.agentPIDPanelIdsByKey["claude_code"], secondPanelId)
+        expectEqual(workspace.agentPIDs["claude_code"], 222)
+    }
+    // SUPERMUX:end panel-scoped-shared-agent-lifecycle-clear
+
     @Test
     func testSessionIndexLoadsAgentLifecycleFromHookStore() throws {
         let home = FileManager.default.temporaryDirectory

@@ -4,6 +4,9 @@ import CmuxFoundation
 import CmuxSidebar
 import CmuxWorkspaces
 import SwiftUI
+// SUPERMUX:begin supermux-unread-badge-capsule (shared badge geometry)
+import SupermuxMobileCore
+// SUPERMUX:end supermux-unread-badge-capsule
 
 /// Pure-AppKit workspace row cell: renders every TabItemView slot without
 /// SwiftUI hosting. Subviews are created once (dynamic slots use view pools),
@@ -74,6 +77,15 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
     /// Test seam: observes every full model application (configure, pump,
     /// optimistic press/deselect, hover enforcement).
     var applyModelProbeForTesting: ((SidebarWorkspaceRowModel) -> Void)?
+
+    // SUPERMUX:begin sidebar-appkit-row-activity
+    var visibleActivitySpinnerCountForTesting: Int {
+        [leadingSpinner, trailingSpinner]
+            .compactMap { $0 }
+            .filter { !$0.isHidden }
+            .count
+    }
+    // SUPERMUX:end sidebar-appkit-row-activity
 #endif
 
     /// Per-row churn pump: mirrors TabItemView's onReceive subscriptions so
@@ -456,13 +468,20 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
         titleView.textColor = palette.primaryText
 
         // Badges / spinner / close
-        let showsSpinner = model.showsAgentActivity && snapshot.activeCodingAgentCount > 0
+        // SUPERMUX:begin sidebar-appkit-row-activity
+        let showsSupermuxActivity = snapshot.supermuxActivity == .working
+        let showsSpinner = showsSupermuxActivity
+            || (model.showsAgentActivity && snapshot.activeCodingAgentCount > 0)
+        // SUPERMUX:end sidebar-appkit-row-activity
         let badgeVisible = model.unreadCount > 0
         configureStatusSlot(
             model: model,
             palette: palette,
             badgeVisible: badgeVisible,
-            spinnerVisible: showsSpinner
+            spinnerVisible: showsSpinner,
+            // SUPERMUX:begin sidebar-appkit-row-activity
+            showsSupermuxActivity: showsSupermuxActivity
+            // SUPERMUX:end sidebar-appkit-row-activity
         )
         closeButton.glyphImage = RenderableSystemSymbol.configuredAppKitImage(
             systemName: "xmark", pointSize: model.scaled(9), weight: .medium
@@ -599,7 +618,10 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
         model: SidebarWorkspaceRowModel,
         palette: SidebarRowPalette,
         badgeVisible: Bool,
-        spinnerVisible: Bool
+        spinnerVisible: Bool,
+        // SUPERMUX:begin sidebar-appkit-row-activity
+        showsSupermuxActivity: Bool
+        // SUPERMUX:end sidebar-appkit-row-activity
     ) {
         let badgeFill: NSColor = {
             if let hex = model.settings.notificationBadgeColorHex, let color = NSColor(hex: hex) {
@@ -624,9 +646,15 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
             trailingBadge.configure(count: model.unreadCount, fillColor: badgeFill, textColor: badgeText, font: badgeFont)
         }
 
-        let spinnerColor: NSColor = model.isActive
-            ? palette.selectedForeground(0.55)
-            : .secondaryLabelColor
+        // SUPERMUX:begin sidebar-appkit-row-activity
+        let spinnerColor: NSColor = if showsSupermuxActivity {
+            NSColor(red: 0.96, green: 0.62, blue: 0.04, alpha: 1)
+        } else if model.isActive {
+            palette.selectedForeground(0.55)
+        } else {
+            .secondaryLabelColor
+        }
+        // SUPERMUX:end sidebar-appkit-row-activity
         leadingSpinner = Self.updateSpinner(
             existing: leadingSpinner,
             visible: leadingSpinnerVisible,
@@ -641,13 +669,20 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
             presentationActive: isPresentationActive,
             in: contentContainer
         )
-        let agentCount = model.snapshot.activeCodingAgentCount
-        let tooltip = agentCount == 1
-            ? String(localized: "sidebar.agentActivity.tooltip.one", defaultValue: "Loading (1 active task)")
-            : String.localizedStringWithFormat(
-                String(localized: "sidebar.agentActivity.tooltip.many", defaultValue: "Loading (%lld active tasks)"),
-                agentCount
-            )
+        // SUPERMUX:begin sidebar-appkit-row-activity
+        let tooltip: String
+        if showsSupermuxActivity {
+            tooltip = String(localized: "supermux.activity.working", defaultValue: "Agent working")
+        } else {
+            let agentCount = model.snapshot.activeCodingAgentCount
+            tooltip = agentCount == 1
+                ? String(localized: "sidebar.agentActivity.tooltip.one", defaultValue: "Loading (1 active task)")
+                : String.localizedStringWithFormat(
+                    String(localized: "sidebar.agentActivity.tooltip.many", defaultValue: "Loading (%lld active tasks)"),
+                    agentCount
+                )
+        }
+        // SUPERMUX:end sidebar-appkit-row-activity
         leadingSpinner?.toolTip = tooltip
         trailingSpinner?.toolTip = tooltip
     }
@@ -1093,10 +1128,29 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
         let spacing: CGFloat = 4
 
         // Title line
-        let titleRowSpacing: CGFloat = (model.settings.loadingSpinnerPosition == .leading
-            && model.showsAgentActivity && model.snapshot.activeCodingAgentCount > 0) ? 6 : 8
+        // SUPERMUX:begin sidebar-appkit-row-activity
+        let titleRowSpacing: CGFloat = leadingSpinner?.isHidden == false ? 6 : 8
+        // SUPERMUX:end sidebar-appkit-row-activity
         var x = leading
-        let badgeSide = 16 * model.fontScale
+        // SUPERMUX:begin supermux-unread-badge-capsule (upstream sized the badge
+        // as a fixed `16 * fontScale` square — see SUPERMUX-TOUCHPOINTS.md)
+        // The badge is a capsule now: two-digit counts widen. Measured through
+        // the shared AppKit helper — the SAME call the group-header cell makes,
+        // so the two hand-laid-out cells cannot size the badge differently.
+        // Measuring at all (rather than assuming a square) is what stops "12"
+        // from being clipped to "1".
+        //
+        // Height is floored at the old `16 * fontScale` square so row heights
+        // never shrink below what the measure pass has always returned, and
+        // takes the style's height when that is larger.
+        let badgeFont = NSFont.systemFont(ofSize: model.scaled(9), weight: .semibold)
+        let badgeSide: CGFloat = 16 * model.fontScale
+        let measuredBadge = SupermuxUnreadBadgeStyle.size(count: model.unreadCount, font: badgeFont)
+        let badgeSize = NSSize(
+            width: max(badgeSide, measuredBadge.width),
+            height: max(badgeSide, measuredBadge.height)
+        )
+        // SUPERMUX:end supermux-unread-badge-capsule
         let spinnerSide = max(10, 12 * model.fontScale)
         let firstLineCenter = model.scaled(12.5) * 0.6 + y
 
@@ -1110,14 +1164,17 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
 
         let leadingSlotActive = (!leadingBadge.isHidden) || (leadingSpinner?.isHidden == false)
         if leadingSlotActive {
-            let side = !leadingBadge.isHidden ? badgeSide : spinnerSide
+            // SUPERMUX:begin supermux-unread-badge-capsule (upstream advanced x by
+            // the square `side`)
+            let slotWidth = !leadingBadge.isHidden ? badgeSize.width : spinnerSide
             if !leadingBadge.isHidden {
-                place(leadingBadge, size: NSSize(width: side, height: side), centerY: firstLineCenter)
+                place(leadingBadge, size: badgeSize, centerY: firstLineCenter)
             }
+            // SUPERMUX:end supermux-unread-badge-capsule
             if let spinner = leadingSpinner, !spinner.isHidden {
                 place(spinner, size: NSSize(width: spinnerSide, height: spinnerSide), centerY: firstLineCenter)
             }
-            x += side + titleRowSpacing
+            x += slotWidth + titleRowSpacing
         }
         if !pinImageView.isHidden {
             let side = model.scaled(9) + 4
@@ -1139,7 +1196,25 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
         let closeHit = max(16, 16 * model.fontScale)
         let closeWidth = max(16, closeHit)
         let trailingSlotActive = !trailingBadge.isHidden || (trailingSpinner?.isHidden == false) || model.canCloseWorkspace
-        let titleMaxX = trailingSlotActive ? (trailing - closeWidth - titleRowSpacing) : trailing
+        // SUPERMUX:begin supermux-unread-badge-capsule (upstream reserved exactly
+        // `closeWidth`)
+        // A wide capsule badge reserves its own width so it cannot overlap the
+        // title; the close button and spinner still reserve only `closeWidth`.
+        //
+        // The reservation is driven by whether the row HAS a trailing badge, not
+        // by whether it is currently visible. Hover hides the badge behind the
+        // close button, and keying off visibility would hand a wrapping title
+        // extra width on hover — the title would unwrap and the row would want
+        // a different height, while the table keeps the height it cached at
+        // `isPointerHovering: false`. Reserving unconditionally keeps row height
+        // hover-independent, which is what the height cache assumes.
+        let trailingBadgeReservesWidth = model.unreadCount > 0
+            && model.settings.notificationBadgePosition == .trailing
+        let trailingSlotWidth = trailingBadgeReservesWidth
+            ? max(closeWidth, badgeSize.width)
+            : closeWidth
+        let titleMaxX = trailingSlotActive ? (trailing - trailingSlotWidth - titleRowSpacing) : trailing
+        // SUPERMUX:end supermux-unread-badge-capsule
         let titleWidth = max(10, titleMaxX - x)
         let renameField = renameSession?.field
         let titleHeight = renameField.map { ceil($0.intrinsicContentSize.height) }
@@ -1157,10 +1232,13 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
                     x: slotX, y: firstLineCenter - closeHit / 2, width: closeWidth, height: closeHit
                 )
                 if !trailingBadge.isHidden {
+                    // SUPERMUX:begin supermux-unread-badge-capsule
                     trailingBadge.frame = NSRect(
-                        x: trailing - badgeSide, y: firstLineCenter - badgeSide / 2,
-                        width: badgeSide, height: badgeSide
+                        x: trailing - badgeSize.width,
+                        y: firstLineCenter - badgeSize.height / 2,
+                        width: badgeSize.width, height: badgeSize.height
                     )
+                    // SUPERMUX:end supermux-unread-badge-capsule
                 }
                 if let spinner = trailingSpinner, !spinner.isHidden {
                     spinner.frame = NSRect(

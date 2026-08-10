@@ -21,6 +21,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     case actionsV1 = "supermux.actions.v1"
     /// File-browser methods are served.
     case filesV1 = "supermux.files.v1"
+    /// Workspace and terminal selection stay synchronized with the Mac.
+    case selectionSyncV1 = "supermux.selection_sync.v1"
+    /// Workspace selection and focused panels of every kind stay synchronized.
+    case selectionSyncV2 = "supermux.selection_sync.v2"
     /// Workspace pane close and Simulator creation methods are served.
     case panesV1 = "supermux.panes.v1"
 

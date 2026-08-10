@@ -7,7 +7,11 @@ struct SidebarWorkspaceLeadingStatusSlot: View {
     let unreadCount: Int
     let side: CGFloat
     let spinnerSide: CGFloat
-    let badgeFont: Font
+    // SUPERMUX:begin supermux-unread-badge-capsule (added parameter)
+    /// The numeral's point size. The shared badge builds its font and derives
+    /// every other dimension from this already-magnified value.
+    let badgePointSize: CGFloat
+    // SUPERMUX:end supermux-unread-badge-capsule
     let badgeFillColor: Color
     let badgeTextColor: Color
     let spinnerColor: NSColor
@@ -19,7 +23,7 @@ struct SidebarWorkspaceLeadingStatusSlot: View {
                 SidebarWorkspaceUnreadBadge(
                     unreadCount: unreadCount,
                     side: side,
-                    font: badgeFont,
+                    pointSize: badgePointSize,
                     fillColor: badgeFillColor,
                     textColor: badgeTextColor
                 )
@@ -33,7 +37,14 @@ struct SidebarWorkspaceLeadingStatusSlot: View {
                 )
             }
         }
-        .frame(width: side, height: side)
-        .clipped()
+        // SUPERMUX:begin supermux-unread-badge-capsule (upstream pinned this slot
+        // to a square `side` x `side` and clipped — see SUPERMUX-TOUCHPOINTS.md)
+        // The badge is a capsule now, so a two-digit count is WIDER than it is
+        // tall. Upstream's square frame plus `.clipped()` would shear the
+        // second digit off. Height stays pinned (rows align on it); width is
+        // only a minimum, so single digits keep the old circular footprint and
+        // wider counts push the title over instead of being cut.
+        .frame(minWidth: side, minHeight: side)
+        // SUPERMUX:end supermux-unread-badge-capsule
     }
 }

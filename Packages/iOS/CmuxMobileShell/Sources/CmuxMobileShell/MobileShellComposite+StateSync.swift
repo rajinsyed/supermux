@@ -351,6 +351,9 @@ extension MobileShellComposite {
                 customColorHex: record.customColorHex,
                 currentDirectory: record.currentDirectory,
                 isSelected: record.isSelected,
+                // SUPERMUX:begin supermux-mobile-selection-sync
+                focusedPanel: record.focusedPanel,
+                // SUPERMUX:end supermux-mobile-selection-sync
                 isPinned: record.isPinned,
                 groupID: record.groupID,
                 preview: record.preview,
@@ -381,7 +384,8 @@ extension MobileShellComposite {
                         url: pullRequest.url,
                         isStale: pullRequest.isStale
                     )
-                }
+                },
+                supermuxUnreadCount: record.supermuxUnreadCount
                 // SUPERMUX:end supermux-mobile-workspace-fields
             )
         }

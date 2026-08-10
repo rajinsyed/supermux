@@ -551,10 +551,10 @@ struct SupermuxProjectWorkspaceRow: View {
                     SupermuxMobileRunIndicator()
                 }
                 if workspace.hasUnread {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 8, height: 8)
-                        .accessibilityHidden(true)
+                    // The same badge the workspace list draws. This was its own
+                    // 8pt accent circle, which made the detail screen a third
+                    // unread indicator alongside the Mac's and the list's.
+                    SupermuxMobileUnreadBadge(count: workspace.unreadCount, fontSize: 10)
                 }
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))

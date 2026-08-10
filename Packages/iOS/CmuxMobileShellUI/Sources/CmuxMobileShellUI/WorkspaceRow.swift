@@ -4,7 +4,6 @@ import CmuxMobileSupport
 import SwiftUI
 
 struct WorkspaceRow: View {
-    private static let unreadDotRailVisualGap: CGFloat = 8
     private static let railTextVisualGap: CGFloat = 10
     private static let railVerticalInset: CGFloat = 5
 
@@ -26,21 +25,28 @@ struct WorkspaceRow: View {
     /// "Preview Lines" setting; 2 is the default). Space is reserved so rows
     /// with short previews keep the same height as their neighbors.
     var previewLineLimit: Int = MobileDisplaySettings.defaultWorkspacePreviewLineCount
+    // SUPERMUX:begin supermux-mobile-unread-badge
+    /// Retained but INERT. This DEBUG-only developer slider nudged the unread
+    /// dot leftward inside its reserved gutter; the gutter is gone and the
+    /// badge is laid out inline, so there is nothing left to shift. Kept as an
+    /// accepted parameter so upstream's whole settings→table→row plumbing (ten
+    /// files, none of which the fork otherwise touches) stays byte-identical
+    /// and merges cleanly. Removing the setting is upstream's call, not a
+    /// reason for the fork to rewrite its pipeline.
     var unreadIndicatorLeftShift: Double = MobileDisplaySettings.defaultUnreadIndicatorLeftShift
+    // SUPERMUX:end supermux-mobile-unread-badge
 
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
-            // Unread is JUST this dot, left of the workspace rail. The
-            // gutter is always present (hidden dot when read) so read and
-            // unread rows line up. Center alignment keeps it centered in the
-            // actual row height as descriptions and previews wrap.
-            WorkspaceUnreadDot(isUnread: workspace.hasUnread, leftShift: unreadIndicatorLeftShift)
-
-            Spacer()
-                .frame(width: unreadDotRailLayoutGap)
-
+            // SUPERMUX:begin supermux-mobile-unread-badge (upstream reserved a
+            // fixed unread gutter here — see SUPERMUX-TOUCHPOINTS.md)
+            // The unread badge now sits inline with the title instead of in a
+            // reserved left column. Upstream's gutter kept every row's text
+            // indented past an empty slot most rows never filled, which is the
+            // blank space that showed up on global workspace rows.
             Color.clear
                 .frame(width: WorkspaceColorRail.width)
+            // SUPERMUX:end supermux-mobile-unread-badge
 
             Spacer()
                 .frame(width: Self.railTextVisualGap)
@@ -58,6 +64,17 @@ struct WorkspaceRow: View {
                         .font(.headline)
                         .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
                         .lineLimit(wrapWorkspaceTitles ? nil : 1)
+
+                    // SUPERMUX:begin supermux-mobile-unread-badge
+                    // Trails the name, the way Mail and Messages badge a row:
+                    // it reads as belonging to this workspace rather than to
+                    // the column of dots it used to sit in.
+                    WorkspaceUnreadDot(
+                        isUnread: workspace.hasUnread,
+                        unreadCount: workspace.supermuxUnreadCount
+                    )
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                    // SUPERMUX:end supermux-mobile-unread-badge
 
                     Spacer(minLength: 8)
 
@@ -131,18 +148,12 @@ struct WorkspaceRow: View {
         }
     }
 
-    private var unreadDotRailLayoutGap: CGFloat {
-        let dotTrailing = (WorkspaceUnreadDot.gutterWidth + WorkspaceUnreadDot.dotDiameter) / 2
-            - CGFloat(unreadIndicatorLeftShift)
-        return max(
-            0,
-            Self.unreadDotRailVisualGap + dotTrailing - WorkspaceUnreadDot.gutterWidth
-        )
-    }
-
-    private var railLeadingOffset: CGFloat {
-        WorkspaceUnreadDot.gutterWidth + unreadDotRailLayoutGap
-    }
+    // SUPERMUX:begin supermux-mobile-unread-badge
+    /// The color rail now starts at the row's own leading edge: with the unread
+    /// gutter gone there is nothing to offset past. (upstream: gutter width
+    /// plus a dot-derived gap.)
+    private var railLeadingOffset: CGFloat { 0 }
+    // SUPERMUX:end supermux-mobile-unread-badge
 }
 
 struct WorkspaceColorRail: View {

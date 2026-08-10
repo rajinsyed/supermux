@@ -38,6 +38,11 @@ enum SupermuxMobileCapabilities {
             // files.rename / files.duplicate / files.trash (root-confined,
             // trash-only deletion).
             SupermuxMobileCapability.filesV1.rawValue,
+            // v1 preserves compatibility with phones that know only terminal
+            // focus; v2 adds browser, Simulator, and every other panel kind via
+            // the same shared focus path as the Mac UI and control socket.
+            SupermuxMobileCapability.selectionSyncV1.rawValue,
+            SupermuxMobileCapability.selectionSyncV2.rawValue,
             // Generic workspace-panel close and native Simulator creation are
             // served. The latter still checks the upstream Simulator feature
             // flag and capability at request/UI time.

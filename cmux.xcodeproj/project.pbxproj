@@ -2158,6 +2158,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		50BE000200000000000000CB /* SupermuxMobileObserversTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */; };
 		50BE000200000000000000D8 /* SupermuxMobileRunObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000D7 /* SupermuxMobileRunObserver.swift */; };
 		50BE000200000000000000DA /* SupermuxMobileRunObserverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000D9 /* SupermuxMobileRunObserverTests.swift */; };
+		50BE000200000000000000DD /* SupermuxMobileSelectionSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000DE /* SupermuxMobileSelectionSync.swift */; };
 		50BE000200000000000000C6 /* SupermuxMobileWorkspaceListAugmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C5 /* SupermuxMobileWorkspaceListAugmenter.swift */; };
 		50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */; };
 		50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */; };
@@ -4851,6 +4852,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 		50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObserversTests.swift; sourceTree = "<group>"; };
 		50BE000200000000000000D7 /* SupermuxMobileRunObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileRunObserver.swift; sourceTree = "<group>"; };
 		50BE000200000000000000D9 /* SupermuxMobileRunObserverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileRunObserverTests.swift; sourceTree = "<group>"; };
+		50BE000200000000000000DE /* SupermuxMobileSelectionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileSelectionSync.swift; sourceTree = "<group>"; };
 		50BE000200000000000000C5 /* SupermuxMobileWorkspaceListAugmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileWorkspaceListAugmenter.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNewWorkspaceHomeDirectoryTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxProjectsSectionHeightPreferenceKey.swift; sourceTree = "<group>"; };
@@ -5586,6 +5588,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000200000000000000DB /* SupermuxMobileHost+Files.swift */,
 				50BE000200000000000000B5 /* SupermuxMobileAuthorization.swift */,
 				50BE000200000000000000B7 /* SupermuxMobileCapabilities.swift */,
+				50BE000200000000000000DE /* SupermuxMobileSelectionSync.swift */,
 				50BE000200000000000000B9 /* SupermuxMobileObservers.swift */,
 				50BE000200000000000000CF /* SupermuxMobileChangesWatchRegistry.swift */,
 				50BE000200000000000000C3 /* SupermuxMobileActivityObserver.swift */,
@@ -10077,6 +10080,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */,
 				50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */,
 				50BE000200000000000000D8 /* SupermuxMobileRunObserver.swift in Sources */,
+				50BE000200000000000000DD /* SupermuxMobileSelectionSync.swift in Sources */,
 				50BE000200000000000000C6 /* SupermuxMobileWorkspaceListAugmenter.swift in Sources */,
 				50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */,
 				50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */,

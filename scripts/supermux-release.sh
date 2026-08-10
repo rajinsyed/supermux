@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# supermux-release.sh — build a Release "Supermux" app, sign it with your
-# Developer ID, and install it to /Applications so it runs like a normal,
-# double-clickable app.
+# supermux-release.sh — build the main Release "Supermux" apps: sign and
+# install the Mac app in /Applications, then build the untagged production iOS
+# Release, sign it under the owner's Apple team, and install it on their iPhone.
 #
 # Edits NO upstream files: the build is produced UNSIGNED with cmux's native
 # bundle ids, then the COPIED bundle is rebranded (Info.plist patches) and
@@ -20,8 +20,10 @@
 # upstream cmux — rerun this script after pulling updates instead.
 #
 # Usage:
-#   ./scripts/supermux-release.sh                # build, install, launch
-#   ./scripts/supermux-release.sh --no-launch
+#   ./scripts/supermux-release.sh                # Mac + iPhone: build, install, launch
+#   ./scripts/supermux-release.sh --no-launch    # install both without launching
+#   ./scripts/supermux-release.sh --no-ios       # Mac release only
+#   ./scripts/supermux-release.sh --ios-device-id <coredevice-id>
 #   SUPERMUX_SIGN_IDENTITY="Developer ID Application: NAME (TEAMID)" ./scripts/supermux-release.sh
 #
 set -euo pipefail
@@ -36,6 +38,59 @@ DERIVED_DATA="${HOME}/Library/Developer/Xcode/DerivedData/cmux-supermux-release"
 # Signing identity: set SUPERMUX_SIGN_IDENTITY explicitly, otherwise the first
 # "Developer ID Application" certificate in the keychain is used.
 SIGN_IDENTITY="${SUPERMUX_SIGN_IDENTITY:-}"
+LAUNCH=1
+BUILD_IOS=1
+IOS_DEVICE_ID=""
+
+# Isolated runtime sockets so Supermux never fights an installed/running cmux.
+APP_SUPPORT_DIR="${HOME}/Library/Application Support/cmux"
+CMUXD_SOCKET="${APP_SUPPORT_DIR}/cmuxd-supermux.sock"
+CMUX_SOCKET_PATH_VALUE="/tmp/supermux.sock"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/supermux-release.sh                # Mac + iPhone: build, install, launch
+  ./scripts/supermux-release.sh --no-launch    # install both without launching
+  ./scripts/supermux-release.sh --no-ios       # Mac release only
+  ./scripts/supermux-release.sh --ios-device-id <coredevice-id>
+
+Environment:
+  SUPERMUX_SIGN_IDENTITY         Developer ID identity for the Mac app
+  SUPERMUX_IOS_DEVELOPMENT_TEAM Apple team for the directly installed iOS app
+  SUPERMUX_IOS_DEVICE_ID         CoreDevice id for the target iPhone
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-launch)
+      LAUNCH=0
+      shift
+      ;;
+    --no-ios)
+      BUILD_IOS=0
+      shift
+      ;;
+    --ios-device-id)
+      if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+        echo "error: --ios-device-id requires a value" >&2
+        exit 1
+      fi
+      IOS_DEVICE_ID="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown option $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
 if [[ -z "${SIGN_IDENTITY}" ]]; then
   SIGN_IDENTITY="$(security find-identity -v -p codesigning \
     | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
@@ -45,20 +100,6 @@ if [[ -z "${SIGN_IDENTITY}" ]]; then
   echo '       Set SUPERMUX_SIGN_IDENTITY="Developer ID Application: NAME (TEAMID)"' >&2
   exit 1
 fi
-LAUNCH=1
-
-# Isolated runtime sockets so Supermux never fights an installed/running cmux.
-APP_SUPPORT_DIR="${HOME}/Library/Application Support/cmux"
-CMUXD_SOCKET="${APP_SUPPORT_DIR}/cmuxd-supermux.sock"
-CMUX_SOCKET_PATH_VALUE="/tmp/supermux.sock"
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --no-launch) LAUNCH=0; shift ;;
-    -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "error: unknown option $1" >&2; exit 1 ;;
-  esac
-done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -256,4 +297,11 @@ if [[ "${LAUNCH}" -eq 1 ]]; then
     CMUXD_UNIX_PATH="${CMUXD_SOCKET}" \
     open "${INSTALL_APP}"
   echo "==> Launched ${APP_NAME}"
+fi
+
+if [[ "${BUILD_IOS}" -eq 1 ]]; then
+  ios_release_args=()
+  [[ "${LAUNCH}" -eq 0 ]] && ios_release_args+=(--no-launch)
+  [[ -n "${IOS_DEVICE_ID}" ]] && ios_release_args+=(--device-id "${IOS_DEVICE_ID}")
+  "${REPO_ROOT}/scripts/supermux-ios-release.sh" "${ios_release_args[@]}"
 fi
