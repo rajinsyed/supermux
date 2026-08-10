@@ -65,11 +65,15 @@ struct SupermuxOpenWorkspaceRowView: View {
             }
             // The same numbered unread capsule cmux's flat rows draw, rightmost
             // like the phone's nested rows, so a workspace shows its unread
-            // count whether it renders flat, nested, or on the phone.
+            // count whether it renders flat, nested, or on the phone. 7pt, not
+            // the flat rows' 9pt: the shared style's capsule stands 1.6× its
+            // font, and this row's neighbors are smaller than a flat row's —
+            // an 11pt PR icon and a 6pt activity spinner — so 7pt lands the
+            // capsule at 11pt, level with the PR badge instead of over it.
             if workspace.unreadCount > 0 {
                 SupermuxUnreadBadgeView(
                     count: workspace.unreadCount,
-                    fontSize: 9 * fontScale,
+                    fontSize: 7 * fontScale,
                     fillColor: unreadBadgeFillColor,
                     textColor: .white
                 )
