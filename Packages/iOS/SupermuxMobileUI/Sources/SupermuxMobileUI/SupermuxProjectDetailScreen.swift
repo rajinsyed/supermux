@@ -33,6 +33,8 @@ public struct SupermuxProjectDetailScreen: View {
     /// event stream is structured — cancelled when the screen disappears.
     @State private var worktreesStore: SupermuxMobileWorktreesStore?
     @State private var showingNewWorktreeSheet = false
+    @State private var isPreparingNewWorktree = false
+    @State private var newWorktreeErrorMessage: String?
     /// The row awaiting the FIRST (always-shown) destructive removal confirm.
     @State private var removalCandidate: SupermuxWorktreeRowSnapshot?
     /// Error surface for a failed worktree open.
@@ -169,19 +171,43 @@ public struct SupermuxProjectDetailScreen: View {
             if let store = worktreesStore {
                 SupermuxNewWorktreeSheet(
                     projectName: row.name,
+                    branches: store.branches,
+                    defaultBaseBranch: row.defaultBranch,
+                    showsBaseBranchPicker: store.supportsStartingBranchSelection,
                     suggestBranch: { workspaceName in
                         try await store.suggestBranchName(workspaceName: workspaceName).branchName
                     },
-                    createWorktree: { workspaceName, branchName, open in
+                    createWorktree: { workspaceName, branchName, baseBranch, open in
                         try await store.createWorktree(
                             workspaceName: workspaceName,
                             branchName: branchName,
+                            baseBranch: baseBranch,
                             open: open
                         ).workspaceId
                     },
                     openWorkspace: selectWorkspace
                 )
             }
+        }
+        .alert(
+            String(
+                localized: "supermux.newWorktree.title",
+                defaultValue: "New Worktree",
+                bundle: .module
+            ),
+            isPresented: Binding(
+                get: { newWorktreeErrorMessage != nil },
+                set: { if !$0 { newWorktreeErrorMessage = nil } }
+            ),
+            presenting: newWorktreeErrorMessage
+        ) { _ in
+            Button(role: .cancel) {
+                newWorktreeErrorMessage = nil
+            } label: {
+                Text(String(localized: "supermux.common.ok", defaultValue: "OK", bundle: .module))
+            }
+        } message: { message in
+            Text(message)
         }
         .confirmationDialog(
             removalCandidate.map { candidate in
@@ -323,7 +349,8 @@ public struct SupermuxProjectDetailScreen: View {
                 SupermuxWorktreesSection(
                     hasLoaded: store.hasLoaded,
                     rows: SupermuxWorktreeRowSnapshot.rows(from: store.worktrees),
-                    newWorktree: { showingNewWorktreeSheet = true },
+                    isPreparingNewWorktree: isPreparingNewWorktree,
+                    newWorktree: prepareNewWorktree,
                     openWorktree: { openWorktree($0) },
                     requestRemoval: { removalCandidate = $0 }
                 )
@@ -405,6 +432,24 @@ public struct SupermuxProjectDetailScreen: View {
     }
 
     // MARK: - Worktree flows
+
+    /// Fetches an authoritative branch snapshot immediately before presenting
+    /// the create sheet. Branch-only git changes do not emit worktree events,
+    /// so the detail screen's long-lived cache is intentionally not trusted.
+    private func prepareNewWorktree() {
+        guard let store = worktreesStore, !isPreparingNewWorktree else { return }
+        isPreparingNewWorktree = true
+        newWorktreeErrorMessage = nil
+        Task {
+            defer { isPreparingNewWorktree = false }
+            do {
+                try await store.refreshBranches()
+                showingNewWorktreeSheet = true
+            } catch {
+                newWorktreeErrorMessage = error.localizedDescription
+            }
+        }
+    }
 
     /// Open worktrees navigate straight to their workspace (same idiom as the
     /// nested workspace rows); unopened ones ask the Mac to open a workspace

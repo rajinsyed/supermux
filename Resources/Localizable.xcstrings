@@ -264038,13 +264038,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Default (HEAD)"
+            "value" : "Repository HEAD"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "デフォルト（HEAD）"
+            "value" : "リポジトリの HEAD"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.base.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Includes committed changes from the selected branch. Uncommitted changes aren’t copied."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したブランチのコミット済みの変更が含まれます。未コミットの変更はコピーされません。"
           }
         }
       }
@@ -264055,13 +264072,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Base branch"
+            "value" : "Start from"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ベースブランチ"
+            "value" : "開始元"
           }
         }
       }
