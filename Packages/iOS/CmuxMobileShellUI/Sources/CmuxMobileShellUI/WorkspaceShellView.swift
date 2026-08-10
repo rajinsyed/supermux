@@ -5,6 +5,9 @@ import CmuxMobileShellModel
 import CmuxMobileSupport
 import CmuxMobileToast
 import CmuxMobileWorkspace
+// SUPERMUX:begin supermux-mobile-compact-root-chrome (root chrome follows the interactive pop — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-compact-root-chrome
 import SwiftUI
 #if os(iOS)
 @preconcurrency import UIKit
@@ -190,6 +193,9 @@ struct WorkspaceShellView: View {
     @State private var rootToolbarPendingSelection: WorkspaceMacSelection?
     @State private var rootToolbarSelectionTask: Task<Void, Never>?
     @State private var rootToolbarSelectionGeneration: UInt64 = 0
+    // SUPERMUX:begin supermux-mobile-compact-root-chrome
+    @State private var compactRootChrome = SupermuxCompactRootChrome()
+    // SUPERMUX:end supermux-mobile-compact-root-chrome
     #endif
     @State private var primarySearchCoordinator = MobilePrimarySearchCoordinator()
     @State private var workspaceListFilterState = WorkspaceListFilterState()
@@ -221,6 +227,22 @@ struct WorkspaceShellView: View {
         #endif
     }
 
+    // SUPERMUX:begin supermux-mobile-compact-root-chrome
+    /// Whether the phone's ROOT chrome (list toolbar items, tab bar, compose
+    /// button) belongs on screen right now. Everything that used to read
+    /// `compactNavigationPath.isEmpty` reads this instead, so all of it appears
+    /// and disappears together — including during an edge-swipe back, which
+    /// reveals the root long before the path is written. See
+    /// `SupermuxCompactRootChrome`.
+    var showsCompactRootChrome: Bool {
+        #if os(iOS)
+        compactRootChrome.isVisible(pathIsEmpty: compactNavigationPath.isEmpty)
+        #else
+        compactNavigationPath.isEmpty
+        #endif
+    }
+    // SUPERMUX:end supermux-mobile-compact-root-chrome
+
     private var listConnectionStatus: MobileMacConnectionStatus {
         if isInitialConnectionLoading || initialConnectionTimedOut {
             return .reconnecting
@@ -241,9 +263,11 @@ struct WorkspaceShellView: View {
                 selection: $selectedPrimaryTab,
                 searchCoordinator: primarySearchCoordinator,
                 notificationUnreadCount: presentation.notificationUnreadCount,
-                taskComposerAction: usesCompactStack && !compactNavigationPath.isEmpty
+                // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                taskComposerAction: usesCompactStack && !showsCompactRootChrome
                     ? nil
                     : taskComposerAction
+                // SUPERMUX:end supermux-mobile-compact-root-chrome
             ) {
                 workspaceTabContent(
                     canCreateWorkspaceForSelection: presentation.canCreateWorkspaceForSelection
@@ -496,9 +520,11 @@ struct WorkspaceShellView: View {
                 )
             }
             .toolbar {
-                if compactNavigationPath.isEmpty {
+                // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                if showsCompactRootChrome {
                     rootToolbarContent
                 }
+                // SUPERMUX:end supermux-mobile-compact-root-chrome
             }
             .navigationDestination(for: MobileWorkspacePreview.ID.self) { workspaceID in
                 workspaceDestination(
@@ -512,7 +538,18 @@ struct WorkspaceShellView: View {
                     )
                 )
                     #if os(iOS)
-                    .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
+                    // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                    // The hide request lives on the pushed destination, and the
+                    // destination stays mounted for the whole pop animation — so
+                    // a constant `.hidden` kept the tab bar suppressed until
+                    // SwiftUI finally retired it, which is the ~1s late arrival.
+                    // Driving it from the root-chrome predicate lets the outgoing
+                    // detail release the bar as the pop starts.
+                    .toolbarVisibility(
+                        showsCompactRootChrome ? .automatic : .hidden,
+                        for: .tabBar, .bottomBar
+                    )
+                    // SUPERMUX:end supermux-mobile-compact-root-chrome
                     #endif
                     // Only on the pushed compact stack (where a back button
                     // exists): replace the system back button with a custom one
@@ -521,6 +558,15 @@ struct WorkspaceShellView: View {
                     // swipe-back, so re-enable it via InteractiveSwipeBackEnabler.
                     .navigationBarBackButtonHidden(true)
                     .background(InteractiveSwipeBackEnabler())
+                    // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                    .background(SupermuxInteractivePopObserver { revealsRoot in
+                        if revealsRoot {
+                            compactRootChrome.interactivePopBegan()
+                        } else {
+                            compactRootChrome.interactivePopRolledBack()
+                        }
+                    })
+                    // SUPERMUX:end supermux-mobile-compact-root-chrome
             }
         }
         .onChange(of: store.selectedWorkspaceID) { _, selectedWorkspaceID in
@@ -542,6 +588,11 @@ struct WorkspaceShellView: View {
             autoOpenSelectedWorkspaceForSoakIfNeeded()
         }
         .onChange(of: compactNavigationPath) { _, path in
+            // SUPERMUX:begin supermux-mobile-compact-root-chrome
+            // The path is authoritative again. Clearing here is what keeps a
+            // completed swipe from leaking root chrome onto the next push.
+            compactRootChrome.navigationPathChanged()
+            // SUPERMUX:end supermux-mobile-compact-root-chrome
             guard let selectedWorkspaceID = path.last else {
                 return
             }
@@ -652,8 +703,10 @@ struct WorkspaceShellView: View {
             macUpdateHintMacName: store.connectedHostName,
             dismissMacUpdateHint: { store.dismissMacUpdateHint() },
             navigationStyle: navigationStyle,
+            // SUPERMUX:begin supermux-mobile-compact-root-chrome
             showsNavigationToolbar: showsNavigationToolbar
-                ?? (navigationStyle != .push || compactNavigationPath.isEmpty),
+                ?? (navigationStyle != .push || showsCompactRootChrome),
+            // SUPERMUX:end supermux-mobile-compact-root-chrome
             usesExternalSharedToolbar: true,
             wrapWorkspaceTitles: displaySettings.wrapWorkspaceTitles,
             previewLineLimit: displaySettings.workspacePreviewLineCount,
