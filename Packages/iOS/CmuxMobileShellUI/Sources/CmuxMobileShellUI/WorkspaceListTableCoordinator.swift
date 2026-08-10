@@ -270,10 +270,34 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
             dataSource.replaceItems(next.items, in: tableView)
             appliedItems = next.items
         } else {
-            let changedIndexPaths = changedToApply.compactMap { dataSource.indexPath(for: $0) }
-            if !changedIndexPaths.isEmpty {
-                tableView.reloadRows(at: changedIndexPaths, with: .none)
+            // SUPERMUX:begin supermux-mobile-list-reconfigure-rows (height-only updates must RECONFIGURE, not reload — see SUPERMUX-TOUCHPOINTS.md)
+            // Reaching here means a changed row's height moved, its native
+            // action payload changed, or both. Those need different APIs:
+            //
+            // `reloadRows` hands back a DIFFERENT cell instance, which destroys
+            // the hosted SwiftUI subtree and every `@State` and `.task` in it.
+            // For a mere height change that is pure waste, and it is visible:
+            // the fork's Projects section is one hosted cell, so an unrelated
+            // row growing a line blanked every project avatar (their decoded
+            // icons live in `@State`) and re-issued their icon fetches.
+            // Measured: reconfiguring keeps the same cell AND still re-queries
+            // the height (48 → 96), which is the whole reason to reload here.
+            //
+            // A native-action change is the exception that still needs the
+            // reload: UIKit caches swipe-derived accessibility actions on the
+            // cell and reconfiguring does not invalidate that cache (the same
+            // reason `didEndEditingRowAt` reloads).
+            let reloadItems = changedToApply.filter { nativeActionReloadIDs.contains($0.id) }
+            let reconfigureItems = changedToApply.filter { !nativeActionReloadIDs.contains($0.id) }
+            let reloadIndexPaths = reloadItems.compactMap { dataSource.indexPath(for: $0) }
+            let reconfigureIndexPaths = reconfigureItems.compactMap { dataSource.indexPath(for: $0) }
+            if !reconfigureIndexPaths.isEmpty {
+                tableView.reconfigureRows(at: reconfigureIndexPaths)
             }
+            if !reloadIndexPaths.isEmpty {
+                tableView.reloadRows(at: reloadIndexPaths, with: .none)
+            }
+            // SUPERMUX:end supermux-mobile-list-reconfigure-rows
         }
         #if DEBUG
         recordPayloadApplyRoute(.tableReload)

@@ -57,9 +57,33 @@ extension WorkspaceListView {
         filterMachines: [WorkspaceFilterMachine]
     ) -> some View {
         #if os(iOS)
-            if showsNavigationToolbar {
-                content
-                    .toolbar {
+            // SUPERMUX:begin supermux-mobile-list-toolbar-identity (the toolbar condition MUST live inside the builder, never as an if/else around `content` — see SUPERMUX-TOUCHPOINTS.md)
+            // `showsNavigationToolbar` is `navigationStyle != .push ||
+            // compactNavigationPath.isEmpty` (`WorkspaceShellView.swift:495`),
+            // so on the phone — where the style is always `.push` — it is
+            // exactly `compactNavigationPath.isEmpty`: it flips false on every
+            // push and true on every pop.
+            //
+            // This used to be `if showsNavigationToolbar { content.toolbar {…} }
+            // else { content }`. Putting the same `content` in two branches of a
+            // `_ConditionalContent` gives it a DIFFERENT structural identity per
+            // branch, so entering or leaving a workspace tore down and rebuilt
+            // everything inside — including `WorkspaceListTable`, a
+            // `UIViewControllerRepresentable`. A fresh table controller meant a
+            // scroll offset reset to zero, `attach()` clearing
+            // `previousConfiguration`/`appliedItems` so the next `apply` saw
+            // `structureChanged` and rebuilt every cell from scratch, and every
+            // hosted `.task` re-firing (the Projects avatars visibly blanked).
+            // Measured: a push+pop built the representable three times and moved
+            // the offset 1200 → 0.
+            //
+            // Keeping ONE `content` and gating only the toolbar's CONTENT holds
+            // the identity stable, so the table controller survives the
+            // navigation and keeps its scroll position. This is the same shape
+            // `WorkspaceShellView.swift:498` already uses for `rootToolbarContent`.
+            content
+                .toolbar {
+                    if showsNavigationToolbar {
                         if !usesExternalSharedToolbar {
                             ToolbarItem(id: "workspace-list-settings", placement: .topBarLeading) {
                                 settingsMenu
@@ -88,9 +112,8 @@ extension WorkspaceListView {
                             }
                         }
                     }
-            } else {
-                content
-            }
+                }
+            // SUPERMUX:end supermux-mobile-list-toolbar-identity
         #else
             content
                 .toolbar {

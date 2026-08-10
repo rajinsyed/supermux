@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **249**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **251**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -268,12 +268,37 @@ Rules for adding a touchpoint:
 | 247 | `Packages/iOS/CmuxMobileTerminal/Sources/CmuxMobileTerminal/GhosttySurfaceView.swift` | `ios-terminal-default-zoom` | Replaces the initializer's stale literal 10 pt default with `MobileTerminalFontPreference.defaultSize`, preventing the public surface default from drifting from the canonical preference |
 | 248 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+TerminalArtifacts.swift` | `ios-terminal-default-zoom` | Mounts each newly selected terminal at `MobileTerminalZoomPreference.resolvedFontSize`, making the floating "Set as default" action affect subsequent terminal mounts instead of only the floating Reset action |
 | 249 | `Packages/iOS/CmuxMobileTerminal/Tests/CmuxMobileTerminalTests/MobileTerminalZoomControlTests.swift` | `unfenced` | Whole-file regression coverage for the 12 pt built-in, saved-default persistence/clearing, and all three floating zoom buttons dispatching their actions |
+| 250 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Toolbar.swift` | `supermux-mobile-list-toolbar-identity` | Moves the `showsNavigationToolbar` condition INSIDE the `.toolbar` builder instead of branching around `content`. Upstream's `if showsNavigationToolbar { content.toolbar {…} } else { content }` gave `content` a different structural identity per branch, so every workspace push/pop tore down and rebuilt `WorkspaceListTable` (a `UIViewControllerRepresentable`) — resetting scroll to zero, forcing a full `structureChanged` rebuild of every cell, and re-firing every hosted `.task`. Measured: push+pop built the representable 3× and moved the offset 1200 → 0 |
+| 251 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListTableCoordinator.swift` | `supermux-mobile-list-reconfigure-rows` | Splits the non-structural update path: rows whose height changed go through `reconfigureRows(at:)` (same cell instance, hosted SwiftUI state preserved, height still re-queried), while only rows with a changed native-action payload keep `reloadRows` (UIKit caches swipe-derived accessibility actions on the cell and reconfiguring does not invalidate them). Previously every height change reloaded, destroying the hosted subtree — which blanked the fork's project avatars, since the whole Projects section is one hosted cell and its decoded icons live in `@State`. Distinct from #150, which fences the same file for the Projects row itself |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
 ### 245–249. iOS terminal default zoom — `ios-terminal-default-zoom`
 
 Keep `MobileTerminalFontPreference.defaultSize` at 12 pt and make every defaulted `GhosttySurfaceView` initializer reference that constant rather than duplicating a number. `MobileTerminalZoomPreference.resolvedFontSize` must return the explicitly saved size when present and the built-in 12 pt size otherwise. The production terminal mount in `WorkspaceDetailView+TerminalArtifacts.swift` must pass that resolved value into `GhosttySurfaceRepresentable`; passing the built-in constant directly recreates the bug where tapping the floating "Set as default" button persists a value that no newly selected terminal ever reads. The floating Reset action continues to apply the resolved value, while Restore built-in clears the explicit preference and applies 12 pt. Keep `MobileTerminalZoomControlTests` in the package test target to cover persistence/clearing and dispatch from all three floating buttons.
+
+### 250. Workspace-list toolbar identity — `supermux-mobile-list-toolbar-identity`
+
+The rule is one sentence: **never branch around `content` to add or remove the toolbar.** Keep a
+single `content.toolbar { … }` and put `if showsNavigationToolbar` inside the
+`ToolbarContentBuilder`. Two branches of a `_ConditionalContent` are two structural identities, so
+an `if/else` around `content` destroys and rebuilds everything it wraps — including the UIKit table
+— on every push and pop. `WorkspaceShellView.swift` already does it the correct way for
+`rootToolbarContent`; match that shape. If an upstream merge reintroduces the `if/else`, the symptom
+is the workspace list losing its scroll position and visibly repainting when you navigate back, not
+a compile error.
+
+### 251. Reconfigure, don't reload, on height-only updates — `supermux-mobile-list-reconfigure-rows`
+
+In `apply(configuration:in:)`, the non-structural branch must partition `changedToApply` on
+`nativeActionReloadIDs`: reconfigure the rest, reload only those. `reconfigureRows(at:)` keeps the
+same cell instance (so hosted SwiftUI `@State` and `.task` survive) while still re-querying the row
+height, which is the only thing that branch actually needs. `reloadRows` is still required for a
+changed native-action payload because UIKit caches swipe-derived accessibility actions on the cell.
+Leave the `reloadRows` in `didEndEditingRowAt` alone — it exists for that same cache and runs at
+UIKit's own boundary after the swipe controls close. Reverting to a blanket `reloadRows` here does
+not fail any build; it silently reintroduces project avatars blanking whenever an unrelated row
+changes height.
 
 ### 228–229, 237. Persistent iOS workspace toolbar actions — `ios-workspace-toolbar-persistent-actions`
 
