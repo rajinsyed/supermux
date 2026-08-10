@@ -15,7 +15,9 @@ extension WorkspaceDetailView {
         workspaceID: workspace.id.rawValue,
         surfaceID: terminalID,
         store: store,
-        fontSize: MobileTerminalFontPreference.defaultSize,
+        // SUPERMUX:begin ios-terminal-default-zoom
+        fontSize: MobileTerminalZoomPreference().resolvedFontSize,
+        // SUPERMUX:end ios-terminal-default-zoom
         // Do not let a terminal reattach steal focus while the
         // composer owns or intentionally withholds the keyboard.
         autoFocusOnWindowAttach: shouldAutoFocus,

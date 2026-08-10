@@ -782,7 +782,10 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
     ///   - terminalConfigTheme: Raw Ghostty configuration defaults. Defaults to
     ///     `terminalTheme` for callers that do not mirror a remote surface.
     public init(runtime: GhosttyRuntime, delegate: GhosttySurfaceViewDelegate,
-                fontSize: Float32 = 10, terminalTheme: TerminalTheme = .monokai,
+                // SUPERMUX:begin ios-terminal-default-zoom
+                fontSize: Float32 = MobileTerminalFontPreference.defaultSize,
+                // SUPERMUX:end ios-terminal-default-zoom
+                terminalTheme: TerminalTheme = .monokai,
                 terminalConfigTheme: TerminalTheme? = nil) {
         self.runtime = runtime
         self.delegate = delegate

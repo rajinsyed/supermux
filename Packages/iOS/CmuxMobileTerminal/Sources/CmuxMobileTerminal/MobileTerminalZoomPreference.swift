@@ -24,6 +24,13 @@ public final class MobileTerminalZoomPreference {
     /// The user's saved default font size in points, or `nil` if none saved.
     public private(set) var savedFontSize: Float32?
 
+    // SUPERMUX:begin ios-terminal-default-zoom
+    /// The font size a newly mounted terminal should use.
+    public var resolvedFontSize: Float32 {
+        savedFontSize ?? MobileTerminalFontPreference.defaultSize
+    }
+    // SUPERMUX:end ios-terminal-default-zoom
+
     /// Creates a preference store.
     ///
     /// - Parameter defaults: The backing store. Tests pass a
