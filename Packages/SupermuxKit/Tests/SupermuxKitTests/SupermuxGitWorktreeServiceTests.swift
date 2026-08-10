@@ -91,6 +91,34 @@ import SupermuxKit
         #expect(await service.currentBranch(repoRoot: fixture.root) == "main")
     }
 
+    @Test func localBranchesListsBranchesAvailableAsStartingPoints() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        try GitFixture.runGit(["branch", "experiment"], in: fixture.root)
+
+        let branches = try await service.localBranches(repoRoot: fixture.root)
+
+        #expect(Set(branches) == ["main", "experiment"])
+    }
+
+    @Test func localBranchesUsesUnambiguousHeadsRelativeNames() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        try GitFixture.runGit(["tag", "main"], in: fixture.root)
+
+        let branches = try await service.localBranches(repoRoot: fixture.root)
+
+        #expect(branches == ["main"])
+    }
+
+    @Test func localBranchesSurfacesProbeFailures() async {
+        let service = SupermuxGitWorktreeService(runner: FailingBranchListRunner())
+
+        await #expect(throws: SupermuxGitError.self) {
+            _ = try await service.localBranches(repoRoot: "/repo")
+        }
+    }
+
     // MARK: - Worktree creation
 
     @Test func createWorktreeSanitizesBranchAndConfiguresCheckout() async throws {
@@ -126,6 +154,48 @@ import SupermuxKit
             in: fixture.root
         )
         #expect(autoSetupRemote.trimmingCharacters(in: .whitespacesAndNewlines) == "true")
+    }
+
+    @Test func createWorktreePrefersMainWhenNoBaseIsConfigured() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        try GitFixture.runGit(["switch", "-c", "develop"], in: fixture.root)
+        try GitFixture.write("develop only\n", to: "DEVELOP.md", in: fixture.root)
+        try GitFixture.runGit(["add", "DEVELOP.md"], in: fixture.root)
+        try GitFixture.commit("Develop commit", in: fixture.root)
+
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature"
+        )
+
+        #expect(!FileManager.default.fileExists(
+            atPath: (worktree.path as NSString).appendingPathComponent("DEVELOP.md")
+        ))
+        let recordedBase = try GitFixture.runGit(
+            ["config", "branch.feature.base"],
+            in: fixture.root
+        )
+        #expect(recordedBase.trimmingCharacters(in: .whitespacesAndNewlines) == "main")
+    }
+
+    @Test func createWorktreeRespectsExplicitRepositoryHead() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        try GitFixture.runGit(["switch", "-c", "develop"], in: fixture.root)
+        try GitFixture.write("develop only\n", to: "DEVELOP.md", in: fixture.root)
+        try GitFixture.runGit(["add", "DEVELOP.md"], in: fixture.root)
+        try GitFixture.commit("Develop commit", in: fixture.root)
+
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature",
+            baseBranch: "HEAD"
+        )
+
+        #expect(FileManager.default.fileExists(
+            atPath: (worktree.path as NSString).appendingPathComponent("DEVELOP.md")
+        ))
     }
 
     @Test func createWorktreeGeneratesFriendlyNameWhenBranchBlank() async throws {
@@ -352,6 +422,30 @@ import SupermuxKit
         let branch = try #require(worktree.branch)
         let recordedBase = try GitFixture.runGit(["config", "branch.\(branch).base"], in: fixture.root)
         #expect(recordedBase.trimmingCharacters(in: .whitespacesAndNewlines) == "main")
+    }
+
+    @Test func createWorktreeStartsFromSelectedBranchCommit() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        try GitFixture.runGit(["switch", "-c", "experiment"], in: fixture.root)
+        try GitFixture.write("selected branch\n", to: "EXPERIMENT.md", in: fixture.root)
+        try GitFixture.runGit(["add", "EXPERIMENT.md"], in: fixture.root)
+        try GitFixture.commit("Experiment commit", in: fixture.root)
+        let experimentCommit = try GitFixture.runGit(["rev-parse", "HEAD"], in: fixture.root)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        try GitFixture.runGit(["switch", "main"], in: fixture.root)
+
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "new-experiment",
+            baseBranch: "experiment"
+        )
+
+        let selectedBranchFile = (worktree.path as NSString).appendingPathComponent("EXPERIMENT.md")
+        #expect(FileManager.default.fileExists(atPath: selectedBranchFile))
+        let worktreeCommit = try GitFixture.runGit(["rev-parse", "HEAD"], in: worktree.path)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(worktreeCommit == experimentCommit)
     }
 
     // MARK: - Worktree removal
@@ -679,6 +773,25 @@ import SupermuxKit
 // The `/usr/bin/env VAR=… git` unwrapping these fakes rely on lives in
 // `SupermuxGitTestSupport.swift` (`unwrappedGitArguments`), shared with the
 // changes-service fakes.
+
+/// Fails only the local-branch probe so the service's error propagation is
+/// deterministic without touching a repository.
+private actor FailingBranchListRunner: CommandRunning {
+    func run(
+        directory: String,
+        executable: String,
+        arguments: [String],
+        timeout: TimeInterval?
+    ) async -> CommandResult {
+        CommandResult(
+            stdout: nil,
+            stderr: "branch probe failed",
+            exitStatus: 2,
+            timedOut: false,
+            executionError: nil
+        )
+    }
+}
 
 /// Delegates to the real `CommandRunner`, but creates the branch the first
 /// `worktree add` is about to claim just before running it — simulating a

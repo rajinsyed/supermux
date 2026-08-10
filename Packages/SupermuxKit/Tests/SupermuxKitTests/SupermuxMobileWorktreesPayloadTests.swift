@@ -65,10 +65,12 @@ struct SupermuxMobileWorktreesPayloadTests {
 
         let payload = try SupermuxMobileWorktreesPayloadBuilder().worktreesList(
             worktrees: worktrees,
+            branches: ["main", "experiment"],
             openWorkspaces: [],
             pullRequestsByWorktreePath: model.pullRequestsByWorktreePath
         )
 
+        #expect(payload["branches"] as? [String] == ["main", "experiment"])
         let entries = try #require(payload["worktrees"] as? [[String: Any]])
         #expect(entries.count == 1)
         let dto = try SupermuxWireJSON().decode(SupermuxWorktreeDTO.self, from: try #require(entries.first))
@@ -145,5 +147,6 @@ struct SupermuxMobileWorktreesPayloadTests {
         #expect(entry["workspace_id"] == nil)
         #expect(entry["is_open"] as? Bool == false)
         #expect(entry["branch"] as? String == "plain")
+        #expect(payload["branches"] == nil)
     }
 }
