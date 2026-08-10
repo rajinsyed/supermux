@@ -24,22 +24,18 @@ extension TerminalController {
         }
         let model = SupermuxComposition.projectsModel
         let includeBranches = params["include_branches"] as? Bool == true
-        var branchesTask: Task<[String], Error>?
-        if includeBranches {
-            // Start branch discovery before the worktree refresh. Both git
-            // commands have 30-second deadlines; running them concurrently
-            // keeps the aggregate RPC within the phone's 30-second deadline.
-            branchesTask = Task {
-                try await model.localBranches(projectId: project.id)
-            }
-        }
+        // Start branch discovery before the worktree refresh. Structured
+        // concurrency keeps both git commands within the phone's 30-second
+        // deadline and cancels the branch probe when the RPC is cancelled.
+        async let branchesResult: [String]? = includeBranches
+            ? model.localBranches(projectId: project.id)
+            : nil
         let refreshed = await model.refreshWorktreesReportingSuccess(for: project.id)
         let worktrees = model.worktreesByProjectId[project.id] ?? []
         // A transient git failure with nothing cached must not read as an
         // authoritative empty list — surface it so the phone can retry rather
         // than render "no worktrees" for a repo that has them.
         if !refreshed, worktrees.isEmpty {
-            branchesTask?.cancel()
             return .err(
                 code: "unavailable",
                 message: "Could not read worktrees",
@@ -48,7 +44,7 @@ extension TerminalController {
         }
         let branches: [String]?
         do {
-            branches = try await branchesTask?.value
+            branches = try await branchesResult
         } catch {
             return .err(
                 code: "unavailable",
