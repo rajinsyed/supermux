@@ -197,6 +197,24 @@ public final class SupermuxMobileProjectsStore {
         return response.project
     }
 
+    /// `mobile.supermux.project.open`: opens (or focuses) a workspace at the
+    /// project ROOT — the phone's twin of clicking a project row in the Mac
+    /// sidebar, routed through the same Mac-side opener, so the workspace
+    /// nests under its project in both sidebars.
+    ///
+    /// Deliberately does NOT refetch: the Mac emits `workspace.updated` for
+    /// the new workspace and the shell's own list is what renders it, so a
+    /// projects refetch here would only add a round trip to the tap.
+    ///
+    /// - Parameter projectID: The project's UUID string.
+    /// - Returns: The opened workspace's Mac-local id, or `nil` if the host
+    ///   answered without one (nothing to navigate to).
+    public func openProject(projectID: String) async throws -> String? {
+        guard capabilities.supportsProjects else { throw SupermuxMacUnavailableError() }
+        let response = try await client.projectOpen(SupermuxProjectOpenRequest(projectID: projectID))
+        return response.workspaceId
+    }
+
     /// `mobile.supermux.project.delete`: unregisters the project (worktrees
     /// and the repository stay on the Mac's disk — desktop semantics; the
     /// confirmation dialog lives on the phone). Refetches on success.

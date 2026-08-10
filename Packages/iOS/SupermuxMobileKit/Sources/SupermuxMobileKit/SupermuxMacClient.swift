@@ -62,6 +62,10 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling {
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func projectOpen(_ request: SupermuxProjectOpenRequest) async throws -> SupermuxProjectOpenResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
     public func projectUpdate(_ request: SupermuxProjectUpdateRequest) async throws -> SupermuxProjectWriteResponse {
         try await send(method: request.wireMethod, params: request.wireParams)
     }

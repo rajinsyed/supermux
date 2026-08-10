@@ -428,7 +428,7 @@ struct WorkspaceListView: View {
         // so every Projects affordance stays unreachable even though the row
         // renders.
         let baseList = workspaceTable
-            .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) })
+            .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) }, closeWorkspace: supermuxRequestWorkspaceClose)
             .modifier(WorkspaceListBarUnderlap())
         // SUPERMUX:end supermux-mobile-projects-section
         #else
@@ -505,7 +505,7 @@ struct WorkspaceListView: View {
         // Let the invisible footer use its 16pt boundary height. Real rows are taller.
         .environment(\.defaultMinListRowHeight, 16)
         // SUPERMUX:begin supermux-mobile-projects-section (session driver: rebuilds the fork stores per (re)connect/capability change; feeds the §6 workspace join + open-workspace navigation)
-        .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) })
+        .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) }, closeWorkspace: supermuxRequestWorkspaceClose)
         // SUPERMUX:end supermux-mobile-projects-section
         .workspaceListRefreshable(refresh)
         #endif

@@ -29,6 +29,30 @@ public struct SupermuxProjectCreateRequest: Equatable, Sendable {
     }
 }
 
+/// `mobile.supermux.project.open`: `{project_id}`.
+///
+/// The desktop's "click a project row" — the Mac opens (or focuses) a
+/// workspace at the project ROOT, recording the workspace→project association
+/// so it nests under the project in both sidebars.
+public struct SupermuxProjectOpenRequest: Equatable, Sendable {
+    /// The project's UUID string.
+    public let projectID: String
+
+    /// Creates the request.
+    /// - Parameter projectID: The project's UUID string.
+    public init(projectID: String) {
+        self.projectID = projectID
+    }
+
+    /// The exact wire method string.
+    public var wireMethod: String { SupermuxMobileMethod.projectOpen.rawValue }
+
+    /// The exact wire params.
+    public var wireParams: [String: Any] {
+        ["project_id": projectID]
+    }
+}
+
 /// `mobile.supermux.project.update`: `{project_id, patch}`.
 public struct SupermuxProjectUpdateRequest: Equatable, Sendable {
     /// The project's UUID string.

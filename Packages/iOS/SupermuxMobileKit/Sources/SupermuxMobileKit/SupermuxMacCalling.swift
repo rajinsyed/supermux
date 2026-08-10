@@ -55,6 +55,11 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func projectCreate(_ request: SupermuxProjectCreateRequest) async throws -> SupermuxProjectWriteResponse
 
+    /// `mobile.supermux.project.open`: opens (or focuses) a workspace at the
+    /// project root — the desktop's "click the project row" action.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func projectOpen(_ request: SupermuxProjectOpenRequest) async throws -> SupermuxProjectOpenResponse
+
     /// `mobile.supermux.project.update`: applies a present-key patch to a
     /// project (arrays replaced whole; explicit `null` clears).
     /// - Parameter request: The typed request (owns the exact wire shape).

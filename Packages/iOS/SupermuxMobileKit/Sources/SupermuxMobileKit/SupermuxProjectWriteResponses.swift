@@ -18,6 +18,28 @@ public struct SupermuxProjectWriteResponse: Codable, Sendable, Equatable {
     }
 }
 
+/// `mobile.supermux.project.open` result: `{workspace_id, project_id}`.
+public struct SupermuxProjectOpenResponse: Codable, Sendable, Equatable {
+    /// The opened (or focused) workspace's id — what the phone navigates to.
+    public var workspaceId: String?
+    /// The project the workspace belongs to (confirmation only).
+    public var projectId: String?
+
+    /// Creates a response value (used by tests and fakes).
+    /// - Parameters:
+    ///   - workspaceId: The opened workspace's id.
+    ///   - projectId: The owning project's UUID string.
+    public init(workspaceId: String? = nil, projectId: String? = nil) {
+        self.workspaceId = workspaceId
+        self.projectId = projectId
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case workspaceId = "workspace_id"
+        case projectId = "project_id"
+    }
+}
+
 /// `mobile.supermux.project.delete` result: `{removed: true, project_id}`.
 public struct SupermuxProjectDeleteResponse: Codable, Sendable, Equatable {
     /// Whether the Mac removed the registration.

@@ -36,14 +36,29 @@ extension View {
     ///     additive `supermux_*` fields). Defaults to none.
     ///   - selectWorkspace: Opens a workspace row — the same closure the
     ///     shell's flat workspace rows navigate through. Defaults to a no-op.
+    ///   - closeWorkspace: Closes a workspace row — the same closure the flat
+    ///     rows' swipe-to-delete uses, so the shell keeps owning the
+    ///     confirmation and there is one close path. `nil` (the default) when
+    ///     the Mac can't close workspaces; the nested rows then offer no close.
     @MainActor
     public func supermuxProjectsSectionDriver(
         model: SupermuxProjectsSectionModel,
         connection: (rpcClient: MobileCoreRPCClient, hostCapabilities: Set<String>)?,
         workspaces: [MobileWorkspacePreview] = [],
-        selectWorkspace: @escaping @MainActor (MobileWorkspacePreview.ID) -> Void = { _ in }
+        selectWorkspace: @escaping @MainActor (MobileWorkspacePreview.ID) -> Void = { _ in },
+        closeWorkspace: (@MainActor (MobileWorkspacePreview.ID) -> Void)? = nil
     ) -> some View {
         let connectionKey = SupermuxProjectsConnectionKey(connection: connection)
+        // Bound outside the `.onChange` closure, with both closure types
+        // spelled out: a `.map` over an optional closure that RETURNS another
+        // closure gives the type checker nothing to anchor either signature to.
+        var closeByRowID: (@MainActor (String) -> Void)?
+        if let closeWorkspace {
+            let close: @MainActor (String) -> Void = { rowID in
+                closeWorkspace(MobileWorkspacePreview.ID(rawValue: rowID))
+            }
+            closeByRowID = close
+        }
         return task(id: connectionKey) {
             guard let connection else {
                 model.endSession()
@@ -60,7 +75,8 @@ extension View {
                 rows,
                 selectWorkspace: { workspaceID in
                     selectWorkspace(MobileWorkspacePreview.ID(rawValue: workspaceID))
-                }
+                },
+                closeWorkspace: closeByRowID
             )
         }
         // Detail-route destination + nested-open error alert (m6-f1): lives

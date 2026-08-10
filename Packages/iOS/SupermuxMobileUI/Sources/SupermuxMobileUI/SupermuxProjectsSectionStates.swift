@@ -13,24 +13,24 @@ struct SupermuxProjectsEmptyState: View {
     @State private var showingCreateEditor = false
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             Image(systemName: "folder.badge.plus")
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(.secondary)
+                .font(.system(.title3, weight: .light))
+                .foregroundStyle(.tertiary)
             Text(String(
                 localized: "supermux.projects.empty",
                 defaultValue: "No projects yet",
                 bundle: .module
             ))
-            .font(.callout.weight(.medium))
-            .foregroundStyle(.primary)
+            .font(.system(.subheadline, weight: .medium))
+            .foregroundStyle(.secondary)
             Text(String(
                 localized: "supermux.projects.empty.detail",
                 defaultValue: "Pin a repo to keep it here — open it, branch a worktree, and run it from your phone.",
                 bundle: .module
             ))
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.system(.caption))
+            .foregroundStyle(.tertiary)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             if let editing {
@@ -42,10 +42,11 @@ struct SupermuxProjectsEmptyState: View {
                         defaultValue: "Add Project",
                         bundle: .module
                     ))
-                    .font(.callout.weight(.medium))
+                    .font(.system(.footnote, weight: .medium))
                 }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
+                .controlSize(.small)
                 .padding(.top, 2)
                 .accessibilityIdentifier("SupermuxProjectsEmptyAddButton")
                 .sheet(isPresented: $showingCreateEditor) {
@@ -54,8 +55,8 @@ struct SupermuxProjectsEmptyState: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 18)
+        .padding(.horizontal, 16)
         .accessibilityIdentifier("SupermuxProjectsEmptyState")
     }
 }
@@ -72,29 +73,26 @@ struct SupermuxProjectSkeletonRow: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shimmering = false
+    // Scaled like the real row's: a skeleton that ignored Dynamic Type would
+    // jump to a different height the moment data replaced it — the exact
+    // thing this placeholder exists to prevent. Not `private`, or the
+    // memberwise initializer this row is constructed with disappears.
+    var metrics = SupermuxScaledRowMetrics()
 
     private var titleWidth: CGFloat {
-        [132, 96, 116][index % 3]
+        [124, 88, 106][index % 3]
     }
 
     var body: some View {
-        HStack(spacing: SupermuxProjectRowMetrics.avatarTextGap) {
-            RoundedRectangle(
-                cornerRadius: SupermuxProjectRowMetrics.avatarSize * 0.28,
-                style: .continuous
-            )
-            .fill(placeholderStyle)
-            .frame(
-                width: SupermuxProjectRowMetrics.avatarSize,
-                height: SupermuxProjectRowMetrics.avatarSize
-            )
-            VStack(alignment: .leading, spacing: 6) {
-                Capsule().fill(placeholderStyle).frame(width: titleWidth, height: 11)
-                Capsule().fill(placeholderStyle).frame(width: 64, height: 9)
-            }
+        HStack(spacing: metrics.avatarTextGap) {
+            RoundedRectangle(cornerRadius: metrics.avatarSize * 0.3, style: .continuous)
+                .fill(placeholderStyle)
+                .frame(width: metrics.avatarSize, height: metrics.avatarSize)
+            Capsule().fill(placeholderStyle).frame(width: titleWidth, height: 10)
             Spacer(minLength: 8)
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, SupermuxProjectRowMetrics.rowHorizontalPadding)
+        .frame(minHeight: metrics.minimumRowHeight)
         .opacity(shimmering ? 0.55 : 1)
         .onAppear {
             guard !reduceMotion else { return }

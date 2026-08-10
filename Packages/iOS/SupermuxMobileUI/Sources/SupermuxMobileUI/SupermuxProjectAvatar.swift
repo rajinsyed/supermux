@@ -24,21 +24,36 @@ struct SupermuxProjectAvatar: View {
     let size: CGFloat
     let iconPNGData: @Sendable (_ projectID: String) async -> Data?
 
+    /// The icon fetched by THIS instance's task. Seeded synchronously from
+    /// ``SupermuxProjectIconImageCache`` in ``icon`` so a rebuilt avatar paints
+    /// its last image immediately — the hosting cell is torn down and rebuilt
+    /// by any height-changing table update, and `@State` alone would blank
+    /// every icon each time.
     @State private var customIcon: Image?
 
     /// Continuous-rounded-square, proportional to the chip (the desktop
     /// avatar's ratio, kept so the two read as the same object).
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
     }
 
     private var accent: SupermuxProjectAccent { row.accent }
 
+    /// What to paint right now: this instance's fetched icon, or — before its
+    /// task has run — whatever was last decoded for the same identity.
+    ///
+    /// Reading the cache here rather than seeding it in `onAppear` is what
+    /// removes the flash entirely: `onAppear` runs after the first frame, so
+    /// the icon would still blank for that frame on every rebuild.
+    private var icon: Image? {
+        customIcon ?? SupermuxProjectIconImageCache.shared.image(for: iconIdentity)
+    }
+
     var body: some View {
         ZStack {
-            if let customIcon {
+            if let icon {
                 shape.fill(Color.primary.opacity(0.06))
-                customIcon
+                icon
                     .resizable()
                     .scaledToFill()
             } else {
@@ -47,18 +62,26 @@ struct SupermuxProjectAvatar: View {
             }
         }
         .frame(width: size, height: size)
+        // No border. A hairline stroke used to sit here to keep the chip from
+        // bleeding into the row background in dark mode, but at sidebar size it
+        // reads as a drawn outline around every project — the "cheap" tell the
+        // Mac avatars don't have. The gradient carries its own edge.
         .clipShape(shape)
-        // A hairline inner edge keeps the chip from bleeding into the row
-        // background in dark mode, where gradient and background can be close
-        // in luminance.
-        .overlay(shape.strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5))
         .task(id: iconIdentity) {
+            let identity = iconIdentity
             guard row.hasCustomIcon else {
                 customIcon = nil
+                SupermuxProjectIconImageCache.shared.removeImage(forProjectID: row.id)
                 return
             }
-            guard let data = await iconPNGData(row.id) else { return }
-            customIcon = Self.decodeImage(data)
+            // Already decoded (a rebuild, or a sibling avatar for the same
+            // project): `icon` is painting it, so re-fetching would only spend
+            // a round trip to arrive at the same pixels.
+            guard SupermuxProjectIconImageCache.shared.image(for: identity) == nil else { return }
+            guard let data = await iconPNGData(row.id),
+                  let decoded = SupermuxProjectIconImageCache.decode(data) else { return }
+            SupermuxProjectIconImageCache.shared.store(decoded, for: identity)
+            customIcon = decoded
         }
         .accessibilityHidden(true)
     }
@@ -95,15 +118,6 @@ struct SupermuxProjectAvatar: View {
         )
     }
 
-    private static func decodeImage(_ data: Data) -> Image? {
-        #if canImport(UIKit)
-        UIImage(data: data).map { Image(uiImage: $0) }
-        #elseif canImport(AppKit)
-        NSImage(data: data).map { Image(nsImage: $0) }
-        #else
-        nil
-        #endif
-    }
 }
 
 /// See ``SupermuxProjectAvatar/iconIdentity``. Internal (not private) so a

@@ -2,19 +2,21 @@ import Foundation
 import SupermuxMobileCore
 import SwiftUI
 
-/// One project row in the phone's Projects section.
+/// One project row in the phone's Projects sidebar.
 ///
-/// A phone row is not a scaled-down Mac sidebar row: the Mac's 12pt name and
-/// bare worktree pill assume a pointer, a hover state, and a dense window. This
-/// row follows the app's own rich-row idiom instead (the shape `MacComputerRow`
-/// uses): an accent-gradient avatar, a `.headline` name, and a secondary line
-/// that actually reports the project's state — open workspaces, worktrees,
-/// running — rather than making the user expand the row to find out.
+/// Deliberately the Mac sidebar row, not a phone "rich row": a small avatar, a
+/// single name, and — only when the project actually has unopened worktrees —
+/// the Mac's branch-count pill, which doubles as the disclosure. Everything the
+/// old row shouted (a derived "1 open · 2 worktrees" subtitle, an `info.circle`
+/// accessory, a trailing chevron) is either already visible as nested rows
+/// underneath or reachable by tapping, so none of it earned a permanent slot.
 ///
-/// The whole row is one tap target that toggles the inline disclosure; the
-/// trailing chevron rotates rather than swapping glyphs, so expansion reads as
-/// one continuous motion. Project details stay reachable through the row's
-/// long-press menu and its explicit info accessory.
+/// Tapping the row opens a workspace at the project ROOT, exactly like
+/// clicking the row in the Mac sidebar (`SupermuxProjectRowActions.openLocal`).
+/// It used to push the project's detail screen instead, which meant the phone's
+/// primary gesture landed somewhere the Mac's never goes; detail now lives in
+/// the long-press menu, where the Mac keeps its own per-project actions. The
+/// pill still owns expand/collapse, so the two never fight over one target.
 ///
 /// Receives an immutable ``SupermuxProjectRowSnapshot`` plus closures only, per
 /// the repo's snapshot-boundary rule.
@@ -22,44 +24,59 @@ struct SupermuxProjectMobileRow: View {
     let row: SupermuxProjectRowSnapshot
     let iconPNGData: @Sendable (_ projectID: String) async -> Data?
     let toggleExpanded: @MainActor (_ projectID: String) -> Void
+    let openWorkspace: @MainActor (_ projectID: String) -> Void
     let openDetail: @MainActor (_ projectID: String) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Not `private`: a private stored property suppresses the memberwise
+    // initializer this row is constructed with.
+    var metrics = SupermuxScaledRowMetrics()
+
+    /// The Mac's capsule counts worktrees WITHOUT an open workspace, and is
+    /// absent when there are none — a project with nothing to disclose shows
+    /// no disclosure at all.
+    private var unopenedWorktreeCount: Int? {
+        guard let count = row.worktreeCount, count > 0 else { return nil }
+        return count
+    }
 
     var body: some View {
-        HStack(spacing: SupermuxProjectRowMetrics.avatarTextGap) {
-            SupermuxProjectAvatar(
-                row: row,
-                size: SupermuxProjectRowMetrics.avatarSize,
-                iconPNGData: iconPNGData
-            )
-            VStack(alignment: .leading, spacing: 2) {
+        Button {
+            SupermuxHaptics.selection()
+            openWorkspace(row.id)
+        } label: {
+            HStack(spacing: metrics.avatarTextGap) {
+                SupermuxProjectAvatar(
+                    row: row,
+                    size: metrics.avatarSize,
+                    iconPNGData: iconPNGData
+                )
                 Text(row.name)
-                    .font(.headline)
+                    .font(.system(.headline, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                subtitle
+                Spacer(minLength: 6)
+                trailing
             }
-            Spacer(minLength: 8)
-            trailing
+            .padding(.horizontal, SupermuxProjectRowMetrics.rowHorizontalPadding)
+            .frame(minHeight: metrics.minimumRowHeight)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            SupermuxHaptics.selection()
-            withAnimation(reduceMotion ? nil : SupermuxProjectMotion.disclosure) {
-                toggleExpanded(row.id)
-            }
-        }
+        .buttonStyle(SupermuxSidebarRowButtonStyle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.name)
         .accessibilityValue(accessibilityValue)
-        .accessibilityHint(row.isExpanded
-            ? String(localized: "supermux.projects.section.collapse", defaultValue: "Collapse", bundle: .module)
-            : String(localized: "supermux.projects.section.expand", defaultValue: "Expand", bundle: .module))
+        .accessibilityHint(String(
+            localized: "supermux.projects.row.openHint",
+            defaultValue: "Opens a workspace at the project root",
+            bundle: .module
+        ))
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("SupermuxProjectRow-\(row.id)")
+        .accessibilityAction(named: Text(disclosureActionTitle)) {
+            toggleExpanded(row.id)
+        }
         .accessibilityAction(named: Text(String(
             localized: "supermux.projects.row.details",
             defaultValue: "Project Details",
@@ -67,43 +84,125 @@ struct SupermuxProjectMobileRow: View {
         ))) {
             openDetail(row.id)
         }
-        .contextMenu {
-            // The long-press twin of the info accessory — both route through
-            // the same openDetail action (one shared path).
-            Button {
-                openDetail(row.id)
-            } label: {
-                Label(
-                    String(
-                        localized: "supermux.projects.row.details",
-                        defaultValue: "Project Details",
-                        bundle: .module
-                    ),
-                    systemImage: "info.circle"
-                )
-            }
-        }
+        .supermuxSidebarContextMenu { contextMenu }
     }
 
-    /// The state line: what the row would otherwise force a tap to discover.
-    /// Falls back to the project's default branch, then its folder name, so
-    /// the line is never empty and never a bare repetition of the title.
+    /// Trailing status: the Mac's worktree pill, and nothing else.
+    ///
+    /// A green "running" dot used to lead this cluster. The Mac project row
+    /// carries no run affordance at all — a run is surfaced on the nested
+    /// WORKSPACE row that hosts it (`SupermuxRunIndicator`), which is where it
+    /// is actually actionable — so the project-level dot was a phone-only
+    /// duplicate of state already shown one row below.
     @ViewBuilder
-    private var subtitle: some View {
-        HStack(spacing: 6) {
-            if row.run?.isRunning == true {
-                SupermuxRunActiveDot()
-                    .accessibilityHidden(true)
-            }
-            Text(subtitleText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+    private var trailing: some View {
+        if let count = unopenedWorktreeCount {
+            worktreePill(count)
         }
     }
 
-    private var subtitleText: String {
+    /// The Mac's `⑂ N ›` capsule, and the row's only disclosure control.
+    ///
+    /// Its visual footprint stays capsule-small while its hit region is padded
+    /// out to the full row height — a 20pt-tall pill is the right density here
+    /// and the wrong tap target, so the two are sized separately.
+    private func worktreePill(_ count: Int) -> some View {
+        Button {
+            SupermuxHaptics.selection()
+            toggleExpanded(row.id)
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(.caption2, weight: .semibold))
+                Text(count.formatted())
+                    .font(.system(.caption2, weight: .semibold).monospacedDigit())
+                Image(systemName: "chevron.right")
+                    .font(.system(.caption2, weight: .bold))
+                    .rotationEffect(.degrees(row.isExpanded ? 90 : 0))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.07)))
+            // Invisible hit padding: the capsule stays 20pt tall, the target
+            // fills the row.
+            .padding(.vertical, 10)
+            .padding(.leading, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(reduceMotion ? nil : SupermuxProjectMotion.disclosure, value: row.isExpanded)
+        .accessibilityLabel(disclosureActionTitle)
+        .accessibilityValue(String(
+            localized: "supermux.projects.row.worktreeCount",
+            defaultValue: "\(count) worktrees",
+            bundle: .module
+        ))
+        .accessibilityIdentifier("SupermuxProjectWorktreeDisclosure-\(row.id)")
+    }
+
+    /// The long-press menu, in the Mac's order: the primary open action first
+    /// (so the menu restates what a tap does), then the disclosure, then the
+    /// detail screen the row tap used to occupy.
+    @ViewBuilder
+    private var contextMenu: some View {
+        Button {
+            openWorkspace(row.id)
+        } label: {
+            Label {
+                Text(String(
+                    localized: "supermux.projects.row.openLocal",
+                    defaultValue: "Open Local Workspace",
+                    bundle: .module
+                ))
+            } icon: {
+                Image(systemName: "macwindow")
+            }
+        }
+        if unopenedWorktreeCount != nil {
+            Button {
+                toggleExpanded(row.id)
+            } label: {
+                Label {
+                    Text(disclosureActionTitle)
+                } icon: {
+                    Image(systemName: row.isExpanded ? "chevron.up" : "chevron.down")
+                }
+            }
+        }
+        Divider()
+        Button {
+            openDetail(row.id)
+        } label: {
+            Label {
+                Text(String(
+                    localized: "supermux.projects.row.details",
+                    defaultValue: "Project Details",
+                    bundle: .module
+                ))
+            } icon: {
+                Image(systemName: "info.circle")
+            }
+        }
+    }
+
+    private var disclosureActionTitle: String {
+        row.isExpanded
+            ? String(
+                localized: "supermux.projects.row.collapseWorktrees",
+                defaultValue: "Hide Worktrees",
+                bundle: .module
+            )
+            : String(
+                localized: "supermux.projects.row.expandWorktrees",
+                defaultValue: "Show Worktrees",
+                bundle: .module
+            )
+    }
+
+    /// What VoiceOver reads after the name: the state the redesigned row no
+    /// longer spends a whole subtitle line on.
+    private var accessibilityValue: String {
         var parts: [String] = []
         if let count = row.openWorkspaceCount, count > 0 {
             parts.append(String(
@@ -112,90 +211,329 @@ struct SupermuxProjectMobileRow: View {
                 bundle: .module
             ))
         }
-        if let count = row.worktreeCount, count > 0 {
+        if let count = unopenedWorktreeCount {
             parts.append(String(
                 localized: "supermux.projects.row.worktreeCount",
                 defaultValue: "\(count) worktrees",
                 bundle: .module
             ))
         }
-        if parts.isEmpty {
-            if let branch = row.defaultBranch, !branch.isEmpty {
-                return branch
-            }
-            let folder = (row.rootPath as NSString).lastPathComponent
-            return folder.isEmpty ? row.rootPath : folder
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    /// Info accessory plus the disclosure chevron. The chevron ROTATES between
-    /// states instead of swapping symbols, so the row animates as one piece.
-    private var trailing: some View {
-        HStack(spacing: 2) {
-            Button {
-                openDetail(row.id)
-            } label: {
-                Image(systemName: "info.circle")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(String(
-                localized: "supermux.projects.row.details",
-                defaultValue: "Project Details",
+        if row.run?.isRunning == true {
+            parts.append(String(
+                localized: "supermux.run.running",
+                defaultValue: "Running",
                 bundle: .module
             ))
-            .accessibilityIdentifier("SupermuxProjectDetailButton-\(row.id)")
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .rotationEffect(.degrees(row.isExpanded ? 90 : 0))
-                .animation(reduceMotion ? nil : SupermuxProjectMotion.disclosure, value: row.isExpanded)
-                .accessibilityHidden(true)
         }
-        // VoiceOver reaches details through the row's custom action; the
-        // duplicate button would otherwise be announced twice.
-        .accessibilityHidden(true)
-    }
-
-    private var accessibilityValue: String {
-        subtitleText
+        return parts.joined(separator: ", ")
     }
 }
 
-/// Shared row geometry. The nested rows read the same constants so a nested
-/// title lines up under the project title instead of guessing an indent.
-/// lint:allow namespace-enum — layout-constant table shared by the project row and its nested rows; stateless, nothing to instantiate.
-enum SupermuxProjectRowMetrics {
-    /// Avatar edge length, matching the app's rich-row avatars.
-    static let avatarSize: CGFloat = 40
-    /// Gap between the avatar and the text column.
-    static let avatarTextGap: CGFloat = 12
-    /// Where a nested row's content starts: exactly the project title's
-    /// leading edge.
-    static var nestedIndent: CGFloat { avatarSize + avatarTextGap }
-}
-
-/// The section's motion vocabulary, matching the app's house curve
-/// (`.snappy`), so a disclosure here feels like the rest of the phone app.
-/// Every caller pairs these with an `accessibilityReduceMotion` check.
-/// lint:allow namespace-enum — animation-constant table shared across the section's views; stateless, nothing to instantiate.
-enum SupermuxProjectMotion {
-    /// Project expand/collapse.
-    static let disclosure = Animation.snappy(duration: 0.26)
-    /// Rows appearing or leaving inside a disclosure.
-    static let nestedContent = Animation.snappy(duration: 0.22)
-}
-
-/// The nested list rows under one project: the project's open workspaces are
-/// ALWAYS visible, while its unopened worktrees sit behind the disclosure.
+/// Aligns one nested row's content under its project's TITLE.
 ///
-/// Nested rows are drawn against a hairline guide tinted with the project's
-/// accent, so a long list stays legible about which rows belong to which
-/// project — the flat 28pt indent it replaces gave no such signal.
+/// Mirrors the Mac sidebar, where a nested row reuses the project row's avatar
+/// column — empty for a workspace, a branch glyph for a worktree — so every
+/// title in the section shares one leading edge. That alignment is the entire
+/// nesting signal; the accent-tinted vertical guide this replaces was pure
+/// decoration, and a column of them was most of why the section read cheap.
+///
+/// Container-agnostic on purpose: the same treatment serves the SwiftUI `List`
+/// path (macOS) and the UIKit-table path (iOS), which cannot use
+/// `listRowInsets`/`listRowSeparator` at all. Those list-only modifiers are
+/// applied by the `List` caller, never in here.
+struct SupermuxNestedRowContainer<Content: View>: View {
+    /// SF Symbol drawn in the avatar column, or `nil` to leave it empty.
+    var symbol: String?
+    @ViewBuilder let content: () -> Content
+
+    private var metrics = SupermuxScaledRowMetrics()
+
+    /// Creates the container.
+    /// - Parameters:
+    ///   - symbol: SF Symbol for the icon column, or `nil` to leave it empty.
+    ///   - content: The row's content, aligned under the project title.
+    init(symbol: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.symbol = symbol
+        self.content = content
+    }
+
+    var body: some View {
+        HStack(spacing: metrics.avatarTextGap) {
+            Group {
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.system(.caption2, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: metrics.avatarSize)
+            .accessibilityHidden(true)
+            content()
+        }
+        .padding(.leading, SupermuxProjectRowMetrics.rowHorizontalPadding)
+    }
+}
+
+/// One open workspace nested under its project, laid out like the Mac
+/// sidebar's `SupermuxOpenWorkspaceRowView`: the workspace name over its
+/// monospaced branch, with the status cluster — PR badge, run indicator, agent
+/// activity, unread — pinned to the trailing edge in the Mac's order.
+///
+/// Sidebar-specific on purpose: the project DETAIL screen's
+/// ``SupermuxProjectWorkspaceRow`` is a `List` row with a navigation chevron
+/// and detail-screen type sizes, which is the wrong density here.
+struct SupermuxSidebarWorkspaceRow: View {
+    let workspace: SupermuxProjectWorkspaceRowSnapshot
+    let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
+    /// Closes the workspace through the shell's own close path (which owns the
+    /// confirmation); `nil` hides the affordance entirely.
+    var closeWorkspace: (@MainActor (_ workspaceID: String) -> Void)?
+
+    // Not `private`: see the note on SupermuxProjectMobileRow.metrics.
+    var metrics = SupermuxScaledRowMetrics()
+
+    var body: some View {
+        Button {
+            SupermuxHaptics.selection()
+            selectWorkspace(workspace.id)
+        } label: {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(workspace.name)
+                        .font(.system(.subheadline, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let branch = workspace.branch {
+                        Text(branch)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Spacer(minLength: 6)
+                statusCluster
+            }
+            .padding(.trailing, SupermuxProjectRowMetrics.rowHorizontalPadding)
+            .frame(minHeight: metrics.minimumRowHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SupermuxSidebarRowButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(workspace.name)
+        .accessibilityValue(workspace.activity.map(SupermuxWorkspaceActivityDot.label(for:)) ?? "")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("SupermuxProjectWorkspaceRow-\(workspace.id)")
+        .accessibilityActions {
+            if let closeWorkspace {
+                Button(closeTitle) { closeWorkspace(workspace.id) }
+            }
+        }
+        .supermuxSidebarContextMenu { contextMenu }
+    }
+
+    /// Mirrors the Mac's nested-workspace menu: focus, then close.
+    @ViewBuilder
+    private var contextMenu: some View {
+        Button {
+            selectWorkspace(workspace.id)
+        } label: {
+            Label {
+                Text(String(
+                    localized: "supermux.workspaces.row.focus",
+                    defaultValue: "Focus Workspace",
+                    bundle: .module
+                ))
+            } icon: {
+                Image(systemName: "arrow.right.circle")
+            }
+        }
+        if let closeWorkspace {
+            Divider()
+            Button(role: .destructive) {
+                closeWorkspace(workspace.id)
+            } label: {
+                Label {
+                    Text(closeTitle)
+                } icon: {
+                    Image(systemName: "xmark.circle")
+                }
+            }
+        }
+    }
+
+    private var closeTitle: String {
+        String(
+            localized: "supermux.workspaces.row.close",
+            defaultValue: "Close Workspace",
+            bundle: .module
+        )
+    }
+
+    /// Mac order exactly — PR badge, run, agent activity — and nothing else.
+    ///
+    /// The phone used to add a blue unread dot after these. It is gone for the
+    /// same reason the Mac dropped its own red/green status dots: the rows sat
+    /// under a column of permanently-lit dots in three colors, which is what
+    /// made the section read as busy. Unread is already carried by the
+    /// workspace's own row in the list below.
+    @ViewBuilder
+    private var statusCluster: some View {
+        HStack(spacing: 6) {
+            if let pullRequest = workspace.pullRequest {
+                SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
+            }
+            if workspace.isRunning {
+                SupermuxMobileRunIndicator()
+            }
+            SupermuxWorkspaceActivityDot(activity: workspace.activity, size: 7)
+        }
+    }
+}
+
+/// One unopened worktree nested under an expanded project: the branch glyph in
+/// the avatar column, the branch name, a dirty marker, and the PR badge — the
+/// phone twin of the Mac sidebar's `SupermuxWorktreeRowView`. Tapping opens a
+/// workspace in the worktree (m2-f2 flow) through the passed closure.
+///
+/// Emits only the row's CONTENT; ``SupermuxNestedRowContainer`` supplies the
+/// glyph column and the alignment.
+struct SupermuxNestedWorktreeRow: View {
+    let worktree: SupermuxWorktreeRowSnapshot
+    let open: @MainActor (_ worktree: SupermuxWorktreeRowSnapshot) -> Void
+    /// Asks to remove the worktree (raises the confirmation — never deletes
+    /// directly). The long-press twin of the row's swipe action, routed
+    /// through the same request so the two can never disagree.
+    var requestRemoval: (@MainActor (_ worktree: SupermuxWorktreeRowSnapshot) -> Void)?
+
+    // Not `private`: see the note on SupermuxProjectMobileRow.metrics.
+    var metrics = SupermuxScaledRowMetrics()
+
+    var body: some View {
+        Button {
+            SupermuxHaptics.selection()
+            open(worktree)
+        } label: {
+            HStack(spacing: 6) {
+                Text(worktree.displayName)
+                    .font(.system(.subheadline))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if worktree.isDirty {
+                    // The dirty marker stays: unlike the status dots this
+                    // replaces, it is not duplicated anywhere else on the phone,
+                    // and it is what warns that removing this worktree will
+                    // need a force. Drawn as a glyph rather than a colored dot
+                    // so it reads as information, not as a status light.
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.system(.caption2))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                Spacer(minLength: 6)
+                if let pullRequest = worktree.pullRequest {
+                    SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
+                }
+            }
+            .padding(.trailing, SupermuxProjectRowMetrics.rowHorizontalPadding)
+            .frame(minHeight: metrics.compactRowHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SupermuxSidebarRowButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(worktree.displayName)
+        .accessibilityValue(worktree.isDirty
+            ? String(
+                localized: "supermux.worktrees.row.dirty",
+                defaultValue: "Uncommitted changes",
+                bundle: .module
+            )
+            : "")
+        .accessibilityHint(String(
+            localized: "supermux.worktrees.open",
+            defaultValue: "Open Workspace",
+            bundle: .module
+        ))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("SupermuxNestedWorktreeRow-\(worktree.id)")
+        .accessibilityActions {
+            if let requestRemoval {
+                Button(Self.removeTitle) { requestRemoval(worktree) }
+            }
+        }
+        .supermuxSidebarContextMenu { contextMenu }
+    }
+
+    /// Mirrors the Mac's worktree menu: open, then the destructive removal.
+    @ViewBuilder
+    private var contextMenu: some View {
+        Button {
+            open(worktree)
+        } label: {
+            Label {
+                Text(String(
+                    localized: "supermux.worktrees.open",
+                    defaultValue: "Open Workspace",
+                    bundle: .module
+                ))
+            } icon: {
+                Image(systemName: "arrow.right.circle")
+            }
+        }
+        if let requestRemoval {
+            Divider()
+            Button(role: .destructive) {
+                requestRemoval(worktree)
+            } label: {
+                Label {
+                    Text(Self.removeTitle)
+                } icon: {
+                    Image(systemName: "trash")
+                }
+            }
+        }
+    }
+
+    static var removeTitle: String {
+        String(
+            localized: "supermux.worktrees.remove.title",
+            defaultValue: "Remove Worktree",
+            bundle: .module
+        )
+    }
+}
+
+/// A nested row's placeholder line — "loading worktrees…" and "nothing here
+/// yet" both sit in the nested column, so the disclosure never opens onto a
+/// left-aligned line that ignores the section's alignment.
+struct SupermuxNestedNoticeRow: View {
+    /// Whether to lead with a small spinner.
+    var isLoading = false
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if isLoading {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+            Text(text)
+                .font(.system(.caption))
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.trailing, SupermuxProjectRowMetrics.rowHorizontalPadding)
+        .frame(minHeight: 32)
+    }
+}
+
+/// The nested list rows under one project inside a SwiftUI `List` (macOS): the
+/// project's open workspaces are ALWAYS visible, while its unopened worktrees
+/// sit behind the disclosure.
 ///
 /// Emits plain sibling rows for the host `Section` — each an immutable
 /// snapshot plus closures, per the snapshot-boundary rule.
@@ -206,11 +544,17 @@ struct SupermuxProjectNestedRows: View {
     var body: some View {
         ForEach(row.openWorkspaces) { workspace in
             nested {
-                SupermuxProjectWorkspaceRow(
+                SupermuxSidebarWorkspaceRow(
                     workspace: workspace,
-                    selectWorkspace: actions.selectWorkspace
+                    selectWorkspace: actions.selectWorkspace,
+                    closeWorkspace: actions.closeWorkspace
                 )
             }
+            // The `List` path's twin of the table path's custom swipe.
+            .modifier(SupermuxWorkspaceListSwipeActions(
+                workspaceID: workspace.id,
+                closeWorkspace: actions.closeWorkspace
+            ))
         }
         // `.unavailable` while collapsed (the model gates on isExpanded), so
         // the worktree slice renders only under an expanded project.
@@ -219,120 +563,98 @@ struct SupermuxProjectNestedRows: View {
             EmptyView()
         case .loading:
             nested {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(String(
+                SupermuxNestedNoticeRow(
+                    isLoading: true,
+                    text: String(
                         localized: "supermux.worktrees.loading",
                         defaultValue: "Loading worktrees…",
                         bundle: .module
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
+                    )
+                )
             }
         case .loaded(let worktrees):
             if worktrees.isEmpty, row.openWorkspaces.isEmpty {
                 nested {
-                    Text(String(
+                    SupermuxNestedNoticeRow(text: String(
                         localized: "supermux.projects.nested.empty",
                         defaultValue: "No open workspaces or worktrees yet",
                         bundle: .module
                     ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
             }
             ForEach(worktrees) { worktree in
-                nested {
-                    SupermuxNestedWorktreeRow(worktree: worktree) { tapped in
-                        actions.openNestedWorktree(row.id, tapped)
+                nested(symbol: "arrow.triangle.branch") {
+                    SupermuxNestedWorktreeRow(
+                        worktree: worktree,
+                        open: { tapped in actions.openNestedWorktree(row.id, tapped) },
+                        requestRemoval: { tapped in
+                            actions.requestNestedWorktreeRemoval(row.id, tapped)
+                        }
+                    )
+                }
+                // The `List` path's twin of the table path's custom swipe: a
+                // real `List` row gets the native modifier, so this container
+                // is not left as the one place a worktree cannot be removed.
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        actions.requestNestedWorktreeRemoval(row.id, worktree)
+                    } label: {
+                        Label {
+                            Text(String(
+                                localized: "supermux.worktrees.remove.title",
+                                defaultValue: "Remove Worktree",
+                                bundle: .module
+                            ))
+                        } icon: {
+                            Image(systemName: "trash")
+                        }
                     }
                 }
             }
         }
     }
 
-    /// Wraps one nested row in the accent guide + indent shared by all of them.
-    private func nested(@ViewBuilder _ content: @escaping () -> some View) -> some View {
-        SupermuxNestedRowContainer(accent: row.accent, content: content)
+    /// Wraps one nested row in the shared alignment plus the `List`-only row
+    /// modifiers this container path needs.
+    private func nested(
+        symbol: String? = nil,
+        @ViewBuilder _ content: @escaping () -> some View
+    ) -> some View {
+        SupermuxNestedRowContainer(symbol: symbol, content: content)
             .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
             .listRowSeparator(.hidden)
     }
 }
 
-/// The indent + accent guide every nested row sits behind.
+/// The nested workspace row's `List`-path swipe: the shell's close action, or
+/// nothing at all when the host can't close workspaces.
 ///
-/// Container-agnostic on purpose: the same treatment is used by the SwiftUI
-/// `List` path (macOS) and by the UIKit-table path (iOS), which cannot use
-/// `listRowInsets`/`listRowSeparator` at all. Those list-only modifiers are
-/// applied by the `List` caller, never in here.
-struct SupermuxNestedRowContainer<Content: View>: View {
-    let accent: SupermuxProjectAccent
-    @ViewBuilder let content: () -> Content
+/// A modifier rather than an inline `.swipeActions`, because the modifier can
+/// return the untouched row in the unsupported case — `.swipeActions` with an
+/// empty body still installs the gesture and reveals a blank tray.
+private struct SupermuxWorkspaceListSwipeActions: ViewModifier {
+    let workspaceID: String
+    let closeWorkspace: (@MainActor (_ workspaceID: String) -> Void)?
 
-    var body: some View {
-        HStack(spacing: 0) {
-            Rectangle()
-                .fill(accent.color.opacity(0.35))
-                .frame(width: 2)
-                .clipShape(Capsule())
-                .padding(.leading, SupermuxProjectRowMetrics.nestedIndent / 2 - 1)
-                .padding(.trailing, SupermuxProjectRowMetrics.nestedIndent / 2 - 1)
-                .accessibilityHidden(true)
-            content()
-        }
-        .transition(.opacity)
-    }
-}
-
-/// One unopened worktree nested under an expanded project: branch glyph, name,
-/// dirty indicator, and the PR badge — the phone twin of the mac sidebar's
-/// `SupermuxWorktreeRowView`. Tapping opens a workspace in the worktree (m2-f2
-/// flow) through the passed closure.
-struct SupermuxNestedWorktreeRow: View {
-    let worktree: SupermuxWorktreeRowSnapshot
-    let open: @MainActor (_ worktree: SupermuxWorktreeRowSnapshot) -> Void
-
-    var body: some View {
-        Button {
-            SupermuxHaptics.selection()
-            open(worktree)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(worktree.displayName)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if worktree.isDirty {
-                    Circle()
-                        .fill(.orange)
-                        .frame(width: 7, height: 7)
-                        .accessibilityLabel(String(
-                            localized: "supermux.worktrees.row.dirty",
-                            defaultValue: "Uncommitted changes",
+    func body(content: Content) -> some View {
+        if let closeWorkspace {
+            content.swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    closeWorkspace(workspaceID)
+                } label: {
+                    Label {
+                        Text(String(
+                            localized: "supermux.workspaces.row.close",
+                            defaultValue: "Close Workspace",
                             bundle: .module
                         ))
-                }
-                Spacer(minLength: 4)
-                if let pullRequest = worktree.pullRequest {
-                    SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
+                    } icon: {
+                        Image(systemName: "xmark")
+                    }
                 }
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+        } else {
+            content
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(worktree.displayName)
-        .accessibilityHint(String(
-            localized: "supermux.worktrees.open",
-            defaultValue: "Open Workspace",
-            bundle: .module
-        ))
-        .accessibilityIdentifier("SupermuxNestedWorktreeRow-\(worktree.id)")
     }
 }

@@ -69,6 +69,19 @@ public final class SupermuxProjectsSectionModel {
     /// never silent). Cleared via ``dismissNestedOpenError()``.
     public internal(set) var nestedOpenErrorMessage: String?
 
+    /// The worktree a sidebar swipe asked to remove, held while its first
+    /// confirmation is on screen; `nil` when nothing is pending. The removal
+    /// itself runs through the project's own worktrees store — see
+    /// `SupermuxProjectsSectionModel+Removal.swift`.
+    public internal(set) var pendingWorktreeRemoval: SupermuxPendingWorktreeRemoval?
+
+    /// The project of the most recent removal request. Disambiguates the
+    /// force/failure prompts when two projects' stores are parked at once:
+    /// `worktreeSessions` is an unordered dictionary, so without this the
+    /// single dialog could speak for — and force-delete — a worktree the user
+    /// never swiped. Observable so a new request re-resolves the prompt.
+    var lastRemovalRequestProjectID: String?
+
     /// One expanded project's section-owned worktree session: the store plus
     /// the task running its event loop (fetch on expand, refetch on
     /// `supermux.worktrees.updated`). The task is `nil` while the session is
@@ -162,10 +175,17 @@ public final class SupermuxProjectsSectionModel {
     private var workspaceRows: [SupermuxProjectWorkspaceRowSnapshot] = []
 
     /// The shell's workspace-open closure, refreshed with every
-    /// ``updateWorkspaces(_:selectWorkspace:)`` so it always targets the live
-    /// shell. Ignored by observation: closures carry no render state.
-    /// Internal (not private) for the `+Nesting.swift` extension.
+    /// ``updateWorkspaces(_:selectWorkspace:closeWorkspace:)`` so it always
+    /// targets the live shell. Ignored by observation: closures carry no render
+    /// state. Internal (not private) for the `+Nesting.swift` extension.
     @ObservationIgnored var selectWorkspaceAction: @MainActor (_ workspaceID: String) -> Void = { _ in }
+
+    /// The shell's workspace-CLOSE closure (its own confirmation flow), or
+    /// `nil` when the host can't close workspaces. Refreshed alongside
+    /// ``selectWorkspaceAction``. Observation-ignored for the same reason —
+    /// but note ``actions`` reads its presence, so the shell must supply it
+    /// with the same value across renders or the affordance would flicker.
+    @ObservationIgnored var closeWorkspaceAction: (@MainActor (_ workspaceID: String) -> Void)?
 
     /// Creates an empty (hidden-section) model.
     /// - Parameter expansionDefaults: Where per-project expansion persists
@@ -245,7 +265,14 @@ public final class SupermuxProjectsSectionModel {
 
     /// The closure bundle row-level views act through.
     public var actions: SupermuxProjectsSectionActions {
-        SupermuxProjectsSectionActions(
+        // Bound and annotated outside the initializer: an optional closure
+        // forwarded into another optional closure parameter gives the type
+        // checker nothing to anchor to inside an expression this large.
+        var close: (@MainActor (_ workspaceID: String) -> Void)?
+        if let closeWorkspaceAction {
+            close = closeWorkspaceAction
+        }
+        return SupermuxProjectsSectionActions(
             toggleCollapsed: { [weak self] in self?.toggleCollapsed() },
             iconPNGData: { [weak self] projectID in
                 await self?.iconPNGData(forProjectID: projectID) ?? nil
@@ -253,6 +280,7 @@ public final class SupermuxProjectsSectionModel {
             selectWorkspace: { [weak self] workspaceID in
                 self?.navigateToWorkspace(workspaceID)
             },
+            closeWorkspace: close,
             makeWorktreesStore: { [weak self] projectID in
                 self?.makeWorktreesStore(forProjectID: projectID)
             },
@@ -261,11 +289,17 @@ public final class SupermuxProjectsSectionModel {
             toggleProjectExpanded: { [weak self] projectID in
                 self?.toggleProjectExpanded(projectID)
             },
+            openProjectWorkspace: { [weak self] projectID in
+                self?.openProjectWorkspace(projectID)
+            },
             openProjectDetail: { [weak self] projectID in
                 self?.openProjectDetail(projectID)
             },
             openNestedWorktree: { [weak self] projectID, worktree in
                 self?.openNestedWorktree(projectID: projectID, worktree: worktree)
+            },
+            requestNestedWorktreeRemoval: { [weak self] projectID, worktree in
+                self?.requestNestedWorktreeRemoval(projectID: projectID, worktree: worktree)
             }
         )
     }
@@ -348,11 +382,16 @@ public final class SupermuxProjectsSectionModel {
     ///   - rows: The project-associated workspace rows, in shell order.
     ///   - selectWorkspace: Opens a workspace by its UI row id (the same
     ///     navigation the flat list's rows use).
+    ///   - closeWorkspace: Closes a workspace through the shell's own close
+    ///     path (which owns the confirmation), or `nil` when the connected Mac
+    ///     doesn't support closing — the nested rows then offer no close.
     public func updateWorkspaces(
         _ rows: [SupermuxProjectWorkspaceRowSnapshot],
-        selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void
+        selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void,
+        closeWorkspace: (@MainActor (_ workspaceID: String) -> Void)? = nil
     ) {
         selectWorkspaceAction = selectWorkspace
+        closeWorkspaceAction = closeWorkspace
         if workspaceRows != rows {
             workspaceRows = rows
         }

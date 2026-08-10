@@ -61,6 +61,13 @@ extension SupermuxProjectsSectionModel {
             // invalidates the old session's in-flight work (nested opens,
             // prune callbacks, count recording).
             endAllWorktreeSessions()
+            // A confirmation raised against the OLD connection must not
+            // survive into this one: its store is gone, and re-resolving the
+            // same (projectID, path) against the fresh session could delete a
+            // DIFFERENT checkout that now sits at that path. The first
+            // confirm has no branch-identity recheck to catch it (only the
+            // forced retry does), so it has to be dropped here.
+            pendingWorktreeRemoval = nil
             sessionGeneration += 1
             let generation = sessionGeneration
             let capabilities = SupermuxMobileCapabilities(hostCapabilities: hostCapabilities)
@@ -159,6 +166,9 @@ extension SupermuxProjectsSectionModel {
         worktreeCounts = [:]
         seededWorktreeCountProjectIDs = []
         collapsedOverride = nil
+        // Same reason as the replacement path: a pending confirm belongs to a
+        // connection that no longer exists.
+        pendingWorktreeRemoval = nil
         endAllWorktreeSessions()
         sessionLoops?.cancel()
         sessionGeneration += 1

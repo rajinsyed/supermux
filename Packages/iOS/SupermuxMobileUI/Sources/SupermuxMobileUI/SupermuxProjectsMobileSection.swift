@@ -47,6 +47,7 @@ public struct SupermuxProjectsMobileSection: View {
             } header: {
                 SupermuxProjectsSectionHeader(
                     isCollapsed: section.isCollapsed,
+                    projectCount: section.hasLoaded ? section.rows.count : nil,
                     toggleCollapsed: actions.toggleCollapsed,
                     editing: actions.editing
                 )
@@ -81,10 +82,26 @@ public struct SupermuxProjectsMobileSection: View {
                     row: row,
                     iconPNGData: actions.iconPNGData,
                     toggleExpanded: actions.toggleProjectExpanded,
+                    openWorkspace: actions.openProjectWorkspace,
                     openDetail: actions.openProjectDetail
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button {
+                        actions.openProjectDetail(row.id)
+                    } label: {
+                        Label {
+                            Text(String(
+                                localized: "supermux.projects.row.details",
+                                defaultValue: "Project Details",
+                                bundle: .module
+                            ))
+                        } icon: {
+                            Image(systemName: "info.circle")
+                        }
+                    }
+                }
                 // Mac-sidebar shape: open workspaces are ALWAYS nested under
                 // their project; only the unopened-worktree slice (inside
                 // SupermuxProjectNestedRows) waits for the disclosure.
@@ -97,35 +114,66 @@ public struct SupermuxProjectsMobileSection: View {
     static let rowInsets = EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
 }
 
-/// The tappable section header: title plus a collapse chevron, and — when
-/// the editing seam is live — a trailing "+" that opens the create-project
-/// editor.
+/// The tappable section header: an uppercase caption title with a collapse
+/// chevron and a project count, plus — when the editing seam is live — a
+/// trailing "+" that opens the create-project editor.
+///
+/// Styled as a sidebar section label rather than a content heading, matching
+/// the Mac's uppercase secondary "PROJECTS": the header is a divider between
+/// groups of rows, so it should recede, and the previous `.subheadline`
+/// primary-colored title competed with the project names underneath it.
 struct SupermuxProjectsSectionHeader: View {
     let isCollapsed: Bool
+    /// Number of projects, shown while collapsed so the fold still reports
+    /// what it is hiding; `nil` before the first fetch lands.
+    var projectCount: Int?
     let toggleCollapsed: @MainActor () -> Void
     var editing: SupermuxProjectEditingActions?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingCreateEditor = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button(action: toggleCollapsed) {
-                HStack(spacing: 6) {
+        HStack(spacing: 0) {
+            Button {
+                SupermuxHaptics.selection()
+                toggleCollapsed()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(.caption2, weight: .bold))
+                        .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                        .animation(
+                            reduceMotion ? nil : SupermuxProjectMotion.disclosure,
+                            value: isCollapsed
+                        )
                     Text(String(
                         localized: "supermux.projects.sectionTitle",
                         defaultValue: "Projects",
                         bundle: .module
                     ))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
+                    .font(.system(.caption2, weight: .semibold))
+                    .textCase(.uppercase)
+                    .kerning(0.5)
+                    // The count only earns its place when the rows are hidden.
+                    if isCollapsed, let projectCount, projectCount > 0 {
+                        Text(projectCount.formatted())
+                            .font(.system(.caption2, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
                     Spacer(minLength: 0)
                 }
+                .foregroundStyle(.secondary)
+                .padding(.leading, SupermuxProjectRowMetrics.rowHorizontalPadding)
+                .frame(height: 34)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(String(
+                localized: "supermux.projects.sectionTitle",
+                defaultValue: "Projects",
+                bundle: .module
+            ))
             .accessibilityHint(isCollapsed
                 ? String(localized: "supermux.projects.section.expand", defaultValue: "Expand", bundle: .module)
                 : String(localized: "supermux.projects.section.collapse", defaultValue: "Collapse", bundle: .module))
@@ -135,8 +183,9 @@ struct SupermuxProjectsSectionHeader: View {
                     showingCreateEditor = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(.footnote, weight: .semibold))
                         .foregroundStyle(.secondary)
+                        .frame(width: 34, height: 34)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

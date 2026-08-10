@@ -3129,6 +3129,23 @@
         }
       }
     },
+    "supermux.projects.row.collapseWorktrees": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Worktrees"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを非表示"
+          }
+        }
+      }
+    },
     "supermux.projects.row.details": {
       "extractionState": "manual",
       "localizations": {
@@ -3142,6 +3159,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "プロジェクトの詳細"
+          }
+        }
+      }
+    },
+    "supermux.projects.row.expandWorktrees": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Worktrees"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを表示"
+          }
+        }
+      }
+    },
+    "supermux.projects.row.openHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens a workspace at the project root"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトルートでワークスペースを開きます"
+          }
+        }
+      }
+    },
+    "supermux.projects.row.openLocal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Local Workspace"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルワークスペースを開く"
           }
         }
       }
@@ -3469,6 +3537,40 @@
         }
       }
     },
+    "supermux.workspaces.row.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Workspace"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペースを閉じる"
+          }
+        }
+      }
+    },
+    "supermux.workspaces.row.focus": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Focus Workspace"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペースにフォーカス"
+          }
+        }
+      }
+    },
     "supermux.worktrees.empty": {
       "extractionState": "manual",
       "localizations": {
@@ -3669,6 +3771,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "未コミットの変更"
+          }
+        }
+      }
+    },
+    "supermux.worktrees.remove.force.titleNamed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove worktree “%@” anyway?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリー「%@」を強制的に削除しますか？"
           }
         }
       }

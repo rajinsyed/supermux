@@ -45,6 +45,10 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     )
     /// When set, `projectCreate`/`projectUpdate` throws instead of returning.
     var projectWriteError: (any Error)?
+    /// The response the next `projectOpen` call returns.
+    var projectOpenResponse = SupermuxProjectOpenResponse()
+    /// When set, `projectOpen` throws instead of returning.
+    var projectOpenError: (any Error)?
     /// When set, `projectDelete` throws instead of returning.
     var projectDeleteError: (any Error)?
     /// When set, `projectsSetSectionCollapsed` throws instead of returning.
@@ -310,6 +314,13 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
         if let projectWriteError { throw projectWriteError }
         return projectWriteResponse
+    }
+
+    func projectOpen(_ request: SupermuxProjectOpenRequest) async throws -> SupermuxProjectOpenResponse {
+        callLog.append("projectOpen")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let projectOpenError { throw projectOpenError }
+        return projectOpenResponse
     }
 
     func projectDelete(_ request: SupermuxProjectDeleteRequest) async throws -> SupermuxProjectDeleteResponse {
