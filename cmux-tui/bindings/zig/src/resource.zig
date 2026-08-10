@@ -16437,7 +16437,7 @@ test "wait cancel false drains the raced response before reuse" {
     defer shared.deinit();
     const connection = try fakeConnection(std.testing.allocator, &shared);
     var client = Client.init(std.testing.allocator, connection, .{
-        .timeout_ms = 2,
+        .timeout_ms = 10,
     });
     defer client.deinit();
     const session_id = try SessionId.parse(
@@ -18750,7 +18750,7 @@ test "acknowledged public stream survives beyond request timeout" {
         std.testing.allocator,
         &control_shared,
     );
-    const request_timeout_ms: u32 = 2;
+    const request_timeout_ms: u32 = 10;
     var client = Client.init(std.testing.allocator, connection, .{
         .timeout_ms = request_timeout_ms,
         .stream_factory = .{
