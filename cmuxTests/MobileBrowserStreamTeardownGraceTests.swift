@@ -61,6 +61,20 @@ struct MobileBrowserStreamTeardownGraceTests {
         #expect(panel.mobileBrowserStreamViewport == nil)
     }
 
+    @Test("A web-view replacement during grace restores the desktop viewport")
+    func webViewReplacementDuringGraceRestoresViewport() throws {
+        let panel = try makeStreamingPanel()
+        defer { panel.close() }
+        #expect(panel.viewportModel.requestedViewport != nil)
+
+        panel.removeMobileBrowserStreamSignalHandler(id: Self.handlerID)
+        panel.debugSimulateWebContentProcessTermination()
+
+        #expect(panel.mobileBrowserStreamRenderHost == nil)
+        #expect(panel.mobileBrowserStreamViewportTeardownTask == nil)
+        #expect(panel.viewportModel.requestedViewport == nil)
+    }
+
     @Test("Panel close during the grace skips the wait and tears down now")
     func panelCloseDuringGraceTearsDownImmediately() throws {
         let panel = try makeStreamingPanel()

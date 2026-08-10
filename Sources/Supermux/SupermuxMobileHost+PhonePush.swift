@@ -18,7 +18,9 @@ extension TerminalController {
         }
         do {
             let registered = try await SupermuxComposition.phonePushService.register(
+                deviceID: v2String(params, "device_id"),
                 deviceToken: deviceToken,
+                previousDeviceToken: v2String(params, "previous_device_token"),
                 bundleID: bundleID,
                 environment: environment,
                 enabled: enabled

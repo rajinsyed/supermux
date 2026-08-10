@@ -88,6 +88,12 @@ extension MobileShellComposite {
             return
         }
         await browserStreamEvents?.browserStreamWillStart(panelID: panelID)
+        guard supermuxAllowsBrowserStreamStart(panelID: panelID) else {
+            MobileDebugLog.anchormux(
+                "browser.stream start-cancelled panel=\(panelID.prefix(8)) selection-changed"
+            )
+            return
+        }
         guard connectionState == .connected,
               supportsBrowserStream,
               remoteClient === client else { return }

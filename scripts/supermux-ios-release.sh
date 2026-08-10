@@ -294,9 +294,13 @@ expected_application_id="${DEVELOPMENT_TEAM}.${BUNDLE_ID}"
 profile_team="$(plist_value TeamIdentifier:0 "${PROFILE_PLIST}")"
 profile_application_id="$(plist_value Entitlements:application-identifier "${PROFILE_PLIST}")"
 profile_aps_environment="$(plist_value Entitlements:aps-environment "${PROFILE_PLIST}")"
+profile_time_sensitive="$(plist_value Entitlements:com.apple.developer.usernotifications.time-sensitive "${PROFILE_PLIST}")"
+profile_apple_sign_in="$(plist_value Entitlements:com.apple.developer.applesignin:0 "${PROFILE_PLIST}")"
 signed_team="$(plist_value com.apple.developer.team-identifier "${SIGNED_ENTITLEMENTS}")"
 signed_application_id="$(plist_value application-identifier "${SIGNED_ENTITLEMENTS}")"
 signed_aps_environment="$(plist_value aps-environment "${SIGNED_ENTITLEMENTS}")"
+signed_time_sensitive="$(plist_value com.apple.developer.usernotifications.time-sensitive "${SIGNED_ENTITLEMENTS}")"
+signed_apple_sign_in="$(plist_value com.apple.developer.applesignin:0 "${SIGNED_ENTITLEMENTS}")"
 
 [[ "${profile_team}" == "${DEVELOPMENT_TEAM}" ]] \
   || die "provisioning profile team is '${profile_team:-<absent>}', expected ${DEVELOPMENT_TEAM}"
@@ -310,8 +314,16 @@ signed_aps_environment="$(plist_value aps-environment "${SIGNED_ENTITLEMENTS}")"
   || die "provisioning profile APNs environment is '${profile_aps_environment:-<absent>}', expected production"
 [[ "${signed_aps_environment}" == "production" ]] \
   || die "signed app APNs environment is '${signed_aps_environment:-<absent>}', expected production"
+[[ "${profile_time_sensitive}" == "true" ]] \
+  || die "provisioning profile Time Sensitive entitlement is '${profile_time_sensitive:-<absent>}', expected true"
+[[ "${signed_time_sensitive}" == "true" ]] \
+  || die "signed app Time Sensitive entitlement is '${signed_time_sensitive:-<absent>}', expected true"
+[[ "${profile_apple_sign_in}" == "Default" ]] \
+  || die "provisioning profile Sign in with Apple entitlement is '${profile_apple_sign_in:-<absent>}', expected Default"
+[[ "${signed_apple_sign_in}" == "Default" ]] \
+  || die "signed app Sign in with Apple entitlement is '${signed_apple_sign_in:-<absent>}', expected Default"
 
-echo "==> Verified iOS signature and production APNs entitlement for team ${DEVELOPMENT_TEAM}"
+echo "==> Verified iOS signature and required production entitlements for team ${DEVELOPMENT_TEAM}"
 echo "==> Installing ${APP_NAME} on iPhone ${DEVICE_ID}"
 "${XCRUN}" devicectl device install app --device "${DEVICE_ID}" "${BUILT_APP}"
 echo "==> Installed ${APP_NAME} (${BUNDLE_ID})"

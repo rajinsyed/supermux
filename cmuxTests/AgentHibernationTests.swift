@@ -402,6 +402,42 @@ struct AgentHibernationTests {
         expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .running)
         expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
     }
+
+    @MainActor
+    @Test
+    func testWorkspaceSweepReportsDeadNonOwnerLifecycleMutation() throws {
+        let workspace = Workspace()
+        let firstPanelId = try #require(workspace.focusedPanelId)
+        let paneId = try #require(workspace.paneId(forPanelId: firstPanelId))
+        let secondPanelId = try #require(workspace.newTerminalSurface(inPane: paneId, focus: false)).id
+
+        workspace.recordAgentPID(key: "claude_code", pid: 999_999, panelId: firstPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: firstPanelId, lifecycle: .running)
+        workspace.recordAgentPID(
+            key: "claude_code",
+            pid: ProcessInfo.processInfo.processIdentifier,
+            panelId: secondPanelId,
+            refreshPorts: false
+        )
+        workspace.setAgentLifecycle(key: "claude_code", panelId: secondPanelId, lifecycle: .running)
+
+        expectTrue(workspace.clearStaleAgentPIDs(refreshPorts: false))
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .unknown)
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
+    }
+
+    @MainActor
+    @Test
+    func testClearingAllAgentPIDsRemovesWorkspaceEvidence() throws {
+        let workspace = Workspace()
+        let panelId = try #require(workspace.focusedPanelId)
+        workspace.recordAgentPID(key: "claude_code", pid: 999_999, panelId: panelId, refreshPorts: false)
+        expectTrue(!SupermuxPanelAgentEvidence.shared.panelIds(workspaceId: workspace.id).isEmpty)
+
+        workspace.clearAllAgentPIDs(refreshPorts: false)
+
+        expectTrue(SupermuxPanelAgentEvidence.shared.panelIds(workspaceId: workspace.id).isEmpty)
+    }
     // SUPERMUX:end panel-agent-liveness-evidence
 
     @Test

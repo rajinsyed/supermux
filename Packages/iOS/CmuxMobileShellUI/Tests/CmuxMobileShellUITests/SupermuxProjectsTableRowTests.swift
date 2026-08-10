@@ -55,16 +55,6 @@ import Testing
         #expect(destination >= 0 && destination <= movableItemCount)
     }
 
-    @Test func firstWorkspaceRemainsAValidDropDestination() {
-        // `dropSessionDidUpdate` forbids rows STRICTLY inside the prefix. The
-        // insertion slot above the first workspace is row == prefix, so
-        // dropping into first position must stay allowed.
-        let items = [status, projects, workspace("w1"), workspace("w2")]
-        let prefix = chromePrefixCount(items)
-        #expect(!(prefix < prefix), "row == prefix must not be forbidden")
-        #expect(0 < prefix, "rows above the workspaces are forbidden")
-    }
-
     @Test func theProjectsRowIsNeverADropTarget() {
         let decision = WorkspaceListDropProposalPolicy().decision(
             hitItem: projects,

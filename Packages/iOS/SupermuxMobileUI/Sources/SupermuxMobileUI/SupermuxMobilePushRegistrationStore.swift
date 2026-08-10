@@ -7,7 +7,9 @@ public struct SupermuxMobilePushRegistrationStore {
     /// The fixed bundle identifier used by `scripts/supermux-ios-release.sh`.
     nonisolated public static let bundleID = "com.supermux.ios"
 
+    private static let deviceIDKey = "supermux.apns.deviceID"
     private static let deviceTokenKey = "supermux.apns.deviceToken"
+    private static let registeredDeviceTokenKey = "supermux.apns.registeredDeviceToken"
     private static let pushEnabledKey = "cmux.notifications.pushEnabled"
     private let defaults: UserDefaults
     private let notificationCenter: NotificationCenter
@@ -50,24 +52,40 @@ public struct SupermuxMobilePushRegistrationStore {
         guard capabilities.supportsPhonePush,
               currentBundleID == Self.bundleID else { return }
 
+        let changes = notificationCenter
+            .notifications(named: UserDefaults.didChangeNotification)
+            .makeAsyncIterator()
         var lastSent: Snapshot?
-        await synchronizeIfChanged(client: client, lastSent: &lastSent)
-        for await _ in notificationCenter.notifications(named: UserDefaults.didChangeNotification) {
-            guard !Task.isCancelled else { return }
-            await synchronizeIfChanged(client: client, lastSent: &lastSent)
+        await synchronizeUntilCurrent(client: client, lastSent: &lastSent)
+        while !Task.isCancelled, await changes.next() != nil {
+            await synchronizeUntilCurrent(client: client, lastSent: &lastSent)
         }
     }
 
-    private func synchronizeIfChanged(
+    private func synchronizeUntilCurrent(
         client: any SupermuxPhonePushRegistering,
         lastSent: inout Snapshot?
     ) async {
-        guard let snapshot = snapshot(), snapshot != lastSent else { return }
-        do {
-            _ = try await client.registerPhonePush(snapshot.request)
-            lastSent = snapshot
-        } catch {
-            // Keep the snapshot unsent so a later defaults change or reconnect retries.
+        while !Task.isCancelled,
+              let snapshot = snapshot(),
+              snapshot != lastSent {
+            do {
+                _ = try await client.registerPhonePush(snapshot.request)
+                if snapshot.enabled {
+                    defaults.set(snapshot.token, forKey: Self.registeredDeviceTokenKey)
+                } else {
+                    defaults.removeObject(forKey: Self.registeredDeviceTokenKey)
+                }
+                lastSent = Snapshot(
+                    deviceID: snapshot.deviceID,
+                    token: snapshot.token,
+                    previousToken: nil,
+                    enabled: snapshot.enabled
+                )
+            } catch {
+                // Keep the snapshot unsent so a later defaults change or reconnect retries.
+                return
+            }
         }
     }
 
@@ -75,7 +93,26 @@ public struct SupermuxMobilePushRegistrationStore {
         guard let token = defaults.string(forKey: Self.deviceTokenKey),
               Self.isValidToken(token) else { return nil }
         let enabled = defaults.object(forKey: Self.pushEnabledKey) as? Bool ?? true
-        return Snapshot(token: token, enabled: enabled)
+        let registeredToken = defaults.string(forKey: Self.registeredDeviceTokenKey)
+        return Snapshot(
+            deviceID: deviceID(),
+            token: token.lowercased(),
+            previousToken: registeredToken.flatMap { previous in
+                let normalized = previous.lowercased()
+                return normalized == token.lowercased() ? nil : normalized
+            },
+            enabled: enabled
+        )
+    }
+
+    private func deviceID() -> String {
+        if let stored = defaults.string(forKey: Self.deviceIDKey),
+           UUID(uuidString: stored) != nil {
+            return stored.lowercased()
+        }
+        let generated = UUID().uuidString.lowercased()
+        defaults.set(generated, forKey: Self.deviceIDKey)
+        return generated
     }
 
     private static func isValidToken(_ token: String) -> Bool {
@@ -84,7 +121,9 @@ public struct SupermuxMobilePushRegistrationStore {
     }
 
     private struct Snapshot: Equatable {
+        let deviceID: String
         let token: String
+        let previousToken: String?
         let enabled: Bool
 
         var request: SupermuxPhonePushRegistrationRequest {
@@ -92,7 +131,9 @@ public struct SupermuxMobilePushRegistrationStore {
             // aps-environment=production; sandbox delivery proved best-effort
             // (silently dropped pushes to the backgrounded app).
             SupermuxPhonePushRegistrationRequest(
-                deviceToken: token.lowercased(),
+                deviceID: deviceID,
+                deviceToken: token,
+                previousDeviceToken: previousToken,
                 bundleID: SupermuxMobilePushRegistrationStore.bundleID,
                 environment: .production,
                 enabled: enabled

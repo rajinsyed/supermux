@@ -21,7 +21,8 @@ import UIKit
 
     private func makeFixture(
         recorder: DropRecorder,
-        includesGroupFooter: Bool = false
+        includesGroupFooter: Bool = false,
+        leadingChrome: [WorkspaceListTableItem] = []
     ) -> (coordinator: WorkspaceListTableCoordinator, tableView: WorkspaceListUITableView, dragItem: UIDragItem) {
         let groupID = MobileWorkspaceGroupPreview.ID(rawValue: "group-a")
         let anchorID = MobileWorkspacePreview.ID(rawValue: "anchor")
@@ -35,12 +36,12 @@ import UIKit
             name: "Group A",
             anchorWorkspaceID: anchorID
         )
-        var items: [WorkspaceListTableItem] = [
+        var items: [WorkspaceListTableItem] = leadingChrome + [
             .groupHeader(groupID),
             .workspace(moverID, indented: false),
         ]
         if includesGroupFooter {
-            items.insert(.groupFooter(groupID), at: 1)
+            items.insert(.groupFooter(groupID), at: leadingChrome.count + 1)
         }
         let configuration = WorkspaceListTable(
             items: items,
@@ -112,8 +113,8 @@ import UIKit
         return (coordinator, tableView, dragItem)
     }
 
-    private func headerMidpoint(in tableView: UITableView) -> CGPoint {
-        let rect = tableView.rectForRow(at: IndexPath(row: 0, section: 0))
+    private func headerMidpoint(in tableView: UITableView, row: Int = 0) -> CGPoint {
+        let rect = tableView.rectForRow(at: IndexPath(row: row, section: 0))
         return CGPoint(x: rect.midX, y: rect.midY)
     }
 
@@ -138,6 +139,31 @@ import UIKit
 
         #expect(proposal.operation == .move)
         #expect(proposal.intent == .insertIntoDestinationIndexPath)
+    }
+
+    @Test func firstMovableBoundaryRemainsAllowedAfterProjectsChrome() {
+        let recorder = DropRecorder()
+        let chrome: [WorkspaceListTableItem] = [
+            .chrome(.macStatusRow),
+            .chrome(.supermuxProjects),
+        ]
+        let (coordinator, tableView, dragItem) = makeFixture(
+            recorder: recorder,
+            leadingChrome: chrome
+        )
+        let firstWorkspaceRow = chrome.count
+        let session = FakeDropSession(
+            dragItems: [dragItem],
+            location: headerMidpoint(in: tableView, row: firstWorkspaceRow)
+        )
+
+        let proposal = coordinator.tableView(
+            tableView,
+            dropSessionDidUpdate: session,
+            withDestinationIndexPath: IndexPath(row: firstWorkspaceRow, section: 0)
+        )
+
+        #expect(proposal.operation == .move)
     }
 
     @Test func headerEdgeBandKeepsInsertionGapProposal() {

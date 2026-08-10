@@ -213,7 +213,9 @@ extension Workspace {
         // SUPERMUX:begin panel-agent-liveness-evidence
         // Companion pass for panels holding lifecycle under a shared key they
         // no longer own — invisible to the owned-PID loop above.
-        supermuxSweepDeadAgentLifecycle()
+        if supermuxSweepDeadAgentLifecycle() {
+            didChange = true
+        }
         // SUPERMUX:end panel-agent-liveness-evidence
         if didChange {
             if refreshPorts { refreshTrackedAgentPorts() }
@@ -258,6 +260,9 @@ extension Workspace {
         agentPIDProcessIdentitiesByKey.removeAll()
         agentPIDPanelIdsByKey.removeAll()
         agentPIDKeysByPanelId.removeAll()
+        // SUPERMUX:begin panel-agent-liveness-evidence
+        SupermuxPanelAgentEvidence.shared.removeWorkspace(workspaceId: id)
+        // SUPERMUX:end panel-agent-liveness-evidence
         if refreshPorts {
             refreshTrackedAgentPorts()
         } else {

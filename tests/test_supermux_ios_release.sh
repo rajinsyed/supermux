@@ -70,7 +70,15 @@ cat > "$BIN_DIR/codesign" <<'SH'
 set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_CODESIGN_LOG:?}"
 if [[ "$*" == *'--entitlements :- --xml'* ]]; then
-  printf '%s\n' '<?xml version="1.0"?><plist version="1.0"><dict/></plist>'
+  cat <<'PLIST'
+<?xml version="1.0"?><plist version="1.0"><dict>
+<key>aps-environment</key><string>production</string>
+<key>application-identifier</key><string>ABCD123456.com.supermux.ios</string>
+<key>com.apple.developer.team-identifier</key><string>ABCD123456</string>
+<key>com.apple.developer.usernotifications.time-sensitive</key><true/>
+<key>com.apple.developer.applesignin</key><array><string>Default</string></array>
+</dict></plist>
+PLIST
 fi
 SH
 chmod +x "$BIN_DIR/codesign"
@@ -82,10 +90,13 @@ if [[ "${1:-}" == "cms" ]]; then
   cat <<'PLIST'
 <?xml version="1.0"?><plist version="1.0"><dict>
 <key>Name</key><string>Supermux iPhone Ad Hoc</string>
+<key>TeamIdentifier</key><array><string>ABCD123456</string></array>
 <key>Entitlements</key><dict>
 <key>aps-environment</key><string>production</string>
 <key>application-identifier</key><string>ABCD123456.com.supermux.ios</string>
 <key>com.apple.developer.team-identifier</key><string>ABCD123456</string>
+<key>com.apple.developer.usernotifications.time-sensitive</key><true/>
+<key>com.apple.developer.applesignin</key><array><string>Default</string></array>
 </dict>
 </dict></plist>
 PLIST
@@ -99,24 +110,32 @@ chmod +x "$BIN_DIR/security"
 cat > "$BIN_DIR/plistbuddy" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-}" == "-x" ]]; then shift; fi
+xml=0
+if [[ "${1:-}" == "-x" ]]; then xml=1; shift; fi
 command="${2:-}"
+file="${3:-}"
 case "$command" in
-  'Print :CFBundleIdentifier') printf 'com.supermux.ios\n' ;;
-  'Print :CFBundleDisplayName') printf 'Supermux\n' ;;
-  'Print :CMUXDevTag') printf '\n' ;;
-  'Print :CMUXAuthEnvironment') printf 'production\n' ;;
-  'Print :TeamIdentifier:0') printf 'ABCD123456\n' ;;
-  'Print :Entitlements:application-identifier') printf 'ABCD123456.com.supermux.ios\n' ;;
-  'Print :Entitlements:aps-environment') printf 'production\n' ;;
-  'Print :com.apple.developer.team-identifier') printf 'ABCD123456\n' ;;
-  'Print :application-identifier') printf 'ABCD123456.com.supermux.ios\n' ;;
-  'Print :aps-environment') printf 'production\n' ;;
-  'Print :Name') printf 'Supermux iPhone Ad Hoc\n' ;;
-  'Print :Entitlements')
-    printf '%s\n' '<?xml version="1.0"?><plist version="1.0"><dict><key>aps-environment</key><string>production</string></dict></plist>' ;;
-  *) echo "unexpected PlistBuddy command: $command" >&2; exit 2 ;;
+  'Print :CFBundleIdentifier') printf 'com.supermux.ios\n'; exit 0 ;;
+  'Print :CFBundleDisplayName') printf 'Supermux\n'; exit 0 ;;
+  'Print :CMUXDevTag') printf '\n'; exit 0 ;;
+  'Print :CMUXAuthEnvironment') printf 'production\n'; exit 0 ;;
 esac
+/usr/bin/python3 - "$file" "$command" "$xml" <<'PY'
+import plistlib
+import sys
+
+path, command, xml = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+with open(path, "rb") as handle:
+    value = plistlib.load(handle)
+for component in command.removeprefix("Print :").split(":"):
+    value = value[int(component)] if isinstance(value, list) else value[component]
+if xml:
+    sys.stdout.buffer.write(plistlib.dumps(value, fmt=plistlib.FMT_XML))
+elif isinstance(value, bool):
+    print("true" if value else "false")
+else:
+    print(value)
+PY
 SH
 chmod +x "$BIN_DIR/plistbuddy"
 
@@ -183,7 +202,7 @@ grep -F -- 'devicectl device info details --device test-phone' "$TMP_DIR/xcrun.l
 grep -F -- 'devicectl device install app --device test-phone ' "$TMP_DIR/xcrun.log" >/dev/null
 grep -F -- 'devicectl device process launch --terminate-existing --device test-phone com.supermux.ios' "$TMP_DIR/xcrun.log" >/dev/null
 grep -F -- '--verify --strict --verbose=2 ' "$TMP_DIR/codesign.log" >/dev/null
-grep -F -- '==> Verified iOS signature and production APNs entitlement for team ABCD123456' "$OUTPUT_FILE" >/dev/null
+grep -F -- '==> Verified iOS signature and required production entitlements for team ABCD123456' "$OUTPUT_FILE" >/dev/null
 grep -F -- '==> Installed Supermux (com.supermux.ios)' "$OUTPUT_FILE" >/dev/null
 grep -F -- '==> Launched Supermux on iPhone' "$OUTPUT_FILE" >/dev/null
 

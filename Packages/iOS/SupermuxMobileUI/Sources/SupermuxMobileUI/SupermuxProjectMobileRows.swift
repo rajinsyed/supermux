@@ -133,11 +133,7 @@ struct SupermuxProjectMobileRow: View {
         .buttonStyle(.plain)
         .animation(reduceMotion ? nil : SupermuxProjectMotion.disclosure, value: row.isExpanded)
         .accessibilityLabel(disclosureActionTitle)
-        .accessibilityValue(String(
-            localized: "supermux.projects.row.worktreeCount",
-            defaultValue: "\(count) worktrees",
-            bundle: .module
-        ))
+        .accessibilityValue(worktreeCountText(count))
         .accessibilityIdentifier("SupermuxProjectWorktreeDisclosure-\(row.id)")
     }
 
@@ -205,18 +201,10 @@ struct SupermuxProjectMobileRow: View {
     private var accessibilityValue: String {
         var parts: [String] = []
         if let count = row.openWorkspaceCount, count > 0 {
-            parts.append(String(
-                localized: "supermux.projects.row.workspaceCount",
-                defaultValue: "\(count) open",
-                bundle: .module
-            ))
+            parts.append(workspaceCountText(count))
         }
         if let count = unopenedWorktreeCount {
-            parts.append(String(
-                localized: "supermux.projects.row.worktreeCount",
-                defaultValue: "\(count) worktrees",
-                bundle: .module
-            ))
+            parts.append(worktreeCountText(count))
         }
         if row.run?.isRunning == true {
             parts.append(String(
@@ -226,6 +214,28 @@ struct SupermuxProjectMobileRow: View {
             ))
         }
         return parts.joined(separator: ", ")
+    }
+
+    private func workspaceCountText(_ count: Int) -> String {
+        String.localizedStringWithFormat(
+            String(
+                localized: "supermux.projects.row.workspaceCount",
+                defaultValue: "%lld open",
+                bundle: .module
+            ),
+            Int64(count)
+        )
+    }
+
+    private func worktreeCountText(_ count: Int) -> String {
+        String.localizedStringWithFormat(
+            String(
+                localized: "supermux.projects.row.worktreeCount",
+                defaultValue: "%lld worktrees",
+                bundle: .module
+            ),
+            Int64(count)
+        )
     }
 }
 

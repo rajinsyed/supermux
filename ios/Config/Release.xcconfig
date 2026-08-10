@@ -7,8 +7,8 @@
 PRODUCT_BUNDLE_IDENTIFIER = dev.cmux.app.beta
 DEVELOPMENT_TEAM = 7WLXT3NR37
 
-// Distinguish the TestFlight beta on-device from a future App Store "cmux"
-// (overrides PRODUCT_DISPLAY_NAME = cmux from Shared.xcconfig). Debug stays "cmux".
+// Shared.xcconfig brands all fork builds as Supermux. The upload scripts still
+// override TestFlight/App Store display names on the xcodebuild command line.
 // SUPERMUX:begin ios-supermux-brand
 // Fork rebrand (see Shared.xcconfig). The upstream TestFlight/App Store lanes
 // pass PRODUCT_DISPLAY_NAME on the xcodebuild command line

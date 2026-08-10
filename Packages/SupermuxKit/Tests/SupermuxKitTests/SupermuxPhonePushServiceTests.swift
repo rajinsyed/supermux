@@ -42,6 +42,7 @@ private actor APNsRequestRecorder {
         )
         let token = String(repeating: "ab", count: 32)
         _ = try await service.register(
+            deviceID: "00000000-0000-0000-0000-000000000001",
             deviceToken: token,
             bundleID: SupermuxPhonePushService.supportedBundleID,
             environment: .sandbox,
@@ -108,6 +109,7 @@ private actor APNsRequestRecorder {
 
         await #expect(throws: SupermuxPhonePushService.RegistrationError.invalidRegistration) {
             _ = try await service.register(
+                deviceID: "00000000-0000-0000-0000-000000000001",
                 deviceToken: String(repeating: "cd", count: 32),
                 bundleID: "com.ryne.ryne",
                 environment: .sandbox,
@@ -136,6 +138,7 @@ private actor APNsRequestRecorder {
             }
         )
         _ = try await service.register(
+            deviceID: "00000000-0000-0000-0000-000000000001",
             deviceToken: String(repeating: "ef", count: 32),
             bundleID: SupermuxPhonePushService.supportedBundleID,
             environment: .sandbox,
@@ -147,6 +150,142 @@ private actor APNsRequestRecorder {
         await service.forward(message)
 
         #expect(await recorder.snapshot().count == 1)
+    }
+
+    @Test func tokenRotationReplacesALegacyRegistrationForTheSameDevice() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeCredentials(to: directory)
+        let recorder = APNsRequestRecorder()
+        let service = SupermuxPhonePushService(
+            baseDirectory: directory,
+            transport: { request in
+                await recorder.record(request)
+                guard let url = request.url,
+                      let response = HTTPURLResponse(
+                          url: url,
+                          statusCode: 200,
+                          httpVersion: "HTTP/2",
+                          headerFields: nil
+                      ) else { throw PhonePushTestError.invalidResponse }
+                return (Data(), response)
+            }
+        )
+        let deviceID = "00000000-0000-0000-0000-000000000002"
+        let oldToken = String(repeating: "ab", count: 32)
+        let newToken = String(repeating: "cd", count: 32)
+        _ = try await service.register(
+            deviceToken: oldToken,
+            bundleID: SupermuxPhonePushService.supportedBundleID,
+            environment: .production,
+            enabled: true
+        )
+        _ = try await service.register(
+            deviceID: deviceID,
+            deviceToken: newToken,
+            previousDeviceToken: oldToken,
+            bundleID: SupermuxPhonePushService.supportedBundleID,
+            environment: .production,
+            enabled: true
+        )
+
+        await service.forward(SupermuxPhonePushMessage(kind: .dismiss, badgeCount: 0))
+
+        let requests = await recorder.snapshot()
+        #expect(requests.count == 1)
+        #expect(requests.first?.url?.path == "/3/device/\(newToken)")
+    }
+
+    @Test func oversizedVisibleContentIsTruncatedBelowTheAPNsLimit() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeCredentials(to: directory)
+        let recorder = APNsRequestRecorder()
+        let service = SupermuxPhonePushService(
+            baseDirectory: directory,
+            transport: { request in
+                await recorder.record(request)
+                guard let url = request.url,
+                      let response = HTTPURLResponse(
+                          url: url,
+                          statusCode: 200,
+                          httpVersion: "HTTP/2",
+                          headerFields: nil
+                      ) else { throw PhonePushTestError.invalidResponse }
+                return (Data(), response)
+            }
+        )
+        _ = try await service.register(
+            deviceID: "00000000-0000-0000-0000-000000000003",
+            deviceToken: String(repeating: "ef", count: 32),
+            bundleID: SupermuxPhonePushService.supportedBundleID,
+            environment: .production,
+            enabled: true
+        )
+        let originalBody = String(repeating: "terminal output ", count: 1_000)
+
+        await service.forward(SupermuxPhonePushMessage(
+            kind: .notify,
+            title: "Agent finished",
+            body: originalBody,
+            badgeCount: 1
+        ))
+
+        let request = try #require(await recorder.snapshot().first)
+        let data = try #require(request.httpBody)
+        #expect(data.count <= SupermuxPhonePushService.maximumPayloadBytes)
+        let payload = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let aps = try #require(payload["aps"] as? [String: Any])
+        let alert = try #require(aps["alert"] as? [String: String])
+        let deliveredBody = try #require(alert["body"])
+        #expect(deliveredBody.count < originalBody.count)
+    }
+
+    @Test func largeDismissBatchesAreChunkedWithoutDroppingIdentifiers() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeCredentials(to: directory)
+        let recorder = APNsRequestRecorder()
+        let service = SupermuxPhonePushService(
+            baseDirectory: directory,
+            transport: { request in
+                await recorder.record(request)
+                guard let url = request.url,
+                      let response = HTTPURLResponse(
+                          url: url,
+                          statusCode: 200,
+                          httpVersion: "HTTP/2",
+                          headerFields: nil
+                      ) else { throw PhonePushTestError.invalidResponse }
+                return (Data(), response)
+            }
+        )
+        _ = try await service.register(
+            deviceID: "00000000-0000-0000-0000-000000000004",
+            deviceToken: String(repeating: "12", count: 32),
+            bundleID: SupermuxPhonePushService.supportedBundleID,
+            environment: .production,
+            enabled: true
+        )
+        let dismissedIDs = (0 ..< 300).map { "notification-\($0)-\(String(repeating: "x", count: 48))" }
+
+        await service.forward(SupermuxPhonePushMessage(
+            kind: .dismiss,
+            dismissedIDs: dismissedIDs,
+            badgeCount: 2
+        ))
+
+        let requests = await recorder.snapshot()
+        #expect(requests.count > 1)
+        var deliveredIDs: [String] = []
+        for request in requests {
+            let data = try #require(request.httpBody)
+            #expect(data.count <= SupermuxPhonePushService.maximumPayloadBytes)
+            let payload = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let cmux = try #require(payload["cmux"] as? [String: Any])
+            deliveredIDs.append(contentsOf: try #require(cmux["dismissedIds"] as? [String]))
+        }
+        #expect(deliveredIDs == dismissedIDs)
     }
 
     private func temporaryDirectory() throws -> URL {

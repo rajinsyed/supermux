@@ -107,7 +107,9 @@ public struct SupermuxWorkspaceToolsMenuEntries: View {
     public var body: some View {
         if SupermuxWorkspaceTools.showsChangesEntry(hostCapabilities: hostCapabilities) {
             Button {
-                showingChanges = true
+                Task { @MainActor in
+                    showingChanges = true
+                }
             } label: {
                 Label {
                     Text(String(
@@ -123,7 +125,9 @@ public struct SupermuxWorkspaceToolsMenuEntries: View {
         }
         if SupermuxWorkspaceTools.showsFilesEntry(hostCapabilities: hostCapabilities) {
             Button {
-                showingFiles = true
+                Task { @MainActor in
+                    showingFiles = true
+                }
             } label: {
                 Label {
                     Text(String(

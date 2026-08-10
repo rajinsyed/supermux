@@ -72,6 +72,10 @@ final class SupermuxPanelAgentEvidence {
         pruneEmpty(workspaceId: workspaceId, panelId: nil)
     }
 
+    func removeWorkspace(workspaceId: UUID) {
+        evidenceByWorkspace.removeValue(forKey: workspaceId)
+    }
+
     private func pruneEmpty(workspaceId: UUID, panelId: UUID?) {
         if let panelId, evidenceByWorkspace[workspaceId]?[panelId]?.isEmpty == true {
             evidenceByWorkspace[workspaceId]?.removeValue(forKey: panelId)
@@ -118,15 +122,20 @@ extension Workspace {
 
     /// Workspace-wide companion for the periodic stale sweep: visits every
     /// panel with recorded evidence, dropping evidence for panels that no
-    /// longer exist.
-    func supermuxSweepDeadAgentLifecycle() {
+    /// longer exist. Returns whether any lifecycle state was cleared.
+    @discardableResult
+    func supermuxSweepDeadAgentLifecycle() -> Bool {
         let registry = SupermuxPanelAgentEvidence.shared
+        var didClear = false
         for panelId in registry.panelIds(workspaceId: id) {
             guard panels[panelId] != nil else {
                 registry.removePanel(workspaceId: id, panelId: panelId)
                 continue
             }
-            supermuxClearDeadPanelAgentLifecycle(panelId: panelId)
+            if supermuxClearDeadPanelAgentLifecycle(panelId: panelId) {
+                didClear = true
+            }
         }
+        return didClear
     }
 }

@@ -140,8 +140,11 @@ extension TerminalController {
             ])
         }
 
-        workspace.markCloseHistoryEligible(panelId: panelID)
-        guard workspace.closePanel(panelID, force: true) else {
+        guard closeSurfaceRecordingHistory(
+            in: workspace,
+            surfaceId: panelID,
+            force: true
+        ) else {
             return .err(code: "unavailable", message: "Panel could not be closed", data: [
                 "workspace_id": workspaceID.uuidString,
                 "panel_id": panelID.uuidString,

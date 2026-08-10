@@ -12,6 +12,8 @@ public actor SupermuxPhonePushService {
     public static let privateKeyFileName = "supermux-apns-auth-key.p8"
     /// The persisted phone registrations learned over the encrypted mobile connection.
     public static let registrationsFileName = "supermux-apns-devices.json"
+    /// Apple's maximum JSON payload size for regular APNs notifications.
+    public static let maximumPayloadBytes = 4_096
 
     /// Apple's APNs environment for one device token.
     public enum Environment: String, Codable, Sendable, Equatable {
@@ -39,11 +41,13 @@ public actor SupermuxPhonePushService {
     }
 
     private struct Registration: Codable, Sendable, Equatable {
+        let deviceID: String?
         let deviceToken: String
         let bundleID: String
         let environment: Environment
 
         enum CodingKeys: String, CodingKey {
+            case deviceID = "device_id"
             case deviceToken = "device_token"
             case bundleID = "bundle_id"
             case environment
@@ -117,28 +121,44 @@ public actor SupermuxPhonePushService {
     /// owned by the same Apple Developer team.
     ///
     /// - Parameters:
+    ///   - deviceID: Stable identity for the physical iPhone installation, when supplied by the client.
     ///   - deviceToken: Lowercase hexadecimal APNs token.
+    ///   - previousDeviceToken: The previously acknowledged token, when APNs rotated it.
     ///   - bundleID: Signed application bundle identifier.
     ///   - environment: APNs host that issued the token.
     ///   - enabled: Whether the registration should remain active.
-    /// - Returns: Whether the token is registered after the mutation.
+    /// - Returns: Whether the device is registered after the mutation.
     public func register(
+        deviceID: String? = nil,
         deviceToken: String,
+        previousDeviceToken: String? = nil,
         bundleID: String,
         environment: Environment,
         enabled: Bool
     ) throws -> Bool {
+        let normalizedDeviceID = deviceID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
         let normalizedToken = deviceToken.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard bundleID == Self.supportedBundleID,
-              (64 ... 200).contains(normalizedToken.count),
-              normalizedToken.allSatisfy(\.isHexDigit) else {
+        let normalizedPreviousToken = previousDeviceToken?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard normalizedDeviceID.map({ UUID(uuidString: $0) != nil }) != false,
+              bundleID == Self.supportedBundleID,
+              Self.isValidDeviceToken(normalizedToken),
+              normalizedPreviousToken.map(Self.isValidDeviceToken) != false else {
             throw RegistrationError.invalidRegistration
         }
 
         var registrations = loadRegistrations()
-        registrations.removeAll { $0.deviceToken == normalizedToken }
+        registrations.removeAll {
+            (normalizedDeviceID != nil && $0.deviceID == normalizedDeviceID)
+                || $0.deviceToken == normalizedToken
+                || $0.deviceToken == normalizedPreviousToken
+        }
         if enabled {
             registrations.append(Registration(
+                deviceID: normalizedDeviceID,
                 deviceToken: normalizedToken,
                 bundleID: bundleID,
                 environment: environment
@@ -173,16 +193,28 @@ public actor SupermuxPhonePushService {
             return
         }
 
+        let encodedPayloadBodies: [Data]
+        do {
+            encodedPayloadBodies = try payloadBodies(for: message)
+        } catch {
+            logger.error("Direct APNs payload could not fit within Apple's size limit")
+            return
+        }
+
         var invalidTokens = Set<String>()
         for registration in registrations {
             do {
-                let result = try await send(
-                    message,
-                    registration: registration,
-                    providerToken: providerToken
-                )
-                if result.shouldPrune {
-                    invalidTokens.insert(registration.deviceToken)
+                for payloadBody in encodedPayloadBodies {
+                    let result = try await send(
+                        message,
+                        payloadBody: payloadBody,
+                        registration: registration,
+                        providerToken: providerToken
+                    )
+                    if result.shouldPrune {
+                        invalidTokens.insert(registration.deviceToken)
+                        break
+                    }
                 }
             } catch {
                 logger.error("Direct APNs request failed for bundle \(registration.bundleID, privacy: .public)")
@@ -225,8 +257,8 @@ public actor SupermuxPhonePushService {
         }
         return document.devices.filter {
             $0.bundleID == Self.supportedBundleID
-                && (64 ... 200).contains($0.deviceToken.count)
-                && $0.deviceToken.allSatisfy(\.isHexDigit)
+                && Self.isValidDeviceToken($0.deviceToken)
+                && $0.deviceID.map { UUID(uuidString: $0) != nil } != false
         }
     }
 
@@ -288,6 +320,7 @@ public actor SupermuxPhonePushService {
 
     private func send(
         _ message: SupermuxPhonePushMessage,
+        payloadBody: Data,
         registration: Registration,
         providerToken: String
     ) async throws -> DeliveryResult {
@@ -296,7 +329,7 @@ public actor SupermuxPhonePushService {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload(for: message))
+        request.httpBody = payloadBody
         request.timeoutInterval = 10
         request.setValue("bearer \(providerToken)", forHTTPHeaderField: "authorization")
         request.setValue(registration.bundleID, forHTTPHeaderField: "apns-topic")
@@ -319,17 +352,128 @@ public actor SupermuxPhonePushService {
         return DeliveryResult(status: http.statusCode, reason: reason)
     }
 
-    private func payload(for message: SupermuxPhonePushMessage) -> [String: Any] {
-        if message.kind == .dismiss {
-            return [
-                "aps": [
-                    "content-available": 1,
-                    "badge": max(0, message.badgeCount),
-                ],
-                "cmux": ["dismissedIds": message.dismissedIDs],
-            ]
+    private func payloadBodies(for message: SupermuxPhonePushMessage) throws -> [Data] {
+        switch message.kind {
+        case .notify:
+            return [try notificationPayloadBody(for: message)]
+        case .dismiss:
+            return try dismissPayloadBodies(for: message)
+        }
+    }
+
+    private func notificationPayloadBody(for message: SupermuxPhonePushMessage) throws -> Data {
+        var title = message.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var subtitle = message.subtitle
+        var body = message.body
+        var data = try encodedNotificationPayload(
+            for: message,
+            title: title,
+            subtitle: subtitle,
+            body: body
+        )
+
+        if data.count > Self.maximumPayloadBytes {
+            body = try fittingPrefix(of: body) { candidate in
+                try encodedNotificationPayload(
+                    for: message,
+                    title: title,
+                    subtitle: subtitle,
+                    body: candidate
+                ).count <= Self.maximumPayloadBytes
+            }
+            data = try encodedNotificationPayload(
+                for: message,
+                title: title,
+                subtitle: subtitle,
+                body: body
+            )
+        }
+        if data.count > Self.maximumPayloadBytes {
+            subtitle = try fittingPrefix(of: subtitle) { candidate in
+                try encodedNotificationPayload(
+                    for: message,
+                    title: title,
+                    subtitle: candidate,
+                    body: body
+                ).count <= Self.maximumPayloadBytes
+            }
+            data = try encodedNotificationPayload(
+                for: message,
+                title: title,
+                subtitle: subtitle,
+                body: body
+            )
+        }
+        if data.count > Self.maximumPayloadBytes {
+            title = try fittingPrefix(of: title) { candidate in
+                try encodedNotificationPayload(
+                    for: message,
+                    title: candidate,
+                    subtitle: subtitle,
+                    body: body
+                ).count <= Self.maximumPayloadBytes
+            }
+            data = try encodedNotificationPayload(
+                for: message,
+                title: title,
+                subtitle: subtitle,
+                body: body
+            )
+        }
+        guard data.count <= Self.maximumPayloadBytes else {
+            throw ProviderError.payloadTooLarge
+        }
+        return data
+    }
+
+    private func dismissPayloadBodies(for message: SupermuxPhonePushMessage) throws -> [Data] {
+        var bodies: [Data] = []
+        var currentIDs: [String] = []
+
+        for notificationID in message.dismissedIDs {
+            let candidateIDs = currentIDs + [notificationID]
+            let candidate = try encodedDismissPayload(
+                dismissedIDs: candidateIDs,
+                badgeCount: message.badgeCount
+            )
+            if candidate.count <= Self.maximumPayloadBytes {
+                currentIDs = candidateIDs
+                continue
+            }
+
+            if !currentIDs.isEmpty {
+                bodies.append(try encodedDismissPayload(
+                    dismissedIDs: currentIDs,
+                    badgeCount: message.badgeCount
+                ))
+                currentIDs = []
+            }
+            let single = try encodedDismissPayload(
+                dismissedIDs: [notificationID],
+                badgeCount: message.badgeCount
+            )
+            if single.count <= Self.maximumPayloadBytes {
+                currentIDs = [notificationID]
+            } else {
+                logger.error("Skipping one oversized direct-APNs dismiss identifier")
+            }
         }
 
+        if !currentIDs.isEmpty || bodies.isEmpty {
+            bodies.append(try encodedDismissPayload(
+                dismissedIDs: currentIDs,
+                badgeCount: message.badgeCount
+            ))
+        }
+        return bodies
+    }
+
+    private func encodedNotificationPayload(
+        for message: SupermuxPhonePushMessage,
+        title: String,
+        subtitle: String,
+        body: String
+    ) throws -> Data {
         let alert: [String: String]
         if message.hideContent {
             alert = [
@@ -337,26 +481,21 @@ public actor SupermuxPhonePushService {
                 "loc-key": "push.generic.body",
             ]
         } else {
-            var visible = ["title": message.title.trimmingCharacters(in: .whitespacesAndNewlines)]
-            if visible["title"]?.isEmpty != false {
-                visible["title"] = "Supermux"
+            var visible = ["title": title.isEmpty ? "Supermux" : title]
+            if !subtitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                visible["subtitle"] = subtitle
             }
-            if !message.subtitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                visible["subtitle"] = message.subtitle
-            }
-            if !message.body.isEmpty {
-                visible["body"] = message.body
+            if !body.isEmpty {
+                visible["body"] = body
             }
             alert = visible
         }
-        var aps: [String: Any] = [
+        let aps: [String: Any] = [
             "alert": alert,
             "sound": "default",
             "badge": max(0, message.badgeCount),
             "category": message.acceptsTextReply ? "cmux.terminal.reply" : "cmux.terminal",
         ]
-        aps.removeValue(forKey: "interruption-level")
-
         var cmux: [String: Any] = [
             "retargetsToLiveSurfaceOwner": message.retargetsToLiveSurfaceOwner,
         ]
@@ -364,7 +503,34 @@ public actor SupermuxPhonePushService {
         if let surfaceID = message.surfaceID { cmux["surfaceId"] = surfaceID }
         if let macDeviceID = message.macDeviceID { cmux["macDeviceId"] = macDeviceID }
         if let notificationID = message.notificationID { cmux["notificationId"] = notificationID }
-        return ["aps": aps, "cmux": cmux]
+        return try JSONSerialization.data(withJSONObject: ["aps": aps, "cmux": cmux])
+    }
+
+    private func encodedDismissPayload(dismissedIDs: [String], badgeCount: Int) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "aps": [
+                "content-available": 1,
+                "badge": max(0, badgeCount),
+            ],
+            "cmux": ["dismissedIds": dismissedIDs],
+        ])
+    }
+
+    private func fittingPrefix(
+        of value: String,
+        fits: (String) throws -> Bool
+    ) rethrows -> String {
+        var lower = 0
+        var upper = value.count
+        while lower < upper {
+            let midpoint = (lower + upper + 1) / 2
+            if try fits(String(value.prefix(midpoint))) {
+                lower = midpoint
+            } else {
+                upper = midpoint - 1
+            }
+        }
+        return String(value.prefix(lower))
     }
 
     private static func encodedJSON(_ object: [String: Any]) throws -> String {
@@ -376,6 +542,10 @@ public actor SupermuxPhonePushService {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+    }
+
+    private static func isValidDeviceToken(_ value: String) -> Bool {
+        (64 ... 200).contains(value.count) && value.allSatisfy(\.isHexDigit)
     }
 
     private static func isValidIdentifier(_ value: String) -> Bool {
@@ -395,6 +565,7 @@ public actor SupermuxPhonePushService {
         case invalidSigningInput
         case invalidRequestURL
         case invalidResponse
+        case payloadTooLarge
     }
 
     private struct APNsErrorBody: Decodable {

@@ -397,6 +397,9 @@ extension BrowserPanel {
                 mobileBrowserStreamViewportTeardownTask = nil
                 mobileBrowserStreamRenderHost?.abandon()
                 mobileBrowserStreamRenderHost = nil
+                if mobileBrowserStreamPreviousViewportWasCaptured {
+                    viewportModel.setViewport(mobileBrowserStreamPreviousViewport)
+                }
                 mobileBrowserStreamPreviousViewport = nil
                 mobileBrowserStreamPreviousViewportWasCaptured = false
                 mobileBrowserStreamViewport = nil

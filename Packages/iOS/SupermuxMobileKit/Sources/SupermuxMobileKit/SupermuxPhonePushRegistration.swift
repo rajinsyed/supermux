@@ -11,29 +11,39 @@ public enum SupermuxPhonePushEnvironment: String, Codable, Sendable, Equatable {
 
 /// Registers or removes one iPhone APNs token on the paired Supermux Mac.
 public struct SupermuxPhonePushRegistrationRequest: Sendable, Equatable {
+    /// Stable identity for this physical iPhone installation.
+    public let deviceID: String
     /// The lowercase hexadecimal APNs device token.
     public let deviceToken: String
+    /// The token previously acknowledged by the Mac, when APNs rotated it.
+    public let previousDeviceToken: String?
     /// The signed iOS application's bundle identifier.
     public let bundleID: String
     /// The APNs host that issued ``deviceToken``.
     public let environment: SupermuxPhonePushEnvironment
-    /// Whether this token should remain registered.
+    /// Whether this device should remain registered.
     public let enabled: Bool
 
     /// Creates a phone-push registration request.
     ///
     /// - Parameters:
+    ///   - deviceID: Stable identity for this physical iPhone installation.
     ///   - deviceToken: The lowercase hexadecimal APNs device token.
+    ///   - previousDeviceToken: The last token the Mac acknowledged, when different.
     ///   - bundleID: The signed iOS application's bundle identifier.
     ///   - environment: The APNs host that issued the token.
-    ///   - enabled: Whether the Mac should retain the token.
+    ///   - enabled: Whether the Mac should retain this device.
     public init(
+        deviceID: String,
         deviceToken: String,
+        previousDeviceToken: String? = nil,
         bundleID: String,
         environment: SupermuxPhonePushEnvironment,
         enabled: Bool
     ) {
+        self.deviceID = deviceID
         self.deviceToken = deviceToken
+        self.previousDeviceToken = previousDeviceToken
         self.bundleID = bundleID
         self.environment = environment
         self.enabled = enabled
@@ -44,12 +54,17 @@ public struct SupermuxPhonePushRegistrationRequest: Sendable, Equatable {
 
     /// The snake-case JSON-RPC parameters.
     public var wireParams: [String: Any] {
-        [
+        var params: [String: Any] = [
+            "device_id": deviceID,
             "device_token": deviceToken,
             "bundle_id": bundleID,
             "environment": environment.rawValue,
             "enabled": enabled,
         ]
+        if let previousDeviceToken {
+            params["previous_device_token"] = previousDeviceToken
+        }
+        return params
     }
 }
 

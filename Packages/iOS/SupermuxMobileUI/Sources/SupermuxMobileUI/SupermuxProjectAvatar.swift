@@ -79,7 +79,9 @@ struct SupermuxProjectAvatar: View {
             // a round trip to arrive at the same pixels.
             guard SupermuxProjectIconImageCache.shared.image(for: identity) == nil else { return }
             guard let data = await iconPNGData(row.id),
-                  let decoded = SupermuxProjectIconImageCache.decode(data) else { return }
+                  let decoded = SupermuxProjectIconImageCache.decode(data),
+                  !Task.isCancelled,
+                  identity == iconIdentity else { return }
             SupermuxProjectIconImageCache.shared.store(decoded, for: identity)
             customIcon = decoded
         }
