@@ -52,32 +52,44 @@ public struct SupermuxUsageScreen: View {
             // rule in CLAUDE.md / the cmux-debugging skill).
             let usage = store.usage
             let hasLoaded = store.hasLoaded
-            VStack(spacing: 24) {
-                providerPanel(
-                    title: String(
-                        localized: "supermux.usage.claude",
-                        defaultValue: "Claude Code",
-                        bundle: .module
-                    ),
-                    symbol: "asterisk",
-                    provider: usage?.claude,
-                    hasLoaded: hasLoaded
-                ) {
-                    claudeRows(usage?.claude)
+            let initialFailureDescription = Self.initialFailureDescription(
+                hasLoaded: hasLoaded,
+                errorDescription: store.lastErrorDescription
+            )
+            if let initialFailureDescription {
+                initialFailurePlaceholder(
+                    initialFailureDescription,
+                    isRefreshing: store.isRefreshing,
+                    retry: { Task { await store.refresh() } }
+                )
+            } else {
+                VStack(spacing: 24) {
+                    providerPanel(
+                        title: String(
+                            localized: "supermux.usage.claude",
+                            defaultValue: "Claude Code",
+                            bundle: .module
+                        ),
+                        symbol: "asterisk",
+                        provider: usage?.claude,
+                        hasLoaded: hasLoaded
+                    ) {
+                        claudeRows(usage?.claude)
+                    }
+                    providerPanel(
+                        title: String(
+                            localized: "supermux.usage.codex",
+                            defaultValue: "Codex",
+                            bundle: .module
+                        ),
+                        symbol: "chevron.left.forwardslash.chevron.right",
+                        provider: usage?.codex,
+                        hasLoaded: hasLoaded
+                    ) {
+                        codexRows(usage?.codex)
+                    }
+                    footer(usage)
                 }
-                providerPanel(
-                    title: String(
-                        localized: "supermux.usage.codex",
-                        defaultValue: "Codex",
-                        bundle: .module
-                    ),
-                    symbol: "chevron.left.forwardslash.chevron.right",
-                    provider: usage?.codex,
-                    hasLoaded: hasLoaded
-                ) {
-                    codexRows(usage?.codex)
-                }
-                footer(usage)
             }
         } else {
             disconnectedPlaceholder
@@ -237,6 +249,49 @@ public struct SupermuxUsageScreen: View {
         .padding(.vertical, 18)
     }
 
+    /// Replaces the initial loading rows after the first RPC fails, and gives
+    /// the user an immediate retry instead of waiting for the poll interval.
+    private func initialFailurePlaceholder(
+        _ message: String,
+        isRefreshing: Bool,
+        retry: @escaping () -> Void
+    ) -> some View {
+        let retryLabel = String(
+            localized: "supermux.common.retry",
+            defaultValue: "Retry",
+            bundle: .module
+        )
+        return VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title3)
+                .foregroundStyle(.orange)
+            Text(String(
+                localized: "supermux.usage.failed",
+                defaultValue: "Usage is unavailable right now",
+                bundle: .module
+            ))
+            .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button(action: retry) {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text(retryLabel)
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isRefreshing)
+            .accessibilityLabel(retryLabel)
+            .accessibilityIdentifier("SupermuxUsageRetryButton")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+    }
+
     // MARK: - Shared pieces
 
     /// The meter rows for one window list, staggered top-to-bottom so the
@@ -247,6 +302,16 @@ public struct SupermuxUsageScreen: View {
                 SupermuxUsageMeterRow(window: window, appearDelay: Double(index) * 0.05)
             }
         }
+    }
+
+    /// The first-fetch error that replaces the loading rows. Once a snapshot
+    /// has loaded, failures keep that last-good data visible instead.
+    static func initialFailureDescription(
+        hasLoaded: Bool,
+        errorDescription: String?
+    ) -> String? {
+        guard !hasLoaded else { return nil }
+        return errorDescription
     }
 
     /// The note replacing a provider's rows in a non-ready state, or `nil`

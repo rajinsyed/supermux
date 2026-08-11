@@ -282,6 +282,7 @@ import Testing
 
     /// A failed first RPC replaces the indefinite loading state with the real
     /// error, while a later failure keeps rendering the last-good snapshot.
+    @MainActor
     @Test func initialFetchFailureSurfacesOnlyBeforeTheFirstSuccess() {
         let offline = "The paired Mac is offline."
         #expect(SupermuxUsageScreen.initialFailureDescription(
