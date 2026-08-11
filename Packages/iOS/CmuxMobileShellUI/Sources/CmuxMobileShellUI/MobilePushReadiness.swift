@@ -35,6 +35,10 @@ public struct MobilePushSystemSettings: Equatable, Sendable {
     public let lockScreenEnabled: Bool
     public let notificationCenterEnabled: Bool
     public let timeSensitiveEnabled: Bool
+    // SUPERMUX:begin ios-direct-apns-token
+    /// Whether iOS exposes a Time Sensitive notification setting for this build.
+    public let timeSensitiveSupported: Bool
+    // SUPERMUX:end ios-direct-apns-token
     public let scheduledDeliveryEnabled: Bool
 
     public init(
@@ -45,6 +49,9 @@ public struct MobilePushSystemSettings: Equatable, Sendable {
         lockScreenEnabled: Bool,
         notificationCenterEnabled: Bool,
         timeSensitiveEnabled: Bool,
+        // SUPERMUX:begin ios-direct-apns-token
+        timeSensitiveSupported: Bool = true,
+        // SUPERMUX:end ios-direct-apns-token
         scheduledDeliveryEnabled: Bool
     ) {
         self.authorization = authorization
@@ -54,6 +61,9 @@ public struct MobilePushSystemSettings: Equatable, Sendable {
         self.lockScreenEnabled = lockScreenEnabled
         self.notificationCenterEnabled = notificationCenterEnabled
         self.timeSensitiveEnabled = timeSensitiveEnabled
+        // SUPERMUX:begin ios-direct-apns-token
+        self.timeSensitiveSupported = timeSensitiveSupported
+        // SUPERMUX:end ios-direct-apns-token
         self.scheduledDeliveryEnabled = scheduledDeliveryEnabled
     }
 

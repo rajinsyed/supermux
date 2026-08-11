@@ -523,6 +523,9 @@ public final class MobilePushCoordinator {
             notificationCenterEnabled:
                 settings.notificationCenterSetting == .enabled,
             timeSensitiveEnabled: settings.timeSensitiveSetting == .enabled,
+            // SUPERMUX:begin ios-direct-apns-token
+            timeSensitiveSupported: settings.timeSensitiveSetting != .notSupported,
+            // SUPERMUX:end ios-direct-apns-token
             scheduledDeliveryEnabled:
                 settings.scheduledDeliverySetting == .enabled
         )

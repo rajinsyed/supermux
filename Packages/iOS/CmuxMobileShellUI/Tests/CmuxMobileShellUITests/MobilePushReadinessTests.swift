@@ -162,6 +162,37 @@ import Testing
         #expect(readiness.repair == .openSystemSettings)
     }
 
+    // SUPERMUX:begin ios-direct-apns-token
+    @Test func unsupportedTimeSensitiveSettingDoesNotCreateAnUnfixableLimitation() {
+        let settings = MobilePushSystemSettings(
+            authorization: .authorized,
+            alertsEnabled: true,
+            soundsEnabled: true,
+            badgesEnabled: true,
+            lockScreenEnabled: true,
+            notificationCenterEnabled: true,
+            timeSensitiveEnabled: false,
+            timeSensitiveSupported: false,
+            scheduledDeliveryEnabled: false
+        )
+        let readiness = MobilePushReadiness.resolve(
+            authorization: .authorized,
+            registration: registered,
+            mac: .init(
+                forwardingEnabled: true,
+                mode: .always,
+                apiOrigin: "https://cmux.com",
+                accountVerified: true
+            ),
+            systemSettings: settings,
+            phoneAPIOrigin: "https://cmux.com"
+        )
+
+        #expect(readiness == .ready(mode: .always))
+        #expect(readiness.repair == nil)
+    }
+    // SUPERMUX:end ios-direct-apns-token
+
     @Test(arguments: MobilePushPresentationLimitation.allCases.filter {
         $0 != .scheduledDeliveryEnabled
     })
