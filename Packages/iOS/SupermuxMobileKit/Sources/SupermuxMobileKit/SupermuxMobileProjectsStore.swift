@@ -283,10 +283,13 @@ public final class SupermuxMobileProjectsStore {
     }
 
     /// Project ids whose mirrored icon files must survive a list refresh.
+    ///
+    /// `nil` is an older host's "unknown", not proof that no icon exists. Only
+    /// an explicit `false` authorizes deleting a live project's mirrored bytes.
     static func mirroredIconProjectIDsToKeep(
         from projects: [SupermuxProjectDTO]
     ) -> Set<String> {
-        Set(projects.lazy.filter { $0.hasCustomIcon == true }.map(\.id))
+        Set(projects.lazy.filter { $0.hasCustomIcon != false }.map(\.id))
     }
 
     private func refetch() async {
@@ -300,9 +303,9 @@ public final class SupermuxMobileProjectsStore {
             }
             hasLoaded = true
             lastErrorDescription = nil
-            // Drop mirrored icons for deleted projects and live projects that
-            // no longer carry a custom icon. A banner cannot re-fetch, so keep
-            // every current custom-icon project regardless of mirror age.
+            // Drop mirrored icons for deleted projects and live projects whose
+            // current host explicitly reports no custom icon. Preserve `nil`:
+            // older hosts omit the optional field, and a banner cannot re-fetch.
             SupermuxSharedProjectIconStore.pruneIcons(
                 keeping: Self.mirroredIconProjectIDsToKeep(from: projects)
             )
