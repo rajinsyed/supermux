@@ -187,6 +187,28 @@ import Testing
         #expect(fingerprints.count == 5, "each state must measure separately")
     }
 
+    @Test func worktreeCreationAvailabilityAffectsHeight() {
+        // The inline New Worktree row renders under every EXPANDED project on
+        // a `supermux.worktrees.v1` host (and suppresses the empty notice),
+        // so the capability's arrival must re-measure the section.
+        let expanded = SupermuxProjectRowSnapshot(
+            project: dto(),
+            isExpanded: true,
+            nestedWorktrees: .loaded([])
+        )
+        let without = SupermuxProjectsSectionSnapshot(
+            isVisible: true, isCollapsed: false, hasLoaded: true, rows: [expanded]
+        )
+        let with = SupermuxProjectsSectionSnapshot(
+            isVisible: true, isCollapsed: false, hasLoaded: true, rows: [expanded],
+            showsWorktreeCreation: true
+        )
+        #expect(
+            SupermuxProjectsTableLayoutIdentity(section: without, canEdit: true).fingerprint
+                != SupermuxProjectsTableLayoutIdentity(section: with, canEdit: true).fingerprint
+        )
+    }
+
     @Test func theEditSeamAffectsHeightInEveryStateThatShowsAButton() {
         // The header's "+" and the empty state's Add Project button both exist
         // only with a live editing seam, and both change the measured height.

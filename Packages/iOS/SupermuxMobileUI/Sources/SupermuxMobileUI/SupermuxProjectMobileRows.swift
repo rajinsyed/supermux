@@ -26,6 +26,9 @@ struct SupermuxProjectMobileRow: View {
     let toggleExpanded: @MainActor (_ projectID: String) -> Void
     let openWorkspace: @MainActor (_ projectID: String) -> Void
     let openDetail: @MainActor (_ projectID: String) -> Void
+    /// Opens the New Worktree sheet (m7 sidebar create flow); `nil` hides the
+    /// menu entry (no session, or no `supermux.worktrees.v1`).
+    var newWorktree: (@MainActor (_ projectID: String) -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Not `private`: a private stored property suppresses the memberwise
@@ -83,6 +86,17 @@ struct SupermuxProjectMobileRow: View {
             bundle: .module
         ))) {
             openDetail(row.id)
+        }
+        .accessibilityActions {
+            if let newWorktree {
+                Button(String(
+                    localized: "supermux.worktrees.new",
+                    defaultValue: "New Worktree",
+                    bundle: .module
+                )) {
+                    newWorktree(row.id)
+                }
+            }
         }
         .supermuxSidebarContextMenu { contextMenu }
     }
@@ -153,6 +167,21 @@ struct SupermuxProjectMobileRow: View {
                 ))
             } icon: {
                 Image(systemName: "macwindow")
+            }
+        }
+        if let newWorktree {
+            Button {
+                newWorktree(row.id)
+            } label: {
+                Label {
+                    Text(String(
+                        localized: "supermux.worktrees.new",
+                        defaultValue: "New Worktree",
+                        bundle: .module
+                    ))
+                } icon: {
+                    Image(systemName: "arrow.triangle.branch")
+                }
             }
         }
         if unopenedWorktreeCount != nil {
@@ -521,20 +550,68 @@ struct SupermuxNestedWorktreeRow: View {
     }
 }
 
-/// A nested row's placeholder line — "loading worktrees…" and "nothing here
-/// yet" both sit in the nested column, so the disclosure never opens onto a
-/// left-aligned line that ignores the section's alignment.
+/// The inline "New Worktree" row that closes an expanded project's worktree
+/// slice (m7): one tap from the sidebar into the same create sheet the detail
+/// screen presents, instead of the old four-step trip through Project Details.
+///
+/// Styled as a quiet tertiary action — a plus glyph in the branch column and
+/// a secondary label — so it reads as an affordance of the disclosure, not as
+/// another worktree. Shows a spinner while the branch snapshot it needs is
+/// being fetched.
+struct SupermuxNestedNewWorktreeRow: View {
+    let projectID: String
+    /// Whether THIS project's sheet is being prepared (branch fetch in
+    /// flight) — the row's label yields to a spinner.
+    let isPreparing: Bool
+    let newWorktree: @MainActor (_ projectID: String) -> Void
+
+    // Not `private`: see the note on SupermuxProjectMobileRow.metrics.
+    var metrics = SupermuxScaledRowMetrics()
+
+    var body: some View {
+        Button {
+            SupermuxHaptics.selection()
+            newWorktree(projectID)
+        } label: {
+            HStack(spacing: 7) {
+                if isPreparing {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+                Text(String(
+                    localized: "supermux.worktrees.new",
+                    defaultValue: "New Worktree",
+                    bundle: .module
+                ))
+                .font(.system(.subheadline, weight: .medium))
+                .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.trailing, SupermuxProjectRowMetrics.rowHorizontalPadding)
+            .frame(minHeight: metrics.compactRowHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SupermuxSidebarRowButtonStyle())
+        .disabled(isPreparing)
+        .accessibilityLabel(String(
+            localized: "supermux.worktrees.new",
+            defaultValue: "New Worktree",
+            bundle: .module
+        ))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("SupermuxNestedNewWorktreeRow-\(projectID)")
+    }
+}
+
+/// A nested row's placeholder line — the "nothing here yet" notice sits in
+/// the nested column, so the disclosure never opens onto a left-aligned line
+/// that ignores the section's alignment. (The loading state renders
+/// ``SupermuxNestedSkeletonRow`` instead of a spinner variant of this row.)
 struct SupermuxNestedNoticeRow: View {
-    /// Whether to lead with a small spinner.
-    var isLoading = false
     let text: String
 
     var body: some View {
         HStack(spacing: 7) {
-            if isLoading {
-                ProgressView()
-                    .controlSize(.mini)
-            }
             Text(text)
                 .font(.system(.caption))
                 .foregroundStyle(.tertiary)
@@ -554,6 +631,9 @@ struct SupermuxNestedNoticeRow: View {
 struct SupermuxProjectNestedRows: View {
     let row: SupermuxProjectRowSnapshot
     let actions: SupermuxProjectsSectionActions
+    /// Whether the disclosure ends in the inline New Worktree row (host
+    /// advertises `supermux.worktrees.v1`).
+    var showsNewWorktree = false
 
     var body: some View {
         ForEach(row.openWorkspaces) { workspace in
@@ -577,17 +657,10 @@ struct SupermuxProjectNestedRows: View {
             EmptyView()
         case .loading:
             nested {
-                SupermuxNestedNoticeRow(
-                    isLoading: true,
-                    text: String(
-                        localized: "supermux.worktrees.loading",
-                        defaultValue: "Loading worktrees…",
-                        bundle: .module
-                    )
-                )
+                SupermuxNestedSkeletonRow()
             }
         case .loaded(let worktrees):
-            if worktrees.isEmpty, row.openWorkspaces.isEmpty {
+            if worktrees.isEmpty, row.openWorkspaces.isEmpty, !showsNewWorktree {
                 nested {
                     SupermuxNestedNoticeRow(text: String(
                         localized: "supermux.projects.nested.empty",
@@ -623,6 +696,15 @@ struct SupermuxProjectNestedRows: View {
                             Image(systemName: "trash")
                         }
                     }
+                }
+            }
+            if showsNewWorktree {
+                nested(symbol: "plus") {
+                    SupermuxNestedNewWorktreeRow(
+                        projectID: row.id,
+                        isPreparing: actions.preparingNewWorktreeProjectID == row.id,
+                        newWorktree: actions.requestNewWorktree
+                    )
                 }
             }
         }

@@ -83,11 +83,16 @@ public struct SupermuxProjectsMobileSection: View {
                     iconPNGData: actions.iconPNGData,
                     toggleExpanded: actions.toggleProjectExpanded,
                     openWorkspace: actions.openProjectWorkspace,
-                    openDetail: actions.openProjectDetail
+                    openDetail: actions.openProjectDetail,
+                    newWorktree: section.showsWorktreeCreation
+                        ? actions.requestNewWorktree
+                        : nil
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    // Details on the outside, New Worktree revealed first —
+                    // the same order as the table path's custom tray.
                     Button {
                         actions.openProjectDetail(row.id)
                     } label: {
@@ -101,11 +106,31 @@ public struct SupermuxProjectsMobileSection: View {
                             Image(systemName: "info.circle")
                         }
                     }
+                    if section.showsWorktreeCreation {
+                        Button {
+                            actions.requestNewWorktree(row.id)
+                        } label: {
+                            Label {
+                                Text(String(
+                                    localized: "supermux.worktrees.new",
+                                    defaultValue: "New Worktree",
+                                    bundle: .module
+                                ))
+                            } icon: {
+                                Image(systemName: "arrow.triangle.branch")
+                            }
+                        }
+                        .tint(.accentColor)
+                    }
                 }
                 // Mac-sidebar shape: open workspaces are ALWAYS nested under
                 // their project; only the unopened-worktree slice (inside
                 // SupermuxProjectNestedRows) waits for the disclosure.
-                SupermuxProjectNestedRows(row: row, actions: actions)
+                SupermuxProjectNestedRows(
+                    row: row,
+                    actions: actions,
+                    showsNewWorktree: section.showsWorktreeCreation
+                )
             }
         }
     }

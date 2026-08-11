@@ -17,16 +17,26 @@ struct SupermuxWorktreesSection: View {
     var body: some View {
         Section {
             if !hasLoaded {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text(String(
-                        localized: "supermux.worktrees.loading",
-                        defaultValue: "Loading worktrees…",
-                        bundle: .module
-                    ))
-                    .font(.callout)
+                // Placeholder rows in the loaded row's shape (system redaction
+                // shimmer), not a lone mini spinner: the section keeps its
+                // geometry and the wait reads as content arriving.
+                ForEach(0..<2, id: \.self) { _ in
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.caption.weight(.semibold))
+                        Text(verbatim: "placeholder-branch")
+                            .font(.body)
+                        Spacer(minLength: 4)
+                    }
+                    .redacted(reason: .placeholder)
                     .foregroundStyle(.secondary)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(String(
+                    localized: "supermux.worktrees.loading",
+                    defaultValue: "Loading worktrees…",
+                    bundle: .module
+                ))
             } else if rows.isEmpty {
                 Text(String(
                     localized: "supermux.worktrees.empty",

@@ -124,36 +124,60 @@ public struct SupermuxProjectsTableSection: View {
                     SupermuxSidebarSwipeRow(
                         rowID: "project:\(row.id)",
                         openRowID: $openSwipeRowID,
-                        actions: [
-                            SupermuxSwipeAction(
-                                id: "details",
-                                systemImage: "info.circle",
-                                title: String(
-                                    localized: "supermux.projects.row.details",
-                                    defaultValue: "Project Details",
-                                    bundle: .module
-                                ),
-                                tint: .gray,
-                                perform: { actions.openProjectDetail(row.id) }
-                            ),
-                        ]
+                        actions: projectSwipeActions(for: row)
                     ) {
                         SupermuxProjectMobileRow(
                             row: row,
                             iconPNGData: actions.iconPNGData,
                             toggleExpanded: actions.toggleProjectExpanded,
                             openWorkspace: actions.openProjectWorkspace,
-                            openDetail: actions.openProjectDetail
+                            openDetail: actions.openProjectDetail,
+                            newWorktree: section.showsWorktreeCreation
+                                ? actions.requestNewWorktree
+                                : nil
                         )
                     }
                     SupermuxProjectTableNestedRows(
                         row: row,
                         actions: actions,
+                        showsNewWorktree: section.showsWorktreeCreation,
                         openSwipeRowID: $openSwipeRowID
                     )
                 }
             }
         }
+    }
+
+    /// A project row's swipe tray: New Worktree first (the fork's most-used
+    /// creation flow), then Project Details. Worktree creation swipes only on
+    /// a `supermux.worktrees.v1` host.
+    private func projectSwipeActions(for row: SupermuxProjectRowSnapshot) -> [SupermuxSwipeAction] {
+        var trayActions: [SupermuxSwipeAction] = []
+        if section.showsWorktreeCreation {
+            trayActions.append(SupermuxSwipeAction(
+                id: "new-worktree",
+                systemImage: "arrow.triangle.branch",
+                title: String(
+                    localized: "supermux.worktrees.new",
+                    defaultValue: "New Worktree",
+                    bundle: .module
+                ),
+                tint: .accentColor,
+                perform: { actions.requestNewWorktree(row.id) }
+            ))
+        }
+        trayActions.append(SupermuxSwipeAction(
+            id: "details",
+            systemImage: "info.circle",
+            title: String(
+                localized: "supermux.projects.row.details",
+                defaultValue: "Project Details",
+                bundle: .module
+            ),
+            tint: .gray,
+            perform: { actions.openProjectDetail(row.id) }
+        ))
+        return trayActions
     }
 
 }
@@ -167,6 +191,8 @@ public struct SupermuxProjectsTableSection: View {
 struct SupermuxProjectTableNestedRows: View {
     let row: SupermuxProjectRowSnapshot
     let actions: SupermuxProjectsSectionActions
+    /// Whether the disclosure ends in the inline New Worktree row.
+    var showsNewWorktree = false
     @Binding var openSwipeRowID: String?
 
     var body: some View {
@@ -190,18 +216,11 @@ struct SupermuxProjectTableNestedRows: View {
             EmptyView()
         case .loading:
             SupermuxNestedRowContainer {
-                SupermuxNestedNoticeRow(
-                    isLoading: true,
-                    text: String(
-                        localized: "supermux.worktrees.loading",
-                        defaultValue: "Loading worktrees…",
-                        bundle: .module
-                    )
-                )
+                SupermuxNestedSkeletonRow()
             }
             .transition(SupermuxProjectMotion.nestedTransition)
         case .loaded(let worktrees):
-            if worktrees.isEmpty, row.openWorkspaces.isEmpty {
+            if worktrees.isEmpty, row.openWorkspaces.isEmpty, !showsNewWorktree {
                 SupermuxNestedRowContainer {
                     SupermuxNestedNoticeRow(text: String(
                         localized: "supermux.projects.nested.empty",
@@ -242,6 +261,16 @@ struct SupermuxProjectTableNestedRows: View {
                             }
                         )
                     }
+                }
+                .transition(SupermuxProjectMotion.nestedTransition)
+            }
+            if showsNewWorktree {
+                SupermuxNestedRowContainer(symbol: "plus") {
+                    SupermuxNestedNewWorktreeRow(
+                        projectID: row.id,
+                        isPreparing: actions.preparingNewWorktreeProjectID == row.id,
+                        newWorktree: actions.requestNewWorktree
+                    )
                 }
                 .transition(SupermuxProjectMotion.nestedTransition)
             }
@@ -315,6 +344,10 @@ public struct SupermuxProjectsTableLayoutIdentity: Equatable, Sendable {
             self.fingerprint = "empty:\(edit)"
             return
         }
+        // Worktree creation adds the inline New Worktree row to every
+        // EXPANDED project's disclosure (and suppresses the empty notice), so
+        // its availability is part of the measured shape.
+        let creation = section.showsWorktreeCreation ? "n" : "-"
         // Name length matters: a long name wraps the row's title and changes
         // the measured height, while the name's spelling does not.
         let rows = section.rows.map { row in
@@ -340,7 +373,7 @@ public struct SupermuxProjectsTableLayoutIdentity: Equatable, Sendable {
                 shape,
             ].joined(separator: ":")
         }
-        self.fingerprint = "rows:\(section.editingFingerprint)|" + rows.joined(separator: ";")
+        self.fingerprint = "rows:\(section.editingFingerprint):\(creation)|" + rows.joined(separator: ";")
     }
 }
 

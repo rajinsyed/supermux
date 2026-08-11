@@ -26,6 +26,10 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     /// Whether the project detail's Actions section renders. `false` unless
     /// the host advertises `supermux.actions.v1`.
     public let showsActions: Bool
+    /// Whether the sidebar offers worktree CREATION (the inline "New
+    /// Worktree" row, the project row's swipe action, and its menu entry).
+    /// `false` unless the host advertises `supermux.worktrees.v1`.
+    public let showsWorktreeCreation: Bool
 
     /// The snapshot of a hidden section (no session, or capability absent).
     public static let hidden = SupermuxProjectsSectionSnapshot(
@@ -44,6 +48,7 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     ///   - showsPresets: Whether the global Presets entry renders.
     ///   - presets: The global terminal presets, in the Mac bar's order.
     ///   - showsActions: Whether the project detail's Actions section renders.
+    ///   - showsWorktreeCreation: Whether the sidebar offers worktree creation.
     public init(
         isVisible: Bool,
         isCollapsed: Bool,
@@ -51,7 +56,8 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
         rows: [SupermuxProjectRowSnapshot],
         showsPresets: Bool = false,
         presets: [SupermuxTerminalPresetDTO] = [],
-        showsActions: Bool = false
+        showsActions: Bool = false,
+        showsWorktreeCreation: Bool = false
     ) {
         self.isVisible = isVisible
         self.isCollapsed = isCollapsed
@@ -60,6 +66,7 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
         self.showsPresets = showsPresets
         self.presets = presets
         self.showsActions = showsActions
+        self.showsWorktreeCreation = showsWorktreeCreation
     }
 }
 
@@ -168,6 +175,12 @@ public struct SupermuxProjectsSectionActions {
         _ projectID: String,
         _ worktree: SupermuxWorktreeRowSnapshot
     ) -> Void
+    /// Opens the New Worktree sheet for one project (the sidebar's inline
+    /// create flow) — the same sheet and store calls the detail screen uses.
+    public let requestNewWorktree: @MainActor (_ projectID: String) -> Void
+    /// The project currently fetching its branch snapshot ahead of the New
+    /// Worktree sheet (its affordance shows a spinner); `nil` when idle.
+    public let preparingNewWorktreeProjectID: String?
 
     /// Memberwise initializer.
     /// - Parameters:
@@ -185,6 +198,9 @@ public struct SupermuxProjectsSectionActions {
     ///   - openNestedWorktree: Opens a nested worktree row.
     ///   - requestNestedWorktreeRemoval: Asks to remove a nested worktree
     ///     (raises the confirmation; never deletes directly).
+    ///   - requestNewWorktree: Opens the New Worktree sheet for one project.
+    ///   - preparingNewWorktreeProjectID: The project currently preparing its
+    ///     New Worktree sheet, for the affordance's spinner.
     public init(
         toggleCollapsed: @escaping @MainActor () -> Void,
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
@@ -203,7 +219,9 @@ public struct SupermuxProjectsSectionActions {
         requestNestedWorktreeRemoval: @escaping @MainActor (
             _ projectID: String,
             _ worktree: SupermuxWorktreeRowSnapshot
-        ) -> Void = { _, _ in }
+        ) -> Void = { _, _ in },
+        requestNewWorktree: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
+        preparingNewWorktreeProjectID: String? = nil
     ) {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
@@ -217,6 +235,8 @@ public struct SupermuxProjectsSectionActions {
         self.openProjectDetail = openProjectDetail
         self.openNestedWorktree = openNestedWorktree
         self.requestNestedWorktreeRemoval = requestNestedWorktreeRemoval
+        self.requestNewWorktree = requestNewWorktree
+        self.preparingNewWorktreeProjectID = preparingNewWorktreeProjectID
     }
 }
 
