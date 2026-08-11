@@ -29,6 +29,8 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     case panesV1 = "supermux.panes.v1"
     /// The paired Mac accepts this phone's APNs token for local push delivery.
     case phonePushV1 = "supermux.phone_push.v1"
+    /// The read-only Claude Code + Codex usage-limits snapshot is served.
+    case usageV1 = "supermux.usage.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

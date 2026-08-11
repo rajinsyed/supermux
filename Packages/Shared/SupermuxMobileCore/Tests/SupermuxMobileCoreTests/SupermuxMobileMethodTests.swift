@@ -55,13 +55,15 @@ import Testing
         "mobile.supermux.panel.select",
         "mobile.supermux.pane.close",
         "mobile.supermux.simulator.create",
+        // Usage
+        "mobile.supermux.usage.state",
         // Phone push
         "mobile.supermux.phone_push.register",
     ]
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 44)
+        #expect(SupermuxMobileMethod.all.count == 45)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

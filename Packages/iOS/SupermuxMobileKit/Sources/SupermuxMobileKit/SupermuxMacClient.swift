@@ -194,6 +194,10 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, Sup
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func usageState(_ request: SupermuxUsageStateRequest) async throws -> SupermuxUsageStateDTO {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
     public func closePane(
         _ request: SupermuxPaneCloseRequest
     ) async throws -> SupermuxPaneCloseResponse {

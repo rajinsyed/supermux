@@ -176,6 +176,14 @@ struct WorkspaceListView: View {
     // extension projects this into the Projects chrome row's payload.
     @State var supermuxProjects = SupermuxProjectsSectionModel()
     // SUPERMUX:end supermux-mobile-projects-section
+    // SUPERMUX:begin supermux-mobile-usage-button (iOS-only usage session; the toolbar gauge only renders it)
+    #if os(iOS)
+    // Internal (not private): the `+Toolbar.swift` extension passes this to
+    // the gauge. It lives HERE, on the stable list view, because the toolbar
+    // branch that hosts the button is torn down on every navigation push.
+    @State var supermuxUsage = SupermuxUsageSectionModel()
+    #endif
+    // SUPERMUX:end supermux-mobile-usage-button
     @State var optimisticFlatState = MobileWorkspaceOptimisticOrderReconciler()
     @State var optimisticGroupedState = MobileWorkspaceOptimisticOrderReconciler()
     /// In-flight move RPC count plus the tail of the send chain. Moves stay
@@ -429,6 +437,9 @@ struct WorkspaceListView: View {
         // renders.
         let baseList = workspaceTable
             .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) }, closeWorkspace: supermuxRequestWorkspaceClose)
+            // SUPERMUX:begin supermux-mobile-usage-button (usage session driver on the stable list — the toolbar gauge that renders it is torn down on every push)
+            .supermuxUsageDriver(model: supermuxUsage, connection: store?.supermuxConnectionSeam)
+            // SUPERMUX:end supermux-mobile-usage-button
             .modifier(WorkspaceListBarUnderlap())
         // SUPERMUX:end supermux-mobile-projects-section
         #else

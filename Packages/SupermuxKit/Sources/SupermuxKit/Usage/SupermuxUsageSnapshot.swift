@@ -1,4 +1,15 @@
 public import Foundation
+// SupermuxUsageSeverity and SupermuxUsageCountdown live in the shared wire
+// package so the iOS usage screen buckets percents and formats resets exactly
+// like the desktop popover does.
+//
+// This is a source break for anything that imported ONLY SupermuxKit and
+// named those types unqualified: `public import` lets them appear in this
+// module's public signatures, but does not put them back in a client's
+// unqualified scope. Harmless today — SupermuxKit is fork-internal, consumed
+// only by the cmux app target — but a future extractor of this package must
+// import SupermuxMobileCore alongside it.
+public import SupermuxMobileCore
 
 /// One provider rate-limit window (Claude's 5-hour/7-day, Codex's 5-hour/weekly,
 /// or a scoped/per-model weekly limit) as rendered by the usage tracker.
@@ -37,21 +48,6 @@ public struct SupermuxUsageWindow: Sendable, Equatable {
     /// Severity bucket for coloring bars and the footer gauge.
     public var severity: SupermuxUsageSeverity {
         SupermuxUsageSeverity(percent: percent)
-    }
-}
-
-/// Shared coloring thresholds for usage bars and the footer gauge.
-public enum SupermuxUsageSeverity: Sendable, Equatable, Comparable {
-    case normal
-    case warning
-    case critical
-
-    public init(percent: Double) {
-        switch percent {
-        case ..<70: self = .normal
-        case ..<90: self = .warning
-        default: self = .critical
-        }
     }
 }
 

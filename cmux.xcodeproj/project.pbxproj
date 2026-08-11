@@ -2156,6 +2156,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		50BE000200000000000000CA /* SupermuxMobileHost+PresetsActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C9 /* SupermuxMobileHost+PresetsActions.swift */; };
 		50BE000200000000000000B4 /* SupermuxMobileHost+Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */; };
 		50BE000200000000000000D6 /* SupermuxMobileHost+Run.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000D5 /* SupermuxMobileHost+Run.swift */; };
+		50BE000200000000000000E2 /* SupermuxMobileHost+Usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000E1 /* SupermuxMobileHost+Usage.swift */; };
 		50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */; };
 		50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B9 /* SupermuxMobileObservers.swift */; };
 		50BE000200000000000000CB /* SupermuxMobileObserversTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */; };
@@ -4854,6 +4855,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 		50BE000200000000000000C9 /* SupermuxMobileHost+PresetsActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+PresetsActions.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Projects.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000D5 /* SupermuxMobileHost+Run.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Run.swift"; sourceTree = "<group>"; };
+		50BE000200000000000000E1 /* SupermuxMobileHost+Usage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Usage.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Worktrees.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000B9 /* SupermuxMobileObservers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObservers.swift; sourceTree = "<group>"; };
 		50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObserversTests.swift; sourceTree = "<group>"; };
@@ -5595,6 +5597,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000200000000000000D3 /* SupermuxMobileHost+ChangesSync.swift */,
 				50BE000200000000000000DF /* SupermuxMobileHost+PhonePush.swift */,
 				50BE000200000000000000D5 /* SupermuxMobileHost+Run.swift */,
+				50BE000200000000000000E1 /* SupermuxMobileHost+Usage.swift */,
 				50BE000200000000000000DB /* SupermuxMobileHost+Files.swift */,
 				50BE000200000000000000B5 /* SupermuxMobileAuthorization.swift */,
 				50BE000200000000000000B7 /* SupermuxMobileCapabilities.swift */,
@@ -10091,6 +10094,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000200000000000000CA /* SupermuxMobileHost+PresetsActions.swift in Sources */,
 				50BE000200000000000000B4 /* SupermuxMobileHost+Projects.swift in Sources */,
 				50BE000200000000000000D6 /* SupermuxMobileHost+Run.swift in Sources */,
+				50BE000200000000000000E2 /* SupermuxMobileHost+Usage.swift in Sources */,
 				50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */,
 				50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */,
 				50BE000200000000000000D8 /* SupermuxMobileRunObserver.swift in Sources */,

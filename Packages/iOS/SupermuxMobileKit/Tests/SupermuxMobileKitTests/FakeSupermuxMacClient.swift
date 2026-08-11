@@ -137,6 +137,18 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var runStateResponse = SupermuxRunStateResponse(runs: [])
     /// When set, `runState` throws instead of returning.
     var runStateError: (any Error)?
+    /// The response the next `usageState` call returns.
+    var usageStateResponse = SupermuxUsageStateDTO(
+        claude: SupermuxUsageProviderDTO(state: SupermuxUsageProviderDTO.loadingState),
+        codex: SupermuxUsageProviderDTO(state: SupermuxUsageProviderDTO.loadingState)
+    )
+    /// When set, `usageState` throws instead of returning.
+    var usageStateError: (any Error)?
+    /// How many `usageState` calls the fake has served.
+    var usageStateCallCount = 0
+    /// When set, `usageState` parks on this gate before answering, so a test
+    /// can hold a fetch in flight and race a second one against it.
+    var usageStateHold: RPCHoldGate?
     /// The response the next `runStart` call returns; `nil` synthesizes a
     /// running row for the requested project.
     var runStartResponse: SupermuxRunWriteResponse?
@@ -358,6 +370,16 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
         if let presetDeleteError { throw presetDeleteError }
         return SupermuxPresetDeleteResponse(removed: true, presetId: request.presetID)
+    }
+
+    // MARK: Usage
+
+    func usageState(_ request: SupermuxUsageStateRequest) async throws -> SupermuxUsageStateDTO {
+        record("usageState", method: request.wireMethod, params: request.wireParams)
+        usageStateCallCount += 1
+        await usageStateHold?.park()
+        if let usageStateError { throw usageStateError }
+        return usageStateResponse
     }
 
     // MARK: Events

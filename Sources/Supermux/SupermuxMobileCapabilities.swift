@@ -50,6 +50,9 @@ enum SupermuxMobileCapabilities {
             // The fixed-identity Supermux phone can register its sandbox APNs
             // token for direct, personal-team delivery from this Mac.
             SupermuxMobileCapability.phonePushV1.rawValue,
+            // usage.state is served: the read-only Claude Code + Codex
+            // rate-limit mirror of the sidebar's usage tracker.
+            SupermuxMobileCapability.usageV1.rawValue,
         ]
     }
 }

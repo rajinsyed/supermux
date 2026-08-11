@@ -4,6 +4,9 @@ public import Foundation
 /// nonzero units, compact ("5d 17h", "4h 39m", "12m"). The system relative
 /// formatter rounds to a single coarse unit ("in 6 days"), which reads
 /// imprecise next to a percent that moves hourly.
+///
+/// Shared between the Mac popover and the iOS usage screen so both spell a
+/// reset the same way.
 public enum SupermuxUsageCountdown {
     /// Formats the remaining time from `now` to `date`. `date` must be in the
     /// future (callers gate on it); a past/now date yields "0m".

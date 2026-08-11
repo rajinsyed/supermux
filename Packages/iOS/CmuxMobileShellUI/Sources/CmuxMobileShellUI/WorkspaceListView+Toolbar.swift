@@ -1,4 +1,7 @@
 import CmuxMobileSupport
+// SUPERMUX:begin supermux-mobile-usage-button (fork usage-limits gauge — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-usage-button
 import SwiftUI
 
 extension WorkspaceListView {
@@ -106,6 +109,15 @@ extension WorkspaceListView {
                                     dismiss: dismissMacUpdateHint
                                 )
                             }
+                            // SUPERMUX:begin supermux-mobile-usage-button (fork usage-limits gauge, mirroring the Mac sidebar footer button — see SUPERMUX-TOUCHPOINTS.md)
+                            // The session lives on the list (see the
+                            // `.supermuxUsageDriver` fence in
+                            // WorkspaceListView.swift), NOT here: this whole
+                            // toolbar branch is torn down on every navigation
+                            // push, so a store owned by the button would lose
+                            // its snapshot and restart polling on every pop.
+                            SupermuxUsageToolbarButton(model: supermuxUsage)
+                            // SUPERMUX:end supermux-mobile-usage-button
                             viewOptionsButton()
                             if canCreateWorkspace {
                                 newWorkspaceButton.equatable()
