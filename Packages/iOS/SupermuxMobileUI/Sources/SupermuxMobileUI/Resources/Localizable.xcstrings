@@ -3826,6 +3826,23 @@
         }
       }
     },
+    "supermux.usage.failed.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again. If the problem continues, check your paired Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度お試しください。問題が続く場合は、ペアリング中の Mac を確認してください。"
+          }
+        }
+      }
+    },
     "supermux.usage.loading": {
       "extractionState": "manual",
       "localizations": {

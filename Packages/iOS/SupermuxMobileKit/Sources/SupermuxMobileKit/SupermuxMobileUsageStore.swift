@@ -1,5 +1,6 @@
 public import Foundation
 import Observation
+import OSLog
 public import SupermuxMobileCore
 
 /// Main-actor state for the phone's usage tracker: the paired Mac's Claude
@@ -32,9 +33,12 @@ public final class SupermuxMobileUsageStore {
     /// Whether a fetch is currently in flight (drives the refresh spinner).
     public private(set) var isRefreshing = false
 
-    /// Human-readable description of the most recent fetch failure, for a
-    /// non-blocking error surface. Cleared on the next success.
+    /// Diagnostic description of the most recent fetch failure. UI uses its
+    /// presence to show localized recovery copy; it must never render this raw
+    /// transport text. Cleared on the next success.
     public private(set) var lastErrorDescription: String?
+
+    private static let logger = Logger(subsystem: "dev.supermux.ios", category: "usage")
 
     @ObservationIgnored private let client: any SupermuxMacCalling
     @ObservationIgnored private let capabilities: SupermuxMobileCapabilities
@@ -128,7 +132,9 @@ public final class SupermuxMobileUsageStore {
             hasLoaded = true
             lastErrorDescription = nil
         } catch {
-            lastErrorDescription = error.localizedDescription
+            let diagnostic = error.localizedDescription
+            lastErrorDescription = diagnostic
+            Self.logger.error("Usage refresh failed: \(diagnostic, privacy: .private)")
         }
     }
 }

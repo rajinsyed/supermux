@@ -304,14 +304,19 @@ public struct SupermuxUsageScreen: View {
         }
     }
 
-    /// The first-fetch error that replaces the loading rows. Once a snapshot
-    /// has loaded, failures keep that last-good data visible instead.
+    /// Product-safe copy for an initial fetch failure. The raw transport
+    /// diagnostic is only a presence signal here and stays in the system log.
+    /// Once a snapshot has loaded, failures keep that last-good data visible.
     static func initialFailureDescription(
         hasLoaded: Bool,
         errorDescription: String?
     ) -> String? {
-        guard !hasLoaded else { return nil }
-        return errorDescription
+        guard !hasLoaded, errorDescription != nil else { return nil }
+        return String(
+            localized: "supermux.usage.failed.message",
+            defaultValue: "Try again. If the problem continues, check your paired Mac.",
+            bundle: .module
+        )
     }
 
     /// The note replacing a provider's rows in a non-ready state, or `nil`
