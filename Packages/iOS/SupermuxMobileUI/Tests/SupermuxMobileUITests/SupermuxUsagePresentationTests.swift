@@ -280,22 +280,25 @@ import Testing
         )?.isEmpty == false)
     }
 
-    /// A failed first RPC replaces the indefinite loading state with the real
-    /// error, while a later failure keeps rendering the last-good snapshot.
+    /// A failed first RPC replaces the indefinite loading state with a safe,
+    /// localized message rather than exposing raw transport diagnostics. A
+    /// later failure keeps rendering the last-good snapshot.
     @MainActor
     @Test func initialFetchFailureSurfacesOnlyBeforeTheFirstSuccess() {
-        let offline = "The paired Mac is offline."
-        #expect(SupermuxUsageScreen.initialFailureDescription(
+        let rawDiagnostic = "RPCError -32603: relay handshake failed at 10.0.0.4"
+        let displayed = SupermuxUsageScreen.initialFailureDescription(
             hasLoaded: false,
-            errorDescription: offline
-        ) == offline)
+            errorDescription: rawDiagnostic
+        )
+        #expect(displayed?.isEmpty == false)
+        #expect(displayed != rawDiagnostic)
         #expect(SupermuxUsageScreen.initialFailureDescription(
             hasLoaded: false,
             errorDescription: nil
         ) == nil)
         #expect(SupermuxUsageScreen.initialFailureDescription(
             hasLoaded: true,
-            errorDescription: offline
+            errorDescription: rawDiagnostic
         ) == nil)
     }
 
