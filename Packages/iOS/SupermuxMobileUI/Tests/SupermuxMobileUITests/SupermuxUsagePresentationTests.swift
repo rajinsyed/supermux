@@ -30,6 +30,125 @@ import Testing
         ]))
     }
 
+    // MARK: - Session lifecycle
+
+    /// The gauge lives in the workspace list's `showsNavigationToolbar`
+    /// branch, which is torn down on every navigation push. The session must
+    /// therefore survive a push/pop: pausing the loop is fine, but losing the
+    /// snapshot means the ring empties and polling restarts every time the
+    /// user opens a workspace and comes back.
+    @MainActor
+    @Test func aPausedSessionKeepsItsStoreAndSnapshotForTheNextPop() async throws {
+        let client = FakeSupermuxMacClient()
+        client.usageStateResponse = SupermuxUsageStateDTO(
+            claude: SupermuxUsageProviderDTO(
+                state: SupermuxUsageProviderDTO.readyState,
+                accounts: [SupermuxUsageAccountDTO(
+                    id: "1|a",
+                    isActive: true,
+                    windows: [SupermuxUsageWindowDTO(kind: "session", percent: 47)]
+                )]
+            ),
+            codex: SupermuxUsageProviderDTO(state: SupermuxUsageProviderDTO.loadingState)
+        )
+        let model = SupermuxUsageSectionModel()
+        let capabilities: Set<String> = [SupermuxMobileCapability.usageV1.rawValue]
+
+        // A push cancels the driver's task; the session pauses.
+        let session = Task {
+            await model.runSession(
+                client: client,
+                hostCapabilities: capabilities,
+                connectionID: "connection-1"
+            )
+        }
+        try await TestWait().until { model.tightestWindow != nil }
+        session.cancel()
+        _ = await session.value
+
+        // Paused, not torn down: the ring still shows its last reading.
+        #expect(model.showsButton)
+        #expect(model.tightestWindow?.percent == 47)
+        let storeAfterPush = model.store
+
+        // The pop re-runs the driver with the SAME connection identity, which
+        // must resume the retained session rather than build a fresh one.
+        let resumed = Task {
+            await model.runSession(
+                client: client,
+                hostCapabilities: capabilities,
+                connectionID: "connection-1"
+            )
+        }
+        try await TestWait().until { client.callLog.filter { $0 == "usageState" }.count >= 2 }
+        resumed.cancel()
+        _ = await resumed.value
+        #expect(model.store === storeAfterPush)
+    }
+
+    /// A different connection (reconnect, or capabilities arriving late) must
+    /// replace the session instead of polling a dead client.
+    @MainActor
+    @Test func aNewConnectionReplacesTheSession() async throws {
+        let client = FakeSupermuxMacClient()
+        let model = SupermuxUsageSectionModel()
+        let capabilities: Set<String> = [SupermuxMobileCapability.usageV1.rawValue]
+
+        let first = Task {
+            await model.runSession(client: client, hostCapabilities: capabilities, connectionID: "a")
+        }
+        try await TestWait().until { model.store != nil }
+        let firstStore = model.store
+        first.cancel()
+        _ = await first.value
+
+        let second = Task {
+            await model.runSession(client: client, hostCapabilities: capabilities, connectionID: "b")
+        }
+        try await TestWait().until { model.store !== firstStore }
+        second.cancel()
+        _ = await second.value
+
+        #expect(model.store !== firstStore)
+    }
+
+    /// A disconnect hides the gauge outright: showing limits from a Mac that
+    /// is no longer paired would be worse than showing nothing.
+    @MainActor
+    @Test func endingTheSessionHidesTheGauge() async throws {
+        let client = FakeSupermuxMacClient()
+        let model = SupermuxUsageSectionModel()
+        let session = Task {
+            await model.runSession(
+                client: client,
+                hostCapabilities: [SupermuxMobileCapability.usageV1.rawValue],
+                connectionID: "a"
+            )
+        }
+        try await TestWait().until { model.store != nil }
+        session.cancel()
+        _ = await session.value
+
+        model.endSession()
+
+        #expect(model.store == nil)
+        #expect(!model.showsButton)
+        #expect(model.tightestWindow == nil)
+    }
+
+    /// Against an upstream Mac the session exists but the gauge stays hidden
+    /// and no request is ever issued.
+    @MainActor
+    @Test func aSessionWithoutTheCapabilityHidesTheGaugeAndIssuesNoRequest() async throws {
+        let client = FakeSupermuxMacClient()
+        let model = SupermuxUsageSectionModel()
+
+        await model.runSession(client: client, hostCapabilities: [], connectionID: "a")
+
+        #expect(!model.showsButton)
+        #expect(client.callLog.isEmpty)
+    }
+
     // MARK: - Account names
 
     /// A malformed cswap row can carry no alias, no email, and no slot; the

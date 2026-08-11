@@ -1,6 +1,14 @@
 public import Foundation
-// SupermuxUsageSeverity lives in the shared wire package so the iOS usage
-// screen buckets a percent exactly like this popover does.
+// SupermuxUsageSeverity and SupermuxUsageCountdown live in the shared wire
+// package so the iOS usage screen buckets percents and formats resets exactly
+// like the desktop popover does.
+//
+// This is a source break for anything that imported ONLY SupermuxKit and
+// named those types unqualified: `public import` lets them appear in this
+// module's public signatures, but does not put them back in a client's
+// unqualified scope. Harmless today — SupermuxKit is fork-internal, consumed
+// only by the cmux app target — but a future extractor of this package must
+// import SupermuxMobileCore alongside it.
 public import SupermuxMobileCore
 
 /// One provider rate-limit window (Claude's 5-hour/7-day, Codex's 5-hour/weekly,

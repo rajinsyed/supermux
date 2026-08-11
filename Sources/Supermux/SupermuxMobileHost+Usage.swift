@@ -23,6 +23,12 @@ import SupermuxMobileCore
 /// The phone's own store polls at the desktop's 120 s cadence, so in normal
 /// use it roughly doubles the pass rate rather than multiplying it.
 extension TerminalController {
+    /// How long a first request waits for an already-running pass to land
+    /// before answering `loading`. Bounded so a wedged provider fetch can
+    /// never hold an RPC open.
+    @MainActor
+    private static var usageFirstPassWait: Duration { .seconds(5) }
+
     /// `mobile.supermux.usage.state`: `{claude: …, codex: …}` — both provider
     /// columns exactly as the desktop tracker holds them after a
     /// floor-throttled refresh.
@@ -30,6 +36,14 @@ extension TerminalController {
     func v2SupermuxUsageState(params: [String: Any]) async -> V2CallResult {
         let model = SupermuxComposition.usageModel
         await model.refresh()
+        // `refresh()` returns immediately with `.alreadyRefreshing` when a
+        // pass is already in flight, which is fine once there is data to
+        // serve — the payload is self-describing and the phone repolls. But
+        // on the FIRST request it would answer `loading` for both providers
+        // and strand the phone on a spinner for a full poll period, even
+        // though the pass lands seconds later. So when nothing has been
+        // measured yet, briefly wait the running pass out.
+        await waitForFirstUsagePass(model)
         do {
             let payload = try SupermuxMobileUsagePayloadBuilder().usageState(
                 claude: model.claude,
@@ -38,6 +52,24 @@ extension TerminalController {
             return .ok(payload)
         } catch {
             return .err(code: "unavailable", message: "Failed to encode usage state", data: nil)
+        }
+    }
+
+    /// Waits out an in-flight pass, but only while BOTH providers are still
+    /// `loading` (nothing has ever been measured) and only up to
+    /// ``usageFirstPassWait``. Polling `isRefreshing` rather than awaiting the
+    /// pass keeps this handler read-only against the shared model — no new
+    /// continuation or completion hook has to be threaded through it.
+    @MainActor
+    private func waitForFirstUsagePass(_ model: SupermuxUsageModel) async {
+        func hasNothingToServe() -> Bool {
+            if case .loading = model.claude, case .loading = model.codex { return true }
+            return false
+        }
+        guard hasNothingToServe(), model.isRefreshing else { return }
+        let deadline = ContinuousClock().now.advanced(by: Self.usageFirstPassWait)
+        while model.isRefreshing, hasNothingToServe(), ContinuousClock().now < deadline {
+            guard (try? await Task.sleep(for: .milliseconds(50))) != nil else { return }
         }
     }
 }

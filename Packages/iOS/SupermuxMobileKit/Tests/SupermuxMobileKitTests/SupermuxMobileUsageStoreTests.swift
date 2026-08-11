@@ -157,8 +157,11 @@ import Testing
     }
 
     /// Concurrent refreshes (pull-to-refresh landing on top of the poll loop)
-    /// coalesce into ONE round trip rather than stacking requests.
-    @Test func aRefreshInFlightSuppressesASecondRoundTrip() async throws {
+    /// coalesce into ONE round trip rather than stacking requests — and the
+    /// second caller JOINS that request instead of being dropped, so a
+    /// pull-to-refresh spinner never ends against a result that has not
+    /// arrived and an explicit retry is never silently discarded.
+    @Test func aConcurrentRefreshJoinsTheInFlightRequest() async throws {
         let client = FakeSupermuxMacClient()
         client.usageStateResponse = readyState()
         let gate = RPCHoldGate()
@@ -169,12 +172,49 @@ import Testing
         try await wait.until { gate.hasParked }
         // The store reports the in-flight pass, so the UI can show a spinner.
         #expect(store.isRefreshing)
-        await store.refresh()
+
+        var secondReturned = false
+        let second = Task {
+            await store.refresh()
+            secondReturned = true
+        }
+        // The joiner must still be waiting on the shared request, not have
+        // returned early against stale (here: absent) data.
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(secondReturned == false)
+        #expect(store.usage == nil)
+
         gate.release()
         _ = await first.value
+        _ = await second.value
 
+        // One request served both callers, and BOTH observe the result.
         #expect(client.usageStateCallCount == 1)
+        #expect(secondReturned)
+        #expect(store.usage == readyState())
         #expect(store.isRefreshing == false)
+    }
+
+    /// The pass belongs to the store, not to whichever caller started it: a
+    /// cancelled caller (a dismissed sheet, a stopped poll loop) must not
+    /// abort the fetch other callers are awaiting.
+    @Test func cancellingOneCallerDoesNotAbortTheSharedRequest() async throws {
+        let client = FakeSupermuxMacClient()
+        client.usageStateResponse = readyState()
+        let gate = RPCHoldGate()
+        client.usageStateHold = gate
+        let store = makeStore(client: client)
+
+        let starter = Task { await store.refresh() }
+        try await wait.until { gate.hasParked }
+        let joiner = Task { await store.refresh() }
+        starter.cancel()
+
+        gate.release()
+        _ = await joiner.value
+
+        #expect(store.usage == readyState())
+        #expect(store.hasLoaded)
     }
 }
 

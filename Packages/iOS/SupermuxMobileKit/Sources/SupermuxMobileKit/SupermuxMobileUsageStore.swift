@@ -41,6 +41,9 @@ public final class SupermuxMobileUsageStore {
     @ObservationIgnored private let pollInterval: Duration
     /// Cancellable poll sleep; injectable for deterministic tests.
     @ObservationIgnored private let idleSleep: (Duration) async -> Void
+    /// The fetch currently on the wire, so concurrent callers join it instead
+    /// of being dropped or stacking a second request.
+    @ObservationIgnored private var inFlight: Task<Void, Never>?
 
     /// Whether the phone shows the usage gauge at all: gated on the host
     /// advertising `supermux.usage.v1`.
@@ -88,11 +91,36 @@ public final class SupermuxMobileUsageStore {
         }
     }
 
-    /// Fetches once. Safe to call from a pull-to-refresh or a sheet
-    /// presentation; a fetch already in flight wins and the call returns
-    /// immediately rather than queueing a second round trip.
+    /// Fetches once, JOINING any fetch already in flight rather than issuing
+    /// a second round trip.
+    ///
+    /// Callers overlap constantly: the poll loop, the sheet's presentation
+    /// refresh, and pull-to-refresh are three independent entry points. A
+    /// concurrent caller must not simply be dropped — pull-to-refresh would
+    /// end its spinner having awaited nothing, and a user retrying a failed
+    /// fetch would silently get no request at all with the next automatic
+    /// attempt up to a poll period away. Awaiting the shared pass instead
+    /// means every caller returns against a settled result, with still only
+    /// one request on the wire.
     public func refresh() async {
-        guard capabilities.supportsUsage, !isRefreshing else { return }
+        guard capabilities.supportsUsage else { return }
+        if let inFlight {
+            await inFlight.value
+            return
+        }
+        // Unstructured on purpose: the pass belongs to the STORE, not to
+        // whichever caller happened to start it, so one caller's cancellation
+        // (a poll loop stopping, a sheet dismissing) cannot abort the fetch
+        // the other callers are awaiting.
+        let pass = Task { @MainActor in await self.performRefresh() }
+        inFlight = pass
+        await pass.value
+        inFlight = nil
+    }
+
+    /// One fetch. Failures keep the last-good snapshot on screen: a dropped
+    /// connection must not blank numbers that were true a minute ago.
+    private func performRefresh() async {
         isRefreshing = true
         defer { isRefreshing = false }
         do {
@@ -100,8 +128,6 @@ public final class SupermuxMobileUsageStore {
             hasLoaded = true
             lastErrorDescription = nil
         } catch {
-            // Keep the last-good snapshot on screen: a dropped connection
-            // must not blank numbers that were true a minute ago.
             lastErrorDescription = error.localizedDescription
         }
     }
