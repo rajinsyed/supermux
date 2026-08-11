@@ -1530,7 +1530,15 @@ override together. It exists because upstream's rule is actively wrong here:
 
 The fenced text records the Release invocation used for real phone dogfood (`CMUX_DEV_TAG=` empty,
 `CMUX_IOS_AUTH_ENV=production`, personal team `NRGUG8GVV4` plus the #53 entitlements file, distinct
-`PRODUCT_BUNDLE_IDENTIFIER` so it sits beside the user's main install).
+dogfood bundle id so it sits beside the user's main install).
+
+Since #374 the identity and entitlements overrides go through the app-scoped variables
+`SUPERMUX_APP_BUNDLE_ID` and `SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS`, **not** `PRODUCT_BUNDLE_IDENTIFIER`
+/ `CODE_SIGN_ENTITLEMENTS` directly. A command-line build setting applies to every target in the
+workspace, so passing the raw settings stamps the app's id onto the embedded notification service
+extension — and iOS silently refuses to load an extension whose bundle id is not a child of its
+container, which would kill the push avatar with no error anywhere. The app-scoped variables leave
+the extension deriving `<app id>.notification-service` and carrying no entitlements file.
 
 Two hard "never pass this" rules are part of the fence, both learned from real failures:
 

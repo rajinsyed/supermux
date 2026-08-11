@@ -87,13 +87,14 @@ xcodebuild -workspace ios/cmux.xcworkspace -scheme cmux-ios \
   -configuration Release -destination 'generic/platform=iOS' \
   -derivedDataPath "$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-<tag>" \
   -allowProvisioningUpdates \
-  PRODUCT_BUNDLE_IDENTIFIER=com.supermux.ios.dogfood \
+  SUPERMUX_APP_BUNDLE_ID=com.supermux.ios.dogfood \
+  SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
   SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>" \
   CMUX_GIT_SHA="$(git rev-parse --short=10 HEAD)" \
   CMUX_DEV_TAG= CMUX_PRESENCE_BASE_URL= CMUX_IOS_AUTH_ENV=production \
   EXCLUDED_SOURCE_FILE_NAMES=Info.plist \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic \
-  DEVELOPMENT_TEAM=NRGUG8GVV4 CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
+  DEVELOPMENT_TEAM=NRGUG8GVV4 \
   build
 
 APP="$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-<tag>/Build/Products/Release-iphoneos/cmux.app"
