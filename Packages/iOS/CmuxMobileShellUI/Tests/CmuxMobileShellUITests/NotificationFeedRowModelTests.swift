@@ -13,7 +13,10 @@ import Testing
             workspaceTitle: "resume review"
         ))
 
-        #expect(model.presentation.workspaceMatchesTitle)
+        // The headline is the workspace, and the title restates it once folded,
+        // so nothing is left for the provenance line.
+        #expect(model.presentation.headline == "resume review")
+        #expect(model.presentation.provenance == nil)
         #expect(model.presentation.workspaceName == "resume review")
     }
 
@@ -39,12 +42,27 @@ import Testing
         #expect(distinctBody.presentation.contentPreview == "Artifacts uploaded to the release bucket.")
     }
 
+    /// The title is the headline only when there is no workspace to use, and
+    /// otherwise moves to the provenance line rather than disappearing.
+    @Test func headlineIsTheWorkspaceAndDemotesTheTitle() {
+        let model = NotificationFeedRowModel(item: item(
+            title: "Claude Code",
+            workspaceTitle: "fix notifications"
+        ))
+
+        #expect(model.presentation.headline == "fix notifications")
+        #expect(model.presentation.provenance == "Claude Code")
+    }
+
     @Test func missingWorkspaceUsesFallbackAndBlankComputerUsesDeviceID() {
         let model = NotificationFeedRowModel(item: item(
             workspaceTitle: "   ",
             macDisplayName: " "
         ))
 
+        // A blank workspace must not promote the "Unknown workspace" UI
+        // placeholder into the headline and push the real title below it.
+        #expect(model.presentation.headline == "Title")
         #expect(model.presentation.workspaceName == "Unknown workspace")
         #expect(model.presentation.computerName == "mac-a")
     }

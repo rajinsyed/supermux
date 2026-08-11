@@ -19,7 +19,7 @@ import Testing
             )
         ))
         #expect(model.presentation.project?.id == "project-1")
-        #expect(model.presentation.projectName == "supermux")
+        #expect(model.presentation.provenance == "supermux · Title")
     }
 
     @Test func projectlessNotificationRendersUpstreamShape() {
@@ -27,18 +27,19 @@ import Testing
         // project: nothing project-shaped may appear.
         let model = NotificationFeedRowModel(item: item(project: nil))
         #expect(model.presentation.project == nil)
-        #expect(model.presentation.projectName == nil)
+        #expect(model.presentation.provenance == "Title")
     }
 
     @Test func projectNameIsDroppedWhenItRestatesTheWorkspace() {
-        // The common case — a workspace named after its repo. Rendering
-        // "supermux · supermux" is noise, so the name is suppressed while the
-        // project itself stays (the avatar still draws).
+        // The common case — a workspace named after its repo. The headline is
+        // already "Supermux", so repeating it in the provenance line is noise;
+        // the project itself stays, because the avatar still draws.
         let model = NotificationFeedRowModel(item: item(
             workspaceTitle: "Supermux",
             project: SupermuxNotificationProject(id: "project-1", name: "supermux")
         ))
-        #expect(model.presentation.projectName == nil)
+        #expect(model.presentation.headline == "Supermux")
+        #expect(model.presentation.provenance == "Title")
         #expect(model.presentation.project != nil)
     }
 
@@ -46,16 +47,49 @@ import Testing
         let model = NotificationFeedRowModel(item: item(
             project: SupermuxNotificationProject(id: "project-1", name: "   ")
         ))
-        #expect(model.presentation.projectName == nil)
+        #expect(model.presentation.provenance == "Title")
+    }
+
+    /// The three surfaces must agree on the row's lines. This asserts the iOS
+    /// presentation equals what the shared decider produces for the same
+    /// notification — the drift this whole type exists to prevent.
+    @Test func rowLinesMatchTheSharedDecider() {
+        let model = NotificationFeedRowModel(item: item(
+            title: "Claude Code",
+            workspaceTitle: "fix notifications",
+            project: SupermuxNotificationProject(id: "project-1", name: "supermux")
+        ))
+
+        let expectedHeadline = SupermuxNotificationRowPresentation.headline(
+            title: "Claude Code",
+            tabName: "fix notifications"
+        )
+        #expect(model.presentation.headline == expectedHeadline)
+        #expect(model.presentation.provenance == SupermuxNotificationRowPresentation.provenance(
+            projectName: "supermux",
+            title: "Claude Code",
+            headline: expectedHeadline
+        ))
     }
 
     @Test func bodyRestatingTheProjectIsNotShownAsAPreview() {
-        // The project renders on its own line now, so a body repeating it adds
-        // nothing and should fall through to the subtitle.
+        // The project renders on the provenance line, so a body repeating it
+        // adds nothing and should fall through to the subtitle.
         let model = NotificationFeedRowModel(item: item(
             subtitle: "Tests passed",
             body: "supermux",
             project: SupermuxNotificationProject(id: "project-1", name: "supermux")
+        ))
+        #expect(model.presentation.contentPreview == "Tests passed")
+    }
+
+    /// The computer renders on its own line, so a body that only repeats the
+    /// Mac's name is not a preview either.
+    @Test func bodyRestatingTheComputerIsNotShownAsAPreview() {
+        let model = NotificationFeedRowModel(item: item(
+            subtitle: "Tests passed",
+            body: "Mac",
+            macDisplayName: "Mac"
         ))
         #expect(model.presentation.contentPreview == "Tests passed")
     }
