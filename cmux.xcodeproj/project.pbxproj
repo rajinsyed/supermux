@@ -2167,6 +2167,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		50BE000200000000000000C6 /* SupermuxMobileWorkspaceListAugmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C5 /* SupermuxMobileWorkspaceListAugmenter.swift */; };
 		50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */; };
 		50BE00010000000000000106 /* SupermuxNotificationProjectBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000105 /* SupermuxNotificationProjectBridge.swift */; };
+		50BE00010000000000000111 /* SupermuxNotificationRowBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000110 /* SupermuxNotificationRowBody.swift */; };
 		50BE00010000000000000102 /* SupermuxPanelAgentEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000101 /* SupermuxPanelAgentEvidence.swift */; };
 		50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */; };
 		50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */; };
@@ -4870,6 +4871,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 		50BE000200000000000000C5 /* SupermuxMobileWorkspaceListAugmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileWorkspaceListAugmenter.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNewWorkspaceHomeDirectoryTests.swift; sourceTree = "<group>"; };
 		50BE00010000000000000105 /* SupermuxNotificationProjectBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNotificationProjectBridge.swift; sourceTree = "<group>"; };
+		50BE00010000000000000110 /* SupermuxNotificationRowBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNotificationRowBody.swift; sourceTree = "<group>"; };
 		50BE00010000000000000101 /* SupermuxPanelAgentEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxPanelAgentEvidence.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxProjectsSectionHeightPreferenceKey.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRowMenuVisibility.swift; sourceTree = "<group>"; };
@@ -5599,6 +5601,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE00010000000000000103 /* SupermuxDirectPhonePush.swift */,
 				50BE00010000000000000105 /* SupermuxNotificationProjectBridge.swift */,
 				50BE00010000000000000107 /* SupermuxBannerProjectDecorator.swift */,
+				50BE00010000000000000110 /* SupermuxNotificationRowBody.swift */,
 				50BE000200000000000000B1 /* TerminalController+SupermuxMobile.swift */,
 				50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */,
 				50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */,
@@ -10114,6 +10117,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000200000000000000DD /* SupermuxMobileSelectionSync.swift in Sources */,
 				50BE000200000000000000C6 /* SupermuxMobileWorkspaceListAugmenter.swift in Sources */,
 				50BE00010000000000000106 /* SupermuxNotificationProjectBridge.swift in Sources */,
+				50BE00010000000000000111 /* SupermuxNotificationRowBody.swift in Sources */,
 				50BE00010000000000000102 /* SupermuxPanelAgentEvidence.swift in Sources */,
 				50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */,
 				50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */,

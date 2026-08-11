@@ -34,17 +34,48 @@ public enum SupermuxNotificationProvenance: Sendable {
         tabName: String?,
         surfaceName: String? = nil
     ) -> String? {
-        var segments: [String] = []
-        for candidate in [projectName, tabName, surfaceName] {
+        line(segments: [projectName, tabName, surfaceName])
+    }
+
+    /// Composes a provenance line from an ordered list of candidate segments.
+    ///
+    /// The general form behind ``line(projectName:tabName:surfaceName:)``: rows
+    /// differ in WHICH facts end up on the secondary line (a row whose headline
+    /// is already the workspace name puts the notification's own title there
+    /// instead), but they must never differ in how segments are trimmed,
+    /// de-duplicated, or joined — that is what makes two surfaces look like two
+    /// different apps.
+    ///
+    /// - Parameter segments: Candidates in display order; `nil` and blank
+    ///   entries are skipped, and any entry restating an earlier one is dropped.
+    /// - Returns: The composed line, or `nil` when nothing is worth showing.
+    public static func line(segments: [String?]) -> String? {
+        let accepted = accepted(segments)
+        guard !accepted.isEmpty else { return nil }
+        return accepted.joined(separator: separator)
+    }
+
+    /// The segments ``line(segments:)`` would join, before joining them.
+    ///
+    /// Exposed because a caller sometimes needs to drop a leading segment it
+    /// only supplied to seed the de-duplication (a row measures the project and
+    /// title against its own headline, then renders the rest). Splitting the
+    /// joined string back apart would be wrong: a workspace title may itself
+    /// contain the separator.
+    ///
+    /// - Parameter segments: Candidates in display order.
+    /// - Returns: Trimmed, de-duplicated segments; empty when nothing survives.
+    public static func accepted(_ segments: [String?]) -> [String] {
+        var accepted: [String] = []
+        for candidate in segments {
             guard let normalized = normalized(candidate) else { continue }
             // Compare against everything already accepted, not just the
             // previous segment: a pane named after the project (with the tab
             // named something else in between) is just as redundant.
-            guard !segments.contains(where: { matches($0, normalized) }) else { continue }
-            segments.append(normalized)
+            guard !accepted.contains(where: { matches($0, normalized) }) else { continue }
+            accepted.append(normalized)
         }
-        guard !segments.isEmpty else { return nil }
-        return segments.joined(separator: separator)
+        return accepted
     }
 
     /// Trims a candidate segment, returning `nil` for blank input.

@@ -721,96 +721,49 @@ struct NotificationRow: View, Equatable {
         }
     }
 
-    /// The row body: a leading unread rail, an optional project avatar, then a
-    /// title/provenance/body stack.
-    ///
-    /// The rail replaces the old free-floating dot — as a full-height bar it
-    /// reads as "this row is unread" rather than as a bullet point, and it
-    /// leaves the title line free for the timestamp alone.
+    /// The row body — the SHARED one, so the panel and the titlebar popover
+    /// cannot drift into two different-looking lists of the same store.
     private var rowContent: some View {
-        HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(notification.isRead ? Color.clear : cmuxAccentColor())
-                .frame(width: 3)
-                .frame(maxHeight: .infinity)
-
-            if showsProjectAvatar, let project = notification.project {
-                SupermuxNotificationAvatarView(project: project, image: projectIcon, size: 28)
-                    .padding(.top, 1)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(notification.title)
-                        .cmuxFont(size: 12.5, weight: notification.isRead ? .medium : .semibold)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .layoutPriority(1)
-
-                    Spacer(minLength: 4)
-
-                    Text(notification.createdAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-                        .cmuxFont(size: 10.5)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-
-                if let provenance {
-                    Text(provenance)
-                        .cmuxFont(size: 10.5, weight: .medium)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                if let preview {
-                    Text(preview)
-                        .cmuxFont(size: 11.5)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 9)
-        .padding(.leading, 8)
-        .padding(.trailing, 28)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(isHovering ? 0.07 : 0.035))
+        SupermuxNotificationRowBody(
+            project: notification.project,
+            projectIcon: projectIcon,
+            showsAvatar: showsProjectAvatar,
+            headline: headline,
+            provenance: provenance,
+            preview: preview,
+            timestamp: notification.createdAt,
+            isRead: notification.isRead,
+            isHovering: isHovering
         )
-        .contentShape(Rectangle())
     }
 
-    /// `project · tab`, minus whatever the section header or the title already
-    /// said. Hidden entirely when it would only repeat something on screen.
-    private var provenance: String? {
-        SupermuxNotificationProvenance.line(
-            projectName: showsProjectAvatar ? notification.project?.name : nil,
+    /// The workspace the notification fired in, or its title when unknown.
+    private var headline: String {
+        SupermuxNotificationRowPresentation.headline(
+            title: notification.title,
             tabName: tabTitle
         )
-        .flatMap { line in
-            SupermuxNotificationProvenance.matches(line, notification.title) ? nil : line
-        }
+    }
+
+    /// `project · title`, minus whatever the headline or the section header
+    /// already said. Hidden entirely when it would only repeat what is on
+    /// screen.
+    private var provenance: String? {
+        SupermuxNotificationRowPresentation.provenance(
+            projectName: showsProjectAvatar ? notification.project?.name : nil,
+            title: notification.title,
+            headline: headline
+        )
     }
 
     /// The body, or the subtitle when the body adds nothing. The subtitle was
     /// carried end-to-end but never rendered anywhere in the app before this.
     private var preview: String? {
-        let redundant = [notification.title, tabTitle, notification.project?.name]
-            .compactMap { SupermuxNotificationProvenance.normalized($0) }
-        if let body = SupermuxNotificationProvenance.normalized(notification.body),
-           !redundant.contains(where: { SupermuxNotificationProvenance.matches(body, $0) }) {
-            return body
-        }
-        if let subtitle = SupermuxNotificationProvenance.normalized(notification.subtitle),
-           !redundant.contains(where: { SupermuxNotificationProvenance.matches(subtitle, $0) }) {
-            return subtitle
-        }
-        return nil
+        SupermuxNotificationRowPresentation.preview(
+            body: notification.body,
+            subtitle: notification.subtitle,
+            redundant: [headline, provenance, notification.project?.name]
+        )
     }
 
     private var accessibilityLabel: String {
