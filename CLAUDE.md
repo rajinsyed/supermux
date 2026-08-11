@@ -31,6 +31,28 @@ cd ghostty && zig build -Demit-xcframework=true -Dxcframework-target=universal -
 
 Clean up older tags you started this session (quit the app, remove its `/tmp` socket and derived data) before launching a new one.
 
+<!-- SUPERMUX:begin mac-dogfood-supermux-profile -->
+### Supermux: Mac dogfood builds the user opens use `--supermux-profile`
+
+A plain `reload.sh --tag` build points sign-in at a localhost dev web origin nothing serves, so the
+user cannot log in to it. For any tagged Mac build the **user** will open and test, add
+`--supermux-profile`:
+
+```bash
+./scripts/reload.sh --tag <branch-slug> --supermux-profile            # user dogfood build
+./scripts/reload.sh --tag <branch-slug> --supermux-profile --launch
+```
+
+It implies `--prod-auth` (production Stack auth + cmux.com APIs) and seeds the tag's isolated
+identity from the main installed Supermux release app (`com.supermux.app`): full UserDefaults
+(settings/preferences) plus the Stack Auth `credentials.json`, so the build launches already
+signed in as the user's real account with their real settings (`scripts/supermux-seed-dev-profile.sh`).
+Stack Auth does not rotate refresh tokens, so both apps can run concurrently off the shared
+session. **Never sign out inside a seeded build** — revoking the shared session signs the user's
+main Supermux app out too. Agent-only builds (the user never opens them) keep using plain
+`--tag` / the `~/.secrets` dogfood auto-sign-in.
+<!-- SUPERMUX:end mac-dogfood-supermux-profile -->
+
 ## Tag-bound debug CLI
 
 For CLI or socket dogfood against a tagged Debug app, set `CMUX_TAG` and use the helper. Do not use `/tmp/cmux-cli`, which points at the most recently reloaded build and can target the user's main app socket.
@@ -65,7 +87,8 @@ xcodebuild -workspace ios/cmux.xcworkspace -scheme cmux-ios \
   -configuration Release -destination 'generic/platform=iOS' \
   -derivedDataPath "$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-<tag>" \
   -allowProvisioningUpdates \
-  PRODUCT_BUNDLE_IDENTIFIER=dev.cmux.ios.<tag> \
+  PRODUCT_BUNDLE_IDENTIFIER=com.supermux.ios.dogfood \
+  SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>" \
   CMUX_GIT_SHA="$(git rev-parse --short=10 HEAD)" \
   CMUX_DEV_TAG= CMUX_PRESENCE_BASE_URL= CMUX_IOS_AUTH_ENV=production \
   EXCLUDED_SOURCE_FILE_NAMES=Info.plist \
@@ -75,12 +98,20 @@ xcodebuild -workspace ios/cmux.xcworkspace -scheme cmux-ios \
 
 APP="$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-<tag>/Build/Products/Release-iphoneos/cmux.app"
 xcrun devicectl device install app --device <device-id> "$APP"
-xcrun devicectl device process launch --terminate-existing --device <device-id> dev.cmux.ios.<tag>
+xcrun devicectl device process launch --terminate-existing --device <device-id> com.supermux.ios.dogfood
 ```
 
 - `CMUX_DEV_TAG=` **empty** is what makes it official-compatible; the distinct
   `PRODUCT_BUNDLE_IDENTIFIER` is what keeps it beside the user's main install instead of replacing
-  it. Reuse the same bundle id across rebuilds so app data survives.
+  it.
+- **The bundle id is FIXED at `com.supermux.ios.dogfood` for every dogfood build, every tag.**
+  Never mint a per-tag bundle id (`dev.cmux.ios.<tag>` is the old scheme — retired). iOS sandboxing
+  means login tokens and Mac pairing live per-bundle-id and cannot be copied from the main
+  `com.supermux.ios` install (and keychain-group sharing with it is FORBIDDEN: the Iroh stores
+  half-share and mutually wipe each other's relay credentials, breaking the user's main app). With
+  one fixed dogfood id, the user signs in and pairs once, and every later dogfood build replaces it
+  in place with login, pairing, and settings intact. `SUPERMUX_IOS_DISPLAY_SUFFIX` still carries the
+  current tag, so the home-screen name says which build is installed.
 - `DEVELOPMENT_TEAM=NRGUG8GVV4` is the personal team, which is also why
   `CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` is required (touchpoint #53 strips the
   capabilities that team lacks).
@@ -91,7 +122,12 @@ xcrun devicectl device process launch --terminate-existing --device <device-id> 
 **Never pass `PRODUCT_DISPLAY_NAME` on this command line.** A command-line build setting overrides
 the xcconfig, so the app installs under whatever ad-hoc name the agent invented (this shipped a
 build literally named "cmux Mobile Fix" and cost a round trip). The name comes from
-`ios/Config/*.xcconfig`, where the fork already sets **Supermux**; leave it alone. Same rule for
+`ios/Config/*.xcconfig`, where the fork already sets **Supermux**; leave it alone. The ONLY
+sanctioned per-build naming knob is `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"` above (leading space,
+quoted): the xcconfig templates `PRODUCT_DISPLAY_NAME = Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)`,
+so every dogfood install shows as "Supermux <tag>" on the home screen while official builds stay
+"Supermux". Always pass it with the current build's `<tag>` (the bundle id stays fixed; the
+suffix is what identifies the installed build). Same never-pass rule for
 `ASSETCATALOG_COMPILER_APPICON_NAME` — a command-line override applies to every target in the
 workspace and fails actool in the SwiftPM resource bundles.
 

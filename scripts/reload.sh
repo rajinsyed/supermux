@@ -27,6 +27,12 @@ CMUX_AUTH_WWW_ORIGIN_VALUE=""
 CMUX_WWW_ORIGIN_VALUE=""
 PROD_AUTH=0
 AUTH_CREDENTIALS_FILE=""
+# SUPERMUX:begin reload-supermux-profile
+# --supermux-profile: seed this tagged build with the main Supermux release
+# install's settings + production sign-in (implies --prod-auth). See
+# scripts/supermux-seed-dev-profile.sh.
+SUPERMUX_PROFILE=0
+# SUPERMUX:end reload-supermux-profile
 CLI_PATH=""
 NO_GLOBAL_CLI_LINKS="${CMUX_RELOAD_NO_GLOBAL_CLI_LINKS:-0}"
 # Matches CmuxStateDirectory (non-TCC ~/.local/state/cmux) where the app/CLI now
@@ -267,6 +273,11 @@ Options:
                          builds and prints the app path but does not open it.
   --prod-auth            Point this tagged Debug build at production Stack auth,
                          cmux APIs, and the production Iroh broker.
+  --supermux-profile     Seed this tagged build with the main Supermux release
+                         install's settings and production sign-in (same account,
+                         same preferences; implies --prod-auth). Use for user
+                         dogfood builds. Do NOT sign out inside a seeded build:
+                         it shares the main app's session.
   --credentials-file <path>
                          Bake only the path to a current-user-owned 0600 auth file.
                          The credential values never enter argv, Info.plist, or
@@ -508,6 +519,13 @@ while [[ $# -gt 0 ]]; do
       PROD_AUTH=1
       shift
       ;;
+    # SUPERMUX:begin reload-supermux-profile-parse
+    --supermux-profile)
+      SUPERMUX_PROFILE=1
+      PROD_AUTH=1
+      shift
+      ;;
+    # SUPERMUX:end reload-supermux-profile-parse
     --credentials-file)
       AUTH_CREDENTIALS_FILE="${2:-}"
       if [[ -z "$AUTH_CREDENTIALS_FILE" ]]; then
@@ -1104,6 +1122,20 @@ if [[ -n "$TAG" ]]; then
   pkill -f "${APP_NAME}.app/Contents/MacOS/${BASE_APP_NAME}" || true
   sleep 0.3
 fi
+
+# SUPERMUX:begin reload-supermux-profile-seed
+# Seed the tagged identity from the main Supermux release install AFTER the
+# old same-tag instance was told to quit (the seeder verifies the exit), so
+# the fresh launch comes up signed in to the production account with the
+# user's settings. Fails the reload loudly if seeding fails: a dogfood build
+# that silently falls back to a signed-out localhost profile is the exact bug
+# this flag exists to prevent.
+if [[ "$SUPERMUX_PROFILE" -eq 1 && -n "$TAG" ]]; then
+  "$PWD/scripts/supermux-seed-dev-profile.sh" \
+    --target-bundle-id "$BUNDLE_ID" \
+    --wait-for-exit "${APP_NAME}.app/Contents/MacOS/${BASE_APP_NAME}"
+fi
+# SUPERMUX:end reload-supermux-profile-seed
 
 if [[ "$LAUNCH" -eq 1 ]]; then
   if [[ -z "$TAG" ]]; then
