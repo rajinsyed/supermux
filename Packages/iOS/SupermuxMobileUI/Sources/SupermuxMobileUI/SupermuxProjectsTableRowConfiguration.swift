@@ -63,6 +63,11 @@ public struct SupermuxProjectsTableRowConfiguration {
         return previous.section != next.section
             || (previous.actions.editing != nil) != (next.actions.editing != nil)
             || (previous.actions.run != nil) != (next.actions.run != nil)
+            // The New Worktree preparation spinner is carried on the actions
+            // bundle (it is UI-transient, not section data), so its change
+            // must repaint the hosted subtree like any value change would.
+            || previous.actions.preparingNewWorktreeProjectID
+                != next.actions.preparingNewWorktreeProjectID
     }
 
     /// The row's height-cache identity, as a string the shell can fold into

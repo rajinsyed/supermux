@@ -75,6 +75,19 @@ public final class SupermuxProjectsSectionModel {
     /// `SupermuxProjectsSectionModel+Removal.swift`.
     public internal(set) var pendingWorktreeRemoval: SupermuxPendingWorktreeRemoval?
 
+    /// The presented New Worktree sheet's payload (m7 sidebar create flow),
+    /// or `nil` while none is up. Consumed by the stable navigation wrapper
+    /// above the list — never inside a recycled row.
+    var newWorktreePresentation: SupermuxNewWorktreePresentation?
+
+    /// The project whose New Worktree request is fetching its branch
+    /// snapshot (its affordance shows a spinner); `nil` when idle.
+    public internal(set) var preparingNewWorktreeProjectID: String?
+
+    /// Error surface for a failed New Worktree preparation (UI-03: visible,
+    /// never silent). Cleared via ``dismissNewWorktreeError()``.
+    public internal(set) var newWorktreeErrorMessage: String?
+
     /// The project of the most recent removal request. Disambiguates the
     /// force/failure prompts when two projects' stores are parked at once:
     /// `worktreeSessions` is an unordered dictionary, so without this the
@@ -230,7 +243,8 @@ public final class SupermuxProjectsSectionModel {
             },
             showsPresets: store.showsPresets,
             presets: store.showsPresets ? store.presets : [],
-            showsActions: runStore?.showsActions ?? false
+            showsActions: runStore?.showsActions ?? false,
+            showsWorktreeCreation: sessionCapabilities?.supportsWorktrees ?? false
         )
     }
 
@@ -300,7 +314,11 @@ public final class SupermuxProjectsSectionModel {
             },
             requestNestedWorktreeRemoval: { [weak self] projectID, worktree in
                 self?.requestNestedWorktreeRemoval(projectID: projectID, worktree: worktree)
-            }
+            },
+            requestNewWorktree: { [weak self] projectID in
+                self?.requestNewWorktree(projectID)
+            },
+            preparingNewWorktreeProjectID: preparingNewWorktreeProjectID
         )
     }
 

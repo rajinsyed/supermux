@@ -68,6 +68,9 @@ extension SupermuxProjectsSectionModel {
             // confirm has no branch-identity recheck to catch it (only the
             // forced retry does), so it has to be dropped here.
             pendingWorktreeRemoval = nil
+            // Same for the create flow: its presentation holds the OLD
+            // connection's store, so a sheet kept open could only fail.
+            resetNewWorktreeFlow()
             sessionGeneration += 1
             let generation = sessionGeneration
             let capabilities = SupermuxMobileCapabilities(hostCapabilities: hostCapabilities)
@@ -169,6 +172,7 @@ extension SupermuxProjectsSectionModel {
         // Same reason as the replacement path: a pending confirm belongs to a
         // connection that no longer exists.
         pendingWorktreeRemoval = nil
+        resetNewWorktreeFlow()
         endAllWorktreeSessions()
         sessionLoops?.cancel()
         sessionGeneration += 1

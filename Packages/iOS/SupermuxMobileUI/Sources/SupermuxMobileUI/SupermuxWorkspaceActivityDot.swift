@@ -22,8 +22,11 @@ public struct SupermuxWorkspaceActivityDot: View {
     /// - Parameters:
     ///   - activity: The state to render; anything but
     ///     ``SupermuxWorkspaceActivityDTO/working`` renders nothing.
-    ///   - size: Diameter of the dot. Defaults to 8.
-    public init(activity: SupermuxWorkspaceActivityDTO?, size: CGFloat = 8) {
+    ///   - size: Footprint of the indicator. Defaults to 11 — the glyph it
+    ///     draws (`size * 1.7` ≈ 19pt) then matches the `.headline` weight of
+    ///     the workspace title beside it; the original 8 rendered a ~14pt
+    ///     glyph that was barely noticeable against subheadline previews.
+    public init(activity: SupermuxWorkspaceActivityDTO?, size: CGFloat = 11) {
         self.activity = activity
         self.size = size
     }
@@ -67,7 +70,7 @@ extension View {
                 activity: rawActivity.flatMap(SupermuxWorkspaceActivityDTO.init(rawValue:))
             )
             .padding(.trailing, 2)
-            .padding(.bottom, 12)
+            .padding(.bottom, 11)
         }
     }
 }

@@ -30,22 +30,24 @@ import SwiftUI
 /// lint:allow namespace-enum — layout-constant table shared by the section, the project row, and its nested rows; stateless, nothing to instantiate.
 enum SupermuxProjectRowMetrics {
     /// Project avatar edge length. Sized against the `.headline` name beside
-    /// it, the way the Mac's 20pt chip is sized against its 12pt name.
-    static let avatarSize: CGFloat = 30
+    /// it, the way the Mac's 20pt chip is sized against its 12pt name. Bumped
+    /// from 30 after field feedback that the section read undersized next to
+    /// the shell's own rows.
+    static let avatarSize: CGFloat = 34
     /// Gap between the avatar column and the text column.
-    static let avatarTextGap: CGFloat = 11
+    static let avatarTextGap: CGFloat = 12
     /// Row inset from the section's leading/trailing edges.
     static let rowHorizontalPadding: CGFloat = 10
     /// Touch floor for a tappable row — comfortably above the 44pt minimum,
     /// matching the rhythm of the workspace rows below the section.
-    static let minimumRowHeight: CGFloat = 48
+    static let minimumRowHeight: CGFloat = 52
     /// Touch floor for a single-line nested row (worktrees): visually lighter
     /// than a two-line workspace row, still comfortably tappable.
     static let compactRowHeight: CGFloat = 44
     /// Vertical gap between sibling rows.
-    static let rowSpacing: CGFloat = 1
+    static let rowSpacing: CGFloat = 2
     /// Corner radius of a row's pressed plate.
-    static let rowCornerRadius: CGFloat = 10
+    static let rowCornerRadius: CGFloat = 11
     /// Where a nested row's CONTENT starts, measured from the row's own
     /// leading inset: exactly the project title's leading edge.
     ///

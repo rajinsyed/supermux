@@ -24,6 +24,12 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var worktreesListResponse = SupermuxWorktreesListResponse(worktrees: [])
     /// When set, `worktreesList` throws instead of returning.
     var worktreesListError: (any Error)?
+    /// When true, `worktreesList` calls with `include_branches` park until
+    /// ``resumeWorktreesList()`` — scripts a slow branch fetch racing a
+    /// session change. Deliberately narrowed to branch fetches so the
+    /// section's own count-seeding list calls pass through unheld.
+    var worktreesListShouldHoldBranchFetches = false
+    private var worktreesListContinuations: [CheckedContinuation<Void, Never>] = []
     /// The response the next `worktreeSuggestBranch` call returns.
     var suggestBranchResponse = SupermuxBranchSuggestionResponse(
         branchName: "cheerful-umbrella",
@@ -206,9 +212,27 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     func worktreesList(_ request: SupermuxWorktreesListRequest) async throws -> SupermuxWorktreesListResponse {
         callLog.append("worktreesList")
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if worktreesListShouldHoldBranchFetches, request.includeBranches {
+            await withCheckedContinuation { continuation in
+                worktreesListContinuations.append(continuation)
+            }
+        }
         if let worktreesListError { throw worktreesListError }
         worktreesListCallCount += 1
         return worktreesListResponse
+    }
+
+    /// Resumes the oldest parked `worktreesList` call, if any.
+    func resumeWorktreesList() {
+        guard !worktreesListContinuations.isEmpty else { return }
+        worktreesListContinuations.removeFirst().resume()
+    }
+
+    /// Resumes every parked `worktreesList` call.
+    func resumeAllWorktreesList() {
+        let parked = worktreesListContinuations
+        worktreesListContinuations.removeAll()
+        for continuation in parked { continuation.resume() }
     }
 
     func worktreeSuggestBranch(
