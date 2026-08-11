@@ -43,7 +43,7 @@ public struct SupermuxUsageToolbarButton: View {
             // The sheet renders the SAME session the gauge does: one store
             // means the ring and the sheet can never show different numbers,
             // and presenting adds no second poll loop.
-            .sheet(isPresented: $isPresented) {
+            .supermuxUsageSheet(isPresented: $isPresented) {
                 SupermuxUsageScreen(store: model.store)
             }
         }

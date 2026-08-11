@@ -302,6 +302,46 @@ import Testing
         #expect(SupermuxUsageScreen.providerDetail(nil) == nil)
     }
 
+    // MARK: - Header summary
+
+    /// The card's headline answers "am I about to run out?" before any row is
+    /// read, so it must name the TIGHTEST window across both providers — not
+    /// Claude's, and not whichever provider sorted first.
+    @Test func theHeadlineSummarizesTheTightestWindowAcrossBothProviders() {
+        let usage = SupermuxUsageStateDTO(
+            claude: SupermuxUsageProviderDTO(
+                state: SupermuxUsageProviderDTO.readyState,
+                accounts: [SupermuxUsageAccountDTO(
+                    id: "1|a",
+                    isActive: true,
+                    windows: [SupermuxUsageWindowDTO(kind: SupermuxUsageWindowDTO.sessionKind, percent: 40)]
+                )]
+            ),
+            codex: SupermuxUsageProviderDTO(
+                state: SupermuxUsageProviderDTO.readyState,
+                windows: [SupermuxUsageWindowDTO(kind: SupermuxUsageWindowDTO.weeklyKind, percent: 91)]
+            )
+        )
+        let headline = SupermuxUsageScreen.headlineDetail(usage: usage, hasLoaded: true)
+        #expect(headline.contains("91%"))
+        #expect(!headline.contains("40%"))
+    }
+
+    /// Before the first payload the headline must read as loading, and a
+    /// loaded-but-empty snapshot must say so rather than claiming 0% used.
+    @Test func theHeadlineDistinguishesLoadingFromNoData() {
+        let empty = SupermuxUsageStateDTO(
+            claude: SupermuxUsageProviderDTO(state: SupermuxUsageProviderDTO.loadingState),
+            codex: SupermuxUsageProviderDTO(state: SupermuxUsageProviderDTO.loadingState)
+        )
+        let loading = SupermuxUsageScreen.headlineDetail(usage: nil, hasLoaded: false)
+        let noData = SupermuxUsageScreen.headlineDetail(usage: empty, hasLoaded: true)
+        #expect(!loading.isEmpty)
+        #expect(!noData.isEmpty)
+        #expect(loading != noData)
+        #expect(!noData.contains("0%"))
+    }
+
     // MARK: - Style
 
     @Test func percentTextRoundsToWholePercentAndClamps() {
@@ -309,5 +349,31 @@ import Testing
         #expect(SupermuxUsageStyle.percentText(46.6) == "47%")
         #expect(SupermuxUsageStyle.percentText(-5) == "0%")
         #expect(SupermuxUsageStyle.percentText(140) == "100%")
+    }
+
+    /// The window label is shared by the meter rows and the header summary, so
+    /// a scoped window must carry the provider's own label and the fixed kinds
+    /// must never fall through to the generic "Scoped" text.
+    @Test func windowLabelsNameEachKindAndCarryScopedLabels() {
+        let session = SupermuxUsageStyle.label(
+            for: SupermuxUsageWindowDTO(kind: SupermuxUsageWindowDTO.sessionKind, percent: 0)
+        )
+        let weekly = SupermuxUsageStyle.label(
+            for: SupermuxUsageWindowDTO(kind: SupermuxUsageWindowDTO.weeklyKind, percent: 0)
+        )
+        #expect(!session.isEmpty)
+        #expect(!weekly.isEmpty)
+        #expect(session != weekly)
+        #expect(SupermuxUsageStyle.label(
+            for: SupermuxUsageWindowDTO(
+                kind: SupermuxUsageWindowDTO.scopedKind,
+                label: "Fable",
+                percent: 0
+            )
+        ) == "Fable")
+        // A scoped window whose label the Mac omitted still needs a name.
+        #expect(!SupermuxUsageStyle.label(
+            for: SupermuxUsageWindowDTO(kind: SupermuxUsageWindowDTO.scopedKind, percent: 0)
+        ).isEmpty)
     }
 }

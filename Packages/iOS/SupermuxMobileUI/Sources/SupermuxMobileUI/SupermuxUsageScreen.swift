@@ -2,9 +2,14 @@ import SupermuxMobileCore
 public import SupermuxMobileKit
 public import SwiftUI
 
-/// The phone's usage-limits sheet: the Mac tracker's Claude Code and Codex
-/// rate-limit windows as meter rows with reset countdowns, the extra cswap
-/// accounts below the active one, and an honest freshness footer.
+/// The phone's usage-limits sheet: a summary dial over one panel per provider,
+/// each carrying its windows as meter rows, the extra cswap accounts below the
+/// active one, and an honest freshness footer.
+///
+/// Presented as a floating Liquid Glass card sized to its content
+/// (``SupermuxUsageSheetModifier``) rather than as a full-screen sheet — the
+/// whole tracker is a handful of rows, so a full sheet would be mostly empty
+/// space and would hide the workspace list for no reason.
 ///
 /// Read-only by design — the Mac owns polling and every cswap mutation, so
 /// there is no account switching here (see ``SupermuxMobileUsageStore``).
@@ -27,132 +32,209 @@ public struct SupermuxUsageScreen: View {
     }
 
     public var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle(String(
-                    localized: "supermux.usage.title",
-                    defaultValue: "Usage Limits",
-                    bundle: .module
-                ))
-                #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-                #endif
-                .accessibilityIdentifier("SupermuxUsageScreen")
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Text(String(
-                                localized: "supermux.common.done",
-                                defaultValue: "Done",
-                                bundle: .module
-                            ))
-                        }
-                        .accessibilityIdentifier("SupermuxUsageDoneButton")
-                    }
-                }
-        }
-        // Opening the sheet asks for a refresh, so the numbers are current on
-        // arrival instead of up to one poll period old. The Mac's shared
-        // floor makes this free when the data is already fresh.
-        .task {
-            await store?.refresh()
-        }
+        content
+            .accessibilityIdentifier("SupermuxUsageScreen")
+            // Opening the sheet asks for a refresh, so the numbers are current
+            // on arrival instead of up to one poll period old. The Mac's
+            // shared floor makes this free when the data is already fresh.
+            .task { await store?.refresh() }
     }
 
     @ViewBuilder
     private var content: some View {
         if let store {
-            // Snapshot the observable state ONCE, above the List: every row
-            // below receives plain values, so no view under the list boundary
-            // holds a store reference (see the SwiftUI list-boundary rule in
-            // CLAUDE.md / the cmux-debugging skill).
+            // Snapshot the observable state ONCE, above the rows: everything
+            // below receives plain values, so no view under a lazy/list
+            // boundary holds a store reference (see the SwiftUI list-boundary
+            // rule in CLAUDE.md / the cmux-debugging skill).
             let usage = store.usage
             let hasLoaded = store.hasLoaded
-            List {
-                providerSection(
+            let isRefreshing = store.isRefreshing
+            VStack(spacing: 14) {
+                header(usage: usage, hasLoaded: hasLoaded, isRefreshing: isRefreshing)
+                providerPanel(
                     title: String(
                         localized: "supermux.usage.claude",
                         defaultValue: "Claude Code",
                         bundle: .module
                     ),
+                    symbol: "asterisk",
                     provider: usage?.claude,
                     hasLoaded: hasLoaded
                 ) {
                     claudeRows(usage?.claude)
                 }
-                providerSection(
+                providerPanel(
                     title: String(
                         localized: "supermux.usage.codex",
                         defaultValue: "Codex",
                         bundle: .module
                     ),
+                    symbol: "chevron.left.forwardslash.chevron.right",
                     provider: usage?.codex,
                     hasLoaded: hasLoaded
                 ) {
                     codexRows(usage?.codex)
                 }
-                footerSection(usage)
+                footer(usage)
             }
-            // The grouped styles are iOS-only and this package also builds
-            // for macOS, so the style is set on the iOS side only; the
-            // sheet's List already defaults to inset-grouped there.
-            #if os(iOS)
-            .listStyle(.insetGrouped)
-            #endif
-            .refreshable { await store.refresh() }
         } else {
-            ContentUnavailableView {
-                Label {
-                    Text(String(
-                        localized: "supermux.usage.disconnected.title",
-                        defaultValue: "Not Connected",
-                        bundle: .module
-                    ))
-                } icon: {
-                    Image(systemName: "wifi.slash")
-                }
-            } description: {
-                Text(String(
-                    localized: "supermux.usage.disconnected.message",
-                    defaultValue: "Usage limits are read from your paired Mac.",
-                    bundle: .module
-                ))
-            }
+            disconnectedPlaceholder
         }
     }
 
-    // MARK: - Provider sections
+    // MARK: - Header
 
-    /// One provider's section: its header (plus the detail line the Mac shows
-    /// — account label or Codex plan) over either its terminal-state note or
-    /// the rows the builder supplies.
+    /// The summary line: the tightest limit as a dial, what it is in words,
+    /// and the refresh control. Answers "am I about to run out?" before the
+    /// reader parses a single row.
+    private func header(
+        usage: SupermuxUsageStateDTO?,
+        hasLoaded: Bool,
+        isRefreshing: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            SupermuxUsageGauge(window: usage?.tightestWindow, pointSize: 52, showsValue: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(
+                    localized: "supermux.usage.title",
+                    defaultValue: "Usage Limits",
+                    bundle: .module
+                ))
+                .font(.headline)
+                Text(Self.headlineDetail(usage: usage, hasLoaded: hasLoaded))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            refreshButton(isRefreshing: isRefreshing)
+            closeButton
+        }
+    }
+
+    private func refreshButton(isRefreshing: Bool) -> some View {
+        circleButton(
+            label: String(
+                localized: "supermux.usage.refresh",
+                defaultValue: "Refresh",
+                bundle: .module
+            ),
+            identifier: "SupermuxUsageRefreshButton",
+            action: { Task { await store?.refresh() } }
+        ) {
+            ZStack {
+                // Both states occupy the same slot, so the header does not
+                // reflow when a refresh starts.
+                ProgressView()
+                    .controlSize(.small)
+                    .opacity(isRefreshing ? 1 : 0)
+                Image(systemName: "arrow.clockwise")
+                    .opacity(isRefreshing ? 0 : 1)
+            }
+        }
+        .disabled(isRefreshing)
+    }
+
+    /// The card's explicit dismiss. The sheet has no navigation bar, and its
+    /// clear backdrop leaves only a 12pt margin around the card — too little
+    /// to expect anyone to hit — so the close affordance has to live in the
+    /// header rather than relying on tap-outside.
+    private var closeButton: some View {
+        circleButton(
+            label: String(
+                localized: "supermux.common.done",
+                defaultValue: "Done",
+                bundle: .module
+            ),
+            identifier: "SupermuxUsageDoneButton",
+            action: { dismiss() }
+        ) {
+            Image(systemName: "xmark")
+        }
+    }
+
+    private func circleButton(
+        label: String,
+        identifier: String,
+        action: @escaping () -> Void,
+        @ViewBuilder icon: () -> some View
+    ) -> some View {
+        Button(action: action) {
+            icon()
+                .font(.footnote.weight(.bold))
+                .frame(width: 30, height: 30)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .background(Color.primary.opacity(0.07), in: Circle())
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+    }
+
+    /// The header's one-line summary: which window is tightest and how full it
+    /// is, or the loading/idle state when there is nothing to summarize.
+    static func headlineDetail(usage: SupermuxUsageStateDTO?, hasLoaded: Bool) -> String {
+        guard hasLoaded else {
+            return String(localized: "supermux.usage.loading", defaultValue: "Loading…", bundle: .module)
+        }
+        guard let tightest = usage?.tightestWindow else {
+            return String(
+                localized: "supermux.usage.noData",
+                defaultValue: "No usage data yet",
+                bundle: .module
+            )
+        }
+        return String(
+            format: String(
+                localized: "supermux.usage.headline",
+                defaultValue: "%1$@ %2$@ used",
+                bundle: .module
+            ),
+            SupermuxUsageStyle.label(for: tightest),
+            SupermuxUsageStyle.percentText(tightest.clampedPercent)
+        )
+    }
+
+    // MARK: - Provider panels
+
+    /// One provider's panel: its title row (symbol, name, and the detail the
+    /// Mac shows — account label or Codex plan) over either its terminal-state
+    /// note or the rows the builder supplies.
     @ViewBuilder
-    private func providerSection(
+    private func providerPanel(
         title: String,
+        symbol: String,
         provider: SupermuxUsageProviderDTO?,
         hasLoaded: Bool,
         @ViewBuilder rows: () -> some View
     ) -> some View {
-        Section {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                Image(systemName: symbol)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 14)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                if let detail = Self.providerDetail(provider) {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 4)
+            }
             if let note = Self.stateNote(for: provider, hasLoaded: hasLoaded) {
                 noteRow(note)
             } else {
                 rows()
             }
-        } header: {
-            HStack(spacing: 6) {
-                Text(title)
-                if let detail = Self.providerDetail(provider) {
-                    Text(detail)
-                        .foregroundStyle(.tertiary)
-                        .textCase(nil)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .supermuxUsagePanel()
     }
 
     /// The active account's windows, then every other cswap account as a
@@ -167,26 +249,36 @@ public struct SupermuxUsageScreen: View {
             }
             if active.displayWindows.isEmpty {
                 if active.isHealthy {
-                    noteRow(String(
-                        localized: "supermux.usage.noData",
-                        defaultValue: "No usage data yet",
-                        bundle: .module
-                    ))
+                    noDataRow
                 }
             } else {
                 windowRows(active.displayWindows)
             }
+        } else {
+            // A `ready` provider with no account rows at all: without this the
+            // panel would render as a bare title over empty space.
+            noDataRow
         }
         let others = (provider?.accounts ?? []).filter { $0.id != provider?.activeAccount?.id }
-        ForEach(others) { account in
-            SupermuxUsageAccountRow(account: account)
+        if !others.isEmpty {
+            Divider().opacity(0.5)
+            VStack(spacing: 10) {
+                ForEach(others) { account in
+                    SupermuxUsageAccountRow(account: account)
+                }
+            }
         }
     }
 
     /// Codex's own windows plus its stale-data notes.
     @ViewBuilder
     private func codexRows(_ provider: SupermuxUsageProviderDTO?) -> some View {
-        windowRows(provider?.windows ?? [])
+        let windows = provider?.windows ?? []
+        if windows.isEmpty {
+            noDataRow
+        } else {
+            windowRows(windows)
+        }
         if provider?.needsRelogin == true {
             // Stale-but-renderable data served because the credential is
             // expired: say so, or stale reads as live.
@@ -208,32 +300,55 @@ public struct SupermuxUsageScreen: View {
     /// poll attempt — a failed pass that kept last-good data must not present
     /// it as just-refreshed.
     @ViewBuilder
-    private func footerSection(_ usage: SupermuxUsageStateDTO?) -> some View {
+    private func footer(_ usage: SupermuxUsageStateDTO?) -> some View {
         if let measured = usage?.oldestMeasurementDate {
-            Section {
-                EmptyView()
-            } footer: {
-                HStack(spacing: 4) {
-                    if usage?.claude.source == SupermuxUsageProviderDTO.cswapSource {
-                        Text(String(
-                            localized: "supermux.usage.viaCswap",
-                            defaultValue: "via cswap",
-                            bundle: .module
-                        ))
-                        Text(verbatim: "·")
-                    }
+            HStack(spacing: 4) {
+                if usage?.claude.source == SupermuxUsageProviderDTO.cswapSource {
                     Text(String(
-                        format: String(
-                            localized: "supermux.usage.dataAsOf",
-                            defaultValue: "data %@",
-                            bundle: .module
-                        ),
-                        measured.formatted(.relative(presentation: .named))
+                        localized: "supermux.usage.viaCswap",
+                        defaultValue: "via cswap",
+                        bundle: .module
                     ))
-                    .monospacedDigit()
+                    Text(verbatim: "·")
                 }
+                Text(String(
+                    format: String(
+                        localized: "supermux.usage.dataAsOf",
+                        defaultValue: "data %@",
+                        bundle: .module
+                    ),
+                    measured.formatted(.relative(presentation: .named))
+                ))
+                .monospacedDigit()
             }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity)
         }
+    }
+
+    private var disconnectedPlaceholder: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "wifi.slash")
+                .font(.title2)
+                .foregroundStyle(.tertiary)
+            Text(String(
+                localized: "supermux.usage.disconnected.title",
+                defaultValue: "Not Connected",
+                bundle: .module
+            ))
+            .font(.headline)
+            Text(String(
+                localized: "supermux.usage.disconnected.message",
+                defaultValue: "Usage limits are read from your paired Mac.",
+                bundle: .module
+            ))
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
     }
 
     // MARK: - Shared pieces
@@ -241,9 +356,10 @@ public struct SupermuxUsageScreen: View {
     /// The meter rows for one window list, staggered top-to-bottom so the
     /// sheet settles in one quick cascade.
     private func windowRows(_ windows: [SupermuxUsageWindowDTO]) -> some View {
-        ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.element.identity) { index, window in
-            SupermuxUsageMeterRow(window: window, appearDelay: Double(index) * 0.05)
-                .listRowInsets(EdgeInsets(top: 3, leading: 16, bottom: 3, trailing: 16))
+        VStack(spacing: 12) {
+            ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.element.identity) { index, window in
+                SupermuxUsageMeterRow(window: window, appearDelay: Double(index) * 0.05)
+            }
         }
     }
 
@@ -280,7 +396,7 @@ public struct SupermuxUsageScreen: View {
         }
     }
 
-    /// The header's detail line: Codex's capitalized plan, or Claude's active
+    /// The panel title's detail: Codex's capitalized plan, or Claude's active
     /// account label.
     static func providerDetail(_ provider: SupermuxUsageProviderDTO?) -> String? {
         guard let provider, provider.state == SupermuxUsageProviderDTO.readyState else { return nil }
@@ -289,21 +405,33 @@ public struct SupermuxUsageScreen: View {
         return SupermuxUsageAccountLabels.name(for: active)
     }
 
+    /// A `ready` provider that reported nothing to show. Shared so an empty
+    /// Claude account and an empty Codex column read identically.
+    private var noDataRow: some View {
+        noteRow(String(
+            localized: "supermux.usage.noData",
+            defaultValue: "No usage data yet",
+            bundle: .module
+        ))
+    }
+
     private func noteRow(_ text: String) -> some View {
         Text(text)
             .font(.subheadline)
             .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func warningRow(_ text: String) -> some View {
         Label {
             Text(text)
-                .font(.subheadline)
-                .foregroundStyle(.orange)
+                .font(.footnote)
         } icon: {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .font(.caption)
         }
+        .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -317,25 +445,27 @@ struct SupermuxUsageAccountRow: View {
     let account: SupermuxUsageAccountDTO
 
     @State private var isExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var windows: [SupermuxUsageWindowDTO] { account.displayWindows }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Button {
                 guard !windows.isEmpty else { return }
-                withAnimation(.snappy(duration: 0.25, extraBounce: 0)) {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.28, extraBounce: 0.05)) {
                     isExpanded.toggle()
                 }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .opacity(windows.isEmpty ? 0 : 1)
+                        .frame(width: 8)
                     Text(SupermuxUsageAccountLabels.name(for: account))
-                        .font(.subheadline)
+                        .font(.footnote)
                         .foregroundStyle(account.isDisabled == true ? .tertiary : .secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -350,11 +480,16 @@ struct SupermuxUsageAccountRow: View {
                 ? String(localized: "supermux.usage.account.expanded", defaultValue: "expanded", bundle: .module)
                 : String(localized: "supermux.usage.account.collapsed", defaultValue: "collapsed", bundle: .module))
             if isExpanded, !windows.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(spacing: 9) {
                     ForEach(Array(windows.sortedForDisplay().enumerated()), id: \.element.identity) { index, window in
-                        SupermuxUsageMeterRow(window: window, appearDelay: Double(index) * 0.04)
+                        SupermuxUsageMeterRow(
+                            window: window,
+                            appearDelay: Double(index) * 0.04,
+                            isCompact: true
+                        )
                     }
                 }
+                .padding(.leading, 16)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -366,20 +501,25 @@ struct SupermuxUsageAccountRow: View {
     private var trailingValue: some View {
         if let problem = SupermuxUsageAccountLabels.statusText(for: account) {
             Text(problem)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.orange)
                 .lineLimit(1)
         } else if let tightest = windows.tightest {
-            Text(verbatim: SupermuxUsageStyle.percentText(tightest.clampedPercent))
-                .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(SupermuxUsageStyle.color(for: tightest.severity))
+            HStack(spacing: 6) {
+                Capsule(style: .continuous)
+                    .fill(SupermuxUsageStyle.color(for: tightest.severity))
+                    .frame(width: 4, height: 12)
+                Text(verbatim: SupermuxUsageStyle.percentText(tightest.clampedPercent))
+                    .font(.footnote.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
         } else {
             Text(String(
                 localized: "supermux.usage.account.unavailable",
                 defaultValue: "—",
                 bundle: .module
             ))
-            .font(.subheadline)
+            .font(.footnote)
             .foregroundStyle(.tertiary)
         }
     }
