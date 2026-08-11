@@ -38,6 +38,9 @@
          location = "group:CmuxSyncStore">
       </FileRef>
       <FileRef
+         location = "group:SupermuxClaudeHarness">
+      </FileRef>
+      <FileRef
          location = "group:SupermuxMobileCore">
       </FileRef>
    </Group>

@@ -1464,6 +1464,13 @@ jobs:
           echo "::group::swift test Packages/iOS/SupermuxMobileUI"
           swift test --package-path Packages/iOS/SupermuxMobileUI
           echo "::endgroup::"
+          # SupermuxClaudeHarness is supermux-owned and absent from upstream's
+          # PACKAGES allowlist above; test it explicitly so its Claude Code
+          # stream-json protocol suite (fixture decoding, control multiplexer,
+          # accumulator, queue/state machine) gates CI.
+          echo "::group::swift test Packages/Shared/SupermuxClaudeHarness"
+          swift test --package-path Packages/Shared/SupermuxClaudeHarness
+          echo "::endgroup::"
           # SUPERMUX:end ci-package-tests
 
   agent-session-web-resources:
