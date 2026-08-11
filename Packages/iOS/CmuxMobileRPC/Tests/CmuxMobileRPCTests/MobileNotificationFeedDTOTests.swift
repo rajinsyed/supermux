@@ -71,6 +71,31 @@ struct MobileNotificationFeedDTOTests {
         #expect(first.retargetsToLiveSurfaceOwner)
     }
 
+    @Test("Bounded project colors drop oversized decoration without dropping the row")
+    func boundedProjectColorHexIsLimited() throws {
+        let data = Data(
+            """
+            {"revision":18,"notifications":[{"id":"valid-1","workspace_id":"work-1","title":"Title","body":"Body","created_at":1721000000,"is_read":false,"supermux_project":{"id":"project","name":"Project","color_hex":"#123456"}},{"id":"valid-2","workspace_id":"work-2","title":"Title","body":"Body","created_at":1721000001,"is_read":false,"supermux_project":{"id":"project","name":"Project","color_hex":"12345678"}}]}
+            """.utf8
+        )
+
+        let response = try MobileNotificationFeedListResponse(
+            decodingBounded: data,
+            maxNotifications: 2,
+            stringLimits: MobileNotificationFeedListStringLimits(
+                identifierByteLimit: 8,
+                titleByteLimit: 8,
+                subtitleByteLimit: 8,
+                bodyByteLimit: 8,
+                metadataByteLimit: 7
+            )
+        )
+
+        #expect(response.notifications.count == 2)
+        #expect(response.notifications[0].project?.colorHex == "#123456")
+        #expect(response.notifications[1].project?.colorHex == nil)
+    }
+
     @Test("Revision-only changed event rejects malformed payloads")
     func changedEventDecode() {
         #expect(MobileNotificationFeedChangedEvent.decode(Data(#"{"revision":18}"#.utf8))?.revision == 18)

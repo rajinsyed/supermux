@@ -274,6 +274,7 @@ import Testing
         #expect(other?.items.map(\.id) == [1, 3])
         #expect(other?.unreadCount == 1)
         #expect(sections.count == 2)
+        #expect(sections.last?.project == nil, "the project-less bucket must stay trailing")
     }
 
     @Test func groupingKeepsEveryNotification() {

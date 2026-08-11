@@ -3,6 +3,7 @@ import CmuxCore
 import CmuxFoundation
 import CmuxWorkspaces
 import Darwin
+import SupermuxMobileCore
 import XCTest
 import CmuxTerminal
 
@@ -117,6 +118,12 @@ final class SessionPersistenceTests: XCTestCase {
         let workspace = Workspace()
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let liveSurfaceId = UUID()
+        let project = SupermuxNotificationProject(
+            id: "project-1",
+            name: "cmux",
+            colorHex: "#3b82f6",
+            iconETag: "icon-v1"
+        )
         let notification = TerminalNotification(
             id: UUID(),
             tabId: workspace.id,
@@ -127,7 +134,8 @@ final class SessionPersistenceTests: XCTestCase {
             body: "Tests passed",
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
             isRead: false,
-            paneFlash: true
+            paneFlash: true,
+            project: project
         )
         store.replaceNotificationsForTesting([notification])
 
@@ -145,6 +153,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(restoredNotification.panelId, restoredPanelId)
         XCTAssertEqual(restoredNotification.title, "Agent finished")
         XCTAssertEqual(restoredNotification.body, "Tests passed")
+        XCTAssertEqual(restoredNotification.project, project)
         XCTAssertFalse(restoredNotification.isRead)
         XCTAssertTrue(store.hasUnreadNotification(forTabId: restored.id, surfaceId: restoredPanelId))
         let restoredSurfaceId = try XCTUnwrap(restored.surfaceIdFromPanelId(restoredPanelId))
@@ -174,6 +183,7 @@ final class SessionPersistenceTests: XCTestCase {
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
             isRead: false
         )
+        let project = SupermuxNotificationProject(id: "project-2", name: "Restored Project")
         let restored = TerminalNotification(
             id: duplicateId,
             tabId: restoredWorkspaceId,
@@ -182,7 +192,8 @@ final class SessionPersistenceTests: XCTestCase {
             subtitle: "codex",
             body: "From the previous launch snapshot",
             createdAt: Date(timeIntervalSince1970: 1_700_000_001),
-            isRead: false
+            isRead: false,
+            project: project
         )
 
         store.replaceNotificationsForTesting([existing])
@@ -191,7 +202,9 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(store.notifications.count, 2)
         XCTAssertEqual(Set(store.notifications.map(\.id)).count, 2)
         XCTAssertTrue(store.notifications.contains { $0.tabId == liveWorkspaceId && $0.id == duplicateId })
-        XCTAssertTrue(store.notifications.contains { $0.tabId == restoredWorkspaceId && $0.id != duplicateId })
+        XCTAssertTrue(store.notifications.contains {
+            $0.tabId == restoredWorkspaceId && $0.id != duplicateId && $0.project == project
+        })
     }
 
     func testSaveAndLoadRoundTripWithCustomSnapshotPath() throws {

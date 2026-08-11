@@ -18,7 +18,8 @@ import Testing
         name: String = "Alpha",
         colorHex: String? = "#3b82f6",
         iconSymbol: String? = "folder",
-        hasCustomIcon: Bool? = false
+        hasCustomIcon: Bool? = false,
+        iconETag: String? = nil
     ) -> SupermuxProjectDTO {
         SupermuxProjectDTO(
             id: id,
@@ -26,7 +27,8 @@ import Testing
             rootPath: "/Users/dev/alpha",
             colorHex: colorHex,
             iconSymbol: iconSymbol,
-            hasCustomIcon: hasCustomIcon
+            hasCustomIcon: hasCustomIcon,
+            iconETag: iconETag
         )
     }
 
@@ -317,5 +319,39 @@ import Testing
         let unknown = await model.actions.iconPNGData("not-a-project")
         #expect(unknown == nil)
         #expect(client.iconRequests.count == 1)
+    }
+
+    @Test func staleIconResponseDoesNotSurviveProjectIconRemoval() async throws {
+        let pngBytes = Data([0x89, 0x50, 0x4E, 0x47])
+        let client = FakeSupermuxMacClient()
+        let project = fixtureProject(hasCustomIcon: true, iconETag: "e1")
+        client.listResponse = SupermuxProjectsListResponse(projects: [project])
+        client.iconResponses = [
+            SupermuxProjectIconResponse(
+                notModified: false,
+                etag: "e1",
+                pngBase64: pngBytes.base64EncodedString()
+            ),
+        ]
+        client.projectIconShouldHold = true
+        let model = SupermuxProjectsSectionModel()
+        let session = Task {
+            await model.runSession(client: client, hostCapabilities: [Self.projectsCapability])
+        }
+        defer { session.cancel() }
+        try await wait.until { model.snapshot.hasLoaded }
+
+        let fetch = Task { await model.actions.iconPNGData(project.id) }
+        try await wait.until { client.iconRequests.count == 1 }
+
+        client.listResponse = SupermuxProjectsListResponse(projects: [
+            fixtureProject(hasCustomIcon: false, iconETag: nil),
+        ])
+        client.emit(SupermuxMobileEvent(topic: .projectsUpdated))
+        try await wait.until { model.snapshot.rows.first?.hasCustomIcon == false }
+
+        client.resumeProjectIcon()
+        let fetched = await fetch.value
+        #expect(fetched == nil)
     }
 }

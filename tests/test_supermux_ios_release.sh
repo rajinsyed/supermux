@@ -289,4 +289,31 @@ if [[ "${#BUILD_LOGS[@]}" -ne 1 || ! -f "${BUILD_LOGS[0]}" ]]; then
 fi
 grep -F -- 'status=0' "${BUILD_LOGS[0]}" >/dev/null
 
-echo 'PASS: supermux iOS release builds the app and notification extension, re-signs both with production capabilities, installs, and launches'
+OVERRIDE_OUTPUT_FILE="$TMP_DIR/unsupported-app-group.log"
+if HOME="$HOME_DIR" \
+  PATH="$BIN_DIR:/usr/bin:/bin" \
+  SUPERMUX_IOS_APP_GROUP=group.example.unsupported \
+  SUPERMUX_IOS_DEVELOPMENT_TEAM=ABCD123456 \
+  SUPERMUX_RELEASE_LOG_DIR="$LOG_DIR" \
+  SUPERMUX_GIT_SHA=0123456789 \
+  XCODEBUILD="$BIN_DIR/xcodebuild" \
+  XCRUN="$BIN_DIR/xcrun" \
+  CODESIGN="$BIN_DIR/codesign" \
+  SECURITY="$BIN_DIR/security" \
+  PLISTBUDDY="$BIN_DIR/plistbuddy" \
+  FAKE_ENSURE_LOG="$TMP_DIR/override-ensure.log" \
+  FAKE_XCODEBUILD_LOG="$TMP_DIR/override-xcodebuild.log" \
+  FAKE_XCRUN_LOG="$TMP_DIR/override-xcrun.log" \
+  FAKE_CODESIGN_LOG="$TMP_DIR/override-codesign.log" \
+    bash "$TEST_REPO/scripts/supermux-ios-release.sh" --device-id test-phone \
+      > "$OVERRIDE_OUTPUT_FILE" 2>&1; then
+  cat "$OVERRIDE_OUTPUT_FILE"
+  echo 'FAIL: unsupported app-group override unexpectedly succeeded' >&2
+  exit 1
+fi
+grep -F -- 'SUPERMUX_IOS_APP_GROUP is fixed at group.com.supermux.ios' "$OVERRIDE_OUTPUT_FILE" >/dev/null \
+  || { cat "$OVERRIDE_OUTPUT_FILE"; echo 'FAIL: unsupported app-group override did not fail with the fixed-contract error' >&2; exit 1; }
+[[ ! -e "$TMP_DIR/override-xcodebuild.log" ]] \
+  || { cat "$OVERRIDE_OUTPUT_FILE"; echo 'FAIL: unsupported app-group override reached xcodebuild' >&2; exit 1; }
+
+echo 'PASS: supermux iOS release builds the app and notification extension, re-signs both with production capabilities, installs, launches, and rejects unsupported app-group overrides'
