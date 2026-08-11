@@ -302,46 +302,6 @@ import Testing
         #expect(SupermuxUsageScreen.providerDetail(nil) == nil)
     }
 
-    // MARK: - Header summary
-
-    /// The card's headline answers "am I about to run out?" before any row is
-    /// read, so it must name the TIGHTEST window across both providers — not
-    /// Claude's, and not whichever provider sorted first.
-    @Test func theHeadlineSummarizesTheTightestWindowAcrossBothProviders() {
-        let usage = SupermuxUsageStateDTO(
-            claude: SupermuxUsageProviderDTO(
-                state: SupermuxUsageProviderDTO.readyState,
-                accounts: [SupermuxUsageAccountDTO(
-                    id: "1|a",
-                    isActive: true,
-                    windows: [SupermuxUsageWindowDTO(kind: SupermuxUsageWindowDTO.sessionKind, percent: 40)]
-                )]
-            ),
-            codex: SupermuxUsageProviderDTO(
-                state: SupermuxUsageProviderDTO.readyState,
-                windows: [SupermuxUsageWindowDTO(kind: SupermuxUsageWindowDTO.weeklyKind, percent: 91)]
-            )
-        )
-        let headline = SupermuxUsageScreen.headlineDetail(usage: usage, hasLoaded: true)
-        #expect(headline.contains("91%"))
-        #expect(!headline.contains("40%"))
-    }
-
-    /// Before the first payload the headline must read as loading, and a
-    /// loaded-but-empty snapshot must say so rather than claiming 0% used.
-    @Test func theHeadlineDistinguishesLoadingFromNoData() {
-        let empty = SupermuxUsageStateDTO(
-            claude: SupermuxUsageProviderDTO(state: SupermuxUsageProviderDTO.loadingState),
-            codex: SupermuxUsageProviderDTO(state: SupermuxUsageProviderDTO.loadingState)
-        )
-        let loading = SupermuxUsageScreen.headlineDetail(usage: nil, hasLoaded: false)
-        let noData = SupermuxUsageScreen.headlineDetail(usage: empty, hasLoaded: true)
-        #expect(!loading.isEmpty)
-        #expect(!noData.isEmpty)
-        #expect(loading != noData)
-        #expect(!noData.contains("0%"))
-    }
-
     // MARK: - Style
 
     @Test func percentTextRoundsToWholePercentAndClamps() {

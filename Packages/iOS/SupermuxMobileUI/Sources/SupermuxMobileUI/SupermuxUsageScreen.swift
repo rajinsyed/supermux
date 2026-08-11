@@ -2,27 +2,30 @@ import SupermuxMobileCore
 public import SupermuxMobileKit
 public import SwiftUI
 
-/// The phone's usage-limits sheet: a summary dial over one panel per provider,
-/// each carrying its windows as meter rows, the extra cswap accounts below the
-/// active one, and an honest freshness footer.
+/// The phone's usage-limits sheet: one block per provider, each carrying its
+/// windows as meter rows, the extra cswap accounts below the active one, and
+/// an honest freshness footer.
 ///
-/// Presented as a floating Liquid Glass card sized to its content
-/// (``SupermuxUsageSheetModifier``) rather than as a full-screen sheet — the
-/// whole tracker is a handful of rows, so a full sheet would be mostly empty
-/// space and would hide the workspace list for no reason.
+/// Presented as a floating Liquid Glass sheet sized to its content
+/// (``SwiftUICore/View/supermuxUsageSheet(isPresented:card:)``) rather than as
+/// a full-screen sheet — the whole tracker is a handful of rows, so a full
+/// sheet would be mostly empty space and would hide the workspace list for no
+/// reason.
+///
+/// Deliberately chrome-free: no title, no summary dial, no refresh or close
+/// button. The rows ARE the content, the gauge that opened the sheet already
+/// carries the summary, and the sheet dismisses by swipe. Presenting refreshes
+/// on its own, so a manual control only added a second way to do what arriving
+/// already did.
 ///
 /// Read-only by design — the Mac owns polling and every cswap mutation, so
 /// there is no account switching here (see ``SupermuxMobileUsageStore``).
-/// Pull-to-refresh and presentation both ask the Mac for its current
-/// snapshot, which the Mac's own floor throttles.
 ///
 /// The screen does NOT own a poll loop: it renders the store the presenting
 /// gauge already drives, so both surfaces show one snapshot and one request
 /// cadence instead of two.
 public struct SupermuxUsageScreen: View {
     private let store: SupermuxMobileUsageStore?
-
-    @Environment(\.dismiss) private var dismiss
 
     /// Creates the usage screen.
     /// - Parameter store: The live usage session the presenting gauge drives,
@@ -49,9 +52,7 @@ public struct SupermuxUsageScreen: View {
             // rule in CLAUDE.md / the cmux-debugging skill).
             let usage = store.usage
             let hasLoaded = store.hasLoaded
-            let isRefreshing = store.isRefreshing
-            VStack(spacing: 14) {
-                header(usage: usage, hasLoaded: hasLoaded, isRefreshing: isRefreshing)
+            VStack(spacing: 24) {
                 providerPanel(
                     title: String(
                         localized: "supermux.usage.claude",
@@ -81,120 +82,6 @@ public struct SupermuxUsageScreen: View {
         } else {
             disconnectedPlaceholder
         }
-    }
-
-    // MARK: - Header
-
-    /// The summary line: the tightest limit as a dial, what it is in words,
-    /// and the refresh control. Answers "am I about to run out?" before the
-    /// reader parses a single row.
-    private func header(
-        usage: SupermuxUsageStateDTO?,
-        hasLoaded: Bool,
-        isRefreshing: Bool
-    ) -> some View {
-        HStack(spacing: 14) {
-            SupermuxUsageGauge(window: usage?.tightestWindow, pointSize: 52, showsValue: true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(String(
-                    localized: "supermux.usage.title",
-                    defaultValue: "Usage Limits",
-                    bundle: .module
-                ))
-                .font(.headline)
-                Text(Self.headlineDetail(usage: usage, hasLoaded: hasLoaded))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            refreshButton(isRefreshing: isRefreshing)
-            closeButton
-        }
-    }
-
-    private func refreshButton(isRefreshing: Bool) -> some View {
-        circleButton(
-            label: String(
-                localized: "supermux.usage.refresh",
-                defaultValue: "Refresh",
-                bundle: .module
-            ),
-            identifier: "SupermuxUsageRefreshButton",
-            action: { Task { await store?.refresh() } }
-        ) {
-            ZStack {
-                // Both states occupy the same slot, so the header does not
-                // reflow when a refresh starts.
-                ProgressView()
-                    .controlSize(.small)
-                    .opacity(isRefreshing ? 1 : 0)
-                Image(systemName: "arrow.clockwise")
-                    .opacity(isRefreshing ? 0 : 1)
-            }
-        }
-        .disabled(isRefreshing)
-    }
-
-    /// The card's explicit dismiss. The sheet has no navigation bar, and its
-    /// clear backdrop leaves only a 12pt margin around the card — too little
-    /// to expect anyone to hit — so the close affordance has to live in the
-    /// header rather than relying on tap-outside.
-    private var closeButton: some View {
-        circleButton(
-            label: String(
-                localized: "supermux.common.done",
-                defaultValue: "Done",
-                bundle: .module
-            ),
-            identifier: "SupermuxUsageDoneButton",
-            action: { dismiss() }
-        ) {
-            Image(systemName: "xmark")
-        }
-    }
-
-    private func circleButton(
-        label: String,
-        identifier: String,
-        action: @escaping () -> Void,
-        @ViewBuilder icon: () -> some View
-    ) -> some View {
-        Button(action: action) {
-            icon()
-                .font(.footnote.weight(.bold))
-                .frame(width: 30, height: 30)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .background(Color.primary.opacity(0.07), in: Circle())
-        .accessibilityLabel(label)
-        .accessibilityIdentifier(identifier)
-    }
-
-    /// The header's one-line summary: which window is tightest and how full it
-    /// is, or the loading/idle state when there is nothing to summarize.
-    static func headlineDetail(usage: SupermuxUsageStateDTO?, hasLoaded: Bool) -> String {
-        guard hasLoaded else {
-            return String(localized: "supermux.usage.loading", defaultValue: "Loading…", bundle: .module)
-        }
-        guard let tightest = usage?.tightestWindow else {
-            return String(
-                localized: "supermux.usage.noData",
-                defaultValue: "No usage data yet",
-                bundle: .module
-            )
-        }
-        return String(
-            format: String(
-                localized: "supermux.usage.headline",
-                defaultValue: "%1$@ %2$@ used",
-                bundle: .module
-            ),
-            SupermuxUsageStyle.label(for: tightest),
-            SupermuxUsageStyle.percentText(tightest.clampedPercent)
-        )
     }
 
     // MARK: - Provider panels
@@ -234,7 +121,6 @@ public struct SupermuxUsageScreen: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .supermuxUsagePanel()
     }
 
     /// The active account's windows, then every other cswap account as a

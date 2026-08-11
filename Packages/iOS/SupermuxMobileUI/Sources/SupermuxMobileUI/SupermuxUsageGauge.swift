@@ -1,17 +1,15 @@
 public import SupermuxMobileCore
 public import SwiftUI
 
-/// A ring filled to one usage window, colored by severity — the toolbar
-/// gauge, and (at a larger size, with its value inside) the sheet's summary
-/// dial. One view for both so tapping a ring opens a bigger version of itself
-/// rather than an unrelated header.
+/// The compact toolbar gauge: a thin ring filled to the tightest usage
+/// window, colored by severity — the phone's twin of the Mac sidebar footer
+/// button's icon.
 ///
 /// Before any data arrives it renders an empty ring in the secondary label
 /// color, so the toolbar slot reads as an icon rather than a gap.
 public struct SupermuxUsageGauge: View {
     private let window: SupermuxUsageWindowDTO?
     private let pointSize: CGFloat
-    private let showsValue: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -19,20 +17,13 @@ public struct SupermuxUsageGauge: View {
     /// - Parameters:
     ///   - window: The tightest window, or `nil` before data arrives.
     ///   - pointSize: The ring's diameter.
-    ///   - showsValue: Whether the percent renders inside the ring. Only
-    ///     legible at the sheet's dial size; the toolbar ring leaves it off.
-    public init(
-        window: SupermuxUsageWindowDTO?,
-        pointSize: CGFloat = 17,
-        showsValue: Bool = false
-    ) {
+    public init(window: SupermuxUsageWindowDTO?, pointSize: CGFloat = 17) {
         self.window = window
         self.pointSize = pointSize
-        self.showsValue = showsValue
     }
 
     public var body: some View {
-        let lineWidth = max(1.5, pointSize / (showsValue ? 9 : 8))
+        let lineWidth = max(1.5, pointSize / 8)
         ZStack {
             // Track opacity steps up while empty so the pre-data button reads
             // as an icon, not a blank slot.
@@ -46,15 +37,6 @@ public struct SupermuxUsageGauge: View {
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-            }
-            if showsValue {
-                Text(verbatim: window.map { SupermuxUsageStyle.percentText($0.clampedPercent) } ?? "—")
-                    .font(.system(size: pointSize * 0.3, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(window.map { SupermuxUsageStyle.color(for: $0.severity) } ?? .secondary)
-                    .contentTransition(
-                        reduceMotion ? .identity : .numericText(value: window?.clampedPercent ?? 0)
-                    )
             }
         }
         .frame(width: pointSize, height: pointSize)

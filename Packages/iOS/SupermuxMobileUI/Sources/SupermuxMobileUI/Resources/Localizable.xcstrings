@@ -3843,23 +3843,6 @@
         }
       }
     },
-    "supermux.usage.headline": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ %2$@ used"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ %2$@ 使用済み"
-          }
-        }
-      }
-    },
     "supermux.usage.needsLogin": {
       "extractionState": "manual",
       "localizations": {
@@ -3907,23 +3890,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mac にログインが見つかりません"
-          }
-        }
-      }
-    },
-    "supermux.usage.refresh": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Refresh"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更新"
           }
         }
       }

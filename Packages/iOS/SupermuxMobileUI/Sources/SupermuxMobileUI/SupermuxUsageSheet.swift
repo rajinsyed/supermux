@@ -1,5 +1,30 @@
 import SwiftUI
 
+/// Shared geometry for the usage sheet, so its content and its measured
+/// height agree on one set of numbers.
+/// lint:allow namespace-enum — layout constants shared by the sheet's content and its height measurement.
+enum SupermuxUsageMetrics {
+    /// Inset from the sheet's edge to its content.
+    static let contentInset: CGFloat = 20
+    /// Floor for the fitted sheet height, so the sheet never opens as a
+    /// sliver in the frame before the first measurement lands.
+    static let minimumSheetHeight: CGFloat = 160
+
+    /// The sheet's ground: the system's glass over an OPAQUE base.
+    ///
+    /// Glass alone is not a ground. It samples the workspace list behind the
+    /// sheet, and with the rows sitting directly on it that list's text reads
+    /// straight through the meter labels. The opaque layer stops that while
+    /// the glass above it keeps the floating-panel look.
+    static var sheetFill: some ShapeStyle {
+        #if os(iOS)
+        Color(uiColor: .systemBackground).opacity(0.82)
+        #else
+        Color(nsColor: .windowBackgroundColor).opacity(0.82)
+        #endif
+    }
+}
+
 extension View {
     /// Presents the usage card as a sheet sized to its own content.
     ///
@@ -70,6 +95,10 @@ private struct SupermuxUsageFittedSheet<Card: View>: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
+        // The rows sit directly on the sheet, so the sheet itself has to be
+        // their ground. Left to the system's glass alone, the blurred
+        // workspace list reads straight through the meter labels.
+        .presentationBackground(SupermuxUsageMetrics.sheetFill)
         .presentationDetents(detents, selection: $detent)
         .presentationDragIndicator(.visible)
     }
