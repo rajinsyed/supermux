@@ -9,20 +9,6 @@ enum SupermuxUsageMetrics {
     /// Floor for the fitted sheet height, so the sheet never opens as a
     /// sliver in the frame before the first measurement lands.
     static let minimumSheetHeight: CGFloat = 160
-
-    /// The sheet's ground: the system's glass over an OPAQUE base.
-    ///
-    /// Glass alone is not a ground. It samples the workspace list behind the
-    /// sheet, and with the rows sitting directly on it that list's text reads
-    /// straight through the meter labels. The opaque layer stops that while
-    /// the glass above it keeps the floating-panel look.
-    static var sheetFill: some ShapeStyle {
-        #if os(iOS)
-        Color(uiColor: .systemBackground).opacity(0.82)
-        #else
-        Color(nsColor: .windowBackgroundColor).opacity(0.82)
-        #endif
-    }
 }
 
 extension View {
@@ -95,10 +81,10 @@ private struct SupermuxUsageFittedSheet<Card: View>: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
-        // The rows sit directly on the sheet, so the sheet itself has to be
-        // their ground. Left to the system's glass alone, the blurred
-        // workspace list reads straight through the meter labels.
-        .presentationBackground(SupermuxUsageMetrics.sheetFill)
+        // Clear: the sheet is the system's Liquid Glass and nothing else. No
+        // fill of our own, so what shows behind the rows is the blurred
+        // workspace list rather than a painted background.
+        .presentationBackground(.clear)
         .presentationDetents(detents, selection: $detent)
         .presentationDragIndicator(.visible)
     }
