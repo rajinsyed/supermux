@@ -50,7 +50,6 @@ PRODUCT_BUNDLE_IDENTIFIER = $(SUPERMUX_APP_BUNDLE_ID)
 // entitlement its own App ID does not carry.
 SUPERMUX_APP_DEV_PROFILE_SPECIFIER =
 SUPERMUX_NSE_DEV_PROFILE_SPECIFIER =
-SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS =
 // SUPERMUX:end ios-communication-notifications
 // User-visible versions (CFBundleShortVersionString). Keep beta and production
 // independent: TestFlight can stay on the already-approved beta version while
@@ -129,7 +128,15 @@ INFOPLIST_KEY_NSCameraUsageDescription = Scan cmux pairing QR codes from your Ma
 // Entitlements
 // ==========================================
 // AI agents can modify Config/cmux.entitlements to add capabilities
-CODE_SIGN_ENTITLEMENTS = Config/cmux.entitlements
+// SUPERMUX:begin ios-communication-notifications
+// Read by the APP target as $(SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS). The
+// notification service extension pins CODE_SIGN_ENTITLEMENTS empty on its own
+// target — it needs none, and inheriting the app's would claim an APNs
+// entitlement its App ID does not carry. Defaulted to upstream's file so an
+// ordinary build resolves exactly as before; only the release script overrides.
+SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS = Config/cmux.entitlements
+CODE_SIGN_ENTITLEMENTS = $(SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS)
+// SUPERMUX:end ios-communication-notifications
 
 // ==========================================
 // Pairing URL scheme (channel-specific)

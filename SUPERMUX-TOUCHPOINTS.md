@@ -389,6 +389,9 @@ Rules for adding a touchpoint:
 | 373 | `Sources/Update/NotificationPopoverRow.swift` | `notification-popover-project-avatar` | Renders the project avatar in the menu-bar notification popover row, so one notification looks the same in the popover, the panel, the phone feed, and the push banner. Takes an `NSImage` resolved above the popover's `LazyVStack` (#374) and adds an identity compare for it to `==` — a store reference below that boundary is the #2586 spin-loop |
 | 374 | `Sources/Update/UpdateTitlebarAccessory.swift` | `notification-read-toggle-shared`, `notification-popover-project-avatar` | Two fences. The read-toggle one is #356. The avatar one resolves every project icon ONCE above the popover's `LazyVStack` via the static `supermuxProjectIcons(for:)` helper and passes immutable `NSImage` values down — the same snapshot-boundary discipline as the existing per-render title index |
 | 375 | `Sources/AppDelegate.swift` | `notification-project-banner` | One line in `applicationDidFinishLaunching` calling `SupermuxBannerProjectDecorator.sweepOrphanedAvatars()`. Avatar PNGs are handed to `UNNotificationAttachment`, which MOVES them into its own store; a banner that failed to schedule leaves its copy in the temp directory. Background, best-effort, older-than-an-hour |
+| 376 | `ios/scripts/reload.sh` | `ios-communication-notifications` | Two sites (simulator leg and device leg) pass `SUPERMUX_APP_BUNDLE_ID` instead of `PRODUCT_BUNDLE_IDENTIFIER`. A command-line build setting applies workspace-wide, so the tagged override would otherwise stamp the app's id onto the notification service extension — and iOS silently refuses to load an extension whose bundle id is not a child of its container. See #369 |
+| 377 | `ios/scripts/upload-testflight.sh` | `ios-communication-notifications` | Same redirection at both archive sites (beta and App Store lanes). **Known remaining gap:** this script's manual export map and its re-sign path still assume a PlugIns-free app, so the TestFlight/App Store lanes are not yet extension-ready — the fork's dogfood lane (`scripts/supermux-ios-release.sh`, #372) is. Fix before the next TestFlight upload |
+| 378 | `ios/scripts/cloud-testflight.sh` | `ios-communication-notifications` | Same redirection for the cloud beta archive |
 | 386 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxMobilePaneUnreadPresentation.swift` | `unfenced` | **Fork-owned new file.** Projects the Mac-authoritative `supermux_unread_panel_ids` field onto the exact visible phone pane. `nil` means the host lacks pane-state support; `[]` means supported with no unread pane. Visibility alone never mutates state |
 | 387 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxMobileUnreadPaneRingStyle.swift` | `unfenced` | **Fork-owned new file.** Pins the mobile ring to the existing Mac pane ring's 2pt inset, 6pt corner radius, 2.5pt stroke, 0.35 glow opacity, and 3pt glow radius without changing the Mac renderer |
 | 388 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxMobileUnreadPaneRing.swift` | `unfenced` | **Fork-owned new file.** Draws the persistent, hit-test-transparent system-blue pane ring on iOS using #387's Mac-parity geometry and glow |
@@ -433,6 +436,16 @@ One-time Apple portal setup (all of it invalidates existing profiles — regener
 2. Create the `com.supermux.ios.notification-service` App ID (no capabilities needed).
 3. Regenerate and reinstall all four profiles: the app's Development + Ad Hoc, and the extension's
    Development + Ad Hoc (default names in the script's `NSE_*_PROFILE` variables).
+
+**Every build entrypoint must use the indirection, not just the release script** (#376–#378). An
+adversarial review found `reload.sh`, `upload-testflight.sh`, and `cloud-testflight.sh` still passing
+`PRODUCT_BUNDLE_IDENTIFIER` workspace-wide, which gave the extension the app's id. Same class of bug
+for entitlements: the app target reads `$(SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS)` (defaulted in the
+xcconfigs to the same per-channel file upstream used, so an ordinary build is unchanged) while the
+extension pins `CODE_SIGN_ENTITLEMENTS = ""` on its own target — inheriting the app's would claim an
+APNs entitlement the extension's App ID does not carry, and signing fails. Verify after any change
+with `xcodebuild -project ios/cmux-ios.xcodeproj -target <t> -configuration <c> -showBuildSettings`
+for BOTH targets, with and without overrides.
 
 Requirements if upstream restructures any of this:
 
