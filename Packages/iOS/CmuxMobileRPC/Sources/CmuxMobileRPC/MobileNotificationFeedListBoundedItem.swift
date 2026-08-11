@@ -1,4 +1,7 @@
 import Foundation
+// SUPERMUX:begin notification-feed-project-wire
+import SupermuxMobileCore
+// SUPERMUX:end notification-feed-project-wire
 
 struct MobileNotificationFeedListBoundedItem: Decodable {
     let item: MobileNotificationFeedListItem?
@@ -15,6 +18,12 @@ struct MobileNotificationFeedListBoundedItem: Decodable {
         case retargetsToLiveSurfaceOwner = "retargets_to_live_surface_owner"
         case workspaceTitle = "workspace_title"
         case surfaceTitle = "surface_title"
+        // SUPERMUX:begin notification-feed-project-wire
+        // THE production decode path. A field added only to
+        // MobileNotificationFeedListItem decodes as nil here while its unit
+        // tests pass — this duplicate key set is the one that actually runs.
+        case project = "supermux_project"
+        // SUPERMUX:end notification-feed-project-wire
     }
 
     init(from decoder: any Decoder) throws {
@@ -70,10 +79,50 @@ struct MobileNotificationFeedListBoundedItem: Decodable {
                 from: container,
                 forKey: .surfaceTitle,
                 limitedToUTF8Bytes: limits.metadataByteLimit
+            ),
+            // SUPERMUX:begin notification-feed-project-wire
+            // Bounded like every other decoded string: the name is clamped and
+            // an over-long id drops the project (never the whole row — losing
+            // a notification over a bad avatar would be the worse failure).
+            project: try mobileNotificationFeedListBoundedProject(
+                from: container,
+                limits: limits
             )
+            // SUPERMUX:end notification-feed-project-wire
         )
     }
 }
+
+// SUPERMUX:begin notification-feed-project-wire
+/// Decodes and bounds the additive project field.
+///
+/// Returns `nil` — degrading the row to its project-less form — when the field
+/// is absent, malformed, or carries an over-long identifier. A row is never
+/// dropped for a bad project: the notification itself is what the user needs.
+private func mobileNotificationFeedListBoundedProject(
+    from container: KeyedDecodingContainer<MobileNotificationFeedListBoundedItem.CodingKeys>,
+    limits: MobileNotificationFeedListStringLimits
+) throws -> SupermuxNotificationProject? {
+    guard let decoded = try? container.decodeIfPresent(
+        SupermuxNotificationProject.self,
+        forKey: .project
+    ) else { return nil }
+    guard decoded.id.utf8.count <= limits.identifierByteLimit,
+          !decoded.id.isEmpty else { return nil }
+    var bounded = decoded
+    bounded.name = mobileNotificationFeedListString(
+        decoded.name,
+        limitedToUTF8Bytes: limits.metadataByteLimit
+    )
+    if let etag = decoded.iconETag, etag.utf8.count > limits.identifierByteLimit {
+        bounded.iconETag = nil
+    }
+    if let symbol = decoded.iconSymbol, symbol.utf8.count > limits.metadataByteLimit {
+        bounded.iconSymbol = nil
+    }
+    return bounded
+}
+// SUPERMUX:end notification-feed-project-wire
 
 private func mobileNotificationFeedListIdentityString(
     from container: KeyedDecodingContainer<MobileNotificationFeedListBoundedItem.CodingKeys>,

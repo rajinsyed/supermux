@@ -1368,6 +1368,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ]
         )
         AppIconLaunchState.markDidFinishLaunching()
+        // SUPERMUX:begin notification-project-banner
+        // Notification-avatar files are handed to UNNotificationAttachment,
+        // which MOVES them into its own store; a banner that failed to schedule
+        // leaves its copy behind. Background, best-effort, older-than-an-hour.
+        SupermuxBannerProjectDecorator.sweepOrphanedAvatars()
+        // SUPERMUX:end notification-project-banner
         AppearanceSettingsUserDefaultsObserver.shared.startObserving()
         systemAppearanceObserver.startObserving()
         BrowserSystemProxyWatcher.shared.startObserving()

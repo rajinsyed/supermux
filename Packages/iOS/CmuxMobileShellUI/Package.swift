@@ -35,6 +35,9 @@ let package = Package(
         .package(path: "../CmuxMobileWorkspace"),
         // SUPERMUX:begin supermux-mobile-shellui-deps (fork package: Projects section mounted in WorkspaceListView)
         .package(path: "../SupermuxMobileUI"),
+        // The shared notification-project type: the feed row derives its
+        // project presentation from it, and the row tests build fixtures with it.
+        .package(path: "../../Shared/SupermuxMobileCore"),
         // SUPERMUX:end supermux-mobile-shellui-deps
         .package(path: "../../../vendor/stack-auth-swift-sdk-prerelease"),
     ],
@@ -62,6 +65,7 @@ let package = Package(
                 "CmuxMobileWorkspace",
                 // SUPERMUX:begin supermux-mobile-shellui-deps (fork package: Projects section mounted in WorkspaceListView)
                 "SupermuxMobileUI",
+                "SupermuxMobileCore",
                 // SUPERMUX:end supermux-mobile-shellui-deps
                 .product(name: "StackAuth", package: "stack-auth-swift-sdk-prerelease"),
             ],
@@ -86,6 +90,11 @@ let package = Package(
                 "CmuxMobileTerminal",
                 "CmuxMobileToast",
                 "CmuxMobileWorkspace",
+                // SUPERMUX:begin notification-feed-project-row
+                // Test-only: the shared notification-project type the feed-row
+                // project coverage constructs fixtures from.
+                "SupermuxMobileCore",
+                // SUPERMUX:end notification-feed-project-row
                 .product(name: "StackAuth", package: "stack-auth-swift-sdk-prerelease"),
             ],
             swiftSettings: [

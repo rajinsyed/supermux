@@ -22,7 +22,36 @@ PRODUCT_NAME = cmux
 SUPERMUX_IOS_DISPLAY_SUFFIX =
 PRODUCT_DISPLAY_NAME = Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)
 // SUPERMUX:end ios-supermux-brand
-PRODUCT_BUNDLE_IDENTIFIER = dev.cmux.ios
+// SUPERMUX:begin ios-communication-notifications
+// Per-target signing identity, indirected through SUPERMUX_* variables.
+//
+// This indirection is load-bearing, not style. An xcodebuild command-line build
+// setting applies to EVERY target in the workspace, so once a notification
+// service extension exists, the release script's
+// `PRODUCT_BUNDLE_IDENTIFIER=com.supermux.ios`,
+// `PROVISIONING_PROFILE_SPECIFIER=…`, and
+// `CODE_SIGN_ENTITLEMENTS=Config/supermux.entitlements` would all be stamped
+// onto the extension too — giving it the APP's bundle id (iOS refuses to load
+// an extension whose id is not a child of its container) and the app's APNs
+// entitlement (which its own App ID does not carry). The script sets these
+// SUPERMUX_* variables instead, and each target reads only its own.
+//
+// The extension's id derives from the app's so it follows every override
+// automatically; hardcoding it would strand the extension under the default id
+// on every release and dogfood build.
+SUPERMUX_APP_BUNDLE_ID = dev.cmux.ios
+SUPERMUX_NSE_BUNDLE_ID = $(SUPERMUX_APP_BUNDLE_ID).notification-service
+PRODUCT_BUNDLE_IDENTIFIER = $(SUPERMUX_APP_BUNDLE_ID)
+
+// Per-target signing inputs. Empty here so ordinary Xcode/simulator builds keep
+// using automatic signing; scripts/supermux-ios-release.sh sets them for the
+// manual-signing Release pass. The extension deliberately gets NO entitlements
+// file — it needs none, and inheriting the app's would request an APNs
+// entitlement its own App ID does not carry.
+SUPERMUX_APP_DEV_PROFILE_SPECIFIER =
+SUPERMUX_NSE_DEV_PROFILE_SPECIFIER =
+SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS =
+// SUPERMUX:end ios-communication-notifications
 // User-visible versions (CFBundleShortVersionString). Keep beta and production
 // independent: TestFlight can stay on the already-approved beta version while
 // the first production App Store upload starts from its own release version.

@@ -1,4 +1,7 @@
 public import Foundation
+// SUPERMUX:begin notification-feed-project-wire
+public import SupermuxMobileCore
+// SUPERMUX:end notification-feed-project-wire
 
 /// An immutable notification snapshot ready for presentation by the mobile shell.
 public struct MobileNotificationFeedItem: Identifiable, Equatable, Sendable {
@@ -34,6 +37,12 @@ public struct MobileNotificationFeedItem: Identifiable, Equatable, Sendable {
     public let surfaceTitle: String?
     /// The current reachability of the owning Mac.
     public let connectionStatus: MobileMacConnectionStatus
+    // SUPERMUX:begin notification-feed-project-wire
+    /// The supermux project that owned this notification's workspace, or `nil`
+    /// (project-less workspace, or an upstream cmux Mac that sends no such
+    /// field). A frozen snapshot resolved Mac-side at notification time.
+    public let project: SupermuxNotificationProject?
+    // SUPERMUX:end notification-feed-project-wire
 
     /// Creates an immutable notification-feed item.
     /// - Parameters:
@@ -66,7 +75,10 @@ public struct MobileNotificationFeedItem: Identifiable, Equatable, Sendable {
         retargetsToLiveSurfaceOwner: Bool = true,
         workspaceTitle: String? = nil,
         surfaceTitle: String? = nil,
-        connectionStatus: MobileMacConnectionStatus
+        connectionStatus: MobileMacConnectionStatus,
+        // SUPERMUX:begin notification-feed-project-wire
+        project: SupermuxNotificationProject? = nil
+        // SUPERMUX:end notification-feed-project-wire
     ) {
         self.id = MobileNotificationFeedItemID(
             macDeviceID: macDeviceID,
@@ -88,6 +100,9 @@ public struct MobileNotificationFeedItem: Identifiable, Equatable, Sendable {
         self.workspaceTitle = workspaceTitle
         self.surfaceTitle = surfaceTitle
         self.connectionStatus = connectionStatus
+        // SUPERMUX:begin notification-feed-project-wire
+        self.project = project
+        // SUPERMUX:end notification-feed-project-wire
     }
 
     /// Returns the same notification with updated read and connection state.
@@ -114,7 +129,13 @@ public struct MobileNotificationFeedItem: Identifiable, Equatable, Sendable {
             retargetsToLiveSurfaceOwner: retargetsToLiveSurfaceOwner,
             workspaceTitle: workspaceTitle,
             surfaceTitle: surfaceTitle,
-            connectionStatus: connectionStatus ?? self.connectionStatus
+            connectionStatus: connectionStatus ?? self.connectionStatus,
+            // SUPERMUX:begin notification-feed-project-wire
+            // This initializer re-lists EVERY field: omitting one here silently
+            // drops it on every mark-read / reconnect, which would blank the
+            // avatar the first time a row was touched.
+            project: project
+            // SUPERMUX:end notification-feed-project-wire
         )
     }
 }

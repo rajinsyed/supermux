@@ -4,7 +4,13 @@
 
 #include "Shared.xcconfig"
 
-PRODUCT_BUNDLE_IDENTIFIER = dev.cmux.app.beta
+// SUPERMUX:begin ios-communication-notifications
+// Set through SUPERMUX_APP_BUNDLE_ID so the notification service extension's
+// id (SUPERMUX_NSE_BUNDLE_ID in Shared.xcconfig) stays derived from it and
+// remains a child of the app's. Assigning PRODUCT_BUNDLE_IDENTIFIER directly
+// here would silently detach the extension from this channel's id.
+SUPERMUX_APP_BUNDLE_ID = dev.cmux.app.beta
+// SUPERMUX:end ios-communication-notifications
 DEVELOPMENT_TEAM = 7WLXT3NR37
 
 // Shared.xcconfig brands all fork builds as Supermux. The upload scripts still

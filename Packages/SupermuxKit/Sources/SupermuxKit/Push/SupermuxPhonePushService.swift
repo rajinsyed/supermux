@@ -362,6 +362,24 @@ public actor SupermuxPhonePushService {
     }
 
     private func notificationPayloadBody(for message: SupermuxPhonePushMessage) throws -> Data {
+        // Project decoration is dropped BEFORE any visible text is truncated.
+        // The decoration is fixed-size metadata the user never asked for; the
+        // terminal output is what they actually want to read, so spending the
+        // body's budget on a project name inverts the priority. The whole
+        // decoration goes at once — a half-decorated banner (grouped, unnamed)
+        // is worse than an undecorated one — and only then does the text ladder
+        // run, on a message that now has the maximum room available to it.
+        var message = message
+        if message.project != nil || message.tabName != nil,
+           try encodedNotificationPayload(
+               for: message,
+               title: message.title.trimmingCharacters(in: .whitespacesAndNewlines),
+               subtitle: message.subtitle,
+               body: message.body
+           ).count > Self.maximumPayloadBytes {
+            message = message.withoutProjectDecoration()
+        }
+
         var title = message.title.trimmingCharacters(in: .whitespacesAndNewlines)
         var subtitle = message.subtitle
         var body = message.body
@@ -490,7 +508,7 @@ public actor SupermuxPhonePushService {
             }
             alert = visible
         }
-        let aps: [String: Any] = [
+        var aps: [String: Any] = [
             "alert": alert,
             "sound": "default",
             "badge": max(0, message.badgeCount),
@@ -511,6 +529,34 @@ public actor SupermuxPhonePushService {
         if let surfaceID = message.surfaceID { cmux["surfaceId"] = surfaceID }
         if let macDeviceID = message.macDeviceID { cmux["macDeviceId"] = macDeviceID }
         if let notificationID = message.notificationID { cmux["notificationId"] = notificationID }
+        // Project identity rides beside the routing ids so the phone can draw
+        // the project's avatar and name on the banner without a round trip to
+        // the Mac (a locked phone has no live session to ask).
+        //
+        // Suppressed under hide-content: the whole point of that setting is
+        // that a glance at the lock screen reveals nothing about what is being
+        // worked on, and a project name is exactly that.
+        if !message.hideContent {
+            if let project = message.project {
+                var encoded: [String: Any] = ["id": project.id, "name": project.name]
+                if let colorHex = project.colorHex { encoded["colorHex"] = colorHex }
+                if let iconSymbol = project.iconSymbol { encoded["iconSymbol"] = iconSymbol }
+                if project.hasIconImage { encoded["hasIcon"] = true }
+                cmux["project"] = encoded
+                // Stacks a project's banners together in Notification Center,
+                // matching the macOS banner's threadIdentifier.
+                aps["thread-id"] = "supermux.project.\(project.id)"
+                // Wakes SupermuxNotificationService, which rewrites this into a
+                // communication notification so iOS draws the project avatar.
+                // Set ONLY alongside a project: without one the extension has
+                // nothing to render and would spend its launch to no effect.
+                // A phone without the extension installed ignores the key.
+                aps["mutable-content"] = 1
+            }
+            if let tabName = message.tabName, !tabName.isEmpty {
+                cmux["tabName"] = tabName
+            }
+        }
         return try JSONSerialization.data(withJSONObject: ["aps": aps, "cmux": cmux])
     }
 

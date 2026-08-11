@@ -628,7 +628,20 @@ extension MobileShellComposite {
                             wire.surfaceTitle,
                             limitedToUTF8Bytes: mobileShellNotificationFeedMetadataByteLimit
                         ),
-                        connectionStatus: status
+                        connectionStatus: status,
+                        // SUPERMUX:begin notification-feed-project-wire
+                        // Normalized with the same metadata bound as the other
+                        // labels; a project whose name normalizes away keeps its
+                        // id and accent, so the avatar still renders.
+                        project: wire.project.map { project in
+                            var bounded = project
+                            bounded.name = mobileShellNotificationFeedString(
+                                project.name,
+                                limitedToUTF8Bytes: mobileShellNotificationFeedMetadataByteLimit
+                            )
+                            return bounded
+                        }
+                        // SUPERMUX:end notification-feed-project-wire
                     )
                 }
                 .sorted { lhs, rhs in

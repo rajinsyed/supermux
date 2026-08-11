@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		SMX1000000000000000002 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMX1000000000000000001 /* NotificationService.swift */; };
+		SMX1000000000000000005 /* SupermuxNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = SMX1000000000000000004 /* SupermuxNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8B8A10012DF5000000A66F90 /* cmuxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10172DF5000000A66F90 /* cmuxApp.swift */; };
 		8B8A10F02DF5000000A66F90 /* CmuxAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10F12DF5000000A66F90 /* CmuxAppDelegate.swift */; };
 		8B8A10AA2DF5000000A66F90 /* AppCompositionRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10AB2DF5000000A66F90 /* AppCompositionRoot.swift */; };
@@ -38,9 +40,33 @@
 			remoteGlobalIDString = 8B41F6442DEDD0D5001A66F9;
 			remoteInfo = cmux;
 		};
+		SMX1000000000000000010 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8B41F63D2DEDD0D5001A66F9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = SMX1000000000000000006;
+			remoteInfo = SupermuxNotificationService;
+		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		SMX100000000000000000A /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				SMX1000000000000000005 /* SupermuxNotificationService.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		SMX1000000000000000001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		SMX1000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		SMX1000000000000000004 /* SupermuxNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SupermuxNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B41F6452DEDD0D5001A66F9 /* cmux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cmux.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B41F65C2DEDD0D6001A66F9 /* cmux.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cmux.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B8A10112DF5000000A66F90 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
@@ -88,6 +114,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		SMX1000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -125,6 +158,7 @@
 				8BD71C052DEE41D800CEDD92 /* Config */,
 				8B41F6472DEDD0D5001A66F9 /* cmux */,
 				8B41F65F2DEDD0D6001A66F9 /* cmuxUITests */,
+				SMX100000000000000000B /* SupermuxNotificationService */,
 				8B41F6812DEDD23B001A66F9 /* Frameworks */,
 				8B41F6462DEDD0D5001A66F9 /* Products */,
 			);
@@ -135,6 +169,7 @@
 			children = (
 				8B41F6452DEDD0D5001A66F9 /* cmux.app */,
 				8B41F65C2DEDD0D6001A66F9 /* cmux.xctest */,
+				SMX1000000000000000004 /* SupermuxNotificationService.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -169,6 +204,15 @@
 			path = Config;
 			sourceTree = "<group>";
 		};
+		SMX100000000000000000B /* SupermuxNotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				SMX1000000000000000001 /* NotificationService.swift */,
+				SMX1000000000000000003 /* Info.plist */,
+			);
+			path = SupermuxNotificationService;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -179,10 +223,12 @@
 				8B41F6412DEDD0D5001A66F9 /* Sources */,
 				8B41F6422DEDD0D5001A66F9 /* Frameworks */,
 				8B41F6432DEDD0D5001A66F9 /* Resources */,
+				SMX100000000000000000A /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				SMX100000000000000000F /* PBXTargetDependency */,
 			);
 			name = cmux;
 			packageProductDependencies = (
@@ -217,6 +263,23 @@
 			productReference = 8B41F65C2DEDD0D6001A66F9 /* cmux.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		SMX1000000000000000006 /* SupermuxNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = SMX100000000000000000C /* Build configuration list for PBXNativeTarget "SupermuxNotificationService" */;
+			buildPhases = (
+				SMX1000000000000000007 /* Sources */,
+				SMX1000000000000000008 /* Frameworks */,
+				SMX1000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SupermuxNotificationService;
+			productName = SupermuxNotificationService;
+			productReference = SMX1000000000000000004 /* SupermuxNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -233,6 +296,9 @@
 					8B41F65B2DEDD0D6001A66F9 = {
 						CreatedOnToolsVersion = 16.3;
 						TestTargetID = 8B41F6442DEDD0D5001A66F9;
+					};
+					SMX1000000000000000006 = {
+						CreatedOnToolsVersion = 26.0;
 					};
 				};
 			};
@@ -252,6 +318,7 @@
 			targets = (
 				8B41F6442DEDD0D5001A66F9 /* cmux */,
 				8B41F65B2DEDD0D6001A66F9 /* cmuxUITests */,
+				SMX1000000000000000006 /* SupermuxNotificationService */,
 			);
 		};
 /* End PBXProject section */
@@ -272,6 +339,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8B41F65A2DEDD0D6001A66F9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SMX1000000000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -303,6 +377,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		SMX1000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				SMX1000000000000000002 /* NotificationService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -310,6 +392,11 @@
 			isa = PBXTargetDependency;
 			target = 8B41F6442DEDD0D5001A66F9 /* cmux */;
 			targetProxy = 8B41F65D2DEDD0D6001A66F9 /* PBXContainerItemProxy */;
+		};
+		SMX100000000000000000F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = SMX1000000000000000006 /* SupermuxNotificationService */;
+			targetProxy = SMX1000000000000000010 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -448,7 +535,9 @@
 				CMUX_IROH_RELAY_POLICY_PUBLIC_KEY_BASE64 = "Otx9S0B4d/tlwIKYRf5evJaqhjCltFLPjMfXrLFd6lk=";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
+				CODE_SIGN_ENTITLEMENTS = "$(SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS)";
 				INFOPLIST_FILE = Config/Info.plist;
+				PROVISIONING_PROFILE_SPECIFIER = "$(SUPERMUX_APP_DEV_PROFILE_SPECIFIER)";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -475,7 +564,9 @@
 				CMUX_IROH_RELAY_POLICY_PUBLIC_KEY_BASE64 = "qoBinRqX4TI1Ro6xAuOQxKUkeZT3pkFJuERP/+R+9aw=";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
+				CODE_SIGN_ENTITLEMENTS = "$(SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS)";
 				INFOPLIST_FILE = Config/Info.plist;
+				PROVISIONING_PROFILE_SPECIFIER = "$(SUPERMUX_APP_DEV_PROFILE_SPECIFIER)";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -515,6 +606,65 @@
 			};
 			name = Release;
 		};
+		SMX100000000000000000D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8B8A10112DF5000000A66F90 /* Debug.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SupermuxNotificationService/Info.plist;
+				PROVISIONING_PROFILE_SPECIFIER = "$(SUPERMUX_NSE_DEV_PROFILE_SPECIFIER)";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(MARKETING_VERSION)";
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SUPERMUX_NSE_BUNDLE_ID)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		SMX100000000000000000E /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8B8A10122DF5000000A66F90 /* Release.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SupermuxNotificationService/Info.plist;
+				PROVISIONING_PROFILE_SPECIFIER = "$(SUPERMUX_NSE_DEV_PROFILE_SPECIFIER)";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(MARKETING_VERSION)";
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SUPERMUX_NSE_BUNDLE_ID)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -541,6 +691,15 @@
 			buildConfigurations = (
 				8B41F66D2DEDD0D6001A66F9 /* Debug */,
 				8B41F66E2DEDD0D6001A66F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		SMX100000000000000000C /* Build configuration list for PBXNativeTarget "SupermuxNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				SMX100000000000000000D /* Debug */,
+				SMX100000000000000000E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

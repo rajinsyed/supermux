@@ -2555,38 +2555,36 @@ private struct NotificationsPopoverView: View {
             let lastIndex = snapshot.count - 1
             // One tabId -> title index per render, not an O(tabs) scan per row (#5794).
             let titleSnapshot = loadedWorkspaceTitles ?? currentWorkspaceTitles()
+            // SUPERMUX:begin notification-popover-project-avatar
+            // Project icons resolved ONCE above the LazyVStack and handed down
+            // as immutable values — the same snapshot-boundary rule the title
+            // index above follows (#2586 / #5794).
+            let projectIcons = Self.supermuxProjectIcons(for: snapshot)
+            // SUPERMUX:end notification-popover-project-avatar
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(snapshot.enumerated()), id: \.element.id) { index, notification in
                         NotificationPopoverRow(
                             notification: notification,
                             workspaceTitle: titleSnapshot[notification.tabId],
+                            // SUPERMUX:begin notification-popover-project-avatar
+                            projectIcon: notification.project.flatMap { projectIcons[$0.id] },
+                            // SUPERMUX:end notification-popover-project-avatar
                             onOpen: { open(notification) },
                             onClear: {
                                 withAnimation(.easeOut(duration: 0.18)) {
                                     notificationStore.remove(id: notification.id)
                                 }
                             },
+                            // SUPERMUX:begin notification-read-toggle-shared
+                            // Was inline here; moved to the shared action path
+                            // so the notifications panel's identical menu item
+                            // cannot drift from this one (the pane focused-read
+                            // clearing is the part a second copy would miss).
                             onToggleRead: {
-                                if notification.isRead {
-                                    notificationStore.markUnread(id: notification.id)
-                                } else {
-                                    notificationStore.markRead(id: notification.id)
-                                    // A user-initiated "Mark as Read" on a pane-scoped
-                                    // notification should also clear the pane's focused-read
-                                    // indicator so the pane badge disappears. For
-                                    // workspace-level notifications (surfaceId == nil), do not
-                                    // call clearFocusedReadIndicator — it treats nil as
-                                    // "clear any pane indicator on this tab" and would wipe
-                                    // an unrelated pane badge.
-                                    if let surfaceId = notification.surfaceId {
-                                        notificationStore.clearFocusedReadIndicator(
-                                            forTabId: notification.tabId,
-                                            surfaceId: surfaceId
-                                        )
-                                    }
-                                }
+                                notificationStore.toggleReadFromUserAction(notification)
                             }
+                            // SUPERMUX:end notification-read-toggle-shared
                         )
                         .equatable()  // snapshot-boundary: skip unchanged rows (#5794)
                         if index < lastIndex {
@@ -2599,6 +2597,28 @@ private struct NotificationsPopoverView: View {
             }
         }
     }
+
+    // SUPERMUX:begin notification-popover-project-avatar
+    /// Decoded icons for every project present in `notifications`, resolved
+    /// once per render above the popover's list boundary.
+    ///
+    /// Static and value-returning on purpose: the rows below the `LazyVStack`
+    /// receive `NSImage` values, never a reference to the icon store.
+    private static func supermuxProjectIcons(
+        for notifications: [TerminalNotification]
+    ) -> [String: NSImage] {
+        var icons: [String: NSImage] = [:]
+        for notification in notifications {
+            guard let project = notification.project,
+                  icons[project.id] == nil,
+                  let uuid = UUID(uuidString: project.id),
+                  let image = SupermuxComposition.projectIconStore.image(for: uuid)
+            else { continue }
+            icons[project.id] = image
+        }
+        return icons
+    }
+    // SUPERMUX:end notification-popover-project-avatar
 
     private func currentWorkspaceTitles() -> [UUID: String] {
         let notificationWorkspaceIds = Set(notificationStore.notifications.map(\.tabId))

@@ -302,7 +302,22 @@ extension TerminalController {
                     $0,
                     limitedToUTF8Bytes: Self.mobileNotificationFeedMetadataByteLimit
                 )
+            },
+            // SUPERMUX:begin notification-feed-project-wire
+            // The project resolved at delivery and persisted on the record, so
+            // a restored feed keeps its avatars and a renamed project does not
+            // rewrite history. The name is clamped like every other metadata
+            // string — the response is trimmed to a frame budget, and one
+            // pathological name must not push notifications out of the frame.
+            project: record.project.map {
+                var bounded = $0
+                bounded.name = Self.mobileNotificationFeedString(
+                    $0.name,
+                    limitedToUTF8Bytes: Self.mobileNotificationFeedMetadataByteLimit
+                )
+                return bounded
             }
+            // SUPERMUX:end notification-feed-project-wire
         )
     }
 

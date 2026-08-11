@@ -1,14 +1,27 @@
 import CmuxFoundation
+// SUPERMUX:begin notification-popover-project-avatar
+import AppKit
+import SupermuxKit
+// SUPERMUX:end notification-popover-project-avatar
 import SwiftUI
 
 struct NotificationPopoverRow: View, Equatable {
     // Closures excluded from ==; equality is the rendered snapshot only (#2586).
     nonisolated static func == (lhs: NotificationPopoverRow, rhs: NotificationPopoverRow) -> Bool {
         lhs.notification == rhs.notification && lhs.workspaceTitle == rhs.workspaceTitle
+            // SUPERMUX:begin notification-popover-project-avatar
+            // Identity compare: the icon store hands out one NSImage per
+            // project and replaces it only when the bytes change.
+            && lhs.projectIcon === rhs.projectIcon
+            // SUPERMUX:end notification-popover-project-avatar
     }
 
     let notification: TerminalNotification
     let workspaceTitle: String?
+    // SUPERMUX:begin notification-popover-project-avatar
+    /// The owning project's decoded icon, resolved above the popover's list.
+    var projectIcon: NSImage? = nil
+    // SUPERMUX:end notification-popover-project-avatar
     let onOpen: () -> Void
     let onClear: () -> Void
     let onToggleRead: () -> Void
@@ -96,6 +109,18 @@ struct NotificationPopoverRow: View, Equatable {
                 .fill(notification.isRead ? Color.clear : cmuxAccentColor())
                 .frame(width: 2.5)
                 .padding(.vertical, 6)
+
+            // SUPERMUX:begin notification-popover-project-avatar
+            // The same project avatar the panel and the phone show, so a
+            // notification is recognizable in every surface it appears in.
+            // Takes the immutable snapshot the notification already carries plus
+            // an image resolved above the popover's LazyVStack — no store
+            // reference crosses the list boundary.
+            if let project = notification.project {
+                SupermuxNotificationAvatarView(project: project, image: projectIcon, size: 24)
+                    .padding(.leading, 10)
+            }
+            // SUPERMUX:end notification-popover-project-avatar
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
