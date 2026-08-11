@@ -14848,6 +14848,16 @@ class TerminalController {
         }
         let col = (params["col"] as? NSNumber)?.intValue ?? 0
         let row = (params["row"] as? NSNumber)?.intValue ?? 0
+        // SUPERMUX:begin ios-pane-unread-acknowledgment
+        // A phone tap is the same explicit terminal interaction as a Mac click.
+        // Reuse the shared dismissal model so only this selected pane clears,
+        // including its focused-read and restored indicators.
+        _ = AppDelegate.shared?.tabManagerFor(tabId: resolved.workspace.id)?
+            .dismissNotificationOnTerminalInteraction(
+                tabId: resolved.workspace.id,
+                surfaceId: terminalPanel.id
+            )
+        // SUPERMUX:end ios-pane-unread-acknowledgment
         terminalPanel.surface.mobileClick(col: max(0, col), row: max(0, row))
         MobileTerminalRenderObserver.shared.noteTerminalBytes(surfaceID: terminalPanel.id)
         return .ok([
@@ -14878,6 +14888,16 @@ class TerminalController {
         )
         #endif
 
+        // SUPERMUX:begin ios-pane-unread-acknowledgment
+        // Typing into the phone's terminal mirrors a Mac key press: visibility
+        // alone keeps the ring, while this explicit interaction clears only the
+        // selected terminal through the shared dismissal model.
+        _ = AppDelegate.shared?.tabManagerFor(tabId: resolved.workspace.id)?
+            .dismissNotificationOnTerminalInteraction(
+                tabId: resolved.workspace.id,
+                surfaceId: terminalPanel.id
+            )
+        // SUPERMUX:end ios-pane-unread-acknowledgment
         _ = applyMobileViewportReport(params: params, terminalPanel: terminalPanel)
 
         #if DEBUG

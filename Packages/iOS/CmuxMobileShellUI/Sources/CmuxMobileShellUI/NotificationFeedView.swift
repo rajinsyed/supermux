@@ -25,11 +25,7 @@ struct NotificationFeedView: View {
 
         VStack(spacing: 0) {
             NotificationFeedFilterBar(selection: $projection.filter)
-            // SUPERMUX:begin notification-feed-project-row
-            // No divider: the filter bar and the list now share one grouped
-            // background, and a full-width rule across it reintroduces exactly
-            // the boxed-in look the card layout removes.
-            // SUPERMUX:end notification-feed-project-row
+            Divider()
             NotificationFeedList(
                 sections: projection.sections,
                 sourceItemCount: projection.sourceItemCount,
@@ -88,12 +84,7 @@ private struct NotificationFeedFilterBar: View {
         .pickerStyle(.segmented)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        // SUPERMUX:begin notification-feed-project-row
-        // Matches the list's grouped background rather than the plain system
-        // background, so the bar reads as part of the same surface as the cards
-        // instead of a separate strip stacked above them.
-        .background(Color(uiColor: .systemGroupedBackground))
-        // SUPERMUX:end notification-feed-project-row
+        .background(Color(uiColor: .systemBackground))
         .accessibilityIdentifier("MobileNotificationFeedFilter")
     }
 }
@@ -129,25 +120,9 @@ private struct NotificationFeedList: View {
                                 .equatable()
                                 .disabled(hasStaleSourceSections)
                                 .allowsHitTesting(!hasStaleSourceSections)
-                                // SUPERMUX:begin notification-feed-project-row
-                                // Applied HERE, not inside the row's own body:
-                                // list-row modifiers must attach to the direct
-                                // child of `ForEach`, and below `.equatable()`
-                                // (an `EquatableView`) they are silently
-                                // dropped — which left the cards with system
-                                // separators and an opaque white row fill.
-                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                                // SUPERMUX:end notification-feed-project-row
                         }
                     } header: {
                         NotificationFeedDayHeader(section: section)
-                            // SUPERMUX:begin notification-feed-project-row
-                            .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 6, trailing: 16))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            // SUPERMUX:end notification-feed-project-row
                     }
                 }
                 if hasMoreRows {
@@ -155,14 +130,7 @@ private struct NotificationFeedList: View {
                 }
             }
         }
-        // SUPERMUX:begin notification-feed-project-row
-        // Plain style with an explicit grouped background, not `.insetGrouped`:
-        // the cards supply their own inset, fill, and corner radius, and the
-        // grouped style would wrap each one in a second system-drawn container.
         .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(Color(uiColor: .systemGroupedBackground))
-        // SUPERMUX:end notification-feed-project-row
         .refreshable {
             await actions.refresh()
         }
@@ -194,15 +162,8 @@ private struct NotificationFeedDayHeader: View {
                 Text(section.id, format: .dateTime.weekday(.wide).month(.abbreviated).day())
             }
         }
-        // SUPERMUX:begin notification-feed-project-row
-        // Small uppercase over the old sentence-case subheadline: at the same
-        // weight and size as a card's headline, a day header competed with the
-        // rows it labels. Tracked caps read as a divider at a glance.
-        .font(.caption.weight(.semibold))
-        .textCase(.uppercase)
-        .kerning(0.6)
+        .font(.subheadline.weight(.semibold))
         .foregroundStyle(.secondary)
-        // SUPERMUX:end notification-feed-project-row
         .accessibilityIdentifier(dayAccessibilityIdentifier)
     }
 

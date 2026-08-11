@@ -1,4 +1,5 @@
-import Foundation
+public import Foundation
+public import SupermuxMobileCore
 
 /// Builds the one-line "where did this come from" string every notification
 /// surface shows under the title: the project, then the tab it fired in.
@@ -8,11 +9,6 @@ import Foundation
 /// its own, they disagree about separators, about what to drop when a field is
 /// missing, and about what to do when the tab name merely repeats the project
 /// name. All of that is decided here once.
-///
-/// Lives in the cross-platform core rather than the macOS-only `SupermuxKit`
-/// because the iOS feed is one of those consumers. While this was Mac-side, the
-/// phone could not reach it and grew its own row logic, which is exactly how the
-/// two ended up disagreeing about what a notification's headline even is.
 ///
 /// Pure value logic with no UI dependency, so it is unit-testable and usable
 /// from a notification service extension.

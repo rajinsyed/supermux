@@ -385,7 +385,8 @@ extension MobileShellComposite {
                         isStale: pullRequest.isStale
                     )
                 },
-                supermuxUnreadCount: record.supermuxUnreadCount
+                supermuxUnreadCount: record.supermuxUnreadCount,
+                supermuxUnreadPanelIDs: record.supermuxUnreadPanelIDs
                 // SUPERMUX:end supermux-mobile-workspace-fields
             )
         }

@@ -234,7 +234,14 @@ final class MobileWorkspaceListObserver {
             unreadIndicatorsCancellable = Publishers.MergeMany(
                 notificationStore.$manualUnreadWorkspaceIds.map { _ in () }.eraseToAnyPublisher(),
                 notificationStore.$panelDerivedUnreadWorkspaceIds.map { _ in () }.eraseToAnyPublisher(),
-                notificationStore.$restoredUnreadWorkspaceIds.map { _ in () }.eraseToAnyPublisher()
+                notificationStore.$restoredUnreadWorkspaceIds.map { _ in () }.eraseToAnyPublisher(),
+                // SUPERMUX:begin supermux-mobile-workspace-fields
+                // Focused-read can clear without changing the notification array
+                // or workspace unread boolean; it still changes the pane ring.
+                notificationStore.$focusedReadIndicatorByTabId
+                    .map { _ in () }
+                    .eraseToAnyPublisher()
+                // SUPERMUX:end supermux-mobile-workspace-fields
             )
             .throttle(for: .milliseconds(throttleMilliseconds), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in
@@ -325,6 +332,13 @@ final class MobileWorkspaceListObserver {
                 supermuxUnreadCountForWorkspaceID?(workspace.id)
                     ?? notificationStore.unreadCount(forTabId: workspace.id)
             )
+            let unreadPanelIDs = workspace.supermuxMobileUnreadPanelIDs(
+                notificationStore: notificationStore
+            )
+            hasher.combine(unreadPanelIDs.count)
+            for panelID in unreadPanelIDs {
+                hasher.combine(panelID)
+            }
             // SUPERMUX:end supermux-mobile-workspace-fields
             signatures[workspace.id] = hasher.finalize()
         }

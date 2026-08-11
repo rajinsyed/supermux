@@ -21,17 +21,13 @@ struct NotificationFeedRow: View, Equatable {
             open()
         } label: {
             NotificationFeedRowLabel(
+                title: item.title,
                 createdAt: item.createdAt,
                 isRead: item.isRead,
                 presentation: model.presentation
             )
         }
         .buttonStyle(.plain)
-        // The card draws its own surface, inset, and separation; the list-row
-        // chrome that would otherwise fight it (separators, opaque row fill,
-        // default insets) is cleared where the row is mounted in
-        // `NotificationFeedList` — those modifiers do not survive being applied
-        // beneath this view's `.equatable()`.
         .contextMenu(menuItems: {
             Button {
                 open()
@@ -92,12 +88,7 @@ struct NotificationFeedRow: View, Equatable {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
-        // SUPERMUX:begin notification-feed-project-row
-        // The headline, not the raw title: it is what the row actually shows,
-        // and VoiceOver announcing "Claude Code" for a row reading "fix
-        // notifications" would describe a different row than the visible one.
-        .accessibilityLabel(model.presentation.headline)
-        // SUPERMUX:end notification-feed-project-row
+        .accessibilityLabel(item.title)
         .accessibilityValue(accessibilityValue)
         .accessibilityHint(L10n.string(
             "mobile.notificationFeed.openHint",
@@ -137,171 +128,234 @@ struct NotificationFeedRow: View, Equatable {
     }
 }
 
-// SUPERMUX:begin notification-feed-project-row
-/// One notification, drawn as a card.
-///
-/// The previous row was a flat list line: a 6pt unread dot, then a stack of
-/// four same-weight lines (title, `folder` project, `desktopcomputer` computer,
-/// body) separated by hairlines. At a glance nothing dominated — the agent name
-/// repeated down every row in the strongest position while the workspace, the
-/// one fact that differs between rows, sat in muted 11pt text below.
-///
-/// This redesign fixes the hierarchy rather than the paint:
-///
-/// - The **headline is the workspace** (shared with both Mac surfaces), so what
-///   varies between rows is what you read first.
-/// - The avatar is the row's anchor at 38pt, large enough to identify a project
-///   by its logo alone while scrolling.
-/// - Provenance and the message preview drop to one muted line each, with the
-///   preview clamped to two lines — the old three-line clamp let one chatty
-///   notification fill a third of the screen.
-/// - Cards on a grouped background replace hairline separators: an unread card
-///   carries a tinted surface and a soft accent border, so read state is legible
-///   from the whole card rather than from a 6pt dot.
 private struct NotificationFeedRowLabel: View {
+    let title: String
     let createdAt: Date
     let isRead: Bool
     let presentation: NotificationFeedRowPresentation
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            avatar
+        HStack(alignment: .top, spacing: 8) {
+            NotificationFeedUnreadIndicator(isRead: isRead)
 
-            VStack(alignment: .leading, spacing: 3) {
+            // SUPERMUX:begin notification-feed-project-row
+            // The project avatar, drawn only when the notification carries a
+            // project. It is a single cached-or-generated chip with no async
+            // work and no loading state, so it adds one leaf node to the cell's
+            // self-sizing pass rather than a fetch per materialization.
+            if let project = presentation.project {
+                SupermuxNotificationAvatar(project: project, size: 30)
+                    .padding(.top, 1)
+            }
+            // SUPERMUX:end notification-feed-project-row
+
+            VStack(alignment: .leading, spacing: 4) {
                 NotificationFeedHeadline(
-                    headline: presentation.headline,
+                    title: title,
                     createdAt: createdAt,
-                    isRead: isRead
+                    isRead: isRead,
+                    representsWorkspace: presentation.workspaceMatchesTitle
                 )
 
-                if let provenance = presentation.provenance {
-                    NotificationFeedProvenance(text: provenance)
-                }
+                NotificationFeedProvenance(
+                    // SUPERMUX:begin notification-feed-project-row
+                    projectName: presentation.projectName,
+                    // SUPERMUX:end notification-feed-project-row
+                    workspaceName: presentation.workspaceName,
+                    workspaceMatchesTitle: presentation.workspaceMatchesTitle,
+                    computerName: presentation.computerName,
+                    computerIsReachable: presentation.connectionStatus == .connected
+                )
 
                 if let contentPreview = presentation.contentPreview {
                     NotificationFeedContentPreview(text: contentPreview)
-                        .padding(.top, 1)
                 }
-
-                NotificationFeedComputer(
-                    name: presentation.computerName,
-                    isReachable: presentation.connectionStatus == .connected
-                )
-                .padding(.top, 2)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(background)
+        .padding(.vertical, 5)
         .contentShape(Rectangle())
         .frame(minHeight: 44)
     }
-
-    /// The project avatar, or a neutral bell for a notification with no project
-    /// (an upstream Mac, or a workspace in no project). A placeholder rather
-    /// than nothing: without it those rows lose the leading column and their
-    /// text hangs off a different left edge than every card above them.
-    @ViewBuilder
-    private var avatar: some View {
-        if let project = presentation.project {
-            SupermuxNotificationAvatar(project: project, size: 38)
-        } else {
-            RoundedRectangle(cornerRadius: 38 * 0.3, style: .continuous)
-                .fill(Color.primary.opacity(0.07))
-                .frame(width: 38, height: 38)
-                .overlay(
-                    Image(systemName: "bell.fill")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                )
-                .accessibilityHidden(true)
-        }
-    }
-
-    /// Unread cards get a tinted fill and a soft accent hairline; read cards sit
-    /// on a plain elevated surface. Both are opacity-based so the card works on
-    /// either appearance without a second palette.
-    private var background: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(isRead ? AnyShapeStyle(.background.secondary) : AnyShapeStyle(Color.accentColor.opacity(0.09)))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(
-                        isRead ? Color.primary.opacity(0.06) : Color.accentColor.opacity(0.28),
-                        lineWidth: 1
-                    )
-            )
-    }
 }
 
-/// The row's primary line and its timestamp.
-///
-/// The unread dot moved here from the row's leading edge, where it cost a column
-/// of width on every row to mark a minority of them. Beside the timestamp it
-/// reads as a status on this notification, and the avatar keeps the leading edge
-/// aligned for every card.
-private struct NotificationFeedHeadline: View {
-    let headline: String
-    let createdAt: Date
+private struct NotificationFeedUnreadIndicator: View {
     let isRead: Bool
 
     var body: some View {
+        // No overlay: the previous read-state overlay stroked Color.clear
+        // (invisible) while still costing a layout node in every cell's
+        // self-sizing pass.
+        Circle()
+            .fill(isRead ? Color.clear : Color.accentColor)
+            .frame(width: 6, height: 6)
+            .padding(.top, 5)
+            .accessibilityHidden(true)
+    }
+}
+
+// Icon-and-label lines are single interpolated `Text`s rather than
+// HStack{Image, Text} pairs: cell self-sizing dominated the scroll profile,
+// and every stack and image node here is measured again for each trial layout
+// a materializing cell runs. The row ignores child accessibility, so the
+// interpolated symbols never reach VoiceOver.
+private struct NotificationFeedHeadline: View {
+    let title: String
+    let createdAt: Date
+    let isRead: Bool
+    let representsWorkspace: Bool
+
+    var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(headline)
-                .font(.subheadline.weight(isRead ? .semibold : .bold))
-                .foregroundStyle(.primary)
+            titleText
                 .lineLimit(2)
                 .layoutPriority(1)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 6)
 
-            HStack(spacing: 5) {
-                Text(createdAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+            Text(createdAt, format: .relative(presentation: .named, unitsStyle: .abbreviated))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
 
-                if !isRead {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 7, height: 7)
+    private var titleText: Text {
+        let base = Text(title)
+            .font(.subheadline)
+            .fontWeight(isRead ? .medium : .semibold)
+            .foregroundStyle(.primary)
+        guard representsWorkspace else { return base }
+        return Text(Image(systemName: "rectangle.stack"))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            + Text(" ")
+            + base
+    }
+}
+
+private struct NotificationFeedProvenance: View {
+    // SUPERMUX:begin notification-feed-project-row
+    /// The owning project's name, already de-duplicated against the workspace
+    /// name by the presentation. `nil` renders exactly upstream's layout.
+    let projectName: String?
+    // SUPERMUX:end notification-feed-project-row
+    let workspaceName: String
+    let workspaceMatchesTitle: Bool
+    let computerName: String
+    let computerIsReachable: Bool
+
+    var body: some View {
+        if workspaceMatchesTitle {
+            // SUPERMUX:begin notification-feed-project-row
+            // The title already says the workspace, so the leading slot is free
+            // for the project — the one identifier the title never carries.
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                if let projectName {
+                    NotificationFeedProject(name: projectName, allowsWrapping: false)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                Spacer(minLength: 8)
+                NotificationFeedComputer(
+                    name: computerName,
+                    isReachable: computerIsReachable,
+                    allowsWrapping: false
+                )
+                .fixedSize(horizontal: true, vertical: false)
+            }
+            // SUPERMUX:end notification-feed-project-row
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    NotificationFeedWorkspace(
+                        // SUPERMUX:begin notification-feed-project-row
+                        projectName: projectName,
+                        // SUPERMUX:end notification-feed-project-row
+                        name: workspaceName,
+                        allowsWrapping: false
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
+                    NotificationFeedComputer(
+                        name: computerName,
+                        isReachable: computerIsReachable,
+                        allowsWrapping: false
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    NotificationFeedWorkspace(
+                        // SUPERMUX:begin notification-feed-project-row
+                        projectName: projectName,
+                        // SUPERMUX:end notification-feed-project-row
+                        name: workspaceName,
+                        allowsWrapping: true
+                    )
+                    NotificationFeedComputer(
+                        name: computerName,
+                        isReachable: computerIsReachable,
+                        allowsWrapping: true
+                    )
                 }
             }
-            .fixedSize(horizontal: true, vertical: false)
         }
     }
 }
 
-/// The `project · title` line. A plain muted line rather than the old
-/// symbol-prefixed one: with the avatar carrying project identity, a `folder`
-/// glyph on the text beside it labels the same fact twice.
-private struct NotificationFeedProvenance: View {
-    let text: String
+// SUPERMUX:begin notification-feed-project-row
+/// The project line, in the same single-interpolated-`Text` form the other
+/// provenance lines use — an `HStack{Image, Text}` here would add nodes to
+/// every trial layout a materializing cell runs (see the file's note).
+private struct NotificationFeedProject: View {
+    let name: String
+    let allowsWrapping: Bool
 
     var body: some View {
-        Text(text)
-            .font(.footnote)
+        (Text(Image(systemName: "folder.fill")) + Text(" ") + Text(name))
+            .font(.footnote.weight(.semibold))
             .foregroundStyle(.secondary)
-            .lineLimit(1)
+            .lineLimit(allowsWrapping ? 2 : 1)
     }
 }
+// SUPERMUX:end notification-feed-project-row
 
-/// The originating Mac. Last and quietest: it is the fact you check when
-/// something looks wrong, not one you scan for. Keeps its symbol because,
-/// unlike the project, nothing else on the card says "computer" — and keeps the
-/// orange unreachable state, which is a warning rather than decoration.
+private struct NotificationFeedWorkspace: View {
+    // SUPERMUX:begin notification-feed-project-row
+    /// Prefixed as `project · workspace` when the notification has a project,
+    /// still one interpolated `Text` so the row's node count is unchanged.
+    let projectName: String?
+    // SUPERMUX:end notification-feed-project-row
+    let name: String
+    let allowsWrapping: Bool
+
+    var body: some View {
+        // SUPERMUX:begin notification-feed-project-row
+        (Text(Image(systemName: "rectangle.stack")) + Text(" ") + Text(label))
+        // SUPERMUX:end notification-feed-project-row
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(allowsWrapping ? 2 : 1)
+    }
+
+    // SUPERMUX:begin notification-feed-project-row
+    private var label: String {
+        guard let projectName else { return name }
+        return "\(projectName) · \(name)"
+    }
+    // SUPERMUX:end notification-feed-project-row
+}
+
 private struct NotificationFeedComputer: View {
     let name: String
     let isReachable: Bool
+    let allowsWrapping: Bool
 
     var body: some View {
         (Text(Image(systemName: "desktopcomputer")) + Text(" ") + Text(name))
-            .font(.caption2)
-            .foregroundStyle(isReachable ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.orange))
-            .lineLimit(1)
+            .font(.caption)
+            .foregroundStyle(isReachable ? Color.secondary.opacity(0.7) : Color.orange)
+            .lineLimit(allowsWrapping ? 2 : 1)
     }
 }
 
@@ -312,10 +366,9 @@ private struct NotificationFeedContentPreview: View {
         Text(text)
             .font(.footnote)
             .foregroundStyle(.secondary)
-            .lineLimit(2)
+            .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
-// SUPERMUX:end notification-feed-project-row
 #endif

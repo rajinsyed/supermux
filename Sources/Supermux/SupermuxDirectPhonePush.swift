@@ -1,9 +1,6 @@
 import CmuxNotifications
 import Foundation
 import SupermuxKit
-// The provenance builder moved to the cross-platform core so the iOS feed row
-// could share it; SupermuxKit no longer re-exports it.
-import SupermuxMobileCore
 
 /// App-target adapter from terminal notifications to the package-owned APNs service.
 @MainActor

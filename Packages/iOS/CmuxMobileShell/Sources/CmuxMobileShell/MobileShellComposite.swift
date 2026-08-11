@@ -7210,7 +7210,10 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         let remoteWorkspaceID = workspace?.rpcWorkspaceID ?? id
         let ownerMacDeviceID = workspace?.macDeviceID
         let ownerInstanceTag = workspace?.macInstanceTag
-        let workspaceHadUnread = workspace?.hasUnread == true
+        // SUPERMUX:begin ios-pane-unread-acknowledgment
+        let shouldUseLegacyWorkspaceReadReceipt =
+            workspace?.supermuxShouldUseLegacyWorkspaceReadReceiptOnOpen == true
+        // SUPERMUX:end ios-pane-unread-acknowledgment
         // Cross-Mac open (P5): a workspace from the aggregated list may belong
         // to a Mac — or a sibling BUILD of the foreground's own Mac — other
         // than the current foreground connection. Switch the foreground to
@@ -7280,14 +7283,16 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             focusedPanel: focusedPanel
         )?.value
         // SUPERMUX:end supermux-mobile-selection-sync
-        // Tapping into a workspace is a read receipt: clear its unread on the Mac
-        // (like opening a thread marks it read), so it drops out of the unread
-        // list and the back-button count. Only when the Mac advertises read-state
-        // actions and the workspace is actually unread, so older Macs and
-        // already-read workspaces send nothing.
-        if supportsWorkspaceReadStateActions, workspaceHadUnread {
+        // SUPERMUX:begin ios-pane-unread-acknowledgment
+        // A supporting Supermux Mac exposes exact pane indicators and clears them
+        // only after pane interaction, matching macOS. Preserve the broad read
+        // receipt solely as compatibility for older/upstream hosts that omit the
+        // additive pane-state field.
+        if supportsWorkspaceReadStateActions,
+           shouldUseLegacyWorkspaceReadReceipt {
             await setWorkspaceUnread(id: resolvedRowID, false)
         }
+        // SUPERMUX:end ios-pane-unread-acknowledgment
     }
 
     /// Submit the current terminal input text from a synchronous UI action.

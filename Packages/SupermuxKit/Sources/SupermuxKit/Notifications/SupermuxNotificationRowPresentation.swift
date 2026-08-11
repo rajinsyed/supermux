@@ -1,20 +1,14 @@
-import Foundation
+public import Foundation
 
 /// Decides what goes on each line of a notification row.
 ///
-/// This exists because there are **three** rows. The macOS notifications panel,
-/// the macOS titlebar popover, and the iOS feed list the same notifications from
-/// the same store, and before this each composed its own lines — so they
-/// disagreed about whether the headline was the workspace or the notification's
-/// title, and a redesign of one left the others untouched. Under the fork's
-/// shared-behavior rule a behavior with several entrypoints gets one
-/// implementation; this is it for the row's content, as
-/// ``SupermuxNotificationRowBody`` (macOS) and `SupermuxNotificationFeedRowBody`
-/// (iOS) are for its layout.
-///
-/// The iOS row was the surface this could not reach while it lived in the
-/// macOS-only `SupermuxKit`: the phone kept "Claude Code" as every headline
-/// while both Mac surfaces had already moved to the workspace name.
+/// This exists because there are two rows. The notifications **panel** and the
+/// titlebar **popover** list the same notifications from the same store, and
+/// before this each composed its own lines — so they disagreed about whether the
+/// headline was the workspace or the notification's title, and a redesign of one
+/// left the other untouched. Under the fork's shared-behavior rule a behavior
+/// with several entrypoints gets one implementation; this is it for the row's
+/// content, as ``SupermuxNotificationRowBody`` is for its layout.
 ///
 /// Pure string logic with no UI dependency, so it is unit-testable here rather
 /// than only through a rendered view.

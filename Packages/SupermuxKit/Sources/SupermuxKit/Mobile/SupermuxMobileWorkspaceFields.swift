@@ -58,6 +58,12 @@ public enum SupermuxMobileWorkspaceFields {
     /// anchored to one constant — a typo would decode as permanently-nil and
     /// look exactly like "paired with upstream cmux".
     public static let unreadCountKey = "supermux_unread_count"
+    /// Wire key of pane ids whose Mac notification indicator is visible.
+    ///
+    /// A supporting Supermux Mac always sends this key, including an empty array,
+    /// so the phone can distinguish exact pane state from an older host that only
+    /// supports workspace-wide unread state.
+    public static let unreadPanelIDsKey = "supermux_unread_panel_ids"
 
     /// Computes the additive fields for one workspace.
     ///

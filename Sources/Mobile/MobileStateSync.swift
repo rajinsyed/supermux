@@ -284,7 +284,10 @@ final class MobileStateSyncHost {
             // `supermuxFields` on purpose: those are gated on the workspace
             // belonging to a project, and unread is a cmux concept that has to
             // travel for every row.
-            supermuxUnreadCount: notificationStore?.unreadCount(forTabId: workspace.id)
+            supermuxUnreadCount: notificationStore?.unreadCount(forTabId: workspace.id),
+            supermuxUnreadPanelIDs: workspace.supermuxMobileUnreadPanelIDs(
+                notificationStore: notificationStore
+            )
             // SUPERMUX:end supermux-mobile-workspace-fields
         )
     }

@@ -2,6 +2,9 @@ import CmuxMobileBrowser
 import CmuxMobileBrowserStream
 import CmuxMobileShell
 import CmuxMobileTerminal
+// SUPERMUX:begin ios-pane-unread-acknowledgment
+import SupermuxMobileUI
+// SUPERMUX:end ios-pane-unread-acknowledgment
 import SwiftUI
 
 extension WorkspaceDetailView {
@@ -38,6 +41,13 @@ extension WorkspaceDetailView {
                     .background(store.activeTerminalTheme.terminalBackgroundColor)
             }
         }
+        // SUPERMUX:begin ios-pane-unread-acknowledgment
+        .overlay {
+            if supermuxActivePaneUnreadPresentation.showsRing {
+                SupermuxMobileUnreadPaneRing()
+            }
+        }
+        // SUPERMUX:end ios-pane-unread-acknowledgment
         .safeAreaInset(edge: .top, spacing: 0) {
             if workspaceChangesHint != nil {
                 WorkspaceChangesHintBanner(
@@ -165,5 +175,27 @@ extension WorkspaceDetailView {
             }
         }
     }
+
+    // SUPERMUX:begin ios-pane-unread-acknowledgment
+    private var supermuxActiveRemotePaneID: String? {
+        switch activeSurface {
+        case .terminal, .chat:
+            selectedTerminal?.id.rawValue
+        case .browser:
+            nil
+        case .browserStream:
+            activeBrowserStream?.id
+        case .simulatorStream:
+            activeSimulatorStream?.id
+        }
+    }
+
+    private var supermuxActivePaneUnreadPresentation: SupermuxMobilePaneUnreadPresentation {
+        SupermuxMobilePaneUnreadPresentation(
+            workspace: workspace,
+            panelID: supermuxActiveRemotePaneID
+        )
+    }
+    // SUPERMUX:end ios-pane-unread-acknowledgment
     #endif
 }

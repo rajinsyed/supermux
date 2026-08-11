@@ -2,9 +2,6 @@ import CmuxFoundation
 // SUPERMUX:begin notification-popover-redesign
 import AppKit
 import SupermuxKit
-// The row's shared line logic moved to the cross-platform core so the iOS feed
-// could use it too; SupermuxKit no longer re-exports it.
-import SupermuxMobileCore
 // SUPERMUX:end notification-popover-redesign
 import SwiftUI
 

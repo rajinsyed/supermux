@@ -203,6 +203,13 @@ extension TerminalController {
         let point = SimulatorPoint(x: input.x, y: input.y)
         switch input.phase {
         case .tap:
+            // SUPERMUX:begin ios-pane-unread-acknowledgment
+            _ = AppDelegate.shared?.tabManagerFor(tabId: resolved.workspace.id)?
+                .dismissNotificationOnDirectInteraction(
+                    tabId: resolved.workspace.id,
+                    surfaceId: resolved.panel.id
+                )
+            // SUPERMUX:end ios-pane-unread-acknowledgment
             resolved.panel.coordinator.tap(at: point)
         case .began:
             resolved.panel.coordinator.beginTouch(at: point)
