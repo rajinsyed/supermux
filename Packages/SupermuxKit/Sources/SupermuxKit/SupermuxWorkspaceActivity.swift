@@ -23,24 +23,28 @@ public enum SupermuxWorkspaceActivity: String, Sendable, Hashable, CaseIterable 
     /// Whether this state shows any indicator at all.
     public var isVisible: Bool { self != .idle }
 
-    /// Resolves the most urgent activity across a set of per-agent lifecycle
-    /// values. `needsInput` wins (the user must act), then `working`, then a
-    /// finished agent (`ready`); absent any agent signal the workspace is idle.
+    /// Resolves the activity to surface across a set of per-agent lifecycle
+    /// values. `working` wins whenever any agent is running, so an idle sibling's
+    /// reminder or permission prompt cannot hide an actively working agent's
+    /// spinner. With no running agent, `needsInput` wins over a finished agent
+    /// (`ready`); absent any agent signal the workspace is idle.
     /// - Parameter lifecycles: Raw lifecycle raw-values
     ///   (`"running"`/`"needsinput"`/`"needs-input"`/`"idle"`), case-insensitive.
     public static func resolve<S: Sequence>(fromLifecycleRawValues lifecycles: S) -> SupermuxWorkspaceActivity
     where S.Element == String {
         var sawRunning = false
+        var sawNeedsInput = false
         var sawReady = false
         for raw in lifecycles {
             switch raw.lowercased().replacingOccurrences(of: "_", with: "-") {
-            case "needsinput", "needs-input": return .needsInput
+            case "needsinput", "needs-input": sawNeedsInput = true
             case "running": sawRunning = true
             case "idle": sawReady = true
             default: break
             }
         }
         if sawRunning { return .working }
+        if sawNeedsInput { return .needsInput }
         if sawReady { return .ready }
         return .idle
     }

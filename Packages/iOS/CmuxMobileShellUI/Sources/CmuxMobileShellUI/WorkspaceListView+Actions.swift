@@ -55,6 +55,23 @@ extension WorkspaceListView {
         }
     }
 
+    // SUPERMUX:begin supermux-mobile-projects-section (the fork's nested workspace rows close through the SHELL's request, so both surfaces raise the same confirmation instead of keeping two close paths)
+    /// ``requestWorkspaceClose`` typed for the fork's section driver.
+    ///
+    /// Separate rather than inline at the call site for two reasons: the
+    /// driver's parameter is `@MainActor`-isolated and this one is not (an
+    /// inline conversion is a Sendable error), and `WorkspaceListView.body` is
+    /// already large enough that an optional-closure conversion inside it
+    /// defeats the type checker outright ("failed to produce diagnostic").
+    var supermuxRequestWorkspaceClose: (@MainActor (CmuxMobileShellModel.MobileWorkspacePreview.ID) -> Void)? {
+        guard let requestWorkspaceClose else { return nil }
+        let close: @MainActor (CmuxMobileShellModel.MobileWorkspacePreview.ID) -> Void = { workspaceID in
+            requestWorkspaceClose(workspaceID)
+        }
+        return close
+    }
+    // SUPERMUX:end supermux-mobile-projects-section
+
     #if os(iOS)
     var requestWorkspaceRename: ((CmuxMobileShellModel.MobileWorkspacePreview.ID) -> Void)? {
         guard renameWorkspace != nil else { return nil }

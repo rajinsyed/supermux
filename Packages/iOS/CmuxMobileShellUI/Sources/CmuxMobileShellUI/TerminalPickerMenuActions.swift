@@ -7,6 +7,11 @@ struct TerminalPickerMenuActions {
     let createTerminal: () -> Void
     let openBrowser: () -> Void
     let selectBrowserStream: (String) -> Void
+    let selectSimulatorStream: (String) -> Void
+    // SUPERMUX:begin ios-pane-actions
+    let createSimulator: () -> Void
+    let closePane: () -> Void
+    // SUPERMUX:end ios-pane-actions
     let openTextSheet: () -> Void
     let copyDebugLogs: () -> Void
     let sendFeedback: () -> Void

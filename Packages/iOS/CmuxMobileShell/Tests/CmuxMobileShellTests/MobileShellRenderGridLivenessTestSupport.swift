@@ -49,6 +49,9 @@ actor LivenessHostRouter {
     private var probeRequestCount = 0
     private var heldSubscribeRequestNumbers: Set<Int> = []
     private var heldProbeRequestNumbers: Set<Int> = []
+    // SUPERMUX:begin mobile-liveness-background-gate
+    private var delayedProbeRequestNumbers: Set<Int> = []
+    // SUPERMUX:end mobile-liveness-background-gate
     private var delayedSubscribeRequestNumbers: Set<Int> = []
     private var invalidSubscribeRequestNumbers: Set<Int> = []
     private var subscribeErrorCodesByRequestNumber: [Int: String] = [:]
@@ -363,6 +366,13 @@ actor LivenessHostRouter {
         heldProbeRequestNumbers.insert(number)
     }
 
+    // SUPERMUX:begin mobile-liveness-background-gate
+    /// Delay a probe response until released, then return its healthy result.
+    func delayProbeRequest(number: Int) {
+        delayedProbeRequestNumbers.insert(number)
+    }
+    // SUPERMUX:end mobile-liveness-background-gate
+
     /// Delay a subscribe acknowledgement until released, then return the
     /// ordinary successful payload.
     func delaySubscribeRequest(number: Int) {
@@ -430,6 +440,9 @@ actor LivenessHostRouter {
         heldWorkspaceListRequestNumbers = []
         heldSubscribeRequestNumbers = []
         heldProbeRequestNumbers = []
+        // SUPERMUX:begin mobile-liveness-background-gate
+        delayedProbeRequestNumbers = []
+        // SUPERMUX:end mobile-liveness-background-gate
         delayedSubscribeRequestNumbers = []
         heldUnsubscribeRequestNumbers = []
         heldNotificationFeedRequestNumbers = []
@@ -554,6 +567,11 @@ actor LivenessHostRouter {
             ])
         case "mobile.events.probe":
             probeRequestCount += 1
+            // SUPERMUX:begin mobile-liveness-background-gate
+            if delayedProbeRequestNumbers.contains(probeRequestCount) {
+                await park()
+            }
+            // SUPERMUX:end mobile-liveness-background-gate
             if heldProbeRequestNumbers.contains(probeRequestCount) {
                 await park()
                 return nil

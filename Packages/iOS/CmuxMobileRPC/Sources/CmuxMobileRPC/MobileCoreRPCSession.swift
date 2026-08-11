@@ -43,11 +43,14 @@ actor MobileCoreRPCSession {
         let continuation: AsyncStream<MobileEventEnvelope>.Continuation
     }
 
+    // SUPERMUX:begin mobile-rpc-client-work-quota (track the decoded frame size so the client mirrors the Mac host's request-work admission budget — see SUPERMUX-TOUCHPOINTS.md)
     private struct PendingWrite: Sendable {
         let id: UUID
         let requestID: String
         let frame: Data
+        let decodedFrameByteCount: Int
     }
+    // SUPERMUX:end mobile-rpc-client-work-quota
 
     private struct ActiveWrite: Sendable {
         let connectionID: UUID
@@ -115,6 +118,18 @@ actor MobileCoreRPCSession {
     private var writeQueue: AsyncStream<PendingWrite>.Continuation?
     private var writerTask: Task<Void, Never>?
     private var activeWrite: ActiveWrite?
+    // SUPERMUX:begin mobile-rpc-client-work-quota (bound sent-but-unsettled requests to the host's shared admission policy — see SUPERMUX-TOUCHPOINTS.md)
+    // Keep one host slot free because the client can observe a response just
+    // before the host actor removes that response task from its active-work set.
+    private let requestWorkQuota = MobileHostRPCWorkQuota(
+        maximumConcurrentRequestCount: max(
+            1,
+            MobileHostRPCWorkQuota.recommendedMaximumConcurrentRequestCount - 1
+        )
+    )
+    private var activeRequestFrameByteCounts: [String: Int] = [:]
+    private var requestWorkCapacityWaiters: [CheckedContinuation<Void, Never>] = []
+    // SUPERMUX:end mobile-rpc-client-work-quota
     /// Each installed close has independent lifetime and is also retained by
     /// the shared registry, so session deallocation cannot strand a queued
     /// transport or its route lease.
@@ -227,7 +242,14 @@ actor MobileCoreRPCSession {
                     return
                 }
                 queuedWriteIDs[requestID] = queuedWriteID
-                _ = queue.yield(PendingWrite(id: queuedWriteID, requestID: requestID, frame: frame))
+                // SUPERMUX:begin mobile-rpc-client-work-quota (carry the host-visible decoded payload size into the writer admission gate — see SUPERMUX-TOUCHPOINTS.md)
+                _ = queue.yield(PendingWrite(
+                    id: queuedWriteID,
+                    requestID: requestID,
+                    frame: frame,
+                    decodedFrameByteCount: payload.count
+                ))
+                // SUPERMUX:end mobile-rpc-client-work-quota
             }
         } onCancel: {
             Task {
@@ -272,11 +294,14 @@ actor MobileCoreRPCSession {
             timeoutNanoseconds: responseTimeoutNanoseconds
         )
         queuedWriteIDs[requestID] = queuedWriteID
+        // SUPERMUX:begin mobile-rpc-client-work-quota (carry the host-visible decoded payload size into the writer admission gate — see SUPERMUX-TOUCHPOINTS.md)
         _ = queue.yield(PendingWrite(
             id: queuedWriteID,
             requestID: requestID,
-            frame: frame
+            frame: frame,
+            decodedFrameByteCount: payload.count
         ))
+        // SUPERMUX:end mobile-rpc-client-work-quota
     }
 
     func awaitResponse(requestID: String) async throws -> Data {
@@ -366,6 +391,10 @@ actor MobileCoreRPCSession {
         requestTimeoutTasks.removeAll()
         queuedWriteIDs.removeAll()
         cancelledQueuedWriteIDs.removeAll()
+        // SUPERMUX:begin mobile-rpc-client-work-quota (teardown releases writer capacity waiters together with all pending requests — see SUPERMUX-TOUCHPOINTS.md)
+        activeRequestFrameByteCounts.removeAll()
+        resumeRequestWorkCapacityWaiters()
+        // SUPERMUX:end mobile-rpc-client-work-quota
         for (_, task) in timeoutSnapshot {
             task.cancel()
         }
@@ -888,6 +917,18 @@ actor MobileCoreRPCSession {
             guard shouldSendQueuedWrite(write) else {
                 continue
             }
+            // SUPERMUX:begin mobile-rpc-client-work-quota (backpressure the multiplexed writer instead of overflowing and losing the whole host connection — see SUPERMUX-TOUCHPOINTS.md)
+            guard await waitForRequestWorkCapacity(
+                for: write,
+                connectionID: connectionID
+            ) else {
+                return
+            }
+            guard requestIsAwaitingResponse(write.requestID) else {
+                continue
+            }
+            activeRequestFrameByteCounts[write.requestID] = write.decodedFrameByteCount
+            // SUPERMUX:end mobile-rpc-client-work-quota
             let sendTask = Task {
                 try await transport.send(write.frame)
             }
@@ -1061,6 +1102,56 @@ actor MobileCoreRPCSession {
         return pending[write.requestID] != nil
             || hasPipelinedRequestAwaitingResponse
     }
+
+    // SUPERMUX:begin mobile-rpc-client-work-quota (mirror host admission and wake the writer only when a host response frees capacity — see SUPERMUX-TOUCHPOINTS.md)
+    private func waitForRequestWorkCapacity(
+        for write: PendingWrite,
+        connectionID: UUID
+    ) async -> Bool {
+        while installedConnectionID == connectionID,
+              transport != nil,
+              !isTearingDown,
+              !requestWorkQuota.allowsAdmission(
+                  frameByteCount: write.decodedFrameByteCount,
+                  activeFrameByteCounts: activeRequestFrameByteCounts.values
+              ) {
+            await withCheckedContinuation { continuation in
+                requestWorkCapacityWaiters.append(continuation)
+            }
+        }
+        return !Task.isCancelled
+            && installedConnectionID == connectionID
+            && transport != nil
+            && !isTearingDown
+    }
+
+    private func requestIsAwaitingResponse(_ requestID: String) -> Bool {
+        if pending[requestID] != nil {
+            return true
+        }
+        switch pipelinedPending[requestID] {
+        case .pending, .awaiting:
+            return true
+        case .settled, nil:
+            return false
+        }
+    }
+
+    func releaseRequestWorkCapacity(requestID: String) {
+        guard activeRequestFrameByteCounts.removeValue(forKey: requestID) != nil else {
+            return
+        }
+        resumeRequestWorkCapacityWaiters()
+    }
+
+    private func resumeRequestWorkCapacityWaiters() {
+        let waiters = requestWorkCapacityWaiters
+        requestWorkCapacityWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+    // SUPERMUX:end mobile-rpc-client-work-quota
 
     private func armResponseTimeout(
         requestID: String,

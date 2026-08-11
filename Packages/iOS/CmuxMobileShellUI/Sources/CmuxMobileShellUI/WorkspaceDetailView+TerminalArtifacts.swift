@@ -15,7 +15,9 @@ extension WorkspaceDetailView {
         workspaceID: workspace.id.rawValue,
         surfaceID: terminalID,
         store: store,
-        fontSize: MobileTerminalFontPreference.defaultSize,
+        // SUPERMUX:begin ios-terminal-default-zoom
+        fontSize: MobileTerminalZoomPreference().resolvedFontSize,
+        // SUPERMUX:end ios-terminal-default-zoom
         // Do not let a terminal reattach steal focus while the
         // composer owns or intentionally withholds the keyboard.
         autoFocusOnWindowAttach: shouldAutoFocus,
@@ -29,6 +31,9 @@ extension WorkspaceDetailView {
         // scrollback survives a theme change.
         configThemeGeneration: store.terminalConfigThemeGeneration,
         artifactFilesEnabled: store.supportsTerminalArtifacts,
+        // SUPERMUX:begin ios-terminal-scroll-speed
+        terminalScrollSpeed: terminalScrollSpeed,
+        // SUPERMUX:end ios-terminal-scroll-speed
         terminalFolderTapEnabled: terminalFolderTapEnabled,
         terminalFilesChipEnabled: terminalFilesChipEnabled,
         showMissingFiles: showMissingFiles,

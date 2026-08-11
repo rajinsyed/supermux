@@ -1,4 +1,5 @@
 import CMUXMobileCore
+import CmuxMobileSupport
 import Foundation
 import Observation
 
@@ -28,9 +29,14 @@ public final class MobileDisplaySettings {
     private static let terminalFolderTapEnabledKey = "cmux.mobile.terminalFolderTapEnabled"
     private static let terminalFilesChipEnabledKey = "cmux.mobile.terminalFilesChipEnabled"
     private static let taskComposerEnabledKey = "cmux.mobile.taskComposerEnabled"
+    // SUPERMUX:begin ios-agent-chat-focus-mode
+    private static let agentChatFocusModeKey = "supermux.mobile.agentChatFocusMode"
+    // SUPERMUX:end ios-agent-chat-focus-mode
     private static let workspacePreviewLineCountKey = "cmux.mobile.workspacePreviewLineCount"
     private static let unreadIndicatorLeftShiftKey = "cmux.mobile.debug.unreadIndicatorLeftShift.v2"
     #if DEBUG
+    private static let taskComposerLayoutStyleKey = "cmux.mobile.debug.taskComposerLayoutStyle.v1"
+    private static let taskComposerModelPickerVariantKey = "cmux.mobile.debug.taskComposerModelPickerVariant.v1"
     private static let taskComposerShellIconVariantKey = "cmux.mobile.debug.taskComposerShellIconVariant.v1"
     #endif
 
@@ -114,6 +120,32 @@ public final class MobileDisplaySettings {
         }
     }
 
+    // SUPERMUX:begin ios-agent-chat-focus-mode
+    /// Whether the agent chat folds runs of tool calls behind an expandable
+    /// "Working" summary, leaving prose, prompts, questions, and permission
+    /// requests always visible. Defaults to `true` — a phone-sized transcript
+    /// is mostly tool calls, and the conversation is what the user opened it
+    /// for. Mutating this writes through to the injected ``UserDefaults``.
+    public var agentChatFocusMode: Bool {
+        didSet { defaults.set(agentChatFocusMode, forKey: Self.agentChatFocusModeKey) }
+    }
+    // SUPERMUX:end ios-agent-chat-focus-mode
+
+    // SUPERMUX:begin ios-terminal-scroll-speed
+    /// Multiplier applied to terminal wheel-scroll sensitivity (TUIs and other
+    /// unbounded scroll paths). Defaults to
+    /// ``MobileTerminalScrollSpeedPreference/defaultSpeed`` (1.0). Mutating
+    /// this clamps to the supported range and writes through to the injected
+    /// ``UserDefaults`` under the shared key mounted surfaces read live.
+    public var terminalScrollSpeed: Double {
+        didSet {
+            let clamped = MobileTerminalScrollSpeedPreference.clamped(terminalScrollSpeed)
+            if clamped != terminalScrollSpeed { terminalScrollSpeed = clamped }
+            defaults.set(clamped, forKey: MobileTerminalScrollSpeedPreference.defaultsKey)
+        }
+    }
+    // SUPERMUX:end ios-terminal-scroll-speed
+
     /// How many lines a workspace row's activity preview shows (1 or 2).
     /// Defaults to 2. Mutating this clamps to the supported range and writes
     /// through to the injected ``UserDefaults``.
@@ -137,6 +169,26 @@ public final class MobileDisplaySettings {
     }
 
     #if DEBUG
+    /// Persisted selection for the debug-only New Task layout lab.
+    var taskComposerLayoutStyle: TaskComposerLayoutStyle {
+        didSet {
+            defaults.set(
+                taskComposerLayoutStyle.rawValue,
+                forKey: Self.taskComposerLayoutStyleKey
+            )
+        }
+    }
+
+    /// Persisted selection for the debug-only New Task model-picker lab.
+    var taskComposerModelPickerVariant: TaskComposerModelPickerVariant {
+        didSet {
+            defaults.set(
+                taskComposerModelPickerVariant.rawValue,
+                forKey: Self.taskComposerModelPickerVariantKey
+            )
+        }
+    }
+
     /// Persisted selection for the debug-only Shell icon lab.
     var taskComposerShellIconVariant: TaskComposerShellIconVariant {
         didSet {
@@ -147,17 +199,27 @@ public final class MobileDisplaySettings {
         }
     }
     #else
+    /// Production builds expose only the shipping classic New Task layout.
+    var taskComposerLayoutStyle: TaskComposerLayoutStyle { .classic }
+    /// Production builds hide model selection in the New Task composer.
+    var taskComposerModelPickerVariant: TaskComposerModelPickerVariant { .off }
     /// Production builds expose only the shipping Shell icon treatment.
     var taskComposerShellIconVariant: TaskComposerShellIconVariant { .current }
     #endif
 
     /// Creates the display settings, seeding stored values from `defaults`.
-    /// - Parameter defaults: The store backing the persisted preferences.
-    ///   Defaults to `.standard`; tests pass a scoped suite. Stored properties
-    ///   are initialized from `defaults`; absent keys read as their default
-    ///   (single-line titles, enabled folder taps, hidden missing files, two
-    ///   preview lines) without a write.
-    public init(defaults: UserDefaults = .standard) {
+    /// - Parameters:
+    ///   - defaults: The store backing the persisted preferences.
+    ///     Defaults to `.standard`; tests pass a scoped suite. Stored properties
+    ///     are initialized from `defaults`; absent keys read as their default
+    ///     (single-line titles, enabled folder taps, hidden missing files, two
+    ///     preview lines) without a write.
+    ///   - environment: The process environment consulted for the DEBUG-only
+    ///     task-composer lab fallbacks; tests pass an explicit dictionary.
+    public init(
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
         let haptics = MobileHapticFeedback(defaults: defaults)
         self.defaults = defaults
         self.haptics = haptics
@@ -168,6 +230,14 @@ public final class MobileDisplaySettings {
         self.hapticFeedbackEnabled = haptics.isEnabled
         self.terminalFilesChipEnabled = defaults.bool(forKey: Self.terminalFilesChipEnabledKey)
         self.terminalScrollbackRows = MobileTerminalScrollbackPreference.resolve(from: defaults)
+        // SUPERMUX:begin ios-terminal-scroll-speed
+        self.terminalScrollSpeed = MobileTerminalScrollSpeedPreference.resolve(from: defaults)
+        // SUPERMUX:end ios-terminal-scroll-speed
+        // SUPERMUX:begin ios-agent-chat-focus-mode
+        // Absent key reads as ON: focus mode is the intended default, so a
+        // fresh install gets the quiet transcript without visiting Settings.
+        self.agentChatFocusMode = defaults.object(forKey: Self.agentChatFocusModeKey) as? Bool ?? true
+        // SUPERMUX:end ios-agent-chat-focus-mode
         self.taskComposerEnabled = defaults.bool(forKey: Self.taskComposerEnabledKey)
         let storedPreviewLines = defaults.object(forKey: Self.workspacePreviewLineCountKey) as? Int
         self.workspacePreviewLineCount = Self.clampedWorkspacePreviewLineCount(
@@ -179,11 +249,49 @@ public final class MobileDisplaySettings {
             to: Self.unreadIndicatorLeftShiftRange
         )
         #if DEBUG
+        self.taskComposerLayoutStyle = defaults.string(
+            forKey: Self.taskComposerLayoutStyleKey
+        ).flatMap(TaskComposerLayoutStyle.init(rawValue:))
+            ?? Self.debugDefaultTaskComposerLayoutStyle(environment: environment)
+        self.taskComposerModelPickerVariant = defaults.string(
+            forKey: Self.taskComposerModelPickerVariantKey
+        ).flatMap(TaskComposerModelPickerVariant.init(rawValue:))
+            ?? Self.debugDefaultTaskComposerModelPickerVariant(environment: environment)
         self.taskComposerShellIconVariant = defaults.string(
             forKey: Self.taskComposerShellIconVariantKey
         ).flatMap(TaskComposerShellIconVariant.init(rawValue:)) ?? .current
         #endif
     }
+
+    #if DEBUG
+    /// The layout fallback when nothing is persisted. The task-composer
+    /// accessibility preview pins the shipping classic layout so the XCUITest
+    /// suite keeps a stable hierarchy; `CMUX_UITEST_TASK_COMPOSER_LAYOUT` opts
+    /// a test or screenshot run into another layout explicitly.
+    static func debugDefaultTaskComposerLayoutStyle(
+        environment: [String: String]
+    ) -> TaskComposerLayoutStyle {
+        if let style = environment["CMUX_UITEST_TASK_COMPOSER_LAYOUT"]
+            .flatMap(TaskComposerLayoutStyle.init(rawValue:)) {
+            return style
+        }
+        return UITestConfig.taskComposerPreviewEnabled(from: environment) ? .classic : .composer
+    }
+
+    /// The model-picker fallback when nothing is persisted. The task-composer
+    /// accessibility preview pins the shipping off state (the combined variant
+    /// changes the agent menu's element tree);
+    /// `CMUX_UITEST_TASK_COMPOSER_MODEL_VARIANT` opts a test into a variant.
+    static func debugDefaultTaskComposerModelPickerVariant(
+        environment: [String: String]
+    ) -> TaskComposerModelPickerVariant {
+        if let variant = environment["CMUX_UITEST_TASK_COMPOSER_MODEL_VARIANT"]
+            .flatMap(TaskComposerModelPickerVariant.init(rawValue:)) {
+            return variant
+        }
+        return UITestConfig.taskComposerPreviewEnabled(from: environment) ? .off : .combined
+    }
+    #endif
 
     /// Clamps a stored or assigned preview line count to the supported range.
     /// A static member (not a file-scope func) because the package-conventions

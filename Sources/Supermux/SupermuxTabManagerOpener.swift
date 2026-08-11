@@ -173,7 +173,8 @@ enum SupermuxWorkspaceRow {
         isSelected: Bool,
         projectId: UUID?,
         isRunning: Bool,
-        includePullRequest: Bool = true
+        includePullRequest: Bool = true,
+        unreadCount: Int = 0
     ) -> SupermuxOpenWorkspace {
         // Reuse cmux's own per-workspace PR probe for opened worktrees: the first
         // display-ordered PR is the representative one (cmux prioritizes
@@ -191,7 +192,8 @@ enum SupermuxWorkspaceRow {
             projectId: projectId,
             activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
             isRunning: isRunning,
-            pullRequest: pullRequest
+            pullRequest: pullRequest,
+            unreadCount: unreadCount
         )
     }
 

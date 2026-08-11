@@ -31,6 +31,7 @@ if [[ "${1:-}" == "-version" ]]; then
   printf 'Xcode 26.3\nBuild version TEST\n'
   exit 0
 fi
+printf '%s\n' "$*" >> "${FAKE_XCODEBUILD_LOG:?}"
 PCM_MARKER="$HOME/Library/Developer/Xcode/DerivedData/cmux-supermux-release/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/stale.pcm"
 if [[ -e "$PCM_MARKER" ]]; then
   echo "stale explicit module cache reached xcodebuild" >&2
@@ -63,9 +64,10 @@ run_release() {
   HOME="$home_dir" \
     PATH="$BIN_DIR:/usr/bin:/bin" \
     FAKE_ENSURE_LOG="$TMP_DIR/ensure.log" \
+    FAKE_XCODEBUILD_LOG="$TMP_DIR/xcodebuild.log" \
     FAKE_XCODEBUILD_MODE="$mode" \
     FAKE_XCODEBUILD_SENTINEL="$sentinel" \
-    bash "$TEST_REPO/scripts/supermux-release.sh" --no-launch \
+    bash "$TEST_REPO/scripts/supermux-release.sh" --no-launch --no-ios \
       > "$output_file" 2>&1
   RELEASE_STATUS=$?
   set -e
@@ -147,5 +149,12 @@ if [[ "$(grep -c '^ensure$' "$TMP_DIR/ensure.log")" -ne 2 ]]; then
   echo "FAIL: release script did not refresh GhosttyKit before both builds" >&2
   exit 1
 fi
+if ! grep -Fq 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) SUPERMUX_LOCAL_RELEASE' "$TMP_DIR/xcodebuild.log"; then
+  cat "$TMP_DIR/xcodebuild.log"
+  echo "FAIL: local Release build did not enable profileless Iroh storage" >&2
+  exit 1
+fi
 
-echo "PASS: supermux release refreshes GhosttyKit, clears stale modules and products, preserves xcodebuild status, and logs failures"
+bash "$ROOT_DIR/tests/test_supermux_ios_release.sh"
+
+echo "PASS: supermux release refreshes GhosttyKit, clears stale modules and products, preserves xcodebuild status, logs failures, and validates the iOS production release path"

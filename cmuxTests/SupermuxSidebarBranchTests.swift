@@ -2,6 +2,7 @@ import XCTest
 // `SidebarGitBranchState` is public in CmuxSidebar; import it explicitly (like
 // SidebarOrderingTests) so this compiles in the plain-`cmux` unit config and not
 // only when `cmux_DEV` happens to re-export it.
+import CmuxNotifications
 import CmuxSidebar
 import SupermuxKit
 
@@ -99,6 +100,44 @@ final class SupermuxSidebarBranchTests: XCTestCase {
             rowTitle(for: workspace),
             processTitle,
             "Clearing the custom title reverts the row to the process title."
+        )
+    }
+
+    /// The unread badge on a project-nested row renders from the snapshot's
+    /// `unreadCount`, fed by the same per-workspace `SidebarUnreadModel`
+    /// summary the flat rows read. Regression: nested rows showed no unread
+    /// badge at all while the flat list (and the phone) showed a numbered one.
+    func testSnapshotCarriesUnreadCountForNestedBadge() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+
+        let unread = SidebarUnreadModel()
+        unread.apply(
+            totalUnreadCount: 3,
+            summaries: [workspace.id: SidebarWorkspaceUnreadSummary(
+                unreadCount: 3,
+                latestNotificationText: nil
+            )],
+            unreadSurfaceKeys: [],
+            focusedReadIndicatorByWorkspaceId: [:],
+            manualUnreadWorkspaceIds: []
+        )
+
+        // The exact read SupermuxProjectsMount performs per nested row.
+        let snapshot = SupermuxWorkspaceRow.snapshot(
+            for: workspace,
+            isSelected: false,
+            projectId: UUID(),
+            isRunning: false,
+            unreadCount: unread.snapshot.unreadCount(forWorkspaceId: workspace.id)
+        )
+        XCTAssertEqual(snapshot.unreadCount, 3, "The nested row must carry the workspace's unread count.")
+
+        // Workspaces without a summary resolve to 0, which hides the badge.
+        XCTAssertEqual(
+            unread.snapshot.unreadCount(forWorkspaceId: UUID()),
+            0,
+            "An absent summary must hide the badge, not crash or linger."
         )
     }
 

@@ -9,7 +9,10 @@ extension BrowserPanel {
     (() => {
       const handlerName = 'cmuxMobileBrowserStream';
       const editableFocused = () => {
-        const el = document.activeElement;
+        // Descend shadow roots: document.activeElement reports the shadow
+        // host, and the phone keyboard must rise for widget-wrapped inputs.
+        let el = document.activeElement;
+        while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
         if (!el) return false;
         const tag = String(el.tagName || '').toLowerCase();
         return !!el.isContentEditable || tag === 'textarea' ||
@@ -120,13 +123,131 @@ extension BrowserPanel {
     })()
     """
 
+    /// Replays one phone pointer input and, for clicks, moves page focus into
+    /// the editable under the tap.
+    ///
+    /// Replayed clicks reach the page as DOM events, but WebKit refuses to
+    /// move field focus for clicks in a window that is never key (the
+    /// offscreen render host), so a tapped text field never focuses, the
+    /// phone keyboard never rises, and backspace falls through as a
+    /// page-level history-back. Programmatic JS focus is exempt from the
+    /// key-window rule, so hit-test the click point and focus explicitly.
+    /// - Parameter input: Page-point pointer input from the phone.
+    /// - Returns: The focus-assist outcome (0 no editable, 1 focus moved,
+    ///   2 already focused); 0 for non-click kinds.
+    func replayMobileBrowserPointer(_ input: MobileBrowserPointerInput) async throws -> Int {
+        try MobileBrowserInputReplayer().replayPointer(input, in: webView)
+        guard input.kind == .click else { return 0 }
+        return await assistMobileBrowserEditableFocus(atPageX: input.x, pageY: input.y)
+    }
+
+    /// Replays one phone key input unless it is a bare backspace outside an
+    /// editable, which WebKit would interpret as history back-navigation.
+    ///
+    /// The phone keyboard's backspace is a text-editing key: with no focused
+    /// editable it must be dropped, or deleting "highlighted" text navigates
+    /// the page away and loses state. Modified combinations pass through.
+    /// - Parameter input: A key token and modifiers from the phone.
+    /// - Returns: `true` when the key was delivered, `false` when suppressed.
+    func replayMobileBrowserKey(_ input: MobileBrowserKeyInput) async throws -> Bool {
+        let isBareBackspace = (input.key == "delete" || input.key == "backspace")
+            && input.modifiers.isEmpty
+        if isBareBackspace, await mobileBrowserEditableHasFocus() == false {
+            return false
+        }
+        try MobileBrowserInputReplayer().replayKey(input, in: webView)
+        return true
+    }
+
+    /// Whether the streamed page currently focuses an editable element.
+    ///
+    /// `document.activeElement` reports the shadow HOST when focus sits inside
+    /// a shadow root, so the check descends shadow roots to the real focused
+    /// element; otherwise backspace into a widget-wrapped input would be
+    /// suppressed as no-editable.
+    func mobileBrowserEditableHasFocus() async -> Bool {
+        let script = """
+        (() => {
+          const isEditable = (el) => {
+            if (!el || el.nodeType !== 1) return false;
+            if (el.isContentEditable) return true;
+            const tag = el.tagName;
+            if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+            if (tag !== 'INPUT') return false;
+            const type = String(el.type || 'text').toLowerCase();
+            return !['button','checkbox','color','file','hidden','image','radio','range','reset','submit'].includes(type);
+          };
+          let el = document.activeElement;
+          while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
+          return isEditable(el);
+        })()
+        """
+        let result = try? await webView.evaluateJavaScript(script, contentWorld: .page)
+        return (result as? Bool) ?? false
+    }
+
+    /// Focuses the editable element under a replayed click point.
+    /// - Parameters:
+    ///   - x: Click X in page viewport points.
+    ///   - y: Click Y in page viewport points.
+    /// - Returns: 0 when no editable is at the point, 1 when focus moved,
+    ///   2 when the editable was already focused.
+    func assistMobileBrowserEditableFocus(atPageX x: Double, pageY y: Double) async -> Int {
+        guard x.isFinite, y.isFinite else { return 0 }
+        let script = """
+        (() => {
+          const isEditable = (el) => {
+            if (!el || el.nodeType !== 1) return false;
+            if (el.isContentEditable) return true;
+            const tag = el.tagName;
+            if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+            if (tag !== 'INPUT') return false;
+            const type = String(el.type || 'text').toLowerCase();
+            return !['button','checkbox','color','file','hidden','image','radio','range','reset','submit'].includes(type);
+          };
+          let el = document.elementFromPoint(\(x), \(y));
+          // Widgets often wrap their input in a shadow root; descend one level
+          // so the hit test can reach the real editable.
+          if (el && el.shadowRoot) {
+            const inner = el.shadowRoot.elementFromPoint(\(x), \(y));
+            if (inner) el = inner;
+          }
+          while (el && !isEditable(el)) el = el.parentElement || (el.getRootNode && el.getRootNode().host) || null;
+          if (!el) return 0;
+          const deepActive = () => {
+            let active = document.activeElement;
+            while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
+            return active;
+          };
+          if (deepActive() === el) return 2;
+          try { el.focus({ preventScroll: true }); } catch (_) { return 0; }
+          return deepActive() === el ? 1 : 0;
+        })()
+        """
+        let result = try? await webView.evaluateJavaScript(script, contentWorld: .page)
+        return (result as? Int) ?? 0
+    }
+
     func addMobileBrowserStreamSignalHandler(
         id handlerID: UUID,
         handler: @escaping (MobileBrowserPanelNativeSignal) -> Void
     ) {
         let wasInactive = mobileBrowserStreamSignalHandlers.isEmpty
+        // SUPERMUX:begin mac-browser-stream-teardown-grace
+        // A restart inside the grace window reuses the parked render host, so
+        // rapid phone-side switching does not reparent the live WKWebView or
+        // churn render windows at all.
+        mobileBrowserStreamViewportTeardownTask?.cancel()
+        mobileBrowserStreamViewportTeardownTask = nil
+        // SUPERMUX:end mac-browser-stream-teardown-grace
         mobileBrowserStreamSignalHandlers[handlerID] = handler
         if wasInactive {
+            // A phone mirror is a visibility touch. A session-restored or
+            // memory-discarded background tab holds only a blank web shell,
+            // and every capture of that shell is a white frame; without this
+            // restore, only a manual reload or revealing the tab on the Mac
+            // ever starts the restore navigation.
+            restoreDiscardedWebViewIfNeeded(reason: "mobile_browser_stream_start")
             installMobileBrowserDirtyBeaconIfNeeded()
             reevaluateHiddenWebViewDiscardScheduling(reason: "mobile_browser_stream_started")
         }
@@ -136,7 +257,16 @@ extension BrowserPanel {
         guard mobileBrowserStreamSignalHandlers.removeValue(forKey: handlerID) != nil else { return }
         guard mobileBrowserStreamSignalHandlers.isEmpty else { return }
         disableMobileBrowserDirtyBeacon()
-        clearMobileStreamViewport()
+        // SUPERMUX:begin mac-browser-stream-teardown-grace
+        // Park the offscreen render host briefly instead of tearing it down.
+        // Every teardown reparents the live WKWebView and closes a
+        // WebKit-hosting window mid-commit; rapid phone-side panel switching
+        // multiplied those hierarchy transitions and amplified a WebKit
+        // layer-tree crash on macOS 26/27 betas (segfault in
+        // RemoteLayerTreePropertyApplier during rapid switch dogfood). A
+        // restart inside the grace reuses the parked host with zero churn.
+        scheduleMobileStreamViewportTeardownAfterGrace()
+        // SUPERMUX:end mac-browser-stream-teardown-grace
         reevaluateHiddenWebViewDiscardScheduling(reason: "mobile_browser_stream_stopped")
     }
 
@@ -199,8 +329,42 @@ extension BrowserPanel {
 
     /// Restores the presentation hierarchy and viewport that preceded phone streaming.
     func clearMobileStreamViewport() {
+        // SUPERMUX:begin mac-browser-stream-teardown-grace
+        mobileBrowserStreamViewportTeardownTask?.cancel()
+        mobileBrowserStreamViewportTeardownTask = nil
+        // SUPERMUX:end mac-browser-stream-teardown-grace
         restoreMobileStreamPresentation(endingStream: true)
     }
+
+    // SUPERMUX:begin mac-browser-stream-teardown-grace
+    /// Defers the stream-ended render-host teardown by a short grace so a
+    /// rapid stop→start cycle reuses the parked host instead of reparenting
+    /// the live web view and closing/recreating its WebKit-hosting window.
+    ///
+    /// The delay is the intended behavior (a teardown grace), bounded and
+    /// cancellable: a restart cancels it via
+    /// ``addMobileBrowserStreamSignalHandler(id:handler:)``, panel close and
+    /// explicit teardown cancel it via ``clearMobileStreamViewport()``, and a
+    /// web-view replacement abandons the parked host in
+    /// ``mobileBrowserWebViewDidBind()``.
+    private func scheduleMobileStreamViewportTeardownAfterGrace() {
+        mobileBrowserStreamViewportTeardownTask?.cancel()
+        guard mobileBrowserStreamRenderHost != nil
+            || mobileBrowserStreamViewport != nil
+            || mobileBrowserStreamPreviousViewportWasCaptured else {
+            mobileBrowserStreamViewportTeardownTask = nil
+            return
+        }
+        let grace = mobileBrowserStreamViewportTeardownGrace
+        mobileBrowserStreamViewportTeardownTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, grace) * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.mobileBrowserStreamViewportTeardownTask = nil
+            guard self.mobileBrowserStreamSignalHandlers.isEmpty else { return }
+            self.clearMobileStreamViewport()
+        }
+    }
+    // SUPERMUX:end mac-browser-stream-teardown-grace
 
     /// Mirrors the latest streamed frame into the Mac pane so it is not blank while
     /// the live web view renders offscreen. No-op unless the offscreen host is active.
@@ -223,7 +387,26 @@ extension BrowserPanel {
     }
 
     func mobileBrowserWebViewDidBind() {
-        guard !mobileBrowserStreamSignalHandlers.isEmpty else { return }
+        // SUPERMUX:begin mac-browser-stream-teardown-grace
+        // A replacement during the teardown grace must not leave a parked
+        // host holding the dead web view's presentation tree: drop it now and
+        // reset stream viewport state instead of waiting for the grace timer.
+        guard !mobileBrowserStreamSignalHandlers.isEmpty else {
+            if mobileBrowserStreamViewportTeardownTask != nil {
+                mobileBrowserStreamViewportTeardownTask?.cancel()
+                mobileBrowserStreamViewportTeardownTask = nil
+                mobileBrowserStreamRenderHost?.abandon()
+                mobileBrowserStreamRenderHost = nil
+                if mobileBrowserStreamPreviousViewportWasCaptured {
+                    viewportModel.setViewport(mobileBrowserStreamPreviousViewport)
+                }
+                mobileBrowserStreamPreviousViewport = nil
+                mobileBrowserStreamPreviousViewportWasCaptured = false
+                mobileBrowserStreamViewport = nil
+            }
+            return
+        }
+        // SUPERMUX:end mac-browser-stream-teardown-grace
         installMobileBrowserDirtyBeaconIfNeeded()
         mobileBrowserStreamRenderHost?.abandon()
         mobileBrowserStreamRenderHost = nil

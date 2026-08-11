@@ -1,0 +1,23 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "supermux.unreadBadge.overflow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "99+"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "99+"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

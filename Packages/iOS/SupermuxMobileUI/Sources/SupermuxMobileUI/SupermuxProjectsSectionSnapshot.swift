@@ -125,6 +125,12 @@ public struct SupermuxProjectsSectionActions {
     /// Opens a nested workspace by its UI row id — the same navigation the
     /// flat list's workspace rows use.
     public let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
+    /// Closes a nested workspace by its UI row id, through the SHELL's own
+    /// close path (which raises its confirmation) — so a workspace closed from
+    /// under a project and one closed from the flat list below behave
+    /// identically. `nil` when the host can't close workspaces, which hides the
+    /// affordance rather than offering a dead one.
+    public let closeWorkspace: (@MainActor (_ workspaceID: String) -> Void)?
     /// Builds a worktrees store for one project against the LIVE session's
     /// client, or `nil` while disconnected or when the host lacks
     /// `supermux.worktrees.v1` (the detail screen's Worktrees section hides).
@@ -138,9 +144,13 @@ public struct SupermuxProjectsSectionActions {
     /// Toggles one project's inline disclosure (mac-sidebar-style nesting);
     /// expansion persists phone-locally by project id.
     public let toggleProjectExpanded: @MainActor (_ projectID: String) -> Void
+    /// Opens (or focuses) a workspace at the project ROOT and navigates to it
+    /// — what TAPPING a project row does, matching the Mac sidebar, where a
+    /// click on the row is `openLocal`.
+    public let openProjectWorkspace: @MainActor (_ projectID: String) -> Void
     /// Routes to the project DETAIL screen (editor, presets, actions, run
-    /// control, files entry) — the info accessory and the long-press menu
-    /// entry share this one path.
+    /// control, files entry) — the long-press menu entry and the detail
+    /// accessory share this one path.
     public let openProjectDetail: @MainActor (_ projectID: String) -> Void
     /// Opens a nested worktree row: an already-open worktree navigates to
     /// its workspace; an unopened one goes through the m2-f2
@@ -150,28 +160,47 @@ public struct SupermuxProjectsSectionActions {
         _ projectID: String,
         _ worktree: SupermuxWorktreeRowSnapshot
     ) -> Void
+    /// Asks to remove a nested worktree (the sidebar's swipe action). Raises
+    /// the destructive confirmation — it never deletes on its own — and runs
+    /// the confirmed removal through the SAME store the detail screen uses,
+    /// so both surfaces share one mutation path.
+    public let requestNestedWorktreeRemoval: @MainActor (
+        _ projectID: String,
+        _ worktree: SupermuxWorktreeRowSnapshot
+    ) -> Void
 
     /// Memberwise initializer.
     /// - Parameters:
     ///   - toggleCollapsed: Toggles the section's local collapse state.
     ///   - iconPNGData: Fetches a project's custom icon PNG by project id.
     ///   - selectWorkspace: Opens a nested workspace by its UI row id.
+    ///   - closeWorkspace: Closes a nested workspace through the shell's own
+    ///     close path, or `nil` to hide the affordance.
     ///   - makeWorktreesStore: Builds a worktrees store for one project.
     ///   - editing: The editor seam, or `nil` to hide editing affordances.
     ///   - run: The run/launch/action seam, or `nil` to hide run affordances.
     ///   - toggleProjectExpanded: Toggles one project's inline disclosure.
+    ///   - openProjectWorkspace: Opens a workspace at the project root.
     ///   - openProjectDetail: Routes to the project detail screen.
     ///   - openNestedWorktree: Opens a nested worktree row.
+    ///   - requestNestedWorktreeRemoval: Asks to remove a nested worktree
+    ///     (raises the confirmation; never deletes directly).
     public init(
         toggleCollapsed: @escaping @MainActor () -> Void,
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
         selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
+        closeWorkspace: (@MainActor (_ workspaceID: String) -> Void)? = nil,
         makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
         editing: SupermuxProjectEditingActions? = nil,
         run: SupermuxProjectRunActions? = nil,
         toggleProjectExpanded: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
+        openProjectWorkspace: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
         openProjectDetail: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
         openNestedWorktree: @escaping @MainActor (
+            _ projectID: String,
+            _ worktree: SupermuxWorktreeRowSnapshot
+        ) -> Void = { _, _ in },
+        requestNestedWorktreeRemoval: @escaping @MainActor (
             _ projectID: String,
             _ worktree: SupermuxWorktreeRowSnapshot
         ) -> Void = { _, _ in }
@@ -179,12 +208,15 @@ public struct SupermuxProjectsSectionActions {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
         self.selectWorkspace = selectWorkspace
+        self.closeWorkspace = closeWorkspace
         self.makeWorktreesStore = makeWorktreesStore
         self.editing = editing
         self.run = run
         self.toggleProjectExpanded = toggleProjectExpanded
+        self.openProjectWorkspace = openProjectWorkspace
         self.openProjectDetail = openProjectDetail
         self.openNestedWorktree = openNestedWorktree
+        self.requestNestedWorktreeRemoval = requestNestedWorktreeRemoval
     }
 }
 

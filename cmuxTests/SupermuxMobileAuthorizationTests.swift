@@ -32,13 +32,27 @@ struct SupermuxMobileAuthorizationTests {
         #expect(SupermuxMobileAuthorization.scope(forMethod: "workspace.list") == nil)
     }
 
-    @Test func classificationSplitsChangesAndFilesFromMacWideMethods() {
+    @Test func classificationCoversWorkspacePaneAndMacWideMethods() {
         for method in SupermuxMobileMethod.all {
-            let expected: SupermuxMobileAuthorization.Scope =
-                method.rawValue.hasPrefix("mobile.supermux.changes.")
-                    || method.rawValue.hasPrefix("mobile.supermux.files.")
-                ? .workspaceScopedPermitted
-                : .macWide
+            let expected: SupermuxMobileAuthorization.Scope
+            switch method {
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            case .panelSelect, .paneClose:
+                expected = .paneScopedPermitted
+            // SUPERMUX:end supermux-mobile-selection-sync
+            case .terminalSelect:
+                expected = .terminalScopedPermitted
+            case .workspaceSelect, .simulatorCreate,
+                 .changesWatch, .changesStatus, .changesDiff, .changesStage,
+                 .changesUnstage, .changesDiscard, .changesCommit,
+                 .changesGenerateCommitMessage, .changesPush, .changesPull,
+                 .changesStash, .changesStashPop, .changesHistory,
+                 .filesList, .filesCreate, .filesRename, .filesDuplicate,
+                 .filesTrash:
+                expected = .workspaceScopedPermitted
+            default:
+                expected = .macWide
+            }
             #expect(
                 SupermuxMobileAuthorization.scope(for: method) == expected,
                 "unexpected scope for \(method.rawValue)"
@@ -163,6 +177,155 @@ struct SupermuxMobileAuthorizationTests {
             )
         )
         #expect(rejected?.code == "forbidden")
+    }
+
+    @Test func workspaceScopedTicketMaySelectAnyTerminalInItsWorkspace() throws {
+        let ticket = try attachTicket(workspaceID: "workspace")
+        let accepted = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.terminalSelect.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "terminal_id": "terminal-b",
+                ]
+            )
+        )
+        #expect(accepted == nil)
+    }
+
+    @Test func terminalScopedTicketMaySelectOnlyItsTerminal() throws {
+        let ticket = try attachTicket(workspaceID: "workspace", terminalID: "terminal-a")
+        let accepted = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.terminalSelect.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "terminal_id": "terminal-a",
+                ]
+            )
+        )
+        let rejectedTerminal = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.terminalSelect.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "terminal_id": "terminal-b",
+                ]
+            )
+        )
+        let rejectedWorkspace = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.terminalSelect.rawValue,
+                params: [
+                    "workspace_id": "other-workspace",
+                    "terminal_id": "terminal-a",
+                ]
+            )
+        )
+
+        #expect(accepted == nil)
+        #expect(rejectedTerminal?.code == "forbidden")
+        #expect(rejectedWorkspace?.code == "forbidden")
+    }
+
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    @Test func workspaceScopedTicketMaySelectAnyPanelInItsWorkspace() throws {
+        let ticket = try attachTicket(workspaceID: "workspace")
+        let accepted = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.panelSelect.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "panel_id": "browser-panel",
+                ]
+            )
+        )
+        #expect(accepted == nil)
+    }
+
+    @Test func terminalScopedTicketMaySelectOnlyItsPinnedPanel() throws {
+        let ticket = try attachTicket(workspaceID: "workspace", terminalID: "terminal")
+        let accepted = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.panelSelect.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "panel_id": "terminal",
+                ]
+            )
+        )
+        let rejected = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.panelSelect.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "panel_id": "browser-panel",
+                ]
+            )
+        )
+        #expect(accepted == nil)
+        #expect(rejected?.code == "forbidden")
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
+
+    @Test func workspaceScopedTicketMayCloseAnyPaneInItsWorkspace() throws {
+        let ticket = try attachTicket(workspaceID: "workspace")
+        let accepted = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.paneClose.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "panel_id": "browser-panel",
+                ]
+            )
+        )
+        #expect(accepted == nil)
+    }
+
+    @Test func terminalScopedTicketMayCloseOnlyItsTerminalPanel() throws {
+        let ticket = try attachTicket(workspaceID: "workspace", terminalID: "terminal")
+        let accepted = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.paneClose.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "panel_id": "terminal",
+                ]
+            )
+        )
+        let rejectedPanel = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.paneClose.rawValue,
+                params: [
+                    "workspace_id": "workspace",
+                    "panel_id": "browser-panel",
+                ]
+            )
+        )
+        let rejectedWorkspace = MobileHostService.ticketAuthorizationError(
+            ticket: ticket,
+            request: request(
+                method: SupermuxMobileMethod.paneClose.rawValue,
+                params: [
+                    "workspace_id": "other-workspace",
+                    "panel_id": "terminal",
+                ]
+            )
+        )
+
+        #expect(accepted == nil)
+        #expect(rejectedPanel?.code == "forbidden")
+        #expect(rejectedWorkspace?.code == "forbidden")
     }
 
     // MARK: - AUTH-03: Stack auth stays mandatory for the whole namespace

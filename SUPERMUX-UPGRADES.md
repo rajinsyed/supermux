@@ -14,6 +14,92 @@ Add a section here as the last step of every upstream merge.
 
 ---
 
+## cmux 0.64.22 → main @ `6d37f62a47` (2026-08-09)
+
+> **Post-merge dogfood regression, fixed on this branch (touchpoints #213/#214):** upstream's
+> keyboard rework in `ba47b1dc0d` ("Keep the iOS terminal dock pinned during keyboard
+> reversals") moved the keyboard layout guide onto a new host view, but the renderer only
+> re-reads keyboard height in its own `layoutSubviews` — which UIKit no longer guarantees to
+> run when the host's guide moves. Result on device: the keyboard opened OVER the terminal
+> instead of shrinking it. Fixed by re-sampling the host guide on the existing display-link
+> pass. This is an upstream bug (stock cmux iOS at `6d37f62a47` has it too) — worth offering
+> upstream.
+>
+> Follow-up on the same branch: fork `origin/main` (PRs #21 + #22 — AI token headroom for
+> reasoning models, and the compact AI usage-analytics button beside the usage gauge) was merged
+> in right after. The registry row PR #22 claimed as #148 was refiled as **#146b** (this branch
+> had already assigned #148–#151 to the iPhone Projects-table restoration); the fence id
+> `sidebar-usage-analytics-button` is unchanged.
+
+Merged `manaflow-ai/cmux` main — **~397 commits, ~1,450 files**, the largest update since the
+fork began. This is a pre-release snapshot of upstream main (no version tag yet), taken to pick
+up a big batch of iOS reliability work.
+
+### New upstream features you will notice
+
+- **Simulator panes with iPhone control.** iPhone/iPad Simulators are first-class panes on the
+  Mac, and the *phone app can now stream and control them* — a whole new `mobile.simulator.*`
+  capability set the iOS app negotiates automatically.
+- **Inline notification replies** on macOS *and* iOS: reply to an agent prompt straight from the
+  notification, with a notification debug mode. Notifications also open as a pane tab now.
+- **iOS terminal send progress/failures are visible** — no more silently dropped input; the send
+  path shows progress and surfaces errors.
+- **Phone browsers are unified on the streamed Mac surface** (create, blank-page state,
+  discarded-tab restore) and the mobile browser stream is self-healing.
+- **iOS keyboard fixes**: the terminal dock stays pinned during keyboard reversals, and focus
+  ownership recovers after the photo picker.
+- **Push notification reliability** was fixed end-to-end, and same-account discovery refreshes on
+  iOS startup, so the phone finds the Mac faster.
+- **Workspace niceties**: Move-to-Group from the iOS context menu, custom sort for All Computers,
+  search selections open inside the search tab, Cmd+Z works in the browser, Korean NFC/NFD font
+  rendering fixed, hibernation SIGHUP fix, CLI burst-typing PTY wedge fix.
+- **Model selection lab** in the New Task composer, coderouter team settings dashboard, raw PTY
+  byte streaming to smart terminal clients.
+
+### Fixes you will feel on the fork
+
+- Upstream's **iOS “diff viewer scroll momentum survives finger lift”** (#9257) does NOT apply to
+  the fork's terminal scrolling — the fork's momentum-free native terminal scroll (your
+  fix-mobile-ui work: no coasting after finger lift, TUI scroll budget/quantizer, scroll-speed
+  slider) survived the merge intact and all its regression tests still pass.
+- The state-sync v2 workspace record now carries upstream's `simulators` array **alongside** the
+  fork's four `supermux_*` fields; both decode leniently, so project nesting, activity dots,
+  branch subtitles, and PR badges keep working against the new wire format.
+
+### Fork-side (what needed manual resolution)
+
+- **13 conflicted files**, all resolved by taking upstream's code and re-applying the fenced
+  SUPERMUX blocks: capability advertising now appends fork capabilities *after* upstream's new
+  simulator-capability filter; the `mobile.supermux.*` RPC route sits beside the new
+  `mobile.simulator.*` route; `closeWorkspace` keeps the fork's `allowEmptyingWindow` empty-home
+  behavior while adopting upstream's new foreign-workspace guard; upstream's last-workspace
+  child-exit path (close the window with a respawn-recovery action) is deliberately not taken —
+  supermux keeps the window open as the empty home.
+- **One new touchpoint (#212)**: upstream added an exhaustive Dock shortcut-routing switch, which
+  requires every action (including the fork's ⌘G Run/Stop) to be classified. It routes to the
+  main container, never the Dock.
+- The localization catalog was merged key-by-key (upstream added Khmer/Ukrainian translations and
+  69 new keys; all ~293 fork keys and the two deliberate fork rewrites preserved).
+- CI app-host script: upstream parameterized the xcodebuild invocation; the fork's Icon Composer
+  exclusion was re-applied on top.
+
+### Watch-outs
+
+- This is **upstream main, not a tagged release** — it includes work upstream has not shipped to
+  their users yet.
+- Four upstream `CmuxMobileShell` render-grid tests fail identically on pure upstream main
+  (verified in a clean worktree) — upstream's own test debt, not a merge regression.
+- Per the standing warning in SUPERMUX.md: after any merge touching `WorkspaceListView`, verify
+  the **Projects section on a real phone**. The fences all survived and the checker is green, but
+  the phone check is the real proof.
+
+### What should feel identical
+
+Everything supermux-specific: Projects, worktrees, Changes panel, run actions, presets, AI
+features, the empty-home behavior, and all the fix-mobile-ui scrolling/pairing work.
+
+---
+
 ## cmux 0.64.21 → 0.64.22 (2026-08-03)
 
 Merged `manaflow-ai/cmux` main @ `6edf2570b8` — **13 commits, 247 files**. A bugfix release: no

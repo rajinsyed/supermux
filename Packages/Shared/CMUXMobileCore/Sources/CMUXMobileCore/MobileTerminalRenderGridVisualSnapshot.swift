@@ -214,10 +214,25 @@ public struct MobileTerminalRenderGridVisualSnapshot: Equatable, Sendable {
     private static func normalizedStyle(
         _ style: MobileTerminalRenderGridFrame.Style
     ) -> MobileTerminalRenderGridFrame.Style {
-        MobileTerminalRenderGridFrame.Style(
+        // SUPERMUX:begin verified-replay-semantic-bold-color
+        // Ghostty resolves bold default/palette foregrounds through the surface's
+        // bold-color config. Compare the replayed semantic instruction in that
+        // case, not a config-dependent RGB result; literal RGB remains exact.
+        let usesSemanticBoldForeground = style.bold && (
+            style.foregroundSource == .defaultColor ||
+                (style.foregroundSource == .palette && style.foregroundPaletteIndex != nil)
+        )
+        // SUPERMUX:end verified-replay-semantic-bold-color
+        return MobileTerminalRenderGridFrame.Style(
             id: 0,
-            foreground: style.foreground?.uppercased(),
+            // SUPERMUX:begin verified-replay-semantic-bold-color
+            foreground: usesSemanticBoldForeground ? nil : style.foreground?.uppercased(),
+            // SUPERMUX:end verified-replay-semantic-bold-color
             background: style.background?.uppercased(),
+            // SUPERMUX:begin verified-replay-semantic-bold-color
+            foregroundSource: usesSemanticBoldForeground ? style.foregroundSource : nil,
+            foregroundPaletteIndex: usesSemanticBoldForeground ? style.foregroundPaletteIndex : nil,
+            // SUPERMUX:end verified-replay-semantic-bold-color
             bold: style.bold,
             faint: style.faint,
             italic: style.italic,

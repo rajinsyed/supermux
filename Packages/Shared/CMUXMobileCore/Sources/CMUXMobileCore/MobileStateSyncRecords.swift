@@ -88,6 +88,10 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     public let currentDirectory: String?
     /// Whether the Mac currently has this workspace selected.
     public let isSelected: Bool
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    /// The focused panel of any kind inside this workspace.
+    public let focusedPanel: MobileWorkspaceFocusedPanel?
+    // SUPERMUX:end supermux-mobile-selection-sync
     /// Whether the workspace is pinned on the Mac.
     public let isPinned: Bool
     /// The owning group's identifier; nil for ungrouped workspaces.
@@ -104,6 +108,8 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     public let sortIndex: Int
     /// Terminal rows belonging to this workspace, in spatial order.
     public let terminals: [Terminal]
+    /// Simulator panes belonging to this workspace, in spatial order.
+    public let simulators: [MobileSimulatorPanelDescriptor]
     // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields mirrored from the legacy
     // list payload so state sync v2 does not drop them — see SUPERMUX-TOUCHPOINTS.md)
     /// The `supermux_pull_request` object: the same `{number, state, url, is_stale}`
@@ -166,6 +172,15 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     /// The workspace branch's pull request; `nil` when none, unassociated, or
     /// from an upstream cmux Mac.
     public let supermuxPullRequest: SupermuxPullRequest?
+    /// How many unread notifications the workspace has, so the phone's badge
+    /// can show the same numeral the Mac sidebar does instead of a countless
+    /// dot. `nil` from an upstream cmux Mac, which sends only `has_unread`;
+    /// the phone then falls back to the dot form.
+    ///
+    /// Unlike the four fields above, this one travels for EVERY workspace, not
+    /// just project-associated ones — unread is a cmux concept, not a projects
+    /// one, so it cannot ride the association-gated augmenter.
+    public let supermuxUnreadCount: Int?
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// ``MobileSyncRecord`` identity: the workspace id.
@@ -183,6 +198,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         customColorHex: String? = nil,
         currentDirectory: String?,
         isSelected: Bool,
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        focusedPanel: MobileWorkspaceFocusedPanel? = nil,
+        // SUPERMUX:end supermux-mobile-selection-sync
         isPinned: Bool,
         groupID: String?,
         preview: String?,
@@ -191,12 +209,14 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         hasUnread: Bool,
         sortIndex: Int,
         terminals: [Terminal],
+        simulators: [MobileSimulatorPanelDescriptor] = [],
         // SUPERMUX:begin supermux-mobile-workspace-fields (defaulted to nil so upstream call sites
         // compile unchanged and an upstream Mac's records stay field-free)
         supermuxProjectID: String? = nil,
         supermuxActivity: String? = nil,
         supermuxBranch: String? = nil,
-        supermuxPullRequest: SupermuxPullRequest? = nil
+        supermuxPullRequest: SupermuxPullRequest? = nil,
+        supermuxUnreadCount: Int? = nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     ) {
         self.id = id
@@ -207,6 +227,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.customColorHex = customColorHex
         self.currentDirectory = currentDirectory
         self.isSelected = isSelected
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        self.focusedPanel = focusedPanel
+        // SUPERMUX:end supermux-mobile-selection-sync
         self.isPinned = isPinned
         self.groupID = groupID
         self.preview = preview
@@ -215,11 +238,13 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.hasUnread = hasUnread
         self.sortIndex = sortIndex
         self.terminals = terminals
+        self.simulators = simulators
         // SUPERMUX:begin supermux-mobile-workspace-fields
         self.supermuxProjectID = supermuxProjectID
         self.supermuxActivity = supermuxActivity
         self.supermuxBranch = supermuxBranch
         self.supermuxPullRequest = supermuxPullRequest
+        self.supermuxUnreadCount = supermuxUnreadCount
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -236,6 +261,14 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         customColorHex = try container.decodeIfPresent(String.self, forKey: .customColorHex)
         currentDirectory = try container.decodeIfPresent(String.self, forKey: .currentDirectory)
         isSelected = try container.decode(Bool.self, forKey: .isSelected)
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        focusedPanel = (
+            try? container.decodeIfPresent(
+                MobileWorkspaceFocusedPanel.self,
+                forKey: .focusedPanel
+            )
+        ) ?? nil
+        // SUPERMUX:end supermux-mobile-selection-sync
         isPinned = try container.decode(Bool.self, forKey: .isPinned)
         groupID = try container.decodeIfPresent(String.self, forKey: .groupID)
         preview = try container.decodeIfPresent(String.self, forKey: .preview)
@@ -244,6 +277,10 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         hasUnread = try container.decode(Bool.self, forKey: .hasUnread)
         sortIndex = try container.decode(Int.self, forKey: .sortIndex)
         terminals = try container.decode([Terminal].self, forKey: .terminals)
+        simulators = try container.decodeIfPresent(
+            [MobileSimulatorPanelDescriptor].self,
+            forKey: .simulators
+        ) ?? []
         // SUPERMUX:begin supermux-mobile-workspace-fields (lenient: a malformed additive field
         // degrades to nil instead of failing the record, which would gap the client's mirror;
         // an upstream Mac omits all four and every one decodes nil)
@@ -253,6 +290,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxPullRequest = (
             try? container.decodeIfPresent(SupermuxPullRequest.self, forKey: .supermuxPullRequest)
         ) ?? nil
+        supermuxUnreadCount = (try? container.decodeIfPresent(Int.self, forKey: .supermuxUnreadCount)) ?? nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -265,6 +303,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case customColorHex = "custom_color"
         case currentDirectory = "current_directory"
         case isSelected = "is_selected"
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        case focusedPanel = "focused_panel"
+        // SUPERMUX:end supermux-mobile-selection-sync
         case isPinned = "is_pinned"
         case groupID = "group_id"
         case preview
@@ -273,12 +314,14 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case hasUnread = "has_unread"
         case sortIndex = "sort_index"
         case terminals
+        case simulators
         // SUPERMUX:begin supermux-mobile-workspace-fields (same snake_case wire names the legacy
         // `mobile.workspace.list` payload uses)
         case supermuxProjectID = "supermux_project_id"
         case supermuxActivity = "supermux_activity"
         case supermuxBranch = "supermux_branch"
         case supermuxPullRequest = "supermux_pull_request"
+        case supermuxUnreadCount = "supermux_unread_count"
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }

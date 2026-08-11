@@ -23,6 +23,7 @@ struct SupermuxProjectsSectionNavigation: ViewModifier {
         let isDetailPresented = model.detailProjectID != nil
         let openError = model.nestedOpenErrorMessage
         content
+            .modifier(SupermuxNestedWorktreeRemovalAlerts(model: model))
             .navigationDestination(isPresented: Binding(
                 get: { isDetailPresented },
                 set: { [weak model] presented in

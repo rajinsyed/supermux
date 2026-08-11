@@ -180,6 +180,19 @@ extension Workspace {
         agentPIDs[key] = pid
         agentPIDProcessIdentitiesByKey[key] = processIdentity
         if let panelId { recordAgentPIDOwnership(key: key, panelId: panelId) } else { removeAgentPIDOwnership(key: key) }
+        // SUPERMUX:begin panel-agent-liveness-evidence
+        // Shared keys (claude_code) hold one PID workspace-wide, so a stolen
+        // panel loses all liveness evidence; keep a panel-scoped copy so the
+        // stale sweeps can retire lifecycle entries whose process died.
+        if let panelId {
+            SupermuxPanelAgentEvidence.shared.record(
+                workspaceId: id,
+                panelId: panelId,
+                statusKey: agentStatusKey(forAgentPIDKey: key),
+                identity: processIdentity
+            )
+        }
+        // SUPERMUX:end panel-agent-liveness-evidence
         if previous.pid != pid || previous.panelId != panelId || previous.identity != processIdentity {
             for changedPanelId in (previous.panelId == panelId ? [panelId] : [previous.panelId, panelId]).compactMap({ $0 }) {
                 AgentHibernationController.shared.recordAgentProcessChange(workspaceId: id, panelId: changedPanelId)
@@ -197,6 +210,13 @@ extension Workspace {
                 didChange = true
             }
         }
+        // SUPERMUX:begin panel-agent-liveness-evidence
+        // Companion pass for panels holding lifecycle under a shared key they
+        // no longer own — invisible to the owned-PID loop above.
+        if supermuxSweepDeadAgentLifecycle() {
+            didChange = true
+        }
+        // SUPERMUX:end panel-agent-liveness-evidence
         if didChange {
             if refreshPorts { refreshTrackedAgentPorts() }
             AppDelegate.shared?.notificationStore?.clearNotifications(forTabId: id)
@@ -220,6 +240,14 @@ extension Workspace {
                 didChange = true
             }
         }
+        // SUPERMUX:begin panel-agent-liveness-evidence
+        // The loop above sees only keys this panel still OWNS; a panel whose
+        // shared key (claude_code) was stolen by a sibling has none, so its
+        // dead agent's lifecycle would survive every sweep.
+        if supermuxClearDeadPanelAgentLifecycle(panelId: panelId) {
+            didChange = true
+        }
+        // SUPERMUX:end panel-agent-liveness-evidence
         if didChange {
             if refreshPorts { refreshTrackedAgentPorts() }
             AppDelegate.shared?.notificationStore?.clearNotifications(forTabId: id, surfaceId: panelId)
@@ -232,6 +260,9 @@ extension Workspace {
         agentPIDProcessIdentitiesByKey.removeAll()
         agentPIDPanelIdsByKey.removeAll()
         agentPIDKeysByPanelId.removeAll()
+        // SUPERMUX:begin panel-agent-liveness-evidence
+        SupermuxPanelAgentEvidence.shared.removeWorkspace(workspaceId: id)
+        // SUPERMUX:end panel-agent-liveness-evidence
         if refreshPorts {
             refreshTrackedAgentPorts()
         } else {
@@ -250,17 +281,14 @@ extension Workspace {
         return currentIdentity == recordedIdentity
     }
 
+    /// Reads the identity the port scanner and session restore compare against.
+    ///
+    /// Delegates rather than reading the process table itself: a second reader
+    /// with different privilege behavior would record `nil` identities for
+    /// agents running under another euid, which `PortScanner.validateAgentRoots`
+    /// treats as permanently incomplete evidence.
     static func agentPIDProcessIdentity(pid: pid_t) -> AgentPIDProcessIdentity? {
-        guard pid > 0 else { return nil }
-        var info = proc_bsdinfo()
-        let expectedSize = MemoryLayout<proc_bsdinfo>.stride
-        let size = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(expectedSize))
-        guard size == expectedSize else { return nil }
-        return AgentPIDProcessIdentity(
-            pid: pid,
-            startSeconds: Int64(info.pbi_start_tvsec),
-            startMicroseconds: Int64(info.pbi_start_tvusec)
-        )
+        AgentPIDProcessIdentity(pid: pid)
     }
 
     func suppressesRawTerminalNotification(panelId: UUID?) -> Bool {
@@ -305,7 +333,17 @@ extension Workspace {
             return false
         }
         if let panelId, let ownedPanelId, ownedPanelId != panelId {
-            return false
+            // SUPERMUX:begin panel-scoped-shared-agent-lifecycle-clear
+            // Structured hooks such as Claude Code intentionally reuse one
+            // status key across sibling panels, so PID ownership belongs to only
+            // the most recent reporter. A non-owner SessionEnd must not clear
+            // that reporter's PID, but it still owns its panel-scoped lifecycle.
+            guard !requireOwnedKey else { return false }
+            return clearAgentLifecycle(
+                key: agentStatusKey(forAgentPIDKey: key),
+                panelId: panelId
+            )
+            // SUPERMUX:end panel-scoped-shared-agent-lifecycle-clear
         }
         let statusKeyToClear = clearStatus ? agentStatusKey(forAgentPIDKey: key) : nil
 
@@ -501,6 +539,7 @@ extension Workspace {
         manualUnreadPanelIds.remove(panelId)
         manualUnreadMarkedAt.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
+        restoredPanelTitleBoundariesByPanelId.removeValue(forKey: panelId)
         clearAgentLifecycleStates(panelId: panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         discardRemotePTYSessionID(panelId: panelId)

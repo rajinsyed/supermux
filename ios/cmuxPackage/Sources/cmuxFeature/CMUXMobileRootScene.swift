@@ -331,6 +331,10 @@ public struct CMUXMobileRootScene: View {
             MobileRecoveryStressView(configuration: recoveryStress)
         } else if ProcessInfo.processInfo.environment["CMUX_ZOOM_STRESS"] == "1" {
             MobileZoomStressView()
+        // SUPERMUX:begin ios-terminal-native-scroll
+        } else if ProcessInfo.processInfo.environment["CMUX_NATIVE_SCROLL_STRESS"] == "1" {
+            MobileBottomScrollStressView(nativeScrollOnly: true)
+        // SUPERMUX:end ios-terminal-native-scroll
         } else if ProcessInfo.processInfo.environment["CMUX_BOTTOM_SCROLL_STRESS"] == "1" {
             MobileBottomScrollStressView()
         } else if ProcessInfo.processInfo.environment["CMUX_TOAST_GALLERY"] == "1" {
@@ -349,17 +353,26 @@ public struct CMUXMobileRootScene: View {
     @MainActor
     private func makeMobileAppView() -> CMUXMobileAppView {
         let browserStreamStore = BrowserStreamStore()
+        let simulatorStreamStore = MobileSimulatorStreamStore()
         #if os(iOS)
         return CMUXMobileAppView(
-            store: makeStore(browserStreamEvents: browserStreamStore),
+            store: makeStore(
+                browserStreamEvents: browserStreamStore,
+                simulatorStreamStore: simulatorStreamStore
+            ),
             browserStreamStore: browserStreamStore,
+            simulatorStreamStore: simulatorStreamStore,
             onboardingStore: onboardingStore,
             signOutHook: signOutHook
         )
         #else
         return CMUXMobileAppView(
-            store: makeStore(browserStreamEvents: browserStreamStore),
+            store: makeStore(
+                browserStreamEvents: browserStreamStore,
+                simulatorStreamStore: simulatorStreamStore
+            ),
             browserStreamStore: browserStreamStore,
+            simulatorStreamStore: simulatorStreamStore,
             signOutHook: signOutHook
         )
         #endif
@@ -367,13 +380,19 @@ public struct CMUXMobileRootScene: View {
 
     @MainActor
     package func makeStore(
-        browserStreamEvents: (any BrowserStreamEventReceiving)? = nil
+        browserStreamEvents: (any BrowserStreamEventReceiving)? = nil,
+        simulatorStreamStore: MobileSimulatorStreamStore? = nil
     ) -> CMUXMobileShellStore {
         let coordinator = auth.coordinator
-        let buildScope = MobileIOSBuildScope.current()
+        // SUPERMUX:begin official-ios-persistence-scope (a personal-team Release bundle may have a dev-style id without owning a development storage partition — see SUPERMUX-TOUCHPOINTS.md)
+        let detectedBuildScope = MobileIOSBuildScope.current()
         let buildCompatibilityPolicy = MobileMacBuildCompatibilityPolicy.current(
-            buildScope: buildScope
+            buildScope: detectedBuildScope
         )
+        let buildScope = buildCompatibilityPolicy.persistenceScope(
+            from: detectedBuildScope
+        )
+        // SUPERMUX:end official-ios-persistence-scope
         let identityProvider = AuthCoordinatorIdentityProvider(
             coordinator: auth.coordinator,
             isDevelopmentAuthEnvironment: auth.authEnvironment == .development
@@ -410,7 +429,8 @@ public struct CMUXMobileRootScene: View {
             feedbackStampProvider: feedbackStampProvider,
             draftStore: draftStore,
             taskTemplateStore: UserDefaultsMobileTaskTemplateStore(defaults: .standard),
-            browserStreamEvents: browserStreamEvents
+            browserStreamEvents: browserStreamEvents,
+            simulatorStreamStore: simulatorStreamStore
         )
     }
 }

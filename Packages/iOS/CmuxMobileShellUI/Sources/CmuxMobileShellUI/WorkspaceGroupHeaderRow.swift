@@ -77,6 +77,13 @@ struct WorkspaceGroupHeaderRow: View, Equatable {
                 .font(.system(size: 15, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
+            // SUPERMUX:begin supermux-mobile-unread-badge (upstream drew this in
+            // a reserved leading gutter — see SUPERMUX-TOUCHPOINTS.md)
+            // Trails the group name, exactly where the Mac sidebar's group
+            // header puts its badge. Countless by construction: the header
+            // rolls its members up to a boolean, never a sum.
+            WorkspaceUnreadDot(isUnread: hasUnread)
+            // SUPERMUX:end supermux-mobile-unread-badge
             if group.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 11, weight: .semibold))
@@ -110,9 +117,10 @@ struct WorkspaceGroupHeaderRow: View, Equatable {
 
     var body: some View {
         HStack(spacing: 6) {
-            // Same leading unread gutter as workspace rows (dot hidden when
-            // read) so headers and top-level rows keep their columns aligned.
-            WorkspaceUnreadDot(isUnread: hasUnread, leftShift: value.unreadIndicatorLeftShift)
+            // SUPERMUX:begin supermux-mobile-unread-badge
+            // The leading unread gutter is gone (the badge moved beside the
+            // group name, above), so the chevron starts the row.
+            // SUPERMUX:end supermux-mobile-unread-badge
             chevron
             anchorTarget
                 // The dot itself is accessibility-hidden; VoiceOver hears the

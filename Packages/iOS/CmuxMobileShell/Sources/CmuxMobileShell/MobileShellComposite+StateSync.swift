@@ -351,6 +351,9 @@ extension MobileShellComposite {
                 customColorHex: record.customColorHex,
                 currentDirectory: record.currentDirectory,
                 isSelected: record.isSelected,
+                // SUPERMUX:begin supermux-mobile-selection-sync
+                focusedPanel: record.focusedPanel,
+                // SUPERMUX:end supermux-mobile-selection-sync
                 isPinned: record.isPinned,
                 groupID: record.groupID,
                 preview: record.preview,
@@ -366,6 +369,7 @@ extension MobileShellComposite {
                         isReady: terminal.isReady
                     )
                 },
+                simulators: record.simulators,
                 // SUPERMUX:begin supermux-mobile-workspace-fields (carry the additive §6 fields
                 // through the v2 projection; without them project nesting, activity dots, the
                 // branch subtitle, and PR badges vanish the moment v2 negotiates —
@@ -380,7 +384,8 @@ extension MobileShellComposite {
                         url: pullRequest.url,
                         isStale: pullRequest.isStale
                     )
-                }
+                },
+                supermuxUnreadCount: record.supermuxUnreadCount
                 // SUPERMUX:end supermux-mobile-workspace-fields
             )
         }

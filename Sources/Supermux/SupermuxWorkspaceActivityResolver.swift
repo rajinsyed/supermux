@@ -19,7 +19,7 @@ import SupermuxKit
 /// consistent.
 @MainActor
 enum SupermuxWorkspaceActivityResolver {
-    /// The most urgent agent activity across all of the workspace's panels.
+    /// The agent activity to surface across all of the workspace's panels.
     /// - Parameter workspace: The workspace to inspect.
     static func activity(for workspace: Workspace) -> SupermuxWorkspaceActivity {
         activity(fromStatesByPanelId: workspace.agentLifecycleStatesByPanelId)

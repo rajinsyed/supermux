@@ -128,8 +128,11 @@ extension MobileCoreRPCSession {
             }
             return
         }
-        guard let id = envelope["id"] as? String,
-              pending[id] != nil || pipelinedPending[id] != nil else { return }
+        guard let id = envelope["id"] as? String else { return }
+        // SUPERMUX:begin mobile-rpc-client-work-quota (a host response frees wire capacity even when the local caller already cancelled or timed out — see SUPERMUX-TOUCHPOINTS.md)
+        releaseRequestWorkCapacity(requestID: id)
+        // SUPERMUX:end mobile-rpc-client-work-quota
+        guard pending[id] != nil || pipelinedPending[id] != nil else { return }
         if (envelope["ok"] as? Bool) == true {
             let result = envelope["result"] ?? [:]
             if let data = try? JSONSerialization.data(withJSONObject: result) {

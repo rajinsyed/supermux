@@ -236,8 +236,8 @@ extension GhosttySurfaceView {
         return true
     }
 
-    /// Retains an immutable copy of the last presented pixels and cursor above
-    /// the live renderer while a replacement grid is replayed and verified.
+    /// Retains an immutable copy of the last presented Ghostty pixels above the
+    /// live renderer while a replacement grid is replayed and verified.
     @discardableResult
     public func freezeVerifiedReplayPresentation(transactionID: UInt64) async -> Bool {
         guard surface != nil, !isDismantled, window != nil, !Task.isCancelled else {
@@ -247,7 +247,6 @@ extension GhosttySurfaceView {
             verifiedReplayFrozenTransactionID = transactionID
             verifiedReplayReadyFence = nil
             verifiedReplayReadyTransactionID = nil
-            cursorOverlayLayer?.isHidden = true
             return true
         }
         guard !verifiedReplayRenderSuppressed,
@@ -274,13 +273,11 @@ extension GhosttySurfaceView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.addSublayer(frozen.layer)
-        cursorOverlayLayer?.isHidden = true
         CATransaction.commit()
 
         verifiedReplayFrozenPresentationLayer = frozen.layer
         verifiedReplayFrozenBackgroundLayer = frozen.backgroundLayer
         verifiedReplayFrozenContentLayer = frozen.contentLayer
-        verifiedReplayFrozenCursorLayer = frozen.cursorLayer
         verifiedReplayFrozenImage = frozen.image
         verifiedReplayFrozenTransactionID = transactionID
         verifiedReplayFrozenViewportRect = frozen.viewportRect
@@ -402,7 +399,13 @@ extension GhosttySurfaceView {
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        frozenLayer.frame = layer.bounds
+        // SUPERMUX:begin ios-terminal-native-scroll
+        // The container can carry the native-scroll translation, and setting
+        // .frame under a non-identity transform derives wrong geometry; size
+        // via bounds/position instead.
+        frozenLayer.bounds = layer.bounds
+        frozenLayer.position = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
+        // SUPERMUX:end ios-terminal-native-scroll
         let oldViewport = verifiedReplayFrozenViewportRect ?? viewportRect
         let contentRect = verifiedReplayFrozenContentLayer?.frame ?? .null
         backgroundLayer.frame = oldViewport.union(viewportRect).union(contentRect)
@@ -416,14 +419,12 @@ extension GhosttySurfaceView {
         verifiedReplayFrozenPresentationLayer = nil
         verifiedReplayFrozenBackgroundLayer = nil
         verifiedReplayFrozenContentLayer = nil
-        verifiedReplayFrozenCursorLayer = nil
         verifiedReplayFrozenImage = nil
         verifiedReplayFrozenTransactionID = nil
         verifiedReplayFrozenViewportRect = nil
         verifiedReplayReadyFence = nil
         verifiedReplayReadyTransactionID = nil
         verifiedReplayRenderSuppressed = false
-        updateCursorOverlay()
         CATransaction.commit()
     }
 

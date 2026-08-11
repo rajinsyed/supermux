@@ -44,9 +44,14 @@ extension WorkspaceDetailView {
         return visibleChatSessions.first { $0.terminalID == terminalID }
     }
 
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+    /// Keeps the trailing toolbar cluster structurally stable: the Agent Chat
+    /// button is always mounted and merely disabled until this terminal has a
+    /// session, so the bar never changes shape with pane/agent state.
     var shouldShowChatToggle: Bool {
-        isChatMode || chatToggleSession != nil
+        true
     }
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
 
     /// The session chat mode opens: the visible tab's session, or the pinned
     /// session while chat mode is on.
@@ -114,20 +119,25 @@ extension WorkspaceDetailView {
         }
     }
 
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+    /// One fixed-shape trailing cluster: [Agent Chat][terminal picker].
+    /// Always exactly these two controls — the lower-frequency actions
+    /// (Changes/Files/alt-screen notice) live in the workspace TITLE menu, so
+    /// the trailing side needs no ••• button at all. A fixed narrow island
+    /// also keeps leading + trailing far under the bar's width budget, so
+    /// UIKit's native overflow ("More") never triggers regardless of the
+    /// back-button badge, pane type, or agent state.
     @ViewBuilder
     var toolbarTrailingCluster: some View {
         HStack(spacing: 8) {
-            if shouldShowChatToggle {
-                chatToggleButton
-                    .frame(width: 44, height: 44)
-                    .transition(.scale(scale: 0.82, anchor: .trailing).combined(with: .opacity))
-            }
+            chatToggleButton
+                .frame(width: 44, height: 44)
             terminalPickerToolbarButton
                 .frame(width: 44, height: 44)
         }
-        .frame(width: shouldShowChatToggle ? 96 : 44, height: 44, alignment: .trailing)
-        .animation(.snappy(duration: 0.25), value: shouldShowChatToggle)
+        .frame(width: 96, height: 44, alignment: .trailing)
     }
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
 
     var chatToggleButton: some View {
         Button(action: toggleChatMode) {
@@ -136,6 +146,12 @@ extension WorkspaceDetailView {
                 : "bubble.left.and.bubble.right")
         }
         .accessibilityLabel(L10n.string("mobile.workspace.agentChat", defaultValue: "Agent Chat"))
+        // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+        .accessibilityHint(L10n.string(
+            "mobile.workspace.agentChat.hint",
+            defaultValue: "Available while a coding agent session is running in this tab"
+        ))
+        // SUPERMUX:end ios-workspace-toolbar-persistent-actions
         .accessibilityIdentifier("MobileWorkspaceAgentChatButton")
         .disabled(!isChatMode && chatToggleSession == nil)
     }

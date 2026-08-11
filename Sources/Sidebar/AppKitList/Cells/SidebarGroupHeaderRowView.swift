@@ -1,6 +1,9 @@
 import AppKit
 import CmuxFoundation
 import SwiftUI
+// SUPERMUX:begin supermux-unread-badge-capsule (shared badge geometry)
+import SupermuxMobileCore
+// SUPERMUX:end supermux-unread-badge-capsule
 
 /// Pure-AppKit group header cell for the sidebar workspace table.
 ///
@@ -59,7 +62,6 @@ final class SidebarGroupHeaderTableCellView: NSTableCellView {
         addSubview(backgroundView)
 
         pinImageView.imageScaling = .scaleProportionallyDown
-        pinImageView.contentTintColor = NSColor.secondaryLabelColor.withAlphaComponent(0.8)
         addSubview(pinImageView)
 
         chevronButton.onClick = { [weak self] in self?.actions?.onToggleCollapsed() }
@@ -150,6 +152,7 @@ final class SidebarGroupHeaderTableCellView: NSTableCellView {
                 pointSize: GlobalFontMagnification.scaledSize(metrics.pinnedIconFontSize, percent: percent),
                 weight: .semibold
             )
+            pinImageView.contentTintColor = .secondaryLabelColor
             pinImageView.toolTip = String(localized: "workspaceGroup.pinned.tooltip", defaultValue: "Pinned group")
         }
 
@@ -385,12 +388,16 @@ final class SidebarGroupHeaderTableCellView: NSTableCellView {
 
         var badgeSize = NSSize.zero
         if !unreadBadgeView.isHidden {
-            let textSize = NSString(string: "\(model.anchorUnreadCount)")
-                .size(withAttributes: [.font: unreadBadgeFont])
-            badgeSize = NSSize(
-                width: ceil(textSize.width) + metrics.unreadHorizontalPadding * 2,
-                height: ceil(textSize.height) + metrics.unreadVerticalPadding * 2
+            // SUPERMUX:begin supermux-unread-badge-capsule (upstream sized this from
+            // the header's own unread paddings — see SUPERMUX-TOUCHPOINTS.md)
+            // Sized by the shared style instead, so a group header's badge and
+            // a workspace row's badge are the same object at the same scale.
+            // Counts past 99 measure as "99+", which is also what gets drawn.
+            badgeSize = SupermuxUnreadBadgeStyle.size(
+                count: model.anchorUnreadCount,
+                font: unreadBadgeFont
             )
+            // SUPERMUX:end supermux-unread-badge-capsule
         }
 
         let nameAvailable = max(0, (plusButton.frame.minX - 4) - x

@@ -28,6 +28,20 @@ import Testing
         #expect(decoded.selectionForegroundSemantic == .background)
     }
 
+    // SUPERMUX:begin ghostty-bold-is-bright-mobile-theme
+    @Test func hostStatusPreservesLegacyBoldIsBrightCompatibilityAlias() throws {
+        var config = GhosttyConfig()
+        config.parse("bold-is-bright = true")
+
+        let theme = TerminalTheme(ghosttyConfig: config)
+        let data = try JSONSerialization.data(withJSONObject: theme.mobileHostJSONObject)
+        let decoded = try JSONDecoder().decode(TerminalTheme.self, from: data)
+
+        #expect(decoded.boldColor == "bright")
+        #expect(decoded.ghosttyColorDirectives.contains("bold-color = bright"))
+    }
+    // SUPERMUX:end ghostty-bold-is-bright-mobile-theme
+
     @Test func surfaceEffectiveColorsOverrideCachedConfigTheme() throws {
         var base = TerminalTheme.monokai
         base.cursorColorSemantic = .background

@@ -316,6 +316,130 @@ struct AgentHibernationTests {
         expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
     }
 
+    // SUPERMUX:begin panel-scoped-shared-agent-lifecycle-clear
+    @MainActor
+    @Test
+    func testNonOwnerSessionEndClearsItsPanelLifecycleForSharedAgentKey() throws {
+        let workspace = Workspace()
+        let firstPanelId = try #require(workspace.focusedPanelId)
+        let paneId = try #require(workspace.paneId(forPanelId: firstPanelId))
+        let secondPanelId = try #require(workspace.newTerminalSurface(inPane: paneId, focus: false)).id
+
+        workspace.recordAgentPID(key: "claude_code", pid: 111, panelId: firstPanelId, refreshPorts: false)
+        workspace.recordAgentPID(key: "claude_code", pid: 222, panelId: secondPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: firstPanelId, lifecycle: .needsInput)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: secondPanelId, lifecycle: .running)
+
+        expectTrue(
+            workspace.clearAgentPID(
+                key: "claude_code",
+                panelId: firstPanelId,
+                clearStatus: true,
+                refreshPorts: false
+            )
+        )
+
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .unknown)
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
+        expectEqual(workspace.agentPIDPanelIdsByKey["claude_code"], secondPanelId)
+        expectEqual(workspace.agentPIDs["claude_code"], 222)
+    }
+    // SUPERMUX:end panel-scoped-shared-agent-lifecycle-clear
+
+    // SUPERMUX:begin panel-agent-liveness-evidence
+    @MainActor
+    @Test
+    func testStaleSweepRetiresDeadNonOwnerPanelLifecycleForSharedKey() throws {
+        let workspace = Workspace()
+        let firstPanelId = try #require(workspace.focusedPanelId)
+        let paneId = try #require(workspace.paneId(forPanelId: firstPanelId))
+        let secondPanelId = try #require(workspace.newTerminalSurface(inPane: paneId, focus: false)).id
+
+        // First Claude reports with a PID that is certainly dead by now
+        // (recorded identity is nil because no such process exists), then a
+        // sibling steals the shared key's single PID slot with a live PID.
+        workspace.recordAgentPID(key: "claude_code", pid: 999_999, panelId: firstPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: firstPanelId, lifecycle: .running)
+        workspace.recordAgentPID(
+            key: "claude_code",
+            pid: ProcessInfo.processInfo.processIdentifier,
+            panelId: secondPanelId,
+            refreshPorts: false
+        )
+        workspace.setAgentLifecycle(key: "claude_code", panelId: secondPanelId, lifecycle: .running)
+
+        // The first panel owns no PID key anymore, so before the evidence
+        // sweep its dead agent's `running` entry was unreachable forever.
+        expectTrue((workspace.agentPIDKeysByPanelId[firstPanelId] ?? []).isEmpty)
+
+        expectTrue(workspace.clearStaleAgentPIDs(panelId: firstPanelId, refreshPorts: false))
+
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .unknown)
+        // The live sibling is untouched: lifecycle, PID, and ownership stay.
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
+        expectEqual(workspace.agentPIDPanelIdsByKey["claude_code"], secondPanelId)
+    }
+
+    @MainActor
+    @Test
+    func testStaleSweepKeepsNonOwnerLifecycleWhoseProcessIsAlive() throws {
+        let workspace = Workspace()
+        let firstPanelId = try #require(workspace.focusedPanelId)
+        let paneId = try #require(workspace.paneId(forPanelId: firstPanelId))
+        let secondPanelId = try #require(workspace.newTerminalSurface(inPane: paneId, focus: false)).id
+
+        // Both Claudes are "alive" (this test process stands in for each);
+        // the second steals the shared PID slot from the first.
+        let livePid = ProcessInfo.processInfo.processIdentifier
+        workspace.recordAgentPID(key: "claude_code", pid: livePid, panelId: firstPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: firstPanelId, lifecycle: .running)
+        workspace.recordAgentPID(key: "claude_code", pid: livePid, panelId: secondPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: secondPanelId, lifecycle: .running)
+
+        _ = workspace.clearStaleAgentPIDs(panelId: firstPanelId, refreshPorts: false)
+
+        // A live process is never retired just because ownership moved on.
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .running)
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
+    }
+
+    @MainActor
+    @Test
+    func testWorkspaceSweepReportsDeadNonOwnerLifecycleMutation() throws {
+        let workspace = Workspace()
+        let firstPanelId = try #require(workspace.focusedPanelId)
+        let paneId = try #require(workspace.paneId(forPanelId: firstPanelId))
+        let secondPanelId = try #require(workspace.newTerminalSurface(inPane: paneId, focus: false)).id
+
+        workspace.recordAgentPID(key: "claude_code", pid: 999_999, panelId: firstPanelId, refreshPorts: false)
+        workspace.setAgentLifecycle(key: "claude_code", panelId: firstPanelId, lifecycle: .running)
+        workspace.recordAgentPID(
+            key: "claude_code",
+            pid: ProcessInfo.processInfo.processIdentifier,
+            panelId: secondPanelId,
+            refreshPorts: false
+        )
+        workspace.setAgentLifecycle(key: "claude_code", panelId: secondPanelId, lifecycle: .running)
+
+        expectTrue(workspace.clearStaleAgentPIDs(refreshPorts: false))
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: firstPanelId, fallback: nil), .unknown)
+        expectEqual(workspace.agentHibernationLifecycleState(panelId: secondPanelId, fallback: nil), .running)
+    }
+
+    @MainActor
+    @Test
+    func testClearingAllAgentPIDsRemovesWorkspaceEvidence() throws {
+        let workspace = Workspace()
+        let panelId = try #require(workspace.focusedPanelId)
+        workspace.recordAgentPID(key: "claude_code", pid: 999_999, panelId: panelId, refreshPorts: false)
+        expectTrue(!SupermuxPanelAgentEvidence.shared.panelIds(workspaceId: workspace.id).isEmpty)
+
+        workspace.clearAllAgentPIDs(refreshPorts: false)
+
+        expectTrue(SupermuxPanelAgentEvidence.shared.panelIds(workspaceId: workspace.id).isEmpty)
+    }
+    // SUPERMUX:end panel-agent-liveness-evidence
+
     @Test
     func testSessionIndexLoadsAgentLifecycleFromHookStore() throws {
         let home = FileManager.default.temporaryDirectory
@@ -888,6 +1012,76 @@ struct AgentHibernationTests {
             TabManager.restorableAgentSnapshotFingerprint(snapshot)
 
         expectNil(workspace.restorableAgentForHibernation(panelId: panelId, index: index))
+    }
+
+    @MainActor
+    @Test
+    func testHibernationRetiresPanelPortsAndScannerLifecycle() throws {
+        let workspace = Workspace()
+        let panelId = try #require(workspace.focusedPanelId)
+        let agent = SessionRestorableAgentSnapshot(
+            kind: .codex,
+            sessionId: "codex-port-retirement",
+            workingDirectory: "/tmp/cmux-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+        )
+        let scannerKey = PortScanner.PanelKey(workspaceId: workspace.id, panelId: panelId)
+        let staleTTYName = "/dev/ttys9152"
+        PortScanner.shared.registerTTY(
+            workspaceId: workspace.id,
+            panelId: panelId,
+            ttyName: staleTTYName
+        )
+        defer {
+            PortScanner.shared.unregisterPanel(workspaceId: workspace.id, panelId: panelId)
+        }
+        workspace.surfaceListeningPorts[panelId] = [4321]
+        workspace.recomputeListeningPorts()
+
+        try #require(workspace.enterAgentHibernation(
+            panelId: panelId,
+            agent: agent,
+            lastActivityAt: Date(timeIntervalSince1970: 0)
+        ))
+
+        expectNil(workspace.surfaceListeningPorts[panelId])
+        expectTrue(workspace.listeningPorts.isEmpty)
+        expectNil(PortScanner.shared.publicationState.registeredPanelTTYName(for: scannerKey))
+        let persistedPanel = try #require(
+            workspace.sessionSnapshot(includeScrollback: false).panels.first { $0.id == panelId }
+        )
+        expectTrue(persistedPanel.listeningPorts.isEmpty)
+    }
+
+    @MainActor
+    @Test
+    func testRestoringHibernatedPanelDiscardsPersistedPorts() throws {
+        let source = Workspace()
+        let sourcePanelId = try #require(source.focusedPanelId)
+        let sourcePanel = try #require(source.panels[sourcePanelId] as? TerminalPanel)
+        let agent = SessionRestorableAgentSnapshot(
+            kind: .codex,
+            sessionId: "codex-restored-port-retirement",
+            workingDirectory: "/tmp/cmux-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+        )
+        try #require(sourcePanel.enterAgentHibernation(
+            agent: agent,
+            lastActivityAt: Date(timeIntervalSince1970: 0)
+        ))
+        var legacyPanelSnapshot = try #require(
+            source.sessionSnapshot(includeScrollback: false).panels.first { $0.id == sourcePanelId }
+        )
+        try #require(legacyPanelSnapshot.terminal?.hibernation != nil)
+        legacyPanelSnapshot.listeningPorts = [4321]
+
+        let restored = Workspace()
+        let restoredPanelId = try #require(restored.focusedPanelId)
+        restored.applySessionPanelMetadata(legacyPanelSnapshot, toPanelId: restoredPanelId)
+        restored.recomputeListeningPorts()
+
+        expectNil(restored.surfaceListeningPorts[restoredPanelId])
+        expectTrue(restored.listeningPorts.isEmpty)
     }
 
     @MainActor

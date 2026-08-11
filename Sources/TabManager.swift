@@ -478,6 +478,7 @@ class TabManager: ObservableObject {
         workspaceGitMetadataReader: (any WorkspaceGitMetadataReading)? = nil,
         gitPollClock: any GitPollClock = SystemGitPollClock(),
         gitProbeLimiter: WorkspaceGitMetadataProbeLimiter? = nil,
+        focusHistoryNow: @escaping @MainActor @Sendable () -> Date = { Date() },
         panelTitleUpdateCoalescer: NotificationBurstCoalescer? = nil,
         settings: any SettingsWriting = UserDefaultsSettingsClient(defaults: .standard),
         defaultWorkspaceWorkingDirectoryProvider: @escaping () -> String = {
@@ -497,9 +498,12 @@ class TabManager: ObservableObject {
         self.workspaceCustomizationStore = workspaceCustomizationStore ?? WorkspaceCustomizationStore()
         let focusHistoryScopeKey = SettingCatalog().app.focusHistoryIncludesPanesAndTabs
         self.lastFocusHistoryIncludesPanesAndTabs = settings.value(for: focusHistoryScopeKey)
-        self.focusHistoryNavigation = FocusHistoryModel(navigationScope: {
-            settings.value(for: focusHistoryScopeKey) ? .panesAndTabs : .workspacesOnly
-        })
+        self.focusHistoryNavigation = FocusHistoryModel(
+            now: focusHistoryNow,
+            navigationScope: {
+                settings.value(for: focusHistoryScopeKey) ? .panesAndTabs : .workspacesOnly
+            }
+        )
         self.nativeSSHConnectionBroker = nativeSSHConnectionBroker
         self.panelTitleUpdateCoalescer = panelTitleUpdateCoalescer ?? NotificationBurstCoalescer()
         self.closeTabWarningDefaults = closeTabWarningDefaults
@@ -2139,7 +2143,6 @@ class TabManager: ObservableObject {
         )
     }
 
-
     func closeWorkspace(
         _ workspace: Workspace,
         recordHistory: Bool = true,
@@ -2156,6 +2159,12 @@ class TabManager: ObservableObject {
         // window to empty so the last workspace can be torn down and removed.
         guard tabs.count > 1 || allowEmptyingWindow else { return }
         // SUPERMUX:end keep-window-on-last-close
+        // Only this manager's own workspaces close here. The teardown below frees
+        // Ghostty surfaces, which SIGHUPs the child processes, empties `panels`, and
+        // publishes a workspace-closed event, so running it for a workspace that
+        // lives in another window or was already detached kills terminals nobody
+        // asked to close and announces a close that did not happen.
+        guard tabs.contains(where: { $0.id == workspace.id }) else { return }
         panelTitleUpdateCoalescer.flushNow()
         sentryBreadcrumb("workspace.close", data: ["tabCount": tabs.count - 1])
         // Closing a mirrored remote tmux workspace DETACHES from the remote session,
@@ -2860,7 +2869,14 @@ class TabManager: ObservableObject {
     /// They must not escalate into workspace/window-close semantics for "last tab".
     func closeRuntimeSurfaceWithConfirmation(tabId: UUID, surfaceId: UUID) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
-        if tab.panels[surfaceId] == nil { tab.closeDockPanelAndClearNotifications(surfaceId, force: false); return }
+        if tab.panels[surfaceId] == nil {
+            tab.closeDockPanelAndClearNotifications(
+                surfaceId,
+                force: false,
+                recordsHistory: false
+            )
+            return
+        }
 
         let requiresConfirmation: Bool
         if let terminalPanel = tab.terminalPanel(for: surfaceId),
@@ -2889,7 +2905,14 @@ class TabManager: ObservableObject {
     /// This path must only close the addressed surface and must never close the workspace window.
     func closeRuntimeSurface(tabId: UUID, surfaceId: UUID) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
-        if tab.panels[surfaceId] == nil { tab.closeDockPanelAndClearNotifications(surfaceId, force: true); return }
+        if tab.panels[surfaceId] == nil {
+            tab.closeDockPanelAndClearNotifications(
+                surfaceId,
+                force: true,
+                recordsHistory: false
+            )
+            return
+        }
 
 #if DEBUG
         cmuxDebugLog(
@@ -2921,7 +2944,14 @@ class TabManager: ObservableObject {
         keepSurfaceVisible: Bool = false
     ) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
-        if tab.panels[surfaceId] == nil { tab.closeDockPanelAndClearNotifications(surfaceId, force: true); return }
+        if tab.panels[surfaceId] == nil {
+            tab.closeDockPanelAndClearNotifications(
+                surfaceId,
+                force: true,
+                recordsHistory: false
+            )
+            return
+        }
         if let runtimeSurface, tab.terminalPanel(for: surfaceId)?.surface !== runtimeSurface { return }
         let ownsRemoteChildExit = tab.isRemoteTerminalSurface(surfaceId) ||
             tab.pendingRemoteTerminalChildExitSurfaceIds.contains(surfaceId) || tab.remoteDisconnectPlaceholderPanelIds.contains(surfaceId)
@@ -2973,15 +3003,52 @@ class TabManager: ObservableObject {
             // The last surface of the last workspace exited (e.g. `exit` typed):
             // collapse the workspace but keep the window open as an empty home
             // instead of closing the window (which would quit the app on the
-            // last window). allowEmptyingWindow lets the final workspace be
-            // removed; closeWorkspace clears its notifications itself. For
-            // tabs.count > 1 this behaves exactly like the prior plain close.
+            // last window — upstream routes tabs.count <= 1 through
+            // AppDelegate.closeMainWindowContainingTabId with a respawn-recovery
+            // action; supermux never closes the window here, so that path is
+            // deliberately not taken). allowEmptyingWindow lets the final
+            // workspace be removed; closeWorkspace clears its notifications
+            // itself. For tabs.count > 1 this behaves exactly like the prior
+            // plain close.
             closeWorkspace(tab, recordHistory: false, allowEmptyingWindow: true)
             // SUPERMUX:end keep-window-on-last-close
             return
         }
 
         closeRuntimeSurface(tabId: tabId, surfaceId: surfaceId)
+    }
+
+    /// Returns a one-shot close-transaction rollback. It revalidates the exact
+    /// terminal identity before replacing the exited renderer with a fresh shell.
+    func lastTerminalChildExitRecoveryAction(
+        tabId: UUID,
+        surfaceId: UUID,
+        runtimeSurface: TerminalSurface
+    ) -> (() -> Void)? {
+        guard tabs.count == 1,
+              let workspace = tabs.first,
+              workspace.id == tabId,
+              workspace.panels.count == 1,
+              workspace.terminalPanel(for: surfaceId)?.surface === runtimeSurface else {
+            return nil
+        }
+
+        return { [weak self, weak workspace, weak runtimeSurface] in
+            guard let self, let workspace, let runtimeSurface,
+                  self.tabs.count == 1,
+                  self.tabs.first === workspace,
+                  workspace.panels.count == 1,
+                  workspace.terminalPanel(for: surfaceId)?.surface === runtimeSurface else {
+                return
+            }
+            _ = workspace.respawnTerminalSurface(
+                panelId: surfaceId,
+                command: nil,
+                focus: true,
+                replayScrollback: nil,
+                replayFileURL: nil
+            )
+        }
     }
 
     private func workspaceNeedsConfirmClose(_ workspace: Workspace) -> Bool {

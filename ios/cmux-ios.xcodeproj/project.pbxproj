@@ -11,12 +11,15 @@
 		8B8A10F02DF5000000A66F90 /* CmuxAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10F12DF5000000A66F90 /* CmuxAppDelegate.swift */; };
 		8B8A10AA2DF5000000A66F90 /* AppCompositionRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10AB2DF5000000A66F90 /* AppCompositionRoot.swift */; };
 		8B8A10022DF5000000A66F90 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A10192DF5000000A66F90 /* Assets.xcassets */; };
+		IC100011 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = IC100001 /* AppIcon.icon */; };
+		IC100012 /* AppIcon-Demo.icon in Resources */ = {isa = PBXBuildFile; fileRef = IC100002 /* AppIcon-Demo.icon */; };
 		8B8A10032DF5000000A66F90 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A101A2DF5000000A66F90 /* InfoPlist.xcstrings */; };
 		8B8A10042DF5000000A66F90 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A101B2DF5000000A66F90 /* Localizable.xcstrings */; };
 		FCAB10042DF5000000A66F90 /* LocalConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = FCAB101B2DF5000000A66F90 /* LocalConfig.plist */; };
 		8B8A10E02DF5000000A66F90 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8B8A10E12DF5000000A66F90 /* PrivacyInfo.xcprivacy */; };
 		8B8A10052DF5000000A66F90 /* cmuxUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A101C2DF5000000A66F90 /* cmuxUITests.swift */; };
 		8B8A10252DF5000000A66F90 /* TerminalThemeParityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10262DF5000000A66F90 /* TerminalThemeParityUITests.swift */; };
+		8B8A10302DF5000000A66F90 /* PushReadinessUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10312DF5000000A66F90 /* PushReadinessUITests.swift */; };
 		8B8A10E22DF5000000A66F90 /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10E32DF5000000A66F90 /* SnapshotHelper.swift */; };
 		8B8A10E42DF5000000A66F90 /* SnapshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10E52DF5000000A66F90 /* SnapshotUITests.swift */; };
 		8B41F6832DEDD23B001A66F9 /* cmuxFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 8B41F6822DEDD23B001A66F9 /* cmuxFeature */; };
@@ -51,12 +54,15 @@
 		8B8A10AB2DF5000000A66F90 /* AppCompositionRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCompositionRoot.swift; sourceTree = "<group>"; };
 		8B8A10182DF5000000A66F90 /* cmux.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = file; path = cmux.xctestplan; sourceTree = "<group>"; };
 		8B8A10192DF5000000A66F90 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		IC100001 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = AppIcon.icon; path = ../AppIcon.icon; sourceTree = SOURCE_ROOT; };
+		IC100002 /* AppIcon-Demo.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = "AppIcon-Demo.icon"; path = "../AppIcon-Demo.icon"; sourceTree = SOURCE_ROOT; };
 		8B8A101A2DF5000000A66F90 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		8B8A101B2DF5000000A66F90 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		FCAB101B2DF5000000A66F90 /* LocalConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = LocalConfig.plist; sourceTree = "<group>"; };
 		8B8A10E12DF5000000A66F90 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		8B8A101C2DF5000000A66F90 /* cmuxUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = cmuxUITests.swift; sourceTree = "<group>"; };
 		8B8A10262DF5000000A66F90 /* TerminalThemeParityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemeParityUITests.swift; sourceTree = "<group>"; };
+		8B8A10312DF5000000A66F90 /* PushReadinessUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushReadinessUITests.swift; sourceTree = "<group>"; };
 		8B8A10E32DF5000000A66F90 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
 		8B8A10E52DF5000000A66F90 /* SnapshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -89,6 +95,8 @@
 			isa = PBXGroup;
 			children = (
 				8B8A10192DF5000000A66F90 /* Assets.xcassets */,
+				IC100001 /* AppIcon.icon */,
+				IC100002 /* AppIcon-Demo.icon */,
 				8B8A10E12DF5000000A66F90 /* PrivacyInfo.xcprivacy */,
 				8B8A10212DF5000000A66F90 /* Resources */,
 				8B8A10172DF5000000A66F90 /* cmuxApp.swift */,
@@ -104,6 +112,7 @@
 			children = (
 				8B8A101C2DF5000000A66F90 /* cmuxUITests.swift */,
 				8B8A10262DF5000000A66F90 /* TerminalThemeParityUITests.swift */,
+				8B8A10312DF5000000A66F90 /* PushReadinessUITests.swift */,
 				8B8A10E52DF5000000A66F90 /* SnapshotUITests.swift */,
 				8B8A10E32DF5000000A66F90 /* SnapshotHelper.swift */,
 			);
@@ -253,6 +262,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				8B8A10022DF5000000A66F90 /* Assets.xcassets in Resources */,
+				IC100011 /* AppIcon.icon in Resources */,
+				IC100012 /* AppIcon-Demo.icon in Resources */,
 				8B8A10032DF5000000A66F90 /* InfoPlist.xcstrings in Resources */,
 				8B8A10042DF5000000A66F90 /* Localizable.xcstrings in Resources */,
 				FCAB10042DF5000000A66F90 /* LocalConfig.plist in Resources */,
@@ -286,6 +297,7 @@
 			files = (
 				8B8A10052DF5000000A66F90 /* cmuxUITests.swift in Sources */,
 				8B8A10252DF5000000A66F90 /* TerminalThemeParityUITests.swift in Sources */,
+				8B8A10302DF5000000A66F90 /* PushReadinessUITests.swift in Sources */,
 				8B8A10E42DF5000000A66F90 /* SnapshotUITests.swift in Sources */,
 				8B8A10E22DF5000000A66F90 /* SnapshotHelper.swift in Sources */,
 			);

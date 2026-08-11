@@ -1,6 +1,9 @@
 #if os(iOS)
 import CmuxMobileShell
 import CmuxMobileShellModel
+// SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects section hosted in one table row — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-projects-table-row
 import SwiftUI
 import UIKit
 
@@ -25,6 +28,9 @@ struct WorkspaceListTable: UIViewControllerRepresentable {
     let workspaceChangeChipsByWorkspaceID: [String: MobileWorkspaceChangesChip]
     let openWorkspaceChanges: (@MainActor (MobileWorkspacePreview) -> Void)?
 
+    // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects payload; nil = section hidden, so an upstream Mac renders exactly today's list)
+    var supermuxProjects: SupermuxProjectsTableRowConfiguration? = nil
+    // SUPERMUX:end supermux-mobile-projects-table-row
     let connectionRequiresReauth: Bool
     let connectionError: String?
     let host: String
@@ -35,6 +41,12 @@ struct WorkspaceListTable: UIViewControllerRepresentable {
     let moveRows: ((IndexSet, Int) -> Void)?
     let canDropIntoGroup: ((MobileWorkspacePreview.ID, MobileWorkspaceGroupPreview.ID) -> Bool)?
     let dropIntoGroup: ((MobileWorkspacePreview.ID, MobileWorkspaceGroupPreview.ID) -> Void)?
+    /// Builds the row's "Move to Group" picker on demand (context-menu open),
+    /// so no per-row menu state is computed during list updates.
+    var groupMoveMenu: ((MobileWorkspacePreview.ID) -> MobileWorkspaceGroupMoveMenu?)? = nil
+    /// Moves the workspace to the end of a group, or out of its group when the
+    /// target is `nil`. Same optimistic move path as drag-and-drop.
+    var moveToGroup: ((MobileWorkspacePreview.ID, MobileWorkspaceGroupPreview.ID?) -> Void)? = nil
 
     let selectWorkspace: (MobileWorkspacePreview.ID) -> Void
     let closeWorkspace: ((MobileWorkspacePreview.ID) -> Void)?

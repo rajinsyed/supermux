@@ -103,6 +103,49 @@ import Testing
     )
 }
 
+// SUPERMUX:begin verified-replay-semantic-bold-color
+@Test func renderGridVisualSnapshotUsesSemanticIdentityForBoldThemeColors() throws {
+    func snapshot(
+        foreground: String,
+        source: MobileTerminalRenderGridFrame.Style.ColorSource,
+        paletteIndex: Int? = nil
+    ) throws -> MobileTerminalRenderGridVisualSnapshot {
+        let frame = try MobileTerminalRenderGridFrame(
+            surfaceID: "terminal-bold-color",
+            stateSeq: 1,
+            columns: 4,
+            rows: 1,
+            styles: [
+                .init(id: 0, foreground: "#FFFFFF", background: "#000000"),
+                .init(
+                    id: 1,
+                    foreground: foreground,
+                    background: "#000000",
+                    foregroundSource: source,
+                    foregroundPaletteIndex: paletteIndex,
+                    bold: true
+                ),
+            ],
+            rowSpans: [.init(row: 0, column: 0, styleID: 1, text: "bold")]
+        )
+        return try #require(MobileTerminalRenderGridVisualSnapshot(fullFrame: frame))
+    }
+
+    #expect(
+        try snapshot(foreground: "#F07178", source: .palette, paletteIndex: 1)
+            == snapshot(foreground: "#EA6C73", source: .palette, paletteIndex: 1)
+    )
+    #expect(
+        try snapshot(foreground: "#F07178", source: .palette, paletteIndex: 1)
+            != snapshot(foreground: "#FFB454", source: .palette, paletteIndex: 3)
+    )
+    #expect(
+        try snapshot(foreground: "#F07178", source: .rgb)
+            != snapshot(foreground: "#EA6C73", source: .rgb)
+    )
+}
+// SUPERMUX:end verified-replay-semantic-bold-color
+
 @Test func renderGridVisualSnapshotPreservesVisibleForegroundDifferences() throws {
     func snapshot(
         text: String,

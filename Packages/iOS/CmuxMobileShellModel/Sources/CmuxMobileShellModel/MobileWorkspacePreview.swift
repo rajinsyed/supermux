@@ -1,3 +1,4 @@
+public import CMUXMobileCore
 public import Foundation
 
 /// A lightweight, `Sendable` snapshot of a remote workspace shown in the mobile shell.
@@ -66,6 +67,10 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
     /// Whether the workspace is pinned on the Mac. Pinned workspaces sort to the
     /// top of the mobile list.
     public var isPinned: Bool
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    /// The Mac-authoritative focused panel of any kind inside this workspace.
+    public var focusedPanel: MobileWorkspaceFocusedPanel?
+    // SUPERMUX:end supermux-mobile-selection-sync
     /// The id of the group this workspace belongs to, if any. `nil` for ungrouped
     /// workspaces. Used to fold contiguous same-group workspaces under their
     /// group header, mirroring the Mac sidebar.
@@ -88,6 +93,8 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
     public var hasUnread: Bool
     /// The terminals contained in the workspace, in display order.
     public var terminals: [MobileTerminalPreview]
+    /// The Simulator panes contained in the workspace, in display order.
+    public var simulators: [MobileSimulatorPanelDescriptor]
     /// The owning Mac's DISTINCT color index in the aggregated list, stamped by
     /// ``MobileWorkspaceAggregation/derivedWorkspaces`` so same-Mac workspaces
     /// share one avatar color and different Macs are guaranteed distinct. `nil`
@@ -128,6 +135,10 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
     public var supermuxPullRequestURL: String? = nil
     /// Whether the pull request is stale (mac dims it), when sent.
     public var supermuxPullRequestIsStale: Bool? = nil
+    /// Unread notification count behind ``hasUnread``, so the badge can show
+    /// the same numeral the Mac sidebar does. `nil` from an upstream cmux Mac,
+    /// which sends only the boolean; the badge then draws its countless dot.
+    public var supermuxUnreadCount: Int? = nil
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// The workspace id to use in RPC params.
@@ -141,6 +152,7 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
     ///   - windowID: The owning Mac window identifier, when known.
     ///   - name: The workspace's user-facing display name.
     ///   - isPinned: Whether the workspace is pinned on the Mac. Defaults to `false`.
+    ///   - focusedPanel: Mac-authoritative focused panel, when reported.
     ///   - groupID: The group this workspace belongs to, if any. Defaults to `nil`.
     ///   - previewText: One-line preview of the latest activity. Defaults to `nil`.
     ///   - previewAt: When the preview's activity happened. Defaults to `nil`.
@@ -158,12 +170,16 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
         customColorHex: String? = nil,
         currentDirectory: String? = nil,
         isPinned: Bool = false,
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        focusedPanel: MobileWorkspaceFocusedPanel? = nil,
+        // SUPERMUX:end supermux-mobile-selection-sync
         groupID: MobileWorkspaceGroupPreview.ID? = nil,
         previewText: String? = nil,
         previewAt: Date? = nil,
         lastActivityAt: Date? = nil,
         hasUnread: Bool = false,
-        terminals: [MobileTerminalPreview]
+        terminals: [MobileTerminalPreview],
+        simulators: [MobileSimulatorPanelDescriptor] = []
     ) {
         self.id = id
         self.remoteWorkspaceID = nil
@@ -176,11 +192,15 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
         self.customColorHex = customColorHex
         self.currentDirectory = currentDirectory
         self.isPinned = isPinned
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        self.focusedPanel = focusedPanel
+        // SUPERMUX:end supermux-mobile-selection-sync
         self.groupID = groupID
         self.previewText = previewText
         self.previewAt = previewAt
         self.lastActivityAt = lastActivityAt
         self.hasUnread = hasUnread
         self.terminals = terminals
+        self.simulators = simulators
     }
 }

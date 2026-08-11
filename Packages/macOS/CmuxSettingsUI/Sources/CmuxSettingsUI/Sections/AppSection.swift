@@ -585,7 +585,7 @@ public struct AppSection: View {
             SettingsCardRow(
                 configurationReview: .json("notifications.unreadPaneRing"),
                 String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Pane Ring"),
-                subtitle: String(localized: "settings.notifications.paneRing.subtitle", defaultValue: "Show a blue ring around panes with unread notifications.")
+                subtitle: String(localized: "settings.notifications.paneRing.subtitle", defaultValue: "Show a ring around panes with unread notifications.")
             ) {
                 Toggle("", isOn: Binding(get: { paneRing.current }, set: { paneRing.set($0) }))
                     .labelsHidden()
@@ -597,7 +597,7 @@ public struct AppSection: View {
             SettingsCardRow(
                 configurationReview: .json("notifications.paneFlash"),
                 String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash"),
-                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash a blue outline when cmux highlights a pane.")
+                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash an outline when cmux highlights a pane.")
             ) {
                 Toggle("", isOn: Binding(get: { paneFlash.current }, set: { paneFlash.set($0) }))
                     .labelsHidden()

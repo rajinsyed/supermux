@@ -56,4 +56,59 @@ struct MobilePairedMacPersistenceFailureTests {
             teamID: "team-a"
         ).isEmpty)
     }
+
+    // SUPERMUX:begin paired-mac-persistence-result (regression: a serialized write skipped after losing connection authority is not a successful persistence — see SUPERMUX-TOUCHPOINTS.md)
+    @Test
+    func skippedStaleWriteRejectsConnectionPersistence() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try MobilePairedMacStore(
+            databaseURL: directory.appendingPathComponent("paired-macs.sqlite3")
+        )
+        let defaultsSuite = "paired-mac-persistence-stale-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: defaultsSuite))
+        defaults.removePersistentDomain(forName: defaultsSuite)
+        let shell = MobileShellComposite(
+            isSignedIn: true,
+            pairedMacStore: store,
+            identityProvider: StaticIdentityProvider(userID: "user-1"),
+            teamIDProvider: { "team-a" },
+            pairingHintDefaults: defaults
+        )
+        let route = try CmxAttachRoute(
+            id: "iroh-test",
+            kind: .iroh,
+            endpoint: .peer(
+                identity: CmxIrohPeerIdentity(
+                    endpointID: String(repeating: "a", count: 64)
+                ),
+                pathHints: []
+            ),
+            priority: 0
+        )
+        let ticket = try CmxAttachTicket(
+            workspaceID: "workspace-1",
+            terminalID: "terminal-1",
+            macDeviceID: "test-mac",
+            macDisplayName: "Test Mac",
+            routes: [route],
+            expiresAt: Date(timeIntervalSince1970: 4_102_444_800)
+        )
+
+        #expect(!(await shell.persistPairedMacFromTicket(
+            ticket,
+            ifStillCurrent: { false }
+        )))
+        #expect(!shell.hasKnownPairedMac)
+        #expect(try await store.loadAll(
+            stackUserID: "user-1",
+            teamID: "team-a"
+        ).isEmpty)
+    }
+    // SUPERMUX:end paired-mac-persistence-result
 }

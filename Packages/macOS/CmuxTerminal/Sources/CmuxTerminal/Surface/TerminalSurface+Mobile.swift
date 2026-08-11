@@ -25,7 +25,10 @@ extension TerminalSurface {
         let posX = (Double(col) + 0.5) * cellWidthPt
         let posY = (Double(row) + 0.5) * cellHeightPt
         ghostty_surface_mouse_pos(surface, posX, posY, GHOSTTY_MODS_NONE)
-        ghostty_surface_mouse_scroll(surface, 0, deltaLines, 0)
+        // SUPERMUX:begin ios-terminal-native-scroll
+        let precisePixelDelta = deltaLines * Double(size.cell_height_px)
+        ghostty_surface_mouse_scroll(surface, 0, precisePixelDelta, 0b0000_0001)
+        // SUPERMUX:end ios-terminal-native-scroll
     }
 
     /// Forward a mobile tap to this real surface as a left mouse click at the

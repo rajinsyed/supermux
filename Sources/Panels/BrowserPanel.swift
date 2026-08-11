@@ -2745,6 +2745,10 @@ final class BrowserPanel: Panel, ObservableObject {
     var mobileBrowserStreamPreviousViewport: BrowserViewport?
     var mobileBrowserStreamPreviousViewportWasCaptured = false
     var mobileBrowserStreamViewport: MobileBrowserViewport?
+    // SUPERMUX:begin mac-browser-stream-teardown-grace
+    var mobileBrowserStreamViewportTeardownTask: Task<Void, Never>?
+    var mobileBrowserStreamViewportTeardownGrace: TimeInterval = 2.0
+    // SUPERMUX:end mac-browser-stream-teardown-grace
     let mobileBrowserDialogBroker: MobileBrowserDialogBroker
 
     /// Monotonic identity for the current WKWebView instance.
@@ -4055,7 +4059,14 @@ final class BrowserPanel: Panel, ObservableObject {
             BrowserToolbarAccessorySpacingDebugSettings.key: BrowserToolbarAccessorySpacingDebugSettings.defaultSpacing,
             BrowserProfilePopoverDebugSettings.horizontalPaddingKey: BrowserProfilePopoverDebugSettings.defaultHorizontalPadding,
             BrowserProfilePopoverDebugSettings.verticalPaddingKey: BrowserProfilePopoverDebugSettings.defaultVerticalPadding,
-            BrowserThemeSettings.modeKey: BrowserThemeSettings.defaultMode.rawValue,
+            // The theme mode deliberately has no registered fallback. Registration
+            // writes into the process-wide registration domain, which every
+            // `UserDefaults` reads through, so the mode key would always resolve to
+            // a value and `BrowserThemeSettings.mode(defaults:)` could no longer tell
+            // "never chosen" from "chosen as system" — which is what lets it migrate
+            // the legacy `browserForcedDarkModeEnabled` toggle. The accessor already
+            // falls back to `defaultMode`, and the SwiftUI binding carries its own
+            // default, so nothing needs the registered value.
         ])
 
         let resolvedThemeMode = BrowserThemeSettings.mode(defaults: defaults)
@@ -4385,6 +4396,10 @@ final class BrowserPanel: Panel, ObservableObject {
             hiddenWebViewDiscardManager.updateRestoredSessionRenderIntent(nil)
             currentURL = initialRequest.url
             shouldRenderWebView = renderInitialNavigation
+            // A panel born with a URL is never `.newTab`: seed the state here
+            // because the deferred path returns without a visibility or
+            // navigation transition to refresh it later.
+            refreshWebViewLifecycleState()
             guard renderInitialNavigation else { return }
             if let url = initialRequest.url,
                insecureHTTPBypassHostOnce == nil,
@@ -4404,6 +4419,10 @@ final class BrowserPanel: Panel, ObservableObject {
             hiddenWebViewDiscardManager.updateRestoredSessionRenderIntent(nil)
             currentURL = url
             shouldRenderWebView = renderInitialNavigation
+            // A panel born with a URL is never `.newTab`: seed the state here
+            // because the deferred path returns without a visibility or
+            // navigation transition to refresh it later.
+            refreshWebViewLifecycleState()
             guard renderInitialNavigation else { return }
             if adoptedPrewarmedWebView {
                 // Already navigated while hidden; record for recovery paths.

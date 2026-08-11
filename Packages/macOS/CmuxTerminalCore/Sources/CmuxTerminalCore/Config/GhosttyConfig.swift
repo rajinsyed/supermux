@@ -591,6 +591,17 @@ public struct GhosttyConfig {
                     } else {
                         boldColor = parseGhosttyColor(value)?.hexString().lowercased()
                     }
+                // SUPERMUX:begin ghostty-bold-is-bright-mobile-theme
+                case "bold-is-bright":
+                    // Match Ghostty's compatibility alias: true enables bright
+                    // palette resolution, while false or invalid values are no-ops.
+                    switch value {
+                    case "1", "t", "T", "true":
+                        boldColor = "bright"
+                    default:
+                        break
+                    }
+                // SUPERMUX:end ghostty-bold-is-bright-mobile-theme
                 case "cursor-color":
                     hasCursorColorDirective = true
                     if let semantic = GhosttyCellRelativeColor(rawValue: value) {

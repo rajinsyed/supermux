@@ -431,6 +431,31 @@ extension MobileShellComposite {
         let immediate = queue.enqueue(delivery)
         let pendingCount = queue.pendingCount
         terminalOutputQueuesBySurfaceID[surfaceID] = queue
+        // SUPERMUX:begin ios-terminal-output-backlog-coalesce
+        // Backlog cap for render-grid frames. Alternate-screen deltas are
+        // nonreplaceable dirty-row patches, so a fast TUI (or a fast scroll
+        // gesture over one) can enqueue frames faster than the serialized
+        // verified apply drains them; physical traces measured 90+ pending
+        // frames draining for ~4 s after touch-up — perceived as momentum.
+        // Individual deltas cannot be dropped (stateful patches), but the
+        // whole backlog can be replaced by one authoritative replay: clear
+        // the queue and route through the standard replay barrier, exactly
+        // the rebuilt-surface recovery path. The frozen verified presentation
+        // keeps the last frame visible until the fresh full frame lands.
+        if pendingCount >= Self.maxTerminalOutputPendingBeforeReplayCoalesce,
+           !bypassReplayBarrier,
+           delivery.sourceRenderGridFrame != nil {
+            terminalOutputQueuesBySurfaceID[surfaceID] = TerminalOutputDeliveryQueue()
+            terminalOutputStreamTokensBySurfaceID[surfaceID] = UUID()
+            terminalReplayBarrierAckStreamTokensBySurfaceID.removeValue(forKey: surfaceID)
+            terminalReplayBarrierAckCoveredDroppedOutputCountsBySurfaceID.removeValue(forKey: surfaceID)
+            MobileDebugLog.anchormux(
+                "terminal.output.backlog_coalesce surface=\(surfaceID) depth=\(pendingCount)"
+            )
+            terminalOutputNeedsReplay(surfaceID: surfaceID)
+            return true
+        }
+        // SUPERMUX:end ios-terminal-output-backlog-coalesce
         if bypassReplayBarrier,
            immediate != nil,
            terminalReplayBarrierTokensBySurfaceID[surfaceID] != nil {
@@ -475,6 +500,23 @@ extension MobileShellComposite {
            frame.activeScreen == .primary {
             return false
         }
+        // SUPERMUX:begin ios-terminal-alt-scroll-direct-apply
+        // Alternate-screen deltas during an active scroll gesture apply
+        // directly: the verified pipeline's per-frame freeze/present/read-back
+        // fence cannot drain gesture-rate repaints and the motion clumps. The
+        // first verified delta after the window re-checks pixel exactness and
+        // any drift triggers full replay recovery, so correctness is deferred
+        // by at most the window, never lost.
+        if let frame = delivery.sourceRenderGridFrame,
+           frame.activeScreen == .alternate,
+           TerminalAltScrollDirectApplyPolicy.shouldApplyDirectly(
+               isFullFrame: frame.full,
+               lastScrollInputAt: terminalAlternateScrollLastInputAtBySurfaceID[frame.surfaceID],
+               now: ProcessInfo.processInfo.systemUptime
+           ) {
+            return false
+        }
+        // SUPERMUX:end ios-terminal-alt-scroll-direct-apply
         return true
     }
 

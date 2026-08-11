@@ -9,8 +9,8 @@ import CmuxMobileTerminal
 import SwiftUI
 import UIKit
 
-/// Mounts a `GhosttySurfaceView`, routes terminal output, and bridges the SwiftUI
-/// composer into the surface-owned bottom dock. Primary-screen output uses the
+/// Mounts a `GhosttySurfaceHostView`, routes terminal output, and bridges the SwiftUI
+/// composer into the host-owned bottom dock. Primary-screen output uses the
 /// phone's natural height; alternate-screen replay can pin to the Mac's grid.
 struct GhosttySurfaceRepresentable: UIViewRepresentable {
     let workspaceID: String
@@ -35,6 +35,11 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
     /// Ghostty config update without remounting or changing another scene.
     var configThemeGeneration: UInt64 = 0
     var artifactFilesEnabled: Bool = false
+    // SUPERMUX:begin ios-terminal-scroll-speed
+    /// User-tuned wheel-scroll sensitivity from Settings; applied live to the
+    /// mounted surface on every update pass.
+    var terminalScrollSpeed: Double = 1.0
+    // SUPERMUX:end ios-terminal-scroll-speed
     var terminalFolderTapEnabled: Bool = true
     var terminalFilesChipEnabled: Bool = false
     var showMissingFiles: Bool = false
@@ -87,6 +92,9 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         )
         view.autoFocusOnWindowAttach = autoFocusOnWindowAttach
         view.artifactFilesEnabled = artifactFilesEnabled
+        // SUPERMUX:begin ios-terminal-scroll-speed
+        view.scrollSpeedMultiplier = terminalScrollSpeed
+        // SUPERMUX:end ios-terminal-scroll-speed
         // Screen-anchored sessions scroll the local mirror's own scrollback
         // immediately (the Mac never repaints for a primary-screen scroll), so
         // they keep the low-latency local authority even under verified replay.
@@ -113,7 +121,7 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         view.setComposerActive(isComposerActive)
         context.coordinator.setComposerMounted(isComposerActive)
         context.coordinator.themeApplicationScheduler.seed(generation: configThemeGeneration)
-        return view
+        return GhosttySurfaceHostView(surfaceView: view)
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
@@ -123,8 +131,11 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         // coordinator mounts/unmounts the hosted compose field into the surface's
         // composer band. This is a UIKit-internal mutation, not a sibling-observed
         // state write, so it is safe in `updateUIView`.
-        guard let surfaceView = uiView as? GhosttySurfaceView else { return }
+        guard let surfaceView = (uiView as? GhosttySurfaceHostView)?.surfaceView else { return }
         surfaceView.autoFocusOnWindowAttach = autoFocusOnWindowAttach
+        // SUPERMUX:begin ios-terminal-scroll-speed
+        surfaceView.scrollSpeedMultiplier = terminalScrollSpeed
+        // SUPERMUX:end ios-terminal-scroll-speed
         surfaceView.terminalTheme = terminalTheme
         surfaceView.terminalConfigTheme = terminalConfigTheme
         context.coordinator.onArtifactFilesRequested = onArtifactFilesRequested
@@ -160,7 +171,7 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        (uiView as? GhosttySurfaceView)?.prepareForDismantle()
+        (uiView as? GhosttySurfaceHostView)?.surfaceView.prepareForDismantle()
         coordinator.tearDownArtifactChip()
         coordinator.tearDownComposer()
         coordinator.detach()
@@ -191,10 +202,10 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         var artifactCountState = TerminalArtifactChipCountState()
         var artifactCountNeedsRefresh: Bool
         var freshestLocalArtifactCount = 0
-        /// Taps must apply in user order, and stopping the live mount invalidates pending work.
-        /// Same-path taps intentionally classify independently so the newest coordinates
-        /// win; human tap rate and the two-second deadline bound concurrent stats.
-        var tapGeneration: UInt64 = 0
+        /// Async Mac clicks apply only for the newest tap and current mount.
+        /// Keyboard intent is owned synchronously by the surface input session,
+        /// so this generation can invalidate click work without starving focus.
+        var clickGeneration: UInt64 = 0
         /// Hosts the SwiftUI ``TerminalComposerView`` so it can be installed into the
         /// surface's composer band. Built lazily on first open and torn down on
         /// dismantle; mounted/unmounted by ``setComposerMounted(_:)``.
@@ -357,6 +368,9 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
                             store: store
                         )
                         if applied {
+                            // SUPERMUX:begin ios-terminal-native-scroll
+                            surfaceView.setNativeScrollScreen(frame.activeScreen)
+                            // SUPERMUX:end ios-terminal-native-scroll
                             #if DEBUG
                             MobileLatencyTrace.stampElapsed(
                                 "ap.done",
@@ -458,6 +472,11 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
                             "path=legacy us=\($0)"
                     }
                     #endif
+                    // SUPERMUX:begin ios-terminal-native-scroll
+                    if let frame = chunk.sourceRenderGridFrame {
+                        surfaceView.setNativeScrollScreen(frame.activeScreen)
+                    }
+                    // SUPERMUX:end ios-terminal-native-scroll
                     store.terminalOutputDidProcess(
                         surfaceID: surfaceID,
                         streamToken: chunk.streamToken
@@ -479,7 +498,7 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
         }
 
         private func stopMountedTasks() {
-            tapGeneration &+= 1
+            clickGeneration &+= 1
             outputStartContinuation?.finish()
             outputStartContinuation = nil
             preparedViewportReportsByReportID.removeAll()
@@ -732,11 +751,20 @@ struct GhosttySurfaceRepresentable: UIViewRepresentable {
                     // unchanged heights, so a no-op change is harmless.
                     self?.reportComposerHeight(animated: true)
                 },
-                prepareForModalPresentation: { [weak self] in
-                    // The photo picker suppresses the keyboard without reliably
-                    // resigning the existing input proxy. Release the surface's
-                    // actual responder first so the next terminal tap can focus it.
-                    self?.surfaceView?.resignCurrentInput()
+                requestInputFocus: { [weak self] in
+                    self?.surfaceView?.requestComposerInputFocus()
+                },
+                inputFocusChanged: { [weak self] focused in
+                    self?.surfaceView?.composerInputFocusChanged(focused)
+                },
+                photoPickerWillPresent: { [weak self] in
+                    self?.surfaceView?.photoPickerWillPresent()
+                },
+                photoPickerDidPresent: { [weak self] in
+                    self?.surfaceView?.photoPickerDidPresent()
+                },
+                photoPickerDidDismiss: { [weak self] in
+                    self?.surfaceView?.photoPickerDidDismiss()
                 }
             )
             let controller = UIHostingController(rootView: view)

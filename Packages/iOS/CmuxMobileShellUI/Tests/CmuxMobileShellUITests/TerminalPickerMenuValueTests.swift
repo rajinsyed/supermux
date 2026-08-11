@@ -58,6 +58,35 @@ import Testing
         #expect(staleSelection.selectedName == "Snapshot")
     }
 
+    // SUPERMUX:begin ios-pane-actions
+    @Test func paneActionAvailabilityParticipatesInMenuIdentity() {
+        let hidden = TerminalPickerMenuValue(
+            liveTerminals: [],
+            snapshotRows: [],
+            selectedID: nil,
+            canCreateWorkspace: true,
+            hasActiveBrowser: false,
+            isChatMode: false
+        )
+        let visible = TerminalPickerMenuValue(
+            liveTerminals: [],
+            snapshotRows: [],
+            selectedID: nil,
+            canCreateWorkspace: true,
+            hasActiveBrowser: false,
+            isChatMode: false,
+            canCreateSimulator: true,
+            canClosePane: true
+        )
+
+        #expect(!hidden.canCreateSimulator)
+        #expect(!hidden.canClosePane)
+        #expect(visible.canCreateSimulator)
+        #expect(visible.canClosePane)
+        #expect(visible != hidden)
+    }
+    // SUPERMUX:end ios-pane-actions
+
     @Test func emptySnapshotUsesLiveRowsAndHandlesNoTerminals() {
         let liveTerminal = MobileTerminalPreview(id: "terminal-live", name: "Live")
         let firstOpen = menuValue(

@@ -5,6 +5,9 @@ import CmuxMobileShellModel
 import CmuxMobileSupport
 import CmuxMobileToast
 import CmuxMobileWorkspace
+// SUPERMUX:begin supermux-mobile-compact-root-chrome (root chrome follows the interactive pop — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-compact-root-chrome
 import SwiftUI
 #if os(iOS)
 @preconcurrency import UIKit
@@ -168,8 +171,21 @@ struct WorkspaceShellView: View {
     @State private var selectedPrimaryTab: MobilePrimaryTab = .workspaces
     @State private var notificationNavigationPath: [MobileWorkspacePreview.ID] = []
     @State private var notificationSearchNavigationPath: [MobileWorkspacePreview.ID] = []
+    @State private var workspaceSearchNavigationPath: [MobileWorkspacePreview.ID] = []
     @State private var pendingPrimarySearchWorkspaceNavigationID: MobileWorkspacePreview.ID?
     @State private var pendingPrimarySearchNotificationNavigationID: MobileWorkspacePreview.ID?
+    // A NavigationStack path write only reaches UIKit while the stack is in the
+    // window. Writing a push mid tab-transition (search morph still animating)
+    // records the pushed state without pushing, which strands the root list
+    // with the tab bar and toolbar hidden. These flags defer pending pushes to
+    // the destination stack's own onAppear.
+    @State private var workspacesStackIsOnScreen = false
+    @State private var notificationsStackIsOnScreen = false
+    // Set when a workspace is opened from search results: popping back then
+    // finishes the search round on the Workspaces tab with the query cleared,
+    // instead of stranding the user on a deactivated search tab whose selected
+    // (tinted) search control suggests a search is still in progress.
+    @State private var searchSelectionReturnsToWorkspaces = false
     @State private var showingRootSettings = false
     @State private var settingsPairingScannerHandoff = SettingsPairingScannerHandoff()
     @State private var showingRootDeviceTree = false
@@ -177,6 +193,9 @@ struct WorkspaceShellView: View {
     @State private var rootToolbarPendingSelection: WorkspaceMacSelection?
     @State private var rootToolbarSelectionTask: Task<Void, Never>?
     @State private var rootToolbarSelectionGeneration: UInt64 = 0
+    // SUPERMUX:begin supermux-mobile-compact-root-chrome
+    @State private var compactRootChrome = SupermuxCompactRootChrome()
+    // SUPERMUX:end supermux-mobile-compact-root-chrome
     #endif
     @State private var primarySearchCoordinator = MobilePrimarySearchCoordinator()
     @State private var workspaceListFilterState = WorkspaceListFilterState()
@@ -208,6 +227,22 @@ struct WorkspaceShellView: View {
         #endif
     }
 
+    // SUPERMUX:begin supermux-mobile-compact-root-chrome
+    /// Whether the phone's ROOT chrome (list toolbar items, tab bar, compose
+    /// button) belongs on screen right now. Everything that used to read
+    /// `compactNavigationPath.isEmpty` reads this instead, so all of it appears
+    /// and disappears together — including during an edge-swipe back, which
+    /// reveals the root long before the path is written. See
+    /// `SupermuxCompactRootChrome`.
+    var showsCompactRootChrome: Bool {
+        #if os(iOS)
+        compactRootChrome.isVisible(pathIsEmpty: compactNavigationPath.isEmpty)
+        #else
+        compactNavigationPath.isEmpty
+        #endif
+    }
+    // SUPERMUX:end supermux-mobile-compact-root-chrome
+
     private var listConnectionStatus: MobileMacConnectionStatus {
         if isInitialConnectionLoading || initialConnectionTimedOut {
             return .reconnecting
@@ -228,9 +263,11 @@ struct WorkspaceShellView: View {
                 selection: $selectedPrimaryTab,
                 searchCoordinator: primarySearchCoordinator,
                 notificationUnreadCount: presentation.notificationUnreadCount,
-                taskComposerAction: usesCompactStack && !compactNavigationPath.isEmpty
+                // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                taskComposerAction: usesCompactStack && !showsCompactRootChrome
                     ? nil
                     : taskComposerAction
+                // SUPERMUX:end supermux-mobile-compact-root-chrome
             ) {
                 workspaceTabContent(
                     canCreateWorkspaceForSelection: presentation.canCreateWorkspaceForSelection
@@ -259,7 +296,11 @@ struct WorkspaceShellView: View {
                     }
                 }
                 .onAppear {
+                    notificationsStackIsOnScreen = true
                     consumePendingPrimarySearchNavigation(for: .notifications)
+                }
+                .onDisappear {
+                    notificationsStackIsOnScreen = false
                 }
                 .onChange(of: pendingPrimarySearchNotificationNavigationID) { _, _ in
                     consumePendingPrimarySearchNavigation(for: .notifications)
@@ -286,7 +327,16 @@ struct WorkspaceShellView: View {
             .onChange(of: selectedPrimaryTab) { oldValue, newValue in
                 if oldValue == .search, newValue != .search {
                     notificationSearchNavigationPath = []
+                    workspaceSearchNavigationPath = []
+                    searchSelectionReturnsToWorkspaces = false
                 }
+            }
+            .onChange(of: workspaceSearchNavigationPath) { _, path in
+                guard path.isEmpty, searchSelectionReturnsToWorkspaces else { return }
+                searchSelectionReturnsToWorkspaces = false
+                guard selectedPrimaryTab == .search else { return }
+                primarySearchCoordinator.workspaces = ""
+                selectedPrimaryTab = .workspaces
             }
             .onChange(of: store.deeplinkWorkspaceNavigationRequest) { _, request in
                 guard request != nil else { return }
@@ -344,7 +394,7 @@ struct WorkspaceShellView: View {
 
     private func workspaceSearchTabContent(canCreateWorkspaceForSelection: Bool) -> some View {
         workspaceActionToastOverlay {
-            NavigationStack {
+            NavigationStack(path: $workspaceSearchNavigationPath) {
                 MobilePrimaryWorkspaceSearchContentHost(
                     searchCoordinator: primarySearchCoordinator
                 ) { searchText in
@@ -360,7 +410,23 @@ struct WorkspaceShellView: View {
                     )
                 }
                 .toolbar {
-                    rootToolbarContent
+                    if workspaceSearchNavigationPath.isEmpty {
+                        rootToolbarContent
+                    }
+                }
+                // Selecting a search result opens the workspace inside the
+                // search tab's own stack, exactly like notification search.
+                // Transitioning to the Workspaces tab and pushing on its stack
+                // from here raced the search-field dismissal and could record
+                // the push without performing it, stranding the list with no
+                // tab bar (the "stuck after selecting from search" bug).
+                .navigationDestination(for: MobileWorkspacePreview.ID.self) { workspaceID in
+                    workspaceDestination(
+                        for: workspaceID,
+                        createWorkspace: createWorkspaceInCompactStack,
+                        canCreateWorkspaceForSelection: canCreateWorkspaceForSelection
+                    )
+                    .toolbarVisibility(.hidden, for: .tabBar)
                 }
             }
         }
@@ -454,9 +520,11 @@ struct WorkspaceShellView: View {
                 )
             }
             .toolbar {
-                if compactNavigationPath.isEmpty {
+                // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                if showsCompactRootChrome {
                     rootToolbarContent
                 }
+                // SUPERMUX:end supermux-mobile-compact-root-chrome
             }
             .navigationDestination(for: MobileWorkspacePreview.ID.self) { workspaceID in
                 workspaceDestination(
@@ -469,9 +537,6 @@ struct WorkspaceShellView: View {
                         action: popCompactStack
                     )
                 )
-                    #if os(iOS)
-                    .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
-                    #endif
                     // Only on the pushed compact stack (where a back button
                     // exists): replace the system back button with a custom one
                     // that folds the unread-workspace count INTO the same button
@@ -479,7 +544,36 @@ struct WorkspaceShellView: View {
                     // swipe-back, so re-enable it via InteractiveSwipeBackEnabler.
                     .navigationBarBackButtonHidden(true)
                     .background(InteractiveSwipeBackEnabler())
+                    // SUPERMUX:begin supermux-mobile-compact-root-chrome
+                    .background(SupermuxInteractivePopObserver { revealsRoot in
+                        if revealsRoot {
+                            compactRootChrome.interactivePopBegan()
+                        } else {
+                            compactRootChrome.interactivePopRolledBack()
+                        }
+                    })
+                    // SUPERMUX:end supermux-mobile-compact-root-chrome
             }
+            // SUPERMUX:begin supermux-mobile-compact-root-chrome
+            // Declared HERE, on the stack itself, and deliberately NOT on the
+            // pushed destination where upstream had it.
+            //
+            // A preference declared inside `navigationDestination` belongs to a
+            // view that is being torn down for the whole pop, and the tab bar
+            // does not pick up a change to it mid-transition — dogfood confirmed
+            // the bar still arrived late after the value was made dynamic there,
+            // while the navigation-bar items (declared on this same stack root)
+            // were fixed by the identical predicate. The stack is not going
+            // anywhere, so SwiftUI re-reads this one as the state flips.
+            //
+            // `.visible` rather than `.automatic`: automatic for content pushed
+            // inside a TabView resolves to hidden, which would make the true
+            // branch a no-op.
+            .toolbarVisibility(
+                showsCompactRootChrome ? .visible : .hidden,
+                for: .tabBar, .bottomBar
+            )
+            // SUPERMUX:end supermux-mobile-compact-root-chrome
         }
         .onChange(of: store.selectedWorkspaceID) { _, selectedWorkspaceID in
             if let createdPath = compactNavigationPolicy.pathForCreatedWorkspaceSelection(
@@ -500,6 +594,11 @@ struct WorkspaceShellView: View {
             autoOpenSelectedWorkspaceForSoakIfNeeded()
         }
         .onChange(of: compactNavigationPath) { _, path in
+            // SUPERMUX:begin supermux-mobile-compact-root-chrome
+            // The path is authoritative again. Clearing here is what keeps a
+            // completed swipe from leaking root chrome onto the next push.
+            compactRootChrome.navigationPathChanged()
+            // SUPERMUX:end supermux-mobile-compact-root-chrome
             guard let selectedWorkspaceID = path.last else {
                 return
             }
@@ -518,8 +617,12 @@ struct WorkspaceShellView: View {
             autoOpenSelectedWorkspaceForSoakIfNeeded()
         }
         .onAppear {
+            workspacesStackIsOnScreen = true
             autoOpenSelectedWorkspaceForSoakIfNeeded()
             consumePendingPrimarySearchNavigation(for: .workspaces)
+        }
+        .onDisappear {
+            workspacesStackIsOnScreen = false
         }
         .onChange(of: pendingPrimarySearchWorkspaceNavigationID) { _, _ in
             consumePendingPrimarySearchNavigation(for: .workspaces)
@@ -606,8 +709,10 @@ struct WorkspaceShellView: View {
             macUpdateHintMacName: store.connectedHostName,
             dismissMacUpdateHint: { store.dismissMacUpdateHint() },
             navigationStyle: navigationStyle,
+            // SUPERMUX:begin supermux-mobile-compact-root-chrome
             showsNavigationToolbar: showsNavigationToolbar
-                ?? (navigationStyle != .push || compactNavigationPath.isEmpty),
+                ?? (navigationStyle != .push || showsCompactRootChrome),
+            // SUPERMUX:end supermux-mobile-compact-root-chrome
             usesExternalSharedToolbar: true,
             wrapWorkspaceTitles: displaySettings.wrapWorkspaceTitles,
             previewLineLimit: displaySettings.workspacePreviewLineCount,
@@ -645,6 +750,10 @@ struct WorkspaceShellView: View {
             isInitialConnectionLoading: isInitialConnectionLoading,
             initialConnectionTimedOut: initialConnectionTimedOut,
             retryInitialConnection: retryInitialConnection,
+            workspaceSortMode: store.workspaceSortMode,
+            setWorkspaceSortMode: { store.setWorkspaceSortMode($0) },
+            workspaceComputerPriority: store.workspaceComputerPriority,
+            setWorkspaceComputerPriority: { store.setWorkspaceComputerPriority($0) },
             filterState: workspaceListFilterState,
             searchText: searchText
         )
@@ -851,10 +960,15 @@ struct WorkspaceShellView: View {
         guard !primarySearchCoordinator.isPresented else { return }
         switch tab {
         case .workspaces:
+            // Compact pushes must wait for the workspaces stack to be in the
+            // window (its onAppear re-runs this); the split layout only writes
+            // the store selection, which is safe at any time.
+            guard !usesCompactStack || workspacesStackIsOnScreen else { return }
             guard let workspaceID = pendingPrimarySearchWorkspaceNavigationID else { return }
             pendingPrimarySearchWorkspaceNavigationID = nil
             selectWorkspaceImmediately(workspaceID)
         case .notifications:
+            guard notificationsStackIsOnScreen else { return }
             guard let workspaceID = pendingPrimarySearchNotificationNavigationID else { return }
             pendingPrimarySearchNotificationNavigationID = nil
             if notificationNavigationPath.last != workspaceID {
@@ -899,9 +1013,21 @@ struct WorkspaceShellView: View {
         }
     }
 
+    /// Opens a workspace tapped in the search results by pushing it onto the
+    /// search tab's own stack — no tab transition, so the push cannot land on
+    /// an off-window stack. Choosing a result also ends the search session
+    /// (committing the query, like every other search exit): left presented,
+    /// the field re-presents after popping anchored to the navigation bar at
+    /// the top instead of the search tab's bottom control. Popping back lands
+    /// on the still-filtered results with the bottom search control collapsed.
     private func selectWorkspaceFromSearch(_ id: MobileWorkspacePreview.ID) {
-        pendingPrimarySearchWorkspaceNavigationID = id
-        transitionPrimaryTab(to: .workspaces)
+        pendingCompactCreateNavigationWorkspaceIDs = nil
+        primarySearchCoordinator.deactivateCurrentSearch()
+        searchSelectionReturnsToWorkspaces = true
+        store.selectedWorkspaceID = id
+        if workspaceSearchNavigationPath.last != id {
+            workspaceSearchNavigationPath = [id]
+        }
     }
 
     private func createWorkspaceFromSearch() {

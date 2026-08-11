@@ -32,8 +32,19 @@ public struct ClaudeConfigDirectoryPath: Sendable {
 
 /// Selects the non-secret launch environment values that are safe to replay when restoring agents.
 public struct AgentLaunchEnvironmentPolicy: Sendable {
+    // SUPERMUX:begin ccx-resume-launcher
+    /// The opt-in environment key through which ccx identifies its resumable launcher path.
+    public static let claudeResumeLauncherEnvironmentKey = "CMUX_CLAUDE_RESUME_LAUNCHER"
+
+    private let homeDirectory: String
+
     /// Creates a launch environment policy.
-    public init() {}
+    ///
+    /// - Parameter homeDirectory: The user home used to constrain the trusted ccx launcher path.
+    public init(homeDirectory: String = NSHomeDirectory()) {
+        self.homeDirectory = ((homeDirectory as NSString).expandingTildeInPath as NSString).standardizingPath
+    }
+    // SUPERMUX:end ccx-resume-launcher
 
     private static let hermesAgentEnvironmentKeys: Set<String> = [
         "CUSTOM_BASE_URL",
@@ -72,6 +83,9 @@ public struct AgentLaunchEnvironmentPolicy: Sendable {
         // so restoring it keeps a restored agent on the account it launched with.
         "CLAUDE_SECURESTORAGE_CONFIG_DIR",
         "CMUX_CUSTOM_CLAUDE_PATH",
+        // SUPERMUX:begin ccx-resume-launcher
+        claudeResumeLauncherEnvironmentKey,
+        // SUPERMUX:end ccx-resume-launcher
         "CMUX_ROVODEV_SESSIONS_DIR",
         "CODEX_HOME",
         "CODEBUDDY_BASE_URL",
@@ -146,6 +160,11 @@ public struct AgentLaunchEnvironmentPolicy: Sendable {
                 result.removeValue(forKey: key)
             }
         }
+        // SUPERMUX:begin ccx-resume-launcher
+        if normalizedKind != "claude" {
+            result.removeValue(forKey: Self.claudeResumeLauncherEnvironmentKey)
+        }
+        // SUPERMUX:end ccx-resume-launcher
         return result
     }
 
@@ -179,12 +198,45 @@ public struct AgentLaunchEnvironmentPolicy: Sendable {
         switch key {
         case "CLAUDE_CONFIG_DIR":
             return value.map { ClaudeConfigDirectoryPath.preferredPath($0) }
+        // SUPERMUX:begin ccx-resume-launcher
+        case Self.claudeResumeLauncherEnvironmentKey:
+            return validatedClaudeResumeLauncherPath(value)
+        // SUPERMUX:end ccx-resume-launcher
         case "NODE_OPTIONS":
             return sanitizedNodeOptions(value)
         default:
             return value
         }
     }
+
+    // SUPERMUX:begin ccx-resume-launcher
+    /// Returns the validated ccx launcher path captured in a Claude launch environment.
+    ///
+    /// Only the current user's `~/.local/bin/ccx` is accepted. The narrow path contract prevents a
+    /// captured environment value from turning session restore into arbitrary executable replay.
+    ///
+    /// - Parameter environment: The captured launch environment, or `nil`.
+    /// - Returns: The standardized absolute ccx path, or `nil` when the marker is absent or invalid.
+    public func claudeResumeLauncherPath(
+        from environment: [String: String]?
+    ) -> String? {
+        validatedClaudeResumeLauncherPath(
+            environment?[Self.claudeResumeLauncherEnvironmentKey]
+        )
+    }
+
+    private func validatedClaudeResumeLauncherPath(_ rawValue: String?) -> String? {
+        guard let trimmed = normalizedValue(rawValue),
+              trimmed.hasPrefix("/"),
+              !trimmed.contains(where: \.isNewline) else {
+            return nil
+        }
+        let standardized = (trimmed as NSString).standardizingPath
+        let expected = ((homeDirectory as NSString).appendingPathComponent(".local/bin/ccx") as NSString)
+            .standardizingPath
+        return standardized == expected ? standardized : nil
+    }
+    // SUPERMUX:end ccx-resume-launcher
 
     private func selectedNodeOptions(from env: [String: String]) -> String? {
         switch normalizedValue(env["CMUX_ORIGINAL_NODE_OPTIONS_PRESENT"]) {

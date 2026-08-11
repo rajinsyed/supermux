@@ -1,3 +1,4 @@
+public import CMUXMobileCore
 public import CmuxMobileRPC
 import Foundation
 public import SupermuxMobileCore
@@ -10,7 +11,7 @@ public import SupermuxMobileCore
 /// typed responses; events ride the shared `mobile.events.subscribe`
 /// pub/sub plane exactly like `MobileChatEventSource`. No state lives here
 /// — everything above this seam tests against a fake.
-public struct SupermuxMacClient: SupermuxMacCalling {
+public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, SupermuxPhonePushRegistering {
     private let client: MobileCoreRPCClient
 
     /// Creates the adapter.
@@ -58,6 +59,10 @@ public struct SupermuxMacClient: SupermuxMacCalling {
     }
 
     public func projectCreate(_ request: SupermuxProjectCreateRequest) async throws -> SupermuxProjectWriteResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func projectOpen(_ request: SupermuxProjectOpenRequest) async throws -> SupermuxProjectOpenResponse {
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
@@ -186,6 +191,24 @@ public struct SupermuxMacClient: SupermuxMacCalling {
     }
 
     public func filesTrash(_ request: SupermuxFilesTrashRequest) async throws -> SupermuxFilesMutationResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func closePane(
+        _ request: SupermuxPaneCloseRequest
+    ) async throws -> SupermuxPaneCloseResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func createSimulatorPane(
+        _ request: SupermuxSimulatorCreateRequest
+    ) async throws -> MobileSimulatorPanelDescriptor {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func registerPhonePush(
+        _ request: SupermuxPhonePushRegistrationRequest
+    ) async throws -> SupermuxPhonePushRegistrationResponse {
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 

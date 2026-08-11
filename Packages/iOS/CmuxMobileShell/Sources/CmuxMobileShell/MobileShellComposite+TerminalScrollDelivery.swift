@@ -1,3 +1,6 @@
+// SUPERMUX:begin ios-terminal-scroll-speed
+import CMUXMobileCore
+// SUPERMUX:end ios-terminal-scroll-speed
 import CmuxMobileRPC
 import Foundation
 import OSLog
@@ -14,10 +17,13 @@ extension MobileShellComposite {
     /// program. The render-grid mirrors the result (it exports the live
     /// `vp_top`).
     ///
-    /// Fire-and-forget and single-flight per surface. Native iOS scrolling can
-    /// continue through deceleration after the finger lifts; while one RPC is
-    /// in flight, newer deltas are summed into the next request instead of
-    /// piling up stale scroll packets.
+    // SUPERMUX:begin ios-terminal-alt-scroll-budget
+    /// Fire-and-forget and single-flight per surface. The phone's scroll view
+    /// has no inertia (it stops at touch-up — physically verified), so the
+    /// deltas arriving here track a live finger; while one RPC is in flight,
+    /// newer deltas are summed into the next request instead of piling up
+    /// stale scroll packets.
+    // SUPERMUX:end ios-terminal-alt-scroll-budget
     public func scrollTerminal(surfaceID: String, lines: Double, col: Int, row: Int) async {
         // Screen-anchored sessions own primary-screen scrolling: the gesture
         // already moved the local mirror's viewport over locally accumulated
@@ -33,13 +39,56 @@ extension MobileShellComposite {
            terminalActiveScreenBySurfaceID[surfaceID] == .primary {
             return
         }
+        // SUPERMUX:begin ios-terminal-alt-scroll-budget
+        // On a confirmed alternate screen each forwarded line becomes a
+        // discrete TUI input whose visible effect only arrives via a later
+        // repaint. A fast drag can emit lines faster than that pipeline
+        // consumes them, and the surplus replays AFTER the finger lifts —
+        // phantom momentum. Budget delivery and DROP the excess (queuing it
+        // would recreate exactly the deferred playback being prevented).
+        var budgetedLines = lines
+        if terminalActiveScreenBySurfaceID[surfaceID] == .alternate {
+            var budget = terminalAlternateScrollBudgetsBySurfaceID[surfaceID]
+                ?? TerminalAlternateScrollBudget()
+            // Incoming lines are already scaled by the user's scroll-speed
+            // preference (the surface applies it at gesture time). Admit in
+            // unscaled gesture units so the burst/refill cap scales with the
+            // preference too — otherwise fast drags saturate at the same
+            // absolute count and the Settings slider does nothing on TUIs.
+            budgetedLines = budget.admit(
+                lines: lines,
+                speed: MobileTerminalScrollSpeedPreference.resolve(),
+                at: ProcessInfo.processInfo.systemUptime
+            )
+            terminalAlternateScrollBudgetsBySurfaceID[surfaceID] = budget
+            // SUPERMUX:begin ios-terminal-alt-scroll-direct-apply
+            // Stamp scroll activity so gesture-window repaint deltas skip the
+            // verified per-frame fence (see requiresVerifiedReplayApplication).
+            terminalAlternateScrollLastInputAtBySurfaceID[surfaceID] =
+                ProcessInfo.processInfo.systemUptime
+            // SUPERMUX:end ios-terminal-alt-scroll-direct-apply
+            guard budgetedLines != 0 else { return }
+            // SUPERMUX:begin ios-terminal-alt-scroll-quantize
+            // TUIs consume scroll as whole wheel ticks, and hosts round each
+            // RPC's delta toward a minimum magnitude of one line — so
+            // fractional gesture packets scroll one line PER PACKET and speed
+            // tracks packet rate, not finger travel (why the slider felt
+            // dead). Accumulate fractions and forward only whole lines.
+            var quantizer = terminalAlternateScrollQuantizersBySurfaceID[surfaceID]
+                ?? TerminalAlternateScrollLineQuantizer()
+            budgetedLines = quantizer.emit(lines: budgetedLines)
+            terminalAlternateScrollQuantizersBySurfaceID[surfaceID] = quantizer
+            guard budgetedLines != 0 else { return }
+            // SUPERMUX:end ios-terminal-alt-scroll-quantize
+        }
+        // SUPERMUX:end ios-terminal-alt-scroll-budget
         var prefetchState = terminalScrollbackPrefetchStatesBySurfaceID[surfaceID]
             ?? TerminalScrollbackPrefetchState()
-        let maxScrollbackRows = prefetchState.rowsToPrefetch(forScrollLines: lines)
+        let maxScrollbackRows = prefetchState.rowsToPrefetch(forScrollLines: budgetedLines)
         terminalScrollbackPrefetchStatesBySurfaceID[surfaceID] = prefetchState
         enqueueTerminalScroll(TerminalScrollDelivery(
             surfaceID: surfaceID,
-            lines: lines,
+            lines: budgetedLines,
             col: col,
             row: row,
             maxScrollbackRows: maxScrollbackRows

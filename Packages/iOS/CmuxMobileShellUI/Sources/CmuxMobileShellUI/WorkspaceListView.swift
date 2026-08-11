@@ -109,6 +109,18 @@ struct WorkspaceListView: View {
     var isInitialConnectionLoading = false
     var initialConnectionTimedOut = false
     var retryInitialConnection: (() -> Void)?
+    /// How the aggregated All Computers list orders its rows. Passed as a value
+    /// snapshot so no `@Observable` store crosses the `List` boundary; the
+    /// device-local preference lives on the shell store.
+    var workspaceSortMode: MobileWorkspaceSortMode = .automatic
+    /// Persist a sort-mode choice on this device. `nil` hides the sort menu
+    /// (previews and macOS fallback).
+    var setWorkspaceSortMode: ((MobileWorkspaceSortMode) -> Void)? = nil
+    /// The user's computer order for ``MobileWorkspaceSortMode/computerPriority``,
+    /// highest first, as Mac device ids.
+    var workspaceComputerPriority: [String] = []
+    /// Persist a computer order on this device.
+    var setWorkspaceComputerPriority: (([String]) -> Void)? = nil
     /// Shared across the normal workspace tab and its native search
     /// presentation so filters compose with the active query.
     let filterState: WorkspaceListFilterState
@@ -117,6 +129,8 @@ struct WorkspaceListView: View {
     var searchText = ""
     @State private var showingShortcutsSettings = false
     @State private var showingSettings = false
+    /// Presents the view-options card (sort tiles + filter rows).
+    @State var showingViewOptionsPopover = false
     @State private var settingsPairingScannerHandoff = SettingsPairingScannerHandoff()
     @State private var showingDeviceTree = false
     @State private var changesSheetTarget: WorkspaceChangesSheetTarget? = nil
@@ -158,7 +172,9 @@ struct WorkspaceListView: View {
         workspaceGroupDestructiveRequest.action
     }
     // SUPERMUX:begin supermux-mobile-projects-section (fork-owned section model; rows below the List get value snapshots + closures only)
-    @State private var supermuxProjects = SupermuxProjectsSectionModel()
+    // Internal (not private): the iOS table builder in the `+Table.swift`
+    // extension projects this into the Projects chrome row's payload.
+    @State var supermuxProjects = SupermuxProjectsSectionModel()
     // SUPERMUX:end supermux-mobile-projects-section
     @State var optimisticFlatState = MobileWorkspaceOptimisticOrderReconciler()
     @State var optimisticGroupedState = MobileWorkspaceOptimisticOrderReconciler()
@@ -201,15 +217,96 @@ struct WorkspaceListView: View {
         macTitlePickerPendingSelection != nil
     }
 
-    /// Groups render from the payload while unfiltered and scoped to the
-    /// foreground Mac. Search, filters, and multi-Mac scopes flatten the list;
-    /// the independently fetched collapse capability does not gate rendering.
+    /// Whether the list presents the recency sort: chosen mode `.recentActivity`
+    /// while the visible scope spans computers (All Computers). A single-Mac
+    /// scope keeps that Mac's own order — the sort exists to make the
+    /// cross-computer order deterministic, not to rewrite one Mac's sidebar.
+    var appliesRecencySort: Bool {
+        guard workspaceSortMode == .recentActivity else { return false }
+        switch visibleMacSelection {
+        case .all, .automatic:
+            return true
+        case .machine:
+            return false
+        }
+    }
+
+    /// The sort mode the filter menu offers, or `nil` to hide the sort section:
+    /// sorting is an All Computers concern, so a single-machine scope (whose
+    /// order is the Mac's own sidebar order) offers none. No computer-count
+    /// gate: the preference is worth setting before a second computer pairs,
+    /// and a wedged or offline secondary connection must not hide the control.
+    var workspaceSortMenuMode: MobileWorkspaceSortMode? {
+        guard setWorkspaceSortMode != nil else { return nil }
+        switch visibleMacSelection {
+        case .all, .automatic:
+            return workspaceSortMode
+        case .machine:
+            return nil
+        }
+    }
+
+    /// Computers offered by the computer-order editor, one per physical Mac,
+    /// in their effective order: stored priority first, then the list's
+    /// current display order. Present computers come straight from the
+    /// aggregated rows (not the filter menu's machine list, which empties
+    /// below its two-machine floor and would drop a singleton or reorder the
+    /// tail); paired-but-offline computers follow, keeping their slot while
+    /// disconnected.
+    var computerOrderSheetMachines: [WorkspaceFilterMachine] {
+        let names = macDisplayNamesByID()
+        let aliasIndex = macSelectionScope.aliasIndex
+        var machines: [WorkspaceFilterMachine] = []
+        var seenDeviceIDs = Set<String>()
+        for workspace in workspaces {
+            guard let deviceID = workspace.macDeviceID, !deviceID.isEmpty else { continue }
+            let representativeID = aliasIndex.deviceRepresentativeID(for: deviceID)
+            guard seenDeviceIDs.insert(representativeID).inserted else { continue }
+            machines.append(WorkspaceFilterMachine(
+                id: representativeID,
+                macDeviceID: representativeID,
+                instanceTag: nil,
+                name: names[representativeID] ?? names[deviceID]
+                    ?? workspace.macDisplayName ?? representativeID,
+                buildLabel: nil
+            ))
+        }
+        for mac in displayPairedMacsForPicker where !mac.macDeviceID.isEmpty {
+            let representativeID = aliasIndex.deviceRepresentativeID(for: mac.macDeviceID)
+            guard seenDeviceIDs.insert(representativeID).inserted else { continue }
+            machines.append(WorkspaceFilterMachine(
+                id: representativeID,
+                macDeviceID: representativeID,
+                instanceTag: nil,
+                name: names[representativeID] ?? mac.resolvedName,
+                buildLabel: nil
+            ))
+        }
+        var rank: [String: Int] = [:]
+        for (index, deviceID) in workspaceComputerPriority.enumerated()
+            where rank[deviceID] == nil {
+            rank[deviceID] = index
+        }
+        return machines.enumerated()
+            .sorted { lhs, rhs in
+                let lhsRank = rank[lhs.element.macDeviceID] ?? Int.max
+                let rhsRank = rank[rhs.element.macDeviceID] ?? Int.max
+                if lhsRank != rhsRank { return lhsRank < rhsRank }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+    }
+
+    /// Groups render from every available Mac payload while unfiltered. Search
+    /// and explicit filters flatten the results; selecting All Computers does
+    /// not discard the group structure. The recency sort interleaves computers
+    /// by time, which no group section can survive, so it also presents flat.
     var rendersGroupedSections: Bool {
         !groups.isEmpty
             && trimmedQuery.isEmpty
             && filter.readState == .all
             && filter.machines.isEmpty
-            && canRenderGroupsForSelection
+            && !appliesRecencySort
     }
 
     private func matchesQuery(
@@ -267,6 +364,9 @@ struct WorkspaceListView: View {
                     && matchesQuery(workspace, query: query, groupsByID: groupLookup)
             }
         }
+        if appliesRecencySort {
+            return MobileWorkspaceRecencyOrder().displayOrder(matches)
+        }
         return matches.enumerated()
             .sorted { lhs, rhs in
                 if lhs.element.isPinned != rhs.element.isPinned {
@@ -321,8 +421,16 @@ struct WorkspaceListView: View {
             visibleSelection: currentVisibleMacSelection
         )
         #if os(iOS)
+        // SUPERMUX:begin supermux-mobile-projects-section (session driver on the iOS list; the rows themselves render inside the UIKit table via the #97b Projects chrome row)
+        // The driver MUST sit on this stable view, never inside a table cell:
+        // it owns the session `.task`, the project-detail `navigationDestination`,
+        // and the nested-open error alert. Without it the section never loads,
+        // so every Projects affordance stays unreachable even though the row
+        // renders.
         let baseList = workspaceTable
+            .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) }, closeWorkspace: supermuxRequestWorkspaceClose)
             .modifier(WorkspaceListBarUnderlap())
+        // SUPERMUX:end supermux-mobile-projects-section
         #else
         let baseList = List {
             switch connectionChrome {
@@ -397,7 +505,7 @@ struct WorkspaceListView: View {
         // Let the invisible footer use its 16pt boundary height. Real rows are taller.
         .environment(\.defaultMinListRowHeight, 16)
         // SUPERMUX:begin supermux-mobile-projects-section (session driver: rebuilds the fork stores per (re)connect/capability change; feeds the §6 workspace join + open-workspace navigation)
-        .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) })
+        .supermuxProjectsSectionDriver(model: supermuxProjects, connection: store?.supermuxConnectionSeam, workspaces: workspaces, selectWorkspace: { selectWorkspace($0) }, closeWorkspace: supermuxRequestWorkspaceClose)
         // SUPERMUX:end supermux-mobile-projects-section
         .workspaceListRefreshable(refresh)
         #endif
@@ -828,6 +936,12 @@ struct WorkspaceListView: View {
                 && capabilities.supportsWorkspaceMetadata ? customizeWorkspace : nil,
             setPinned: capabilities.supportsWorkspaceActions ? setPinned : nil,
             setUnread: capabilities.supportsReadStateActions ? setUnread : nil,
+            groupMoveMenu: capabilities.supportsMoveActions ? {
+                groupMoveMenu(for: workspace.id)
+            } : nil,
+            moveToGroup: capabilities.supportsMoveActions ? { id, groupID in
+                joinGroupAtEnd(workspaceID: id, groupID: groupID)
+            } : nil,
             closeWorkspace: capabilities.supportsCloseActions ? requestWorkspaceClose : nil,
             isConfirmingClose: closeConfirmationBinding(for: workspace.id),
             confirmCloseWorkspace: capabilities.supportsCloseActions && closeWorkspace != nil ? { _ in

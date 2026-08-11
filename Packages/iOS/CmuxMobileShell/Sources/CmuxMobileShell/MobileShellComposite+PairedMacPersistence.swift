@@ -36,7 +36,9 @@ extension MobileShellComposite {
         let stackUserID = identityProvider?.currentUserID
         let scope = await currentScopeSnapshot(userID: stackUserID)
         let ticketDisplayName = displayNameOverride ?? ticket.macDisplayName
-        var accepted = true
+        // SUPERMUX:begin paired-mac-persistence-result (a skipped serialized write must not masquerade as successful pairing persistence — see SUPERMUX-TOUCHPOINTS.md)
+        var accepted = false
+        // SUPERMUX:end paired-mac-persistence-result
         await performSerializedPairedMacWrite(ifStillCurrent: ifStillCurrent) { [weak self] in
             guard let self else { return }
             if let scope, await !self.isScopeCurrent(scope) { return }
@@ -104,7 +106,7 @@ extension MobileShellComposite {
                 : ticket.routes
             do {
                 if case .preserveOnlyIfUnclaimed = instanceTagUpdate {
-                    accepted = try await pairedMacStore.upsertRoutesIfAuthorized(
+                    let didUpsert = try await pairedMacStore.upsertRoutesIfAuthorized(
                         macDeviceID: ticket.macDeviceID,
                         displayName: displayName,
                         routes: routes,
@@ -114,7 +116,7 @@ extension MobileShellComposite {
                         teamID: scope?.teamID,
                         now: Date()
                     )
-                    guard accepted else { return }
+                    guard didUpsert else { return }
                 } else {
                     try await pairedMacStore.upsert(
                         macDeviceID: ticket.macDeviceID,
@@ -127,6 +129,9 @@ extension MobileShellComposite {
                         now: Date()
                     )
                 }
+                // SUPERMUX:begin paired-mac-persistence-result (publish success only after the authoritative store mutation landed — see SUPERMUX-TOUCHPOINTS.md)
+                accepted = true
+                // SUPERMUX:end paired-mac-persistence-result
                 if !userAuthorizedTailscaleRoutes.isEmpty {
                     // The user just proved control of this Mac by entering its
                     // pairing code; record the device-local grant so later

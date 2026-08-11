@@ -48,10 +48,22 @@ struct WorkspaceDetailView: View {
     let signOut: (@MainActor @Sendable () -> Void)?
     @Environment(BrowserSurfaceStore.self) var browserStore
     @Environment(BrowserStreamStore.self) var browserStreamStore
+    @Environment(MobileSimulatorStreamStore.self) var simulatorStreamStore
     @Environment(MobileDisplaySettings.self) private var displaySettings
-    @Environment(ToastCenter.self) private var toasts
+    // SUPERMUX:begin ios-pane-actions
+    @Environment(ToastCenter.self) var toasts
+    // SUPERMUX:end ios-pane-actions
     /// Drives the destructive close-workspace confirmation dialog.
     @State var isConfirmingClose = false
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+    /// Presentation state for the fork's Changes/Files sheets, flipped by the
+    /// trailing overflow menu's entries. Outside the UIKit block because the
+    /// `supermuxWorkspaceTools` sheet mount is shared with the macOS branch.
+    @State var isSupermuxChangesSheetPresented = false
+    @State var isSupermuxFilesSheetPresented = false
+    /// Presents the alt-screen sizing explanation from its overflow-menu row.
+    @State var isAltScreenExplanationPresented = false
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
     #if canImport(UIKit)
     @State private var isFeedbackComposerPresented = false
     @State private var feedbackText = ""
@@ -69,6 +81,16 @@ struct WorkspaceDetailView: View {
     @State private var contentWidth: CGFloat = 0
     /// Terminal captured for the current "View as Text" sheet presentation.
     @State private var textSheetSurfaceID: String?
+    /// Identity of the in-flight New Browser creation. A late RPC result must
+    /// not activate its panel over a selection the user made in the meantime,
+    /// so completion applies only while its request is still current.
+    // SUPERMUX:begin ios-pane-actions
+    @State var browserCreateRequest: UUID?
+    /// Identity of the in-flight native Simulator creation, guarded like the browser path.
+    @State var simulatorCreateRequest: UUID?
+    /// Pane captured before the destructive confirmation appears.
+    @State var pendingPaneCloseTarget: WorkspacePaneCloseTarget?
+    // SUPERMUX:end ios-pane-actions
     @State var terminalPickerRows: [TerminalPickerMenuRow] = []
     /// Chat-mode toggle for inline agent chat in place of the terminal.
     @State var isChatMode = false
@@ -104,6 +126,14 @@ struct WorkspaceDetailView: View {
     var activeBrowserStream: BrowserStreamSurfaceState? {
         browserStreamStore.activeState(in: workspace.rpcWorkspaceID.rawValue)
     }
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    var browserStreamPanelIDs: [String] {
+        browserStreamStore.panels(in: workspace.rpcWorkspaceID.rawValue).map(\.panelID)
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
+    var activeSimulatorStream: MobileSimulatorStreamSurfaceState? {
+        simulatorStreamStore.activeState(in: workspace.rpcWorkspaceID.rawValue)
+    }
     #if os(iOS)
     var terminalFilesChipEnabled: Bool {
         displaySettings.terminalFilesChipEnabled
@@ -114,12 +144,18 @@ struct WorkspaceDetailView: View {
     var terminalFolderTapEnabled: Bool {
         displaySettings.terminalFolderTapEnabled
     }
+    // SUPERMUX:begin ios-terminal-scroll-speed
+    var terminalScrollSpeed: Double {
+        displaySettings.terminalScrollSpeed
+    }
+    // SUPERMUX:end ios-terminal-scroll-speed
     var activeSurface: WorkspaceActiveSurface {
         WorkspaceActiveSurface.derive(
             isChatMode: isChatMode,
             hasChosenChatSession: chosenChatSession != nil,
             hasActiveBrowser: activeBrowser != nil,
-            hasActiveBrowserStream: activeBrowserStream != nil
+            hasActiveBrowserStream: activeBrowserStream != nil,
+            hasActiveSimulatorStream: activeSimulatorStream != nil
         )
     }
     #endif
@@ -130,7 +166,13 @@ struct WorkspaceDetailView: View {
         // parse workspace_id as a bare UUID. Sending the scoped row id fails
         // every request with invalid_params. rpcWorkspaceID is the Mac-local id.
         let content = Group { detailSurfaceContent }
-            .supermuxWorkspaceTools(connection: store.supermuxConnectionSeam, workspaceID: workspace.rpcWorkspaceID.rawValue, workspaceName: workspace.name)
+            .supermuxWorkspaceTools(
+                connection: store.supermuxConnectionSeam,
+                workspaceID: workspace.rpcWorkspaceID.rawValue,
+                workspaceName: workspace.name,
+                showingChanges: $isSupermuxChangesSheetPresented,
+                showingFiles: $isSupermuxFilesSheetPresented
+            )
         // SUPERMUX:end supermux-mobile-workspace-tools
 
         #if os(iOS)
@@ -142,7 +184,21 @@ struct WorkspaceDetailView: View {
             .task(id: chatRefreshKey) { await refreshChatSessions() }
             .task(id: workspace.rpcWorkspaceID.rawValue) {
                 await store.refreshMobileBrowserPanels(workspaceID: workspace.rpcWorkspaceID.rawValue)
+                syncSimulatorStreamPanels()
+                applyFocusedPanelFromStore()
             }
+            .onChange(of: workspace.simulators) { _, _ in
+                syncSimulatorStreamPanels()
+                applyFocusedPanelFromStore()
+            }
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            .onChange(of: browserStreamPanelIDs) { _, _ in
+                applyFocusedPanelFromStore()
+            }
+            .onChange(of: store.selectedWorkspaceFocusedPanel) { _, _ in
+                applyFocusedPanelFromStore()
+            }
+            // SUPERMUX:end supermux-mobile-selection-sync
             .task(id: chatConversationWarmKey) { await runWarmChatConversation() }
             .onAppear { refreshWorkspaceChangesHint() }
             .onChange(of: workspaceChangesHintEligibilityKey) { _, _ in
@@ -159,10 +215,33 @@ struct WorkspaceDetailView: View {
             .onChange(of: store.supportsChatArtifactGallery) { _, _ in
                 visibleArtifactCount = 0
             }
+            // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+            // The fork Changes/Files rows flip these bindings from inside the
+            // title menu; give them the same keyboard behavior as the
+            // upstream Changes entry (one shared chrome policy).
+            .onChange(of: isSupermuxChangesSheetPresented) { _, isPresented in
+                if isPresented { dismissTerminalKeyboardForChrome() }
+            }
+            .onChange(of: isSupermuxFilesSheetPresented) { _, isPresented in
+                if isPresented { dismissTerminalKeyboardForChrome() }
+            }
+            // The title menu's alt-screen row presents the shared explanation
+            // here (the menu row itself cannot host a popover anchor).
+            .altScreenNoticeExplanationPopover(isPresented: $isAltScreenExplanationPresented) {
+                displaySettings.showAltScreenNotice = false
+                isAltScreenExplanationPresented = false
+            }
+            // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             .closeWorkspaceConfirmation(
                 isPresented: $isConfirmingClose,
                 confirm: confirmCloseWorkspaceFromMenu
             )
+            // SUPERMUX:begin ios-pane-actions
+            .supermuxPaneCloseConfirmation(
+                isPresented: paneCloseConfirmationIsPresented,
+                confirm: confirmClosePane
+            )
+            // SUPERMUX:end ios-pane-actions
             .sheet(isPresented: $isFeedbackComposerPresented) {
                 feedbackComposer
             }
@@ -214,31 +293,96 @@ struct WorkspaceDetailView: View {
         ToolbarItem(id: "workspace-title", placement: .topBarLeading) {
             workspaceTitleToolbarMenu
         }
-        if let selectedTerminalID,
-           store.isAlternateScreen(surfaceID: selectedTerminalID),
-           displaySettings.showAltScreenNotice {
-            ToolbarItem(id: "workspace-altscreen-notice", placement: .topBarTrailing) {
-                AltScreenNoticeButton {
-                    displaySettings.showAltScreenNotice = false
-                }
-            }
-        }
-        if workspaceChangesAreAvailable {
-            ToolbarItem(id: "workspace-changes", placement: .topBarTrailing) {
-                WorkspaceChangesToolbarButton(
-                    chip: workspaceChangesChip,
-                    workspaceID: workspace.rpcWorkspaceID.rawValue,
-                    action: openWorkspaceChanges
-                )
-                // The chrome sits on the terminal theme's background, not the
-                // system scheme; resolve the counts' green/red for that.
-                .environment(\.colorScheme, store.activeTerminalTheme.terminalColorScheme)
-            }
-        }
+        // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+        // ONE trailing item, always the same three controls. Every extra
+        // trailing ToolbarItem risks UIKit's native overflow ("More") button
+        // evicting a varying subset of items — the bar then looks different
+        // per pane/state. The alt-screen notice and both Changes entries live
+        // inside the explicit overflow menu instead of as separate items.
         ToolbarItem(id: "workspace-trailing", placement: .topBarTrailing) {
             toolbarTrailingCluster
         }
+        // SUPERMUX:end ios-workspace-toolbar-persistent-actions
     }
+
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+    /// Whether the alt-screen sizing notice row shows in the title menu.
+    var showsAltScreenNoticeMenuEntry: Bool {
+        guard let selectedTerminalID else { return false }
+        return store.isAlternateScreen(surfaceID: selectedTerminalID)
+            && displaySettings.showAltScreenNotice
+    }
+
+    /// The workspace-tool rows hosted inside the title menu: upstream
+    /// Changes, the fork's Changes/Files, and the alt-screen sizing notice.
+    /// Living in the title menu (not their own ToolbarItems, not a dedicated
+    /// ••• button) keeps the trailing side down to two fixed controls so
+    /// UIKit's native overflow ("More") never triggers.
+    @ViewBuilder
+    private var workspaceTitleToolMenuEntries: some View {
+        if workspaceChangesAreAvailable || showsAltScreenNoticeMenuEntry {
+            Section {
+                if workspaceChangesAreAvailable {
+                    Button(action: openWorkspaceChanges) {
+                        Label {
+                            Text(workspaceChangesMenuTitle)
+                        } icon: {
+                            Image(systemName: "plus.forwardslash.minus")
+                        }
+                    }
+                    .accessibilityIdentifier("MobileChangesButton")
+                }
+                if showsAltScreenNoticeMenuEntry {
+                    Button {
+                        // Deferred a turn so the popover presentation does not
+                        // race the menu's own dismissal transition.
+                        Task { @MainActor in
+                            isAltScreenExplanationPresented = true
+                        }
+                    } label: {
+                        Label(
+                            AltScreenNoticeExplanationContent.title,
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                    }
+                    .accessibilityIdentifier("MobileTerminalAltScreenNoticeButton")
+                }
+            }
+        }
+        SupermuxWorkspaceToolsMenuEntries(
+            hostCapabilities: store.supermuxConnectionSeam?.hostCapabilities,
+            showingChanges: $isSupermuxChangesSheetPresented,
+            showingFiles: $isSupermuxFilesSheetPresented
+        )
+    }
+
+    /// The menu-row title, carrying the live +N/−M summary the old dedicated
+    /// toolbar chip showed at a glance.
+    private var workspaceChangesMenuTitle: String {
+        let base = String(
+            localized: "workspace.changes.title",
+            defaultValue: "Changes",
+            bundle: .module
+        )
+        guard let chip = workspaceChangesChip, chip.filesChanged > 0 else { return base }
+        return "\(base)  +\(chip.additions) −\(chip.deletions)"
+    }
+
+    /// Fingerprint of everything the tool entries render from. Folded into
+    /// `WorkspaceTitleMenuValue` so `.equatable()` cannot pin a stale menu
+    /// closure (Menu content is captured at the last accepted update).
+    private var workspaceTitleToolEntriesFingerprint: String {
+        let seam = store.supermuxConnectionSeam
+        let changes = workspaceChangesAreAvailable ? workspaceChangesMenuTitle : ""
+        let supermuxChanges = SupermuxWorkspaceTools.showsChangesEntry(
+            hostCapabilities: seam?.hostCapabilities
+        )
+        let supermuxFiles = SupermuxWorkspaceTools.showsFilesEntry(
+            hostCapabilities: seam?.hostCapabilities
+        )
+        return "\(changes)|\(supermuxChanges)|\(supermuxFiles)|\(showsAltScreenNoticeMenuEntry)"
+    }
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
 
     private var workspaceTitleToolbarMenu: some View {
         let value = WorkspaceTitleMenuValue(
@@ -246,13 +390,23 @@ struct WorkspaceDetailView: View {
             hasBackButton: backButtonConfiguration != nil,
             hasTrailingCluster: true,
             hasChatToggle: shouldShowChatToggle,
-            isEnabled: hasTitleMenuActions,
+            // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+            isEnabled: hasTitleMenuActions
+                || workspaceChangesAreAvailable
+                || showsAltScreenNoticeMenuEntry
+                || SupermuxWorkspaceTools.showsAnyEntry(
+                    hostCapabilities: store.supermuxConnectionSeam?.hostCapabilities
+                ),
+            // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             workspaceName: workspace.name,
             hasUnread: workspace.hasUnread,
             canCustomizeWorkspace: customizeWorkspace != nil,
             canRenameWorkspace: renameWorkspace != nil,
             canToggleReadState: setWorkspaceUnread != nil,
             canCloseWorkspace: closeWorkspace != nil,
+            // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+            toolEntriesFingerprint: workspaceTitleToolEntriesFingerprint,
+            // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             labelToken: toolbarTitleLabelToken,
             terminalTheme: store.activeTerminalTheme
         )
@@ -271,6 +425,9 @@ struct WorkspaceDetailView: View {
                     toggleReadState: toggleWorkspaceReadStateFromMenu,
                     requestClose: requestCloseWorkspaceFromMenu
                 )
+                // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
+                workspaceTitleToolMenuEntries
+                // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             },
             label: {
                 switch value.labelToken {
@@ -318,6 +475,8 @@ struct WorkspaceDetailView: View {
             return .browser(title: browser.title ?? workspace.name)
         } else if let browser = activeBrowserStream {
             return .browser(title: browser.title ?? workspace.name)
+        } else if let simulator = activeSimulatorStream {
+            return .browser(title: simulator.selectedDeviceName ?? simulator.title)
         } else {
             return .standard(title: workspace.name, subtitle: selectedToolbarSubtitle)
         }
@@ -375,6 +534,19 @@ struct WorkspaceDetailView: View {
                 .padding(.top, 10)
                 .padding(.leading, 10)
         }
+        #if os(iOS)
+        .overlay(alignment: .topTrailing) {
+            if let terminalID = selectedTerminal?.id.rawValue,
+               !store.isComposerPresented {
+                TerminalSendStatusPill(
+                    status: store.terminalSendStatus(forTerminalID: terminalID)
+                )
+                .allowsHitTesting(false)
+                .padding(.top, 10)
+                .padding(.trailing, 10)
+            }
+        }
+        #endif
         #if os(iOS) && DEBUG
         // DEBUG/UI-test-only store-side composer probe.
         .overlay {
@@ -610,14 +782,28 @@ struct WorkspaceDetailView: View {
                 isChatMode: isChatMode,
                 browserStreamRows: browserStreamStore.panels(in: workspace.rpcWorkspaceID.rawValue).map(BrowserStreamPickerRow.init),
                 supportsBrowserStream: store.supportsBrowserStream,
-                activeBrowserStreamPanelID: activeBrowserStream?.id
+                activeBrowserStreamPanelID: activeBrowserStream?.id,
+                simulatorStreamRows: simulatorStreamStore.panels(in: workspace.rpcWorkspaceID.rawValue).map(SimulatorStreamPickerRow.init),
+                supportsSimulatorStream: store.supportsSimulatorStream,
+                activeSimulatorStreamPanelID: activeSimulatorStream?.id,
+                // SUPERMUX:begin ios-pane-actions
+                canCreateSimulator: canCreateSimulatorPane,
+                canClosePane: canCloseActivePane
+                // SUPERMUX:end ios-pane-actions
             ),
             actions: TerminalPickerMenuActions(
                 selectTerminal: selectTerminalFromPicker,
                 createWorkspace: createWorkspaceFromToolbar,
                 createTerminal: createTerminalFromToolbar,
                 openBrowser: openBrowserFromToolbar,
-                selectBrowserStream: selectBrowserStreamFromToolbar,
+                selectBrowserStream: { selectBrowserStreamFromToolbar($0) },
+                // SUPERMUX:begin supermux-mobile-selection-sync
+                selectSimulatorStream: { selectSimulatorStreamFromToolbar($0) },
+                // SUPERMUX:end supermux-mobile-selection-sync
+                // SUPERMUX:begin ios-pane-actions
+                createSimulator: createSimulatorFromToolbar,
+                closePane: requestClosePane,
+                // SUPERMUX:end ios-pane-actions
                 openTextSheet: openTextSheetFromMenu,
                 copyDebugLogs: {
                     #if DEBUG
@@ -851,32 +1037,231 @@ struct WorkspaceDetailView: View {
 
     private func createTerminalFromToolbar() {
         dismissTerminalKeyboardForChrome()
+        browserCreateRequest = nil
+        // SUPERMUX:begin ios-pane-actions
+        simulatorCreateRequest = nil
+        // SUPERMUX:end ios-pane-actions
         // Creating a terminal from the (shared) chrome must surface it. If a
         // browser pane is up, close it so `body` leaves the browser branch and
         // shows the new terminal instead of staying on the browser.
         browserStore.closeBrowser(for: workspace.id.rawValue)
         stopActiveBrowserStream()
+        stopActiveSimulatorStream()
         createTerminal()
     }
 
     private func openBrowserFromToolbar() {
         dismissTerminalKeyboardForChrome()
-        // Opens (or reveals the existing) browser pane for this workspace. The
-        // detail view flips to the browser because `activeBrowser` becomes
-        // non-nil; the picker shows a check next to "New Browser" while it is up.
-        browserStore.openBrowser(for: workspace.id.rawValue)
-        stopActiveBrowserStream()
+        // SUPERMUX:begin ios-pane-actions
+        simulatorCreateRequest = nil
+        // SUPERMUX:end ios-pane-actions
+        // New Browser creates a real Mac browser pane and streams it, so it
+        // shows the same surface as the Mac Browsers rows. The phone-local
+        // WKWebView pane remains only as a fallback for Macs that cannot
+        // create panels (older builds, disconnected, or creation rejected).
+        guard store.supportsBrowserStreamCreate else {
+            openLocalBrowserFallback()
+            return
+        }
+        let workspaceID = workspace.rpcWorkspaceID.rawValue
+        let request = UUID()
+        browserCreateRequest = request
+        Task {
+            let descriptor = await store.createMobileBrowserPanel(workspaceID: workspaceID)
+            guard browserCreateRequest == request else { return }
+            browserCreateRequest = nil
+            guard let descriptor else {
+                openLocalBrowserFallback()
+                return
+            }
+            selectBrowserStreamFromToolbar(descriptor.panelID, dismissKeyboard: false)
+        }
     }
 
-    private func selectBrowserStreamFromToolbar(_ panelID: String) {
-        dismissTerminalKeyboardForChrome()
+    /// Opens (or reveals) the phone-local browser pane for this workspace. The
+    /// detail view flips to the browser because `activeBrowser` becomes
+    /// non-nil; the picker shows a check next to "New Browser" while it is up.
+    private func openLocalBrowserFallback() {
+        browserStore.openBrowser(for: workspace.id.rawValue)
+        stopActiveBrowserStream()
+        stopActiveSimulatorStream()
+    }
+
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    private func selectBrowserStreamFromToolbar(
+        _ panelID: String,
+        dismissKeyboard: Bool = true,
+        syncMacSelection: Bool = true
+    ) {
+        if dismissKeyboard {
+            dismissTerminalKeyboardForChrome()
+        }
+        browserCreateRequest = nil
+        // SUPERMUX:begin ios-pane-actions
+        simulatorCreateRequest = nil
+        // SUPERMUX:end ios-pane-actions
         browserStore.closeBrowser(for: workspace.id.rawValue)
-        if let previous = activeBrowserStream, previous.id != panelID {
-            Task { await store.stopMobileBrowserStream(panelID: previous.id) }
+        stopActiveSimulatorStream()
+        let previousPanelID = activeBrowserStream.flatMap {
+            $0.id == panelID ? nil : $0.id
         }
         _ = browserStreamStore.activate(panelID: panelID, in: workspace.rpcWorkspaceID.rawValue)
-        Task { await store.startMobileBrowserStream(panelID: panelID) }
+        let focusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: panelID,
+            kind: MobileWorkspaceFocusedPanel.browserKind
+        )
+        let focusTask = syncMacSelection
+            ? store.selectWorkspacePanel(
+                panelID: panelID,
+                kind: focusedPanel.kind,
+                workspaceID: workspace.id
+            )
+            : nil
+        Task {
+            // A Mac browser mirror is not operable while its source panel is in
+            // the background. Await the ordered focus mutation before starting
+            // the stream so its first frame and input target are the new tab.
+            await WorkspacePanelStreamActivationSequence.run(
+                focusTask: focusTask,
+                isSelectionCurrent: {
+                    store.selectedWorkspaceFocusedPanel == focusedPanel
+                },
+                stopPrevious: {
+                    if let previousPanelID {
+                        await store.stopMobileBrowserStream(panelID: previousPanelID)
+                    }
+                },
+                abandonCurrent: {
+                    if browserStreamStore.activeState(
+                        in: workspace.rpcWorkspaceID.rawValue
+                    )?.id == panelID {
+                        browserStreamStore.deactivate(
+                            in: workspace.rpcWorkspaceID.rawValue
+                        )
+                    }
+                },
+                startCurrent: {
+                    await store.startMobileBrowserStream(panelID: panelID)
+                }
+            )
+        }
     }
+    // SUPERMUX:end supermux-mobile-selection-sync
+
+    // SUPERMUX:begin ios-pane-actions
+    func selectSimulatorStreamFromToolbar(
+        _ panelID: String,
+        syncMacSelection: Bool = true
+    ) {
+        simulatorCreateRequest = nil
+        isChatMode = false
+        pinnedChatSessionID = nil
+    // SUPERMUX:end ios-pane-actions
+        dismissTerminalKeyboardForChrome()
+        browserStore.closeBrowser(for: workspace.id.rawValue)
+        stopActiveBrowserStream()
+        let workspaceID = workspace.rpcWorkspaceID.rawValue
+        let previousPanelID: String? = activeSimulatorStream.flatMap {
+            $0.id == panelID ? nil : $0.id
+        }
+        // Settle the previous panel's local state before activating the new
+        // one, so switching A -> B leaves A idle instead of frozen on a stale
+        // `.streaming`/`.starting` status.
+        if let previousPanelID {
+            simulatorStreamStore.deactivate(panelID: previousPanelID, in: workspaceID)
+        }
+        _ = simulatorStreamStore.activate(panelID: panelID, in: workspaceID)
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        let focusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: panelID,
+            kind: MobileWorkspaceFocusedPanel.simulatorKind
+        )
+        let focusTask = syncMacSelection
+            ? store.selectWorkspacePanel(
+                panelID: panelID,
+                kind: focusedPanel.kind,
+                workspaceID: workspace.id
+            )
+            : nil
+        // SUPERMUX:end supermux-mobile-selection-sync
+        // One task owns focus, stop, then start. Starting the Simulator stream
+        // before Mac focus settles leaves its control surface unavailable even
+        // though the phone has already mounted the new tab.
+        Task {
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            await WorkspacePanelStreamActivationSequence.run(
+                focusTask: focusTask,
+                isSelectionCurrent: {
+                    store.selectedWorkspaceFocusedPanel == focusedPanel
+                },
+                stopPrevious: {
+                    if let previousPanelID {
+                        await store.stopMobileSimulatorStream(
+                            panelID: previousPanelID,
+                            workspaceID: workspaceID
+                        )
+                    }
+                },
+                abandonCurrent: {
+                    simulatorStreamStore.deactivate(
+                        panelID: panelID,
+                        in: workspaceID
+                    )
+                },
+                startCurrent: {
+                    await store.startMobileSimulatorStream(
+                        panelID: panelID,
+                        workspaceID: workspaceID
+                    )
+                }
+            )
+            // SUPERMUX:end supermux-mobile-selection-sync
+        }
+    }
+
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    private func applyFocusedPanelFromStore() {
+        guard store.selectedWorkspaceID == workspace.id,
+              let focusedPanel = store.selectedWorkspaceFocusedPanel else {
+            return
+        }
+
+        let target = WorkspaceFocusedPanelPresentationTarget.resolve(
+            focusedPanel: focusedPanel,
+            terminalIDs: Set(workspace.terminals.map { $0.id.rawValue }),
+            browserPanelIDs: Set(browserStreamPanelIDs),
+            simulatorPanelIDs: Set(workspace.simulators.map(\.panelID))
+        )
+        switch target {
+        case .terminal:
+            isChatMode = false
+            pinnedChatSessionID = nil
+            browserStore.closeBrowser(for: workspace.id.rawValue)
+            stopActiveBrowserStream()
+            stopActiveSimulatorStream()
+        case .browserStream(let panelID):
+            isChatMode = false
+            pinnedChatSessionID = nil
+            guard activeBrowserStream?.id != panelID else { break }
+            selectBrowserStreamFromToolbar(
+                panelID,
+                dismissKeyboard: true,
+                syncMacSelection: false
+            )
+        case .simulatorStream(let panelID):
+            guard activeSimulatorStream?.id != panelID else { break }
+            selectSimulatorStreamFromToolbar(
+                panelID,
+                syncMacSelection: false
+            )
+        case .unsupported:
+            // A newer Mac may focus a panel this phone cannot render. Preserve
+            // the current mobile surface rather than decoding the whole row as
+            // invalid or replacing it with an unrelated terminal.
+            break
+        }
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
 
     private func stopActiveBrowserStream() {
         guard let stream = activeBrowserStream else { return }
@@ -884,12 +1269,28 @@ struct WorkspaceDetailView: View {
         Task { await store.stopMobileBrowserStream(panelID: stream.id) }
     }
 
+    private func stopActiveSimulatorStream() {
+        guard let stream = activeSimulatorStream else { return }
+        simulatorStreamStore.deactivate(in: workspace.rpcWorkspaceID.rawValue)
+        Task {
+            await store.stopMobileSimulatorStream(
+                panelID: stream.id,
+                workspaceID: workspace.rpcWorkspaceID.rawValue
+            )
+        }
+    }
+
     private func selectTerminalFromPicker(_ terminalID: MobileTerminalPreview.ID) {
         dismissTerminalKeyboardForChrome()
+        browserCreateRequest = nil
+        // SUPERMUX:begin ios-pane-actions
+        simulatorCreateRequest = nil
+        // SUPERMUX:end ios-pane-actions
         // Choosing a terminal returns from the browser pane (if up) to the
         // terminal. Closing the browser is enough to flip the detail view back.
         browserStore.closeBrowser(for: workspace.id.rawValue)
         stopActiveBrowserStream()
+        stopActiveSimulatorStream()
         // Switching from the picker is chrome, not a typing intent, so the
         // newly-selected surface must not grab the keyboard on attach. The
         // store suppresses the target's autofocus (and is a no-op when it is
@@ -904,5 +1305,12 @@ struct WorkspaceDetailView: View {
         // it; then sweep any other responder across the scene.
         GhosttySurfaceView.resignActiveInput()
         UIApplication.shared.dismissMobileKeyboard()
+    }
+
+    private func syncSimulatorStreamPanels() {
+        simulatorStreamStore.replaceSimulatorPanels(
+            in: workspace.rpcWorkspaceID.rawValue,
+            with: workspace.simulators
+        )
     }
 }

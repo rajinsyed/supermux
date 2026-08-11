@@ -49,11 +49,19 @@ import Testing
         "mobile.supermux.files.rename",
         "mobile.supermux.files.duplicate",
         "mobile.supermux.files.trash",
+        // Workspace selection / panes
+        "mobile.supermux.workspace.select",
+        "mobile.supermux.terminal.select",
+        "mobile.supermux.panel.select",
+        "mobile.supermux.pane.close",
+        "mobile.supermux.simulator.create",
+        // Phone push
+        "mobile.supermux.phone_push.register",
     ]
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 38)
+        #expect(SupermuxMobileMethod.all.count == 44)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

@@ -1,5 +1,8 @@
 import CMUXMobileCore
 import CmuxMobileSupport
+// SUPERMUX:begin ios-pane-actions
+import SupermuxMobileUI
+// SUPERMUX:end ios-pane-actions
 import SwiftUI
 
 /// Snapshot-isolated native menu for switching the active workspace surface.
@@ -51,11 +54,28 @@ struct TerminalPickerMenu: View, Equatable {
                         systemImage: terminal.id == value.selectedID
                             && !value.hasActiveBrowser
                             && value.activeBrowserStreamPanelID == nil
+                            && value.activeSimulatorStreamPanelID == nil
                             ? "checkmark.circle.fill"
                             : "terminal"
                     )
                 }
                 .accessibilityIdentifier("MobileTerminalMenuItem-\(terminal.id.rawValue)")
+            }
+        }
+
+        if value.supportsSimulatorStream, !value.simulatorStreamRows.isEmpty {
+            Section(L10n.string("mobile.simulatorStream.menuTitle", defaultValue: "Mac Simulators")) {
+                ForEach(value.simulatorStreamRows) { panel in
+                    Button { actions.selectSimulatorStream(panel.id) } label: {
+                        Label(
+                            panel.label,
+                            systemImage: panel.id == value.activeSimulatorStreamPanelID
+                                ? "checkmark.circle.fill"
+                                : "iphone"
+                        )
+                    }
+                    .accessibilityIdentifier("SimulatorStreamMenuItem-\(panel.id)")
+                }
             }
         }
 
@@ -108,6 +128,15 @@ struct TerminalPickerMenu: View, Equatable {
             }
             .accessibilityIdentifier("MobileNewBrowserMenuItem")
         }
+
+        // SUPERMUX:begin ios-pane-actions
+        SupermuxPaneMenuControls(
+            canCreateSimulator: value.canCreateSimulator,
+            canClosePane: value.canClosePane,
+            createSimulator: actions.createSimulator,
+            closePane: actions.closePane
+        )
+        // SUPERMUX:end ios-pane-actions
 
         #if canImport(UIKit)
         Section {

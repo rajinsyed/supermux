@@ -98,7 +98,30 @@ private let tailscaleInterface = CmxNetworkInterfaceIdentity(name: "utun4", inde
         #expect(ipv4Proof.request.expectedPeerDeviceID == "mac-1")
     }
 
-    @Test func rejectsGenerationInterfaceAndEffectiveEndpointSubstitution() throws {
+    // SUPERMUX:begin tailscale-packet-tunnel-proof (regression: packet-tunnel NWPath may omit localEndpoint — see SUPERMUX-TOUCHPOINTS.md)
+    @Test func validatesWhenNetworkFrameworkOmitsTailscaleLocalEndpoint() throws {
+        let request = try tailscaleRequest(host: "100.71.210.41")
+        let snapshot = authoritySnapshot(generation: 41)
+        let proof = try CmxTailscaleRouteProofValidator().prepare(
+            request: request,
+            snapshot: snapshot
+        )
+
+        try CmxTailscaleRouteProofValidator().validate(
+            proof: proof,
+            authoritySnapshot: snapshot,
+            connectionPath: CmxTailscaleConnectionPathSnapshot(
+                isSatisfied: true,
+                availableInterfaces: [tailscaleInterface],
+                localAddress: nil,
+                remoteAddress: CmxTailscaleIPAddress("100.71.210.41"),
+                remotePort: 58_465
+            )
+        )
+    }
+    // SUPERMUX:end tailscale-packet-tunnel-proof
+
+    @Test func acceptsEquivalentGenerationAndRejectsRouteSubstitution() throws {
         let request = try tailscaleRequest(host: "100.71.210.41")
         let snapshot = authoritySnapshot(generation: 41)
         let proof = try CmxTailscaleRouteProofValidator().prepare(
@@ -107,13 +130,33 @@ private let tailscaleInterface = CmxNetworkInterfaceIdentity(name: "utun4", inde
         )
         let replacement = CmxNetworkInterfaceIdentity(name: "utun5", index: 23)
 
-        #expect(throws: CmxTailscaleRouteProofError.routeGenerationChanged) {
+        // SUPERMUX:begin tailscale-packet-tunnel-proof (an equivalent authority revision keeps the proven route valid — see SUPERMUX-TOUCHPOINTS.md)
+        try CmxTailscaleRouteProofValidator().validate(
+            proof: proof,
+            authoritySnapshot: authoritySnapshot(generation: 42),
+            connectionPath: connectionPath()
+        )
+        // SUPERMUX:end tailscale-packet-tunnel-proof
+        // SUPERMUX:begin tailscale-packet-tunnel-proof (a real interface substitution still fails after an equivalent-revision acceptance — see SUPERMUX-TOUCHPOINTS.md)
+        #expect(throws: CmxTailscaleRouteProofError.interfaceChanged) {
             try CmxTailscaleRouteProofValidator().validate(
                 proof: proof,
-                authoritySnapshot: authoritySnapshot(generation: 42),
+                authoritySnapshot: CmxTailscaleAuthoritySnapshot(
+                    generation: 42,
+                    pathSatisfied: true,
+                    availableInterfaces: [replacement],
+                    systemInterfaces: [
+                        interface(
+                            name: replacement.name,
+                            index: replacement.index,
+                            addresses: ["100.70.231.80", "fd7a:115c:a1e0::6c36:e750"]
+                        )
+                    ]
+                ),
                 connectionPath: connectionPath()
             )
         }
+        // SUPERMUX:end tailscale-packet-tunnel-proof
         #expect(throws: CmxTailscaleRouteProofError.connectionPathUnavailable) {
             try CmxTailscaleRouteProofValidator().validate(
                 proof: proof,
@@ -127,6 +170,21 @@ private let tailscaleInterface = CmxNetworkInterfaceIdentity(name: "utun4", inde
                 )
             )
         }
+        // SUPERMUX:begin tailscale-packet-tunnel-proof (present-but-wrong local endpoints still fail closed — see SUPERMUX-TOUCHPOINTS.md)
+        #expect(throws: CmxTailscaleRouteProofError.localEndpointMismatch) {
+            try CmxTailscaleRouteProofValidator().validate(
+                proof: proof,
+                authoritySnapshot: snapshot,
+                connectionPath: CmxTailscaleConnectionPathSnapshot(
+                    isSatisfied: true,
+                    availableInterfaces: [tailscaleInterface],
+                    localAddress: CmxTailscaleIPAddress("100.70.231.81"),
+                    remoteAddress: CmxTailscaleIPAddress("100.71.210.41"),
+                    remotePort: 58_465
+                )
+            )
+        }
+        // SUPERMUX:end tailscale-packet-tunnel-proof
         #expect(throws: CmxTailscaleRouteProofError.remoteEndpointMismatch) {
             try CmxTailscaleRouteProofValidator().validate(
                 proof: proof,

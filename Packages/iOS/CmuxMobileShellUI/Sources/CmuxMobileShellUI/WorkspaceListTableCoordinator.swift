@@ -2,6 +2,9 @@
 import CmuxMobileDiagnostics
 import CmuxMobileShellModel
 import CmuxMobileSupport
+// SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects section hosted in one table row — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-projects-table-row
 import SwiftUI
 import UIKit
 
@@ -21,13 +24,26 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
             hasDescription: Bool,
             isSelected: Bool,
             isIndented: Bool,
-            changesChipIdentity: WorkspaceChangesChipHeightKey?
+            changesChipIdentity: WorkspaceChangesChipHeightKey?,
+            // SUPERMUX:begin supermux-mobile-unread-badge (badge occupies title-row width)
+            // The unread badge sits INLINE with the title, so its presence and
+            // its width both steal room from a title that is allowed to wrap.
+            // A read → unread flip, or 9 → 10, can push a barely-fitting title
+            // onto another line; without these in the key the cached height
+            // stays stale and the extra line is clipped. The displayed text is
+            // the width-determining value, not the raw count — 100 and 4000
+            // both render "99+" and must share a cache entry.
+            unreadBadgeText: String?
+            // SUPERMUX:end supermux-mobile-unread-badge
         )
         case groupHeader
         case groupFooter
         case recoveryBanner(String)
         case macStatus(String)
         case filterEmpty(MobileWorkspaceListFilter)
+        // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects row height identity)
+        case supermuxProjects(String)
+        // SUPERMUX:end supermux-mobile-projects-table-row
     }
 
     private struct HeightCacheKey: Hashable {
@@ -264,10 +280,34 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
             dataSource.replaceItems(next.items, in: tableView)
             appliedItems = next.items
         } else {
-            let changedIndexPaths = changedToApply.compactMap { dataSource.indexPath(for: $0) }
-            if !changedIndexPaths.isEmpty {
-                tableView.reloadRows(at: changedIndexPaths, with: .none)
+            // SUPERMUX:begin supermux-mobile-list-reconfigure-rows (height-only updates must RECONFIGURE, not reload — see SUPERMUX-TOUCHPOINTS.md)
+            // Reaching here means a changed row's height moved, its native
+            // action payload changed, or both. Those need different APIs:
+            //
+            // `reloadRows` hands back a DIFFERENT cell instance, which destroys
+            // the hosted SwiftUI subtree and every `@State` and `.task` in it.
+            // For a mere height change that is pure waste, and it is visible:
+            // the fork's Projects section is one hosted cell, so an unrelated
+            // row growing a line blanked every project avatar (their decoded
+            // icons live in `@State`) and re-issued their icon fetches.
+            // Measured: reconfiguring keeps the same cell AND still re-queries
+            // the height (48 → 96), which is the whole reason to reload here.
+            //
+            // A native-action change is the exception that still needs the
+            // reload: UIKit caches swipe-derived accessibility actions on the
+            // cell and reconfiguring does not invalidate that cache (the same
+            // reason `didEndEditingRowAt` reloads).
+            let reloadItems = changedToApply.filter { nativeActionReloadIDs.contains($0.id) }
+            let reconfigureItems = changedToApply.filter { !nativeActionReloadIDs.contains($0.id) }
+            let reloadIndexPaths = reloadItems.compactMap { dataSource.indexPath(for: $0) }
+            let reconfigureIndexPaths = reconfigureItems.compactMap { dataSource.indexPath(for: $0) }
+            if !reconfigureIndexPaths.isEmpty {
+                tableView.reconfigureRows(at: reconfigureIndexPaths)
             }
+            if !reloadIndexPaths.isEmpty {
+                tableView.reloadRows(at: reloadIndexPaths, with: .none)
+            }
+            // SUPERMUX:end supermux-mobile-list-reconfigure-rows
         }
         #if DEBUG
         recordPayloadApplyRoute(.tableReload)
@@ -950,6 +990,12 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                 .margins(.leading, 32)
                 .margins(.trailing, 12)
                 .minSize(width: 0, height: 0)
+        // SUPERMUX:begin supermux-mobile-projects-table-row (the Projects row owns its own horizontal insets and internal spacing; the banner/status 8/12 margins would double them)
+        case .chrome(.supermuxProjects):
+            hosting = hosting
+                .margins(.all, 0)
+                .minSize(width: 0, height: 0)
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .chrome:
             hosting = hosting
                 .margins(.top, 8)
@@ -992,6 +1038,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                     previewLineLimit: configuration.previewLineLimit,
                     unreadIndicatorLeftShift: configuration.unreadIndicatorLeftShift
                 )
+                // SUPERMUX:begin supermux-mobile-row-activity (the iPhone uses this UIKit table, not WorkspaceListView's SwiftUI List branch)
+                .supermuxWorkspaceActivityDot(rawActivity: workspace.supermuxActivity)
+                // SUPERMUX:end supermux-mobile-row-activity
                 .accessibilityElement(
                     children: onOpenChanges == nil ? .combine : .contain
                 )
@@ -1082,6 +1131,18 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                     rendersInline: true
                 )
             )
+        // SUPERMUX:begin supermux-mobile-projects-table-row (hosts the fork's whole Projects subtree in this one row)
+        case .chrome(.supermuxProjects):
+            guard let projects = configuration.supermuxProjects else {
+                return AnyView(EmptyView())
+            }
+            return AnyView(
+                SupermuxProjectsTableSection(
+                    section: projects.section,
+                    actions: projects.actions
+                )
+            )
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .chrome(.macStatusRow):
             return AnyView(
                 MobileMacConnectionStatusRow(
@@ -1133,7 +1194,13 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                     isSelected: configuration.navigationStyle == .sidebar
                         && configuration.selectedWorkspaceID == id,
                     isIndented: item.isIndentedWorkspace,
-                    changesChipIdentity: changesChipIdentity
+                    changesChipIdentity: changesChipIdentity,
+                    // SUPERMUX:begin supermux-mobile-unread-badge
+                    unreadBadgeText: WorkspaceUnreadDot.heightIdentity(
+                        isUnread: workspace.hasUnread,
+                        unreadCount: workspace.supermuxUnreadCount
+                    )
+                    // SUPERMUX:end supermux-mobile-unread-badge
                 )
             } else {
                 kind = .workspaceUniform(
@@ -1149,6 +1216,12 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                 configuration.connectionError ?? "",
                 String(configuration.signOut != nil),
             ].joined(separator: "|"))
+        // SUPERMUX:begin supermux-mobile-projects-table-row (height keyed on the fork's LAYOUT identity, not its full snapshot: live activity/PR/run repaints must not re-measure the whole section)
+        case .chrome(.supermuxProjects):
+            kind = .supermuxProjects(
+                configuration.supermuxProjects?.heightIdentity ?? "hidden"
+            )
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .chrome(.macStatusRow):
             kind = .macStatus([
                 configuration.host,
@@ -1261,6 +1334,13 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
             return previous.connectionRequiresReauth != next.connectionRequiresReauth
                 || previous.connectionError != next.connectionError
                 || (previous.signOut != nil) != (next.signOut != nil)
+        // SUPERMUX:begin supermux-mobile-projects-table-row (repaint on snapshot/seam changes; the closure bundles themselves are not Equatable and change identity every projection)
+        case .chrome(.supermuxProjects):
+            return SupermuxProjectsTableRowConfiguration.renderChanged(
+                previous: previous.supermuxProjects,
+                next: next.supermuxProjects
+            )
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .chrome(.macStatusRow):
             return previous.host != next.host
                 || previous.connectionStatus != next.connectionStatus

@@ -15,6 +15,10 @@ import Testing
         #expect(!capabilities.supportsRun)
         #expect(!capabilities.supportsActions)
         #expect(!capabilities.supportsFiles)
+        #expect(!capabilities.supportsSelectionSync)
+        #expect(!capabilities.supportsPanelSelectionSync)
+        #expect(!capabilities.supportsPanes)
+        #expect(!capabilities.supportsPhonePush)
         for capability in SupermuxMobileCapability.all {
             #expect(!capabilities.contains(capability))
         }
@@ -46,6 +50,10 @@ import Testing
         #expect(!capabilities.supportsRun)
         #expect(!capabilities.supportsActions)
         #expect(!capabilities.supportsFiles)
+        #expect(!capabilities.supportsSelectionSync)
+        #expect(!capabilities.supportsPanelSelectionSync)
+        #expect(!capabilities.supportsPanes)
+        #expect(!capabilities.supportsPhonePush)
     }
 
     @Test func everyAccessorMatchesItsWireString() {
@@ -60,6 +68,10 @@ import Testing
             (.runV1, \.supportsRun),
             (.actionsV1, \.supportsActions),
             (.filesV1, \.supportsFiles),
+            (.selectionSyncV1, \.supportsSelectionSync),
+            (.selectionSyncV2, \.supportsPanelSelectionSync),
+            (.panesV1, \.supportsPanes),
+            (.phonePushV1, \.supportsPhonePush),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {
@@ -67,7 +79,11 @@ import Testing
             #expect(accessor(on), "\(capability.rawValue) should flip its accessor")
             #expect(on.contains(capability))
             for (other, otherAccessor) in accessors where other != capability {
-                #expect(!otherAccessor(on), "\(capability.rawValue) must not flip \(other.rawValue)")
+                if capability == .selectionSyncV2, other == .selectionSyncV1 {
+                    #expect(otherAccessor(on))
+                } else {
+                    #expect(!otherAccessor(on), "\(capability.rawValue) must not flip \(other.rawValue)")
+                }
             }
         }
     }
@@ -81,5 +97,9 @@ import Testing
         ])
         #expect(capabilities.supportsProjects)
         #expect(!capabilities.supportsFiles)
+        #expect(!capabilities.supportsSelectionSync)
+        #expect(!capabilities.supportsPanelSelectionSync)
+        #expect(!capabilities.supportsPanes)
+        #expect(!capabilities.supportsPhonePush)
     }
 }

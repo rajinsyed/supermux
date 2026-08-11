@@ -14,6 +14,9 @@ extension MobileWorkspacePreview {
             customColorHex: remote.customColorHex,
             currentDirectory: remote.currentDirectory,
             isPinned: remote.isPinned ?? false,
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            focusedPanel: remote.focusedPanel,
+            // SUPERMUX:end supermux-mobile-selection-sync
             groupID: remote.groupID.map { MobileWorkspaceGroupPreview.ID(rawValue: $0) },
             previewText: remote.preview,
             previewAt: remote.previewAt.map { Date(timeIntervalSince1970: $0) },
@@ -21,7 +24,8 @@ extension MobileWorkspacePreview {
             hasUnread: remote.hasUnread ?? false,
             terminals: remote.terminals.map { terminal in
                 MobileTerminalPreview(remote: terminal)
-            }
+            },
+            simulators: remote.simulators
         )
         // SUPERMUX:begin supermux-mobile-workspace-fields (carry the additive §6 fields into the preview — see SUPERMUX-TOUCHPOINTS.md)
         self.supermuxProjectID = remote.supermuxProjectID
@@ -31,6 +35,7 @@ extension MobileWorkspacePreview {
         self.supermuxPullRequestState = remote.supermuxPullRequest?.state
         self.supermuxPullRequestURL = remote.supermuxPullRequest?.url
         self.supermuxPullRequestIsStale = remote.supermuxPullRequest?.isStale ?? nil
+        self.supermuxUnreadCount = remote.supermuxUnreadCount
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }

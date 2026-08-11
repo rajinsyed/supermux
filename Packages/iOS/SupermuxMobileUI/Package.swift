@@ -26,6 +26,18 @@ let package = Package(
         // hide-filter and the nested-workspace mapping can name
         // `MobileWorkspacePreview` in their public APIs.
         .package(path: "../CmuxMobileShellModel"),
+        // Already in the graph transitively; declared directly for the app's
+        // gated haptic entry point (`MobileHapticFeedback`), which every
+        // cmux-owned haptic must route through.
+        .package(path: "../../Shared/CMUXMobileCore"),
+        // Already in the graph transitively; declared directly for the shared
+        // glass/material modifiers so fork surfaces match the app's chrome.
+        .package(path: "../CmuxMobileSupport"),
+        // Focus mode groups upstream's transcript rows (`ChatTranscriptRow`)
+        // and re-renders the expanded ones with upstream's own row view, so
+        // both the model and the UI package are named directly.
+        .package(path: "../../Shared/CmuxAgentChat"),
+        .package(path: "../CmuxAgentChatUI"),
     ],
     targets: [
         .target(
@@ -35,6 +47,10 @@ let package = Package(
                 "SupermuxMobileKit",
                 "CmuxMobileRPC",
                 "CmuxMobileShellModel",
+                "CMUXMobileCore",
+                "CmuxMobileSupport",
+                "CmuxAgentChat",
+                "CmuxAgentChatUI",
             ],
             resources: [.process("Resources")],
             swiftSettings: [

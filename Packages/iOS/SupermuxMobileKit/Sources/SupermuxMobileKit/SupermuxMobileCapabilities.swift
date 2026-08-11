@@ -41,4 +41,14 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     public var supportsActions: Bool { contains(.actionsV1) }
     /// `supermux.files.v1`: file-browser methods are served.
     public var supportsFiles: Bool { contains(.filesV1) }
+    /// Whether workspace selection synchronization is available in either version.
+    public var supportsSelectionSync: Bool {
+        contains(.selectionSyncV1) || contains(.selectionSyncV2)
+    }
+    /// `supermux.selection_sync.v2`: every Mac panel kind stays in sync.
+    public var supportsPanelSelectionSync: Bool { contains(.selectionSyncV2) }
+    /// `supermux.panes.v1`: pane close and Simulator creation are served.
+    public var supportsPanes: Bool { contains(.panesV1) }
+    /// `supermux.phone_push.v1`: the paired Mac accepts this phone's APNs token.
+    public var supportsPhonePush: Bool { contains(.phonePushV1) }
 }

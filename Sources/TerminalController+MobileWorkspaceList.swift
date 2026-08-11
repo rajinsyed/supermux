@@ -2,6 +2,9 @@ import AppKit
 import CMUXMobileCore
 import CmuxWorkspaces
 import Foundation
+// SUPERMUX:begin mobile-supermux-workspace-fields (the additive field keys)
+import SupermuxKit
+// SUPERMUX:end mobile-supermux-workspace-fields
 
 // MARK: - Mobile workspace list (iOS-facing payloads)
 //
@@ -238,6 +241,29 @@ extension TerminalController {
                 "is_focused": workspace.isFocusedTerminalInputSurface(terminal.id)
             ]
         }
+        let simulatorEncoder = MobileSimulatorWireEncoder()
+        let simulators: [[String: Any]]
+        if CmuxFeatureFlags.shared.isSimulatorEnabled {
+            simulators = mobileSimulatorPanels(in: workspace).compactMap { panel in
+                simulatorEncoder.object(MobileHostService.shared.mobileSimulatorStreamCoordinator.descriptor(
+                    panel: panel
+                ) ?? simulatorEncoder.descriptor(panel: panel, workspaceID: workspace.id))
+            }
+        } else {
+            simulators = []
+        }
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        let focusedPanel: [String: Any]?
+        if let panelID = workspace.focusedPanelId,
+           let kind = workspace.panelKind(panelId: panelID) {
+            focusedPanel = [
+                "panel_id": panelID.uuidString,
+                "kind": kind,
+            ]
+        } else {
+            focusedPanel = nil
+        }
+        // SUPERMUX:end supermux-mobile-selection-sync
 
         let store = notificationStore ?? AppDelegate.shared?.notificationStore
         let latestNotification = store?.latestNotification(forTabId: workspace.id)
@@ -259,6 +285,9 @@ extension TerminalController {
             "custom_color": v2OrNull(workspace.customColor),
             "current_directory": v2OrNull(workspace.presentedCurrentDirectory),
             "is_selected": isSelected,
+            // SUPERMUX:begin supermux-mobile-selection-sync
+            "focused_panel": v2OrNull(focusedPanel),
+            // SUPERMUX:end supermux-mobile-selection-sync
             "is_pinned": workspace.isPinned,
             // Group membership so the phone can fold contiguous same-group
             // workspaces under their group header. nil for ungrouped workspaces.
@@ -278,10 +307,23 @@ extension TerminalController {
             // unread + manual/panel-derived/restored indicators) so the phone can
             // show an iMessage-style unread dot.
             "has_unread": store?.workspaceIsUnread(forTabId: workspace.id) ?? false,
-            "terminals": terminals
+            "terminals": terminals,
+            "simulators": simulators
         ]
         // SUPERMUX:begin mobile-supermux-workspace-fields (additive supermux_project_id / supermux_activity / supermux_branch / supermux_pull_request, §6 — see SUPERMUX-TOUCHPOINTS.md)
-        return SupermuxMobileWorkspaceListAugmenter.augment(payload, workspace: workspace)
+        var forkPayload = SupermuxMobileWorkspaceListAugmenter.augment(payload, workspace: workspace)
+        // The COUNT behind `has_unread`, so the phone draws the Mac's numbered
+        // badge instead of a countless dot. Merged here rather than inside the
+        // augmenter because that one only fires for project-associated
+        // workspaces, and unread applies to every row.
+        //
+        // No store means "unknown", which must stay ABSENT rather than become
+        // 0: state sync v2 sends nil in the same case, and a 0 here would make
+        // the two transports render the same workspace differently.
+        if let unreadCount = store?.unreadCount(forTabId: workspace.id) {
+            forkPayload[SupermuxMobileWorkspaceFields.unreadCountKey] = unreadCount
+        }
+        return forkPayload
         // SUPERMUX:end mobile-supermux-workspace-fields
     }
 

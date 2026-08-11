@@ -1,3 +1,4 @@
+import CMUXMobileCore
 import Foundation
 import SupermuxMobileCore
 
@@ -97,10 +98,122 @@ extension TerminalController {
             return await v2SupermuxFilesDuplicate(params: params)
         case .filesTrash:
             return await v2SupermuxFilesTrash(params: params)
+        case .workspaceSelect:
+            return v2SupermuxWorkspaceSelect(params: params)
+        case .terminalSelect:
+            return v2SupermuxTerminalSelect(params: params)
+        case .panelSelect:
+            return v2SupermuxPanelSelect(params: params)
+        case .paneClose:
+            return v2SupermuxPaneClose(params: params)
+        case .simulatorCreate:
+            return v2SupermuxSimulatorCreate(params: params)
+        case .phonePushRegister:
+            return await v2SupermuxPhonePushRegister(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method
             ])
         }
+    }
+
+    /// Closes any panel type through the workspace's shared close path.
+    private func v2SupermuxPaneClose(params: [String: Any]) -> V2CallResult {
+        guard let workspaceID = v2UUID(params, "workspace_id"),
+              let panelID = v2UUID(params, "panel_id") else {
+            return .err(
+                code: "invalid_params",
+                message: "Missing or invalid workspace_id/panel_id",
+                data: nil
+            )
+        }
+        guard let tabManager = v2ResolveTabManager(params: params),
+              let workspace = tabManager.tabs.first(where: { $0.id == workspaceID }) else {
+            return .err(code: "not_found", message: "Workspace not found", data: [
+                "workspace_id": workspaceID.uuidString,
+            ])
+        }
+        guard workspace.panels[panelID] != nil else {
+            return .err(code: "not_found", message: "Panel not found", data: [
+                "workspace_id": workspaceID.uuidString,
+                "panel_id": panelID.uuidString,
+            ])
+        }
+
+        guard closeSurfaceRecordingHistory(
+            in: workspace,
+            surfaceId: panelID,
+            force: true
+        ) else {
+            return .err(code: "unavailable", message: "Panel could not be closed", data: [
+                "workspace_id": workspaceID.uuidString,
+                "panel_id": panelID.uuidString,
+            ])
+        }
+        AppDelegate.shared?.notificationStore?.clearNotifications(
+            forTabId: workspace.id,
+            surfaceId: panelID
+        )
+        return .ok([
+            "closed": true,
+            "workspace_id": workspaceID.uuidString,
+            "panel_id": panelID.uuidString,
+        ])
+    }
+
+    /// Creates a native Simulator panel in the workspace's current pane.
+    private func v2SupermuxSimulatorCreate(params: [String: Any]) -> V2CallResult {
+        guard CmuxFeatureFlags.shared.isSimulatorEnabled else {
+            return .err(
+                code: "capability_disabled",
+                message: "Simulator panes are disabled",
+                data: nil
+            )
+        }
+        guard let workspaceID = v2UUID(params, "workspace_id") else {
+            return .err(
+                code: "invalid_params",
+                message: "Missing or invalid workspace_id",
+                data: nil
+            )
+        }
+        guard let tabManager = v2ResolveTabManager(params: params),
+              let workspace = tabManager.tabs.first(where: { $0.id == workspaceID }) else {
+            return .err(code: "not_found", message: "Workspace not found", data: [
+                "workspace_id": workspaceID.uuidString,
+            ])
+        }
+        guard let paneID = workspace.bonsplitController.focusedPaneId
+                ?? workspace.bonsplitController.allPaneIds.first else {
+            return .err(code: "not_found", message: "Pane not found", data: nil)
+        }
+        guard let panel = workspace.newSimulatorSurface(inPane: paneID, focus: false) else {
+            return .err(
+                code: "unavailable",
+                message: "Simulator creation is unavailable",
+                data: ["workspace_id": workspaceID.uuidString]
+            )
+        }
+        if v2Bool(params, "focus") == true,
+           let focusError = v2SupermuxCreatedPanelFocusError(
+               workspaceID: workspace.id,
+               panelID: panel.id
+           ) {
+            _ = workspace.closePanel(panel.id, force: true)
+            return focusError
+        }
+        let encoder = MobileSimulatorWireEncoder()
+        guard let payload = encoder.object(encoder.descriptor(
+            panel: panel,
+            workspaceID: workspaceID
+        )) else {
+            _ = workspace.closePanel(panel.id, force: true)
+            return .err(
+                code: "internal_error",
+                message: "Failed to encode simulator descriptor",
+                data: nil
+            )
+        }
+        return .ok(payload)
     }
 }

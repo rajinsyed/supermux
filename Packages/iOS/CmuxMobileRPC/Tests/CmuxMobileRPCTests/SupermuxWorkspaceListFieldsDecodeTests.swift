@@ -109,6 +109,9 @@ import Testing
         #expect(response.createdTerminalID == nil)
 
         // The new optional fields stay absent on a pre-mission payload.
+        // SUPERMUX:begin supermux-mobile-selection-sync
+        #expect(first.focusedPanel == nil)
+        // SUPERMUX:end supermux-mobile-selection-sync
         #expect(first.supermuxProjectID == nil)
         #expect(first.supermuxActivity == nil)
         #expect(second.supermuxProjectID == nil)
@@ -169,6 +172,52 @@ import Testing
         #expect(preview.supermuxProjectID == "66666666-6666-6666-6666-666666666666")
         #expect(preview.supermuxActivity == "working")
     }
+
+    // SUPERMUX:begin supermux-mobile-selection-sync
+    @Test func genericFocusedPanelDecodesAndFlowsIntoThePreview() throws {
+        let payload = #"""
+        {
+          "workspaces": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "browser focus",
+              "is_selected": true,
+              "focused_panel": {
+                "panel_id": "77777777-7777-7777-7777-777777777777",
+                "kind": "browser"
+              },
+              "terminals": []
+            }
+          ]
+        }
+        """#
+        let response = try MobileSyncWorkspaceListResponse.decode(Data(payload.utf8))
+        let workspace = try #require(response.workspaces.first)
+        #expect(workspace.focusedPanel?.panelID == "77777777-7777-7777-7777-777777777777")
+        #expect(workspace.focusedPanel?.kind == "browser")
+
+        let preview = MobileWorkspacePreview(remote: workspace)
+        #expect(preview.focusedPanel == workspace.focusedPanel)
+    }
+
+    @Test func malformedFocusedPanelDoesNotFailTheWorkspaceList() throws {
+        let payload = #"""
+        {
+          "workspaces": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "bad focus",
+              "is_selected": true,
+              "focused_panel": {"panel_id": 7, "kind": ["browser"]},
+              "terminals": []
+            }
+          ]
+        }
+        """#
+        let response = try MobileSyncWorkspaceListResponse.decode(Data(payload.utf8))
+        #expect(response.workspaces.first?.focusedPanel == nil)
+    }
+    // SUPERMUX:end supermux-mobile-selection-sync
 
     // MARK: - m6-f2 sidebar-row parity fields (supermux_branch / supermux_pull_request)
 

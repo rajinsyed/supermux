@@ -3,9 +3,13 @@ import SwiftUI
 import UIKit
 
 struct MobileBottomScrollStressRepresentable: UIViewRepresentable {
+    // SUPERMUX:begin ios-terminal-native-scroll
+    let nativeScrollOnly: Bool
+
     func makeCoordinator() -> MobileBottomScrollStressCoordinator {
-        MobileBottomScrollStressCoordinator()
+        MobileBottomScrollStressCoordinator(nativeScrollOnly: nativeScrollOnly)
     }
+    // SUPERMUX:end ios-terminal-native-scroll
 
     func makeUIView(context: Context) -> UIView {
         guard let runtime = try? GhosttyRuntime.shared() else {

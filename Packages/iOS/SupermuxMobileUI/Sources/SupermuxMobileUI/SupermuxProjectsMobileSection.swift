@@ -47,6 +47,7 @@ public struct SupermuxProjectsMobileSection: View {
             } header: {
                 SupermuxProjectsSectionHeader(
                     isCollapsed: section.isCollapsed,
+                    projectCount: section.hasLoaded ? section.rows.count : nil,
                     toggleCollapsed: actions.toggleCollapsed,
                     editing: actions.editing
                 )
@@ -57,38 +58,50 @@ public struct SupermuxProjectsMobileSection: View {
     @ViewBuilder
     private var sectionRows: some View {
         if !section.hasLoaded {
-            HStack(spacing: 8) {
-                ProgressView()
-                Text(String(
-                    localized: "supermux.projects.loading",
-                    defaultValue: "Loading projects…",
-                    bundle: .module
-                ))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            // Skeleton rows in the real row's shape, not a spinner: the list
+            // keeps its geometry, so rows land in place instead of the section
+            // snapping from one line to full height when the fetch returns.
+            ForEach(0..<3, id: \.self) { index in
+                SupermuxProjectSkeletonRow(index: index)
+                    .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
+                    .listRowSeparator(.hidden)
             }
-            .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
-            .listRowSeparator(.hidden)
-        } else if section.rows.isEmpty {
-            Text(String(
-                localized: "supermux.projects.empty",
-                defaultValue: "No projects yet",
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(String(
+                localized: "supermux.projects.loading",
+                defaultValue: "Loading projects…",
                 bundle: .module
             ))
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
-            .listRowSeparator(.hidden)
+        } else if section.rows.isEmpty {
+            SupermuxProjectsEmptyState(editing: actions.editing)
+                .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
+                .listRowSeparator(.hidden)
         } else {
             ForEach(section.rows) { row in
                 SupermuxProjectMobileRow(
                     row: row,
                     iconPNGData: actions.iconPNGData,
                     toggleExpanded: actions.toggleProjectExpanded,
+                    openWorkspace: actions.openProjectWorkspace,
                     openDetail: actions.openProjectDetail
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button {
+                        actions.openProjectDetail(row.id)
+                    } label: {
+                        Label {
+                            Text(String(
+                                localized: "supermux.projects.row.details",
+                                defaultValue: "Project Details",
+                                bundle: .module
+                            ))
+                        } icon: {
+                            Image(systemName: "info.circle")
+                        }
+                    }
+                }
                 // Mac-sidebar shape: open workspaces are ALWAYS nested under
                 // their project; only the unopened-worktree slice (inside
                 // SupermuxProjectNestedRows) waits for the disclosure.
@@ -101,35 +114,66 @@ public struct SupermuxProjectsMobileSection: View {
     static let rowInsets = EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
 }
 
-/// The tappable section header: title plus a collapse chevron, and — when
-/// the editing seam is live — a trailing "+" that opens the create-project
-/// editor.
+/// The tappable section header: an uppercase caption title with a collapse
+/// chevron and a project count, plus — when the editing seam is live — a
+/// trailing "+" that opens the create-project editor.
+///
+/// Styled as a sidebar section label rather than a content heading, matching
+/// the Mac's uppercase secondary "PROJECTS": the header is a divider between
+/// groups of rows, so it should recede, and the previous `.subheadline`
+/// primary-colored title competed with the project names underneath it.
 struct SupermuxProjectsSectionHeader: View {
     let isCollapsed: Bool
+    /// Number of projects, shown while collapsed so the fold still reports
+    /// what it is hiding; `nil` before the first fetch lands.
+    var projectCount: Int?
     let toggleCollapsed: @MainActor () -> Void
     var editing: SupermuxProjectEditingActions?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingCreateEditor = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button(action: toggleCollapsed) {
-                HStack(spacing: 6) {
+        HStack(spacing: 0) {
+            Button {
+                SupermuxHaptics.selection()
+                toggleCollapsed()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(.caption2, weight: .bold))
+                        .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                        .animation(
+                            reduceMotion ? nil : SupermuxProjectMotion.disclosure,
+                            value: isCollapsed
+                        )
                     Text(String(
                         localized: "supermux.projects.sectionTitle",
                         defaultValue: "Projects",
                         bundle: .module
                     ))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
+                    .font(.system(.caption2, weight: .semibold))
+                    .textCase(.uppercase)
+                    .kerning(0.5)
+                    // The count only earns its place when the rows are hidden.
+                    if isCollapsed, let projectCount, projectCount > 0 {
+                        Text(projectCount.formatted())
+                            .font(.system(.caption2, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
                     Spacer(minLength: 0)
                 }
+                .foregroundStyle(.secondary)
+                .padding(.leading, SupermuxProjectRowMetrics.rowHorizontalPadding)
+                .frame(height: 34)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(String(
+                localized: "supermux.projects.sectionTitle",
+                defaultValue: "Projects",
+                bundle: .module
+            ))
             .accessibilityHint(isCollapsed
                 ? String(localized: "supermux.projects.section.expand", defaultValue: "Expand", bundle: .module)
                 : String(localized: "supermux.projects.section.collapse", defaultValue: "Collapse", bundle: .module))
@@ -139,8 +183,9 @@ struct SupermuxProjectsSectionHeader: View {
                     showingCreateEditor = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(.footnote, weight: .semibold))
                         .foregroundStyle(.secondary)
+                        .frame(width: 34, height: 34)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -158,89 +203,5 @@ struct SupermuxProjectsSectionHeader: View {
     }
 }
 
-/// Project avatar, in the §7 display order: fetched custom icon → SF symbol
-/// → letter, the latter two tinted by the project's accent color.
-struct SupermuxProjectMobileAvatar: View {
-    let row: SupermuxProjectRowSnapshot
-    let size: CGFloat
-    let iconPNGData: @Sendable (_ projectID: String) async -> Data?
-
-    @State private var customIcon: Image?
-
-    private var accent: Color {
-        row.avatarRGB.map { Color(red: $0.red, green: $0.green, blue: $0.blue) } ?? .secondary
-    }
-
-    var body: some View {
-        ZStack {
-            if let customIcon {
-                customIcon
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                    .fill(accent.opacity(0.22))
-                if let symbol = row.iconSymbol {
-                    Image(systemName: symbol)
-                        .font(.system(size: size * 0.48, weight: .medium))
-                        .foregroundStyle(accent)
-                } else {
-                    Text(row.avatarLetter)
-                        .font(.system(size: size * 0.48, weight: .semibold))
-                        .foregroundStyle(accent)
-                }
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
-        .task(id: iconIdentity) {
-            guard row.hasCustomIcon else {
-                customIcon = nil
-                return
-            }
-            guard let data = await iconPNGData(row.id) else { return }
-            customIcon = Self.decodeImage(data)
-        }
-        .accessibilityHidden(true)
-    }
-
-    /// The avatar's icon-refetch identity: only the fields that actually
-    /// change which bytes must be fetched/decoded. Keying `.task(id:)` on the
-    /// FULL row snapshot re-issues `project.icon` and re-decodes the PNG on
-    /// EVERY unrelated row change (branch subtitle, expansion, counts,
-    /// run state, …); keying on just the project id + custom-icon flag +
-    /// content etag re-fetches only when the project changes, its custom-icon
-    /// flag flips, or the icon's CONTENT changes (a Mac-side icon replacement
-    /// keeps the flag `true` but moves the etag — without the etag in the
-    /// identity that change would never re-run the task and the stale icon
-    /// would render forever).
-    private var iconIdentity: SupermuxProjectIconIdentity {
-        SupermuxProjectIconIdentity(
-            projectID: row.id,
-            hasCustomIcon: row.hasCustomIcon,
-            iconETag: row.iconETag
-        )
-    }
-
-    private static func decodeImage(_ data: Data) -> Image? {
-        #if canImport(UIKit)
-        UIImage(data: data).map { Image(uiImage: $0) }
-        #elseif canImport(AppKit)
-        NSImage(data: data).map { Image(nsImage: $0) }
-        #else
-        nil
-        #endif
-    }
-}
-
-/// See ``SupermuxProjectMobileAvatar/iconIdentity``. Internal (not private)
-/// so a focused unit test can pin the equality semantics without a SwiftUI
-/// test harness.
-struct SupermuxProjectIconIdentity: Equatable {
-    let projectID: String
-    let hasCustomIcon: Bool
-    /// The icon's content etag (`nil` while the wire doesn't surface one) —
-    /// the signal that re-keys the fetch when the icon's BYTES change while
-    /// `hasCustomIcon` stays `true`.
-    let iconETag: String?
-}
+/// The project avatar now lives in `SupermuxProjectAvatar.swift`
+/// (``SupermuxProjectAvatar``), which draws the accent-gradient chip.

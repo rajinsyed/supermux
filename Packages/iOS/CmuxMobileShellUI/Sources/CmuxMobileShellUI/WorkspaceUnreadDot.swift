@@ -1,32 +1,52 @@
 import SwiftUI
 
-/// The single unread indicator for workspace rows: an iMessage-style accent
-/// dot in a fixed-width gutter to the LEFT of the workspace icon.
-///
-/// Every row renders this gutter (the dot is just hidden when read), so read
-/// and unread rows keep their icon and text columns aligned. Shared by the
-/// flat workspace list and the device-tree workspace leaves; any future
-/// surface that marks a workspace unread should reuse it rather than invent
-/// another badge.
-struct WorkspaceUnreadDot: View {
-    /// Width every row reserves for the dot column, dot plus breathing room,
-    /// kept narrow so the list does not drift right.
-    static let gutterWidth: CGFloat = 10
-    /// Diameter of the dot itself.
-    static let dotDiameter: CGFloat = 11
+// SUPERMUX:begin supermux-unread-badge-capsule
+import SupermuxMobileCore
+import SupermuxMobileUI
 
+/// The single unread indicator for workspace rows.
+///
+/// This used to be a bare accent dot in a fixed-width gutter that every row
+/// reserved, drawn or not. Two problems were visible on a phone: the Mac showed
+/// a numbered badge for the same workspace while the phone showed a countless
+/// dot, and the always-present gutter left a blank column down the entire list.
+///
+/// Now it wraps ``SupermuxMobileUnreadBadge``, which shares its geometry with
+/// the Mac's badge through `SupermuxUnreadBadgeStyle`, and it occupies no space
+/// at all when the workspace is read. Rows lay the badge out inline instead of
+/// reserving a column for it.
+struct WorkspaceUnreadDot: View {
     let isUnread: Bool
-    var leftShift: Double = MobileDisplaySettings.defaultUnreadIndicatorLeftShift
+    /// The unread count, when the paired Mac reports one. `nil` (an upstream
+    /// cmux Mac, or a group header's rolled-up boolean) draws the countless
+    /// dot form of the same badge.
+    var unreadCount: Int?
+    /// Point size of the badge numeral; every other dimension derives from it.
+    var fontSize: CGFloat = 10
 
     var body: some View {
-        Circle()
-            .fill(Color.accentColor)
-            .frame(width: Self.dotDiameter, height: Self.dotDiameter)
-            .opacity(isUnread ? 1 : 0)
-            .frame(width: Self.gutterWidth)
-            .offset(x: -CGFloat(leftShift))
-            // The dot is decorative here; rows fold the unread state into
-            // their combined accessibility summary instead.
-            .accessibilityHidden(true)
+        if isUnread {
+            SupermuxMobileUnreadBadge(count: unreadCount, fontSize: fontSize)
+                // The badge is decorative here; rows fold the unread state into
+                // their combined accessibility summary instead.
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// What the badge contributes to a wrapping row's height, for the table's
+    /// height cache: `nil` when nothing renders, otherwise the exact string
+    /// drawn.
+    ///
+    /// The drawn text, not the raw count, is the width-determining value — 100
+    /// and 4000 both render "99+" and must share one cache entry, while 9 and 10
+    /// must not. An unread badge occupying title-row width can push a
+    /// barely-fitting title onto another line, so a cache that ignored this
+    /// would clip that line until an unrelated event invalidated it.
+    static func heightIdentity(isUnread: Bool, unreadCount: Int?) -> String? {
+        guard isUnread else { return nil }
+        // "" is the countless dot: distinct from nil (nothing drawn) and from
+        // any numeral.
+        return SupermuxUnreadBadgeStyle.displayText(count: unreadCount) ?? ""
     }
 }
+// SUPERMUX:end supermux-unread-badge-capsule

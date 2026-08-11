@@ -377,6 +377,7 @@ extension MobileHostIrohRuntime {
         await stopLANPublication()
         guard ownsDeactivationCleanup(revision: revision) else { return }
         clearHostRuntime()
+        clearIrohRoutePublication(revision: revision)
         guard ownsDeactivationCleanup(revision: revision) else { return }
         await noteActiveRuntimeDeactivated(revision: revision)
     }
@@ -561,7 +562,9 @@ extension MobileHostIrohRuntime {
         )
     }
 
-    #if DEBUG
+    // SUPERMUX:begin profileless-release-iroh-storage
+    #if DEBUG || SUPERMUX_LOCAL_RELEASE
+    // SUPERMUX:end profileless-release-iroh-storage
     static func developmentStoreDirectory(service: String) -> URL {
         let rawBundleScope = Bundle.main.bundleIdentifier
             ?? "com.cmuxterm.app.debug"

@@ -119,6 +119,38 @@ extension SupermuxProjectsSectionModel {
         }
     }
 
+    /// Opens (or focuses) a workspace at the project ROOT and navigates to it
+    /// — the phone's twin of clicking a project row in the Mac sidebar
+    /// (`SupermuxProjectRowActions.openLocal`). Routed through the session's
+    /// projects store, so the Mac records the workspace→project association
+    /// and the new workspace nests under its project on both devices.
+    ///
+    /// Shares ``nestedOpenRequestToken`` with the nested-worktree open flow on
+    /// purpose: both end in "navigate the shell to a workspace", so a slow
+    /// project open must lose to a newer tap on a WORKTREE row just as surely
+    /// as to a newer tap on another project. Failures surface on
+    /// ``nestedOpenErrorMessage`` (UI-03: visible, never silent).
+    ///
+    /// - Parameter projectID: The project's UUID string.
+    public func openProjectWorkspace(_ projectID: String) {
+        nestedOpenRequestToken += 1
+        let requestToken = nestedOpenRequestToken
+        guard let store else { return }
+        let generation = sessionGeneration
+        Task {
+            do {
+                let workspaceID = try await store.openProject(projectID: projectID)
+                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
+                if let workspaceID {
+                    navigateToWorkspace(workspaceID)
+                }
+            } catch {
+                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
+                nestedOpenErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
     /// Clears a surfaced nested-worktree open failure (alert dismissed).
     public func dismissNestedOpenError() {
         nestedOpenErrorMessage = nil

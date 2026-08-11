@@ -370,41 +370,64 @@ public struct SupermuxProjectDetailScreen: View {
 
     // MARK: - Sections
 
+    /// The identity card: a large accent avatar over the project's name, its
+    /// path, and its default branch as a chip.
+    ///
+    /// This replaces a cramped 44pt avatar row followed by two `LabeledContent`
+    /// rows that repeated the path immediately below it. Centering the identity
+    /// and dropping the duplicate gives the screen an actual header instead of
+    /// a list that starts mid-sentence.
     private var headerSection: some View {
         Section {
-            HStack(spacing: 12) {
-                SupermuxProjectMobileAvatar(row: row, size: 44, iconPNGData: iconPNGData)
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(spacing: 12) {
+                SupermuxProjectAvatar(row: row, size: 68, iconPNGData: iconPNGData)
+                    .shadow(color: row.accent.color.opacity(0.28), radius: 10, y: 4)
+                VStack(spacing: 4) {
                     Text(row.name)
-                        .font(.headline)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
                     Text(row.rootPath)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .truncationMode(.middle)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                }
+                if let defaultBranch = row.defaultBranch, !defaultBranch.isEmpty {
+                    branchChip(defaultBranch)
                 }
             }
-            LabeledContent(
-                String(
-                    localized: "supermux.projects.detail.pathLabel",
-                    defaultValue: "Path",
-                    bundle: .module
-                ),
-                value: row.rootPath
-            )
-            .font(.callout)
-            if let defaultBranch = row.defaultBranch {
-                LabeledContent(
-                    String(
-                        localized: "supermux.projects.detail.defaultBranchLabel",
-                        defaultValue: "Default Branch",
-                        bundle: .module
-                    ),
-                    value: defaultBranch
-                )
-                .font(.callout)
-            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .accessibilityElement(children: .combine)
         }
+    }
+
+    /// The default-branch chip: the app's capsule-badge idiom, tinted by the
+    /// project's accent so the header carries the project's identity color.
+    private func branchChip(_ branch: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.caption2.weight(.semibold))
+            Text(branch)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(row.accent.color)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule(style: .continuous).fill(row.accent.color.opacity(0.14)))
+        .accessibilityLabel(String(
+            localized: "supermux.projects.detail.defaultBranchLabel",
+            defaultValue: "Default Branch",
+            bundle: .module
+        ))
+        .accessibilityValue(branch)
     }
 
     private var workspacesSection: some View {
@@ -503,9 +526,9 @@ struct SupermuxProjectWorkspaceRow: View {
             selectWorkspace(workspace.id)
         } label: {
             HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(workspace.name)
-                        .font(.subheadline)
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -528,10 +551,10 @@ struct SupermuxProjectWorkspaceRow: View {
                     SupermuxMobileRunIndicator()
                 }
                 if workspace.hasUnread {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 8, height: 8)
-                        .accessibilityHidden(true)
+                    // The same badge the workspace list draws. This was its own
+                    // 8pt accent circle, which made the detail screen a third
+                    // unread indicator alongside the Mac's and the list's.
+                    SupermuxMobileUnreadBadge(count: workspace.unreadCount, fontSize: 10)
                 }
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))

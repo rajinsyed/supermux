@@ -5,6 +5,18 @@ import CmuxMobileShellModel
 enum WorkspaceListChromeKind: Hashable {
     case recoveryBanner
     case macStatusRow
+    // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects section as one leading chrome row — see SUPERMUX-TOUCHPOINTS.md)
+    /// The fork's Projects section, hosted as ONE row.
+    ///
+    /// Deliberately a chrome kind: chrome rows are already counted by
+    /// `chromePrefixCount`, forbidden as drop targets, non-movable, and
+    /// excluded from workspace lookups — exactly the semantics this section
+    /// needs — so the UIKit↔model index mapping used by workspace
+    /// drag-reorder keeps working untouched. Its identity never varies with
+    /// project expansion, so a disclosure stays a payload change rather than
+    /// a structural `reloadData()`.
+    case supermuxProjects
+    // SUPERMUX:end supermux-mobile-projects-table-row
 }
 
 /// Stable identity for one row in the UIKit-backed workspace list.
@@ -21,6 +33,10 @@ enum WorkspaceListTableItem: Hashable, Identifiable {
             "chrome.recoveryBanner"
         case .chrome(.macStatusRow):
             "chrome.macStatusRow"
+        // SUPERMUX:begin supermux-mobile-projects-table-row (stable id — never varies with project expansion, so a disclosure is a payload change, not a structural reload)
+        case .chrome(.supermuxProjects):
+            "chrome.supermuxProjects"
+        // SUPERMUX:end supermux-mobile-projects-table-row
         case .filterEmpty:
             "filter.empty"
         case .groupHeader(let groupID):
