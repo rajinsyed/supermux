@@ -495,6 +495,14 @@ public actor SupermuxPhonePushService {
             "sound": "default",
             "badge": max(0, message.badgeCount),
             "category": message.acceptsTextReply ? "cmux.terminal.reply" : "cmux.terminal",
+            // An agent finishing is the whole point of this lane, and the user
+            // is by definition away from the Mac when the phone matters, so
+            // these must break through Focus and Scheduled Summary rather than
+            // wait in a batch. Requires the App ID's Time Sensitive
+            // Notifications capability, which the Ad Hoc profile carries into
+            // the re-signed app; without the entitlement iOS ignores the key
+            // and delivers at the active level instead of failing the push.
+            "interruption-level": "time-sensitive",
         ]
         var cmux: [String: Any] = [
             "retargetsToLiveSurfaceOwner": message.retargetsToLiveSurfaceOwner,

@@ -297,6 +297,8 @@ profile_aps_environment="$(plist_value Entitlements:aps-environment "${PROFILE_P
 signed_team="$(plist_value com.apple.developer.team-identifier "${SIGNED_ENTITLEMENTS}")"
 signed_application_id="$(plist_value application-identifier "${SIGNED_ENTITLEMENTS}")"
 signed_aps_environment="$(plist_value aps-environment "${SIGNED_ENTITLEMENTS}")"
+profile_time_sensitive="$(plist_value Entitlements:com.apple.developer.usernotifications.time-sensitive "${PROFILE_PLIST}")"
+signed_time_sensitive="$(plist_value com.apple.developer.usernotifications.time-sensitive "${SIGNED_ENTITLEMENTS}")"
 
 [[ "${profile_team}" == "${DEVELOPMENT_TEAM}" ]] \
   || die "provisioning profile team is '${profile_team:-<absent>}', expected ${DEVELOPMENT_TEAM}"
@@ -311,11 +313,20 @@ signed_aps_environment="$(plist_value aps-environment "${SIGNED_ENTITLEMENTS}")"
 [[ "${signed_aps_environment}" == "production" ]] \
   || die "signed app APNs environment is '${signed_aps_environment:-<absent>}', expected production"
 
-# This personal-team lane intentionally signs the Ad Hoc profile's exact
-# entitlement set. It supports production APNs, while Sign in with Apple and
-# Time Sensitive Notifications are unavailable and unnecessary here: auth uses
-# the production web flow, and direct notifications deliver at the active level.
-echo "==> Verified iOS signature and production APNs entitlement for team ${DEVELOPMENT_TEAM}"
+# Time Sensitive is load-bearing, not cosmetic: the payload sends
+# "interruption-level": "time-sensitive", and iOS SILENTLY downgrades that to
+# active when the entitlement is absent — the push still arrives, just batched
+# behind Focus and Scheduled Summary, which is the failure the phone lane
+# exists to avoid. Enabling any App ID capability invalidates both profiles, so
+# a regenerated-but-not-reinstalled profile would otherwise lose this quietly.
+# Sign in with Apple is deliberately NOT required: nothing in the iOS sources
+# uses it (auth runs through the production web flow).
+[[ "${profile_time_sensitive}" == "true" ]] \
+  || die "provisioning profile lacks the Time Sensitive Notifications entitlement (got '${profile_time_sensitive:-<absent>}'); enable it on the App ID, then regenerate and reinstall '${ADHOC_PROFILE_NAME}'"
+[[ "${signed_time_sensitive}" == "true" ]] \
+  || die "signed app lacks the Time Sensitive Notifications entitlement (got '${signed_time_sensitive:-<absent>}')"
+
+echo "==> Verified iOS signature, production APNs, and Time Sensitive entitlement for team ${DEVELOPMENT_TEAM}"
 echo "==> Installing ${APP_NAME} on iPhone ${DEVICE_ID}"
 "${XCRUN}" devicectl device install app --device "${DEVICE_ID}" "${BUILT_APP}"
 echo "==> Installed ${APP_NAME} (${BUNDLE_ID})"

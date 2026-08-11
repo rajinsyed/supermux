@@ -84,6 +84,9 @@ private actor APNsRequestRecorder {
         #expect(alert["body"] == "Task finished")
         #expect(aps["category"] as? String == "cmux.terminal.reply")
         #expect(aps["badge"] as? Int == 3)
+        // Agent-completion pushes matter precisely when the user is away from
+        // the Mac, so they must break through Focus and Scheduled Summary.
+        #expect(aps["interruption-level"] as? String == "time-sensitive")
         #expect(cmux["workspaceId"] as? String == "workspace-1")
         #expect(cmux["surfaceId"] as? String == "surface-1")
         #expect(cmux["macDeviceId"] as? String == "mac-1")

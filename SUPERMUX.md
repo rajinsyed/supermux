@@ -362,9 +362,19 @@ Constraints inherited from upstream that supermux code MUST follow:
   the production key `supermux-apns.json`/`supermux-apns-auth-key.p8` from the cmux state directory
   (`~/.local/state/cmux`, via `CmuxStateDirectory` — NOT `~/Library/Application Support/cmux`);
   both files must be mode `0600`, the directory `0700`, and the `.p8` must never be committed or
-  copied to the phone. `scripts/supermux-ios-release.sh` uses the installed `Supermux iPhone
-  Development` profile (name overrideable by environment) and verifies the profile and final app both
-  contain `aps-environment = development` before installing.
+  copied to the phone. `scripts/supermux-ios-release.sh` builds with the installed `Supermux iPhone
+  Development` profile (`aps-environment = development`; both profile names are overrideable by
+  environment), then re-signs with the `Supermux iPhone Ad Hoc` profile and verifies that the
+  EMBEDDED profile and the final signature — the Ad Hoc pair, not the build-stage one — both carry
+  `aps-environment = production` before installing.
+- Agent pushes carry `"interruption-level": "time-sensitive"` so they break through Focus and
+  Scheduled Summary — the phone matters precisely when nobody is at the Mac. That needs the App ID's
+  Time Sensitive Notifications capability (a free checkbox on a paid team, unlike Critical Alerts).
+  Because the re-sign derives entitlements FROM the Ad Hoc profile, enabling any App ID capability
+  invalidates both profiles: regenerate and reinstall them, or the next build silently drops it.
+  The release script fails loudly if either the profile or the final signature lacks the
+  entitlement, since iOS would otherwise keep delivering the push at the active level and only the
+  Focus/Scheduled Summary bypass would disappear.
 - The local Mac Release is Developer ID-signed without a provisioning profile, so
   `scripts/supermux-release.sh` defines `SUPERMUX_LOCAL_RELEASE` and reuses Iroh's bundle-scoped
   `0600` file stores. Without that condition the data-protection Keychain rejects identity creation
