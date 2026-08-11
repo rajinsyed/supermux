@@ -392,6 +392,7 @@ Rules for adding a touchpoint:
 | 376 | `ios/scripts/reload.sh` | `ios-communication-notifications` | Two sites (simulator leg and device leg) pass `SUPERMUX_APP_BUNDLE_ID` instead of `PRODUCT_BUNDLE_IDENTIFIER`. A command-line build setting applies workspace-wide, so the tagged override would otherwise stamp the app's id onto the notification service extension — and iOS silently refuses to load an extension whose bundle id is not a child of its container. See #369 |
 | 377 | `ios/scripts/upload-testflight.sh` | `ios-communication-notifications` | Same redirection at both archive sites (beta and App Store lanes). **Known remaining gap:** this script's manual export map and its re-sign path still assume a PlugIns-free app, so the TestFlight/App Store lanes are not yet extension-ready — the fork's dogfood lane (`scripts/supermux-ios-release.sh`, #372) is. Fix before the next TestFlight upload |
 | 378 | `ios/scripts/cloud-testflight.sh` | `ios-communication-notifications` | Same redirection for the cloud beta archive |
+| 379 | `CLAUDE.md` | `no-handoff-notify` | Replaces upstream's "Notify through `cmux notify` so the user can leave and return" handoff/closeout instruction with the fork's rule: **don't**. The agent harness already notifies on response completion, so a handoff `cmux notify` is a second alert for the same event, and at handoff the user is about to read the summary regardless. The handoff content moves into the final response. The adjacent mid-dogfood sentence drops its `re-notify` clause for the same reason while keeping the substantive rule (rebuild the tag; the old verdict is stale). Explicitly still allowed: user asks for a ping, a skill/script that sends one as part of its job (the iPhone install queue), or testing the notification path |
 | 386 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxMobilePaneUnreadPresentation.swift` | `unfenced` | **Fork-owned new file.** Projects the Mac-authoritative `supermux_unread_panel_ids` field onto the exact visible phone pane. `nil` means the host lacks pane-state support; `[]` means supported with no unread pane. Visibility alone never mutates state |
 | 387 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxMobileUnreadPaneRingStyle.swift` | `unfenced` | **Fork-owned new file.** Pins the mobile ring to the existing Mac pane ring's 2pt inset, 6pt corner radius, 2.5pt stroke, 0.35 glow opacity, and 3pt glow radius without changing the Mac renderer |
 | 388 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxMobileUnreadPaneRing.swift` | `unfenced` | **Fork-owned new file.** Draws the persistent, hit-test-transparent system-blue pane ring on iOS using #387's Mac-parity geometry and glow |
@@ -405,6 +406,27 @@ Rules for adding a touchpoint:
 | 396 | `Packages/SupermuxKit/Sources/SupermuxKit/Mobile/SupermuxMobileWorkspaceFields.swift` | `unfenced` | Adds the shared `supermux_unread_panel_ids` wire-key constant used by the legacy sender. The key always travels on a supporting Supermux Mac, including an empty array, so absence remains an unambiguous old-host capability signal |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
+
+### 379. `CLAUDE.md` — `no-handoff-notify`
+
+Upstream's "First pass, then dogfood" section ends with a paragraph instructing the agent to send
+`cmux notify` at handoff and closeout. Replace that paragraph with the fenced fork rule: do not
+notify at handoff or closeout, because this harness already notifies the user when a response
+finishes — the `cmux notify` is a duplicate alert for the same event, and the user is about to read
+the summary anyway. The handoff fields upstream put in the notification body (was / now / the
+concrete check / the PR URL) belong in the final response.
+
+Also drop `and re-notify` from the preceding mid-dogfood sentence, keeping the rule itself intact:
+a runtime-behavior fix mid-dogfood still requires rebuilding the tag, because the user's earlier
+verdict only covers the build they actually tested.
+
+Keep the carve-outs in the fence. This is a rule about unprompted handoff pings, not a ban on the
+CLI: an explicit user request, a skill or script that notifies as part of its own job
+(`scripts/iphone-install-queue.sh` does), and `cmux-diagnostics`' notification-path test are all
+still correct.
+
+Note `AGENTS.md` is a symlink to `CLAUDE.md`, so it inherits this automatically — do not add a
+second copy there.
 
 ### 368–372. iOS push project avatar (notification service extension) — `ios-communication-notifications`
 

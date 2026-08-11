@@ -150,9 +150,21 @@ A first pass ends when the change is implemented, the tagged build succeeded on 
 
 Do not launch a background review agent (`$autoreview`, `codex review`, `claude review`, or a judge loop) by default. Second-model review is explicit user opt-in in the current conversation; an implementation request, open PR, CI failure, closeout, or handoff is not that opt-in. Let required GitHub checks and the automatic review bots run asynchronously, then return to address only concrete check failures and actionable findings before merge.
 
-The main agent owns dogfood, approval, mergeability, and every pushed fix. Merging app/runtime/UI changes requires the user's explicit approval after dogfood; if a fix changes runtime behavior mid-dogfood, rebuild the tag and re-notify, since the earlier verdict covers only the build the user tested.
+The main agent owns dogfood, approval, mergeability, and every pushed fix. Merging app/runtime/UI changes requires the user's explicit approval after dogfood; if a fix changes runtime behavior mid-dogfood, rebuild the tag and say so in the handoff, since the earlier verdict covers only the build the user tested.
 
-Notify through `cmux notify` so the user can leave and return. Handoff: `--title "Dogfood ready: <short task>" --subtitle "<branch> · <tag>" --body "Was: <prior bad behavior>. Now: <expected behavior>. <concrete check>. PR: <pr-url>"`. Later closeout notifications use `"CI green: <branch>"` or `"CI blocked: <branch>"` with a one-line cause and the next decision. Titles carry outcome and branch, bodies carry the single next action. Skip notify if there is no cmux socket.
+<!-- SUPERMUX:begin no-handoff-notify -->
+**Do not send `cmux notify` at handoff or closeout.** Upstream instructs agents to notify at
+these points so the user can leave and return. In this fork that is pure duplication: the agent
+harness already notifies the user when a response completes, so a `cmux notify` fires a second
+alert for the same event — and at handoff the user is, by construction, about to read the summary
+anyway. Put the handoff information (was / now / the concrete check / the PR URL) in the final
+response instead; that is the notification.
+
+This does not ban the CLI. `cmux notify` remains correct when the user explicitly asks to be
+pinged, when a skill or script sends one as part of its own job (the iPhone install queue does
+this), or when testing the notification path itself.
+<!-- SUPERMUX:end no-handoff-notify -->
+
 
 ## Pitfalls
 
