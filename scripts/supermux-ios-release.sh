@@ -35,6 +35,20 @@ BASE_APP_NAME="cmux"
 DEVELOPMENT_TEAM="${SUPERMUX_IOS_DEVELOPMENT_TEAM:-NRGUG8GVV4}"
 DEV_PROFILE_SPECIFIER="${SUPERMUX_IOS_DEV_PROFILE_SPECIFIER:-Supermux iPhone Development}"
 ADHOC_PROFILE_NAME="${SUPERMUX_IOS_PROVISIONING_PROFILE_SPECIFIER:-Supermux iPhone Ad Hoc}"
+# The notification service extension that renders the project avatar on push
+# banners. It is a separate App ID with its own two profiles: an extension is
+# signed independently of its container, and iOS rejects the whole app if the
+# nested .appex signature or profile is wrong.
+NSE_PRODUCT_NAME="SupermuxNotificationService"
+NSE_BUNDLE_ID="${BUNDLE_ID}.notification-service"
+NSE_DEV_PROFILE_SPECIFIER="${SUPERMUX_IOS_NSE_DEV_PROFILE_SPECIFIER:-Supermux Notification Service Development}"
+NSE_ADHOC_PROFILE_NAME="${SUPERMUX_IOS_NSE_PROVISIONING_PROFILE_SPECIFIER:-Supermux Notification Service Ad Hoc}"
+# Shared container for project icon PNGs. The app writes them; the extension
+# reads them to paint the real logo on a push banner. Must match
+# SupermuxSharedProjectIconStore.appGroupIdentifier and both entitlements files.
+# This is a fixed runtime contract, not an independently configurable build knob.
+APP_GROUP_ID="group.com.supermux.ios"
+REQUESTED_APP_GROUP_ID="${SUPERMUX_IOS_APP_GROUP:-${APP_GROUP_ID}}"
 DISTRIBUTION_IDENTITY="${SUPERMUX_IOS_DISTRIBUTION_IDENTITY:-Apple Distribution}"
 DERIVED_DATA="${SUPERMUX_IOS_DERIVED_DATA:-${HOME}/Library/Developer/Xcode/DerivedData/cmux-ios-supermux-release}"
 LAUNCH=1
@@ -76,10 +90,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ "${REQUESTED_APP_GROUP_ID}" == "${APP_GROUP_ID}" ]] \
+  || die "SUPERMUX_IOS_APP_GROUP is fixed at ${APP_GROUP_ID}; runtime readers and entitlements must change together"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 IOS_DIR="${REPO_ROOT}/ios"
 BUILT_APP="${DERIVED_DATA}/Build/Products/Release-iphoneos/${BASE_APP_NAME}.app"
+BUILT_NSE="${BUILT_APP}/PlugIns/${NSE_PRODUCT_NAME}.appex"
 EXPLICIT_MODULE_CACHE="${DERIVED_DATA}/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules"
 BUILD_LOG_DIR="${SUPERMUX_RELEASE_LOG_DIR:-${HOME}/Library/Logs/Supermux}"
 mkdir -p "${BUILD_LOG_DIR}"
@@ -191,7 +209,7 @@ NSUnbufferedIO=YES "${XCODEBUILD}" \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "${DERIVED_DATA}" \
   -allowProvisioningUpdates \
-  PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
+  SUPERMUX_APP_BUNDLE_ID="${BUNDLE_ID}" \
   CMUX_GIT_SHA="${BUILD_SHA}" \
   CMUX_DEV_TAG= \
   CMUX_PRESENCE_BASE_URL= \
@@ -202,9 +220,10 @@ NSUnbufferedIO=YES "${XCODEBUILD}" \
   CODE_SIGNING_ALLOWED=YES \
   CODE_SIGNING_REQUIRED=YES \
   CODE_SIGN_STYLE=Manual \
-  PROVISIONING_PROFILE_SPECIFIER="${DEV_PROFILE_SPECIFIER}" \
+  SUPERMUX_APP_DEV_PROFILE_SPECIFIER="${DEV_PROFILE_SPECIFIER}" \
+  SUPERMUX_NSE_DEV_PROFILE_SPECIFIER="${NSE_DEV_PROFILE_SPECIFIER}" \
+  SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS=Config/supermux.entitlements \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
-  CODE_SIGN_ENTITLEMENTS=Config/supermux.entitlements \
   build 2>&1 | tee -a "${BUILD_LOG}"
 pipeline_status=("${PIPESTATUS[@]}")
 build_status=${pipeline_status[0]}
@@ -229,6 +248,7 @@ plist_value() {
 }
 
 resolve_adhoc_profile() {
+  local wanted="$1"
   local dir="${HOME}/Library/MobileDevice/Provisioning Profiles"
   local candidate name decoded
   decoded="$(mktemp "${TMPDIR:-/tmp}/supermux-profile-scan.XXXXXX")"
@@ -236,7 +256,7 @@ resolve_adhoc_profile() {
     [[ -f "${candidate}" ]] || continue
     "${SECURITY}" cms -D -i "${candidate}" > "${decoded}" 2>/dev/null || continue
     name="$("${PLISTBUDDY}" -c 'Print :Name' "${decoded}" 2>/dev/null || true)"
-    if [[ "${name}" == "${ADHOC_PROFILE_NAME}" ]]; then
+    if [[ "${name}" == "${wanted}" ]]; then
       rm -f "${decoded}"
       printf '%s\n' "${candidate}"
       return 0
@@ -247,22 +267,48 @@ resolve_adhoc_profile() {
 }
 
 echo "==> Re-signing with ${DISTRIBUTION_IDENTITY} + ${ADHOC_PROFILE_NAME}"
-ADHOC_PROFILE_FILE="$(resolve_adhoc_profile)" \
+ADHOC_PROFILE_FILE="$(resolve_adhoc_profile "${ADHOC_PROFILE_NAME}")" \
   || die "Ad Hoc profile '${ADHOC_PROFILE_NAME}' not installed under ~/Library/MobileDevice/Provisioning Profiles"
+NSE_ADHOC_PROFILE_FILE="$(resolve_adhoc_profile "${NSE_ADHOC_PROFILE_NAME}")" \
+  || die "Ad Hoc profile '${NSE_ADHOC_PROFILE_NAME}' not installed under ~/Library/MobileDevice/Provisioning Profiles (create the ${NSE_BUNDLE_ID} App ID and its Ad Hoc profile)"
+[[ -d "${BUILT_NSE}" ]] \
+  || die "notification service extension not embedded at ${BUILT_NSE}"
 RESIGN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/supermux-ios-resign.XXXXXX")"
 trap 'rm -rf "${RESIGN_DIR}"' EXIT
 ADHOC_PROFILE_PLIST="${RESIGN_DIR}/adhoc-profile.plist"
 RESIGN_ENTITLEMENTS="${RESIGN_DIR}/entitlements.plist"
+NSE_ADHOC_PROFILE_PLIST="${RESIGN_DIR}/nse-adhoc-profile.plist"
+NSE_RESIGN_ENTITLEMENTS="${RESIGN_DIR}/nse-entitlements.plist"
 "${SECURITY}" cms -D -i "${ADHOC_PROFILE_FILE}" > "${ADHOC_PROFILE_PLIST}"
-# Sign with exactly the entitlements the Ad Hoc profile authorizes
+"${SECURITY}" cms -D -i "${NSE_ADHOC_PROFILE_FILE}" > "${NSE_ADHOC_PROFILE_PLIST}"
+# Sign with exactly the entitlements each Ad Hoc profile authorizes
 # (application-identifier, team-identifier, aps-environment=production,
-# get-task-allow=false), so signature and profile can never disagree.
+# get-task-allow=false), so signature and profile can never disagree. The
+# extension gets its OWN profile's entitlements — reusing the app's would claim
+# an APNs entitlement its App ID does not carry, and the install would fail.
 "${PLISTBUDDY}" -x -c 'Print :Entitlements' "${ADHOC_PROFILE_PLIST}" > "${RESIGN_ENTITLEMENTS}"
+"${PLISTBUDDY}" -x -c 'Print :Entitlements' "${NSE_ADHOC_PROFILE_PLIST}" > "${NSE_RESIGN_ENTITLEMENTS}"
 cp "${ADHOC_PROFILE_FILE}" "${BUILT_APP}/embedded.mobileprovision"
-while IFS= read -r -d '' nested; do
-  "${CODESIGN}" --force --sign "${DISTRIBUTION_IDENTITY}" --timestamp=none "${nested}" \
-    || die "failed to re-sign ${nested}"
-done < <(find "${BUILT_APP}/Frameworks" \( -name '*.framework' -o -name '*.dylib' \) -maxdepth 1 -print0 2>/dev/null)
+cp "${NSE_ADHOC_PROFILE_FILE}" "${BUILT_NSE}/embedded.mobileprovision"
+
+# Signing is strictly INSIDE-OUT: nested code first, container last. Signing the
+# .app before its embedded .appex invalidates the outer signature, and the
+# install fails on device with no useful diagnostic.
+resign_nested_libraries() {
+  local bundle="$1"
+  [[ -d "${bundle}/Frameworks" ]] || return 0
+  while IFS= read -r -d '' nested; do
+    "${CODESIGN}" --force --sign "${DISTRIBUTION_IDENTITY}" --timestamp=none "${nested}" \
+      || die "failed to re-sign ${nested}"
+  done < <(find "${bundle}/Frameworks" \( -name '*.framework' -o -name '*.dylib' \) -maxdepth 1 -print0 2>/dev/null)
+}
+
+resign_nested_libraries "${BUILT_NSE}"
+"${CODESIGN}" --force --sign "${DISTRIBUTION_IDENTITY}" --timestamp=none \
+  --entitlements "${NSE_RESIGN_ENTITLEMENTS}" "${BUILT_NSE}" \
+  || die "failed to re-sign ${BUILT_NSE}"
+
+resign_nested_libraries "${BUILT_APP}"
 "${CODESIGN}" --force --sign "${DISTRIBUTION_IDENTITY}" --timestamp=none \
   --entitlements "${RESIGN_ENTITLEMENTS}" "${BUILT_APP}" \
   || die "failed to re-sign ${BUILT_APP}"
@@ -281,12 +327,46 @@ actual_auth_environment="$(plist_value CMUXAuthEnvironment "${INFO_PLIST}")"
 [[ "${actual_auth_environment}" == "production" ]] \
   || die "built iOS auth environment is '${actual_auth_environment:-<absent>}', expected production"
 
+NSE_INFO_PLIST="${BUILT_NSE}/Info.plist"
+[[ -f "${NSE_INFO_PLIST}" ]] || die "notification service extension Info.plist is missing"
+actual_nse_bundle_id="$(plist_value CFBundleIdentifier "${NSE_INFO_PLIST}")"
+actual_nse_point="$(plist_value NSExtension:NSExtensionPointIdentifier "${NSE_INFO_PLIST}")"
+actual_nse_class="$(plist_value NSExtension:NSExtensionPrincipalClass "${NSE_INFO_PLIST}")"
+[[ "${actual_nse_bundle_id}" == "${NSE_BUNDLE_ID}" ]] \
+  || die "extension bundle id is '${actual_nse_bundle_id:-<absent>}', expected ${NSE_BUNDLE_ID}"
+# iOS refuses to load an extension whose id is not a child of its container.
+[[ "${actual_nse_bundle_id}" == "${BUNDLE_ID}."* ]] \
+  || die "extension bundle id '${actual_nse_bundle_id}' is not a child of ${BUNDLE_ID}"
+[[ "${actual_nse_point}" == "com.apple.usernotifications.service" ]] \
+  || die "extension point is '${actual_nse_point:-<absent>}', expected com.apple.usernotifications.service"
+[[ -n "${actual_nse_class}" ]] || die "extension principal class is absent"
+
+# Communication Notifications needs this key on the CONTAINING app. Missing, the
+# push still arrives and is presented as an ordinary banner with no avatar and
+# no error anywhere — exactly the silent failure this script exists to catch.
+python3 - "${INFO_PLIST}" <<'PY_ACTIVITY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    info = plistlib.load(handle)
+if "INSendMessageIntent" not in info.get("NSUserActivityTypes", []):
+    raise SystemExit(
+        "error: app Info.plist lacks NSUserActivityTypes/INSendMessageIntent; "
+        "communication notifications would silently render without the project avatar"
+    )
+PY_ACTIVITY
+
 VERIFY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/supermux-ios-verify.XXXXXX")"
 trap 'rm -rf "${VERIFY_DIR}" "${RESIGN_DIR}"' EXIT
 PROFILE_PLIST="${VERIFY_DIR}/profile.plist"
 SIGNED_ENTITLEMENTS="${VERIFY_DIR}/signed-entitlements.plist"
 
+"${CODESIGN}" --verify --strict --verbose=2 "${BUILT_NSE}"
 "${CODESIGN}" --verify --strict --verbose=2 "${BUILT_APP}"
+# --deep re-walks the nested .appex against the now-final outer signature; the
+# strict pass above does not descend into PlugIns.
+"${CODESIGN}" --verify --deep --strict --verbose=2 "${BUILT_APP}"
 "${SECURITY}" cms -D -i "${BUILT_APP}/embedded.mobileprovision" > "${PROFILE_PLIST}"
 "${CODESIGN}" -d --entitlements :- --xml "${BUILT_APP}" > "${SIGNED_ENTITLEMENTS}" 2>/dev/null
 
@@ -299,6 +379,17 @@ signed_application_id="$(plist_value application-identifier "${SIGNED_ENTITLEMEN
 signed_aps_environment="$(plist_value aps-environment "${SIGNED_ENTITLEMENTS}")"
 profile_time_sensitive="$(plist_value Entitlements:com.apple.developer.usernotifications.time-sensitive "${PROFILE_PLIST}")"
 signed_time_sensitive="$(plist_value com.apple.developer.usernotifications.time-sensitive "${SIGNED_ENTITLEMENTS}")"
+profile_communication="$(plist_value Entitlements:com.apple.developer.usernotifications.communication "${PROFILE_PLIST}")"
+signed_communication="$(plist_value com.apple.developer.usernotifications.communication "${SIGNED_ENTITLEMENTS}")"
+NSE_PROFILE_PLIST="${VERIFY_DIR}/nse-profile.plist"
+NSE_SIGNED_ENTITLEMENTS="${VERIFY_DIR}/nse-signed-entitlements.plist"
+"${SECURITY}" cms -D -i "${BUILT_NSE}/embedded.mobileprovision" > "${NSE_PROFILE_PLIST}"
+"${CODESIGN}" -d --entitlements :- --xml "${BUILT_NSE}" > "${NSE_SIGNED_ENTITLEMENTS}" 2>/dev/null
+expected_nse_application_id="${DEVELOPMENT_TEAM}.${NSE_BUNDLE_ID}"
+nse_profile_team="$(plist_value TeamIdentifier:0 "${NSE_PROFILE_PLIST}")"
+nse_profile_application_id="$(plist_value Entitlements:application-identifier "${NSE_PROFILE_PLIST}")"
+nse_signed_team="$(plist_value com.apple.developer.team-identifier "${NSE_SIGNED_ENTITLEMENTS}")"
+nse_signed_application_id="$(plist_value application-identifier "${NSE_SIGNED_ENTITLEMENTS}")"
 
 [[ "${profile_team}" == "${DEVELOPMENT_TEAM}" ]] \
   || die "provisioning profile team is '${profile_team:-<absent>}', expected ${DEVELOPMENT_TEAM}"
@@ -326,7 +417,58 @@ signed_time_sensitive="$(plist_value com.apple.developer.usernotifications.time-
 [[ "${signed_time_sensitive}" == "true" ]] \
   || die "signed app lacks the Time Sensitive Notifications entitlement (got '${signed_time_sensitive:-<absent>}')"
 
-echo "==> Verified iOS signature, production APNs, and Time Sensitive entitlement for team ${DEVELOPMENT_TEAM}"
+# Communication Notifications is the entitlement that lets the extension apply
+# the avatar treatment. Like Time Sensitive it fails SILENTLY when absent, and
+# enabling it on the App ID invalidates BOTH profiles — so a regenerated-but-not
+# -reinstalled profile would quietly drop it at re-sign.
+[[ "${profile_communication}" == "true" ]] \
+  || die "provisioning profile lacks the Communication Notifications entitlement (got '${profile_communication:-<absent>}'); enable it on the ${BUNDLE_ID} App ID, then regenerate and reinstall '${ADHOC_PROFILE_NAME}'"
+[[ "${signed_communication}" == "true" ]] \
+  || die "signed app lacks the Communication Notifications entitlement (got '${signed_communication:-<absent>}')"
+
+[[ "${nse_profile_team}" == "${DEVELOPMENT_TEAM}" ]] \
+  || die "extension provisioning profile team is '${nse_profile_team:-<absent>}', expected ${DEVELOPMENT_TEAM}"
+[[ "${nse_profile_application_id}" == "${expected_nse_application_id}" ]] \
+  || die "extension profile app id is '${nse_profile_application_id:-<absent>}', expected ${expected_nse_application_id}"
+[[ "${nse_signed_team}" == "${DEVELOPMENT_TEAM}" ]] \
+  || die "signed extension team is '${nse_signed_team:-<absent>}', expected ${DEVELOPMENT_TEAM}"
+[[ "${nse_signed_application_id}" == "${expected_nse_application_id}" ]] \
+  || die "signed extension app id is '${nse_signed_application_id:-<absent>}', expected ${expected_nse_application_id}"
+
+# The app group is how a real project logo reaches a push banner at all: the
+# extension cannot open the app's RPC session, and APNs caps a payload at 4096
+# bytes — an order of magnitude under a real icon — so the image can never ride
+# the push. The app mirrors icons into this container and the extension reads
+# them. Miss it on EITHER side and every banner silently falls back to a
+# generated gradient chip, with no error anywhere. Both App IDs must have the
+# App Groups capability enabled and both profiles regenerated.
+app_group_in() {
+  python3 - "$1" "${APP_GROUP_ID}" <<'PY_GROUP'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    entitlements = plistlib.load(handle)
+groups = entitlements.get("com.apple.security.application-groups") or []
+print("yes" if sys.argv[2] in groups else "no")
+PY_GROUP
+}
+
+profile_app_groups_plist="${VERIFY_DIR}/profile-entitlements.plist"
+nse_profile_app_groups_plist="${VERIFY_DIR}/nse-profile-entitlements.plist"
+"${PLISTBUDDY}" -x -c 'Print :Entitlements' "${PROFILE_PLIST}" > "${profile_app_groups_plist}"
+"${PLISTBUDDY}" -x -c 'Print :Entitlements' "${NSE_PROFILE_PLIST}" > "${nse_profile_app_groups_plist}"
+
+[[ "$(app_group_in "${profile_app_groups_plist}")" == "yes" ]] \
+  || die "provisioning profile '${ADHOC_PROFILE_NAME}' lacks app group ${APP_GROUP_ID}; enable App Groups on the ${BUNDLE_ID} App ID, then regenerate and reinstall it (push banners would silently lose the project logo)"
+[[ "$(app_group_in "${SIGNED_ENTITLEMENTS}")" == "yes" ]] \
+  || die "signed app lacks app group ${APP_GROUP_ID}"
+[[ "$(app_group_in "${nse_profile_app_groups_plist}")" == "yes" ]] \
+  || die "provisioning profile '${NSE_ADHOC_PROFILE_NAME}' lacks app group ${APP_GROUP_ID}; enable App Groups on the ${NSE_BUNDLE_ID} App ID, then regenerate and reinstall it"
+[[ "$(app_group_in "${NSE_SIGNED_ENTITLEMENTS}")" == "yes" ]] \
+  || die "signed extension lacks app group ${APP_GROUP_ID}; without it the extension cannot read the mirrored project icon and every banner falls back to a generated avatar"
+
+echo "==> Verified app + notification-extension signatures, production APNs, Time Sensitive, and Communication Notifications for team ${DEVELOPMENT_TEAM}"
 echo "==> Installing ${APP_NAME} on iPhone ${DEVICE_ID}"
 "${XCRUN}" devicectl device install app --device "${DEVICE_ID}" "${BUILT_APP}"
 echo "==> Installed ${APP_NAME} (${BUNDLE_ID})"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# supermux-release.sh — build the main Release "Supermux" apps: sign and
-# install the Mac app in /Applications, then build the untagged production iOS
-# Release, sign it under the owner's Apple team, and install it on their iPhone.
+# supermux-release.sh — build the main Release "Supermux" apps: stage and
+# verify the Mac app, complete the untagged production iOS Release, then replace
+# and relaunch the installed Mac app only after the phone leg is safely done.
 #
 # Edits NO upstream files: the build is produced UNSIGNED with cmux's native
 # bundle ids, then the COPIED bundle is rebranded (Info.plist patches) and
@@ -33,8 +33,10 @@ BUNDLE_ID="com.supermux.app"
 DOCKTILE_BUNDLE_ID="${BUNDLE_ID}.docktileplugin"
 SIDEBAR_EXTENSION_POINT_ID="${BUNDLE_ID}.cmux.sidebar"
 BASE_APP_NAME="cmux"          # PRODUCT_NAME stays "cmux"; we rename the bundle on copy.
-INSTALL_APP="/Applications/${APP_NAME}.app"
+INSTALL_APP="${SUPERMUX_INSTALL_APP:-/Applications/${APP_NAME}.app}"
 DERIVED_DATA="${HOME}/Library/Developer/Xcode/DerivedData/cmux-supermux-release"
+PLISTBUDDY="${PLISTBUDDY:-/usr/libexec/PlistBuddy}"
+OSASCRIPT="${OSASCRIPT:-/usr/bin/osascript}"
 # Signing identity: set SUPERMUX_SIGN_IDENTITY explicitly, otherwise the first
 # "Developer ID Application" certificate in the keychain is used.
 SIGN_IDENTITY="${SUPERMUX_SIGN_IDENTITY:-}"
@@ -188,8 +190,8 @@ cp -R "${BUILT_APP}" "${STAGED_APP}"
 INFO_PLIST="${STAGED_APP}/Contents/Info.plist"
 plist_set() {
   local key="$1" type="$2" value="$3" plist="${4:-$INFO_PLIST}"
-  /usr/libexec/PlistBuddy -c "Set :${key} ${value}" "${plist}" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :${key} ${type} ${value}" "${plist}"
+  "${PLISTBUDDY}" -c "Set :${key} ${value}" "${plist}" 2>/dev/null \
+    || "${PLISTBUDDY}" -c "Add :${key} ${type} ${value}" "${plist}"
 }
 
 # Rebrand the host bundle.
@@ -201,7 +203,7 @@ plist_set "SUEnableAutomaticChecks" bool false
 # Isolated sockets via LSEnvironment. CMUX_ALLOW_SOCKET_OVERRIDE is REQUIRED:
 # without it a non-debug/non-staging release id ignores CMUX_SOCKET_PATH and
 # falls back to the shared stable socket (SocketControlSettings.swift).
-/usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "${INFO_PLIST}" 2>/dev/null || true
+"${PLISTBUDDY}" -c "Add :LSEnvironment dict" "${INFO_PLIST}" 2>/dev/null || true
 plist_set "LSEnvironment:CMUX_BUNDLE_ID" string "${BUNDLE_ID}"
 plist_set "LSEnvironment:CMUXD_UNIX_PATH" string "${CMUXD_SOCKET}"
 plist_set "LSEnvironment:CMUX_SOCKET_PATH" string "${CMUX_SOCKET_PATH_VALUE}"
@@ -266,8 +268,20 @@ echo "==> Verifying signature"
 codesign --verify --deep --strict --verbose=2 "${STAGED_APP}" || {
   echo "error: signature verification failed" >&2; exit 1; }
 
+# Complete the phone release before terminating the currently running Mac app.
+# This script is commonly launched from a Supermux terminal, and tearing down
+# that app SIGHUPs (then eventually SIGKILLs) the terminal's process groups.
+# Keeping the old app alive until iOS finishes makes the documented foreground
+# invocation safe without relying on callers to remember nohup/disown.
+if [[ "${BUILD_IOS}" -eq 1 ]]; then
+  ios_release_args=()
+  [[ "${LAUNCH}" -eq 0 ]] && ios_release_args+=(--no-launch)
+  [[ -n "${IOS_DEVICE_ID}" ]] && ios_release_args+=(--device-id "${IOS_DEVICE_ID}")
+  "${REPO_ROOT}/scripts/supermux-ios-release.sh" "${ios_release_args[@]}"
+fi
+
 echo "==> Installing to ${INSTALL_APP}"
-/usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
+"${OSASCRIPT}" -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
 sleep 0.3
 pkill -f "${INSTALL_APP}/Contents/MacOS/${BASE_APP_NAME}" 2>/dev/null || true
 sleep 0.3
@@ -301,8 +315,7 @@ if [[ "${LAUNCH}" -eq 1 ]]; then
 fi
 
 if [[ "${BUILD_IOS}" -eq 1 ]]; then
-  ios_release_args=()
-  [[ "${LAUNCH}" -eq 0 ]] && ios_release_args+=(--no-launch)
-  [[ -n "${IOS_DEVICE_ID}" ]] && ios_release_args+=(--device-id "${IOS_DEVICE_ID}")
-  "${REPO_ROOT}/scripts/supermux-ios-release.sh" "${ios_release_args[@]}"
+  echo "==> Release complete: macOS + iOS"
+else
+  echo "==> Release complete: macOS"
 fi

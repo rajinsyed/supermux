@@ -854,6 +854,12 @@ if [[ -z "$ARCHIVE_PATH" ]]; then
     # iOS app target gets those entitlements from Config/Release.xcconfig; do
     # not pass CODE_SIGN_ENTITLEMENTS here because command-line build settings
     # apply to every SwiftPM target in the workspace.
+    # SUPERMUX:begin ios-communication-notifications
+    # Not PRODUCT_BUNDLE_IDENTIFIER: a command-line build setting applies to
+    # EVERY target, which would stamp the app id onto the notification service
+    # extension. iOS refuses to load an extension whose id is not a child of
+    # its container, so the extension derives its own from this variable.
+    # SUPERMUX:end ios-communication-notifications
     xcodebuild archive \
       -workspace "$WORKSPACE" \
       -scheme "$SCHEME" \
@@ -864,7 +870,7 @@ if [[ -z "$ARCHIVE_PATH" ]]; then
       -allowProvisioningUpdates \
       "${XCODE_AUTH_ARGS[@]}" \
       DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-      PRODUCT_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER" \
+      SUPERMUX_APP_BUNDLE_ID="$PRODUCT_BUNDLE_IDENTIFIER" \
       PRODUCT_DISPLAY_NAME="$PRODUCT_DISPLAY_NAME" \
       CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
       CMUX_CRASH_REPORTING_ENABLED="$CRASH_REPORTING_ENABLED" \
@@ -878,6 +884,12 @@ if [[ -z "$ARCHIVE_PATH" ]]; then
     # installed distribution profile, then the manual path below re-signs with
     # the full Release entitlements from the local Apple Distribution cert.
     # This keeps signing material off shared fleet builders.
+    # SUPERMUX:begin ios-communication-notifications
+    # Not PRODUCT_BUNDLE_IDENTIFIER: a command-line build setting applies to
+    # EVERY target, which would stamp the app id onto the notification service
+    # extension. iOS refuses to load an extension whose id is not a child of
+    # its container, so the extension derives its own from this variable.
+    # SUPERMUX:end ios-communication-notifications
     xcodebuild archive \
       -workspace "$WORKSPACE" \
       -scheme "$SCHEME" \
@@ -886,7 +898,7 @@ if [[ -z "$ARCHIVE_PATH" ]]; then
       -archivePath "$ARCHIVE_PATH" \
       -derivedDataPath "$DERIVED_DATA" \
       DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-      PRODUCT_BUNDLE_IDENTIFIER="$PRODUCT_BUNDLE_IDENTIFIER" \
+      SUPERMUX_APP_BUNDLE_ID="$PRODUCT_BUNDLE_IDENTIFIER" \
       PRODUCT_DISPLAY_NAME="$PRODUCT_DISPLAY_NAME" \
       CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
       CMUX_CRASH_REPORTING_ENABLED="$CRASH_REPORTING_ENABLED" \

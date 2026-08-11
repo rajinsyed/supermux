@@ -18,6 +18,11 @@ let package = Package(
         .package(path: "../../Shared/CMUXMobileCore"),
         .package(path: "../CmuxMobileShellModel"),
         .package(path: "../CmuxMobileSupport"),
+        // SUPERMUX:begin notification-feed-project-wire
+        // The shared notification-project wire type, decoded from the Mac's
+        // additive `supermux_project` field on each feed row.
+        .package(path: "../../Shared/SupermuxMobileCore"),
+        // SUPERMUX:end notification-feed-project-wire
     ],
     targets: [
         .target(
@@ -26,6 +31,9 @@ let package = Package(
                 "CMUXMobileCore",
                 "CmuxMobileShellModel",
                 "CmuxMobileSupport",
+                // SUPERMUX:begin notification-feed-project-wire
+                "SupermuxMobileCore",
+                // SUPERMUX:end notification-feed-project-wire
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

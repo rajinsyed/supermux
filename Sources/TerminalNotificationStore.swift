@@ -1227,7 +1227,14 @@ final class TerminalNotificationStore: ObservableObject {
             paneFlash: effects.paneFlash,
             scrollPosition: scrollPosition,
             clickAction: clickAction,
-            replyShape: request.replyShape
+            replyShape: request.replyShape,
+            // SUPERMUX:begin notification-project-identity
+            // Resolved ONCE here, at the single construction site every
+            // notification passes through, so the panel, the macOS banner, the
+            // phone feed, and the APNs push all describe the same project —
+            // and history keeps the project it fired from even after a rename.
+            project: SupermuxNotificationProjectBridge.project(forWorkspace: request.tabId)
+            // SUPERMUX:end notification-project-identity
         )
         if effects.record {
             recordNotification(
@@ -1756,7 +1763,10 @@ final class TerminalNotificationStore: ObservableObject {
             paneFlash: notification.paneFlash,
             scrollPosition: notification.scrollPosition,
             clickAction: notification.clickAction,
-            replyShape: notification.replyShape
+            replyShape: notification.replyShape,
+            // SUPERMUX:begin notification-project-identity
+            project: notification.project
+            // SUPERMUX:end notification-project-identity
         )
     }
 
@@ -1862,7 +1872,10 @@ final class TerminalNotificationStore: ObservableObject {
                 paneFlash: notification.paneFlash,
                 scrollPosition: notification.scrollPosition,
                 clickAction: notification.clickAction,
-                replyShape: notification.replyShape
+                replyShape: notification.replyShape,
+                // SUPERMUX:begin notification-project-identity
+                project: notification.project
+                // SUPERMUX:end notification-project-identity
             )
         }
         if didMoveNotification {
@@ -1945,6 +1958,32 @@ final class TerminalNotificationStore: ObservableObject {
         let categoryIdentifier = notification.replyShape == .text
             ? Self.textReplyCategoryIdentifier
             : Self.categoryIdentifier
+        // SUPERMUX:begin notification-project-banner
+        // Resolved HERE, on the enclosing @MainActor method, rather than inside
+        // the authorization closure below: that closure is not guaranteed
+        // main-actor isolated, and its `content` is built fresh per invocation.
+        // Capturing plain Sendable values keeps the closure unchanged in shape
+        // and the decoration free of any actor assumption.
+        let supermuxTabName = AppDelegate.shared?
+            .tabTitlesByTabId(for: [notificationTabId])[notificationTabId]
+        let supermuxProject = notification.project
+        // Applied inside the authorization closure, which upstream does not
+        // guarantee to be main-actor isolated. `MainActor.assumeIsolated` would
+        // TRAP there if it ever ran off the main actor — losing the app, not
+        // just the banner — so this checks instead, and simply skips the
+        // decoration on the (currently unreached) off-actor path. The values it
+        // closes over are all Sendable.
+        let supermuxDecorateBanner: @Sendable (UNMutableNotificationContent) -> Void = { content in
+            guard Thread.isMainThread else { return }
+            MainActor.assumeIsolated {
+                SupermuxBannerProjectDecorator.decorate(
+                    content,
+                    project: supermuxProject,
+                    tabName: supermuxTabName
+                )
+            }
+        }
+        // SUPERMUX:end notification-project-banner
         let handleAuthorization: NativeNotificationDeliveryHooks.AuthorizationCompletion = { authorized, effectiveAuthorizationState in
             let content = UNMutableNotificationContent()
             content.title = notificationTitle
@@ -1969,6 +2008,15 @@ final class TerminalNotificationStore: ObservableObject {
             for (key, value) in clickActionUserInfo {
                 content.userInfo[key] = value
             }
+            // SUPERMUX:begin notification-project-banner
+            // Adds the project's provenance subtitle, a per-project
+            // threadIdentifier (so Notification Center stacks a project's
+            // banners together instead of interleaving every workspace), and a
+            // circular project-avatar attachment. Synchronous and in place:
+            // scheduling order stays exactly upstream's, and a render failure
+            // yields an undecorated banner rather than a lost notification.
+            supermuxDecorateBanner(content)
+            // SUPERMUX:end notification-project-banner
             let request = UNNotificationRequest(
                 identifier: notificationId.uuidString,
                 content: content,

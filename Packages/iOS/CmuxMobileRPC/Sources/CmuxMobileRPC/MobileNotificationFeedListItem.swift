@@ -1,4 +1,7 @@
 public import Foundation
+// SUPERMUX:begin notification-feed-project-wire
+public import SupermuxMobileCore
+// SUPERMUX:end notification-feed-project-wire
 
 /// One notification returned by the Mac's `notification.feed.list` RPC.
 public struct MobileNotificationFeedListItem: Decodable, Equatable, Sendable {
@@ -24,6 +27,11 @@ public struct MobileNotificationFeedListItem: Decodable, Equatable, Sendable {
     public let workspaceTitle: String?
     /// The current destination pane label resolved by the Mac, when available.
     public let surfaceTitle: String?
+    // SUPERMUX:begin notification-feed-project-wire
+    /// The owning supermux project, when the Mac resolved one. `nil` from an
+    /// upstream cmux Mac, which sends no such field.
+    public let project: SupermuxNotificationProject?
+    // SUPERMUX:end notification-feed-project-wire
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -37,6 +45,9 @@ public struct MobileNotificationFeedListItem: Decodable, Equatable, Sendable {
         case retargetsToLiveSurfaceOwner = "retargets_to_live_surface_owner"
         case workspaceTitle = "workspace_title"
         case surfaceTitle = "surface_title"
+        // SUPERMUX:begin notification-feed-project-wire
+        case project = "supermux_project"
+        // SUPERMUX:end notification-feed-project-wire
     }
 
     /// Creates a notification-feed list item from already-normalized values.
@@ -51,7 +62,11 @@ public struct MobileNotificationFeedListItem: Decodable, Equatable, Sendable {
         isRead: Bool,
         retargetsToLiveSurfaceOwner: Bool,
         workspaceTitle: String?,
-        surfaceTitle: String?
+        surfaceTitle: String?,
+        // SUPERMUX:begin notification-feed-project-wire
+        // Defaulted so upstream construction sites need no change.
+        project: SupermuxNotificationProject? = nil
+        // SUPERMUX:end notification-feed-project-wire
     ) {
         self.id = id
         self.workspaceID = workspaceID
@@ -64,6 +79,9 @@ public struct MobileNotificationFeedListItem: Decodable, Equatable, Sendable {
         self.retargetsToLiveSurfaceOwner = retargetsToLiveSurfaceOwner
         self.workspaceTitle = workspaceTitle
         self.surfaceTitle = surfaceTitle
+        // SUPERMUX:begin notification-feed-project-wire
+        self.project = project
+        // SUPERMUX:end notification-feed-project-wire
     }
 
     /// Decodes one feed item from its wire representation.
@@ -86,5 +104,10 @@ public struct MobileNotificationFeedListItem: Decodable, Equatable, Sendable {
         ) ?? false
         workspaceTitle = try container.decodeIfPresent(String.self, forKey: .workspaceTitle)
         surfaceTitle = try container.decodeIfPresent(String.self, forKey: .surfaceTitle)
+        // SUPERMUX:begin notification-feed-project-wire
+        project = try container.decodeIfPresent(
+            SupermuxNotificationProject.self, forKey: .project
+        )
+        // SUPERMUX:end notification-feed-project-wire
     }
 }

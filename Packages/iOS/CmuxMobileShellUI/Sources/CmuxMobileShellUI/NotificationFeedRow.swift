@@ -1,6 +1,9 @@
 #if os(iOS)
 import CmuxMobileShellModel
 import CmuxMobileSupport
+// SUPERMUX:begin notification-feed-project-row
+import SupermuxMobileUI
+// SUPERMUX:end notification-feed-project-row
 import SwiftUI
 
 struct NotificationFeedRow: View, Equatable {
@@ -135,6 +138,17 @@ private struct NotificationFeedRowLabel: View {
         HStack(alignment: .top, spacing: 8) {
             NotificationFeedUnreadIndicator(isRead: isRead)
 
+            // SUPERMUX:begin notification-feed-project-row
+            // The project avatar, drawn only when the notification carries a
+            // project. It is a single cached-or-generated chip with no async
+            // work and no loading state, so it adds one leaf node to the cell's
+            // self-sizing pass rather than a fetch per materialization.
+            if let project = presentation.project {
+                SupermuxNotificationAvatar(project: project, size: 30)
+                    .padding(.top, 1)
+            }
+            // SUPERMUX:end notification-feed-project-row
+
             VStack(alignment: .leading, spacing: 4) {
                 NotificationFeedHeadline(
                     title: title,
@@ -144,6 +158,9 @@ private struct NotificationFeedRowLabel: View {
                 )
 
                 NotificationFeedProvenance(
+                    // SUPERMUX:begin notification-feed-project-row
+                    projectName: presentation.projectName,
+                    // SUPERMUX:end notification-feed-project-row
                     workspaceName: presentation.workspaceName,
                     workspaceMatchesTitle: presentation.workspaceMatchesTitle,
                     computerName: presentation.computerName,
@@ -218,6 +235,11 @@ private struct NotificationFeedHeadline: View {
 }
 
 private struct NotificationFeedProvenance: View {
+    // SUPERMUX:begin notification-feed-project-row
+    /// The owning project's name, already de-duplicated against the workspace
+    /// name by the presentation. `nil` renders exactly upstream's layout.
+    let projectName: String?
+    // SUPERMUX:end notification-feed-project-row
     let workspaceName: String
     let workspaceMatchesTitle: Bool
     let computerName: String
@@ -225,17 +247,18 @@ private struct NotificationFeedProvenance: View {
 
     var body: some View {
         if workspaceMatchesTitle {
-            NotificationFeedComputer(
-                name: computerName,
-                isReachable: computerIsReachable,
-                allowsWrapping: false
-            )
-            .frame(maxWidth: .infinity, alignment: .trailing)
-        } else {
+            // SUPERMUX:begin notification-feed-project-row
+            // The title already says the workspace, so the leading slot is free
+            // for the project — the one identifier the title never carries.
+            // Match the sibling provenance path's horizontal/vertical fallback:
+            // two fixed-width labels cannot both fit at narrow widths or larger
+            // Dynamic Type sizes.
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    NotificationFeedWorkspace(name: workspaceName, allowsWrapping: false)
-                        .fixedSize(horizontal: true, vertical: false)
+                    if let projectName {
+                        NotificationFeedProject(name: projectName, allowsWrapping: false)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
                     Spacer(minLength: 8)
                     NotificationFeedComputer(
                         name: computerName,
@@ -246,7 +269,45 @@ private struct NotificationFeedProvenance: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    NotificationFeedWorkspace(name: workspaceName, allowsWrapping: true)
+                    if let projectName {
+                        NotificationFeedProject(name: projectName, allowsWrapping: true)
+                    }
+                    NotificationFeedComputer(
+                        name: computerName,
+                        isReachable: computerIsReachable,
+                        allowsWrapping: true
+                    )
+                }
+            }
+            // SUPERMUX:end notification-feed-project-row
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    NotificationFeedWorkspace(
+                        // SUPERMUX:begin notification-feed-project-row
+                        projectName: projectName,
+                        // SUPERMUX:end notification-feed-project-row
+                        name: workspaceName,
+                        allowsWrapping: false
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
+                    NotificationFeedComputer(
+                        name: computerName,
+                        isReachable: computerIsReachable,
+                        allowsWrapping: false
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    NotificationFeedWorkspace(
+                        // SUPERMUX:begin notification-feed-project-row
+                        projectName: projectName,
+                        // SUPERMUX:end notification-feed-project-row
+                        name: workspaceName,
+                        allowsWrapping: true
+                    )
                     NotificationFeedComputer(
                         name: computerName,
                         isReachable: computerIsReachable,
@@ -258,16 +319,47 @@ private struct NotificationFeedProvenance: View {
     }
 }
 
-private struct NotificationFeedWorkspace: View {
+// SUPERMUX:begin notification-feed-project-row
+/// The project line, in the same single-interpolated-`Text` form the other
+/// provenance lines use — an `HStack{Image, Text}` here would add nodes to
+/// every trial layout a materializing cell runs (see the file's note).
+private struct NotificationFeedProject: View {
     let name: String
     let allowsWrapping: Bool
 
     var body: some View {
-        (Text(Image(systemName: "rectangle.stack")) + Text(" ") + Text(name))
+        (Text(Image(systemName: "folder.fill")) + Text(" ") + Text(name))
             .font(.footnote.weight(.semibold))
             .foregroundStyle(.secondary)
             .lineLimit(allowsWrapping ? 2 : 1)
     }
+}
+// SUPERMUX:end notification-feed-project-row
+
+private struct NotificationFeedWorkspace: View {
+    // SUPERMUX:begin notification-feed-project-row
+    /// Prefixed as `project · workspace` when the notification has a project,
+    /// still one interpolated `Text` so the row's node count is unchanged.
+    let projectName: String?
+    // SUPERMUX:end notification-feed-project-row
+    let name: String
+    let allowsWrapping: Bool
+
+    var body: some View {
+        // SUPERMUX:begin notification-feed-project-row
+        (Text(Image(systemName: "rectangle.stack")) + Text(" ") + Text(label))
+        // SUPERMUX:end notification-feed-project-row
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(allowsWrapping ? 2 : 1)
+    }
+
+    // SUPERMUX:begin notification-feed-project-row
+    private var label: String {
+        guard let projectName else { return name }
+        return "\(projectName) · \(name)"
+    }
+    // SUPERMUX:end notification-feed-project-row
 }
 
 private struct NotificationFeedComputer: View {

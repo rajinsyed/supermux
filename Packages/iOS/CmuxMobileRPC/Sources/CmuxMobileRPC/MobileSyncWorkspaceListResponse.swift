@@ -68,6 +68,10 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         /// `has_unread`); the badge then renders its countless dot form. Travels for EVERY
         /// workspace, unlike the four project-gated fields above.
         public let supermuxUnreadCount: Int?
+        /// Pane identifiers whose Mac unread indicator is visible. `nil` means
+        /// the host does not support exact pane unread state; an empty array means
+        /// it supports the field and no pane currently needs acknowledgment.
+        public let supermuxUnreadPanelIDs: [String]?
         /// The `supermux_pull_request` object: same shape as the worktree DTO's `pull_request`
         /// (`{number, state, url, is_stale}`). Decoding is LOSSY on purpose: a malformed
         /// extension object (wrong types, not even an object) degrades to nil fields —
@@ -143,6 +147,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case supermuxBranch = "supermux_branch"
             case supermuxPullRequest = "supermux_pull_request"
             case supermuxUnreadCount = "supermux_unread_count"
+            case supermuxUnreadPanelIDs = "supermux_unread_panel_ids"
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
 
@@ -176,7 +181,8 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             supermuxActivity: String? = nil,
             supermuxBranch: String? = nil,
             supermuxPullRequest: SupermuxPullRequest? = nil,
-            supermuxUnreadCount: Int? = nil
+            supermuxUnreadCount: Int? = nil,
+            supermuxUnreadPanelIDs: [String]? = nil
             // SUPERMUX:end supermux-mobile-workspace-fields
         ) {
             self.id = id
@@ -204,6 +210,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             self.supermuxBranch = supermuxBranch
             self.supermuxPullRequest = supermuxPullRequest
             self.supermuxUnreadCount = supermuxUnreadCount
+            self.supermuxUnreadPanelIDs = supermuxUnreadPanelIDs
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
 
@@ -245,6 +252,9 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
                 try? container.decodeIfPresent(SupermuxPullRequest.self, forKey: .supermuxPullRequest)
             ) ?? nil
             supermuxUnreadCount = (try? container.decodeIfPresent(Int.self, forKey: .supermuxUnreadCount)) ?? nil
+            supermuxUnreadPanelIDs = (
+                try? container.decodeIfPresent([String].self, forKey: .supermuxUnreadPanelIDs)
+            ) ?? nil
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
     }

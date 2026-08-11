@@ -65,6 +65,24 @@ final class SupermuxProjectIconImageCache {
         return entry.image
     }
 
+    /// The decoded icon cached for a project, whatever identity produced it.
+    ///
+    /// Deliberately identity-agnostic, unlike ``image(for:)``. A notification
+    /// carries a frozen snapshot of its project taken when it fired, so its
+    /// icon token is often older than whatever the Projects list last fetched —
+    /// an exact-identity match would then miss on every notification and drop
+    /// the row to a letter avatar even though the correct logo is sitting in
+    /// this cache. For a notification row the right answer is "this project's
+    /// icon"; a marginally stale logo is strictly better than none, and the
+    /// Projects list keeps this entry current anyway.
+    ///
+    /// Never use this where the exact bytes matter (the Projects avatar's own
+    /// fetch) — there, a stale hit would suppress a re-fetch.
+    /// - Parameter projectID: The project's UUID string.
+    func anyImage(forProjectID projectID: String) -> Image? {
+        entries[projectID]?.image
+    }
+
     /// Stores a freshly decoded icon.
     /// - Parameters:
     ///   - image: The decoded image.

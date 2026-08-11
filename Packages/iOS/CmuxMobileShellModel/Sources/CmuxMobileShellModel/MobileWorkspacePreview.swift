@@ -139,6 +139,18 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
     /// the same numeral the Mac sidebar does. `nil` from an upstream cmux Mac,
     /// which sends only the boolean; the badge then draws its countless dot.
     public var supermuxUnreadCount: Int? = nil
+    /// Pane identifiers whose Mac unread indicator is visible. `nil` means the
+    /// host only exposes workspace-wide unread state; an empty array means exact
+    /// pane state is supported and no pane currently needs acknowledgment.
+    public var supermuxUnreadPanelIDs: [String]? = nil
+    /// Whether opening this workspace should use the pre-pane-state broad read receipt.
+    ///
+    /// Only an unread row from an older/upstream host qualifies. A supporting
+    /// Supermux Mac sends an array, including `[]`, and waits for explicit pane
+    /// interaction instead of treating visibility as acknowledgment.
+    public var supermuxShouldUseLegacyWorkspaceReadReceiptOnOpen: Bool {
+        hasUnread && supermuxUnreadPanelIDs == nil
+    }
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// The workspace id to use in RPC params.

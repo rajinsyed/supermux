@@ -1,6 +1,7 @@
 import AppKit
 import CmuxControlSocket
 import CmuxCore
+import SupermuxMobileCore
 import Testing
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -449,6 +450,41 @@ extension AgentNotificationRegressionTests {
         #expect(surfaceID == fixture.panelId)
         let recorded = fixture.store.notifications.filter { $0.title == "Surface notify" }
         #expect(recorded.map(\.tabId) == [fixture.owningWorkspace.id])
+    }
+
+    @Test
+    func testRebindPreservesNotificationProjectSnapshot() throws {
+        let fixture = try makeLiveRetargetFixture()
+        defer { fixture.restore() }
+        let project = SupermuxNotificationProject(
+            id: "project-rebind",
+            name: "Rebound Project",
+            colorHex: "#a855f7"
+        )
+        fixture.store.replaceNotificationsForTesting([
+            TerminalNotification(
+                id: UUID(),
+                tabId: fixture.claimedWorkspace.id,
+                surfaceId: fixture.panelId,
+                panelId: fixture.panelId,
+                title: "Claude Code",
+                subtitle: "Completed",
+                body: "Moved with its project",
+                createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+                isRead: false,
+                project: project
+            ),
+        ])
+
+        fixture.store.rebindSurfaceNotifications(
+            fromTabId: fixture.claimedWorkspace.id,
+            toTabId: fixture.owningWorkspace.id,
+            surfaceId: fixture.panelId
+        )
+
+        let moved = try #require(fixture.store.notifications.first)
+        #expect(moved.tabId == fixture.owningWorkspace.id)
+        #expect(moved.project == project)
     }
 
     @Test

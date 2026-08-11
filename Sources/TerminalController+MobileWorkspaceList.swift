@@ -323,6 +323,11 @@ extension TerminalController {
         if let unreadCount = store?.unreadCount(forTabId: workspace.id) {
             forkPayload[SupermuxMobileWorkspaceFields.unreadCountKey] = unreadCount
         }
+        // Unlike the count, the pane-id key is always present on a supporting
+        // Supermux Mac. An empty array is the capability signal that prevents the
+        // phone from falling back to its legacy workspace-wide read receipt.
+        forkPayload[SupermuxMobileWorkspaceFields.unreadPanelIDsKey] =
+            workspace.supermuxMobileUnreadPanelIDs(notificationStore: store)
         return forkPayload
         // SUPERMUX:end mobile-supermux-workspace-fields
     }

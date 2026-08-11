@@ -7,6 +7,9 @@ import CmuxSettings
 import CmuxSettingsUI
 import CmuxTestSupport
 import Observation
+// SUPERMUX:begin notification-popover-redesign
+import SupermuxKit
+// SUPERMUX:end notification-popover-redesign
 import SwiftUI
 
 enum TitlebarControlsStyle: Int, CaseIterable, Identifiable {
@@ -2330,6 +2333,12 @@ private struct NotificationsPopoverView: View {
     @State private var liveWidth: CGFloat?
     @State private var liveHeight: CGFloat?
     @State private var loadedWorkspaceTitles: [UUID: String]?
+    // SUPERMUX:begin notification-popover-redesign
+    /// Project grouping, read from the SAME key the notifications panel writes,
+    /// so toggling it in one surface is reflected in the other rather than
+    /// leaving the user with two independent preferences for one behavior.
+    @AppStorage("supermux.notifications.groupByProject") private var groupsByProject = true
+    // SUPERMUX:end notification-popover-redesign
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2432,6 +2441,25 @@ private struct NotificationsPopoverView: View {
     }
 
     private var header: some View {
+        // SUPERMUX:begin notification-popover-redesign
+        // Two tiers, matching the notifications panel: an identity line (title +
+        // live unread count + Jump) over a control line (grouping, Mark All
+        // Read, Clear All). The single row pushed Clear All against the title
+        // and had nowhere to put the grouping control the panel gained.
+        VStack(alignment: .leading, spacing: 8) {
+            identityRow
+            // Always mounted, its actions disabled when they don't apply, so
+            // the header doesn't reflow as notifications arrive and drain — and
+            // because MultiWindowNotificationsUITests asserts Clear All exists
+            // and is disabled in the empty popover.
+            controlRow
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var identityRow: some View {
+        // SUPERMUX:end notification-popover-redesign
         HStack(spacing: 8) {
             Text(String(localized: "notifications.title", defaultValue: "Notifications"))
                 .cmuxFont(size: 14, weight: .semibold)
@@ -2481,25 +2509,59 @@ private struct NotificationsPopoverView: View {
                 )
             )
             .disabled(!hasUnreadNotifications)
-
-            Button(action: { notificationStore.clearAll() }) {
-                Text(String(localized: "notifications.clearAll", defaultValue: "Clear All"))
-                    .cmuxFont(size: 11)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-            }
-            .buttonStyle(.plain)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.secondary.opacity(notificationStore.notificationMenuSnapshot.hasNotifications ? 0.12 : 0.05))
-            )
-            .foregroundColor(notificationStore.notificationMenuSnapshot.hasNotifications ? .primary : .secondary)
-            .accessibilityIdentifier("notificationsPopover.clearAll")
-            .disabled(notificationStore.notificationMenuSnapshot.hasNotifications == false)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
+
+    // SUPERMUX:begin notification-popover-redesign
+    /// Grouping and bulk actions, mirroring the notifications panel's control
+    /// row so the two surfaces expose the same affordances.
+    private var controlRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                groupsByProject.toggle()
+            } label: {
+                CmuxSystemSymbolImage(
+                    systemName: groupsByProject ? "rectangle.3.group.fill" : "list.bullet",
+                    pointSize: 11
+                )
+            }
+            .buttonStyle(.accessoryBar)
+            .safeHelp(groupsByProject
+                ? String(localized: "supermux.notifications.group.off", defaultValue: "Show as one list")
+                : String(localized: "supermux.notifications.group.on", defaultValue: "Group by project"))
+            .accessibilityLabel(String(
+                localized: "supermux.notifications.group.label",
+                defaultValue: "Group by project"
+            ))
+            .accessibilityIdentifier("notificationsPopover.groupByProject")
+            .disabled(!hasNotifications)
+
+            Spacer(minLength: 0)
+
+            if unreadCount > 0 {
+                Button(String(
+                    localized: "supermux.notifications.markAllRead",
+                    defaultValue: "Mark All Read"
+                )) {
+                    notificationStore.markAllRead()
+                }
+                .buttonStyle(.accessoryBar)
+                .accessibilityIdentifier("notificationsPopover.markAllRead")
+            }
+
+            Button(String(localized: "notifications.clearAll", defaultValue: "Clear All")) {
+                notificationStore.clearAll()
+            }
+            .buttonStyle(.accessoryBar)
+            .accessibilityIdentifier("notificationsPopover.clearAll")
+            .disabled(!hasNotifications)
+        }
+    }
+
+    private var hasNotifications: Bool {
+        notificationStore.notificationMenuSnapshot.hasNotifications
+    }
+    // SUPERMUX:end notification-popover-redesign
 
     private var phoneForwardingEntry: some View {
         Button(action: onOpenPhoneForwarding) {
@@ -2552,53 +2614,89 @@ private struct NotificationsPopoverView: View {
             // the list boundary, which is the same anti-pattern CLAUDE.md flags for the
             // sidebar/sessions panel (https://github.com/manaflow-ai/cmux/issues/2586).
             let snapshot = notificationStore.notifications
-            let lastIndex = snapshot.count - 1
             // One tabId -> title index per render, not an O(tabs) scan per row (#5794).
             let titleSnapshot = loadedWorkspaceTitles ?? currentWorkspaceTitles()
+            // SUPERMUX:begin notification-popover-redesign
+            // Project icons resolved ONCE above the LazyVStack and handed down
+            // as immutable values — the same snapshot-boundary rule the title
+            // index above follows (#2586 / #5794).
+            let projectIcons = SupermuxNotificationProjectBridge.projectIcons(for: snapshot)
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(snapshot.enumerated()), id: \.element.id) { index, notification in
-                        NotificationPopoverRow(
-                            notification: notification,
-                            workspaceTitle: titleSnapshot[notification.tabId],
-                            onOpen: { open(notification) },
-                            onClear: {
-                                withAnimation(.easeOut(duration: 0.18)) {
-                                    notificationStore.remove(id: notification.id)
-                                }
-                            },
-                            onToggleRead: {
-                                if notification.isRead {
-                                    notificationStore.markUnread(id: notification.id)
-                                } else {
-                                    notificationStore.markRead(id: notification.id)
-                                    // A user-initiated "Mark as Read" on a pane-scoped
-                                    // notification should also clear the pane's focused-read
-                                    // indicator so the pane badge disappears. For
-                                    // workspace-level notifications (surfaceId == nil), do not
-                                    // call clearFocusedReadIndicator — it treats nil as
-                                    // "clear any pane indicator on this tab" and would wipe
-                                    // an unrelated pane badge.
-                                    if let surfaceId = notification.surfaceId {
-                                        notificationStore.clearFocusedReadIndicator(
-                                            forTabId: notification.tabId,
-                                            surfaceId: surfaceId
-                                        )
+                // Grouped and spaced like the notifications panel, reading the
+                // SAME persisted grouping preference, so the bell popover and the
+                // panel are one feature with one look rather than two lists that
+                // happen to share a store.
+                LazyVStack(alignment: .leading, spacing: groupsByProject ? 18 : 6) {
+                    if groupsByProject {
+                        ForEach(SupermuxNotificationGrouping.sections(
+                            for: snapshot,
+                            project: { $0.project },
+                            isUnread: { !$0.isRead }
+                        )) { section in
+                            VStack(alignment: .leading, spacing: 6) {
+                                SupermuxNotificationSectionHeader(
+                                    project: section.project,
+                                    icon: section.project.flatMap { projectIcons[$0.id] },
+                                    count: section.items.count,
+                                    unreadCount: section.unreadCount
+                                )
+                                .padding(.horizontal, 4)
+
+                                VStack(spacing: 4) {
+                                    ForEach(section.items) { notification in
+                                        // The section header already carries the
+                                        // avatar; repeating it per row would just
+                                        // be a column of duplicates.
+                                        row(notification, titles: titleSnapshot, icons: projectIcons, showsAvatar: false)
                                     }
                                 }
                             }
-                        )
-                        .equatable()  // snapshot-boundary: skip unchanged rows (#5794)
-                        if index < lastIndex {
-                            Divider()
-                                .opacity(0.4)
-                                .padding(.leading, 18)
+                        }
+                    } else {
+                        ForEach(snapshot) { notification in
+                            row(notification, titles: titleSnapshot, icons: projectIcons, showsAvatar: true)
                         }
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
             }
+            // SUPERMUX:end notification-popover-redesign
         }
     }
+
+    // SUPERMUX:begin notification-popover-redesign
+    /// One popover row, wired to the same shared actions the panel uses.
+    private func row(
+        _ notification: TerminalNotification,
+        titles: [UUID: String],
+        icons: [String: NSImage],
+        showsAvatar: Bool
+    ) -> some View {
+        NotificationPopoverRow(
+            notification: notification,
+            workspaceTitle: titles[notification.tabId],
+            projectIcon: showsAvatar ? notification.project.flatMap { icons[$0.id] } : nil,
+            showsProjectAvatar: showsAvatar,
+            onOpen: { open(notification) },
+            onClear: {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    notificationStore.remove(id: notification.id)
+                }
+            },
+            // SUPERMUX:begin notification-read-toggle-shared
+            // Was inline here; moved to the shared action path so the
+            // notifications panel's identical menu item cannot drift from this
+            // one (the pane focused-read clearing is the part a second copy
+            // would miss).
+            onToggleRead: {
+                notificationStore.toggleReadFromUserAction(notification)
+            }
+            // SUPERMUX:end notification-read-toggle-shared
+        )
+        .equatable()  // snapshot-boundary: skip unchanged rows (#5794)
+    }
+    // SUPERMUX:end notification-popover-redesign
 
     private func currentWorkspaceTitles() -> [UUID: String] {
         let notificationWorkspaceIds = Set(notificationStore.notifications.map(\.tabId))

@@ -10,5 +10,15 @@
 	     profile. -->
 	<key>aps-environment</key>
 	<string>development</string>
+
+	<!-- Shared container the app mirrors project icon PNGs into so the
+	     notification service extension can paint the real project logo on a push
+	     banner. Both the app and the extension must carry the SAME group; the
+	     extension's own file (supermux-notification-service.entitlements) is
+	     kept to this key alone. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.supermux.ios</string>
+	</array>
 </dict>
 </plist>

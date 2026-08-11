@@ -653,6 +653,13 @@ reload_simulator() {
   # compiled Swift is fast enough to compile but produces materially
   # slower runtime code. Keep Debug configuration so codesigning and
   # debug info still work, but force the compiler to optimize.
+  # SUPERMUX:begin ios-communication-notifications
+  # SUPERMUX_APP_BUNDLE_ID, not PRODUCT_BUNDLE_IDENTIFIER: a command-line build
+  # setting applies to EVERY target in the workspace, which would stamp the
+  # app's id onto the notification service extension too. iOS refuses to load
+  # an extension whose bundle id is not a child of its container, so the
+  # extension derives its id from this variable instead (ios/Config/Shared.xcconfig).
+  # SUPERMUX:end ios-communication-notifications
   xcodebuild \
     -workspace "$WORKSPACE" \
     -scheme "$SCHEME" \
@@ -660,7 +667,7 @@ reload_simulator() {
     -destination "$DESTINATION" \
     -derivedDataPath "$DERIVED_DATA" \
     ${IROH_RELAY_POLICY_BUILD_ARGS[@]+"${IROH_RELAY_POLICY_BUILD_ARGS[@]}"} \
-    PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+    SUPERMUX_APP_BUNDLE_ID="$BUNDLE_ID" \
     PRODUCT_DISPLAY_NAME="$DISPLAY_NAME" \
     CMUX_GIT_SHA="$GIT_SHA" \
     CMUX_DEV_TAG="$TAG" \
@@ -867,7 +874,7 @@ reload_device() {
   build_args+=(${XCODE_AUTH_ARGS[@]+"${XCODE_AUTH_ARGS[@]}"})
 
   build_args+=(
-    PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+    SUPERMUX_APP_BUNDLE_ID="$BUNDLE_ID"
     PRODUCT_DISPLAY_NAME="$DISPLAY_NAME"
     CMUX_GIT_SHA="$GIT_SHA"
     CMUX_DEV_TAG="$TAG"

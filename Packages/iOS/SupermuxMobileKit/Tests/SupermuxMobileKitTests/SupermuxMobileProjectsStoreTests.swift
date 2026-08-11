@@ -1,6 +1,6 @@
 import Foundation
 import SupermuxMobileCore
-import SupermuxMobileKit
+@testable import SupermuxMobileKit
 import Testing
 
 /// UI-01: the projects store syncs from a fake ``SupermuxMacCalling`` and
@@ -180,6 +180,24 @@ import Testing
     }
 
     // MARK: icon fetch through the etag cache
+
+    @Test func mirroredIconRetentionKeepsUnknownStateAndDropsExplicitRemoval() {
+        let custom = SupermuxProjectDTO(
+            id: "custom", name: "Custom", rootPath: "/custom", hasCustomIcon: true
+        )
+        let unknown = SupermuxProjectDTO(
+            id: "unknown", name: "Unknown", rootPath: "/unknown", hasCustomIcon: nil
+        )
+        let removed = SupermuxProjectDTO(
+            id: "removed", name: "Removed", rootPath: "/removed", hasCustomIcon: false
+        )
+
+        let kept = SupermuxMobileProjectsStore.mirroredIconProjectIDsToKeep(
+            from: [custom, unknown, removed]
+        )
+
+        #expect(kept == ["custom", "unknown"])
+    }
 
     @Test func iconFetchStoresEtagThenServesNotModifiedFromCache() async throws {
         let fake = FakeSupermuxMacClient()

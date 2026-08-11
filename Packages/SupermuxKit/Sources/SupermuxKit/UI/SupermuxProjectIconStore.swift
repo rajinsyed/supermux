@@ -58,6 +58,20 @@ public final class SupermuxProjectIconStore {
     /// - Parameter id: Project identifier.
     public func image(for id: UUID) -> NSImage? { images[id] }
 
+    /// The content identity of the project's currently resolved icon — its
+    /// root/custom paths plus each resolved file's path, mtime, and size — or
+    /// `nil` when no icon is cached.
+    ///
+    /// Exposed so a notification can record WHICH icon bytes it was resolved
+    /// against. An in-process pointer or object hash cannot serve that purpose:
+    /// the phone compares this token against the one the projects list sent it,
+    /// and only a value derived from the file itself matches across processes.
+    /// - Parameter id: Project identifier.
+    public func contentToken(for id: UUID) -> String? {
+        guard images[id] != nil else { return nil }
+        return resolvedKeys[id]
+    }
+
     /// Resolves logos for projects whose icon source changed since the last
     /// pass and drops cache entries for projects that no longer exist.
     ///

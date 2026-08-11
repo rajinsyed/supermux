@@ -17,6 +17,7 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         supermuxBranch: String? = nil,
         supermuxPullRequest: WorkspaceSyncRecord.SupermuxPullRequest? = nil,
         supermuxUnreadCount: Int? = nil,
+        supermuxUnreadPanelIDs: [String]? = nil,
         // SUPERMUX:begin supermux-mobile-selection-sync
         focusedPanel: MobileWorkspaceFocusedPanel? = nil
         // SUPERMUX:end supermux-mobile-selection-sync
@@ -42,7 +43,8 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
             supermuxActivity: supermuxActivity,
             supermuxBranch: supermuxBranch,
             supermuxPullRequest: supermuxPullRequest,
-            supermuxUnreadCount: supermuxUnreadCount
+            supermuxUnreadCount: supermuxUnreadCount,
+            supermuxUnreadPanelIDs: supermuxUnreadPanelIDs
         )
     }
 
@@ -122,9 +124,10 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(decoded.supermuxActivity == nil)
         #expect(decoded.supermuxBranch == nil)
         #expect(decoded.supermuxPullRequest == nil)
-        // An upstream Mac reports `has_unread` but never a count, so the phone
-        // must fall back to the badge's countless dot rather than showing "0".
+        // An upstream Mac reports `has_unread` but never the fork's exact count
+        // or pane state, so the phone keeps both legacy fallbacks available.
         #expect(decoded.supermuxUnreadCount == nil)
+        #expect(decoded.supermuxUnreadPanelIDs == nil)
     }
 
     @Test func recordWithoutSupermuxFieldsEmitsNoSupermuxKeys() throws {
@@ -135,6 +138,7 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(object["supermux_branch"] == nil)
         #expect(object["supermux_pull_request"] == nil)
         #expect(object["supermux_unread_count"] == nil)
+        #expect(object["supermux_unread_panel_ids"] == nil)
     }
 
     // SUPERMUX:begin supermux-mobile-selection-sync
@@ -264,6 +268,48 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         // from 1 to 2 with nothing else changing must compare unequal.
         #expect(makeRecord(supermuxUnreadCount: 1) != makeRecord(supermuxUnreadCount: 2))
         #expect(makeRecord(supermuxUnreadCount: nil) != makeRecord(supermuxUnreadCount: 0))
+    }
+
+    @Test func unreadPanelIDsPreserveCapabilityAndRoundTrip() throws {
+        let panelIDs = ["panel-a", "panel-b"]
+        let record = makeRecord(supermuxUnreadPanelIDs: panelIDs)
+        let coder = MobileSyncFrameCoder()
+        let object = try coder.jsonObject(from: record)
+
+        #expect(object["supermux_unread_panel_ids"] as? [String] == panelIDs)
+        #expect(try coder.decode(
+            WorkspaceSyncRecord.self,
+            fromJSONObject: object
+        ) == record)
+        #expect(makeRecord(supermuxUnreadPanelIDs: nil) != makeRecord(supermuxUnreadPanelIDs: []))
+        #expect(makeRecord(supermuxUnreadPanelIDs: []) != record)
+    }
+
+    @Test func malformedUnreadPanelIDsDegradeToUnsupported() throws {
+        let decoded = try MobileSyncFrameCoder().decode(
+            WorkspaceSyncRecord.self,
+            fromJSONString: """
+            {
+              "id": "ws-bad-panels",
+              "window_id": "win-1",
+              "title": "bad panels",
+              "current_directory": null,
+              "is_selected": false,
+              "is_pinned": false,
+              "group_id": null,
+              "preview": null,
+              "preview_at": null,
+              "last_activity_at": 1,
+              "has_unread": true,
+              "sort_index": 0,
+              "terminals": [],
+              "supermux_unread_panel_ids": ["panel-a", 7]
+            }
+            """
+        )
+
+        #expect(decoded.id == "ws-bad-panels")
+        #expect(decoded.supermuxUnreadPanelIDs == nil)
     }
 
     @Test func malformedSupermuxFieldsDegradeToNilInsteadOfFailingTheRecord() throws {

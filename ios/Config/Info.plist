@@ -68,6 +68,18 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan cmux pairing QR codes from your Mac terminal.</string>
+	<!-- SUPERMUX:begin ios-communication-notifications -->
+	<!-- Required by the Communication Notifications capability. Its absence is
+	     the ITMS-90894 rejection, and at runtime it is one of the several
+	     silent failure modes where the push still arrives but is presented as
+	     an ordinary banner with no project avatar. Paired with the
+	     SupermuxNotificationService extension, which calls
+	     UNMutableNotificationContent.updating(from: INSendMessageIntent). -->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INSendMessageIntent</string>
+	</array>
+	<!-- SUPERMUX:end ios-communication-notifications -->
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_cmux-iroh._udp</string>

@@ -16,6 +16,9 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var iconResponses: [SupermuxProjectIconResponse] = []
     /// When set, `projectIcon` throws instead of returning.
     var iconError: (any Error)?
+    /// When true, `projectIcon` parks until ``resumeProjectIcon()`` is called.
+    var projectIconShouldHold = false
+    private var projectIconContinuations: [CheckedContinuation<Void, Never>] = []
 
     /// The response the next `worktreesList` call returns.
     var worktreesListResponse = SupermuxWorktreesListResponse(worktrees: [])
@@ -182,11 +185,22 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     func projectIcon(projectID: String, etag: String?) async throws -> SupermuxProjectIconResponse {
         callLog.append("projectIcon")
         iconRequests.append((projectID: projectID, etag: etag))
+        if projectIconShouldHold {
+            await withCheckedContinuation { continuation in
+                projectIconContinuations.append(continuation)
+            }
+        }
         if let iconError { throw iconError }
         guard !iconResponses.isEmpty else {
             throw FakeSupermuxMacClientError.unscriptedIconRequest
         }
         return iconResponses.removeFirst()
+    }
+
+    /// Resumes the oldest parked `projectIcon` call, if any.
+    func resumeProjectIcon() {
+        guard !projectIconContinuations.isEmpty else { return }
+        projectIconContinuations.removeFirst().resume()
     }
 
     func worktreesList(_ request: SupermuxWorktreesListRequest) async throws -> SupermuxWorktreesListResponse {

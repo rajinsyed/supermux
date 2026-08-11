@@ -12,10 +12,16 @@ struct SupermuxDirectPhonePush {
     }
 
     func forward(notification: TerminalNotification, badgeCount: Int, hideContent: Bool) {
+        let tabName = AppDelegate.shared?
+            .tabTitlesByTabId(for: [notification.tabId])[notification.tabId]
         let message = SupermuxPhonePushMessage(
             kind: .notify,
             title: notification.title,
-            subtitle: notification.subtitle,
+            // An empty subtitle becomes the provenance line (`project · tab`),
+            // so the banner answers "which repo, which terminal?" without the
+            // user unlocking anything. A subtitle the agent set is content and
+            // is left alone — same rule the macOS banner follows.
+            subtitle: Self.subtitle(for: notification, tabName: tabName),
             body: notification.body,
             acceptsTextReply: notification.replyShape == .text,
             workspaceID: notification.tabId.uuidString,
@@ -24,7 +30,9 @@ struct SupermuxDirectPhonePush {
             macDeviceID: MobileHostIdentity.deviceID(),
             notificationID: notification.id.uuidString,
             badgeCount: badgeCount,
-            hideContent: hideContent
+            hideContent: hideContent,
+            project: notification.project,
+            tabName: tabName
         )
         Task { await service.forward(message) }
     }
@@ -36,5 +44,20 @@ struct SupermuxDirectPhonePush {
             badgeCount: badgeCount
         )
         Task { await service.forward(message) }
+    }
+
+    /// The banner's subtitle: whatever the notification already carries, or the
+    /// project/tab provenance line when it carries nothing.
+    private static func subtitle(
+        for notification: TerminalNotification,
+        tabName: String?
+    ) -> String {
+        if let existing = SupermuxNotificationProvenance.normalized(notification.subtitle) {
+            return existing
+        }
+        return SupermuxNotificationProvenance.line(
+            projectName: notification.project?.name,
+            tabName: tabName
+        ) ?? ""
     }
 }

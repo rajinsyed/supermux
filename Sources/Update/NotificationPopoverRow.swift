@@ -1,37 +1,49 @@
 import CmuxFoundation
+// SUPERMUX:begin notification-popover-redesign
+import AppKit
+import SupermuxKit
+// SUPERMUX:end notification-popover-redesign
 import SwiftUI
 
 struct NotificationPopoverRow: View, Equatable {
     // Closures excluded from ==; equality is the rendered snapshot only (#2586).
     nonisolated static func == (lhs: NotificationPopoverRow, rhs: NotificationPopoverRow) -> Bool {
         lhs.notification == rhs.notification && lhs.workspaceTitle == rhs.workspaceTitle
+            // SUPERMUX:begin notification-popover-redesign
+            // Identity compare: the icon store hands out one NSImage per
+            // project and replaces it only when the bytes change.
+            && lhs.projectIcon === rhs.projectIcon
+            && lhs.showsProjectAvatar == rhs.showsProjectAvatar
+            // SUPERMUX:end notification-popover-redesign
     }
 
     let notification: TerminalNotification
     let workspaceTitle: String?
+    // SUPERMUX:begin notification-popover-redesign
+    /// The owning project's decoded icon, resolved above the popover's list.
+    var projectIcon: NSImage? = nil
+    /// Whether this row draws its own avatar. `false` under a project section
+    /// header, which already carries it.
+    var showsProjectAvatar: Bool = true
+    // SUPERMUX:end notification-popover-redesign
     let onOpen: () -> Void
     let onClear: () -> Void
     let onToggleRead: () -> Void
 
     @State private var isHovering: Bool = false
 
-    private static let rowHeight: CGFloat = 56
-
     var body: some View {
         // Row uses a ZStack so the hover-only clear button is a *sibling* of the row's
         // primary-action Button, not nested in its label. Nested SwiftUI buttons don't
         // produce reliable independent hit targets on macOS — clicks on a nested button
         // can be consumed by the outer button's tap area.
-        ZStack(alignment: .trailing) {
+        ZStack(alignment: .topTrailing) {
             // Primary row action wrapped as a Button so the row participates in the
             // key-view loop: keyboard users can tab to a row and activate it with
             // space/return. Visual styling is owned by rowContent; the button background
             // lets the NSTrackingArea-driven hover tint shine through.
             Button(action: onOpen) {
                 rowContent
-                    .background(
-                        Color.primary.opacity(isHovering ? 0.11 : 0)
-                    )
             }
             .buttonStyle(.plain)
             // Identifier/action live on the Button itself so XCUITest's
@@ -51,7 +63,6 @@ struct NotificationPopoverRow: View, Equatable {
             }
 
             clearButton
-                .padding(.trailing, 10)
                 .opacity(isHovering ? 1 : 0)
                 .allowsHitTesting(isHovering)
                 // Dismissal is exposed through the row Button's accessibility action and the
@@ -90,61 +101,55 @@ struct NotificationPopoverRow: View, Equatable {
             }
     }
 
+    // SUPERMUX:begin notification-popover-redesign
+    // The row body is the SHARED one (Sources/Supermux/SupermuxNotificationRowBody.swift),
+    // not a second layout. The popover and the notifications panel list the same
+    // notifications from the same store; before this they drew them with two
+    // independent bodies, so the redesign landed only in the panel while the
+    // popover — the surface behind the bell button and ⌘I, which is what most
+    // people actually open — kept the old look.
     private var rowContent: some View {
-        HStack(spacing: 0) {
-            Rectangle()
-                .fill(notification.isRead ? Color.clear : cmuxAccentColor())
-                .frame(width: 2.5)
-                .padding(.vertical, 6)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if let workspaceTitle, !workspaceTitle.isEmpty {
-                        Text(workspaceTitle)
-                            .cmuxFont(size: 12.5, weight: .semibold)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                            .layoutPriority(1)
-                            .accessibilityIdentifier(
-                                "NotificationPopoverRow.\(notification.id.uuidString).workspaceTitle"
-                            )
-                    } else {
-                        Text(notification.title)
-                            .cmuxFont(size: 12.5, weight: .semibold)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    Text(notification.createdAt.formatted(date: .omitted, time: .shortened))
-                        .cmuxFont(size: 10.5)
-                        .foregroundColor(.secondary)
-                        .padding(.trailing, 34)
-                        .layoutPriority(2)
-                }
-
-                if let workspaceTitle, !workspaceTitle.isEmpty {
-                    Text(notification.title)
-                        .cmuxFont(size: 10.5, weight: .medium)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-
-                if !notification.body.isEmpty {
-                    Text(notification.body)
-                        .cmuxFont(size: 11.5)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        SupermuxNotificationRowBody(
+            project: notification.project,
+            projectIcon: projectIcon,
+            showsAvatar: showsProjectAvatar,
+            headline: headline,
+            provenance: provenance,
+            preview: preview,
+            timestamp: notification.createdAt,
+            isRead: notification.isRead,
+            isHovering: isHovering,
+            // Kept: MultiWindowNotificationsWorkspaceHeadlineUITests queries this
+            // identifier to assert the row headline tracks a workspace rename.
+            headlineAccessibilityIdentifier: workspaceTitle.map { _ in
+                "NotificationPopoverRow.\(notification.id.uuidString).workspaceTitle"
             }
-            .padding(.leading, 10)
-            .padding(.vertical, 8)
-
-            Spacer(minLength: 0)
-        }
-        .frame(minHeight: Self.rowHeight)
-        .padding(.leading, 4)
+        )
     }
+
+    private var headline: String {
+        SupermuxNotificationRowPresentation.headline(
+            title: notification.title,
+            tabName: workspaceTitle
+        )
+    }
+
+    private var provenance: String? {
+        SupermuxNotificationRowPresentation.provenance(
+            projectName: showsProjectAvatar ? notification.project?.name : nil,
+            title: notification.title,
+            headline: headline
+        )
+    }
+
+    private var preview: String? {
+        SupermuxNotificationRowPresentation.preview(
+            body: notification.body,
+            subtitle: notification.subtitle,
+            redundant: [headline, provenance, notification.project?.name]
+        )
+    }
+    // SUPERMUX:end notification-popover-redesign
 
     private var clearButton: some View {
         Button(action: onClear) {
@@ -157,5 +162,6 @@ struct NotificationPopoverRow: View, Equatable {
             .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
+        .padding(8)
     }
 }

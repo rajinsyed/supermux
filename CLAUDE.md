@@ -87,13 +87,15 @@ xcodebuild -workspace ios/cmux.xcworkspace -scheme cmux-ios \
   -configuration Release -destination 'generic/platform=iOS' \
   -derivedDataPath "$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-<tag>" \
   -allowProvisioningUpdates \
-  PRODUCT_BUNDLE_IDENTIFIER=com.supermux.ios.dogfood \
+  SUPERMUX_APP_BUNDLE_ID=com.supermux.ios.dogfood \
+  SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
+  SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
   SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>" \
   CMUX_GIT_SHA="$(git rev-parse --short=10 HEAD)" \
   CMUX_DEV_TAG= CMUX_PRESENCE_BASE_URL= CMUX_IOS_AUTH_ENV=production \
   EXCLUDED_SOURCE_FILE_NAMES=Info.plist \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic \
-  DEVELOPMENT_TEAM=NRGUG8GVV4 CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
+  DEVELOPMENT_TEAM=NRGUG8GVV4 \
   build
 
 APP="$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-<tag>/Build/Products/Release-iphoneos/cmux.app"
@@ -113,8 +115,19 @@ xcrun devicectl device process launch --terminate-existing --device <device-id> 
   in place with login, pairing, and settings intact. `SUPERMUX_IOS_DISPLAY_SUFFIX` still carries the
   current tag, so the home-screen name says which build is installed.
 - `DEVELOPMENT_TEAM=NRGUG8GVV4` is the personal team, which is also why
-  `CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` is required (touchpoint #53 strips the
-  capabilities that team lacks).
+  `SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` is required (touchpoint #53 strips
+  the capabilities that team lacks).
+- `SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` points the notification service
+  extension at the capability-free entitlements file, stripping the app group (#384) it carries by
+  default. The dogfood extension id (`com.supermux.ios.dogfood.notification-service`) has no
+  registered App ID, so it signs against the wildcard team profile, which has no App Groups
+  capability; leave the default in and the build fails with *"Provisioning profile … doesn't support
+  the group.com.supermux.ios App Group"*. Consequence: dogfood push banners show the generated
+  avatar chip, not the real project logo — verify that path on the fixed-identity build
+  (`scripts/supermux-ios-release.sh`), which owns registered App IDs and profiles.
+  **Point it at a file; do not try to blank it.** A bare `SETTING=` is dropped by xcodebuild (the
+  xcconfig default wins and the build still fails), while `'SETTING=""'` becomes the literal
+  two-quote path `ios/""` and fails with *"The file … could not be opened"*.
 - Resolve `<device-id>` from `CMUX_IPHONE_DEVICE_ID`, `~/.config/cmux/iphone-device-id`, or
   `xcrun devicectl list devices`. `install` works with the phone locked; `launch` fails with
   `BSErrorCodeDescription = Locked` — report that as "installed, tap to open", not as a failure.
@@ -150,9 +163,21 @@ A first pass ends when the change is implemented, the tagged build succeeded on 
 
 Do not launch a background review agent (`$autoreview`, `codex review`, `claude review`, or a judge loop) by default. Second-model review is explicit user opt-in in the current conversation; an implementation request, open PR, CI failure, closeout, or handoff is not that opt-in. Let required GitHub checks and the automatic review bots run asynchronously, then return to address only concrete check failures and actionable findings before merge.
 
-The main agent owns dogfood, approval, mergeability, and every pushed fix. Merging app/runtime/UI changes requires the user's explicit approval after dogfood; if a fix changes runtime behavior mid-dogfood, rebuild the tag and re-notify, since the earlier verdict covers only the build the user tested.
+The main agent owns dogfood, approval, mergeability, and every pushed fix. Merging app/runtime/UI changes requires the user's explicit approval after dogfood; if a fix changes runtime behavior mid-dogfood, rebuild the tag and say so in the handoff, since the earlier verdict covers only the build the user tested.
 
-Notify through `cmux notify` so the user can leave and return. Handoff: `--title "Dogfood ready: <short task>" --subtitle "<branch> · <tag>" --body "Was: <prior bad behavior>. Now: <expected behavior>. <concrete check>. PR: <pr-url>"`. Later closeout notifications use `"CI green: <branch>"` or `"CI blocked: <branch>"` with a one-line cause and the next decision. Titles carry outcome and branch, bodies carry the single next action. Skip notify if there is no cmux socket.
+<!-- SUPERMUX:begin no-handoff-notify -->
+**Do not send `cmux notify` at handoff or closeout.** Upstream instructs agents to notify at
+these points so the user can leave and return. In this fork that is pure duplication: the agent
+harness already notifies the user when a response completes, so a `cmux notify` fires a second
+alert for the same event — and at handoff the user is, by construction, about to read the summary
+anyway. Put the handoff information (was / now / the concrete check / the PR URL) in the final
+response instead; that is the notification.
+
+This does not ban the CLI. `cmux notify` remains correct when the user explicitly asks to be
+pinged, when a skill or script sends one as part of its own job (the iPhone install queue does
+this), or when testing the notification path itself.
+<!-- SUPERMUX:end no-handoff-notify -->
+
 
 ## Pitfalls
 

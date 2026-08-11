@@ -1,4 +1,5 @@
 import Foundation
+public import SupermuxMobileCore
 
 /// A native iPhone push emitted directly by the paired Supermux Mac.
 public struct SupermuxPhonePushMessage: Sendable, Equatable {
@@ -36,6 +37,25 @@ public struct SupermuxPhonePushMessage: Sendable, Equatable {
     public let badgeCount: Int
     /// Whether terminal text should be replaced with generic copy.
     public let hideContent: Bool
+    /// The supermux project the notification's workspace belongs to, or `nil`.
+    ///
+    /// Travels so the phone can render the project's avatar and name on the
+    /// banner and group a project's notifications together — the whole point of
+    /// a push you can triage from the lock screen without opening anything.
+    ///
+    /// The name is clamped by ``projectNameByteLimit`` before it is encoded:
+    /// the payload's truncation ladder only shrinks body/subtitle/title, so an
+    /// unbounded project name would silently eat the terminal output's budget.
+    public let project: SupermuxNotificationProject?
+    /// The workspace/tab title the notification fired in, for the banner's
+    /// provenance line. Clamped by ``tabNameByteLimit`` for the same reason.
+    public let tabName: String?
+
+    /// Maximum UTF-8 bytes of ``SupermuxNotificationProject/name`` that ride in
+    /// a push payload.
+    public static let projectNameByteLimit = 64
+    /// Maximum UTF-8 bytes of ``tabName`` that ride in a push payload.
+    public static let tabNameByteLimit = 64
 
     /// Creates a directly delivered phone-push message.
     public init(
@@ -51,7 +71,9 @@ public struct SupermuxPhonePushMessage: Sendable, Equatable {
         notificationID: String? = nil,
         dismissedIDs: [String] = [],
         badgeCount: Int,
-        hideContent: Bool = false
+        hideContent: Bool = false,
+        project: SupermuxNotificationProject? = nil,
+        tabName: String? = nil
     ) {
         self.kind = kind
         self.title = title
@@ -66,5 +88,52 @@ public struct SupermuxPhonePushMessage: Sendable, Equatable {
         self.dismissedIDs = dismissedIDs
         self.badgeCount = badgeCount
         self.hideContent = hideContent
+        self.project = project.map {
+            var bounded = $0
+            bounded.name = Self.clamped($0.name, toUTF8Bytes: Self.projectNameByteLimit)
+            return bounded
+        }
+        self.tabName = tabName.map { Self.clamped($0, toUTF8Bytes: Self.tabNameByteLimit) }
+    }
+
+    /// The same message with its project decoration removed.
+    ///
+    /// The escape hatch for a payload that still will not fit after the text
+    /// truncation ladder has run: a notification that arrives without its
+    /// avatar beats a notification that does not arrive.
+    public func withoutProjectDecoration() -> SupermuxPhonePushMessage {
+        SupermuxPhonePushMessage(
+            kind: kind,
+            title: title,
+            subtitle: subtitle,
+            body: body,
+            acceptsTextReply: acceptsTextReply,
+            workspaceID: workspaceID,
+            surfaceID: surfaceID,
+            retargetsToLiveSurfaceOwner: retargetsToLiveSurfaceOwner,
+            macDeviceID: macDeviceID,
+            notificationID: notificationID,
+            dismissedIDs: dismissedIDs,
+            badgeCount: badgeCount,
+            hideContent: hideContent,
+            project: nil,
+            tabName: nil
+        )
+    }
+
+    /// Truncates `value` to at most `maxBytes` UTF-8 bytes on a character
+    /// boundary, so a clamp can never split a grapheme into mojibake.
+    static func clamped(_ value: String, toUTF8Bytes maxBytes: Int) -> String {
+        guard maxBytes >= 0, value.utf8.count > maxBytes else { return value }
+        var byteCount = 0
+        var endIndex = value.startIndex
+        while endIndex < value.endIndex {
+            let nextIndex = value.index(after: endIndex)
+            let characterByteCount = value[endIndex..<nextIndex].utf8.count
+            guard byteCount + characterByteCount <= maxBytes else { break }
+            byteCount += characterByteCount
+            endIndex = nextIndex
+        }
+        return String(value[..<endIndex])
     }
 }

@@ -120,6 +120,8 @@ import Testing
         #expect(first.supermuxPullRequest == nil)
         #expect(second.supermuxBranch == nil)
         #expect(second.supermuxPullRequest == nil)
+        #expect(first.supermuxUnreadPanelIDs == nil)
+        #expect(second.supermuxUnreadPanelIDs == nil)
     }
 
     @Test func payloadWithSupermuxFieldsPopulatesThem() throws {
@@ -171,6 +173,57 @@ import Testing
         let preview = try #require(response.workspaces.first.map(MobileWorkspacePreview.init(remote:)))
         #expect(preview.supermuxProjectID == "66666666-6666-6666-6666-666666666666")
         #expect(preview.supermuxActivity == "working")
+    }
+
+    @Test func unreadPanelIDsDecodeAndFlowIntoTheWorkspacePreview() throws {
+        let payload = #"""
+        {
+          "workspaces": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "pane unread",
+              "is_selected": true,
+              "terminals": [],
+              "supermux_unread_panel_ids": ["panel-a", "panel-b"]
+            },
+            {
+              "id": "22222222-2222-2222-2222-222222222222",
+              "title": "supported empty",
+              "is_selected": false,
+              "terminals": [],
+              "supermux_unread_panel_ids": []
+            }
+          ]
+        }
+        """#
+        let response = try MobileSyncWorkspaceListResponse.decode(Data(payload.utf8))
+        try #require(response.workspaces.count == 2)
+
+        #expect(response.workspaces[0].supermuxUnreadPanelIDs == ["panel-a", "panel-b"])
+        #expect(MobileWorkspacePreview(remote: response.workspaces[0]).supermuxUnreadPanelIDs == [
+            "panel-a", "panel-b",
+        ])
+        #expect(response.workspaces[1].supermuxUnreadPanelIDs == [])
+        #expect(MobileWorkspacePreview(remote: response.workspaces[1]).supermuxUnreadPanelIDs == [])
+    }
+
+    @Test func malformedUnreadPanelIDsDegradeToUnsupported() throws {
+        let payload = #"""
+        {
+          "workspaces": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "bad panes",
+              "is_selected": false,
+              "terminals": [],
+              "supermux_unread_panel_ids": ["panel-a", 7]
+            }
+          ]
+        }
+        """#
+        let response = try MobileSyncWorkspaceListResponse.decode(Data(payload.utf8))
+
+        #expect(response.workspaces.first?.supermuxUnreadPanelIDs == nil)
     }
 
     // SUPERMUX:begin supermux-mobile-selection-sync

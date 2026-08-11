@@ -418,7 +418,32 @@ public final class SupermuxProjectsSectionModel {
         guard let store, let project = store.projects.first(where: { $0.id == projectID }) else {
             return nil
         }
-        return await store.iconPNGData(for: project)
+        let data = await store.iconPNGData(for: project)
+
+        // The await above is a main-actor reentrancy point. Revalidate the live
+        // session and icon identity before mutating the shared mirror: a removed
+        // or replaced icon must not be resurrected by an older response.
+        guard !Task.isCancelled, self.store === store else { return nil }
+        guard let currentProject = store.projects.first(where: { $0.id == projectID }) else {
+            SupermuxSharedProjectIconStore.removeIcon(forProjectID: projectID)
+            return nil
+        }
+        guard currentProject.hasCustomIcon == true else {
+            SupermuxSharedProjectIconStore.removeIcon(forProjectID: projectID)
+            return nil
+        }
+        guard currentProject.iconETag == project.iconETag else { return nil }
+
+        // Mirror into the app-group container so the notification service
+        // extension can paint the REAL logo on a push banner. The extension has
+        // no RPC session and APNs caps a payload at 4 KB — an order of magnitude
+        // under a real icon — so this file is the only way those bytes ever
+        // reach a banner. Writing here (rather than on a dedicated sync pass)
+        // keeps the mirror a pure side effect of the fetch the UI already does.
+        if let data {
+            SupermuxSharedProjectIconStore.store(data, forProjectID: projectID)
+        }
+        return data
     }
 
     // runSession(client:hostCapabilities:connectionID:) and endSession()

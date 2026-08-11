@@ -224,6 +224,15 @@ extension TerminalController {
         }
         do {
             let focusAssist = try await panel.replayMobileBrowserPointer(input)
+            // SUPERMUX:begin ios-pane-unread-acknowledgment
+            if input.kind == .click,
+               let located = AppDelegate.shared?.locateSurface(surfaceId: panel.id) {
+                _ = located.tabManager.dismissNotificationOnDirectInteraction(
+                    tabId: located.workspaceId,
+                    surfaceId: panel.id
+                )
+            }
+            // SUPERMUX:end ios-pane-unread-acknowledgment
             mobileBrowserInputDidReplay(connectionID: connectionID, panelID: panel.id)
             mobileBrowserRecordDiagnostic(
                 .browserInputReplayed, panel: panel, a: 1, b: input.clickCount

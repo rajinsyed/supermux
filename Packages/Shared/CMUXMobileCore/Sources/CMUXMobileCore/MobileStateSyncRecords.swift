@@ -181,6 +181,10 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     /// just project-associated ones — unread is a cmux concept, not a projects
     /// one, so it cannot ride the association-gated augmenter.
     public let supermuxUnreadCount: Int?
+    /// Pane identifiers whose Mac unread indicator is visible. `nil` means the
+    /// host predates exact pane unread state; an empty array means the host
+    /// supports it and no pane currently needs acknowledgment.
+    public let supermuxUnreadPanelIDs: [String]?
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// ``MobileSyncRecord`` identity: the workspace id.
@@ -216,7 +220,8 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxActivity: String? = nil,
         supermuxBranch: String? = nil,
         supermuxPullRequest: SupermuxPullRequest? = nil,
-        supermuxUnreadCount: Int? = nil
+        supermuxUnreadCount: Int? = nil,
+        supermuxUnreadPanelIDs: [String]? = nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     ) {
         self.id = id
@@ -245,6 +250,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.supermuxBranch = supermuxBranch
         self.supermuxPullRequest = supermuxPullRequest
         self.supermuxUnreadCount = supermuxUnreadCount
+        self.supermuxUnreadPanelIDs = supermuxUnreadPanelIDs
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -291,6 +297,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
             try? container.decodeIfPresent(SupermuxPullRequest.self, forKey: .supermuxPullRequest)
         ) ?? nil
         supermuxUnreadCount = (try? container.decodeIfPresent(Int.self, forKey: .supermuxUnreadCount)) ?? nil
+        supermuxUnreadPanelIDs = (
+            try? container.decodeIfPresent([String].self, forKey: .supermuxUnreadPanelIDs)
+        ) ?? nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -322,6 +331,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case supermuxBranch = "supermux_branch"
         case supermuxPullRequest = "supermux_pull_request"
         case supermuxUnreadCount = "supermux_unread_count"
+        case supermuxUnreadPanelIDs = "supermux_unread_panel_ids"
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }
