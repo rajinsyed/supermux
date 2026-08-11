@@ -13,12 +13,18 @@ import UserNotifications
 /// process is not running when a banner arrives on a locked phone. There is no
 /// APNs payload key that does this.
 ///
-/// **The avatar is drawn here, not downloaded.** A project's icon lives on the
-/// paired Mac and reaches the phone only over the app's encrypted RPC session,
-/// which this out-of-process, short-lived extension cannot open. So the payload
-/// carries the project's *identity* (name + accent), and this extension renders
-/// the same gradient-and-initial chip the Mac sidebar and the in-app feed draw.
-/// No app group, no network, no shared container.
+/// **Where the avatar comes from.** A project's icon lives on the paired Mac and
+/// reaches the phone only over the app's encrypted RPC session, which this
+/// out-of-process, short-lived extension cannot open. It cannot ride the push
+/// either: APNs caps a notification at 4096 bytes and a real icon is an order of
+/// magnitude past that (a 15 KB favicon is ~20 KB base64). So the app mirrors
+/// every icon it fetches into the shared app-group container, and this extension
+/// reads the PNG from disk — no network, no RPC, one file read.
+///
+/// When no icon is stored — the project has none, the app has not displayed it
+/// yet, or the build is signed without the app group — it falls back to
+/// rendering the same gradient-and-initial chip the Mac sidebar and the in-app
+/// feed draw, from the identity the payload does carry.
 ///
 /// **Failure is always graceful.** Every path — missing metadata, a render
 /// failure, a throwing `updating(from:)`, or the extension's execution budget
@@ -51,11 +57,19 @@ final class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        let avatar = ProjectAvatarRenderer.pngData(
-            projectID: project.id,
-            name: project.name,
-            colorHex: project.colorHex,
-            symbolName: project.iconSymbol
+        // The project's real logo when the app has mirrored one, otherwise the
+        // generated chip. Circular-masked either way: iOS renders a
+        // communication avatar as a circle, and an unmasked square logo would
+        // have its corners clipped rather than fitted.
+        let avatar = (
+            SharedProjectIconStore.iconData(forProjectID: project.id)
+                .flatMap { ProjectAvatarRenderer.circularPNGData(from: $0) }
+                ?? ProjectAvatarRenderer.pngData(
+                    projectID: project.id,
+                    name: project.name,
+                    colorHex: project.colorHex,
+                    symbolName: project.iconSymbol
+                )
         ).map(INImage.init(imageData:))
 
         // Keyed on the project, so every notification from one repo lands in a
@@ -155,6 +169,39 @@ private struct PushProject {
     }
 }
 
+/// Reads project icon PNGs the app mirrored into the shared app-group
+/// container.
+///
+/// Re-declared rather than imported from `SupermuxMobileCore`, for the same
+/// reason `PushProject` is: an app extension links its own copy of every
+/// dependency, and pulling the mobile package graph into a process with a hard
+/// execution budget would cost launch time this process does not have.
+///
+/// **The group identifier and path shape are a contract with
+/// `SupermuxSharedProjectIconStore`.** Change one side without the other and the
+/// banner silently falls back to a generated avatar with no error anywhere —
+/// exactly the class of failure the release script's assertions exist to catch.
+/// `SupermuxSharedProjectIconStoreTests` pins both values.
+private enum SharedProjectIconStore {
+    private static let appGroupIdentifier = "group.com.supermux.ios"
+    private static let directoryName = "project-icons"
+
+    /// The stored PNG bytes for a project, or `nil` when the app has not
+    /// mirrored one (or this build carries no app-group entitlement).
+    static func iconData(forProjectID projectID: String) -> Data? {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let filtered = projectID.unicodeScalars.filter { allowed.contains($0) }
+        guard !filtered.isEmpty,
+              let container = FileManager.default.containerURL(
+                  forSecurityApplicationGroupIdentifier: appGroupIdentifier
+              ) else { return nil }
+        let name = String(String.UnicodeScalarView(filtered))
+        return try? Data(
+            contentsOf: container.appending(path: "\(directoryName)/\(name).png")
+        )
+    }
+}
+
 /// Draws the project avatar: the accent gradient carrying the project's SF
 /// Symbol, or its initial.
 ///
@@ -169,6 +216,43 @@ private enum ProjectAvatarRenderer {
         "#ef4444", "#f97316", "#eab308", "#84cc16", "#22c55e", "#14b8a6",
         "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899",
     ]
+
+    /// Fits a real project logo into the circle iOS paints for a communication
+    /// avatar.
+    ///
+    /// Necessary because the source is an arbitrary square (a repo favicon or
+    /// app icon): handed over unmasked, iOS clips its corners, so a logo whose
+    /// artwork reaches the edges loses them. Scaling to fill and masking here
+    /// produces the same framing the in-app avatars use.
+    ///
+    /// - Parameter data: The stored PNG bytes.
+    /// - Returns: Circular PNG bytes, or `nil` when the bytes do not decode —
+    ///   in which case the caller falls back to the generated chip.
+    static func circularPNGData(from data: Data) -> Data? {
+        guard let source = UIImage(data: data) else { return nil }
+        let size = CGSize(width: 128, height: 128)
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let bounds = CGRect(origin: .zero, size: size)
+            context.cgContext.addEllipse(in: bounds)
+            context.cgContext.clip()
+            // Aspect-fill: a non-square logo is centered and cropped rather
+            // than stretched.
+            let scale = max(size.width / source.size.width, size.height / source.size.height)
+            let scaled = CGSize(
+                width: source.size.width * scale,
+                height: source.size.height * scale
+            )
+            source.draw(in: CGRect(
+                x: bounds.midX - scaled.width / 2,
+                y: bounds.midY - scaled.height / 2,
+                width: scaled.width,
+                height: scaled.height
+            ))
+        }.pngData()
+    }
 
     /// - Parameters:
     ///   - projectID: The project's STABLE id — the derivation key. Keying on

@@ -43,6 +43,10 @@ NSE_PRODUCT_NAME="SupermuxNotificationService"
 NSE_BUNDLE_ID="${BUNDLE_ID}.notification-service"
 NSE_DEV_PROFILE_SPECIFIER="${SUPERMUX_IOS_NSE_DEV_PROFILE_SPECIFIER:-Supermux Notification Service Development}"
 NSE_ADHOC_PROFILE_NAME="${SUPERMUX_IOS_NSE_PROVISIONING_PROFILE_SPECIFIER:-Supermux Notification Service Ad Hoc}"
+# Shared container for project icon PNGs. The app writes them; the extension
+# reads them to paint the real logo on a push banner. Must match
+# SupermuxSharedProjectIconStore.appGroupIdentifier and both entitlements files.
+APP_GROUP_ID="${SUPERMUX_IOS_APP_GROUP:-group.com.supermux.ios}"
 DISTRIBUTION_IDENTITY="${SUPERMUX_IOS_DISTRIBUTION_IDENTITY:-Apple Distribution}"
 DERIVED_DATA="${SUPERMUX_IOS_DERIVED_DATA:-${HOME}/Library/Developer/Xcode/DerivedData/cmux-ios-supermux-release}"
 LAUNCH=1
@@ -425,6 +429,39 @@ nse_signed_application_id="$(plist_value application-identifier "${NSE_SIGNED_EN
   || die "signed extension team is '${nse_signed_team:-<absent>}', expected ${DEVELOPMENT_TEAM}"
 [[ "${nse_signed_application_id}" == "${expected_nse_application_id}" ]] \
   || die "signed extension app id is '${nse_signed_application_id:-<absent>}', expected ${expected_nse_application_id}"
+
+# The app group is how a real project logo reaches a push banner at all: the
+# extension cannot open the app's RPC session, and APNs caps a payload at 4096
+# bytes — an order of magnitude under a real icon — so the image can never ride
+# the push. The app mirrors icons into this container and the extension reads
+# them. Miss it on EITHER side and every banner silently falls back to a
+# generated gradient chip, with no error anywhere. Both App IDs must have the
+# App Groups capability enabled and both profiles regenerated.
+app_group_in() {
+  python3 - "$1" "${APP_GROUP_ID}" <<'PY_GROUP'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    entitlements = plistlib.load(handle)
+groups = entitlements.get("com.apple.security.application-groups") or []
+print("yes" if sys.argv[2] in groups else "no")
+PY_GROUP
+}
+
+profile_app_groups_plist="${VERIFY_DIR}/profile-entitlements.plist"
+nse_profile_app_groups_plist="${VERIFY_DIR}/nse-profile-entitlements.plist"
+"${PLISTBUDDY}" -x -c 'Print :Entitlements' "${PROFILE_PLIST}" > "${profile_app_groups_plist}"
+"${PLISTBUDDY}" -x -c 'Print :Entitlements' "${NSE_PROFILE_PLIST}" > "${nse_profile_app_groups_plist}"
+
+[[ "$(app_group_in "${profile_app_groups_plist}")" == "yes" ]] \
+  || die "provisioning profile '${ADHOC_PROFILE_NAME}' lacks app group ${APP_GROUP_ID}; enable App Groups on the ${BUNDLE_ID} App ID, then regenerate and reinstall it (push banners would silently lose the project logo)"
+[[ "$(app_group_in "${SIGNED_ENTITLEMENTS}")" == "yes" ]] \
+  || die "signed app lacks app group ${APP_GROUP_ID}"
+[[ "$(app_group_in "${nse_profile_app_groups_plist}")" == "yes" ]] \
+  || die "provisioning profile '${NSE_ADHOC_PROFILE_NAME}' lacks app group ${APP_GROUP_ID}; enable App Groups on the ${NSE_BUNDLE_ID} App ID, then regenerate and reinstall it"
+[[ "$(app_group_in "${NSE_SIGNED_ENTITLEMENTS}")" == "yes" ]] \
+  || die "signed extension lacks app group ${APP_GROUP_ID}; without it the extension cannot read the mirrored project icon and every banner falls back to a generated avatar"
 
 echo "==> Verified app + notification-extension signatures, production APNs, Time Sensitive, and Communication Notifications for team ${DEVELOPMENT_TEAM}"
 echo "==> Installing ${APP_NAME} on iPhone ${DEVICE_ID}"

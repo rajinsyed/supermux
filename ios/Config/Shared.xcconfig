@@ -45,11 +45,18 @@ PRODUCT_BUNDLE_IDENTIFIER = $(SUPERMUX_APP_BUNDLE_ID)
 
 // Per-target signing inputs. Empty here so ordinary Xcode/simulator builds keep
 // using automatic signing; scripts/supermux-ios-release.sh sets them for the
-// manual-signing Release pass. The extension deliberately gets NO entitlements
-// file — it needs none, and inheriting the app's would request an APNs
-// entitlement its own App ID does not carry.
+// manual-signing Release pass.
 SUPERMUX_APP_DEV_PROFILE_SPECIFIER =
 SUPERMUX_NSE_DEV_PROFILE_SPECIFIER =
+
+// The extension's OWN entitlements — never the app's. It needs exactly one
+// capability: the app group holding project icon PNGs, which is the only way a
+// push banner can show a real project logo (APNs caps a payload at 4096 bytes,
+// an order of magnitude under a real icon, and the extension cannot open the
+// app's RPC session). Inheriting the app's file would claim aps-environment and
+// Communication Notifications, which the extension's App ID does not carry, and
+// signing would fail.
+SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS = Config/supermux-notification-service.entitlements
 // SUPERMUX:end ios-communication-notifications
 // User-visible versions (CFBundleShortVersionString). Keep beta and production
 // independent: TestFlight can stay on the already-approved beta version while

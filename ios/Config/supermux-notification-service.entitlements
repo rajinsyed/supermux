@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The notification service extension's ONLY entitlement, and the only one
+	     it may ever carry.
+
+	     It exists so the extension can read project icon PNGs the app mirrored
+	     into the shared container (SupermuxSharedProjectIconStore). Without it
+	     the extension has no way to reach a real project logo at all: it cannot
+	     open the app's RPC session, and APNs caps a push at 4096 bytes — an
+	     order of magnitude under a real icon — so the bytes cannot ride the
+	     payload either. Absent this, banners fall back to a generated
+	     gradient-and-initial chip.
+
+	     Deliberately NOT the app's entitlements file: that one claims
+	     aps-environment and Communication Notifications, which the extension's
+	     own App ID does not carry, and signing would fail. Keep this file to
+	     the app group alone. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.supermux.ios</string>
+	</array>
+</dict>
+</plist>
