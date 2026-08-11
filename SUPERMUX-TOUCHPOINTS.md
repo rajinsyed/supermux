@@ -25,7 +25,7 @@ Rules for adding a touchpoint:
 | # | File | Fence id | What it does |
 |---|------|----------|--------------|
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
-| 244 | `CLAUDE.md` | `ios-dogfood-release-build` | Overrides upstream's "iOS builds open on the iPhone by default" section for this fork: `reload.sh --tag` ships a tagged DEV build the user cannot sign in to, so physical-phone dogfood uses a Release build with `CMUX_DEV_TAG=` empty and `CMUX_IOS_AUTH_ENV=production`. Records the exact invocation and the two overrides never to pass on it (`PRODUCT_DISPLAY_NAME`, `ASSETCATALOG_COMPILER_APPICON_NAME`) |
+| 244 | `CLAUDE.md` | `ios-dogfood-release-build` | Overrides upstream's "iOS builds open on the iPhone by default" section for this fork: `reload.sh --tag` ships a tagged DEV build the user cannot sign in to, so physical-phone dogfood uses a Release build with `CMUX_DEV_TAG=` empty and `CMUX_IOS_AUTH_ENV=production`. Records the exact invocation — the FIXED dogfood bundle id `com.supermux.ios.dogfood` (one persistent identity so sign-in/pairing survive across tags; per-tag `dev.cmux.ios.<tag>` is retired, and keychain-group sharing with the main install is forbidden — Iroh stores would mutually wipe), `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"`, the sanctioned per-build naming knob (#238/#239) — and the two overrides never to pass on it (`PRODUCT_DISPLAY_NAME`, `ASSETCATALOG_COMPILER_APPICON_NAME`) |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges (`selectWorkspaceRow`) and the actions-bundle Close Other/Below/Above closures exclude project-hidden workspaces (via a fenced parent-level `supermuxProjectHiddenWorkspaceIds()` helper — since upstream's 0.65 snapshot-boundary refactor moved row actions from `TabItemView` to the sidebar owner, the fenced logic lives in those parent functions; Move Up/Down stepping lives in the SHARED entrypoint, #131, so `moveWorkspaceRow` is back to the upstream one-liner), the actions bundle gets a fenced `supermuxMenuVisibility` provider (keyed by workspace id; consumed by #114, declared in #129, move enablement via the #131 stepped-plan check) so the four Move/Close menu items disable on real reachability instead of raw full-list indices, a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`, the row-input construction computes fenced `supermuxVisibleIndex`/`supermuxVisibleCount` (#132/#133) and `TabItemView.accessibilityTitle` announces "workspace N of M" against the visible list; renders the agent-activity indicator on flat-list workspace rows (indicator overlay in `TabItemView`; snapshot resolution moved to #128); gives the flat-list selection the faint accent tint used by nested project rows in `backgroundColor(for:)` (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06 via `isPointerHovering`); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, and `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
@@ -259,8 +259,8 @@ Rules for adding a touchpoint:
 | 228 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `ios-workspace-toolbar-persistent-actions` | Consolidates the workspace-detail toolbar so UIKit's native overflow ("More") can never trigger: ONE trailing `ToolbarItem` with the fixed [Agent Chat][terminal picker] cluster, and the lower-frequency actions moved into the workspace TITLE menu via `workspaceTitleToolMenuEntries` — upstream Changes (id `MobileChangesButton`, title carries live +N/−M), the fork rows via `SupermuxWorkspaceToolsMenuEntries` (#108 bindings), and the alt-screen notice row presenting the shared explanation popover (anchored on the detail body). Replaces the conditional `workspace-altscreen-notice` / `workspace-changes` items (and the fork's former separate entries) whose state-varying widths made iOS evict a varying subset into a native ••• per pane. Also fences: the widened title-menu `isEnabled` gate + `toolEntriesFingerprint` plumbing (`WorkspaceTitleMenuValue.swift`, same id — defeats `.equatable()` pinning a stale menu closure), the `isSupermuxChangesSheetPresented`/`isSupermuxFilesSheetPresented`/`isAltScreenExplanationPresented` state, `onChange` keyboard-dismiss parity for the fork sheets, the deferred-one-turn presentation in `openWorkspaceChanges` (menu-dismissal race), and the badge-headroom reserves (`backButtonReserve` 44→60, `floor` 96→80) in `MobileLeadingToolbarTitleWidth.swift` (same fence id) |
 | 229 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+AgentChat.swift` | `ios-workspace-toolbar-persistent-actions` | Makes `shouldShowChatToggle` structurally true and fixes `toolbarTrailingCluster` at two 44pt controls (96pt frame): the Agent Chat button is always mounted, merely disabled (with an accessibility hint) until the visible tab has a session, so agent/pane churn never changes the bar's shape. Companion fence in `AltScreenNoticeButton.swift` (same id) extracts `AltScreenNoticeExplanationContent` + `altScreenNoticeExplanationPopover(isPresented:dismissNotice:)` so the standalone notice button and #228's title-menu row present identical content |
 | 237 | `ios/cmuxUITests/cmuxUITests.swift` | `ios-workspace-toolbar-persistent-actions` | Reverses upstream's no-session expectation in the long-title workspace-toolbar preview: the Agent Chat button must remain present-but-disabled without a chat descriptor, and native toolbar overflow (`More`) must not replace the stable action cluster |
-| 238 | `ios/Config/Shared.xcconfig` | `ios-supermux-brand` | `PRODUCT_DISPLAY_NAME` = `Supermux` (was `cmux`), the iOS app's home-screen name. `PRODUCT_NAME` stays `cmux` on purpose — it names the built product (`cmux.app`), which every reload/install/queue script resolves by path |
-| 239 | `ios/Config/Release.xcconfig` | `ios-supermux-brand` | Local Release builds display `Supermux` (was `cmux BETA`). The TestFlight/App Store lanes pass `PRODUCT_DISPLAY_NAME` on the xcodebuild command line (`ios/scripts/upload-testflight.sh`, `ios/scripts/resolve_testflight_distribution.py`), so upstream channel names and `tests/test_ios_testflight_pro_distribution.py` are untouched |
+| 238 | `ios/Config/Shared.xcconfig` | `ios-supermux-brand` | `PRODUCT_DISPLAY_NAME` = `Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)` (was `cmux`), the iOS app's home-screen name. `SUPERMUX_IOS_DISPLAY_SUFFIX` (new fork variable, empty default) lets dogfood builds append `" <tag>"` from the command line without passing `PRODUCT_DISPLAY_NAME` itself. `PRODUCT_NAME` stays `cmux` on purpose — it names the built product (`cmux.app`), which every reload/install/queue script resolves by path |
+| 239 | `ios/Config/Release.xcconfig` | `ios-supermux-brand` | Local Release builds display `Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)` (was `cmux BETA`; suffix empty → `Supermux`). The TestFlight/App Store lanes pass `PRODUCT_DISPLAY_NAME` on the xcodebuild command line (`ios/scripts/upload-testflight.sh`, `ios/scripts/resolve_testflight_distribution.py`), so upstream channel names and `tests/test_ios_testflight_pro_distribution.py` are untouched |
 | 240 | `ios/scripts/reload.sh` | `ios-supermux-brand` | Tagged dev builds display `Supermux DEV <tag>` (was `cmux DEV <tag>`). The tag suffix is kept so parallel tagged installs stay tellable apart; the `cmux.app` product path this script resolves is unchanged |
 | 241 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Wires the ROOT `AppIcon.icon` + `AppIcon-Demo.icon` Icon Composer bundles into the iOS app target's Resources phase (ids `IC1000*`, `sourceTree = SOURCE_ROOT`, `path = ../AppIcon*.icon`) and deletes the upstream `AppIcon.appiconset` / `AppIcon-Demo.appiconset` PNG sets. iOS now renders from the same single source of truth as macOS (#17); no PNG icon art exists in the fork. `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` was already correct and is unchanged |
 | 242 | `ios/cmux/Assets.xcassets/CmuxLogo.imageset` | `unfenced` | The in-app brand logo (sign-in header, restoring-session screen) re-sourced from the supermux mark, squircle-masked, as a base64-PNG-in-SVG at the same path/name so no Swift call site changes |
@@ -358,6 +358,8 @@ Rules for adding a touchpoint:
 | 335 | `Sources/Mobile/MobileHostIrohRuntime+Lifecycle.swift` | `profileless-release-iroh-storage` | Compiles the matching bundle-scoped `developmentStoreDirectory(service:)` helper for `SUPERMUX_LOCAL_RELEASE`, keeping every local-release identity/credential family under `Application Support/cmux/iroh-debug/com.supermux.app/`. Must use the same compilation condition as #334 or the Release build fails at compile time |
 | 336 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobilePushReadiness.swift` | `ios-direct-apns-token` | Models Time Sensitive Notifications support separately from the user's enabled setting. Unsupported personal-team builds do not show an unfixable Time Sensitive warning, while a supported setting that the user disables remains actionable and Scheduled Summary remains a real warning whenever active-level delivery cannot bypass it |
 | 337 | `Packages/iOS/CmuxMobileShellUI/Tests/CmuxMobileShellUITests/MobilePushReadinessTests.swift` | `ios-direct-apns-token` | Regression coverage proving an unsupported Time Sensitive setting can reach `.ready`, while Scheduled Summary remains the sole limitation when enabled on that build; the upstream parameterized test still proves a supported-but-disabled setting reaches `.presentationLimited([.timeSensitiveDisabled])` |
+| 338 | `scripts/reload.sh` | `reload-supermux-profile`, `reload-supermux-profile-parse`, `reload-supermux-profile-seed` | Adds `--supermux-profile` (implies `--prod-auth`): after the same-tag app is told to quit, calls the supermux-owned `scripts/supermux-seed-dev-profile.sh` to copy the main `com.supermux.app` release install's UserDefaults + Stack Auth `credentials.json` into the tag's isolated identity, so a user-facing Mac dogfood build launches already signed in to the production account with the user's settings. The seeder is supermux-owned (no touchpoint); the three fences are the flag var, the arg parse, and the post-quit seeding call |
+| 339 | `CLAUDE.md` | `mac-dogfood-supermux-profile` | Documents #338 next to upstream's "Build and reload" section: user-facing Mac dogfood builds must pass `--supermux-profile` (plain `--tag` sign-in points at an unserved localhost origin), sign-out inside a seeded build is forbidden (shared Stack session — revoking it signs the main app out too), agent-only builds keep plain `--tag` |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
@@ -1227,8 +1229,15 @@ with the supermux mark. Two independent halves:
 **Name (`ios-supermux-brand`, three fenced xcconfig/shell sites).** `CFBundleDisplayName` is
 `$(PRODUCT_DISPLAY_NAME)` in `ios/Config/Info.plist` (upstream, unfenced), so only that variable
 had to move:
-- `ios/Config/Shared.xcconfig` (#238) → `Supermux` (Debug and any build not overriding it).
-- `ios/Config/Release.xcconfig` (#239) → `Supermux` (was `cmux BETA`).
+- `ios/Config/Shared.xcconfig` (#238) → `Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)` (Debug and any
+  build not overriding it). `SUPERMUX_IOS_DISPLAY_SUFFIX` is a fork-invented variable, empty by
+  default; dogfood Release builds pass `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"` (leading space) on
+  the xcodebuild command line so parallel phone installs read "Supermux <tag>" on the home screen.
+  This is deliberately NOT `PRODUCT_DISPLAY_NAME` on the command line (see #244's never-pass rule);
+  custom variables are inert in SwiftPM targets, so the override is workspace-safe.
+- `ios/Config/Release.xcconfig` (#239) → `Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)` (was `cmux BETA`).
+  Release re-declares the whole template because it previously re-declared the name; keep both
+  sites in sync when editing.
 - `ios/scripts/reload.sh` (#240) → `DISPLAY_NAME="Supermux DEV $TAG"`.
 
 **Do not touch `PRODUCT_NAME`.** It stays `cmux` because it names the built product; `cmux.app`
@@ -3344,3 +3353,47 @@ straight back into `ChatTranscriptRowView`.
 - Verify it is actually live, not just compiling: open a Claude session with Focus Mode on and
   confirm runs of tool calls appear as one "Working · N steps" row that expands on tap. If every
   tool call still renders individually, the #248 modifier or item 1 above was dropped.
+
+### 338–339. Mac user-dogfood profile seeding — `reload-supermux-profile*` + `mac-dogfood-supermux-profile`
+
+**Problem.** A tagged Debug Mac build bakes `CMUX_AUTH_WWW_ORIGIN=http://localhost:<port>` into its
+`LSEnvironment`, so its sign-in flow redirects to a dev web origin nothing serves; and even with
+`--prod-auth`, the tag's bundle id isolates its token store, so the user starts signed out with
+default settings. The user cannot dogfood such a build.
+
+**Fix.** `scripts/reload.sh` gains `--supermux-profile` (three small fences in #338, all calling out
+to the supermux-owned `scripts/supermux-seed-dev-profile.sh`):
+
+1. `reload-supermux-profile` — declares `SUPERMUX_PROFILE=0` next to `PROD_AUTH` and documents the
+   flag in the usage text.
+2. `reload-supermux-profile-parse` — `--supermux-profile) SUPERMUX_PROFILE=1; PROD_AUTH=1` in the
+   arg loop (implies `--prod-auth`, so the plist gets `CMUX_AUTH_ENVIRONMENT=production` and the
+   cmux.com origins).
+3. `reload-supermux-profile-seed` — after the tag-mode "quit the old same-tag app" block, calls the
+   seeder with `--target-bundle-id "$BUNDLE_ID"` and `--wait-for-exit` on the tagged executable
+   path. Failure fails the reload (a silently signed-out dogfood build is the bug this exists to
+   prevent).
+
+The seeder (fork-owned, no fence) copies from the `com.supermux.app` release install:
+- the full UserDefaults domain (`defaults export | import`), then force-writes
+  `cmux.auth.stackProjectID` to the production Stack project id (parsed out of
+  `Sources/Auth/AuthEnvironment.swift`) so `MacAuthComposition.detectAuthProjectSwitch` does not
+  clear the seeded tokens on first launch, and `cmux.auth.hasTokens=true`;
+- `~/Library/Application Support/cmux/com.supermux.app/credentials.json` (the release build's Stack
+  file token store) into the tag's directory via 0600 temp file + atomic rename in a 0700 dir,
+  after validating ownership, non-symlink, JSON shape, and a non-empty refresh token. Tagged Debug
+  builds are ad-hoc signed, so their keychain writes fail and they read the same file fallback.
+
+**Why sharing tokens is safe / the one hazard.** Stack Auth does not rotate refresh tokens
+(`alwaysIssueNewRefreshToken: false` server-side; the vendored SDK writes the same refresh token
+back on refresh), so both apps mint access tokens off one session concurrently. Sign-out is the
+exception: `DELETE /auth/sessions/current` revokes the shared session row, signing out the main
+app too. Hence the documented rule: never sign out inside a seeded build.
+
+**#339** is the `mac-dogfood-supermux-profile` fence in `CLAUDE.md` (after upstream's "Build and
+reload" section): user-facing Mac dogfood builds must use `--supermux-profile`; agent-only builds
+keep plain `--tag` + the `~/.secrets` auto-sign-in.
+
+**To re-apply after an upstream merge:** re-add the three #338 fences around reload.sh's flag
+declarations, arg parse, and the post-quit block (the seeder script itself is fork-owned and merges
+clean), and re-insert the #339 doc fence after upstream's reload section.

@@ -13,7 +13,14 @@ PRODUCT_NAME = cmux
 // path, so renaming it would break them. Only the user-visible
 // CFBundleDisplayName is rebranded. Release.xcconfig overrides this again for
 // its own channel suffix.
-PRODUCT_DISPLAY_NAME = Supermux
+// SUPERMUX_IOS_DISPLAY_SUFFIX is the sanctioned per-build name tag: dogfood
+// Release builds pass SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>" (leading space
+// included) on the xcodebuild command line so parallel phone installs are
+// tellable apart (e.g. "Supermux notification-redesign") without ever passing
+// PRODUCT_DISPLAY_NAME itself. Empty by default, so official builds stay
+// exactly "Supermux".
+SUPERMUX_IOS_DISPLAY_SUFFIX =
+PRODUCT_DISPLAY_NAME = Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)
 // SUPERMUX:end ios-supermux-brand
 PRODUCT_BUNDLE_IDENTIFIER = dev.cmux.ios
 // User-visible versions (CFBundleShortVersionString). Keep beta and production

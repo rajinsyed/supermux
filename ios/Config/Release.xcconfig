@@ -14,8 +14,9 @@ DEVELOPMENT_TEAM = 7WLXT3NR37
 // pass PRODUCT_DISPLAY_NAME on the xcodebuild command line
 // (ios/scripts/upload-testflight.sh), so they still ship "cmux BETA"/"cmux" and
 // tests/test_ios_testflight_pro_distribution.py is unaffected; this value only
-// covers local Release builds, which is what fork dogfood installs.
-PRODUCT_DISPLAY_NAME = Supermux
+// covers local Release builds, which is what fork dogfood installs. Dogfood
+// tag builds append SUPERMUX_IOS_DISPLAY_SUFFIX (see Shared.xcconfig).
+PRODUCT_DISPLAY_NAME = Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)
 // SUPERMUX:end ios-supermux-brand
 
 // TestFlight/App Store builds use production APNs. Debug keeps
