@@ -18,6 +18,18 @@ printf 'ensure\n' >> "${FAKE_ENSURE_LOG:?}"
 SH
 chmod +x "$TEST_REPO/scripts/ensure-ghosttykit.sh"
 
+cat > "$TEST_REPO/scripts/supermux-ios-release.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if grep -Eq '^(quit|pkill|open)( |$)' "${FAKE_RELEASE_EVENT_LOG:?}" 2>/dev/null; then
+  echo 'iOS release started after the Mac app shutdown boundary' >&2
+  exit 90
+fi
+printf 'ios %s\n' "$*" >> "${FAKE_RELEASE_EVENT_LOG}"
+echo '==> Stub iOS release complete'
+SH
+chmod +x "$TEST_REPO/scripts/supermux-ios-release.sh"
+
 cat > "$BIN_DIR/security" <<'SH'
 #!/usr/bin/env bash
 printf '  1) TESTHASH "Developer ID Application: Test (TEAM)"\n'
@@ -42,6 +54,15 @@ case "${FAKE_XCODEBUILD_MODE:?}" in
     printf 'fake xcodebuild completed without a product\n'
     exit 0
     ;;
+  success-with-product)
+    app="$HOME/Library/Developer/Xcode/DerivedData/cmux-supermux-release/Build/Products/Release/cmux.app"
+    mkdir -p "$app/Contents/MacOS"
+    printf 'binary\n' > "$app/Contents/MacOS/cmux"
+    chmod +x "$app/Contents/MacOS/cmux"
+    printf 'plist\n' > "$app/Contents/Info.plist"
+    printf 'fake xcodebuild completed with a product\n'
+    exit 0
+    ;;
   fail)
     printf '%s\n' "${FAKE_XCODEBUILD_SENTINEL:?}" >&2
     exit 65
@@ -53,6 +74,47 @@ case "${FAKE_XCODEBUILD_MODE:?}" in
 esac
 SH
 chmod +x "$BIN_DIR/xcodebuild"
+
+cat > "$BIN_DIR/plistbuddy" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_PLISTBUDDY_LOG:?}"
+SH
+chmod +x "$BIN_DIR/plistbuddy"
+
+cat > "$BIN_DIR/codesign" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_CODESIGN_LOG:?}"
+SH
+chmod +x "$BIN_DIR/codesign"
+
+cat > "$BIN_DIR/osascript" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'quit %s\n' "$*" >> "${FAKE_RELEASE_EVENT_LOG:?}"
+SH
+chmod +x "$BIN_DIR/osascript"
+
+cat > "$BIN_DIR/pkill" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'pkill %s\n' "$*" >> "${FAKE_RELEASE_EVENT_LOG:?}"
+SH
+chmod +x "$BIN_DIR/pkill"
+
+cat > "$BIN_DIR/open" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'open %s\n' "$*" >> "${FAKE_RELEASE_EVENT_LOG:?}"
+SH
+chmod +x "$BIN_DIR/open"
+
+cat > "$BIN_DIR/spctl" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$BIN_DIR/spctl"
 
 run_release() {
   local home_dir="$1"
@@ -146,7 +208,7 @@ fi
 
 if [[ "$(grep -c '^ensure$' "$TMP_DIR/ensure.log")" -ne 2 ]]; then
   cat "$TMP_DIR/ensure.log"
-  echo "FAIL: release script did not refresh GhosttyKit before both builds" >&2
+  echo "FAIL: release script did not refresh GhosttyKit before both build attempts" >&2
   exit 1
 fi
 if ! grep -Fq 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) SUPERMUX_LOCAL_RELEASE' "$TMP_DIR/xcodebuild.log"; then
@@ -155,6 +217,66 @@ if ! grep -Fq 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) SUPERMUX_LOCAL_R
   exit 1
 fi
 
+COMBINED_HOME="$TMP_DIR/home-combined"
+COMBINED_INSTALL="$TMP_DIR/install/Supermux.app"
+COMBINED_OUTPUT="$TMP_DIR/combined-output.log"
+EVENT_LOG="$TMP_DIR/release-events.log"
+mkdir -p "$COMBINED_INSTALL/Contents/MacOS"
+printf 'old app\n' > "$COMBINED_INSTALL/Contents/MacOS/cmux"
+chmod +x "$COMBINED_INSTALL/Contents/MacOS/cmux"
+: > "$EVENT_LOG"
+
+set +e
+HOME="$COMBINED_HOME" \
+PATH="$BIN_DIR:/usr/bin:/bin" \
+SUPERMUX_INSTALL_APP="$COMBINED_INSTALL" \
+PLISTBUDDY="$BIN_DIR/plistbuddy" \
+OSASCRIPT="$BIN_DIR/osascript" \
+FAKE_ENSURE_LOG="$TMP_DIR/ensure.log" \
+FAKE_XCODEBUILD_LOG="$TMP_DIR/xcodebuild.log" \
+FAKE_XCODEBUILD_MODE=success-with-product \
+FAKE_XCODEBUILD_SENTINEL=unused \
+FAKE_PLISTBUDDY_LOG="$TMP_DIR/plistbuddy.log" \
+FAKE_CODESIGN_LOG="$TMP_DIR/codesign.log" \
+FAKE_RELEASE_EVENT_LOG="$EVENT_LOG" \
+  bash "$TEST_REPO/scripts/supermux-release.sh" --ios-device-id test-phone \
+    > "$COMBINED_OUTPUT" 2>&1
+COMBINED_STATUS=$?
+set -e
+if [[ "$COMBINED_STATUS" -ne 0 ]]; then
+  cat "$COMBINED_OUTPUT"
+  echo "FAIL: combined release exited with status $COMBINED_STATUS" >&2
+  exit 1
+fi
+
+event_order="$(cut -d' ' -f1 "$EVENT_LOG" | paste -sd, -)"
+if [[ "$event_order" != "ios,quit,pkill,open" ]]; then
+  cat "$EVENT_LOG"
+  cat "$COMBINED_OUTPUT"
+  echo "FAIL: expected iOS to finish before the Mac app shutdown boundary, got $event_order" >&2
+  exit 1
+fi
+if ! grep -Fq 'ios --device-id test-phone' "$EVENT_LOG"; then
+  cat "$EVENT_LOG"
+  echo "FAIL: combined release did not forward the selected iPhone" >&2
+  exit 1
+fi
+if [[ ! -x "$COMBINED_INSTALL/Contents/MacOS/cmux" ]]; then
+  cat "$COMBINED_OUTPUT"
+  echo "FAIL: combined release did not install the newly built Mac app" >&2
+  exit 1
+fi
+if ! grep -Fq '==> Release complete: macOS + iOS' "$COMBINED_OUTPUT"; then
+  cat "$COMBINED_OUTPUT"
+  echo "FAIL: combined release did not record overall completion" >&2
+  exit 1
+fi
+if [[ "$(grep -c '^ensure$' "$TMP_DIR/ensure.log")" -ne 3 ]]; then
+  cat "$TMP_DIR/ensure.log"
+  echo "FAIL: combined release did not refresh GhosttyKit" >&2
+  exit 1
+fi
+
 bash "$ROOT_DIR/tests/test_supermux_ios_release.sh"
 
-echo "PASS: supermux release refreshes GhosttyKit, clears stale modules and products, preserves xcodebuild status, logs failures, and validates the iOS production release path"
+echo "PASS: supermux release clears stale artifacts, preserves build failures, completes iOS before self-restarting the Mac app, and validates current iOS signing"
