@@ -112,6 +112,11 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Creates a native Simulator panel in a workspace.
     case simulatorCreate = "mobile.supermux.simulator.create"
 
+    // MARK: Usage
+
+    /// Reads the Claude Code + Codex rate-limit snapshot (read-only).
+    case usageState = "mobile.supermux.usage.state"
+
     // MARK: Phone push
 
     /// Registers or removes this phone's APNs token on the paired Mac.

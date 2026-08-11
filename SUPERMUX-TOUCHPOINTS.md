@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **339**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
+- Numbering: the highest number in use is **341**. Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
   #18 → #20). Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
@@ -360,6 +360,8 @@ Rules for adding a touchpoint:
 | 337 | `Packages/iOS/CmuxMobileShellUI/Tests/CmuxMobileShellUITests/MobilePushReadinessTests.swift` | `ios-direct-apns-token` | Regression coverage proving an unsupported Time Sensitive setting can reach `.ready`, while Scheduled Summary remains the sole limitation when enabled on that build; the upstream parameterized test still proves a supported-but-disabled setting reaches `.presentationLimited([.timeSensitiveDisabled])` |
 | 338 | `scripts/reload.sh` | `reload-supermux-profile`, `reload-supermux-profile-parse`, `reload-supermux-profile-seed` | Adds `--supermux-profile` (implies `--prod-auth`): after the same-tag app is told to quit, calls the supermux-owned `scripts/supermux-seed-dev-profile.sh` to copy the main `com.supermux.app` release install's UserDefaults + Stack Auth `credentials.json` into the tag's isolated identity, so a user-facing Mac dogfood build launches already signed in to the production account with the user's settings. The seeder is supermux-owned (no touchpoint); the three fences are the flag var, the arg parse, and the post-quit seeding call |
 | 339 | `CLAUDE.md` | `mac-dogfood-supermux-profile` | Documents #338 next to upstream's "Build and reload" section: user-facing Mac dogfood builds must pass `--supermux-profile` (plain `--tag` sign-in points at an unserved localhost origin), sign-out inside a seeded build is forbidden (shared Stack session — revoking it signs the main app out too), agent-only builds keep plain `--tag` |
+| 340 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Toolbar.swift` | `supermux-mobile-usage-button` | Two fences: `import SupermuxMobileUI`, and `SupermuxUsageToolbarButton(connection: store?.supermuxConnectionSeam)` as the FIRST entry of the iOS `.topBarTrailing` `ToolbarItemGroup`, before upstream's `viewOptionsButton()` / `newWorkspaceButton`. The phone twin of the Mac sidebar footer gauge (#146): a ring filled to the tightest Claude/Codex limit, opening the read-only `SupermuxUsageScreen` sheet. Purely additive — no upstream toolbar item is replaced or wrapped. Renders nothing without `supermux.usage.v1`, so a fork phone paired with an upstream cmux Mac shows exactly upstream's toolbar. Note this fence sits INSIDE the #250 `supermux-mobile-list-toolbar-identity` region, which must keep gating only the toolbar's CONTENT — never branching around `content` |
+| 341 | `Sources/Supermux/SupermuxMobileHost+Usage.swift` | `unfenced` | **Whole-file fork addition** (`Sources/Supermux/`, pbxproj ids `50BE0002…00E1`/`…00E2` under #95). Serves `mobile.supermux.usage.state` by projecting `SupermuxComposition.usageModel` — the SAME model the sidebar gauge and popover render — through the package-tested `SupermuxMobileUsagePayloadBuilder`. Awaits `usageModel.refresh()` first, because that poll loop is view-driven and a Mac with no sidebar mounted would otherwise report `loading` forever; the model's own hard floor applies to every caller, so a phone polling fast cannot add provider traffic. Read-only: no cswap switch/enable path is exposed to the phone |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
@@ -1112,6 +1114,11 @@ file reference `50BE0001…0101` and build file `50BE0001…0102` for
 The direct phone-push adapter (touchpoint #332) adds file reference `50BE0001…0103` and build file
 `50BE0001…0104` for `SupermuxDirectPhonePush.swift`, wired in the same four places. Its package-owned
 APNs service is discovered automatically by SwiftPM and needs no pbxproj entry.
+
+The mobile usage handler (touchpoint #341) adds file reference `50BE0002…00E1` and build file
+`50BE0002…00E2` for `Sources/Supermux/SupermuxMobileHost+Usage.swift`, wired in the same four
+places as its `SupermuxMobileHost+*` siblings under #95 (`50BE0002…` prefix). Its package-owned
+payload builder and the phone's stores/screens are SwiftPM files and need no pbxproj entry.
 
 
 Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `113`.

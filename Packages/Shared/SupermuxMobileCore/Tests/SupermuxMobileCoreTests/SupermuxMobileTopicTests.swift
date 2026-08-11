@@ -31,11 +31,12 @@ import Testing
         #expect(SupermuxMobileCapability.selectionSyncV2.rawValue == "supermux.selection_sync.v2")
         #expect(SupermuxMobileCapability.panesV1.rawValue == "supermux.panes.v1")
         #expect(SupermuxMobileCapability.phonePushV1.rawValue == "supermux.phone_push.v1")
+        #expect(SupermuxMobileCapability.usageV1.rawValue == "supermux.usage.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 12)
-        #expect(Set(SupermuxMobileCapability.all).count == 12)
+        #expect(SupermuxMobileCapability.all.count == 13)
+        #expect(Set(SupermuxMobileCapability.all).count == 13)
     }
 }

@@ -1,4 +1,7 @@
 import CmuxMobileSupport
+// SUPERMUX:begin supermux-mobile-usage-button (fork usage-limits gauge — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-usage-button
 import SwiftUI
 
 extension WorkspaceListView {
@@ -106,6 +109,11 @@ extension WorkspaceListView {
                                     dismiss: dismissMacUpdateHint
                                 )
                             }
+                            // SUPERMUX:begin supermux-mobile-usage-button (fork usage-limits gauge, mirroring the Mac sidebar footer button — see SUPERMUX-TOUCHPOINTS.md)
+                            SupermuxUsageToolbarButton(
+                                connection: store?.supermuxConnectionSeam
+                            )
+                            // SUPERMUX:end supermux-mobile-usage-button
                             viewOptionsButton()
                             if canCreateWorkspace {
                                 newWorkspaceButton.equatable()

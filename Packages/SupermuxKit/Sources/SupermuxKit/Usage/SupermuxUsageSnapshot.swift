@@ -1,4 +1,7 @@
 public import Foundation
+// SupermuxUsageSeverity lives in the shared wire package so the iOS usage
+// screen buckets a percent exactly like this popover does.
+public import SupermuxMobileCore
 
 /// One provider rate-limit window (Claude's 5-hour/7-day, Codex's 5-hour/weekly,
 /// or a scoped/per-model weekly limit) as rendered by the usage tracker.
@@ -37,21 +40,6 @@ public struct SupermuxUsageWindow: Sendable, Equatable {
     /// Severity bucket for coloring bars and the footer gauge.
     public var severity: SupermuxUsageSeverity {
         SupermuxUsageSeverity(percent: percent)
-    }
-}
-
-/// Shared coloring thresholds for usage bars and the footer gauge.
-public enum SupermuxUsageSeverity: Sendable, Equatable, Comparable {
-    case normal
-    case warning
-    case critical
-
-    public init(percent: Double) {
-        switch percent {
-        case ..<70: self = .normal
-        case ..<90: self = .warning
-        default: self = .critical
-        }
     }
 }
 

@@ -1,3 +1,6 @@
+// SupermuxUsageCountdown / SupermuxUsageSeverity are shared with the iOS
+// usage screen, so both surfaces format resets and bucket percents alike.
+import SupermuxMobileCore
 public import SwiftUI
 
 /// The unified usage popover: Claude Code and Codex rate-limit windows as

@@ -108,6 +108,8 @@ extension TerminalController {
             return v2SupermuxPaneClose(params: params)
         case .simulatorCreate:
             return v2SupermuxSimulatorCreate(params: params)
+        case .usageState:
+            return await v2SupermuxUsageState(params: params)
         case .phonePushRegister:
             return await v2SupermuxPhonePushRegister(params: params)
         default:

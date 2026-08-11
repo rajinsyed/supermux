@@ -1,5 +1,8 @@
 import CmuxFoundation
 import Foundation
+// SupermuxUsageSeverity moved to the shared wire package so the iOS usage
+// screen buckets percents identically.
+import SupermuxMobileCore
 import Testing
 @testable import SupermuxKit
 
@@ -380,33 +383,6 @@ struct SupermuxClaudeCswapFallthroughTests {
     }
 }
 
-@Suite
-struct SupermuxUsageCountdownTests {
-    private let now = Date(timeIntervalSince1970: 1_786_000_000)
-
-    @Test func twoUnitFormats() {
-        // 5d 17h 20m → "5d 17h"
-        #expect(SupermuxUsageCountdown.text(
-            until: now.addingTimeInterval(5 * 86400 + 17 * 3600 + 20 * 60), now: now
-        ) == "5d 17h")
-        // 4h 39m → "4h 39m"
-        #expect(SupermuxUsageCountdown.text(
-            until: now.addingTimeInterval(4 * 3600 + 39 * 60), now: now
-        ) == "4h 39m")
-        // 12m → "12m"
-        #expect(SupermuxUsageCountdown.text(until: now.addingTimeInterval(12 * 60), now: now) == "12m")
-    }
-
-    @Test func exactUnitsDropTheZeroComponent() {
-        #expect(SupermuxUsageCountdown.text(until: now.addingTimeInterval(2 * 86400), now: now) == "2d")
-        #expect(SupermuxUsageCountdown.text(until: now.addingTimeInterval(3 * 3600), now: now) == "3h")
-    }
-
-    @Test func subMinuteRoundsUpAndPastClampsToZero() {
-        #expect(SupermuxUsageCountdown.text(until: now.addingTimeInterval(30), now: now) == "1m")
-        #expect(SupermuxUsageCountdown.text(until: now.addingTimeInterval(-60), now: now) == "0m")
-    }
-}
 
 @Suite
 struct SupermuxCswapSwitchResultTests {

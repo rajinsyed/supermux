@@ -51,4 +51,6 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     public var supportsPanes: Bool { contains(.panesV1) }
     /// `supermux.phone_push.v1`: the paired Mac accepts this phone's APNs token.
     public var supportsPhonePush: Bool { contains(.phonePushV1) }
+    /// `supermux.usage.v1`: the read-only usage-limits snapshot is served.
+    public var supportsUsage: Bool { contains(.usageV1) }
 }

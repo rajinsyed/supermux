@@ -209,6 +209,11 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func filesTrash(_ request: SupermuxFilesTrashRequest) async throws -> SupermuxFilesMutationResponse
 
+    /// `mobile.supermux.usage.state`: the Mac's current Claude Code + Codex
+    /// rate-limit snapshot (read-only mirror of the desktop usage tracker).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func usageState(_ request: SupermuxUsageStateRequest) async throws -> SupermuxUsageStateDTO
+
     /// Subscribes to `supermux.*` event topics. Events are payload-light
     /// pokes; consumers refetch through the matching request method. The
     /// stream finishes when the underlying connection drops; consumers
