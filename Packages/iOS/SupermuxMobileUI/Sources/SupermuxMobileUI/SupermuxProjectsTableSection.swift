@@ -148,11 +148,25 @@ public struct SupermuxProjectsTableSection: View {
         }
     }
 
-    /// A project row's swipe tray: New Worktree first (the fork's most-used
-    /// creation flow), then Project Details. Worktree creation swipes only on
-    /// a `supermux.worktrees.v1` host.
+    /// A project row's swipe tray: New Worktree revealed first (the fork's
+    /// most-used creation flow), then Project Details. The tray lays its
+    /// actions out left-to-right in array order, so the FIRST-revealed action
+    /// — the one on the trailing edge — is the LAST element. Worktree
+    /// creation swipes only on a `supermux.worktrees.v1` host.
     private func projectSwipeActions(for row: SupermuxProjectRowSnapshot) -> [SupermuxSwipeAction] {
-        var trayActions: [SupermuxSwipeAction] = []
+        var trayActions: [SupermuxSwipeAction] = [
+            SupermuxSwipeAction(
+                id: "details",
+                systemImage: "info.circle",
+                title: String(
+                    localized: "supermux.projects.row.details",
+                    defaultValue: "Project Details",
+                    bundle: .module
+                ),
+                tint: .gray,
+                perform: { actions.openProjectDetail(row.id) }
+            ),
+        ]
         if section.showsWorktreeCreation {
             trayActions.append(SupermuxSwipeAction(
                 id: "new-worktree",
@@ -166,17 +180,6 @@ public struct SupermuxProjectsTableSection: View {
                 perform: { actions.requestNewWorktree(row.id) }
             ))
         }
-        trayActions.append(SupermuxSwipeAction(
-            id: "details",
-            systemImage: "info.circle",
-            title: String(
-                localized: "supermux.projects.row.details",
-                defaultValue: "Project Details",
-                bundle: .module
-            ),
-            tint: .gray,
-            perform: { actions.openProjectDetail(row.id) }
-        ))
         return trayActions
     }
 
@@ -219,6 +222,12 @@ struct SupermuxProjectTableNestedRows: View {
                 SupermuxNestedSkeletonRow()
             }
             .transition(SupermuxProjectMotion.nestedTransition)
+            // The create affordance does not wait for the list fetch: it
+            // fetches its own branch snapshot, so it works — and can show its
+            // preparing spinner — while the skeleton is still up.
+            if showsNewWorktree {
+                newWorktreeRow
+            }
         case .loaded(let worktrees):
             if worktrees.isEmpty, row.openWorkspaces.isEmpty, !showsNewWorktree {
                 SupermuxNestedRowContainer {
@@ -265,16 +274,21 @@ struct SupermuxProjectTableNestedRows: View {
                 .transition(SupermuxProjectMotion.nestedTransition)
             }
             if showsNewWorktree {
-                SupermuxNestedRowContainer(symbol: "plus") {
-                    SupermuxNestedNewWorktreeRow(
-                        projectID: row.id,
-                        isPreparing: actions.preparingNewWorktreeProjectID == row.id,
-                        newWorktree: actions.requestNewWorktree
-                    )
-                }
-                .transition(SupermuxProjectMotion.nestedTransition)
+                newWorktreeRow
             }
         }
+    }
+
+    /// The inline New Worktree row, shared by the loading and loaded slices.
+    private var newWorktreeRow: some View {
+        SupermuxNestedRowContainer(symbol: "plus") {
+            SupermuxNestedNewWorktreeRow(
+                projectID: row.id,
+                isPreparing: actions.preparingNewWorktreeProjectID == row.id,
+                newWorktree: actions.requestNewWorktree
+            )
+        }
+        .transition(SupermuxProjectMotion.nestedTransition)
     }
 
     /// The nested workspace row's swipe tray: the shell's own close action, or

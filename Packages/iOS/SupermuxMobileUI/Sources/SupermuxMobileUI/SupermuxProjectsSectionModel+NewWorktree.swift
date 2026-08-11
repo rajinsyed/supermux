@@ -50,7 +50,10 @@ extension SupermuxProjectsSectionModel {
         let generation = sessionGeneration
         Task {
             defer {
-                if preparingNewWorktreeProjectID == projectID {
+                // Generation-guarded: after a session replacement has already
+                // reset the flow, a NEWER request for the same project owns
+                // the marker — this stale task must not clear its spinner.
+                if sessionGeneration == generation, preparingNewWorktreeProjectID == projectID {
                     preparingNewWorktreeProjectID = nil
                 }
             }
@@ -77,9 +80,12 @@ extension SupermuxProjectsSectionModel {
 
     /// Ends the create flow's transient state when its session goes away
     /// (disconnect or replacement): the presentation's store belongs to the
-    /// dead connection, and a sheet kept open over it could only fail.
+    /// dead connection, and a sheet kept open over it could only fail. A
+    /// surfaced preparation failure drops too — its alert describes the dead
+    /// session, not the one replacing it.
     func resetNewWorktreeFlow() {
         newWorktreePresentation = nil
         preparingNewWorktreeProjectID = nil
+        newWorktreeErrorMessage = nil
     }
 }

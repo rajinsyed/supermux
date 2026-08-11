@@ -157,6 +157,10 @@ struct SupermuxProjectSkeletonRow: View {
 struct SupermuxNestedSkeletonRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shimmering = false
+    // Scaled like the worktree rows that replace it, so the disclosure does
+    // not jump taller the moment the fetch lands. See
+    // SupermuxProjectSkeletonRow.metrics for why this is not `private`.
+    var metrics = SupermuxScaledRowMetrics()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -165,7 +169,7 @@ struct SupermuxNestedSkeletonRow: View {
                 .frame(width: 108, height: 11)
             Spacer(minLength: 0)
         }
-        .frame(minHeight: 32)
+        .frame(minHeight: metrics.compactRowHeight)
         .opacity(shimmering ? 0.45 : 1)
         .onAppear {
             guard !reduceMotion else { return }

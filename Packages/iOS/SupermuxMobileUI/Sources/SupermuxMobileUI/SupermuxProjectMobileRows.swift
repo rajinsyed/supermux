@@ -661,6 +661,12 @@ struct SupermuxProjectNestedRows: View {
             nested {
                 SupermuxNestedSkeletonRow()
             }
+            // The create affordance does not wait for the list fetch: it
+            // fetches its own branch snapshot, so it works — and can show its
+            // preparing spinner — while the skeleton is still up.
+            if showsNewWorktree {
+                newWorktreeRow
+            }
         case .loaded(let worktrees):
             if worktrees.isEmpty, row.openWorkspaces.isEmpty, !showsNewWorktree {
                 nested {
@@ -701,14 +707,19 @@ struct SupermuxProjectNestedRows: View {
                 }
             }
             if showsNewWorktree {
-                nested(symbol: "plus") {
-                    SupermuxNestedNewWorktreeRow(
-                        projectID: row.id,
-                        isPreparing: actions.preparingNewWorktreeProjectID == row.id,
-                        newWorktree: actions.requestNewWorktree
-                    )
-                }
+                newWorktreeRow
             }
+        }
+    }
+
+    /// The inline New Worktree row, shared by the loading and loaded slices.
+    private var newWorktreeRow: some View {
+        nested(symbol: "plus") {
+            SupermuxNestedNewWorktreeRow(
+                projectID: row.id,
+                isPreparing: actions.preparingNewWorktreeProjectID == row.id,
+                newWorktree: actions.requestNewWorktree
+            )
         }
     }
 

@@ -165,4 +165,74 @@ import Testing
         #expect(model.newWorktreePresentation == nil)
         #expect(model.preparingNewWorktreeProjectID == nil)
     }
+
+    @Test func endSessionDropsASurfacedPreparationFailure() async throws {
+        // A surfaced failure alert describes the DEAD session; it must not
+        // linger over the one replacing it.
+        let project = fixtureProject()
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(projects: [project])
+        let (model, session) = try await runningModel(client: client)
+        defer { session.cancel() }
+
+        struct Boom: LocalizedError {
+            var errorDescription: String? { "git exploded" }
+        }
+        client.worktreesListError = Boom()
+        model.requestNewWorktree(project.id)
+        try await wait.until { model.newWorktreeErrorMessage != nil }
+
+        model.endSession()
+        #expect(model.newWorktreeErrorMessage == nil)
+    }
+
+    @Test func aStaleFetchNeverClearsANewerRequestsSpinner() async throws {
+        // A request left in flight across a session replacement must not, on
+        // completion, clear the preparing marker a NEWER request for the same
+        // project now owns.
+        let project = fixtureProject()
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(projects: [project])
+        client.worktreesListResponse = SupermuxWorktreesListResponse(
+            worktrees: [],
+            branches: ["main"]
+        )
+        client.worktreesListShouldHoldBranchFetches = true
+        let (model, session) = try await runningModel(client: client)
+        defer { session.cancel() }
+
+        model.requestNewWorktree(project.id)
+        try await wait.until { model.preparingNewWorktreeProjectID == project.id }
+
+        // Replacement session: resets the flow and bumps the generation while
+        // the first branch fetch is still parked.
+        session.cancel()
+        let replacement = Task {
+            await model.runSession(client: client, hostCapabilities: Set([
+                Self.projectsCapability, Self.worktreesCapability,
+            ]))
+        }
+        defer { replacement.cancel() }
+        try await wait.until {
+            model.preparingNewWorktreeProjectID == nil
+                && model.snapshot.rows.first?.id == project.id
+        }
+
+        // The newer request against the fresh session takes the marker…
+        model.requestNewWorktree(project.id)
+        #expect(model.preparingNewWorktreeProjectID == project.id)
+
+        // …and the stale fetch finishing (FIFO: it parked first) must not
+        // steal its spinner.
+        client.resumeWorktreesList()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.preparingNewWorktreeProjectID == project.id)
+        #expect(model.newWorktreePresentation == nil)
+
+        // Let the still-parked newer fetch finish: it presents normally.
+        client.worktreesListShouldHoldBranchFetches = false
+        client.resumeAllWorktreesList()
+        try await wait.until { model.newWorktreePresentation != nil }
+        #expect(model.preparingNewWorktreeProjectID == nil)
+    }
 }
