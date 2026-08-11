@@ -282,6 +282,13 @@ public final class SupermuxMobileProjectsStore {
         await refetch()
     }
 
+    /// Project ids whose mirrored icon files must survive a list refresh.
+    static func mirroredIconProjectIDsToKeep(
+        from projects: [SupermuxProjectDTO]
+    ) -> Set<String> {
+        Set(projects.lazy.filter { $0.hasCustomIcon == true }.map(\.id))
+    }
+
     private func refetch() async {
         do {
             let response = try await client.projectsList()
@@ -296,9 +303,9 @@ public final class SupermuxMobileProjectsStore {
             // Drop mirrored icons for deleted projects and live projects that
             // no longer carry a custom icon. A banner cannot re-fetch, so keep
             // every current custom-icon project regardless of mirror age.
-            SupermuxSharedProjectIconStore.pruneIcons(keeping: Set(
-                projects.lazy.filter { $0.hasCustomIcon == true }.map(\.id)
-            ))
+            SupermuxSharedProjectIconStore.pruneIcons(
+                keeping: Self.mirroredIconProjectIDsToKeep(from: projects)
+            )
             onProjectsChanged?(projects)
         } catch {
             lastErrorDescription = error.localizedDescription
