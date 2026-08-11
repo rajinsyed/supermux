@@ -55,27 +55,28 @@ struct SupermuxCoffeeModeCoverageTests {
         #expect(!SupermuxCoffeeModeCoverage.off.isDegraded)
     }
 
-    @Test("Active coverage says the Mac stays awake only while open")
-    func activeCoverageStatesLidCaveat() {
+    @Test("A held assertion reports active coverage")
+    func heldAssertionIsActive() {
         let coverage = SupermuxCoffeeModeCoverage(
             isActive: true,
             keepsSystemAwake: true
         )
 
+        #expect(coverage.isActive)
+        #expect(coverage.keepsSystemAwake)
         #expect(!coverage.isDegraded)
-        #expect(coverage.tooltip.contains("Mac stays awake while open"))
-        #expect(coverage.tooltip.contains("closing the lid still sleeps it"))
     }
 
-    @Test("A refused assertion reports unavailable")
+    @Test("A refused assertion reports degraded coverage")
     func refusedAssertionIsDegraded() {
         let coverage = SupermuxCoffeeModeCoverage(
             isActive: true,
             keepsSystemAwake: false
         )
 
+        #expect(coverage.isActive)
+        #expect(!coverage.keepsSystemAwake)
         #expect(coverage.isDegraded)
-        #expect(coverage.tooltip.contains("unavailable"))
     }
 }
 

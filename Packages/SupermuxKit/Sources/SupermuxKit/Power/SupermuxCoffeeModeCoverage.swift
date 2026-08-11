@@ -1,5 +1,3 @@
-import Foundation
-
 /// Describes whether Coffee Mode is active and actually keeping the Mac awake.
 ///
 /// The state is intentionally small. Coffee Mode holds one public IOKit
@@ -31,29 +29,5 @@ public struct SupermuxCoffeeModeCoverage: Sendable, Equatable {
     /// Whether Coffee Mode is on but macOS refused its keep-awake assertion.
     public var isDegraded: Bool {
         isActive && !keepsSystemAwake
-    }
-
-    /// Localized help text that accurately describes the current coverage.
-    ///
-    /// Lid close is never claimed: `PreventUserIdleSystemSleep` prevents only
-    /// idle sleep. Closing a MacBook's lid, choosing Sleep, or reaching critical
-    /// battery still sleeps the Mac.
-    public var tooltip: String {
-        guard isActive else {
-            return String(
-                localized: "supermux.coffee.tooltip.off",
-                defaultValue: "Coffee Mode — keep this Mac awake for running agents"
-            )
-        }
-        guard keepsSystemAwake else {
-            return String(
-                localized: "supermux.coffee.tooltip.unavailable",
-                defaultValue: "Coffee Mode — unavailable, macOS refused the keep-awake request"
-            )
-        }
-        return String(
-            localized: "supermux.coffee.tooltip.on",
-            defaultValue: "Coffee Mode on — Mac stays awake while open (closing the lid still sleeps it)"
-        )
     }
 }

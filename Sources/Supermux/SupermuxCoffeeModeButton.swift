@@ -50,7 +50,7 @@ struct SupermuxCoffeeModeButton: View {
         .buttonStyle(SidebarFooterIconButtonStyle())
         .frame(width: buttonSize, height: buttonSize, alignment: .center)
         .accessibilityElement(children: .ignore)
-        .safeHelp(model.coverage.tooltip)
+        .safeHelp(helpTitle(for: model.coverage))
         .accessibilityLabel(String(
             localized: "supermux.coffee.button",
             defaultValue: "Coffee Mode"
@@ -60,6 +60,28 @@ struct SupermuxCoffeeModeButton: View {
             : String(localized: "supermux.coffee.state.off", defaultValue: "Off"))
         .accessibilityAddTraits(model.isEnabled ? [.isSelected] : [])
         .accessibilityIdentifier("SupermuxCoffeeModeButton")
+    }
+
+    private func helpTitle(for coverage: SupermuxCoffeeModeCoverage) -> String {
+        guard coverage.isActive else {
+            return String(
+                localized: "supermux.coffee.tooltip.off",
+                defaultValue: "Coffee Mode — keep this Mac awake for running agents"
+            )
+        }
+        guard coverage.keepsSystemAwake else {
+            return String(
+                localized: "supermux.coffee.tooltip.unavailable",
+                defaultValue: "Coffee Mode — unavailable, macOS refused the keep-awake request"
+            )
+        }
+        // `PreventUserIdleSystemSleep` stops only idle sleep. Display sleep is
+        // harmless to agents; lid close, explicit sleep, and critical battery
+        // remain normal macOS behavior.
+        return String(
+            localized: "supermux.coffee.tooltip.on",
+            defaultValue: "Coffee Mode on — Mac stays awake while open (closing the lid still sleeps it)"
+        )
     }
 }
 
