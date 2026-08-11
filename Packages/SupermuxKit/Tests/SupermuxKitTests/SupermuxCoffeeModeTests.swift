@@ -3,350 +3,180 @@ import Testing
 
 @testable import SupermuxKit
 
-/// Records what was asked of IOKit and lets a test refuse specific layers, so
-/// the honesty rules can be exercised without changing the machine's real
-/// power behavior.
-private final class StubKeepAwakeAssertions: SupermuxKeepAwakeAsserting, @unchecked Sendable {
-    var powerSource: SupermuxPowerSource
-    /// Layers macOS will refuse; everything else requested is granted.
-    var refusedLayers: Set<SupermuxKeepAwakeLayer>
+@MainActor
+private final class StubKeepAwakeAssertion: SupermuxKeepAwakeAsserting {
+    var acquireSucceeds = true
+    var releaseSucceeds = true
 
-    /// Layers whose RELEASE powerd will refuse, simulating a failed
-    /// IOPMAssertionRelease that leaves the Mac still awake.
-    var unreleasableLayers: Set<SupermuxKeepAwakeLayer> = []
+    private(set) var acquireCount = 0
+    private(set) var releaseCount = 0
+    private(set) var isHeld = false
 
-    private(set) var acquireCalls: [[SupermuxKeepAwakeLayer]] = []
-    private(set) var releaseAllCount = 0
-    private(set) var held: Set<SupermuxKeepAwakeLayer> = []
-
-    init(
-        powerSource: SupermuxPowerSource = .ac,
-        refusedLayers: Set<SupermuxKeepAwakeLayer> = []
-    ) {
-        self.powerSource = powerSource
-        self.refusedLayers = refusedLayers
+    func acquire() -> Bool {
+        acquireCount += 1
+        guard acquireSucceeds else {
+            isHeld = false
+            return false
+        }
+        isHeld = true
+        return true
     }
 
-    func currentPowerSource() -> SupermuxPowerSource { powerSource }
-
-    func acquire(_ layers: [SupermuxKeepAwakeLayer]) -> Set<SupermuxKeepAwakeLayer> {
-        acquireCalls.append(layers)
-        held = Set(layers).subtracting(refusedLayers)
-        return held
-    }
-
-    @discardableResult
-    func releaseAll() -> Set<SupermuxKeepAwakeLayer> {
-        releaseAllCount += 1
-        held = held.intersection(unreleasableLayers)
-        return held
+    func release() -> Bool {
+        releaseCount += 1
+        guard releaseSucceeds else {
+            return false
+        }
+        isHeld = false
+        return true
     }
 }
 
 @MainActor
 private func makeModel(
-    _ assertions: StubKeepAwakeAssertions,
+    assertion: StubKeepAwakeAssertion = StubKeepAwakeAssertion(),
     persisted: Bool = false
-) -> (SupermuxCoffeeModeModel, UserDefaults) {
-    let suiteName = "supermux.coffee.tests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suiteName)!
+) -> (SupermuxCoffeeModeModel, StubKeepAwakeAssertion, UserDefaults) {
+    let defaults = UserDefaults(suiteName: "supermux.coffee.tests.\(UUID().uuidString)")!
     defaults.set(persisted, forKey: SupermuxCoffeeModeModel.enabledDefaultsKey)
-    // No power-source monitor: tests drive `refreshForPowerSourceChange()`
-    // directly rather than waiting on a real plug/unplug run-loop event.
-    let model = SupermuxCoffeeModeModel(
-        assertions: assertions,
-        defaults: defaults,
-        powerSourceMonitor: nil
+    return (
+        SupermuxCoffeeModeModel(assertion: assertion, defaults: defaults),
+        assertion,
+        defaults
     )
-    return (model, defaults)
 }
 
-@Suite("Coffee Mode layer selection")
-struct SupermuxCoffeeModeLayerTests {
-    @Test("AC power requests the deep-sleep layer alongside both idle layers")
-    func acRequestsAllThree() {
-        #expect(SupermuxKeepAwakeLayer.requested(for: .ac) == [
-            .idleSystemSleep, .idleDisplaySleep, .systemSleep,
-        ])
-    }
-
-    /// PreventSystemSleep is marked `kAssertionTypeNotValidOnBatt` by powerd,
-    /// so requesting it on battery would report coverage the Mac lacks.
-    @Test("Battery omits the AC-only deep-sleep layer")
-    func batteryOmitsSystemSleep() {
-        #expect(SupermuxKeepAwakeLayer.requested(for: .battery) == [
-            .idleSystemSleep, .idleDisplaySleep,
-        ])
-    }
-
-    /// An unreadable power source must NOT get the AC-only layer:
-    /// IOPMAssertionCreateWithName succeeds even for a layer powerd marks
-    /// NotValidOnBatt, so an inert assertion looks identical to a working one
-    /// and coverage would overpromise on a battery Mac.
-    @Test("Unknown power source withholds the AC-only layer")
-    func unknownWithholdsSystemSleep() {
-        #expect(!SupermuxPowerSource.unknown.allowsSystemSleepAssertion)
-        #expect(SupermuxKeepAwakeLayer.requested(for: .unknown) == [
-            .idleSystemSleep, .idleDisplaySleep,
-        ])
-    }
-
-    @Test("Battery does not allow the system-sleep assertion")
-    func batteryDisallows() {
-        #expect(!SupermuxPowerSource.battery.allowsSystemSleepAssertion)
-    }
-}
-
-@Suite("Coffee Mode coverage honesty")
+@Suite("Coffee Mode coverage")
 struct SupermuxCoffeeModeCoverageTests {
-    @Test("Full AC coverage holds the deep-sleep layer")
-    func fullCoverage() {
-        let coverage = SupermuxCoffeeModeCoverage(
-            isActive: true,
-            powerSource: .ac,
-            heldLayers: [.idleSystemSleep, .idleDisplaySleep, .systemSleep]
-        )
-        #expect(coverage.keepsSystemAwake)
-        #expect(coverage.preventsDarkWakeSleep)
-        #expect(!coverage.isDegraded)
-        #expect(coverage.tooltip.contains("closing the lid still sleeps it"))
-    }
-
-    @Test("Battery coverage holds only the idle layers")
-    func batteryCoverageWarns() {
-        let coverage = SupermuxCoffeeModeCoverage(
-            isActive: true,
-            powerSource: .battery,
-            heldLayers: [.idleSystemSleep, .idleDisplaySleep]
-        )
-        #expect(coverage.keepsSystemAwake)
-        #expect(!coverage.preventsDarkWakeSleep)
-        #expect(!coverage.isDegraded)
-        #expect(coverage.tooltip.contains("closing the lid still sleeps it"))
-    }
-
-    @Test("Losing every assertion reports degraded, not working")
-    func degradedWhenNothingHeld() {
-        let coverage = SupermuxCoffeeModeCoverage(
-            isActive: true,
-            powerSource: .ac,
-            heldLayers: []
-        )
-        #expect(!coverage.keepsSystemAwake)
-        #expect(coverage.isDegraded)
-        #expect(coverage.tooltip.contains("unavailable"))
-    }
-
     @Test("Inactive coverage claims nothing")
     func offClaimsNothing() {
+        #expect(!SupermuxCoffeeModeCoverage.off.isActive)
         #expect(!SupermuxCoffeeModeCoverage.off.keepsSystemAwake)
-        #expect(!SupermuxCoffeeModeCoverage.off.preventsDarkWakeSleep)
         #expect(!SupermuxCoffeeModeCoverage.off.isDegraded)
+    }
+
+    @Test("Active coverage says the Mac stays awake only while open")
+    func activeCoverageStatesLidCaveat() {
+        let coverage = SupermuxCoffeeModeCoverage(
+            isActive: true,
+            keepsSystemAwake: true
+        )
+
+        #expect(!coverage.isDegraded)
+        #expect(coverage.tooltip.contains("Mac stays awake while open"))
+        #expect(coverage.tooltip.contains("closing the lid still sleeps it"))
+    }
+
+    @Test("A refused assertion reports unavailable")
+    func refusedAssertionIsDegraded() {
+        let coverage = SupermuxCoffeeModeCoverage(
+            isActive: true,
+            keepsSystemAwake: false
+        )
+
+        #expect(coverage.isDegraded)
+        #expect(coverage.tooltip.contains("unavailable"))
     }
 }
 
 @Suite("Coffee Mode model")
 @MainActor
 struct SupermuxCoffeeModeModelTests {
-    @Test("Starts off and holds no assertions")
+    @Test("Starts off without acquiring an assertion")
     func startsOff() {
-        let stub = StubKeepAwakeAssertions()
-        let (model, _) = makeModel(stub)
+        let (model, assertion, _) = makeModel()
+
         #expect(!model.isEnabled)
-        #expect(stub.acquireCalls.isEmpty)
         #expect(model.coverage == .off)
+        #expect(assertion.acquireCount == 0)
     }
 
-    @Test("Enabling acquires assertions and publishes coverage")
+    @Test("Enabling acquires one assertion and persists the state")
     func enablingAcquires() {
-        let stub = StubKeepAwakeAssertions(powerSource: .ac)
-        let (model, defaults) = makeModel(stub)
+        let (model, assertion, defaults) = makeModel()
         model.toggle()
 
         #expect(model.isEnabled)
-        #expect(stub.acquireCalls.count == 1)
-        #expect(model.coverage.preventsDarkWakeSleep)
+        #expect(model.coverage.keepsSystemAwake)
+        #expect(assertion.acquireCount == 1)
+        #expect(assertion.isHeld)
         #expect(defaults.bool(forKey: SupermuxCoffeeModeModel.enabledDefaultsKey))
     }
 
-    @Test("Disabling releases every assertion and resets coverage")
-    func disablingReleases() {
-        let stub = StubKeepAwakeAssertions()
-        let (model, defaults) = makeModel(stub)
-        model.toggle()
-        model.toggle()
-
-        #expect(!model.isEnabled)
-        #expect(stub.releaseAllCount == 1)
-        #expect(stub.held.isEmpty)
-        #expect(model.coverage == .off)
-        #expect(!defaults.bool(forKey: SupermuxCoffeeModeModel.enabledDefaultsKey))
-    }
-
-    /// An agent left running overnight should survive an app restart with the
-    /// Mac still kept awake.
-    @Test("A persisted enabled flag re-acquires assertions at launch")
-    func persistedFlagReacquires() {
-        let stub = StubKeepAwakeAssertions()
-        let (model, _) = makeModel(stub, persisted: true)
-        #expect(model.isEnabled)
-        #expect(stub.acquireCalls.count == 1)
-        #expect(model.coverage.keepsSystemAwake)
-    }
-
-    /// Unplugging must drop the AC-only layer so coverage stops reporting
-    /// protection the Mac no longer has.
-    @Test("Unplugging drops the deep-sleep layer")
-    func unpluggingDowngradesCoverage() {
-        let stub = StubKeepAwakeAssertions(powerSource: .ac)
-        let (model, _) = makeModel(stub)
-        model.toggle()
-        #expect(model.coverage.preventsDarkWakeSleep)
-
-        stub.powerSource = .battery
-        model.refreshForPowerSourceChange()
-
-        #expect(!model.coverage.preventsDarkWakeSleep)
-        #expect(model.coverage.keepsSystemAwake)
-        #expect(stub.acquireCalls.last == [.idleSystemSleep, .idleDisplaySleep])
-    }
-
-    @Test("Plugging back in restores the deep-sleep layer")
-    func pluggingInRestoresCoverage() {
-        let stub = StubKeepAwakeAssertions(powerSource: .battery)
-        let (model, _) = makeModel(stub)
-        model.toggle()
-        #expect(!model.coverage.preventsDarkWakeSleep)
-
-        stub.powerSource = .ac
-        model.refreshForPowerSourceChange()
-
-        #expect(model.coverage.preventsDarkWakeSleep)
-    }
-
-    @Test("Power-source changes while disabled acquire nothing")
-    func powerChangeWhileDisabledIsInert() {
-        let stub = StubKeepAwakeAssertions()
-        let (model, _) = makeModel(stub)
-        model.refreshForPowerSourceChange()
-        #expect(stub.acquireCalls.isEmpty)
-        #expect(model.coverage == .off)
-    }
-
-    /// If macOS refuses the idle assertion, the mode must report degraded
-    /// rather than let the user believe their agents are protected.
-    @Test("A refused idle assertion surfaces as degraded")
-    func refusedAssertionIsDegraded() {
-        let stub = StubKeepAwakeAssertions(
-            powerSource: .ac,
-            refusedLayers: [.idleSystemSleep, .idleDisplaySleep, .systemSleep]
-        )
-        let (model, _) = makeModel(stub)
+    @Test("A refused acquire stays visibly enabled but degraded")
+    func refusedAcquireIsDegraded() {
+        let assertion = StubKeepAwakeAssertion()
+        assertion.acquireSucceeds = false
+        let (model, _, defaults) = makeModel(assertion: assertion)
         model.toggle()
 
         #expect(model.isEnabled)
         #expect(model.coverage.isDegraded)
         #expect(!model.coverage.keepsSystemAwake)
-    }
-
-    @Test("Setting the same value twice does not re-acquire")
-    func idempotentSetEnabled() {
-        let stub = StubKeepAwakeAssertions()
-        let (model, _) = makeModel(stub)
-        model.setEnabled(true)
-        model.setEnabled(true)
-        #expect(stub.acquireCalls.count == 1)
-    }
-
-    /// The core honesty rule. No unprivileged assertion can prevent clamshell
-    /// sleep — powerd's `setClamshellSleepState()` counts only assertions with
-    /// `kAssertionLidStateModifier`, gated on the private
-    /// `com.apple.private.iokit.assertonlidclose` entitlement. So every active
-    /// tooltip must say the lid still sleeps the Mac, never imply otherwise.
-    @Test("No active tooltip ever promises lid-close coverage", arguments: [
-        SupermuxPowerSource.ac, .battery, .unknown,
-    ])
-    func tooltipNeverPromisesLidClose(powerSource: SupermuxPowerSource) {
-        for layers in [
-            Set(SupermuxKeepAwakeLayer.allCases),
-            Set([SupermuxKeepAwakeLayer.idleSystemSleep, .idleDisplaySleep]),
-            Set([SupermuxKeepAwakeLayer.idleSystemSleep]),
-        ] {
-            let tooltip = SupermuxCoffeeModeCoverage(
-                isActive: true,
-                powerSource: powerSource,
-                heldLayers: layers
-            ).tooltip
-            #expect(tooltip.contains("closing the lid still sleeps it"))
-            #expect(!tooltip.contains("including with the lid closed"))
-        }
-    }
-
-    /// A refused IOPMAssertionRelease leaves the Mac awake. Going Off there
-    /// would show an inactive icon over a live assertion with nothing left to
-    /// release it — the exact dishonesty this design exists to avoid. Every
-    /// signal must stay ON and agree: flag, persisted value, and coverage.
-    @Test("A refused release leaves the mode fully on, not Off")
-    func refusedReleaseStaysOn() {
-        let stub = StubKeepAwakeAssertions(powerSource: .ac)
-        stub.unreleasableLayers = [.idleSystemSleep]
-        let (model, defaults) = makeModel(stub)
-        model.toggle()
-        model.toggle()
-
-        #expect(model.isEnabled)
         #expect(defaults.bool(forKey: SupermuxCoffeeModeModel.enabledDefaultsKey))
-        #expect(model.coverage.isActive)
-        #expect(model.coverage.keepsSystemAwake)
     }
 
-    /// Because `isEnabled` never flipped, the very next toggle is another
-    /// release attempt rather than a redundant acquire.
-    @Test("The next toggle retries a previously refused release")
-    func toggleRetriesRefusedRelease() {
-        let stub = StubKeepAwakeAssertions(powerSource: .ac)
-        stub.unreleasableLayers = [.idleSystemSleep]
-        let (model, _) = makeModel(stub)
+    @Test("Disabling releases the assertion and clears persistence")
+    func disablingReleases() {
+        let (model, assertion, defaults) = makeModel()
         model.toggle()
-        model.toggle()
-        #expect(model.isEnabled)
-
-        // powerd recovers; the next single toggle actually lets it go.
-        stub.unreleasableLayers = []
         model.toggle()
 
         #expect(!model.isEnabled)
         #expect(model.coverage == .off)
-        #expect(stub.held.isEmpty)
-        #expect(stub.releaseAllCount == 2)
+        #expect(assertion.releaseCount == 1)
+        #expect(!assertion.isHeld)
+        #expect(!defaults.bool(forKey: SupermuxCoffeeModeModel.enabledDefaultsKey))
     }
 
-    /// If IOPSNotificationCreateRunLoopSource fails, an unplug is undetectable.
-    /// Claiming the AC-only layer would then report protection that silently
-    /// goes inert the moment the user unplugs, with nothing to notice it.
-    @Test("Unobservable power source withholds the AC-only layer")
-    func unobservablePowerSourceWithholdsACLayer() {
-        let stub = StubKeepAwakeAssertions(powerSource: .ac)
-        let monitor = FailingPowerSourceMonitor()
-        let suiteName = "supermux.coffee.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        let model = SupermuxCoffeeModeModel(
-            assertions: stub,
-            defaults: defaults,
-            powerSourceMonitor: monitor
-        )
+    @Test("A refused release leaves every signal on")
+    func refusedReleaseStaysOn() {
+        let assertion = StubKeepAwakeAssertion()
+        assertion.releaseSucceeds = false
+        let (model, _, defaults) = makeModel(assertion: assertion)
+        model.toggle()
         model.toggle()
 
+        #expect(model.isEnabled)
         #expect(model.coverage.keepsSystemAwake)
-        #expect(!model.coverage.preventsDarkWakeSleep)
-        #expect(stub.acquireCalls.last == [.idleSystemSleep, .idleDisplaySleep])
+        #expect(assertion.isHeld)
+        #expect(defaults.bool(forKey: SupermuxCoffeeModeModel.enabledDefaultsKey))
     }
-}
 
-/// A monitor whose run-loop source cannot be created, mirroring the documented
-/// NULL return from `IOPSNotificationCreateRunLoopSource`.
-@MainActor
-private final class FailingPowerSourceMonitor: SupermuxPowerSourceObserving {
-    func start(onChange: @escaping () -> Void) -> Bool { false }
-    func stop() {}
+    @Test("The next toggle retries a previously refused release")
+    func retryRefusedRelease() {
+        let assertion = StubKeepAwakeAssertion()
+        assertion.releaseSucceeds = false
+        let (model, _, _) = makeModel(assertion: assertion)
+        model.toggle()
+        model.toggle()
+        #expect(model.isEnabled)
+
+        assertion.releaseSucceeds = true
+        model.toggle()
+
+        #expect(!model.isEnabled)
+        #expect(model.coverage == .off)
+        #expect(assertion.releaseCount == 2)
+    }
+
+    @Test("A persisted enabled state re-acquires at construction")
+    func persistedStateReacquires() {
+        let (model, assertion, _) = makeModel(persisted: true)
+
+        #expect(model.isEnabled)
+        #expect(model.coverage.keepsSystemAwake)
+        #expect(assertion.acquireCount == 1)
+    }
+
+    @Test("Setting the current state is idempotent")
+    func idempotentSetEnabled() {
+        let (model, assertion, _) = makeModel()
+        model.setEnabled(false)
+        #expect(assertion.releaseCount == 0)
+
+        model.setEnabled(true)
+        model.setEnabled(true)
+        #expect(assertion.acquireCount == 1)
+    }
 }

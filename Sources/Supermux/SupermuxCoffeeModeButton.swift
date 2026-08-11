@@ -6,7 +6,10 @@ import SwiftUI
 extension SupermuxComposition {
     /// App-wide Coffee Mode model: one set of power assertions shared by every
     /// window's sidebar footer, so the toggle reads the same in all windows.
-    static let coffeeModeModel = SupermuxCoffeeModeModel()
+    static let coffeeModeModel = SupermuxCoffeeModeModel(
+        assertion: SupermuxKeepAwakeAssertion(),
+        defaults: .standard
+    )
 
     /// Forces the model into existence at launch so a persisted "on" state is
     /// re-applied. Swift `static let` is lazy, and the button below is the only
@@ -23,9 +26,9 @@ extension SupermuxComposition {
 /// buttons and upstream's help "?" button (see the `sidebar-coffee-mode-button`
 /// touchpoint in `ContentView.swift`).
 ///
-/// Keeps the Mac awake so long-running agents are not cut off by sleep. Unlike
-/// Sleepy Mode — which also holds power assertions but blacks out every screen
-/// with a screensaver — this is just the keep-awake half, as a one-click toggle.
+/// Keeps the Mac from idle-sleeping so long-running agents are not cut off.
+/// Unlike Sleepy Mode—which keeps the display awake behind a full-screen
+/// screensaver—Coffee Mode lets the display turn off normally.
 ///
 /// Purely additive: upstream's help button and the fork's usage buttons all
 /// keep rendering untouched next to it.
@@ -46,8 +49,6 @@ struct SupermuxCoffeeModeButton: View {
         }
         .buttonStyle(SidebarFooterIconButtonStyle())
         .frame(width: buttonSize, height: buttonSize, alignment: .center)
-        // Plug/unplug is handled by the model's own IOPS run-loop monitor
-        // (the lid-close layer is AC-only), so the view stays a pure toggle.
         .accessibilityElement(children: .ignore)
         .safeHelp(model.coverage.tooltip)
         .accessibilityLabel(String(
@@ -83,6 +84,7 @@ private struct SupermuxCoffeeModeIcon: View {
 
     var body: some View {
         Image(systemName: symbolName)
+            .contentTransition(.symbolEffect(.replace))
             .font(.system(size: pointSize, weight: .medium))
             .foregroundStyle(foreground)
             .frame(
