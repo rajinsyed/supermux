@@ -75,8 +75,6 @@ if [[ "$*" == *'--entitlements :- --xml'* ]]; then
 <key>aps-environment</key><string>production</string>
 <key>application-identifier</key><string>ABCD123456.com.supermux.ios</string>
 <key>com.apple.developer.team-identifier</key><string>ABCD123456</string>
-<key>com.apple.developer.usernotifications.time-sensitive</key><true/>
-<key>com.apple.developer.applesignin</key><array><string>Default</string></array>
 </dict></plist>
 PLIST
 fi
@@ -95,8 +93,6 @@ if [[ "${1:-}" == "cms" ]]; then
 <key>aps-environment</key><string>production</string>
 <key>application-identifier</key><string>ABCD123456.com.supermux.ios</string>
 <key>com.apple.developer.team-identifier</key><string>ABCD123456</string>
-<key>com.apple.developer.usernotifications.time-sensitive</key><true/>
-<key>com.apple.developer.applesignin</key><array><string>Default</string></array>
 </dict>
 </dict></plist>
 PLIST
@@ -202,7 +198,7 @@ grep -F -- 'devicectl device info details --device test-phone' "$TMP_DIR/xcrun.l
 grep -F -- 'devicectl device install app --device test-phone ' "$TMP_DIR/xcrun.log" >/dev/null
 grep -F -- 'devicectl device process launch --terminate-existing --device test-phone com.supermux.ios' "$TMP_DIR/xcrun.log" >/dev/null
 grep -F -- '--verify --strict --verbose=2 ' "$TMP_DIR/codesign.log" >/dev/null
-grep -F -- '==> Verified iOS signature and required production entitlements for team ABCD123456' "$OUTPUT_FILE" >/dev/null
+grep -F -- '==> Verified iOS signature and production APNs entitlement for team ABCD123456' "$OUTPUT_FILE" >/dev/null
 grep -F -- '==> Installed Supermux (com.supermux.ios)' "$OUTPUT_FILE" >/dev/null
 grep -F -- '==> Launched Supermux on iPhone' "$OUTPUT_FILE" >/dev/null
 
