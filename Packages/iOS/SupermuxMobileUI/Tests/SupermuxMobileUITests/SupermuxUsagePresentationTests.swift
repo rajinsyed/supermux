@@ -280,6 +280,24 @@ import Testing
         )?.isEmpty == false)
     }
 
+    /// A failed first RPC replaces the indefinite loading state with the real
+    /// error, while a later failure keeps rendering the last-good snapshot.
+    @Test func initialFetchFailureSurfacesOnlyBeforeTheFirstSuccess() {
+        let offline = "The paired Mac is offline."
+        #expect(SupermuxUsageScreen.initialFailureDescription(
+            hasLoaded: false,
+            errorDescription: offline
+        ) == offline)
+        #expect(SupermuxUsageScreen.initialFailureDescription(
+            hasLoaded: false,
+            errorDescription: nil
+        ) == nil)
+        #expect(SupermuxUsageScreen.initialFailureDescription(
+            hasLoaded: true,
+            errorDescription: offline
+        ) == nil)
+    }
+
     @Test func providerDetailShowsPlanForCodexAndAccountNameForClaude() {
         #expect(SupermuxUsageScreen.providerDetail(SupermuxUsageProviderDTO(
             state: SupermuxUsageProviderDTO.readyState,
