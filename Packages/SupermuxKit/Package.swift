@@ -20,6 +20,8 @@ let package = Package(
         .package(path: "../macOS/CmuxGit"),
         // Shared wire contract with the iOS companion app (mobile.supermux.* DTOs).
         .package(path: "../Shared/SupermuxMobileCore"),
+        // Claude Code stream-json protocol model shared with the iOS harness UI.
+        .package(path: "../Shared/SupermuxClaudeHarness"),
     ],
     targets: [
         .target(
@@ -28,6 +30,7 @@ let package = Package(
                 .product(name: "CmuxFoundation", package: "CmuxFoundation"),
                 .product(name: "CmuxGit", package: "CmuxGit"),
                 .product(name: "SupermuxMobileCore", package: "SupermuxMobileCore"),
+                .product(name: "SupermuxClaudeHarness", package: "SupermuxClaudeHarness"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
@@ -40,6 +43,7 @@ let package = Package(
             dependencies: [
                 "SupermuxKit",
                 .product(name: "SupermuxMobileCore", package: "SupermuxMobileCore"),
+                .product(name: "SupermuxClaudeHarness", package: "SupermuxClaudeHarness"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
