@@ -2135,6 +2135,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		D35B71010000000000000001 /* StartupBreadcrumbLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D35B71010000000000000002 /* StartupBreadcrumbLog.swift */; };
 		C0DE70530000000000000002 /* submit-cmux-profile in Copy CLI */ = {isa = PBXBuildFile; fileRef = C0DE70530000000000000001 /* submit-cmux-profile */; };
 		50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B1 /* SupermuxAppGlue.swift */; };
+		50BE00010000000000000106 /* SupermuxCoffeeModeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000105 /* SupermuxCoffeeModeButton.swift */; };
 		50BE00010000000000000104 /* SupermuxDirectPhonePush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000103 /* SupermuxDirectPhonePush.swift */; };
 		50BE000100000000000000F6 /* SupermuxEmptyHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F5 /* SupermuxEmptyHomeView.swift */; };
 		50BE000100000000000000F3 /* SupermuxFileExplorerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */; };
@@ -4836,6 +4837,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 		D35B71010000000000000002 /* StartupBreadcrumbLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/StartupBreadcrumbLog.swift; sourceTree = "<group>"; };
 		C0DE70530000000000000001 /* submit-cmux-profile */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "Resources/bin/submit-cmux-profile"; sourceTree = SOURCE_ROOT; };
 		50BE000100000000000000B1 /* SupermuxAppGlue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxAppGlue.swift; sourceTree = "<group>"; };
+		50BE00010000000000000105 /* SupermuxCoffeeModeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxCoffeeModeButton.swift; sourceTree = "<group>"; };
 		50BE00010000000000000103 /* SupermuxDirectPhonePush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxDirectPhonePush.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F5 /* SupermuxEmptyHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxEmptyHomeView.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxFileExplorerCommands.swift; sourceTree = "<group>"; };
@@ -5616,6 +5618,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */,
 				50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */,
 				50BE000100000000000000FD /* SupermuxUsageMenuButton.swift */,
+				50BE00010000000000000105 /* SupermuxCoffeeModeButton.swift */,
 				50BE00010000000000000101 /* SupermuxPanelAgentEvidence.swift */,
 				50BE000100000000000000FF /* SupermuxUsageAnalyticsMenuButton.swift */,
 				50BE000100000000000000D3 /* SupermuxWorkspaceSwitcherViewState.swift */,
@@ -10075,6 +10078,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				A5C017000000000000000005 /* StackAccountAvatarView.swift in Sources */,
 				D35B71010000000000000001 /* StartupBreadcrumbLog.swift in Sources */,
 				50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */,
+				50BE00010000000000000106 /* SupermuxCoffeeModeButton.swift in Sources */,
 				50BE00010000000000000104 /* SupermuxDirectPhonePush.swift in Sources */,
 				50BE000100000000000000F6 /* SupermuxEmptyHomeView.swift in Sources */,
 				50BE000100000000000000F3 /* SupermuxFileExplorerCommands.swift in Sources */,

@@ -266809,6 +266809,108 @@
         }
       }
     },
+    "supermux.coffee.button" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffee Mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コーヒーモード"
+          }
+        }
+      }
+    },
+    "supermux.coffee.state.off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフ"
+          }
+        }
+      }
+    },
+    "supermux.coffee.state.on" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オン"
+          }
+        }
+      }
+    },
+    "supermux.coffee.tooltip.off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffee Mode — keep this Mac awake for running agents"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コーヒーモード — 実行中のエージェントのためにこの Mac をスリープさせません"
+          }
+        }
+      }
+    },
+    "supermux.coffee.tooltip.on" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffee Mode on \u2014 Mac stays awake while open (closing the lid still sleeps it)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コーヒーモード オン — 開いている間 Mac はスリープしません（ふたを閉じるとスリープします）"
+          }
+        }
+      }
+    },
+    "supermux.coffee.tooltip.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffee Mode — unavailable, macOS refused the keep-awake request"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コーヒーモード — 利用できません。macOS がスリープ防止の要求を拒否しました"
+          }
+        }
+      }
+    },
     "supermux.common.cancel" : {
       "extractionState" : "manual",
       "localizations" : {

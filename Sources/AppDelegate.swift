@@ -1389,6 +1389,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         claimAuthCallbackURLSchemes()
         StartupBreadcrumbLog.append("appDelegate.didFinish.authSchemes.claimed")
 
+        // SUPERMUX:begin coffee-mode-restore
+        // Re-acquire the keep-awake assertions here rather than lazily from the
+        // sidebar button: `SupermuxComposition.coffeeModeModel` is a `static
+        // let`, so nothing would construct it in presentation modes that hide
+        // the footer, and a Mac left with Coffee Mode on would silently sleep
+        // after a relaunch.
+        SupermuxComposition.restoreCoffeeMode()
+        // SUPERMUX:end coffee-mode-restore
+
         // Install the Feed (workstream) store. Separate from the transport
         // wiring: the store is a plain singleton here, and the socket
         // `feed.*` V2 verbs in `TerminalController` push into it directly

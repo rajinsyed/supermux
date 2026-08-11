@@ -14943,6 +14943,9 @@ struct SidebarFooterButtons: View {
                         // SUPERMUX:begin sidebar-usage-analytics-button
                         SupermuxUsageAnalyticsMenuButton()
                         // SUPERMUX:end sidebar-usage-analytics-button
+                        // SUPERMUX:begin sidebar-coffee-mode-button
+                        SupermuxCoffeeModeButton()
+                        // SUPERMUX:end sidebar-coffee-mode-button
                         SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
                     }
                 }
