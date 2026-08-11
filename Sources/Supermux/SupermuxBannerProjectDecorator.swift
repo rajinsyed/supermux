@@ -36,8 +36,8 @@ enum SupermuxBannerProjectDecorator {
     private static let renderer = SupermuxProjectAvatarRenderer()
 
     /// Rendered avatar bytes per project, keyed by the identity that produced
-    /// them, so repeated notifications from one project rasterize once.
-    /// Bounded: projects are few, and a stale entry is evicted by its key.
+    /// them, so repeated notifications from one project rasterize once. A changed
+    /// rendered identity adds a new entry; notification volume alone does not.
     @MainActor private static var avatarCache: [AvatarKey: Data] = [:]
 
     private struct AvatarKey: Hashable {
@@ -45,6 +45,7 @@ enum SupermuxBannerProjectDecorator {
         let colorHex: String?
         let iconSymbol: String?
         let iconETag: String?
+        let avatarLetter: String
     }
 
     /// Decorates `content` in place.
@@ -118,7 +119,10 @@ enum SupermuxBannerProjectDecorator {
             iconSymbol: project.iconSymbol,
             // Included so replacing a project's icon file re-renders instead of
             // serving the previous logo forever.
-            iconETag: project.iconETag
+            iconETag: project.iconETag,
+            // The generated letter path rasterizes this glyph. A rename that
+            // changes the initial must not reuse the old banner chip.
+            avatarLetter: project.avatarLetter
         )
         if let cached = avatarCache[key] { return cached }
         guard let data = renderer.pngData(for: project, image: image) else { return nil }

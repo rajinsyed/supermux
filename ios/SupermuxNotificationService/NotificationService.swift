@@ -57,12 +57,16 @@ final class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        // The project's real logo when the app has mirrored one, otherwise the
-        // generated chip. Circular-masked either way: iOS renders a
+        // The project's real logo only when THIS notification snapshot says an
+        // icon exists; stale mirrored bytes must not override an icon removal.
+        // Otherwise use the generated chip. Circular-masked either way: iOS renders a
         // communication avatar as a circle, and an unmasked square logo would
         // have its corners clipped rather than fitted.
+        let mirroredIcon = project.hasIcon
+            ? SharedProjectIconStore.iconData(forProjectID: project.id)
+            : nil
         let avatar = (
-            SharedProjectIconStore.iconData(forProjectID: project.id)
+            mirroredIcon
                 .flatMap { ProjectAvatarRenderer.circularPNGData(from: $0) }
                 ?? ProjectAvatarRenderer.pngData(
                     projectID: project.id,
@@ -153,6 +157,7 @@ private struct PushProject {
     let name: String
     let colorHex: String?
     let iconSymbol: String?
+    let hasIcon: Bool
 
     init?(userInfo: [AnyHashable: Any]) {
         guard let cmux = userInfo["cmux"] as? [String: Any],
@@ -166,6 +171,7 @@ private struct PushProject {
         self.name = name
         self.colorHex = project["colorHex"] as? String
         self.iconSymbol = project["iconSymbol"] as? String
+        self.hasIcon = project["hasIcon"] as? Bool == true
     }
 }
 

@@ -93,7 +93,9 @@ public enum SupermuxNotificationGrouping {
             }
         }
 
-        return order.compactMap { key in
+        let otherKey = SupermuxNotificationSection<Item>.otherSectionID
+        let displayOrder = order.filter { $0 != otherKey } + order.filter { $0 == otherKey }
+        return displayOrder.compactMap { key in
             guard let bucket = grouped[key] else { return nil }
             return SupermuxNotificationSection(
                 id: key,

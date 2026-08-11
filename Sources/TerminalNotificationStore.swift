@@ -1763,7 +1763,10 @@ final class TerminalNotificationStore: ObservableObject {
             paneFlash: notification.paneFlash,
             scrollPosition: notification.scrollPosition,
             clickAction: notification.clickAction,
-            replyShape: notification.replyShape
+            replyShape: notification.replyShape,
+            // SUPERMUX:begin notification-project-identity
+            project: notification.project
+            // SUPERMUX:end notification-project-identity
         )
     }
 
@@ -1869,7 +1872,10 @@ final class TerminalNotificationStore: ObservableObject {
                 paneFlash: notification.paneFlash,
                 scrollPosition: notification.scrollPosition,
                 clickAction: notification.clickAction,
-                replyShape: notification.replyShape
+                replyShape: notification.replyShape,
+                // SUPERMUX:begin notification-project-identity
+                project: notification.project
+                // SUPERMUX:end notification-project-identity
             )
         }
         if didMoveNotification {

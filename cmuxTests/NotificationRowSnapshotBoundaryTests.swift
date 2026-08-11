@@ -2,6 +2,7 @@ import CmuxTerminal
 import CmuxTerminalCore
 import Foundation
 import SwiftUI
+import SupermuxMobileCore
 import Testing
 
 #if canImport(cmux_DEV)
@@ -452,6 +453,30 @@ struct NotificationRowSnapshotBoundaryTests {
         #expect(surfaceView.performedBindingActions == ["scroll_to_row:344"])
     }
 
+    @Test func projectIconSnapshotDeduplicatesProjectsAndSkipsInvalidIDs() {
+        let projectID = UUID()
+        let project = SupermuxNotificationProject(id: projectID.uuidString, name: "Project")
+        let invalidProject = SupermuxNotificationProject(id: "not-a-uuid", name: "Invalid")
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        var requestedIDs: [UUID] = []
+
+        let icons = SupermuxNotificationProjectBridge.projectIcons(
+            for: [
+                Self.makeNotification(project: project),
+                Self.makeNotification(project: project),
+                Self.makeNotification(project: invalidProject),
+            ],
+            imageForProject: {
+                requestedIDs.append($0)
+                return image
+            }
+        )
+
+        #expect(requestedIDs == [projectID])
+        #expect(icons[projectID.uuidString].map { $0 === image } == true)
+        #expect(icons.count == 1)
+    }
+
     // MARK: - Fixtures
 
     private func notificationScrollbar(total: UInt64, offset: UInt64, len: UInt64) -> GhosttyScrollbar {
@@ -467,7 +492,8 @@ struct NotificationRowSnapshotBoundaryTests {
 
     private static func makeNotification(
         id: UUID = UUID(),
-        isRead: Bool = false
+        isRead: Bool = false,
+        project: SupermuxNotificationProject? = nil
     ) -> TerminalNotification {
         TerminalNotification(
             id: id,
@@ -477,7 +503,8 @@ struct NotificationRowSnapshotBoundaryTests {
             subtitle: "",
             body: "Build succeeded",
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
-            isRead: isRead
+            isRead: isRead,
+            project: project
         )
     }
 }

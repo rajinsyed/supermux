@@ -235,6 +235,13 @@ build_archive_local() {
   # Same UNSIGNED Release archive the fleet builds, so the downstream export/
   # re-sign/upload path is identical. CODE_SIGNING_ALLOWED=NO keeps signing out of
   # the archive; upload-testflight.sh does all signing.
+  # SUPERMUX:begin ios-communication-notifications
+  # SUPERMUX_APP_BUNDLE_ID, not PRODUCT_BUNDLE_IDENTIFIER: a command-line build
+  # setting applies to EVERY target in the workspace, which would stamp the
+  # app's id onto the notification service extension too. iOS refuses to load
+  # an extension whose bundle id is not a child of its container, so the
+  # extension derives its id from this variable instead (ios/Config/Shared.xcconfig).
+  # SUPERMUX:end ios-communication-notifications
   ( cd "$REPO_ROOT" && xcodebuild archive \
       -workspace ios/cmux.xcworkspace \
       -scheme cmux-ios \
@@ -242,13 +249,6 @@ build_archive_local() {
       -destination 'generic/platform=iOS' \
       -archivePath "$ARCHIVE_PATH" \
       -derivedDataPath "$out/DerivedData" \
-      # SUPERMUX:begin ios-communication-notifications
-      # SUPERMUX_APP_BUNDLE_ID, not PRODUCT_BUNDLE_IDENTIFIER: a command-line build
-      # setting applies to EVERY target in the workspace, which would stamp the
-      # app's id onto the notification service extension too. iOS refuses to load
-      # an extension whose bundle id is not a child of its container, so the
-      # extension derives its id from this variable instead (ios/Config/Shared.xcconfig).
-      # SUPERMUX:end ios-communication-notifications
       SUPERMUX_APP_BUNDLE_ID="$BETA_BUNDLE_ID" \
       ${LANE_DISPLAY_NAME:+PRODUCT_DISPLAY_NAME="$LANE_DISPLAY_NAME"} \
       CURRENT_PROJECT_VERSION="$build_number" \

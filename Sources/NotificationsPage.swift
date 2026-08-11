@@ -59,6 +59,14 @@ struct NotificationsPage: View {
         .onChange(of: notificationStore.notifications.first?.id) {
             setInitialFocus()
         }
+        // SUPERMUX:begin notifications-panel-redesign
+        .onChange(of: showsUnreadOnly) {
+            setInitialFocus()
+        }
+        .onChange(of: notificationStore.unreadNotificationCount) {
+            setInitialFocus()
+        }
+        // SUPERMUX:end notifications-panel-redesign
         .onChange(of: isFocused) {
             setInitialFocus()
         }
@@ -91,7 +99,7 @@ struct NotificationsPage: View {
         // Icons are read ABOVE the lazy boundary and handed down as immutable
         // values: no view below a LazyVStack may hold a reference to an
         // observable store (CLAUDE.md / issue #2586).
-        let icons = projectIcons(for: notifications)
+        let icons = SupermuxNotificationProjectBridge.projectIcons(for: notifications)
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: groupsByProject ? 18 : 6, pinnedViews: []) {
                 if notifications.isEmpty {
@@ -120,21 +128,6 @@ struct NotificationsPage: View {
             project: { $0.project },
             isUnread: { !$0.isRead }
         )
-    }
-
-    /// The decoded icon for every project present in `notifications`, resolved
-    /// once per render above the list boundary.
-    private func projectIcons(for notifications: [TerminalNotification]) -> [String: NSImage] {
-        var icons: [String: NSImage] = [:]
-        for notification in notifications {
-            guard let project = notification.project,
-                  icons[project.id] == nil,
-                  let uuid = UUID(uuidString: project.id),
-                  let image = SupermuxComposition.projectIconStore.image(for: uuid)
-            else { continue }
-            icons[project.id] = image
-        }
-        return icons
     }
 
     @ViewBuilder
@@ -221,13 +214,14 @@ struct NotificationsPage: View {
 
     private func setInitialFocus() {
         // Background-mounted pane tabs must not claim focus when their feed changes.
-        guard isFocused,
-              isVisibleInUI,
-              let firstId = notificationStore.notifications.first?.id else {
+        guard isFocused, isVisibleInUI else {
             focusedNotificationId = nil
             return
         }
-        focusedNotificationId = firstId
+        focusedNotificationId = SupermuxNotificationFocusPolicy().focusedID(
+            visibleIDs: visibleNotifications.map(\.id),
+            current: focusedNotificationId
+        )
     }
 
     private var header: some View {

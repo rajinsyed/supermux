@@ -114,6 +114,11 @@ private func mobileNotificationFeedListBoundedProject(
         decoded.name,
         limitedToUTF8Bytes: limits.metadataByteLimit
     )
+    if let colorHex = decoded.colorHex, colorHex.utf8.count > limits.metadataByteLimit {
+        // Drop malformed decoration rather than truncating it into a different
+        // potentially-valid color. The notification row itself stays intact.
+        bounded.colorHex = nil
+    }
     if let etag = decoded.iconETag, etag.utf8.count > limits.identifierByteLimit {
         bounded.iconETag = nil
     }

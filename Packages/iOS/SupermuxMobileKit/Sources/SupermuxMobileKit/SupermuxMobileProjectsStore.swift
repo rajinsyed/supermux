@@ -293,12 +293,12 @@ public final class SupermuxMobileProjectsStore {
             }
             hasLoaded = true
             lastErrorDescription = nil
-            // Drop mirrored icons for projects that no longer exist, so the
-            // shared container cannot accumulate logos for deleted projects
-            // forever. Keyed on the live id set rather than on age: a live
-            // project's icon must never be evicted, because a push banner has
-            // no way to re-fetch it.
-            SupermuxSharedProjectIconStore.pruneIcons(keeping: Set(projects.map(\.id)))
+            // Drop mirrored icons for deleted projects and live projects that
+            // no longer carry a custom icon. A banner cannot re-fetch, so keep
+            // every current custom-icon project regardless of mirror age.
+            SupermuxSharedProjectIconStore.pruneIcons(keeping: Set(
+                projects.lazy.filter { $0.hasCustomIcon == true }.map(\.id)
+            ))
             onProjectsChanged?(projects)
         } catch {
             lastErrorDescription = error.localizedDescription

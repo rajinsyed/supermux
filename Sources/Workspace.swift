@@ -2473,6 +2473,17 @@ final class Workspace: Identifiable, ObservableObject {
     }
     var restoredUnreadPanelIds: Set<UUID> { Set(restoredUnreadPanelIndicators.keys) }
 
+    // SUPERMUX:begin supermux-mobile-workspace-fields
+    /// Emits whenever the exact pane-level unread set serialized to the phone can change.
+    var supermuxUnreadPanelIDsPublisher: AnyPublisher<Void, Never> {
+        Publishers.Merge(
+            $manualUnreadPanelIds.map { _ in () },
+            $restoredUnreadPanelIndicators.map { _ in () }
+        )
+        .eraseToAnyPublisher()
+    }
+    // SUPERMUX:end supermux-mobile-workspace-fields
+
     var hasAnyRestoredUnreadPanelIndicator: Bool { !restoredUnreadPanelIndicators.isEmpty }
     @Published private(set) var tmuxLayoutSnapshot: LayoutSnapshot?
     @Published private(set) var tmuxWorkspaceFlashPanelId: UUID?

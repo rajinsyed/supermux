@@ -409,6 +409,11 @@ final class MobileWorkspaceListObserver {
                 workspace.currentDirectoryChangeRevisionPublisher()
                     .map { _ in () }
                     .eraseToAnyPublisher(),
+                // SUPERMUX:begin supermux-mobile-workspace-fields
+                // Pane A → A+B is visible on the phone even while the workspace
+                // unread boolean stays true, so observe the exact pane set too.
+                workspace.supermuxUnreadPanelIDsPublisher,
+                // SUPERMUX:end supermux-mobile-workspace-fields
                 workspace.$activeRemoteTerminalSessionCount.map { _ in () }.eraseToAnyPublisher(),
                 // Pure drag-reorders change spatial order without changing the panel
                 // set; bonsplit selection state is not `@Published`, so this counter

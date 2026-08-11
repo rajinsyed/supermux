@@ -46,7 +46,9 @@ NSE_ADHOC_PROFILE_NAME="${SUPERMUX_IOS_NSE_PROVISIONING_PROFILE_SPECIFIER:-Super
 # Shared container for project icon PNGs. The app writes them; the extension
 # reads them to paint the real logo on a push banner. Must match
 # SupermuxSharedProjectIconStore.appGroupIdentifier and both entitlements files.
-APP_GROUP_ID="${SUPERMUX_IOS_APP_GROUP:-group.com.supermux.ios}"
+# This is a fixed runtime contract, not an independently configurable build knob.
+APP_GROUP_ID="group.com.supermux.ios"
+REQUESTED_APP_GROUP_ID="${SUPERMUX_IOS_APP_GROUP:-${APP_GROUP_ID}}"
 DISTRIBUTION_IDENTITY="${SUPERMUX_IOS_DISTRIBUTION_IDENTITY:-Apple Distribution}"
 DERIVED_DATA="${SUPERMUX_IOS_DERIVED_DATA:-${HOME}/Library/Developer/Xcode/DerivedData/cmux-ios-supermux-release}"
 LAUNCH=1
@@ -87,6 +89,9 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+[[ "${REQUESTED_APP_GROUP_ID}" == "${APP_GROUP_ID}" ]] \
+  || die "SUPERMUX_IOS_APP_GROUP is fixed at ${APP_GROUP_ID}; runtime readers and entitlements must change together"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

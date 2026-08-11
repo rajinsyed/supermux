@@ -1,4 +1,7 @@
 import Foundation
+// SUPERMUX:begin notification-project-identity
+import SupermuxMobileCore
+// SUPERMUX:end notification-project-identity
 
 struct SessionNotificationSnapshot: Codable, Sendable {
     var id: UUID
@@ -12,6 +15,9 @@ struct SessionNotificationSnapshot: Codable, Sendable {
     var correlationKey: String?
     var scrollPosition: TerminalNotificationScrollPosition?
     var clickAction: TerminalNotificationClickAction?
+    // SUPERMUX:begin notification-project-identity
+    var project: SupermuxNotificationProject?
+    // SUPERMUX:end notification-project-identity
 
     init(
         id: UUID,
@@ -24,7 +30,10 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         retargetsToLiveSurfaceOwner: Bool? = nil,
         correlationKey: String? = nil,
         scrollPosition: TerminalNotificationScrollPosition? = nil,
-        clickAction: TerminalNotificationClickAction? = nil
+        clickAction: TerminalNotificationClickAction? = nil,
+        // SUPERMUX:begin notification-project-identity
+        project: SupermuxNotificationProject? = nil
+        // SUPERMUX:end notification-project-identity
     ) {
         self.id = id
         self.title = title
@@ -37,6 +46,9 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         self.correlationKey = correlationKey
         self.scrollPosition = scrollPosition
         self.clickAction = clickAction
+        // SUPERMUX:begin notification-project-identity
+        self.project = project
+        // SUPERMUX:end notification-project-identity
     }
 
     init(notification: TerminalNotification) {
@@ -54,7 +66,10 @@ struct SessionNotificationSnapshot: Codable, Sendable {
             retargetsToLiveSurfaceOwner: notification.retargetsToLiveSurfaceOwner,
             correlationKey: notification.correlationKey,
             scrollPosition: persistedScrollPosition,
-            clickAction: notification.clickAction
+            clickAction: notification.clickAction,
+            // SUPERMUX:begin notification-project-identity
+            project: notification.project
+            // SUPERMUX:end notification-project-identity
         )
     }
 
@@ -76,7 +91,10 @@ struct SessionNotificationSnapshot: Codable, Sendable {
             isRead: isRead,
             paneFlash: paneFlash ?? true,
             scrollPosition: restoredScrollPosition,
-            clickAction: clickAction
+            clickAction: clickAction,
+            // SUPERMUX:begin notification-project-identity
+            project: project
+            // SUPERMUX:end notification-project-identity
         )
     }
 }

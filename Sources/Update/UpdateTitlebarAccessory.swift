@@ -2620,7 +2620,7 @@ private struct NotificationsPopoverView: View {
             // Project icons resolved ONCE above the LazyVStack and handed down
             // as immutable values — the same snapshot-boundary rule the title
             // index above follows (#2586 / #5794).
-            let projectIcons = Self.supermuxProjectIcons(for: snapshot)
+            let projectIcons = SupermuxNotificationProjectBridge.projectIcons(for: snapshot)
             ScrollView {
                 // Grouped and spaced like the notifications panel, reading the
                 // SAME persisted grouping preference, so the bell popover and the
@@ -2695,28 +2695,6 @@ private struct NotificationsPopoverView: View {
             // SUPERMUX:end notification-read-toggle-shared
         )
         .equatable()  // snapshot-boundary: skip unchanged rows (#5794)
-    }
-    // SUPERMUX:end notification-popover-redesign
-
-    // SUPERMUX:begin notification-popover-redesign
-    /// Decoded icons for every project present in `notifications`, resolved
-    /// once per render above the popover's list boundary.
-    ///
-    /// Static and value-returning on purpose: the rows below the `LazyVStack`
-    /// receive `NSImage` values, never a reference to the icon store.
-    private static func supermuxProjectIcons(
-        for notifications: [TerminalNotification]
-    ) -> [String: NSImage] {
-        var icons: [String: NSImage] = [:]
-        for notification in notifications {
-            guard let project = notification.project,
-                  icons[project.id] == nil,
-                  let uuid = UUID(uuidString: project.id),
-                  let image = SupermuxComposition.projectIconStore.image(for: uuid)
-            else { continue }
-            icons[project.id] = image
-        }
-        return icons
     }
     // SUPERMUX:end notification-popover-redesign
 

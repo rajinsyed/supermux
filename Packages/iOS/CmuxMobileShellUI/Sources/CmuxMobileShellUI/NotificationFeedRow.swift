@@ -250,18 +250,34 @@ private struct NotificationFeedProvenance: View {
             // SUPERMUX:begin notification-feed-project-row
             // The title already says the workspace, so the leading slot is free
             // for the project — the one identifier the title never carries.
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                if let projectName {
-                    NotificationFeedProject(name: projectName, allowsWrapping: false)
-                        .fixedSize(horizontal: true, vertical: false)
+            // Match the sibling provenance path's horizontal/vertical fallback:
+            // two fixed-width labels cannot both fit at narrow widths or larger
+            // Dynamic Type sizes.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    if let projectName {
+                        NotificationFeedProject(name: projectName, allowsWrapping: false)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    Spacer(minLength: 8)
+                    NotificationFeedComputer(
+                        name: computerName,
+                        isReachable: computerIsReachable,
+                        allowsWrapping: false
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
                 }
-                Spacer(minLength: 8)
-                NotificationFeedComputer(
-                    name: computerName,
-                    isReachable: computerIsReachable,
-                    allowsWrapping: false
-                )
-                .fixedSize(horizontal: true, vertical: false)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    if let projectName {
+                        NotificationFeedProject(name: projectName, allowsWrapping: true)
+                    }
+                    NotificationFeedComputer(
+                        name: computerName,
+                        isReachable: computerIsReachable,
+                        allowsWrapping: true
+                    )
+                }
             }
             // SUPERMUX:end notification-feed-project-row
         } else {

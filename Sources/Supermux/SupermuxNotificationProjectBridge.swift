@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SupermuxKit
 import SupermuxMobileCore
@@ -56,5 +57,37 @@ enum SupermuxNotificationProjectBridge {
             projects: projects,
             associations: SupermuxComposition.workspaceAssociations
         )
+    }
+
+    /// Resolves one immutable icon snapshot for every project in a notification list.
+    ///
+    /// Call above a `LazyVStack` boundary and pass the returned values down to
+    /// rows; no observable icon store crosses into the lazy subtree.
+    /// - Parameter notifications: Notification snapshots whose project icons are needed.
+    /// - Returns: Decoded images keyed by project identifier.
+    static func projectIcons(
+        for notifications: [TerminalNotification]
+    ) -> [String: NSImage] {
+        projectIcons(
+            for: notifications,
+            imageForProject: { SupermuxComposition.projectIconStore.image(for: $0) }
+        )
+    }
+
+    /// Testable variant with an injected icon lookup.
+    static func projectIcons(
+        for notifications: [TerminalNotification],
+        imageForProject: (UUID) -> NSImage?
+    ) -> [String: NSImage] {
+        var icons: [String: NSImage] = [:]
+        for notification in notifications {
+            guard let project = notification.project,
+                  icons[project.id] == nil,
+                  let uuid = UUID(uuidString: project.id),
+                  let image = imageForProject(uuid)
+            else { continue }
+            icons[project.id] = image
+        }
+        return icons
     }
 }
