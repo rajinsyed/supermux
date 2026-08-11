@@ -543,7 +543,9 @@ struct SupermuxProjectWorkspaceRow: View {
                 Spacer(minLength: 4)
                 // Status cluster on the trailing edge, mac order: activity,
                 // PR badge, run indicator (idle activity renders nothing).
-                SupermuxWorkspaceActivityDot(activity: workspace.activity)
+                // 9: this row titles in `.subheadline`, matching the sidebar's
+                // nested rows rather than the shell tiles' headline scale.
+                SupermuxWorkspaceActivityDot(activity: workspace.activity, size: 9)
                 if let pullRequest = workspace.pullRequest {
                     SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
                 }

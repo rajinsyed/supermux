@@ -429,7 +429,9 @@ struct SupermuxSidebarWorkspaceRow: View {
             if workspace.isRunning {
                 SupermuxMobileRunIndicator()
             }
-            SupermuxWorkspaceActivityDot(activity: workspace.activity, size: 7)
+            // 9, not the tiles' 11: this row titles in `.subheadline`, so the
+            // indicator scales down with the type beside it.
+            SupermuxWorkspaceActivityDot(activity: workspace.activity, size: 9)
             if workspace.hasUnread {
                 SupermuxMobileUnreadBadge(count: workspace.unreadCount, fontSize: 9)
             }
