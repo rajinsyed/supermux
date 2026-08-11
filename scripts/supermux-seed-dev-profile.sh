@@ -88,13 +88,18 @@ DST_CRED="$DST_DIR/credentials.json"
 
 # Wait for the previous same-tag app instance to actually exit before seeding,
 # otherwise its shutdown could rewrite the seeded credentials file. reload.sh
-# already asked it to quit; this only bounds the race.
+# already asked it to quit; this only bounds the race. The pattern is also in
+# this script's own argv, so filter out our own PID and parent to be safe
+# against a pgrep -f self-match.
+matching_app_pids() {
+  pgrep -f "$WAIT_FOR_EXIT_PATH" 2>/dev/null | grep -vx -e "$$" -e "$PPID" || true
+}
 if [[ -n "$WAIT_FOR_EXIT_PATH" ]]; then
   for _ in $(seq 1 50); do
-    pgrep -f "$WAIT_FOR_EXIT_PATH" >/dev/null 2>&1 || break
+    [[ -n "$(matching_app_pids)" ]] || break
     sleep 0.1
   done
-  if pgrep -f "$WAIT_FOR_EXIT_PATH" >/dev/null 2>&1; then
+  if [[ -n "$(matching_app_pids)" ]]; then
     die "previous tagged app is still running ($WAIT_FOR_EXIT_PATH); not seeding over a live process"
   fi
 fi

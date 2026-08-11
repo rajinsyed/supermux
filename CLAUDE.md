@@ -126,7 +126,8 @@ build literally named "cmux Mobile Fix" and cost a round trip). The name comes f
 sanctioned per-build naming knob is `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"` above (leading space,
 quoted): the xcconfig templates `PRODUCT_DISPLAY_NAME = Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)`,
 so every dogfood install shows as "Supermux <tag>" on the home screen while official builds stay
-"Supermux". Always pass it with the same `<tag>` as the bundle id. Same never-pass rule for
+"Supermux". Always pass it with the current build's `<tag>` (the bundle id stays fixed; the
+suffix is what identifies the installed build). Same never-pass rule for
 `ASSETCATALOG_COMPILER_APPICON_NAME` — a command-line override applies to every target in the
 workspace and fails actool in the SwiftPM resource bundles.
 
