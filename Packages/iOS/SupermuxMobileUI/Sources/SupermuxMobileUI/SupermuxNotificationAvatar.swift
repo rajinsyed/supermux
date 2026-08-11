@@ -42,18 +42,17 @@ public struct SupermuxNotificationAvatar: View {
         return Color(red: palette.red, green: palette.green, blue: palette.blue)
     }
 
-    /// The already-decoded icon for this project, if the cache holds one for
-    /// the exact etag the notification recorded. A stale etag misses on
-    /// purpose: a gradient chip is better than a previous project's logo.
+    /// The already-decoded icon for this project, from whatever the Projects
+    /// list last fetched.
+    ///
+    /// Matched by project id rather than by exact icon identity. A notification
+    /// carries a snapshot frozen when it fired, so its token is routinely older
+    /// than the cache's — demanding an exact match would miss on essentially
+    /// every notification and fall back to a letter avatar while the correct
+    /// logo sat in memory. The icon is decoration here, not content: showing
+    /// the project's current logo is right even if the notification predates it.
     private var icon: Image? {
-        guard project.hasIconImage else { return nil }
-        return SupermuxProjectIconImageCache.shared.image(
-            for: SupermuxProjectIconIdentity(
-                projectID: project.id,
-                hasCustomIcon: true,
-                iconETag: project.iconETag
-            )
-        )
+        SupermuxProjectIconImageCache.shared.anyImage(forProjectID: project.id)
     }
 
     public var body: some View {

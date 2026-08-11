@@ -25,14 +25,15 @@ enum SupermuxNotificationProjectBridge {
     /// delivery path.
     private static let resolver = SupermuxNotificationProjectResolver(
         iconToken: { projectID in
-            // A rendered NSImage in the warm store is the same signal the
-            // sidebar uses to draw an image avatar. Its object identity doubles
-            // as the change token: the store replaces the image only when the
-            // underlying file's path/mtime/size moved, so a new pointer means
-            // new bytes. Cheap, allocation-free, and never touches the disk.
-            guard let image = SupermuxComposition.projectIconStore
-                .image(for: projectID) else { return nil }
-            return String(UInt(bitPattern: ObjectIdentifier(image).hashValue), radix: 16)
+            // The store's own content identity (root/custom paths + each
+            // resolved file's path, mtime, size). Read from the warm cache, so
+            // no filesystem probing happens on the delivery path.
+            //
+            // NOT an in-process object hash: the phone compares this token
+            // against one it received in a different process, so only a value
+            // derived from the file itself can ever mean the same thing on
+            // both sides. A pointer hash would be a token that never matches.
+            SupermuxComposition.projectIconStore.contentToken(for: projectID)
         }
     )
 
