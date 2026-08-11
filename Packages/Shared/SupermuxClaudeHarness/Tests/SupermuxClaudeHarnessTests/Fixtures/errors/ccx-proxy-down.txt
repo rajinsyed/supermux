@@ -1,0 +1,6 @@
+command: CCX_PROXY_URL=http://localhost:1 /Users/syedrajin/.local/bin/ccx -p --output-format stream-json --input-format stream-json --include-partial-messages --verbose
+exit_code: 1
+stdout:
+stderr:
+[1;31mccx:[0m DroidProxy is not answering at http://localhost:1.
+    Open the DroidProxy menubar app, or set CCX_PROXY_URL.

@@ -1,0 +1,8 @@
+attempted_launcher: /tmp/supermux-claude-harness-fixtures/nonexistent-claude-launcher
+stage: OS process spawn (before any Claude protocol bytes exist)
+exception_type: FileNotFoundError
+errno: 2
+strerror: No such file or directory
+filename: /tmp/supermux-claude-harness-fixtures/nonexistent-claude-launcher
+classification: launcher_not_found
+note: This is an OS-level ENOENT failure, so there is no stdout, stderr, exit code, system.init, or result line to decode.
