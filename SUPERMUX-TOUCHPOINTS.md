@@ -1543,6 +1543,16 @@ The fenced text records the Release invocation used for real phone dogfood (`CMU
 `CMUX_IOS_AUTH_ENV=production`, personal team `NRGUG8GVV4` plus the #53 entitlements file, distinct
 dogfood bundle id so it sits beside the user's main install).
 
+The dogfood lane also passes `SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements`,
+pointing the notification service extension at the capability-free file and so stripping the app
+group (#384) it carries by default. It must name a FILE: a bare `SETTING=` is dropped by xcodebuild
+(the xcconfig default wins), and `'SETTING=""'` resolves to the literal path `ios/""`. The dogfood extension id
+(`com.supermux.ios.dogfood.notification-service`) has no registered App ID, so it signs against the
+wildcard team profile, which carries no App Groups capability; leaving the entitlement in fails the
+build outright. The cost is that dogfood push banners show the generated avatar chip rather than the
+real project logo — the fixed-identity lane (#372), which owns registered App IDs and profiles, is
+where that path is verified.
+
 Since #374 the identity and entitlements overrides go through the app-scoped variables
 `SUPERMUX_APP_BUNDLE_ID` and `SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS`, **not** `PRODUCT_BUNDLE_IDENTIFIER`
 / `CODE_SIGN_ENTITLEMENTS` directly. A command-line build setting applies to every target in the

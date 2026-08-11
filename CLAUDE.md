@@ -89,6 +89,7 @@ xcodebuild -workspace ios/cmux.xcworkspace -scheme cmux-ios \
   -allowProvisioningUpdates \
   SUPERMUX_APP_BUNDLE_ID=com.supermux.ios.dogfood \
   SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
+  SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements \
   SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>" \
   CMUX_GIT_SHA="$(git rev-parse --short=10 HEAD)" \
   CMUX_DEV_TAG= CMUX_PRESENCE_BASE_URL= CMUX_IOS_AUTH_ENV=production \
@@ -114,8 +115,19 @@ xcrun devicectl device process launch --terminate-existing --device <device-id> 
   in place with login, pairing, and settings intact. `SUPERMUX_IOS_DISPLAY_SUFFIX` still carries the
   current tag, so the home-screen name says which build is installed.
 - `DEVELOPMENT_TEAM=NRGUG8GVV4` is the personal team, which is also why
-  `CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` is required (touchpoint #53 strips the
-  capabilities that team lacks).
+  `SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` is required (touchpoint #53 strips
+  the capabilities that team lacks).
+- `SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` points the notification service
+  extension at the capability-free entitlements file, stripping the app group (#384) it carries by
+  default. The dogfood extension id (`com.supermux.ios.dogfood.notification-service`) has no
+  registered App ID, so it signs against the wildcard team profile, which has no App Groups
+  capability; leave the default in and the build fails with *"Provisioning profile … doesn't support
+  the group.com.supermux.ios App Group"*. Consequence: dogfood push banners show the generated
+  avatar chip, not the real project logo — verify that path on the fixed-identity build
+  (`scripts/supermux-ios-release.sh`), which owns registered App IDs and profiles.
+  **Point it at a file; do not try to blank it.** A bare `SETTING=` is dropped by xcodebuild (the
+  xcconfig default wins and the build still fails), while `'SETTING=""'` becomes the literal
+  two-quote path `ios/""` and fails with *"The file … could not be opened"*.
 - Resolve `<device-id>` from `CMUX_IPHONE_DEVICE_ID`, `~/.config/cmux/iphone-device-id`, or
   `xcrun devicectl list devices`. `install` works with the phone locked; `launch` fails with
   `BSErrorCodeDescription = Locked` — report that as "installed, tap to open", not as a failure.
