@@ -91,7 +91,11 @@ public struct MobilePushSystemSettings: Equatable, Sendable {
         if !notificationCenterEnabled {
             result.insert(.notificationCenterDisabled)
         }
-        if !timeSensitiveEnabled { result.insert(.timeSensitiveDisabled) }
+        // SUPERMUX:begin ios-direct-apns-token
+        if timeSensitiveSupported && !timeSensitiveEnabled {
+            result.insert(.timeSensitiveDisabled)
+        }
+        // SUPERMUX:end ios-direct-apns-token
         if scheduledDeliveryEnabled && !timeSensitiveEnabled {
             result.insert(.scheduledDeliveryEnabled)
         }
