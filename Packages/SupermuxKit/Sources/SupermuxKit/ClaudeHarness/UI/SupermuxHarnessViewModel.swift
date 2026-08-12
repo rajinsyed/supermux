@@ -204,7 +204,15 @@ public final class SupermuxHarnessViewModel {
         } else {
             identity = .new(sessionID: UUID().uuidString.lowercased())
         }
+        // The registry key MUST be the persisted record key (the stable
+        // surface ID): the mobile host looks live sessions up by
+        // `record.stableSurfaceID`, so a random key would make the phone
+        // report an active desktop session as ended — and let a phone-side
+        // resume spawn a second child for the same provider session. The
+        // panel ID is the fallback for panels whose stable ID has not been
+        // adopted yet (no record exists, so no cross-device lookup either).
         let configuration = ClaudeSessionConfiguration(
+            id: stableSurfaceID ?? panelID,
             launcher: launcher,
             workingDirectory: workingDirectory,
             identity: identity,
@@ -215,6 +223,24 @@ public final class SupermuxHarnessViewModel {
             SupermuxHarnessSessionPersistence(store: store, stableSurfaceID: $0)
         }
         do {
+            // A live session under this key can already exist (the phone
+            // resumed this panel's session while the desktop was showing the
+            // setup form). Attach to a running one; replace a dead one.
+            if let existing = registry.session(id: configuration.id) {
+                switch await existing.processPhase {
+                case .dormant, .spawning, .handshaking, .running, .stopping:
+                    self.session = existing
+                    self.sessionID = configuration.id
+                    phase = .session
+                    startupError = nil
+                    restorableQueueEntries = []
+                    observe(existing)
+                    await loadModels()
+                    return
+                case .exited, .failed:
+                    await registry.remove(id: configuration.id)
+                }
+            }
             let session = try await registry.create(
                 configuration: configuration, persistence: persistence
             )
@@ -457,23 +483,39 @@ public final class SupermuxHarnessViewModel {
     private func persistRecord() async {
         guard let stableSurfaceID, let launcher else { return }
         let providerSessionID = await session?.claudeSessionID
-        var record = await store.load(stableSurfaceID: stableSurfaceID)
-            ?? SupermuxHarnessSessionRecord(
-                stableSurfaceID: stableSurfaceID,
-                launcher: launcher,
-                workingDirectory: workingDirectory
-            )
-        record.launcher = launcher
-        record.workingDirectory = workingDirectory
-        record.claudeSessionID = providerSessionID ?? record.claudeSessionID
-        record.model = selectedModel ?? record.model
-        record.effortLevel = effortLevel ?? record.effortLevel
-        record.fastMode = fastMode
-        record.maxThinkingTokens = maxThinkingTokens ?? record.maxThinkingTokens
-        record.derivedTitle = derivedTitle ?? record.derivedTitle
-        record.lastActiveAt = Date()
-        try? await store.save(record)
-        resumableSessionID = record.claudeSessionID
+        // One atomic read-modify-write on the store actor: a separate
+        // load + save pair here races the session actor's own persistence
+        // sink, and the loser's save would erase the winner's fields
+        // (queue delivery states, the provider session ID).
+        let workingDirectory = workingDirectory
+        let selectedModel = selectedModel
+        let effortLevel = effortLevel
+        let fastMode = fastMode
+        let maxThinkingTokens = maxThinkingTokens
+        let derivedTitle = derivedTitle
+        let saved = try? await store.update(
+            stableSurfaceID: stableSurfaceID,
+            default: {
+                SupermuxHarnessSessionRecord(
+                    stableSurfaceID: stableSurfaceID,
+                    launcher: launcher,
+                    workingDirectory: workingDirectory
+                )
+            }
+        ) { record in
+            record.launcher = launcher
+            record.workingDirectory = workingDirectory
+            record.claudeSessionID = providerSessionID ?? record.claudeSessionID
+            record.model = selectedModel ?? record.model
+            record.effortLevel = effortLevel ?? record.effortLevel
+            record.fastMode = fastMode
+            record.maxThinkingTokens = maxThinkingTokens ?? record.maxThinkingTokens
+            record.derivedTitle = derivedTitle ?? record.derivedTitle
+            record.lastActiveAt = Date()
+        }
+        if let saved {
+            resumableSessionID = saved.claudeSessionID
+        }
     }
 
     private func deriveTitleIfNeeded(from prompt: String) {
