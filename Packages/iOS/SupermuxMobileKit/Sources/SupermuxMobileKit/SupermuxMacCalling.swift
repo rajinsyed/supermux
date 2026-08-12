@@ -214,6 +214,86 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func usageState(_ request: SupermuxUsageStateRequest) async throws -> SupermuxUsageStateDTO
 
+    /// `mobile.supermux.claude.sessions.list`: every retained Claude harness
+    /// session on the Mac, plus a monotonic registry version.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeSessionsList(
+        _ request: SupermuxClaudeSessionsListRequest
+    ) async throws -> SupermuxClaudeSessionsListResponse
+
+    /// `mobile.supermux.claude.session.create`: spawns a harness session and
+    /// answers once its startup handshake settled (or failed, in which case
+    /// the snapshot's state is `failed` and `stderr_excerpt` explains why).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeSessionCreate(
+        _ request: SupermuxClaudeSessionCreateRequest
+    ) async throws -> SupermuxClaudeSessionResponse
+
+    /// `mobile.supermux.claude.session.get`: one authoritative snapshot.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeSessionGet(
+        _ request: SupermuxClaudeSessionGetRequest
+    ) async throws -> SupermuxClaudeSessionResponse
+
+    /// `mobile.supermux.claude.session.resume`: relaunches an ended session
+    /// with its PERSISTED launcher and Claude session id.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeSessionResume(
+        _ request: SupermuxClaudeSessionResumeRequest
+    ) async throws -> SupermuxClaudeSessionResponse
+
+    /// `mobile.supermux.claude.session.end`: stops the process gracefully and
+    /// keeps the session listed.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeSessionEnd(
+        _ request: SupermuxClaudeSessionEndRequest
+    ) async throws -> SupermuxClaudeAcknowledgementResponse
+
+    /// `mobile.supermux.claude.session.delete`: removes the session record.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeSessionDelete(
+        _ request: SupermuxClaudeSessionDeleteRequest
+    ) async throws -> SupermuxClaudeAcknowledgementResponse
+
+    /// `mobile.supermux.claude.send`: submits a prompt. While a turn is
+    /// running the Mac queues it — the phone keeps no queue of its own.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeSend(_ request: SupermuxClaudeSendRequest) async throws -> SupermuxClaudeSendResponse
+
+    /// `mobile.supermux.claude.interrupt`: sends a protocol interrupt.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeInterrupt(
+        _ request: SupermuxClaudeInterruptRequest
+    ) async throws -> SupermuxClaudeAcknowledgementResponse
+
+    /// `mobile.supermux.claude.set_option`: mutates model, effort, fast mode,
+    /// or thinking budget and returns the reconciled value.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeSetOption(
+        _ request: SupermuxClaudeSetOptionRequest
+    ) async throws -> SupermuxClaudeSetOptionResponse
+
+    /// `mobile.supermux.claude.options`: model catalog, effort levels, slash
+    /// commands, and Mac-side launcher availability.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeOptions(_ request: SupermuxClaudeOptionsRequest) async throws -> SupermuxClaudeOptionsResponse
+
+    /// `mobile.supermux.claude.history`: one page of transcript messages.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeHistory(_ request: SupermuxClaudeHistoryRequest) async throws -> SupermuxClaudeHistoryResponse
+
+    /// `mobile.supermux.claude.tool_payload`: one bounded chunk of an
+    /// untruncated tool output or diff.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeToolPayload(
+        _ request: SupermuxClaudeToolPayloadRequest
+    ) async throws -> SupermuxClaudeToolPayloadResponse
+
+    /// `mobile.supermux.claude.watch`: acquires, renews, or releases this
+    /// device's lease on the transcript event firehose.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func claudeWatch(_ request: SupermuxClaudeWatchRequest) async throws -> SupermuxClaudeWatchResponse
+
     /// Subscribes to `supermux.*` event topics. Events are payload-light
     /// pokes; consumers refetch through the matching request method. The
     /// stream finishes when the underlying connection drops; consumers

@@ -210,6 +210,97 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, Sup
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func claudeSessionsList(
+        _ request: SupermuxClaudeSessionsListRequest
+    ) async throws -> SupermuxClaudeSessionsListResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeSessionCreate(
+        _ request: SupermuxClaudeSessionCreateRequest
+    ) async throws -> SupermuxClaudeSessionResponse {
+        // Startup waits for the launcher's handshake, and ccx additionally
+        // runs a five-second DroidProxy preflight before exec, so this one
+        // call legitimately outlives the default RPC deadline.
+        try await send(
+            method: request.wireMethod,
+            params: request.wireParams,
+            timeoutNanoseconds: Self.sessionStartTimeoutNanoseconds
+        )
+    }
+
+    public func claudeSessionGet(
+        _ request: SupermuxClaudeSessionGetRequest
+    ) async throws -> SupermuxClaudeSessionResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeSessionResume(
+        _ request: SupermuxClaudeSessionResumeRequest
+    ) async throws -> SupermuxClaudeSessionResponse {
+        try await send(
+            method: request.wireMethod,
+            params: request.wireParams,
+            timeoutNanoseconds: Self.sessionStartTimeoutNanoseconds
+        )
+    }
+
+    public func claudeSessionEnd(
+        _ request: SupermuxClaudeSessionEndRequest
+    ) async throws -> SupermuxClaudeAcknowledgementResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeSessionDelete(
+        _ request: SupermuxClaudeSessionDeleteRequest
+    ) async throws -> SupermuxClaudeAcknowledgementResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeSend(_ request: SupermuxClaudeSendRequest) async throws -> SupermuxClaudeSendResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeInterrupt(
+        _ request: SupermuxClaudeInterruptRequest
+    ) async throws -> SupermuxClaudeAcknowledgementResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeSetOption(
+        _ request: SupermuxClaudeSetOptionRequest
+    ) async throws -> SupermuxClaudeSetOptionResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeOptions(
+        _ request: SupermuxClaudeOptionsRequest
+    ) async throws -> SupermuxClaudeOptionsResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeHistory(
+        _ request: SupermuxClaudeHistoryRequest
+    ) async throws -> SupermuxClaudeHistoryResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeToolPayload(
+        _ request: SupermuxClaudeToolPayloadRequest
+    ) async throws -> SupermuxClaudeToolPayloadResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func claudeWatch(_ request: SupermuxClaudeWatchRequest) async throws -> SupermuxClaudeWatchResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    /// Deadline for the two session-start calls. The Mac spawns a process,
+    /// waits for `system.init`, and (for ccx) may spend five seconds in a
+    /// proxy preflight first; the phone's default RPC deadline is tuned for
+    /// ordinary reads and would abandon a healthy startup.
+    private static let sessionStartTimeoutNanoseconds: UInt64 = 60 * 1_000_000_000
+
     public func registerPhonePush(
         _ request: SupermuxPhonePushRegistrationRequest
     ) async throws -> SupermuxPhonePushRegistrationResponse {
@@ -238,31 +329,36 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, Sup
     /// Opens the live event stream for the given `supermux.*` topics.
     ///
     /// Registers server-side AFTER the local listener exists so no event
-    /// falls between subscribe and handshake; a failed handshake finishes
-    /// the stream (the server never feeds an unregistered connection). The
-    /// stream also finishes when the connection drops; store run loops
-    /// resubscribe. Consumer cancellation withdraws the server-side
-    /// registration.
+    /// falls between subscribe and handshake, and AWAITS the server's
+    /// registration acknowledgement before returning: callers begin their
+    /// authoritative fetch the moment this returns, and an unacknowledged
+    /// registration would let the final event of a turn slip between that
+    /// fetch and the server actually feeding this connection — a hole no
+    /// later `event_no` gap would ever reveal. A failed handshake returns an
+    /// already-finished stream (the server never feeds an unregistered
+    /// connection); store run loops treat that as an unhealthy pass and
+    /// back off. The stream also finishes when the connection drops; store
+    /// run loops resubscribe. Consumer cancellation withdraws the
+    /// server-side registration.
     public func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {
         let topicStrings = topics.map(\.rawValue).sorted()
         let envelopes = await client.subscribe(to: Set(topicStrings))
         let client = self.client
         let streamID = UUID().uuidString
+        do {
+            let subscribe = try MobileCoreRPCClient.requestData(
+                method: "mobile.events.subscribe",
+                params: [
+                    "topics": topicStrings,
+                    "stream_id": streamID,
+                ]
+            )
+            _ = try await client.sendRequest(subscribe)
+        } catch {
+            return AsyncStream { continuation in continuation.finish() }
+        }
         return AsyncStream { continuation in
             let pump = Task {
-                do {
-                    let subscribe = try MobileCoreRPCClient.requestData(
-                        method: "mobile.events.subscribe",
-                        params: [
-                            "topics": topicStrings,
-                            "stream_id": streamID,
-                        ]
-                    )
-                    _ = try await client.sendRequest(subscribe)
-                } catch {
-                    continuation.finish()
-                    return
-                }
                 for await envelope in envelopes {
                     guard let event = SupermuxMobileEvent(
                         topic: envelope.topic,

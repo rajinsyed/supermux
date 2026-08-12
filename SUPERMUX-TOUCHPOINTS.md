@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **396**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **412**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -420,8 +420,77 @@ Rules for adding a touchpoint:
 | 404 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxProjectsSectionModel.swift` | `unfenced` | Revalidates the live store, project presence, custom-icon flag, and icon etag after the async fetch before writing the app-group mirror. A stale response cannot resurrect a removed or replaced logo |
 | 405 | `Packages/iOS/SupermuxMobileKit/Sources/SupermuxMobileKit/SupermuxMobileProjectsStore.swift` | `unfenced` | Prunes the shared push-avatar mirror against live projects unless `hasCustomIcon` is explicitly `false`: deleted and confirmed-iconless projects lose stale files, while optional `nil` from older hosts remains "unknown" and preserves bytes a banner cannot re-fetch |
 | 406 | `scripts/supermux-ios-release.sh` | `unfenced` | Treats `group.com.supermux.ios` as the fixed entitlement/runtime-reader contract. A conflicting `SUPERMUX_IOS_APP_GROUP` now fails before `xcodebuild` instead of producing a signature that verifies while both readers silently open another container |
+| 407 | `Sources/Panels/AgentSessionPanelView.swift` | `supermux-claude-harness-panel` | Branches the visible agent-session panel on the PROVIDER, not on a renderer kind: `providerID == .claude` renders the fork's native harness (`SupermuxClaudeHarnessMount`), while codex/opencode keep the upstream `AgentSessionWebRenderer` untouched. Chosen over a new `PanelType` case (~12 upstream switch sites) or a new `AgentSessionRendererKind` case (which is persisted with a SYNTHESIZED `Codable` and would throw mid-`SessionPanelSnapshot` decode on an upstream build) |
+| 408 | `Sources/Panels/AgentSessionPanel.swift` | `supermux-claude-harness-lifecycle` | One line in `close()` terminating the panel's harness session. **Required, not optional:** `AgentSessionPanelView` renders `Color.clear` whenever `isVisibleInUI` is false while the `claude` process must keep running, so teardown cannot live in `onDisappear` — and a missed teardown is a leaked child process, not a leaked view |
+| 409 | `Sources/ContentView.swift` | `supermux-claude-harness-palette` | Two one-line inserts registering the "New Claude Code Session" command: the contribution beside `.newSimulatorPane`, and `registry.registerSupermuxClaudeHarness(tabManager:)` beside `registerNewSimulatorPane`. Both bodies live in the fork-owned `Sources/Supermux/SupermuxClaudeHarnessLauncher.swift`, modeled on `SimulatorCommandPaletteIntegration.swift`, so only the two call lines are fenced |
+| 410 | `Sources/cmuxApp.swift` | `supermux-claude-harness-menu` | One File-menu `Button` opening a native Claude harness surface, mirroring `menu.file.newSimulatorPane`. It calls the same `SupermuxClaudeHarnessLauncher.open(tabManager:)` the palette uses — one shared action path, per the fork's shared-behavior rule |
+| 413 | `Sources/AppDelegate.swift` | `supermux-claude-harness-terminate` | One call in `applicationWillTerminate` (beside `CloudVMActionLauncher.shared.terminateAll()`): `SupermuxClaudeHarness.terminateAllForAppShutdown()` gives every live harness child stdin EOF + SIGTERM **synchronously** (no actor hop — a spawned task might never run before exit). Without it a child mid-turn relies on eventually noticing stdin EOF and can outlive the app |
+| 411 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-claude-button` | Two iOS-only fences mirroring #340b: the internal `@State supermuxClaude = SupermuxClaudeSectionModel()` beside the usage model (guarded by `#if os(iOS)`), and a `.supermuxClaudeDriver(model:connection:)` on the stable iOS `workspaceTable` right after the usage driver. The driver owns the harness session `.task` keyed on connection identity; cancellation (a navigation push) pauses the subscription but keeps the store, so the entry holds its badge and a pop resumes instead of reloading. Must stay on the stable iOS view — never inside the toolbar branch or a table cell |
+| 412 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Toolbar.swift` | `supermux-mobile-claude-button` | One fence: `SupermuxClaudeToolbarButton(model: supermuxClaude)` in the iOS `.topBarTrailing` `ToolbarItemGroup` directly after the #340 usage gauge, before upstream's `viewOptionsButton()`. Purely additive; renders nothing without `supermux.claude.v1`, so a fork phone paired with an upstream cmux Mac shows exactly upstream's toolbar. **The button must stay stateless** — the session lives in #411's list-owned `@State` because this whole toolbar branch sits inside `if showsNavigationToolbar` and is torn down on every push. The file's existing #340 `import SupermuxMobileUI` fence covers the import |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
+
+### 411–412. iOS Claude harness toolbar entry — `supermux-mobile-claude-button`
+
+The exact twin of the #340/#340b usage-button pattern; re-apply them together.
+
+**#411 `WorkspaceListView.swift`** — two `#if os(iOS)` fences: the
+`@State supermuxClaude = SupermuxClaudeSectionModel()` property beside `supermuxUsage`, and
+`.supermuxClaudeDriver(model: supermuxClaude, connection: store?.supermuxConnectionSeam)` chained
+directly after `.supermuxUsageDriver(...)` on the stable `workspaceTable` (inside the #97
+`baseList` chain, before `WorkspaceListBarUnderlap`).
+
+**#412 `WorkspaceListView+Toolbar.swift`** — one fence:
+`SupermuxClaudeToolbarButton(model: supermuxClaude)` immediately after
+`SupermuxUsageToolbarButton(model: supermuxUsage)` in the iOS `.topBarTrailing` group. The import
+is already covered by #340's `import SupermuxMobileUI` fence.
+
+Everything else (model, driver, button, sheet, screens) is fork-owned in
+`Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/Claude/` and needs no fences.
+
+### 407–410. Native Claude Code harness — `supermux-claude-harness-*`
+
+Four fences, all one- to four-liners. Everything they call lives in fork-owned files
+(`Sources/Supermux/SupermuxClaudeHarness{Mount,Registry,Launcher}.swift`, plus
+`Packages/SupermuxKit/Sources/SupermuxKit/ClaudeHarness/`), so re-applying is mechanical.
+
+**#407 `Sources/Panels/AgentSessionPanelView.swift` — `supermux-claude-harness-panel`.** Inside
+`body`'s `if isVisibleInUI` arm, wrap upstream's `AgentSessionWebRenderer(...)` in
+`if SupermuxClaudeHarness.handles(panel) { SupermuxClaudeHarnessMount(panel:isFocused:appearance:onRequestPanelFocus:) … } else { <upstream> }`.
+Note the fence appears twice (open and close of the `else`) because the upstream expression sits
+between them; keep both halves or the checker flags the file.
+
+**#408 `Sources/Panels/AgentSessionPanel.swift` — `supermux-claude-harness-lifecycle`.** First line
+of `close()`: `SupermuxClaudeHarness.closeSession(panelID: id)`.
+
+**#409 `Sources/ContentView.swift` — `supermux-claude-harness-palette`.** Two inserts:
+`contributions.append(.supermuxNewClaudeHarness)` after the `.newSimulatorPane` block, and
+`registry.registerSupermuxClaudeHarness(tabManager: tabManager)` after
+`registry.registerNewSimulatorPane(...)`.
+
+**#410 `Sources/cmuxApp.swift` — `supermux-claude-harness-menu`.** A `Button` in the File menu after
+the Simulator item, calling `SupermuxClaudeHarnessLauncher.open(tabManager: activeTabManager)` and
+beeping on `false`.
+
+**#413 `Sources/AppDelegate.swift` — `supermux-claude-harness-terminate`.** One line in
+`applicationWillTerminate`, beside the other `terminateAll()` calls:
+`SupermuxClaudeHarness.terminateAllForAppShutdown()`. A `surface_closed` event-bus safety net was
+considered and rejected — that event also fires on surface *detach* (origin `detach`), where the
+session must keep running.
+
+**Why the provider branch and not a new panel type.** `AgentSessionRendererKind` is an HTML-path
+enum (`resourceHTMLPathComponents`) whose every consumer is WebKit-typed, and it is persisted with
+a synthesized `Codable`: writing a `"native"` case would throw mid-`SessionPanelSnapshot` decode on
+an upstream build or after a fork revert. A new `PanelType` case would need ~12 exhaustive-switch
+edits across upstream files that carry no fences today. Branching on
+`panel.currentProviderID == .claude` needs neither, and loses nothing — the webview's Claude path
+never rendered tools, thinking, or cost anyway.
+
+**Persistence is deliberately fork-side.** Harness records key off `panel.stableSurfaceId` in
+`SupermuxHarnessSessionStore` (JSON under the cmux state directory), NOT
+`SessionAgentSessionPanelSnapshot`, so new persisted fields never touch an upstream `Codable`. The
+mount reads `stableSurfaceId` lazily from `.task`, never at construction: upstream adopts the
+restored id inside `applySessionPanelMetadata`, which runs *after* `newAgentSessionSurface` returns.
 
 ### 379. `CLAUDE.md` — `no-handoff-notify`
 
@@ -1363,7 +1432,15 @@ package-owned line-composition counterpart (#381) is discovered automatically by
 no pbxproj entry.
 
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `129`.
+The native Claude harness (touchpoints #407–#410) adds three app-target glue files, six ids in the
+same four places: `SupermuxClaudeHarnessMount.swift` (`50BE0001…0112` / `…0113`),
+`SupermuxClaudeHarnessRegistry.swift` (`…0114` / `…0115`), and
+`SupermuxClaudeHarnessLauncher.swift` (`…0116` / `…0117`). Everything else the harness ships lives
+in `Packages/SupermuxKit/Sources/SupermuxKit/ClaudeHarness/` and `Packages/Shared/SupermuxClaudeHarness/`,
+which SwiftPM discovers automatically — that is exactly why the UI lives there and not in the app
+target.
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `141`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 

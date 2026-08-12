@@ -53,4 +53,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     public var supportsPhonePush: Bool { contains(.phonePushV1) }
     /// `supermux.usage.v1`: the read-only usage-limits snapshot is served.
     public var supportsUsage: Bool { contains(.usageV1) }
+    /// `supermux.claude.v1`: the Claude harness sessions, transcript events,
+    /// and controls are served.
+    public var supportsClaudeHarness: Bool { contains(.claudeV1) }
 }

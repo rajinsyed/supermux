@@ -181,6 +181,47 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
 
     private var eventContinuations: [AsyncStream<SupermuxMobileEvent>.Continuation] = []
 
+    // MARK: Claude harness
+    //
+    // The seam methods live in `FakeSupermuxMacClient+Claude.swift` and record
+    // through ``recordClaude(_:_:_:)``; the scripted values live here so the
+    // extension needs no stored properties of its own.
+
+    /// The response every `claudeSessionsList` call returns.
+    var claudeSessions = SupermuxClaudeSessionsDTO(sessions: [], stateVersion: 1)
+    /// The response every single-session method returns.
+    var claudeSessionResult = SupermuxClaudeSessionResultDTO(
+        session: SupermuxClaudeSessionDTO(
+            sessionID: "session-1",
+            title: "Session",
+            cwd: "/repo",
+            launcher: .claude,
+            state: .idle,
+            cost: SupermuxClaudeCostDTO(totalUSD: 0, turns: 0, durationMS: 0),
+            version: 1
+        )
+    )
+    /// The response every `claudeOptions` call returns.
+    var claudeOptionsResponse = SupermuxClaudeOptionsDTO(
+        models: [],
+        supportedEffortLevels: [],
+        supportsFastMode: false,
+        slashCommands: [],
+        launchers: []
+    )
+    /// The response every `claudeHistory` call returns.
+    var claudeHistoryPage = SupermuxClaudeHistoryPageDTO(messages: [], hasMore: false)
+    /// The bytes every `claudeToolPayload` call returns (single chunk).
+    var claudeToolPayloadData = Data()
+    /// When set, every `mobile.supermux.claude.*` method throws.
+    var claudeError: (any Error)?
+
+    /// Records one Claude seam call's name and exact wire shape.
+    func recordClaude(_ call: String, _ method: String, _ params: [String: Any]) {
+        callLog.append(call)
+        recordedWireCalls.append((method, params as NSDictionary))
+    }
+
     func projectsList() async throws -> SupermuxProjectsListResponse {
         callLog.append("projectsList")
         projectsListCallCount += 1

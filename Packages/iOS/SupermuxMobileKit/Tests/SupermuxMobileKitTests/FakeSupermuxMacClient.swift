@@ -202,6 +202,10 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
 
     private var eventContinuations: [AsyncStream<SupermuxMobileEvent>.Continuation] = []
 
+    /// Scripted state for the `mobile.supermux.claude.*` seam methods, whose
+    /// implementations live in `FakeSupermuxMacClient+Claude.swift`.
+    let claude = FakeSupermuxClaudeScript()
+
     // MARK: Recording seams
     //
     // The per-namespace method groups live in FakeSupermuxMacClient+Changes/

@@ -184,6 +184,15 @@ struct WorkspaceListView: View {
     @State var supermuxUsage = SupermuxUsageSectionModel()
     #endif
     // SUPERMUX:end supermux-mobile-usage-button
+    // SUPERMUX:begin supermux-mobile-claude-button (iOS-only Claude harness session; the toolbar entry only renders it)
+    #if os(iOS)
+    // Internal (not private): the `+Toolbar.swift` extension passes this to
+    // the Claude entry. Same stability rule as the usage model above: the
+    // toolbar branch is torn down on every navigation push, so the session
+    // must live on the stable list view.
+    @State var supermuxClaude = SupermuxClaudeSectionModel()
+    #endif
+    // SUPERMUX:end supermux-mobile-claude-button
     @State var optimisticFlatState = MobileWorkspaceOptimisticOrderReconciler()
     @State var optimisticGroupedState = MobileWorkspaceOptimisticOrderReconciler()
     /// In-flight move RPC count plus the tail of the send chain. Moves stay
@@ -440,6 +449,9 @@ struct WorkspaceListView: View {
             // SUPERMUX:begin supermux-mobile-usage-button (usage session driver on the stable list — the toolbar gauge that renders it is torn down on every push)
             .supermuxUsageDriver(model: supermuxUsage, connection: store?.supermuxConnectionSeam)
             // SUPERMUX:end supermux-mobile-usage-button
+            // SUPERMUX:begin supermux-mobile-claude-button (Claude harness session driver on the stable list — the toolbar entry that renders it is torn down on every push)
+            .supermuxClaudeDriver(model: supermuxClaude, connection: store?.supermuxConnectionSeam)
+            // SUPERMUX:end supermux-mobile-claude-button
             .modifier(WorkspaceListBarUnderlap())
         // SUPERMUX:end supermux-mobile-projects-section
         #else

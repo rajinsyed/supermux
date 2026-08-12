@@ -118,6 +118,9 @@ extension WorkspaceListView {
                             // its snapshot and restart polling on every pop.
                             SupermuxUsageToolbarButton(model: supermuxUsage)
                             // SUPERMUX:end supermux-mobile-usage-button
+                            // SUPERMUX:begin supermux-mobile-claude-button (fork Claude harness entry — renders nothing without supermux.claude.v1; session lives on the list, see WorkspaceListView.swift)
+                            SupermuxClaudeToolbarButton(model: supermuxClaude)
+                            // SUPERMUX:end supermux-mobile-claude-button
                             viewOptionsButton()
                             if canCreateWorkspace {
                                 newWorkspaceButton.equatable()

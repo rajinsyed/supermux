@@ -56,6 +56,7 @@ import Testing
         #expect(!capabilities.supportsPanes)
         #expect(!capabilities.supportsPhonePush)
         #expect(!capabilities.supportsUsage)
+        #expect(!capabilities.supportsClaudeHarness)
     }
 
     @Test func everyAccessorMatchesItsWireString() {
@@ -75,6 +76,7 @@ import Testing
             (.panesV1, \.supportsPanes),
             (.phonePushV1, \.supportsPhonePush),
             (.usageV1, \.supportsUsage),
+            (.claudeV1, \.supportsClaudeHarness),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {
