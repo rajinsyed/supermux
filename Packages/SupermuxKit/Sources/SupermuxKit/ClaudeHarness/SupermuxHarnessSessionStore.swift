@@ -11,6 +11,8 @@ public struct SupermuxHarnessSessionRecord: Codable, Sendable, Equatable {
     public var claudeSessionID: String?
     public var launcher: ClaudeLauncher
     public var workingDirectory: String
+    /// Associated Supermux project identifier, when created from a project.
+    public var projectID: String?
     public var model: String?
     public var effortLevel: String?
     public var fastMode: Bool
@@ -30,6 +32,7 @@ public struct SupermuxHarnessSessionRecord: Codable, Sendable, Equatable {
         claudeSessionID: String? = nil,
         launcher: ClaudeLauncher,
         workingDirectory: String,
+        projectID: String? = nil,
         model: String? = nil,
         effortLevel: String? = nil,
         fastMode: Bool = false,
@@ -46,6 +49,7 @@ public struct SupermuxHarnessSessionRecord: Codable, Sendable, Equatable {
         self.claudeSessionID = claudeSessionID
         self.launcher = launcher
         self.workingDirectory = workingDirectory
+        self.projectID = projectID
         self.model = model
         self.effortLevel = effortLevel
         self.fastMode = fastMode

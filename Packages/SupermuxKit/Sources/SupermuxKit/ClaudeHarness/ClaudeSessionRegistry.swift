@@ -25,6 +25,7 @@ public struct ClaudeDuplicateSessionError: Error, Sendable, Equatable {
 @MainActor
 public final class ClaudeSessionRegistry {
     private var sessions: [UUID: ClaudeSession] = [:]
+    private var revision: UInt64 = 0
     private var subscribers: [UUID: AsyncStream<ClaudeRegistryChange>.Continuation] = [:]
     private let runner: any ClaudeProcessRunning
 
@@ -69,6 +70,9 @@ public final class ClaudeSessionRegistry {
         Array(sessions.keys)
     }
 
+    /// Monotonic revision incremented when registry membership changes.
+    public var latestRevision: UInt64 { revision }
+
     /// Terminates and removes one session.
     public func remove(id: UUID) async {
         guard let session = sessions.removeValue(forKey: id) else { return }
@@ -81,6 +85,16 @@ public final class ClaudeSessionRegistry {
     public func removeAll() async {
         for id in Array(sessions.keys) {
             await remove(id: id)
+        }
+    }
+
+    /// Synchronous best-effort teardown for `applicationWillTerminate`, where
+    /// awaiting the full grace-period escalation would outlive the app. Each
+    /// live child gets stdin EOF + SIGTERM immediately (no actor hop — a
+    /// spawned task might never run before the app exits).
+    public func terminateAllForAppShutdown() {
+        for session in sessions.values {
+            session.terminateForAppShutdown()
         }
     }
 
@@ -100,6 +114,7 @@ public final class ClaudeSessionRegistry {
     }
 
     private func emit(_ change: ClaudeRegistryChange) {
+        revision &+= 1
         for continuation in subscribers.values {
             continuation.yield(change)
         }

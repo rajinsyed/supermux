@@ -64,7 +64,11 @@ enum SupermuxMobileAuthorization {
              .worktreeOpen, .worktreeRemove,
              .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch,
-             .actionRun, .phonePushRegister, .usageState:
+             .actionRun, .phonePushRegister, .usageState,
+             .claudeSessionsList, .claudeSessionCreate, .claudeSessionGet,
+             .claudeSessionResume, .claudeSessionEnd, .claudeSessionDelete,
+             .claudeSend, .claudeInterrupt, .claudeSetOption, .claudeOptions,
+             .claudeHistory, .claudeToolPayload, .claudeWatch:
             return .macWide
         }
     }

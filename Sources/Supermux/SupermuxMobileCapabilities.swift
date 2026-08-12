@@ -53,6 +53,8 @@ enum SupermuxMobileCapabilities {
             // usage.state is served: the read-only Claude Code + Codex
             // rate-limit mirror of the sidebar's usage tracker.
             SupermuxMobileCapability.usageV1.rawValue,
+            // Native Claude harness sessions, controls, history, and leased events.
+            SupermuxMobileCapability.claudeV1.rawValue,
         ]
     }
 }

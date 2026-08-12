@@ -196,6 +196,8 @@ enum SupermuxMobileHostGlue {
     private static var activityObserver: SupermuxMobileActivityObserver?
     private static var worktreesObserver: SupermuxMobileWorktreesObserver?
     private static var runObserver: SupermuxMobileRunObserver?
+    private static var claudeObserver: SupermuxMobileClaudeObserver?
+    private(set) static var claudeWatchRegistry: SupermuxMobileClaudeWatchRegistry?
 
     /// Per-workspace repository watchers behind `mobile.supermux.changes.watch`
     /// (leased, TTL-swept; see ``SupermuxMobileChangesWatchRegistry``). Lazily
@@ -218,5 +220,10 @@ enum SupermuxMobileHostGlue {
         runObserver = SupermuxMobileRunObserver(
             readSnapshots: { SupermuxComposition.runCoordinator.mobileRunSnapshots }
         )
+        let observer = SupermuxMobileClaudeObserver(
+            registry: SupermuxClaudeHarnessRegistry.shared.sessions
+        )
+        claudeObserver = observer
+        claudeWatchRegistry = SupermuxMobileClaudeWatchRegistry(observer: observer)
     }
 }

@@ -25,10 +25,14 @@ public actor ClaudeSession {
     private var accumulator = ClaudeStreamAccumulator()
     private var transcript: [ClaudeTranscriptLine] = []
     private var nextSeq: UInt64 = 0
+    private var revision: UInt64 = 0
     private var handle: ClaudeProcessHandle?
     private var multiplexer: ClaudeControlMultiplexer?
     private var eventTask: Task<Void, Never>?
     private var stderrRing = ClaudeStderrRing()
+    /// Thread-safe mirror of the live handle's stdin-close/SIGTERM controls,
+    /// for synchronous teardown from `applicationWillTerminate`.
+    private nonisolated let shutdownBox = ClaudeShutdownHandleBox()
     private var providerSessionID: String?
     private var rejectedGeneration: UInt64?
     private var initialization: ClaudeSystemInitialization?
@@ -85,6 +89,8 @@ public actor ClaudeSession {
 
     /// The sequence number of the most recent retained line (0 when none).
     public var latestSeq: UInt64 { nextSeq }
+    /// Monotonic revision incremented for every observable session change.
+    public var latestRevision: UInt64 { revision }
 
     /// Retained lines after `seq`, for gap recovery (e.g. mobile resync).
     public func transcriptTail(afterSeq seq: UInt64) -> [ClaudeTranscriptLine] {
@@ -119,6 +125,7 @@ public actor ClaudeSession {
                 environment: configuration.environment
             )
             self.handle = handle
+            shutdownBox.attach(handle)
             machine.processStarted(generation: generation)
             emitState()
             eventTask = Task { [weak self] in
@@ -156,6 +163,29 @@ public actor ClaudeSession {
     /// Explicitly resumes queue dispatch after a process crash paused it.
     public func resumeQueue() {
         queue.resume()
+        emit(.queueChanged(queue.entries))
+        persistSnapshot()
+        dispatchNextIfIdle()
+    }
+
+    /// Seeds persisted queue entries into a freshly created session (resume
+    /// after an app restart). Entries that were in flight when the app died
+    /// are restored as `uncertain` — never auto-resent; terminal entries are
+    /// dropped. Call once, before any new input is enqueued.
+    public func restoreQueue(entries: [ClaudeQueuedInput]) {
+        guard !entries.isEmpty, queue.entries.isEmpty else { return }
+        for entry in entries {
+            var restored = entry
+            switch entry.state {
+            case .queued, .uncertain:
+                break
+            case .dispatching:
+                restored.state = .uncertain
+            case .acknowledged, .cancelled:
+                continue
+            }
+            queue.enqueue(restored)
+        }
         emit(.queueChanged(queue.entries))
         persistSnapshot()
         dispatchNextIfIdle()
@@ -201,6 +231,15 @@ public actor ClaudeSession {
         // Wait for the event task to observe the exit.
         await eventTask?.value
         escalation.cancel()
+    }
+
+    /// Best-effort **synchronous** teardown for app termination: closes stdin
+    /// and sends SIGTERM immediately, without grace periods, actor hops, or
+    /// waiting for the exit event. `applicationWillTerminate` cannot await an
+    /// actor — a spawned task might never run before the app dies — so this
+    /// goes through a lock-protected mirror of the live handle's controls.
+    public nonisolated func terminateForAppShutdown() {
+        shutdownBox.terminateNow()
     }
 
     // MARK: - Process events
@@ -269,6 +308,9 @@ public actor ClaudeSession {
                 machine.initialized(generation: generation)
                 emitState()
                 persistSnapshot()
+                // Entries queued before the process finished initializing
+                // (restored queues, early sends) dispatch now.
+                dispatchNextIfIdle()
             }
         case .user(let envelope):
             // The replayed user line is the acknowledgment of a dispatch.
@@ -353,6 +395,7 @@ public actor ClaudeSession {
             }
         }
         handle = nil
+        shutdownBox.detach()
         emitState()
         emit(.queueChanged(queue.entries))
         persistSnapshot()
@@ -375,6 +418,7 @@ public actor ClaudeSession {
         }
         multiplexer = nil
         handle = nil
+        shutdownBox.detach()
         let tail = stderrRing.isEmpty
             ? nil
             : ClaudeSecretRedactor.redact(stderrRing.text)
@@ -474,6 +518,7 @@ public actor ClaudeSession {
     // MARK: - Emission
 
     private func emit(_ change: ClaudeSessionChange) {
+        revision &+= 1
         for continuation in subscribers.values {
             continuation.yield(change)
         }
@@ -493,5 +538,43 @@ public actor ClaudeSession {
             continuation.finish()
         }
         subscribers.removeAll()
+    }
+}
+
+/// Lock-protected mirror of a live process handle's teardown controls.
+///
+/// Exists so `applicationWillTerminate` — which cannot await the session actor
+/// and cannot rely on a spawned task running before the process dies — can
+/// close stdin and SIGTERM the child synchronously.
+final class ClaudeShutdownHandleBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var closeStdin: (@Sendable () -> Void)?
+    private var terminate: (@Sendable () -> Void)?
+
+    func attach(_ handle: ClaudeProcessHandle) {
+        lock.lock()
+        closeStdin = handle.closeStdin
+        terminate = handle.terminate
+        lock.unlock()
+    }
+
+    func detach() {
+        lock.lock()
+        closeStdin = nil
+        terminate = nil
+        lock.unlock()
+    }
+
+    /// Idempotent: detaches on first use so a later actor-side teardown
+    /// cannot double-signal.
+    func terminateNow() {
+        lock.lock()
+        let close = closeStdin
+        let term = terminate
+        closeStdin = nil
+        terminate = nil
+        lock.unlock()
+        close?()
+        term?()
     }
 }

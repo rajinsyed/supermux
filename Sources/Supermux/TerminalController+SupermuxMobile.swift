@@ -112,6 +112,32 @@ extension TerminalController {
             return await v2SupermuxUsageState(params: params)
         case .phonePushRegister:
             return await v2SupermuxPhonePushRegister(params: params)
+        case .claudeSessionsList:
+            return await v2SupermuxClaudeSessionsList(params: params)
+        case .claudeSessionCreate:
+            return await v2SupermuxClaudeSessionCreate(params: params)
+        case .claudeSessionGet:
+            return await v2SupermuxClaudeSessionGet(params: params)
+        case .claudeSessionResume:
+            return await v2SupermuxClaudeSessionResume(params: params)
+        case .claudeSessionEnd:
+            return await v2SupermuxClaudeSessionEnd(params: params)
+        case .claudeSessionDelete:
+            return await v2SupermuxClaudeSessionDelete(params: params)
+        case .claudeSend:
+            return await v2SupermuxClaudeSend(params: params)
+        case .claudeInterrupt:
+            return await v2SupermuxClaudeInterrupt(params: params)
+        case .claudeSetOption:
+            return await v2SupermuxClaudeSetOption(params: params)
+        case .claudeOptions:
+            return await v2SupermuxClaudeOptions(params: params)
+        case .claudeHistory:
+            return await v2SupermuxClaudeHistory(params: params)
+        case .claudeToolPayload:
+            return await v2SupermuxClaudeToolPayload(params: params)
+        case .claudeWatch:
+            return await v2SupermuxClaudeWatch(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method
