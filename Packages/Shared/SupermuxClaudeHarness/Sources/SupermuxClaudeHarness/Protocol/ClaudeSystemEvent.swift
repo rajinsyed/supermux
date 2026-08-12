@@ -91,8 +91,65 @@ public struct ClaudeSystemInitialization: Sendable, Equatable {
         self.raw = raw
     }
 
+    /// Builds provisional initialization metadata from the explicit initialize
+    /// control response. A later `system.init` remains authoritative.
+    public static func controlResponse(
+        payload: ClaudeJSONValue,
+        sessionID: String? = nil,
+        cwd: String? = nil
+    ) -> ClaudeSystemInitialization {
+        let object = payload.objectValue ?? [:]
+        let models = object["models"]?.arrayValue ?? []
+        let selectedModel = models.first?["value"]?.stringValue
+        let commands = Self.names(object["commands"])
+        let agents = Self.names(object["agents"])
+        return ClaudeSystemInitialization(
+            sessionID: object["session_id"]?.stringValue ?? sessionID,
+            cwd: object["cwd"]?.stringValue ?? cwd,
+            model: object["model"]?.stringValue ?? selectedModel,
+            permissionMode: object["current_permission_mode"]?.stringValue,
+            tools: [],
+            slashCommands: commands,
+            capabilities: [],
+            claudeCodeVersion: object["claude_code_version"]?.stringValue,
+            outputStyle: object["output_style"]?.stringValue,
+            apiKeySource: object["account"]?["tokenSource"]?.stringValue,
+            mcpServers: nil,
+            agents: agents,
+            fastModeState: object["fast_mode_state"]?.stringValue,
+            raw: payload
+        )
+    }
+
+    private init(
+        sessionID: String?, cwd: String?, model: String?, permissionMode: String?,
+        tools: [String], slashCommands: [String], capabilities: [String],
+        claudeCodeVersion: String?, outputStyle: String?, apiKeySource: String?,
+        mcpServers: ClaudeJSONValue?, agents: [String], fastModeState: String?,
+        raw: ClaudeJSONValue
+    ) {
+        self.sessionID = sessionID
+        self.cwd = cwd
+        self.model = model
+        self.permissionMode = permissionMode
+        self.tools = tools
+        self.slashCommands = slashCommands
+        self.capabilities = capabilities
+        self.claudeCodeVersion = claudeCodeVersion
+        self.outputStyle = outputStyle
+        self.apiKeySource = apiKeySource
+        self.mcpServers = mcpServers
+        self.agents = agents
+        self.fastModeState = fastModeState
+        self.raw = raw
+    }
+
     private static func strings(_ value: ClaudeJSONValue?) -> [String] {
         value?.arrayValue?.compactMap(\.stringValue) ?? []
+    }
+
+    private static func names(_ value: ClaudeJSONValue?) -> [String] {
+        value?.arrayValue?.compactMap { $0["name"]?.stringValue } ?? []
     }
 }
 

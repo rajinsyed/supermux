@@ -57,6 +57,7 @@ public enum ClaudeTurnPhase: Sendable, Equatable {
 public struct ClaudeSessionStateMachine: Sendable, Equatable {
     public private(set) var processPhase: ClaudeProcessPhase = .dormant
     public private(set) var turnPhase: ClaudeTurnPhase = .idle
+    public private(set) var permitsBootstrapDispatch = false
     private var nextGeneration: UInt64 = 0
 
     public init() {}
@@ -66,6 +67,7 @@ public struct ClaudeSessionStateMachine: Sendable, Equatable {
         nextGeneration += 1
         processPhase = .spawning(generation: nextGeneration)
         turnPhase = .idle
+        permitsBootstrapDispatch = false
         return nextGeneration
     }
 
@@ -80,6 +82,14 @@ public struct ClaudeSessionStateMachine: Sendable, Equatable {
     public mutating func initialized(generation: UInt64) {
         guard processPhase.generation == generation else { return }
         processPhase = .running(generation: generation)
+        permitsBootstrapDispatch = false
+    }
+
+    /// Allows one queued user frame to break a failed initialize-control
+    /// handshake. The resulting `system.init` remains authoritative.
+    public mutating func allowBootstrapDispatch(generation: UInt64) {
+        guard case .handshaking(generation) = processPhase else { return }
+        permitsBootstrapDispatch = true
     }
 
     /// Begins teardown. Ignored for stale generations.
@@ -94,6 +104,7 @@ public struct ClaudeSessionStateMachine: Sendable, Equatable {
     public mutating func finishProcess(generation: UInt64, exit: ClaudeProcessExit) -> Bool {
         guard processPhase.generation == generation else { return false }
         processPhase = .exited(exit)
+        permitsBootstrapDispatch = false
         switch turnPhase {
         case .dispatching(let inputID), .active(.some(let inputID)):
             turnPhase = .uncertain(inputID: inputID)
@@ -110,6 +121,7 @@ public struct ClaudeSessionStateMachine: Sendable, Equatable {
         guard processPhase.generation == generation else { return }
         processPhase = .failed(message: message)
         turnPhase = .idle
+        permitsBootstrapDispatch = false
     }
 
     /// A queued input was written to stdin.

@@ -28,4 +28,7 @@ public enum ClaudeHarnessDiagnostic: Sendable, Equatable {
     /// A resumed process reported a different provider session ID than the
     /// persisted resume identity; the process is not attached to the session.
     case resumeSessionMismatch(expected: String, observed: String)
+    /// The explicit initialize control failed or timed out. The session remains
+    /// usable by dispatching the first queued user frame while handshaking.
+    case initializeFallback(message: String)
 }

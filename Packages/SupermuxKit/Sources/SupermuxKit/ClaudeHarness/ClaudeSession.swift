@@ -133,11 +133,55 @@ public actor ClaudeSession {
                     await self?.handleProcessEvent(event, generation: generation)
                 }
             }
+            Task { [weak self] in
+                await self?.performInitializeHandshake(generation: generation)
+            }
         } catch {
             machine.failSpawn(generation: generation, message: "\(error)")
             multiplexer = nil
             emitState()
             throw error
+        }
+    }
+
+    private func performInitializeHandshake(generation: UInt64) async {
+        do {
+            let response = try await sendControl(.initialize)
+            guard rejectedGeneration != generation,
+                  case .handshaking(generation) = machine.processPhase else { return }
+
+            if let payload = response.payload {
+                let provisional = ClaudeSystemInitialization.controlResponse(
+                    payload: payload,
+                    sessionID: configuredProviderSessionID,
+                    cwd: configuration.workingDirectory
+                )
+                if !validateResumeIdentity(provisional.sessionID, generation: generation) {
+                    return
+                }
+                initialization = provisional
+                if let sessionID = provisional.sessionID {
+                    providerSessionID = sessionID
+                }
+            }
+            machine.initialized(generation: generation)
+            emitState()
+            persistSnapshot()
+            dispatchNextIfIdle()
+        } catch {
+            guard rejectedGeneration != generation,
+                  case .handshaking(generation) = machine.processPhase else { return }
+            initialization = ClaudeSystemInitialization.controlResponse(
+                payload: .object([:]),
+                sessionID: configuredProviderSessionID,
+                cwd: configuration.workingDirectory
+            )
+            providerSessionID = configuredProviderSessionID
+            machine.initialized(generation: generation)
+            emit(.diagnostic(.initializeFallback(message: "\(error)")))
+            emitState()
+            persistSnapshot()
+            dispatchNextIfIdle()
         }
     }
 
@@ -244,6 +288,20 @@ public actor ClaudeSession {
 
     // MARK: - Process events
 
+    private var configuredProviderSessionID: String {
+        switch configuration.identity {
+        case .new(let sessionID), .resume(let sessionID): return sessionID
+        }
+    }
+
+    private func validateResumeIdentity(_ observed: String?, generation: UInt64) -> Bool {
+        guard case .resume(let expected) = configuration.identity,
+              let observed else { return true }
+        guard observed != expected else { return true }
+        abortMismatchedResume(expected: expected, observed: observed, generation: generation)
+        return false
+    }
+
     private func handleProcessEvent(_ event: ClaudeProcessEvent, generation: UInt64) async {
         guard rejectedGeneration != generation else { return }
         guard machine.processPhase.generation == generation
@@ -293,12 +351,7 @@ public actor ClaudeSession {
             if case .initialize(let initialization) = event {
                 // A resumed process must confirm the persisted identity; a
                 // mismatched process is never attached to this session.
-                if case .resume(let expected) = configuration.identity,
-                   let observed = initialization.sessionID,
-                   observed != expected {
-                    abortMismatchedResume(
-                        expected: expected, observed: observed, generation: generation
-                    )
+                guard validateResumeIdentity(initialization.sessionID, generation: generation) else {
                     return
                 }
                 self.initialization = initialization
@@ -433,9 +486,17 @@ public actor ClaudeSession {
 
     // MARK: - Dispatch
 
+    private var canDispatchInput: Bool {
+        if case .running = machine.processPhase { return true }
+        if case .handshaking = machine.processPhase {
+            return machine.permitsBootstrapDispatch
+        }
+        return false
+    }
+
     private func dispatchNextIfIdle() {
         guard case .idle = machine.turnPhase,
-              case .running = machine.processPhase,
+              canDispatchInput,
               let next = queue.nextForDispatch() else { return }
         queue.markDispatching(id: next.id)
         machine.beginDispatch(inputID: next.id)

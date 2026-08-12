@@ -21,6 +21,7 @@ struct ClaudeSessionTests {
         var exitsOnStdinClose = true
         /// When true, every stdin write throws.
         var failStdinWrites = false
+        var autoRespondsToInitialize = true
         private var continuation: AsyncStream<ClaudeProcessEvent>.Continuation?
 
         func handle(
@@ -45,8 +46,17 @@ struct ClaudeSessionTests {
                     self.stdinWriteAttempts += 1
                     let fails = self.failStdinWrites
                     if !fails { self.stdinWrites.append(data) }
+                    let autoInitialize = self.autoRespondsToInitialize
                     self.lock.unlock()
                     if fails { throw ClaudeSpawnError(message: "EPIPE") }
+                    if autoInitialize,
+                       let object = try? JSONDecoder().decode(ClaudeJSONValue.self, from: data),
+                       object["request"]?["subtype"]?.stringValue == "initialize",
+                       let requestID = object["request_id"]?.stringValue {
+                        self.emitLine(
+                            #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(requestID)","response":{"commands":[],"agents":[],"models":[],"output_style":"default","current_permission_mode":"bypassPermissions"}}}"#
+                        )
+                    }
                 },
                 closeStdin: { [weak self] in
                     guard let self else { return }
@@ -92,6 +102,10 @@ struct ClaudeSessionTests {
             lock.lock()
             defer { lock.unlock() }
             return stdinWrites.map { String(decoding: $0, as: UTF8.self) }
+        }
+
+        func userLines() -> [String] {
+            writtenLines().filter { !$0.contains(#""type":"control_request""#) }
         }
 
         func writeAttempts() -> Int {
@@ -264,6 +278,7 @@ struct ClaudeSessionTests {
 
     @Test func initializeControlStartsAndDispatchesQueuedInputWithoutSystemInit() async throws {
         let (session, process) = makeSession()
+        process.autoRespondsToInitialize = false
         await session.enqueue(text: "hello")
         try await session.start()
 
@@ -286,6 +301,7 @@ struct ClaudeSessionTests {
 
     @Test func initializeTimeoutFallsBackToFirstDispatchThenSystemInitCompletesHandshake() async throws {
         let (session, process) = makeSession(coldControlTimeout: .milliseconds(25))
+        process.autoRespondsToInitialize = false
         await session.enqueue(text: "fallback")
         try await session.start()
 
@@ -294,8 +310,8 @@ struct ClaudeSessionTests {
                 line.contains(#""role":"user""#) && line.contains("fallback")
             }
         })
-        guard case .handshaking = await session.processPhase else {
-            Issue.record("expected fallback dispatch while handshaking")
+        guard case .running = await session.processPhase else {
+            Issue.record("expected fallback to mark the live process running")
             return
         }
 
@@ -320,8 +336,8 @@ struct ClaudeSessionTests {
 
         await session.enqueue(text: "hello")
         // The prompt line is written to stdin.
-        #expect(await waitUntil { !process.writtenLines().isEmpty })
-        let written = process.writtenLines()[0]
+        #expect(await waitUntil { !process.userLines().isEmpty })
+        let written = process.userLines()[0]
         #expect(written.contains(#""role":"user""#))
         #expect(written.contains("hello"))
         #expect(written.hasSuffix("\n"))
@@ -349,16 +365,16 @@ struct ClaudeSessionTests {
         #expect(await waitUntil { await session.systemInitialization != nil })
 
         await session.enqueue(text: "first")
-        #expect(await waitUntil { process.writtenLines().count == 1 })
+        #expect(await waitUntil { process.userLines().count == 1 })
         await session.enqueue(text: "second")
         // No dispatch of the second input while the first turn is open.
         try? await Task.sleep(for: .milliseconds(50))
-        #expect(process.writtenLines().count == 1)
+        #expect(process.userLines().count == 1)
 
         // First turn ends → second dispatches.
         process.emitLine(resultLine())
-        #expect(await waitUntil { process.writtenLines().count == 2 })
-        #expect(process.writtenLines()[1].contains("second"))
+        #expect(await waitUntil { process.userLines().count == 2 })
+        #expect(process.userLines()[1].contains("second"))
         await session.terminate()
     }
 
@@ -369,7 +385,7 @@ struct ClaudeSessionTests {
         #expect(await waitUntil { await session.systemInitialization != nil })
 
         await session.enqueue(text: "doomed")
-        #expect(await waitUntil { !process.writtenLines().isEmpty })
+        #expect(await waitUntil { !process.userLines().isEmpty })
         await session.enqueue(text: "survivor")
 
         process.exit(status: 1)
@@ -382,7 +398,7 @@ struct ClaudeSessionTests {
         #expect(inputs.first { $0.text == "doomed" }?.state == .uncertain)
         #expect(inputs.first { $0.text == "survivor" }?.state == .queued)
         // Queue is paused: nothing further was transmitted.
-        #expect(process.writtenLines().count == 1)
+        #expect(process.userLines().count == 1)
     }
 
     @Test func interruptSendsControlAndAwaitsResult() async throws {
@@ -392,7 +408,7 @@ struct ClaudeSessionTests {
         #expect(await waitUntil { await session.systemInitialization != nil })
 
         await session.enqueue(text: "long task")
-        #expect(await waitUntil { !process.writtenLines().isEmpty })
+        #expect(await waitUntil { !process.userLines().isEmpty })
 
         let interruptTask = Task { try await session.interrupt() }
         #expect(await waitUntil {
@@ -438,8 +454,9 @@ struct ClaudeSessionTests {
             }
         }
         #expect(sawDiagnostic)
-        // Nothing was written back: no answer path exists.
-        #expect(process.writtenLines().isEmpty)
+        // Nothing was written back for the inbound request: the only control
+        // write is the harness's own initialize handshake.
+        #expect(process.userLines().isEmpty)
         await session.terminate()
     }
 
@@ -542,13 +559,13 @@ struct ClaudeSessionTests {
         // A second enqueue must NOT produce another stdin write attempt.
         await session.enqueue(text: "second")
         try? await Task.sleep(for: .milliseconds(50))
-        #expect(process.writeAttempts() == 1)
+        #expect(process.userLines().count == 0)
         #expect(await session.queuedInputs.first { $0.text == "second" }?.state == .queued)
 
         // Explicit resume re-enables dispatch.
         process.failStdinWrites = false
         await session.resumeQueue()
-        #expect(await waitUntil { process.writeAttempts() == 2 })
+        #expect(await waitUntil { process.userLines().count == 1 })
     }
 
     // MARK: - Persistence
@@ -576,7 +593,7 @@ struct ClaudeSessionTests {
         })
 
         await session.enqueue(text: "hello")
-        #expect(await waitUntil { !process.writtenLines().isEmpty })
+        #expect(await waitUntil { !process.userLines().isEmpty })
         // Persist-before-write: some persisted snapshot recorded the entry as
         // dispatching before the stdin write happened.
         #expect(sink.snapshots().contains { snapshot in
@@ -589,7 +606,7 @@ struct ClaudeSessionTests {
             sink.snapshots().last?.queueEntries.first?.state == .uncertain
         })
         #expect(sink.snapshots().last?.redactedStderrTail != nil
-            || process.writtenLines().count == 1)
+            || process.userLines().count == 1)
     }
 
     // MARK: - Transcript retention
@@ -639,10 +656,10 @@ struct ClaudeSessionTests {
 
         // Once the process initializes, only the queued entry dispatches.
         process.emitLine(initLine())
-        #expect(await waitUntil { process.writtenLines().count == 1 })
-        #expect(process.writtenLines()[0].contains("unsent"))
+        #expect(await waitUntil { process.userLines().count == 1 })
+        #expect(process.userLines()[0].contains("unsent"))
         try? await Task.sleep(for: .milliseconds(50))
-        #expect(process.writtenLines().count == 1)
+        #expect(process.userLines().count == 1)
         await session.terminate()
     }
 

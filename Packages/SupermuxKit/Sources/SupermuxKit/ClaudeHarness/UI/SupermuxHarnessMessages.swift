@@ -88,7 +88,7 @@ extension SupermuxHarnessViewModel {
                 )
             )
         case .unknownLine, .inboundControlRequestIgnored, .unmatchedControlResponse,
-             .toolInputUndecodable, .toolInputMismatch:
+             .toolInputUndecodable, .toolInputMismatch, .initializeFallback:
             // Protocol curiosities with no user-actionable content; they stay
             // in the session's diagnostic stream without cluttering the
             // transcript.
