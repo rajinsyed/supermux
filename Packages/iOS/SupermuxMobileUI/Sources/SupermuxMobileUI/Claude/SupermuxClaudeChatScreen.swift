@@ -13,13 +13,16 @@ public import SwiftUI
 public struct SupermuxClaudeChatScreen: View {
     private let store: SupermuxClaudeConversationStore
     private let options: SupermuxClaudeOptionsDTO?
+    private let resume: (@MainActor () async -> Bool)?
 
     @State private var draft = ""
     @State private var isSending = false
+    @State private var isResuming = false
     @State private var isPresentingRuntimePicker = false
     @State private var pendingModel: String?
     @State private var pendingEffort: String?
     @State private var pendingFastMode = false
+    @State private var showsOptionError = false
     @State private var markdownRenderer = ChatMarkdownRenderer()
 
     /// Creates the chat screen.
@@ -27,12 +30,16 @@ public struct SupermuxClaudeChatScreen: View {
     ///   - store: The live conversation session.
     ///   - options: The Mac's advertised options, for the runtime pills and
     ///     the composer's slash-command autocomplete. `nil` hides both.
+    ///   - resume: Resumes the ended session on the Mac, returning whether it
+    ///     came back. `nil` hides the in-chat resume affordance.
     public init(
         store: SupermuxClaudeConversationStore,
-        options: SupermuxClaudeOptionsDTO? = nil
+        options: SupermuxClaudeOptionsDTO? = nil,
+        resume: (@MainActor () async -> Bool)? = nil
     ) {
         self.store = store
         self.options = options
+        self.resume = resume
     }
 
     public var body: some View {
@@ -42,13 +49,22 @@ public struct SupermuxClaudeChatScreen: View {
         let isWorking = store.isWorking
         let hasLoaded = store.hasLoaded
         let hasMoreHistory = store.transcript.hasMoreHistory
+        let isEnded = Self.isEnded(session)
 
         VStack(spacing: 0) {
-            transcript(rows: rows, hasLoaded: hasLoaded, hasMoreHistory: hasMoreHistory)
+            transcript(
+                rows: rows,
+                hasLoaded: hasLoaded,
+                hasMoreHistory: hasMoreHistory,
+                isEnded: isEnded
+            )
+            if isEnded {
+                endedNotice
+            }
             accessoryRow(session: session, isWorking: isWorking)
             SupermuxClaudeComposer(
                 draft: $draft,
-                isSending: isSending,
+                isSending: isSending || isEnded,
                 isWorking: isWorking,
                 slashCommands: options?.slashCommands ?? [],
                 send: { text in Task { await send(text) } },
@@ -88,12 +104,21 @@ public struct SupermuxClaudeChatScreen: View {
         .accessibilityIdentifier("SupermuxClaudeChatScreen")
     }
 
+    /// Whether the session cannot accept prompts (ended or failed on the Mac).
+    private static func isEnded(_ session: SupermuxClaudeSessionDTO?) -> Bool {
+        switch session?.state {
+        case .ended, .failed: true
+        case .starting, .working, .idle, nil: false
+        }
+    }
+
     // MARK: Transcript
 
     private func transcript(
         rows: [SupermuxClaudeTranscriptRow],
         hasLoaded: Bool,
-        hasMoreHistory: Bool
+        hasMoreHistory: Bool,
+        isEnded: Bool
     ) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: SupermuxClaudeStyle.looseSpacing) {
@@ -121,7 +146,10 @@ public struct SupermuxClaudeChatScreen: View {
                     }
                     .id(row.id)
                 }
-                if !hasLoaded {
+                // An ended session whose Mac process is gone has no history
+                // endpoint to load from, so a spinner would just spin forever;
+                // the ended notice below the transcript explains the state.
+                if !hasLoaded, !isEnded {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                         .padding(.top, 40)
@@ -132,6 +160,51 @@ public struct SupermuxClaudeChatScreen: View {
         }
         .defaultScrollAnchor(.bottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Ended notice
+
+    /// The ended-session bar: names the state instead of letting a send fail
+    /// with a not-found error, and offers Resume when the host can.
+    private var endedNotice: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "moon.zzz")
+                .foregroundStyle(.secondary)
+            Text(String(
+                localized: "supermux.claude.ended.notice",
+                defaultValue: "This session has ended.",
+                bundle: .module
+            ))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+            Spacer(minLength: 0)
+
+            if resume != nil {
+                Button {
+                    Task { await resumeSession() }
+                } label: {
+                    if isResuming {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text(String(
+                            localized: "supermux.claude.resume",
+                            defaultValue: "Resume",
+                            bundle: .module
+                        ))
+                        .font(.footnote.weight(.semibold))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .disabled(isResuming)
+            }
+        }
+        .padding(.horizontal, SupermuxClaudeStyle.horizontalMargin)
+        .padding(.vertical, 8)
+        .background(.quaternary.opacity(0.3))
+        .accessibilityIdentifier("SupermuxClaudeEndedNotice")
     }
 
     // MARK: Accessory row
@@ -158,7 +231,16 @@ public struct SupermuxClaudeChatScreen: View {
             .buttonStyle(.plain)
             .disabled(options == nil)
 
-            if isWorking {
+            if showsOptionError {
+                Text(String(
+                    localized: "supermux.claude.option.rejected",
+                    defaultValue: "Setting not applied",
+                    bundle: .module
+                ))
+                .font(.caption)
+                .foregroundStyle(.red)
+                .transition(.opacity)
+            } else if isWorking {
                 SupermuxChatShimmerText(text: String(
                     localized: "supermux.claude.working",
                     defaultValue: "Working",
@@ -211,6 +293,10 @@ public struct SupermuxClaudeChatScreen: View {
     // MARK: Actions
 
     private func send(_ text: String) async {
+        // An ended session has no process to receive the prompt — the Mac
+        // would answer not-found. The ended notice is already naming the
+        // state, so the draft simply stays put.
+        guard !Self.isEnded(store.session) else { return }
         isSending = true
         defer { isSending = false }
         // Clear optimistically: the Mac echoes the prompt back as a transcript
@@ -224,20 +310,63 @@ public struct SupermuxClaudeChatScreen: View {
         }
     }
 
+    private func resumeSession() async {
+        guard let resume else { return }
+        isResuming = true
+        defer { isResuming = false }
+        _ = await resume()
+        // Success or failure, the authoritative snapshot decides what shows:
+        // on success the state flips and the notice disappears; on failure it
+        // stays, which is the honest reading.
+    }
+
     private func applyModel(_ value: String?) {
         pendingModel = value
         guard let value else { return }
-        Task { _ = try? await store.setOption(.model, to: .string(value)) }
+        Task {
+            await applyOption(.model, value: .string(value)) {
+                pendingModel = store.session?.model
+            }
+        }
     }
 
     private func applyEffort(_ value: String?) {
         pendingEffort = value
         guard let value else { return }
-        Task { _ = try? await store.setOption(.effort, to: .string(value)) }
+        Task {
+            await applyOption(.effort, value: .string(value)) {
+                pendingEffort = store.session?.effort
+            }
+        }
     }
 
     private func applyFastMode(_ value: Bool) {
         pendingFastMode = value
-        Task { _ = try? await store.setOption(.fastMode, to: .bool(value)) }
+        Task {
+            await applyOption(.fastMode, value: .bool(value)) {
+                pendingFastMode = store.session?.fastMode ?? false
+            }
+        }
+    }
+
+    /// Sends one option mutation. On rejection the pending value is rolled
+    /// back to the authoritative snapshot — a rejected `setOption` leaves the
+    /// Mac unchanged, so `onChange` never fires and an optimistic pending
+    /// value would keep the picker lying — and a brief inline error names
+    /// what happened.
+    private func applyOption(
+        _ option: SupermuxClaudeOption,
+        value: SupermuxClaudeOptionValue,
+        rollback: @MainActor () -> Void
+    ) async {
+        do {
+            _ = try await store.setOption(option, to: value)
+            showsOptionError = false
+        } catch {
+            rollback()
+            withAnimation { showsOptionError = true }
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation { showsOptionError = false }
+        }
     }
 }

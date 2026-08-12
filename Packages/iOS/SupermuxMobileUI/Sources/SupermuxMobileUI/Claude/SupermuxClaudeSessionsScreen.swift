@@ -215,6 +215,35 @@ public struct SupermuxClaudeSessionsScreen: View {
                 }
                 .tint(.orange)
             }
+            if session.state == .ended || session.state == .failed {
+                Button {
+                    let id = session.sessionID
+                    Task {
+                        // Navigate only when the Mac actually brought the
+                        // session back. The resume RPC answers OK even when
+                        // startup failed (the snapshot carries `.failed` and
+                        // the stderr excerpt), so the state decides — a
+                        // failed resume leaves the refreshed row to tell the
+                        // truth instead of pushing a dead chat.
+                        guard let result = try? await store.resumeSession(id: id),
+                              result.session.state != .failed, result.session.state != .ended
+                        else { return }
+                        store.markOpened(id: id)
+                        openSession(result.session)
+                    }
+                } label: {
+                    Label {
+                        Text(String(
+                            localized: "supermux.claude.resume",
+                            defaultValue: "Resume",
+                            bundle: .module
+                        ))
+                    } icon: {
+                        Image(systemName: "play.circle")
+                    }
+                }
+                .tint(.blue)
+            }
         }
     }
 

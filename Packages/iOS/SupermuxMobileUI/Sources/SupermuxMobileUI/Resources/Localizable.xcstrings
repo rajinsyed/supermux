@@ -1089,6 +1089,23 @@
         }
       }
     },
+    "supermux.claude.ended.notice": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This session has ended."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションは終了しました。"
+          }
+        }
+      }
+    },
     "supermux.claude.failure.message": {
       "extractionState": "manual",
       "localizations": {
@@ -1310,6 +1327,23 @@
         }
       }
     },
+    "supermux.claude.option.rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setting not applied"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定は適用されませんでした"
+          }
+        }
+      }
+    },
     "supermux.claude.prompt.placeholder": {
       "extractionState": "manual",
       "localizations": {
@@ -1357,6 +1391,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld件待機中"
+          }
+        }
+      }
+    },
+    "supermux.claude.resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開"
           }
         }
       }

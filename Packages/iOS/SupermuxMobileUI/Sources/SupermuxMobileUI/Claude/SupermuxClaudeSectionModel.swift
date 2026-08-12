@@ -197,7 +197,18 @@ struct SupermuxClaudeSessionsFlow: View {
                 if let store = model.store {
                     SupermuxClaudeChatScreen(
                         store: store.conversationStore(for: sessionID),
-                        options: model.options
+                        options: model.options,
+                        resume: {
+                            // The chat screen's ended-notice Resume: restart
+                            // the Mac process for this session in place. The
+                            // RPC answers OK even when startup failed, so
+                            // success means the snapshot came back live.
+                            guard let result = try? await store.resumeSession(id: sessionID) else {
+                                return false
+                            }
+                            return result.session.state != .failed
+                                && result.session.state != .ended
+                        }
                     )
                 }
             }
