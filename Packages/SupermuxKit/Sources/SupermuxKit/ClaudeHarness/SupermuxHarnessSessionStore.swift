@@ -100,6 +100,31 @@ public actor SupermuxHarnessSessionStore {
         }
     }
 
+    /// Atomically read-modify-writes one record in a single actor call.
+    ///
+    /// Every merge-into-existing-record write MUST go through this method:
+    /// a separate `load` + `save` pair is two actor calls, and a concurrent
+    /// writer interleaving between them silently erases whatever the other
+    /// writer just persisted (e.g. the Claude session ID from `system.init`,
+    /// or a queue entry's delivery state).
+    ///
+    /// - Parameters:
+    ///   - stableSurfaceID: The record key.
+    ///   - makeDefault: Builds the record when none is persisted yet.
+    ///   - mutate: Applies the caller's changes to the loaded record.
+    /// - Returns: The record as saved.
+    @discardableResult
+    public func update(
+        stableSurfaceID: UUID,
+        default makeDefault: @Sendable () -> SupermuxHarnessSessionRecord,
+        _ mutate: @Sendable (inout SupermuxHarnessSessionRecord) -> Void
+    ) throws -> SupermuxHarnessSessionRecord {
+        var record = load(stableSurfaceID: stableSurfaceID) ?? makeDefault()
+        mutate(&record)
+        try save(record)
+        return record
+    }
+
     /// Atomically saves one record with owner-only permissions.
     public func save(_ record: SupermuxHarnessSessionRecord) throws {
         try ensureDirectory()

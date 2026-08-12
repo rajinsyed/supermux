@@ -82,9 +82,17 @@ extension TerminalController {
         }
         if let prompt = request.initialPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
             await session.enqueue(text: prompt)
-            record = await SupermuxClaudeHarnessRegistry.shared.store.load(stableSurfaceID: id) ?? record
-            record.derivedTitle = String(prompt.prefix(80))
-            try? await SupermuxClaudeHarnessRegistry.shared.store.save(record)
+            // Atomic read-modify-write: the enqueue above triggers the
+            // session's own persistence, and a load + save pair here would
+            // race it and could erase the just-persisted queue state.
+            let fallback = record
+            let title = String(prompt.prefix(80))
+            let updated = try? await SupermuxClaudeHarnessRegistry.shared.store.update(
+                stableSurfaceID: id, default: { fallback }
+            ) { record in
+                record.derivedTitle = title
+            }
+            record = updated ?? record
         }
         return supermuxClaudeOK(SupermuxClaudeSessionResultDTO(
             session: await supermuxClaudeSnapshot(record: record, session: session)
@@ -143,16 +151,22 @@ extension TerminalController {
             // persisted values or the snapshot below would report settings
             // that are not actually active. A rejection clears the persisted
             // value so the phone shows the truth rather than the wish.
-            var reconciled = record
             do {
                 try await supermuxClaudeApplyRuntimeControls(
                     session: session, fastMode: record.fastMode, thinkingBudget: record.maxThinkingTokens
                 )
             } catch {
-                reconciled.fastMode = false
-                reconciled.maxThinkingTokens = nil
-                try? await harness.store.save(reconciled)
-                record = reconciled
+                // Atomic read-modify-write: the freshly resumed session's own
+                // persistence is already writing snapshots, and saving a
+                // stale full record over them would erase queue state.
+                let fallback = record
+                let updated = try? await harness.store.update(
+                    stableSurfaceID: id, default: { fallback }
+                ) { record in
+                    record.fastMode = false
+                    record.maxThinkingTokens = nil
+                }
+                record = updated ?? record
             }
         }
         await session.resumeQueue()
@@ -203,11 +217,16 @@ extension TerminalController {
         let wasIdle = await session.turnPhase == .idle
         await session.enqueue(text: text)
         let store = SupermuxClaudeHarnessRegistry.shared.store
-        if var record = await store.load(stableSurfaceID: id), record.derivedTitle == nil {
-            record.claudeSessionID = await session.claudeSessionID ?? record.claudeSessionID
-            record.derivedTitle = String(text.prefix(80))
-            record.lastActiveAt = Date()
-            try? await store.save(record)
+        // Atomic read-modify-write: the enqueue above triggers the session's
+        // own persistence, and a load + save pair here would race it.
+        if let existing = await store.load(stableSurfaceID: id), existing.derivedTitle == nil {
+            let providerSessionID = await session.claudeSessionID
+            let title = String(text.prefix(80))
+            try? await store.update(stableSurfaceID: id, default: { existing }) { record in
+                record.claudeSessionID = providerSessionID ?? record.claudeSessionID
+                if record.derivedTitle == nil { record.derivedTitle = title }
+                record.lastActiveAt = Date()
+            }
         }
         let queueCount = await session.queuedInputs.filter { $0.state == .queued }.count
         return supermuxClaudeOK(SupermuxClaudeSendResultDTO(
@@ -234,25 +253,32 @@ extension TerminalController {
         }
         let harness = SupermuxClaudeHarnessRegistry.shared
         guard let session = harness.sessions.session(id: id),
-              var record = await harness.store.load(stableSurfaceID: id) else {
+              let existing = await harness.store.load(stableSurfaceID: id) else {
             return .err(code: "not_found", message: "Claude session is not running", data: nil)
         }
         let control: ClaudeOutboundControl
+        let applyOption: @Sendable (inout SupermuxHarnessSessionRecord) -> Void
         switch (request.option, request.value) {
         case (.model, .string(let value)):
-            control = .setModel(value); record.model = value
+            control = .setModel(value); applyOption = { $0.model = value }
         case (.effort, .string(let value)):
-            control = .setEffort(value); record.effortLevel = value
+            control = .setEffort(value); applyOption = { $0.effortLevel = value }
         case (.fastMode, .bool(let value)):
-            control = .setFastMode(value); record.fastMode = value
+            control = .setFastMode(value); applyOption = { $0.fastMode = value }
         case (.thinkingBudget, .integer(let value)) where value >= 0:
-            control = .setMaxThinkingTokens(value); record.maxThinkingTokens = value
+            control = .setMaxThinkingTokens(value); applyOption = { $0.maxThinkingTokens = value }
         default:
             return .err(code: "invalid_params", message: "Option value has the wrong type", data: nil)
         }
         do {
             try await supermuxClaudeRequireSuccess(session.sendControl(control))
-            try await harness.store.save(record)
+            // Atomic read-modify-write AFTER the control round trip: a record
+            // loaded before it would be a whole network turn stale, and
+            // saving it wholesale would erase queue/session fields the
+            // session's own persistence wrote meanwhile.
+            try await harness.store.update(
+                stableSurfaceID: id, default: { existing }, applyOption
+            )
         } catch {
             return .err(code: "unavailable", message: "Claude rejected the option", data: ["detail": "\(error)"])
         }

@@ -59,25 +59,36 @@ public struct SupermuxHarnessSessionPersistence: ClaudeSessionPersisting {
     }
 
     public func persist(_ snapshot: ClaudeSessionPersistenceSnapshot) async {
-        var record = await store.load(stableSurfaceID: stableSurfaceID)
-            ?? SupermuxHarnessSessionRecord(
-                stableSurfaceID: stableSurfaceID,
-                launcher: snapshot.launcher,
-                workingDirectory: snapshot.workingDirectory
-            )
-        record.claudeSessionID = snapshot.providerSessionID ?? record.claudeSessionID
-        record.launcher = snapshot.launcher
-        record.workingDirectory = snapshot.workingDirectory
-        record.queueEntries = snapshot.queueEntries
-        record.lastActiveAt = Date()
-        if let result = snapshot.lastResult {
-            record.lastTotalCostUSD = result.totalCostUSD ?? record.lastTotalCostUSD
-            record.lastInputTokens = result.usage?.inputTokens ?? record.lastInputTokens
-            record.lastOutputTokens = result.usage?.outputTokens ?? record.lastOutputTokens
+        // One atomic read-modify-write on the store actor. A separate
+        // load + save pair here raced concurrent writers (the view model's
+        // persistRecord, the mobile host's record edits): both could load
+        // the same stale record and the loser's save would erase the
+        // winner's fields — including the just-learned Claude session ID,
+        // which is the `--resume` identity (lost-update race).
+        let stableSurfaceID = self.stableSurfaceID
+        try? await store.update(
+            stableSurfaceID: stableSurfaceID,
+            default: {
+                SupermuxHarnessSessionRecord(
+                    stableSurfaceID: stableSurfaceID,
+                    launcher: snapshot.launcher,
+                    workingDirectory: snapshot.workingDirectory
+                )
+            }
+        ) { record in
+            record.claudeSessionID = snapshot.providerSessionID ?? record.claudeSessionID
+            record.launcher = snapshot.launcher
+            record.workingDirectory = snapshot.workingDirectory
+            record.queueEntries = snapshot.queueEntries
+            record.lastActiveAt = Date()
+            if let result = snapshot.lastResult {
+                record.lastTotalCostUSD = result.totalCostUSD ?? record.lastTotalCostUSD
+                record.lastInputTokens = result.usage?.inputTokens ?? record.lastInputTokens
+                record.lastOutputTokens = result.usage?.outputTokens ?? record.lastOutputTokens
+            }
+            if let tail = snapshot.redactedStderrTail {
+                record.redactedDiagnostic = tail
+            }
         }
-        if let tail = snapshot.redactedStderrTail {
-            record.redactedDiagnostic = tail
-        }
-        try? await store.save(record)
     }
 }

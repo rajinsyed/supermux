@@ -118,6 +118,63 @@ struct SupermuxHarnessSessionStoreTests {
         #expect(await store.loadAll().isEmpty)
     }
 
+    @Test func updateIsAtomicUnderConcurrentWriters() async throws {
+        // The lost-update race behind supermux.harness persistence: one
+        // writer learns the Claude session ID while another persists queue
+        // entries. With load + save as separate actor calls, whichever saved
+        // last erased the other's field. `update` is one actor call, so both
+        // fields must survive any interleaving.
+        let base = try temporaryBase()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let store = SupermuxHarnessSessionStore(baseDirectory: base)
+        let id = UUID()
+        var mutableSeed = makeRecord(id: id)
+        mutableSeed.claudeSessionID = nil
+        mutableSeed.queueEntries = []
+        let seed = mutableSeed
+        try await store.save(seed)
+
+        let queueEntry = ClaudeQueuedInput(text: "queued prompt", state: .queued)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                for _ in 0..<50 {
+                    _ = try? await store.update(
+                        stableSurfaceID: id, default: { seed }
+                    ) { record in
+                        record.claudeSessionID = "prov-final"
+                    }
+                }
+            }
+            group.addTask {
+                for _ in 0..<50 {
+                    _ = try? await store.update(
+                        stableSurfaceID: id, default: { seed }
+                    ) { record in
+                        record.queueEntries = [queueEntry]
+                    }
+                }
+            }
+        }
+
+        let final = try #require(await store.load(stableSurfaceID: id))
+        #expect(final.claudeSessionID == "prov-final")
+        #expect(final.queueEntries.map(\.text) == ["queued prompt"])
+    }
+
+    @Test func updateCreatesTheRecordWhenAbsent() async throws {
+        let base = try temporaryBase()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let store = SupermuxHarnessSessionStore(baseDirectory: base)
+        let id = UUID()
+        let seed = makeRecord(id: id)
+
+        let saved = try await store.update(stableSurfaceID: id, default: { seed }) { record in
+            record.derivedTitle = "created via update"
+        }
+        #expect(saved.derivedTitle == "created via update")
+        #expect(await store.load(stableSurfaceID: id) == saved)
+    }
+
     @Test func recordHasNoPermissionModeField() throws {
         // Sessions always skip permissions; the record must not resurrect a
         // permission-mode field.
