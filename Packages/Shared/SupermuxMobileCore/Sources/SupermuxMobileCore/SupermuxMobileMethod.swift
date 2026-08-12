@@ -122,6 +122,35 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Registers or removes this phone's APNs token on the paired Mac.
     case phonePushRegister = "mobile.supermux.phone_push.register"
 
+    // MARK: Claude harness
+
+    /// Lists retained Claude harness sessions.
+    case claudeSessionsList = "mobile.supermux.claude.sessions.list"
+    /// Creates and starts a Claude harness session.
+    case claudeSessionCreate = "mobile.supermux.claude.session.create"
+    /// Reads one authoritative Claude harness session snapshot.
+    case claudeSessionGet = "mobile.supermux.claude.session.get"
+    /// Resumes an ended Claude harness session.
+    case claudeSessionResume = "mobile.supermux.claude.session.resume"
+    /// Ends a running Claude harness session.
+    case claudeSessionEnd = "mobile.supermux.claude.session.end"
+    /// Deletes a retained Claude harness session.
+    case claudeSessionDelete = "mobile.supermux.claude.session.delete"
+    /// Dispatches or queues a prompt for a Claude harness session.
+    case claudeSend = "mobile.supermux.claude.send"
+    /// Interrupts the active Claude harness turn.
+    case claudeInterrupt = "mobile.supermux.claude.interrupt"
+    /// Changes one supported Claude harness session option.
+    case claudeSetOption = "mobile.supermux.claude.set_option"
+    /// Reads Mac-advertised Claude harness options.
+    case claudeOptions = "mobile.supermux.claude.options"
+    /// Reads one page of Claude harness transcript history.
+    case claudeHistory = "mobile.supermux.claude.history"
+    /// Reads one bounded chunk of a large Claude tool payload.
+    case claudeToolPayload = "mobile.supermux.claude.tool_payload"
+    /// Acquires, renews, or releases the client's Claude event watch lease.
+    case claudeWatch = "mobile.supermux.claude.watch"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 

@@ -8,12 +8,14 @@ import Testing
         #expect(SupermuxMobileTopic.worktreesUpdated.rawValue == "supermux.worktrees.updated")
         #expect(SupermuxMobileTopic.changesUpdated.rawValue == "supermux.changes.updated")
         #expect(SupermuxMobileTopic.runUpdated.rawValue == "supermux.run.updated")
+        #expect(SupermuxMobileTopic.claudeSessionsUpdated.rawValue == "supermux.claude.sessions_updated")
+        #expect(SupermuxMobileTopic.claudeEvent.rawValue == "supermux.claude.event")
     }
 
     @Test func allExposesEveryTopicExactlyOnce() {
         #expect(SupermuxMobileTopic.all == SupermuxMobileTopic.allCases)
-        #expect(SupermuxMobileTopic.all.count == 4)
-        #expect(Set(SupermuxMobileTopic.all).count == 4)
+        #expect(SupermuxMobileTopic.all.count == 6)
+        #expect(Set(SupermuxMobileTopic.all).count == 6)
     }
 }
 
@@ -32,11 +34,12 @@ import Testing
         #expect(SupermuxMobileCapability.panesV1.rawValue == "supermux.panes.v1")
         #expect(SupermuxMobileCapability.phonePushV1.rawValue == "supermux.phone_push.v1")
         #expect(SupermuxMobileCapability.usageV1.rawValue == "supermux.usage.v1")
+        #expect(SupermuxMobileCapability.claudeV1.rawValue == "supermux.claude.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 13)
-        #expect(Set(SupermuxMobileCapability.all).count == 13)
+        #expect(SupermuxMobileCapability.all.count == 14)
+        #expect(Set(SupermuxMobileCapability.all).count == 14)
     }
 }

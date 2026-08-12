@@ -59,11 +59,25 @@ import Testing
         "mobile.supermux.usage.state",
         // Phone push
         "mobile.supermux.phone_push.register",
+        // Claude harness
+        "mobile.supermux.claude.sessions.list",
+        "mobile.supermux.claude.session.create",
+        "mobile.supermux.claude.session.get",
+        "mobile.supermux.claude.session.resume",
+        "mobile.supermux.claude.session.end",
+        "mobile.supermux.claude.session.delete",
+        "mobile.supermux.claude.send",
+        "mobile.supermux.claude.interrupt",
+        "mobile.supermux.claude.set_option",
+        "mobile.supermux.claude.options",
+        "mobile.supermux.claude.history",
+        "mobile.supermux.claude.tool_payload",
+        "mobile.supermux.claude.watch",
     ]
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 45)
+        #expect(SupermuxMobileMethod.all.count == 58)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

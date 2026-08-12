@@ -1,8 +1,9 @@
 /// A `supermux.*` event topic the macOS host publishes over the existing
 /// `mobile.events.subscribe` pub/sub plane.
 ///
-/// Events are payload-light "pokes" — the phone refetches through the matching
-/// RPC method on receipt (same pattern as `workspace.updated`).
+/// Most events are payload-light "pokes" that make the phone refetch through
+/// the matching RPC. ``claudeEvent`` is the exception: it carries a compact,
+/// monotonic transcript frame.
 public enum SupermuxMobileTopic: String, CaseIterable, Codable, Sendable, Equatable {
     /// The projects model changed; refetch via ``SupermuxMobileMethod/projectsList``.
     case projectsUpdated = "supermux.projects.updated"
@@ -13,6 +14,10 @@ public enum SupermuxMobileTopic: String, CaseIterable, Codable, Sendable, Equata
     case changesUpdated = "supermux.changes.updated"
     /// A project's run state changed; refetch via ``SupermuxMobileMethod/runState``.
     case runUpdated = "supermux.run.updated"
+    /// Claude session metadata changed; refetch via ``SupermuxMobileMethod/claudeSessionsList``.
+    case claudeSessionsUpdated = "supermux.claude.sessions_updated"
+    /// Carries a ``SupermuxClaudeEventFrame`` for a watched Claude session.
+    case claudeEvent = "supermux.claude.event"
 
     /// Every topic, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileTopic] = SupermuxMobileTopic.allCases

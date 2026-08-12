@@ -31,6 +31,8 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     case phonePushV1 = "supermux.phone_push.v1"
     /// The read-only Claude Code + Codex usage-limits snapshot is served.
     case usageV1 = "supermux.usage.v1"
+    /// Claude harness session RPCs and event topics are served.
+    case claudeV1 = "supermux.claude.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases
