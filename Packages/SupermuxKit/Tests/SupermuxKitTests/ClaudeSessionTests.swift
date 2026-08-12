@@ -549,6 +549,69 @@ struct ClaudeSessionTests {
         await session.terminate()
     }
 
+    // MARK: - Queue restoration
+
+    @Test func restoreQueueSeedsPersistedEntriesAndDispatches() async throws {
+        let (session, process) = makeSession()
+        try await session.start()
+        let entries = [
+            ClaudeQueuedInput(text: "unsent", state: .queued),
+            ClaudeQueuedInput(text: "in flight when app died", state: .dispatching),
+            ClaudeQueuedInput(text: "already delivered", state: .acknowledged),
+            ClaudeQueuedInput(text: "lost", state: .uncertain),
+        ]
+        await session.restoreQueue(entries: entries)
+
+        let restored = await session.queuedInputs
+        #expect(restored.count == 3)
+        #expect(restored.first { $0.text == "unsent" }?.state == .queued)
+        // dispatching at restore time means the write outcome is unknown.
+        #expect(
+            restored.first { $0.text == "in flight when app died" }?.state == .uncertain
+        )
+        #expect(restored.first { $0.text == "lost" }?.state == .uncertain)
+        // Terminal entries are dropped, and nothing auto-resends.
+        #expect(!restored.contains { $0.text == "already delivered" })
+
+        // Once the process initializes, only the queued entry dispatches.
+        process.emitLine(initLine())
+        #expect(await waitUntil { process.writtenLines().count == 1 })
+        #expect(process.writtenLines()[0].contains("unsent"))
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(process.writtenLines().count == 1)
+        await session.terminate()
+    }
+
+    @Test func restoreQueueIsNoOpWhenSessionAlreadyHasEntries() async throws {
+        let (session, process) = makeSession()
+        try await session.start()
+        process.emitLine(initLine())
+        #expect(await waitUntil { await session.systemInitialization != nil })
+        await session.enqueue(text: "live")
+        await session.restoreQueue(entries: [ClaudeQueuedInput(text: "stale")])
+        let entries = await session.queuedInputs
+        #expect(entries.map(\.text) == ["live"])
+        await session.terminate()
+    }
+
+    // MARK: - App shutdown
+
+    @Test func terminateForAppShutdownSignalsSynchronously() async throws {
+        let (session, process) = makeSession()
+        process.exitsOnStdinClose = false
+        try await session.start()
+        process.emitLine(initLine())
+        #expect(await waitUntil { await session.systemInitialization != nil })
+
+        // Synchronous: no await between the call and the assertions.
+        session.terminateForAppShutdown()
+        #expect(process.stdinClosed)
+        #expect(process.terminated)
+        // Idempotent: a second call cannot double-signal.
+        session.terminateForAppShutdown()
+        process.exit(status: 0)
+    }
+
     @Test func terminateEscalatesStdinCloseFirst() async throws {
         let (session, process) = makeSession()
         try await session.start()
