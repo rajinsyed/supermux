@@ -147,7 +147,8 @@ struct ClaudeSessionTests {
         launcherKind: ClaudeLauncher.Kind = .claude,
         identity: ClaudeSpawnArguments.SessionIdentity = .new(sessionID: "prov-uuid"),
         model: String? = nil,
-        spawnError: ClaudeSpawnError? = nil
+        spawnError: ClaudeSpawnError? = nil,
+        coldControlTimeout: Duration = .seconds(2)
     ) -> (ClaudeSession, FakeProcess) {
         let process = FakeProcess()
         let launcher = ClaudeLauncher(
@@ -165,7 +166,7 @@ struct ClaudeSessionTests {
             configuration: configuration,
             runner: FakeRunner(process: process, spawnError: spawnError),
             controlTimeouts: .init(
-                ordinary: .seconds(2), cold: .seconds(2), interrupt: .seconds(2)
+                ordinary: .seconds(2), cold: coldControlTimeout, interrupt: .seconds(2)
             )
         )
         return (session, process)
@@ -177,6 +178,23 @@ struct ClaudeSessionTests {
 
     private func resultLine(sessionID: String = "prov-uuid") -> String {
         #"{"type":"result","subtype":"success","is_error":false,"session_id":"\#(sessionID)","terminal_reason":"completed","num_turns":1}"#
+    }
+
+    private func answerInitialize(
+        _ process: FakeProcess,
+        payload: String = #"{"commands":[{"name":"help","description":"Help","argumentHint":""}],"agents":[],"output_style":"default","available_output_styles":["default"],"models":[{"value":"haiku","resolvedModel":"claude-haiku-4-5","displayName":"Haiku","description":"Fast","supportsEffort":true,"supportedEffortLevels":["low","high"],"supportsAdaptiveThinking":true,"supportsFastMode":false,"supportsAutoMode":false}],"account":{"tokenSource":"oauth","apiProvider":"firstParty"},"pid":42,"current_permission_mode":"bypassPermissions","fast_mode_state":"off"}"#
+    ) async throws {
+        #expect(await waitUntil {
+            process.writtenLines().contains { $0.contains(#""subtype":"initialize""#) }
+        })
+        let line = try #require(process.writtenLines().first {
+            $0.contains(#""subtype":"initialize""#)
+        })
+        let object = try JSONDecoder().decode(ClaudeJSONValue.self, from: Data(line.utf8))
+        let requestID = try #require(object["request_id"]?.stringValue)
+        process.emitLine(
+            #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(requestID)","response":\#(payload)}}"#
+        )
     }
 
     private func waitUntil(
@@ -243,6 +261,52 @@ struct ClaudeSessionTests {
     }
 
     // MARK: - Turn lifecycle
+
+    @Test func initializeControlStartsAndDispatchesQueuedInputWithoutSystemInit() async throws {
+        let (session, process) = makeSession()
+        await session.enqueue(text: "hello")
+        try await session.start()
+
+        try await answerInitialize(process)
+
+        #expect(await waitUntil {
+            if case .running = await session.processPhase { return true }
+            return false
+        })
+        #expect(await waitUntil {
+            process.writtenLines().contains { line in
+                line.contains(#""role":"user""#) && line.contains("hello")
+            }
+        })
+        let initialization = try #require(await session.systemInitialization)
+        #expect(initialization.slashCommands == ["help"])
+        #expect(initialization.model == "haiku")
+        await session.terminate()
+    }
+
+    @Test func initializeTimeoutFallsBackToFirstDispatchThenSystemInitCompletesHandshake() async throws {
+        let (session, process) = makeSession(coldControlTimeout: .milliseconds(25))
+        await session.enqueue(text: "fallback")
+        try await session.start()
+
+        #expect(await waitUntil {
+            process.writtenLines().contains { line in
+                line.contains(#""role":"user""#) && line.contains("fallback")
+            }
+        })
+        guard case .handshaking = await session.processPhase else {
+            Issue.record("expected fallback dispatch while handshaking")
+            return
+        }
+
+        process.emitLine(initLine())
+        #expect(await waitUntil {
+            if case .running = await session.processPhase { return true }
+            return false
+        })
+        #expect(await session.claudeSessionID == "prov-uuid")
+        await session.terminate()
+    }
 
     @Test func initThenTurnThenResult() async throws {
         let (session, process) = makeSession()
