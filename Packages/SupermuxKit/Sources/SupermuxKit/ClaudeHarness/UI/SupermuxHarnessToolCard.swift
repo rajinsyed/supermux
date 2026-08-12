@@ -48,13 +48,16 @@ struct SupermuxHarnessToolCard: View {
                 Text(label)
                     .cmuxFont(size: SupermuxHarnessTokens.subheadline)
                     .foregroundStyle(theme.mutedText)
+                    .supermuxHarnessRigidLabel()
                 if let subject = call.subject {
+                    // The command is the only thing allowed to lose width here;
+                    // it must NOT carry layoutPriority, or it takes the width
+                    // from the label and wraps that into a 1-glyph column.
                     Text(subject)
                         .cmuxFont(size: SupermuxHarnessTokens.footnote, design: .monospaced)
                         .foregroundStyle(theme.mutedText)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .layoutPriority(1)
                 }
                 if call.status == .failed {
                     Image(systemName: "exclamationmark.circle.fill")
@@ -166,6 +169,7 @@ struct SupermuxHarnessToolBurstGroup: View {
                     )
                     .cmuxFont(size: SupermuxHarnessTokens.subheadline)
                     .foregroundStyle(theme.mutedText)
+                    .supermuxHarnessRigidLabel()
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: SupermuxHarnessTokens.caption2, weight: .semibold))
                         .foregroundStyle(theme.mutedText)

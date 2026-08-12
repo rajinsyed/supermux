@@ -142,6 +142,26 @@ struct SupermuxHarnessTranscript: View {
     }
 }
 
+extension View {
+    /// Marks a short label as *rigid*: it always renders at its ideal width on
+    /// one line, and never absorbs the compression a sibling causes.
+    ///
+    /// Every transcript row is an `HStack` of a fixed label ("Ran command") and
+    /// an unbounded value (a 200-character shell command). Left alone, SwiftUI
+    /// splits the width between them, and once the label's share falls below one
+    /// glyph it wraps *letter by letter* into a one-character column — which is
+    /// both the "R\na\nn\n…" text and the ~180pt row height that reads as a
+    /// dashed line and huge gaps in the transcript. Making the label rigid moves
+    /// it to the front of the layout queue, so the *value* is what truncates.
+    ///
+    /// Pair it with `.lineLimit(1)` + `.truncationMode(.middle)` on the value,
+    /// and never give the value `layoutPriority` — a higher priority there
+    /// re-inverts the order and starves the label again.
+    func supermuxHarnessRigidLabel() -> some View {
+        lineLimit(1).fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 /// Bottom-marker minY in the legacy scroll view's coordinate space.
 private struct SupermuxHarnessBottomDistanceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0

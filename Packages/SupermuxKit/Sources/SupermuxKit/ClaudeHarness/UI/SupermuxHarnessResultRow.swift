@@ -10,9 +10,13 @@ struct SupermuxHarnessResultRow: View {
         HStack(spacing: SupermuxHarnessTokens.spacing6) {
             ForEach(Array(components.enumerated()), id: \.offset) { index, component in
                 if index > 0 {
-                    Text("·").foregroundStyle(theme.mutedText.opacity(0.6))
+                    Text("·")
+                        .foregroundStyle(theme.mutedText.opacity(0.6))
+                        .supermuxHarnessRigidLabel()
                 }
-                Text(component)
+                // Every component is a short fixed token ("$0.0321", "2 turns");
+                // none may wrap into a one-glyph column when the panel narrows.
+                Text(component).supermuxHarnessRigidLabel()
             }
             Spacer(minLength: 0)
         }

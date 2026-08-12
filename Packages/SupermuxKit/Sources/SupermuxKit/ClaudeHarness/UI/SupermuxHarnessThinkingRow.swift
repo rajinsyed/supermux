@@ -29,6 +29,7 @@ struct SupermuxHarnessThinkingRow: View {
                     Text(label)
                         .cmuxFont(size: SupermuxHarnessTokens.footnote, weight: .medium)
                         .foregroundStyle(theme.mutedText)
+                        .supermuxHarnessRigidLabel()
                     if !isExpanded {
                         Text(preview)
                             .cmuxFont(size: SupermuxHarnessTokens.footnote)

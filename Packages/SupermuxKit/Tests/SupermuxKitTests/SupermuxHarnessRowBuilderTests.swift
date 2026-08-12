@@ -178,6 +178,75 @@ struct SupermuxHarnessRowBuilderTests {
         #expect(call.labels.running.contains("codex: codex"))
     }
 
+    /// The CLI emits `"\n\n"` text blocks as separators between tool calls.
+    /// Projected as rows they draw nothing but still occupy a line box plus
+    /// `rowSpacing`, which is the "huge blank gaps between tool rows" bug.
+    @Test func whitespaceOnlyProseProducesNoRow() {
+        var builder = SupermuxHarnessRowBuilder()
+        builder.consume(line("""
+        {"type":"assistant","session_id":"s","message":{"id":"m","role":"assistant",
+        "content":[{"type":"text","text":"\\n\\n   "}]}}
+        """))
+        #expect(builder.rows.isEmpty)
+    }
+
+    @Test func whitespaceOnlyThinkingProducesNoRow() {
+        var builder = SupermuxHarnessRowBuilder()
+        builder.consume(line("""
+        {"type":"assistant","session_id":"s","message":{"id":"m","role":"assistant",
+        "content":[{"type":"thinking","thinking":"  \\n ","signature":"sig"}]}}
+        """))
+        #expect(builder.rows.isEmpty)
+    }
+
+    @Test func blankNoticeProducesNoRow() {
+        var builder = SupermuxHarnessRowBuilder()
+        builder.append(notice: SupermuxHarnessNotice(severity: .info, title: "  \n "))
+        #expect(builder.rows.isEmpty)
+
+        builder.append(notice: SupermuxHarnessNotice(severity: .info, title: "real"))
+        #expect(builder.rows.count == 1)
+    }
+
+    /// A blank separator between two tool calls must not leave a gap row
+    /// *between* them — the exact shape of the reported transcript.
+    @Test func blankSeparatorBetweenToolCallsLeavesNoGapRow() {
+        var builder = SupermuxHarnessRowBuilder()
+        builder.consume(line("""
+        {"type":"assistant","session_id":"s","message":{"id":"m","role":"assistant",
+        "content":[
+        {"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}},
+        {"type":"text","text":"\\n"},
+        {"type":"tool_use","id":"t2","name":"Bash","input":{"command":"pwd"}}]}}
+        """))
+        #expect(builder.rows.count == 2)
+        for row in builder.rows {
+            guard case .toolCall = row.kind else {
+                Issue.record("expected only tool rows, got \(row.kind)")
+                return
+            }
+        }
+    }
+
+    /// Both halves of a tool row must be present: the humanized label is what
+    /// collapsed into a 1-glyph vertical column, and a row that lost its label
+    /// would "pass" a subject-only assertion.
+    @Test func toolRowCarriesBothAHumanizedLabelAndItsSubject() {
+        var builder = SupermuxHarnessRowBuilder()
+        builder.consume(line("""
+        {"type":"assistant","session_id":"s","message":{"id":"m","role":"assistant",
+        "content":[{"type":"tool_use","id":"t","name":"Bash",
+        "input":{"command":"echo hello"}}]}}
+        """))
+        guard case .toolCall(let call) = builder.rows[0].kind else {
+            Issue.record("expected tool row")
+            return
+        }
+        #expect(call.labels.running == "Running command")
+        #expect(call.labels.done == "Ran command")
+        #expect(call.subject == "echo hello")
+    }
+
     @Test func derivedTitleClipsOnAWordBoundary() {
         let short = SupermuxHarnessViewModel.title(fromPrompt: "Fix the login bug")
         #expect(short == "Fix the login bug")

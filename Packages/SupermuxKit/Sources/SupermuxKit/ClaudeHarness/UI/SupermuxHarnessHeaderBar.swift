@@ -34,6 +34,7 @@ struct SupermuxHarnessHeaderBar: View {
                 Text(String(format: "$%.4f", totalCostUSD))
                     .cmuxFont(size: SupermuxHarnessTokens.caption, monospacedDigit: true)
                     .foregroundStyle(theme.mutedText)
+                    .supermuxHarnessRigidLabel()
             }
             // No header stop button: the composer's send→stop morph is the one
             // interrupt affordance (four simultaneous busy signals is three too
@@ -101,6 +102,7 @@ struct SupermuxHarnessHeaderBar: View {
             Text(stateLabel)
                 .cmuxFont(size: SupermuxHarnessTokens.caption)
                 .foregroundStyle(theme.mutedText)
+                .supermuxHarnessRigidLabel()
         }
         .onChange(of: isBusy) { _, busy in
             isPulsing = busy

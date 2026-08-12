@@ -52,7 +52,11 @@ public struct SupermuxHarnessRowBuilder: Sendable {
     }
 
     /// Appends a notice row (diagnostics, process end, launcher errors).
+    ///
+    /// A notice with a blank title is dropped: it would render as an icon and a
+    /// zero-width string, i.e. an empty band in the transcript.
     public mutating func append(notice: SupermuxHarnessNotice) {
+        guard !notice.title.isBlankForTranscript else { return }
         noticeCounter += 1
         upsert(SupermuxHarnessRow(id: "notice-\(noticeCounter)", kind: .notice(notice)))
     }
@@ -69,7 +73,12 @@ public struct SupermuxHarnessRowBuilder: Sendable {
             let rowID = "\(message.key.messageID)-\(block.index)"
             switch block.content {
             case .text(let text, _):
-                guard !text.isEmpty else { continue }
+                // Whitespace-only is not content. The CLI regularly emits
+                // "\n\n" text blocks as separators between tool calls; an
+                // `isEmpty` check lets those through, and each one becomes a
+                // real row occupying a real line box plus `rowSpacing` — blank
+                // bands in the transcript with nothing drawn in them.
+                guard !text.isBlankForTranscript else { continue }
                 upsert(
                     SupermuxHarnessRow(
                         id: rowID,
@@ -77,7 +86,7 @@ public struct SupermuxHarnessRowBuilder: Sendable {
                     )
                 )
             case .thinking(let thinking, _):
-                guard !thinking.isEmpty else { continue }
+                guard !thinking.isBlankForTranscript else { continue }
                 upsert(
                     SupermuxHarnessRow(
                         id: rowID,
@@ -145,7 +154,7 @@ public struct SupermuxHarnessRowBuilder: Sendable {
     private mutating func applySystem(_ event: ClaudeSystemEvent) {
         switch event {
         case .notification(let notification):
-            guard let text = notification.text, !text.isEmpty else { return }
+            guard let text = notification.text, !text.isBlankForTranscript else { return }
             append(notice: SupermuxHarnessNotice(severity: .info, title: text))
         case .permissionDenied(let payload):
             append(
@@ -182,5 +191,16 @@ public struct SupermuxHarnessRowBuilder: Sendable {
         }
         indexByID[row.id] = rows.count
         rows.append(row)
+    }
+}
+
+extension String {
+    /// True when this string would render as an empty transcript row.
+    ///
+    /// Deliberately stricter than `isEmpty`: a block of only newlines or spaces
+    /// still occupies a full line box plus the surrounding `rowSpacing`, so it
+    /// reads as an unexplained gap in the transcript rather than as nothing.
+    var isBlankForTranscript: Bool {
+        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
