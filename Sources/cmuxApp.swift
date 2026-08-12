@@ -759,6 +759,19 @@ struct cmuxApp: App {
                     }
                 }
 
+                // SUPERMUX:begin supermux-claude-harness-menu
+                Button(
+                    String(
+                        localized: "supermux.harness.menu.newSession",
+                        defaultValue: "New Claude Code Session"
+                    )
+                ) {
+                    if !SupermuxClaudeHarnessLauncher.open(tabManager: activeTabManager) {
+                        NSSound.beep()
+                    }
+                }
+                // SUPERMUX:end supermux-claude-harness-menu
+
                 splitCommandButton(title: String(localized: "menu.file.newWorkspaceGroup", defaultValue: "New Workspace Group"), shortcut: menuShortcut(for: .newWorkspaceGroup)) {
                     _ = AppDelegate.shared?.createEmptyWorkspaceGroup(
                         tabManager: activeTabManager,

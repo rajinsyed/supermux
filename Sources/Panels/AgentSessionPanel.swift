@@ -60,6 +60,12 @@ final class AgentSessionPanel: Panel {
     }
 
     func close() {
+        // SUPERMUX:begin supermux-claude-harness-lifecycle
+        // Primary teardown for a native Claude harness session. It cannot live
+        // in the view: `AgentSessionPanelView` renders `Color.clear` while the
+        // panel is hidden, so `onDisappear` would kill a backgrounded session.
+        SupermuxClaudeHarness.closeSession(panelID: id)
+        // SUPERMUX:end supermux-claude-harness-lifecycle
         rendererSession.close()
     }
 

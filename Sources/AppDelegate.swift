@@ -2192,6 +2192,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         stopSessionAutosaveTimer()
         CloudVMActionLauncher.shared.terminateAll()
         CmuxSSHURLProcessLauncher.shared.terminateAll()
+        // SUPERMUX:begin supermux-claude-harness-terminate
+        // Native Claude harness children get stdin EOF + SIGTERM synchronously;
+        // the SIGKILL escalation cannot run here, but a child that survives the
+        // app loses its pipes anyway.
+        SupermuxClaudeHarness.terminateAllForAppShutdown()
+        // SUPERMUX:end supermux-claude-harness-terminate
         MobileHostService.shared.stop()
         TerminalController.shared.stop()
         GhosttyApp.terminalPasteboard.cleanupAllOwnedTemporaryImageFiles()
