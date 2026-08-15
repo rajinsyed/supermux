@@ -265,6 +265,73 @@ import Testing
         #expect(state.streamStatus == .streaming)
     }
 
+    // SUPERMUX:begin simulator-stream-presentation-lifecycle
+    /// SwiftUI may mount the returning workspace before unmounting the old
+    /// detail. The departing host must not deactivate the replacement host for
+    /// the same panel.
+    @Test func overlappingPresentationsKeepReplacementSimulatorActive() {
+        let store = MobileSimulatorStreamStore()
+        store.replaceSimulatorPanels(in: "workspace-1", with: [simulatorDescriptor()])
+        store.activate(panelID: "sim-1", in: "workspace-1")
+        let departingPresentation = UUID()
+        let replacementPresentation = UUID()
+
+        #expect(!store.presentationDidAppear(
+            id: departingPresentation,
+            panelID: "sim-1",
+            in: "workspace-1"
+        ))
+        #expect(!store.presentationDidAppear(
+            id: replacementPresentation,
+            panelID: "sim-1",
+            in: "workspace-1"
+        ))
+
+        #expect(!store.presentationDidDisappear(
+            id: departingPresentation,
+            panelID: "sim-1",
+            in: "workspace-1"
+        ))
+        #expect(store.activeState(in: "workspace-1")?.id == "sim-1")
+
+        #expect(store.presentationDidDisappear(
+            id: replacementPresentation,
+            panelID: "sim-1",
+            in: "workspace-1"
+        ))
+        #expect(store.activeState(in: "workspace-1") == nil)
+    }
+
+    /// If the old detail disappears first, the replacement presentation
+    /// restores the same panel and tells its caller to restart the stream.
+    @Test func replacementPresentationRestoresSimulatorAfterDisappearFirst() {
+        let store = MobileSimulatorStreamStore()
+        store.replaceSimulatorPanels(in: "workspace-1", with: [simulatorDescriptor()])
+        store.activate(panelID: "sim-1", in: "workspace-1")
+        let departingPresentation = UUID()
+        let replacementPresentation = UUID()
+        store.presentationDidAppear(
+            id: departingPresentation,
+            panelID: "sim-1",
+            in: "workspace-1"
+        )
+
+        #expect(store.presentationDidDisappear(
+            id: departingPresentation,
+            panelID: "sim-1",
+            in: "workspace-1"
+        ))
+        #expect(store.activeState(in: "workspace-1") == nil)
+
+        #expect(store.presentationDidAppear(
+            id: replacementPresentation,
+            panelID: "sim-1",
+            in: "workspace-1"
+        ))
+        #expect(store.activeState(in: "workspace-1")?.id == "sim-1")
+    }
+    // SUPERMUX:end simulator-stream-presentation-lifecycle
+
     /// A `locked` start rejection means another phone owns the panel; the
     /// ownership remembered from an earlier successful start must not keep
     /// text and hardware controls live underneath the locked overlay.

@@ -174,9 +174,20 @@ public final class MobileSimulatorStreamSurfaceState: Identifiable {
 @MainActor
 @Observable
 public final class MobileSimulatorStreamStore {
+    // SUPERMUX:begin simulator-stream-presentation-lifecycle
+    private struct PresentationKey: Hashable {
+        let workspaceID: String
+        let panelID: String
+    }
+    // SUPERMUX:end simulator-stream-presentation-lifecycle
+
     private var descriptorsByWorkspace: [String: [MobileSimulatorPanelDescriptor]] = [:]
     private var statesByPanel: [String: MobileSimulatorStreamSurfaceState] = [:]
     private var activePanelByWorkspace: [String: String] = [:]
+    // SUPERMUX:begin simulator-stream-presentation-lifecycle
+    /// View-host bookkeeping is lifecycle state, not rendered domain state.
+    @ObservationIgnored private var presentationIDsByKey: [PresentationKey: Set<UUID>] = [:]
+    // SUPERMUX:end simulator-stream-presentation-lifecycle
     private var currentConnectionStatus: MobileSimulatorStreamSurfaceState.ConnectionStatus = .disconnected
 
     public init() {}
@@ -202,6 +213,9 @@ public final class MobileSimulatorStreamStore {
         }
         if let active = activePanelByWorkspace[workspaceID], !currentIDs.contains(active) {
             activePanelByWorkspace[workspaceID] = nil
+            // SUPERMUX:begin simulator-stream-presentation-lifecycle
+            removePresentations(panelID: active, in: workspaceID)
+            // SUPERMUX:end simulator-stream-presentation-lifecycle
         }
         pruneUnreferencedPanelStates()
     }
@@ -214,12 +228,84 @@ public final class MobileSimulatorStreamStore {
         activePanelByWorkspace[workspaceID].flatMap { statesByPanel[$0] }
     }
 
+    // SUPERMUX:begin simulator-stream-presentation-lifecycle
+    /// Registers one mounted Simulator view and restores its local selection if
+    /// a departing predecessor cleared it during SwiftUI's transition.
+    ///
+    /// - Parameters:
+    ///   - presentationID: Stable identity owned by one mounted view instance.
+    ///   - panelID: Simulator panel rendered by the view.
+    ///   - workspaceID: Mac-local workspace containing the panel.
+    ///   - restoreSelectionIfNeeded: Whether this presentation may restore an
+    ///     inactive local selection. Lifecycle registration always occurs.
+    /// - Returns: `true` when the caller must restart the stream because this
+    ///   presentation restored an inactive selection.
+    @discardableResult
+    public func presentationDidAppear(
+        id presentationID: UUID,
+        panelID: String,
+        in workspaceID: String,
+        restoreSelectionIfNeeded: Bool = true
+    ) -> Bool {
+        guard statesByPanel[panelID] != nil else { return false }
+        let key = PresentationKey(workspaceID: workspaceID, panelID: panelID)
+        presentationIDsByKey[key, default: []].insert(presentationID)
+        guard restoreSelectionIfNeeded,
+              activePanelByWorkspace[workspaceID] != panelID else {
+            return false
+        }
+        return activate(panelID: panelID, in: workspaceID) != nil
+    }
+
+    /// Ends one mounted Simulator view without disturbing a replacement view
+    /// for the same panel that appeared before this callback arrived.
+    ///
+    /// - Parameters:
+    ///   - presentationID: Identity previously passed to
+    ///     ``presentationDidAppear(id:panelID:in:restoreSelectionIfNeeded:)``.
+    ///   - panelID: Simulator panel rendered by the departing view.
+    ///   - workspaceID: Mac-local workspace containing the panel.
+    /// - Returns: `true` only when this was the final mounted presentation of
+    ///   the workspace's active Simulator, so the caller owns stream teardown.
+    @discardableResult
+    public func presentationDidDisappear(
+        id presentationID: UUID,
+        panelID: String,
+        in workspaceID: String
+    ) -> Bool {
+        let key = PresentationKey(workspaceID: workspaceID, panelID: panelID)
+        guard var presentationIDs = presentationIDsByKey[key],
+              presentationIDs.remove(presentationID) != nil else {
+            return false
+        }
+        if presentationIDs.isEmpty {
+            presentationIDsByKey.removeValue(forKey: key)
+        } else {
+            presentationIDsByKey[key] = presentationIDs
+        }
+        guard presentationIDs.isEmpty,
+              activePanelByWorkspace[workspaceID] == panelID else {
+            return false
+        }
+        activePanelByWorkspace[workspaceID] = nil
+        statesByPanel[panelID]?.streamStatus = .idle
+        return true
+    }
+    // SUPERMUX:end simulator-stream-presentation-lifecycle
+
     @discardableResult
     public func activate(
         panelID: String,
         in workspaceID: String
     ) -> MobileSimulatorStreamSurfaceState? {
         guard let state = statesByPanel[panelID] else { return nil }
+        // SUPERMUX:begin simulator-stream-presentation-lifecycle
+        if let previousPanelID = activePanelByWorkspace[workspaceID],
+           previousPanelID != panelID {
+            statesByPanel[previousPanelID]?.streamStatus = .idle
+            removePresentations(panelID: previousPanelID, in: workspaceID)
+        }
+        // SUPERMUX:end simulator-stream-presentation-lifecycle
         activePanelByWorkspace[workspaceID] = panelID
         state.connectionStatus = currentConnectionStatus
         // Re-selecting a stalled panel must not hide the stall; the overlay
@@ -233,6 +319,9 @@ public final class MobileSimulatorStreamStore {
     public func deactivate(in workspaceID: String) {
         if let panelID = activePanelByWorkspace.removeValue(forKey: workspaceID) {
             statesByPanel[panelID]?.streamStatus = .idle
+            // SUPERMUX:begin simulator-stream-presentation-lifecycle
+            removePresentations(panelID: panelID, in: workspaceID)
+            // SUPERMUX:end simulator-stream-presentation-lifecycle
         }
     }
 
@@ -244,6 +333,9 @@ public final class MobileSimulatorStreamStore {
         guard activePanelByWorkspace[workspaceID] == panelID else { return }
         activePanelByWorkspace[workspaceID] = nil
         statesByPanel[panelID]?.streamStatus = .idle
+        // SUPERMUX:begin simulator-stream-presentation-lifecycle
+        removePresentations(panelID: panelID, in: workspaceID)
+        // SUPERMUX:end simulator-stream-presentation-lifecycle
     }
 
     public func simulatorStreamWillStart(panelID: String) {
@@ -343,6 +435,9 @@ public final class MobileSimulatorStreamStore {
         statesByPanel[event.panelID]?.streamStatus = .closed
         for (workspaceID, panelID) in activePanelByWorkspace where panelID == event.panelID {
             activePanelByWorkspace[workspaceID] = nil
+            // SUPERMUX:begin simulator-stream-presentation-lifecycle
+            removePresentations(panelID: panelID, in: workspaceID)
+            // SUPERMUX:end simulator-stream-presentation-lifecycle
         }
         for (workspaceID, descriptors) in descriptorsByWorkspace {
             descriptorsByWorkspace[workspaceID] = descriptors.filter { $0.panelID != event.panelID }
@@ -350,6 +445,14 @@ public final class MobileSimulatorStreamStore {
         pruneUnreferencedPanelStates()
         return event.panelID
     }
+
+    // SUPERMUX:begin simulator-stream-presentation-lifecycle
+    private func removePresentations(panelID: String, in workspaceID: String) {
+        presentationIDsByKey.removeValue(
+            forKey: PresentationKey(workspaceID: workspaceID, panelID: panelID)
+        )
+    }
+    // SUPERMUX:end simulator-stream-presentation-lifecycle
 
     /// Drops state objects for panels no longer present in any workspace's
     /// descriptor list and not the active panel anywhere. Each retained state
