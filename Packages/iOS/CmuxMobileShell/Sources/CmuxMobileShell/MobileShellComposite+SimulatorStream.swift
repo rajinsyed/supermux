@@ -15,7 +15,17 @@ extension MobileShellComposite {
 
     public func stopMobileSimulatorStream(panelID: String, workspaceID: String) async {
         await enqueueMobileSimulatorStreamOperation(panelID: panelID) { [weak self] in
-            await self?.performMobileSimulatorStreamStop(panelID: panelID, workspaceID: workspaceID)
+            guard let self else { return }
+            // SUPERMUX:begin simulator-stream-presentation-lifecycle
+            // SwiftUI can deliver an old presentation's stop after the same
+            // panel is active again. Selection-driven stops must yield to that
+            // newer intent; background teardown calls the unconditional
+            // `performMobileSimulatorStreamStop` path directly.
+            guard self.simulatorStreamStore?.activeSimulatorStreamSelections().contains(where: {
+                $0.workspaceID == workspaceID && $0.panelID == panelID
+            }) != true else { return }
+            // SUPERMUX:end simulator-stream-presentation-lifecycle
+            await self.performMobileSimulatorStreamStop(panelID: panelID, workspaceID: workspaceID)
         }.value
     }
 

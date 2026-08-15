@@ -1,3 +1,6 @@
+// SUPERMUX:begin simulator-stream-presentation-lifecycle
+import CMUXMobileCore
+// SUPERMUX:end simulator-stream-presentation-lifecycle
 import CmuxMobileBrowser
 import CmuxMobileBrowserStream
 import CmuxMobileShell
@@ -157,23 +160,31 @@ extension WorkspaceDetailView {
         )
         .id(simulator.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onDisappear {
-            // Panel-scoped: when switching simulator A -> B, A's onDisappear
-            // fires AFTER B was activated, so the unconditional deactivate
-            // would clear B's fresh selection. The stop targets only this
-            // pane's panel and is a no-op on the Mac if it was already
-            // stopped by the selection switch.
-            simulatorStreamStore.deactivate(
-                panelID: simulator.id,
-                in: workspace.rpcWorkspaceID.rawValue
-            )
-            Task {
+        // SUPERMUX:begin simulator-stream-presentation-lifecycle
+        .simulatorStreamPresentationLifecycle(
+            panelID: simulator.id,
+            workspaceID: workspace.rpcWorkspaceID.rawValue,
+            isCurrentSelection: {
+                store.selectedWorkspaceID == workspace.id
+                    && store.selectedWorkspaceFocusedPanel == MobileWorkspaceFocusedPanel(
+                        panelID: simulator.id,
+                        kind: MobileWorkspaceFocusedPanel.simulatorKind
+                    )
+            },
+            startStream: {
+                await store.startMobileSimulatorStream(
+                    panelID: simulator.id,
+                    workspaceID: workspace.rpcWorkspaceID.rawValue
+                )
+            },
+            stopStream: {
                 await store.stopMobileSimulatorStream(
                     panelID: simulator.id,
                     workspaceID: workspace.rpcWorkspaceID.rawValue
                 )
             }
-        }
+        )
+        // SUPERMUX:end simulator-stream-presentation-lifecycle
     }
 
     // SUPERMUX:begin ios-pane-unread-acknowledgment

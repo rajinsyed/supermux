@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **396**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **412**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -420,6 +420,12 @@ Rules for adding a touchpoint:
 | 404 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxProjectsSectionModel.swift` | `unfenced` | Revalidates the live store, project presence, custom-icon flag, and icon etag after the async fetch before writing the app-group mirror. A stale response cannot resurrect a removed or replaced logo |
 | 405 | `Packages/iOS/SupermuxMobileKit/Sources/SupermuxMobileKit/SupermuxMobileProjectsStore.swift` | `unfenced` | Prunes the shared push-avatar mirror against live projects unless `hasCustomIcon` is explicitly `false`: deleted and confirmed-iconless projects lose stale files, while optional `nil` from older hosts remains "unknown" and preserves bytes a banner cannot re-fetch |
 | 406 | `scripts/supermux-ios-release.sh` | `unfenced` | Treats `group.com.supermux.ios` as the fixed entitlement/runtime-reader contract. A conflicting `SUPERMUX_IOS_APP_GROUP` now fails before `xcodebuild` instead of producing a signature that verifies while both readers silently open another container |
+| 407 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileSimulatorStreamStore.swift` | `simulator-stream-presentation-lifecycle` | Tracks mounted Simulator presentations by stable view identity, lets overlapping old/new details share the same active panel, restores selection when the old view disappears first, and clears presentation registrations through every explicit deactivate/close/discovery-removal path |
+| 408 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+SimulatorStream.swift` | `simulator-stream-presentation-lifecycle` | Makes selection-driven Simulator stops yield when the exact workspace/panel is active again before the serialized stop runs; background teardown stays unconditional through the existing private stop path |
+| 409 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/SimulatorStreamPresentationLifecycleModifier.swift` | `simulator-stream-presentation-lifecycle` | Whole-file fork addition giving each mounted Simulator view a stable UUID, registering it on appear, restarting when it restores a current selection, and stopping only when its disappearance removes the final presentation |
+| 410 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+Surfaces.swift` | `simulator-stream-presentation-lifecycle` | Adds the direct `CMUXMobileCore` import needed for the generic focused-panel value, then replaces the Simulator pane's unconditional `onDisappear` teardown with the presentation-lifecycle modifier gated on the exact authoritative workspace/panel selection |
+| 411 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileSimulatorStreamStoreTests.swift` | `simulator-stream-presentation-lifecycle` | Behavior coverage for both SwiftUI lifecycle orders: replacement appears before old detail disappears, and old detail disappears before replacement appears and must request a restart |
+| 412 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellCompositeSimulatorStreamTests.swift` | `simulator-stream-presentation-lifecycle` | Red/green regression proving a delayed presentation stop cannot remove a reactivated panel's live-session marker, while a genuinely inactive panel still stops |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
@@ -3664,3 +3670,48 @@ keep plain `--tag` + the `~/.secrets` auto-sign-in.
 **To re-apply after an upstream merge:** re-add the three #338 fences around reload.sh's flag
 declarations, arg parse, and the post-quit block (the seeder script itself is fork-owned and merges
 clean), and re-insert the #339 doc fence after upstream's reload section.
+
+### 407–412. Simulator stream presentation lifecycle — `simulator-stream-presentation-lifecycle`
+
+**Symptom:** open a Simulator pane from the phone, switch to another pane/workspace tab, then return.
+The phone loses the stream and the Mac Simulator pane can fall onto its connection-failure screen.
+
+**Cause:** Simulator teardown had two independent owners. Selection actions deactivated and queued a
+stop, while the conditionally mounted pane also queued an unconditional stop from `onDisappear`.
+SwiftUI is free to unmount an old detail after its replacement appears; task scheduling could also
+let either stale stop run after the same panel was active again. The per-panel RPC queue serialized
+those operations but preserved the wrong order, so a delayed old teardown could release the new
+session's Mac ownership and disable its framebuffer.
+
+Keep the fix as one lifecycle path:
+
+1. `MobileSimulatorStreamStore` records a stable presentation UUID per `(workspace, panel)`. The
+   final registered presentation owns deactivation; an overlapping old view cannot clear a newer
+   view for the same panel. If the old view disappears first, the replacement registration restores
+   the local selection and reports that the caller must restart. Explicit deactivate, panel switch,
+   discovery removal, and close all clear registrations so the later `onDisappear` is a no-op.
+2. `SimulatorStreamPresentationLifecycleModifier` owns registration plus start/stop dispatch for one
+   mounted view. It may restore only when the phone's selected workspace and generic focused panel
+   still exactly identify this Simulator; it always registers lifecycle identity so a later
+   authoritative transition can still tear the view down cleanly.
+3. `WorkspaceDetailView+Surfaces.swift` keeps the fenced `CMUXMobileCore` import for
+   `MobileWorkspaceFocusedPanel`, then mounts that modifier instead of keeping a second raw
+   `onDisappear` stop path.
+4. `MobileShellComposite.stopMobileSimulatorStream` re-checks the active selection inside the
+   serialized operation. A stop queued by an old presentation yields if the exact panel is active
+   again. Do **not** put that gate in `performMobileSimulatorStreamStop`: backgrounding intentionally
+   keeps selections for foreground restart but must still stop every Mac session unconditionally.
+
+Re-apply all six rows together. The two store tests pin both SwiftUI lifecycle orders, and the
+composite regression pins the task-order race (reactivated selection skips the stale stop, then a
+real deactivation still stops). Run:
+
+```bash
+swift test --package-path Packages/iOS/CmuxMobileShell \
+  --filter MobileSimulatorStreamStoreTests
+swift test --package-path Packages/iOS/CmuxMobileShell \
+  --filter MobileShellCompositeSimulatorStreamTests
+```
+
+Then verify on a real phone: open Simulator, switch to a terminal or another workspace, return, and
+confirm the same pane resumes without either the phone stream or Mac Simulator connection failing.

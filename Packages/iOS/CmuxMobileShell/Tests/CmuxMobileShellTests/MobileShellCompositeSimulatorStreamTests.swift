@@ -23,6 +23,33 @@ import Testing
         #expect(store.state(for: "sim-1")?.streamStatus == .idle)
     }
 
+    // SUPERMUX:begin simulator-stream-presentation-lifecycle
+    /// A delayed `onDisappear` stop belongs to the presentation that left. If
+    /// the same panel is already active again, that stale stop must not tear
+    /// down the replacement presentation's live Mac session.
+    @Test func stalePresentationStopPreservesReactivatedSimulatorStream() async {
+        let store = MobileSimulatorStreamStore()
+        store.replaceSimulatorPanels(in: "workspace-1", with: [Self.descriptor()])
+        store.activate(panelID: "sim-1", in: "workspace-1")
+        let composite = MobileShellComposite(simulatorStreamStore: store)
+        composite.startedMobileSimulatorPanelIDs.insert("sim-1")
+
+        await composite.stopMobileSimulatorStream(
+            panelID: "sim-1",
+            workspaceID: "workspace-1"
+        )
+
+        #expect(composite.startedMobileSimulatorPanelIDs.contains("sim-1"))
+
+        store.deactivate(panelID: "sim-1", in: "workspace-1")
+        await composite.stopMobileSimulatorStream(
+            panelID: "sim-1",
+            workspaceID: "workspace-1"
+        )
+        #expect(!composite.startedMobileSimulatorPanelIDs.contains("sim-1"))
+    }
+    // SUPERMUX:end simulator-stream-presentation-lifecycle
+
     /// A staleness fire surfaces the stall and re-requests the stream; when
     /// the restart cannot reach the Mac, the pane stays visibly stalled
     /// instead of flipping back to a live-looking frame.
