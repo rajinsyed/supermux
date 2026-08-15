@@ -1,7 +1,6 @@
 import Foundation
-import SupermuxClaudeHarness
 import Testing
-@testable import SupermuxKit
+@testable import SupermuxClaudeHarness
 
 /// Transcript projection: the rule that matters is that refinements UPDATE a
 /// row rather than appending a second one. Every streaming delta appending a
@@ -59,8 +58,9 @@ struct SupermuxHarnessRowBuilderTests {
         "input":{"command":"echo ok"}}]}}
         """))
         #expect(builder.rows.count == 1)
-        guard case .toolCall(let running) = builder.rows[0].kind else {
-            Issue.record("expected tool row")
+        guard case .toolGroup(let opened) = builder.rows[0].kind,
+              let running = opened.tools.first else {
+            Issue.record("expected a tool group")
             return
         }
         #expect(running.status == .running)
@@ -74,8 +74,9 @@ struct SupermuxHarnessRowBuilderTests {
 
         // Still ONE row: the result refines the call, it is not a new event.
         #expect(builder.rows.count == 1)
-        guard case .toolCall(let finished) = builder.rows[0].kind else {
-            Issue.record("expected tool row")
+        guard case .toolGroup(let resolved) = builder.rows[0].kind,
+              let finished = resolved.tools.first else {
+            Issue.record("expected a tool group")
             return
         }
         #expect(finished.status == .succeeded)
@@ -92,8 +93,9 @@ struct SupermuxHarnessRowBuilderTests {
         {"type":"user","session_id":"s","message":{"role":"user","content":[
         {"tool_use_id":"t1","type":"tool_result","content":"no such file","is_error":true}]}}
         """))
-        guard case .toolCall(let call) = builder.rows[0].kind else {
-            Issue.record("expected tool row")
+        guard case .toolGroup(let group) = builder.rows[0].kind,
+              let call = group.tools.first else {
+            Issue.record("expected a tool group")
             return
         }
         #expect(call.status == .failed)
@@ -154,8 +156,9 @@ struct SupermuxHarnessRowBuilderTests {
         {"content":"two","status":"in_progress"},
         {"content":"three","status":"pending"}]}}]}}
         """))
-        guard case .toolCall(let call) = builder.rows[0].kind else {
-            Issue.record("expected tool row")
+        guard case .toolGroup(let group) = builder.rows[0].kind,
+              let call = group.tools.first else {
+            Issue.record("expected a tool group")
             return
         }
         let todos = call.todos
@@ -171,8 +174,9 @@ struct SupermuxHarnessRowBuilderTests {
         {"type":"assistant","session_id":"s","message":{"id":"m","role":"assistant",
         "content":[{"type":"tool_use","id":"t","name":"mcp__codex__codex","input":{}}]}}
         """))
-        guard case .toolCall(let call) = builder.rows[0].kind else {
-            Issue.record("expected tool row")
+        guard case .toolGroup(let group) = builder.rows[0].kind,
+              let call = group.tools.first else {
+            Issue.record("expected a tool group")
             return
         }
         #expect(call.labels.running.contains("codex: codex"))
@@ -209,7 +213,8 @@ struct SupermuxHarnessRowBuilderTests {
     }
 
     /// A blank separator between two tool calls must not leave a gap row
-    /// *between* them — the exact shape of the reported transcript.
+    /// *between* them — the exact shape of the reported transcript. It must
+    /// also not split the group, or every Claude tool pair would get its own.
     @Test func blankSeparatorBetweenToolCallsLeavesNoGapRow() {
         var builder = SupermuxHarnessRowBuilder()
         builder.consume(line("""
@@ -219,13 +224,12 @@ struct SupermuxHarnessRowBuilderTests {
         {"type":"text","text":"\\n"},
         {"type":"tool_use","id":"t2","name":"Bash","input":{"command":"pwd"}}]}}
         """))
-        #expect(builder.rows.count == 2)
-        for row in builder.rows {
-            guard case .toolCall = row.kind else {
-                Issue.record("expected only tool rows, got \(row.kind)")
-                return
-            }
+        #expect(builder.rows.count == 1)
+        guard case .toolGroup(let group) = builder.rows[0].kind else {
+            Issue.record("expected one tool group, got \(builder.rows[0].kind)")
+            return
         }
+        #expect(group.tools.count == 2)
     }
 
     /// Both halves of a tool row must be present: the humanized label is what
@@ -238,25 +242,13 @@ struct SupermuxHarnessRowBuilderTests {
         "content":[{"type":"tool_use","id":"t","name":"Bash",
         "input":{"command":"echo hello"}}]}}
         """))
-        guard case .toolCall(let call) = builder.rows[0].kind else {
-            Issue.record("expected tool row")
+        guard case .toolGroup(let group) = builder.rows[0].kind,
+              let call = group.tools.first else {
+            Issue.record("expected a tool group")
             return
         }
         #expect(call.labels.running == "Running command")
         #expect(call.labels.done == "Ran command")
         #expect(call.subject == "echo hello")
-    }
-
-    @Test func derivedTitleClipsOnAWordBoundary() {
-        let short = SupermuxHarnessViewModel.title(fromPrompt: "Fix the login bug")
-        #expect(short == "Fix the login bug")
-
-        let long = SupermuxHarnessViewModel.title(
-            fromPrompt: "Please refactor the entire authentication subsystem today\nsecond line"
-        )
-        #expect(long.count <= 41)
-        #expect(long.hasSuffix("…"))
-        // Clipped on a space, never mid-word.
-        #expect(!long.dropLast().hasSuffix(" "))
     }
 }

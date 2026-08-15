@@ -1,7 +1,6 @@
 import Foundation
-import SupermuxClaudeHarness
 import Testing
-@testable import SupermuxKit
+@testable import SupermuxClaudeHarness
 
 /// Diff parsing, including the `structuredPatch` shape Claude Code actually
 /// emits on Edit/Write/MultiEdit results (the fixture corpus has it as `[]` for

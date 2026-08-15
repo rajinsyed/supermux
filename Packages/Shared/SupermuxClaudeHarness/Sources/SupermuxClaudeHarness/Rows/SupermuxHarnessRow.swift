@@ -1,5 +1,4 @@
 import Foundation
-public import SupermuxClaudeHarness
 
 /// One rendered transcript row.
 ///
@@ -7,6 +6,10 @@ public import SupermuxClaudeHarness
 /// truth: the builder rewrites a row in place when later lines refine it (a
 /// streaming text block completing, a tool call receiving its result), so the
 /// list identity stays stable and SwiftUI animates instead of re-inserting.
+///
+/// Consumers compare on `(id, version)`. An unchanged row keeps its
+/// fingerprint across a streaming delta, which is what stops a transcript from
+/// rebuilding every visible row per chunk.
 public struct SupermuxHarnessRow: Identifiable, Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         /// A prompt the user sent (the CLI's replayed `user` line).
@@ -15,8 +18,12 @@ public struct SupermuxHarnessRow: Identifiable, Sendable, Equatable {
         case assistantProse(text: String, isStreaming: Bool)
         /// An extended-thinking block.
         case thinking(text: String, isStreaming: Bool)
-        /// A tool invocation with its lifecycle state.
-        case toolCall(SupermuxHarnessToolCall)
+        /// Consecutive tool invocations, collapsed into one railed group.
+        ///
+        /// A lone call is a group of one. That uniformity is what makes the
+        /// guide rail, the summary line and the analytic `2 + 38N` height
+        /// model work without a second code path.
+        case toolGroup(SupermuxHarnessToolGroup)
         /// The terminal `result` line's cost/duration summary.
         case result(SupermuxHarnessResultSummary)
         /// A launcher/protocol/process notice.
@@ -25,10 +32,32 @@ public struct SupermuxHarnessRow: Identifiable, Sendable, Equatable {
 
     public let id: String
     public var kind: Kind
+    /// True on the first row of a message entry — selects the turn gap over
+    /// the block gap.
+    public var turnStart: Bool
+    /// The entry this row belongs to. Hovering ANY row of an entry reveals the
+    /// entry's timestamp.
+    public let entryID: String
+    /// Set only on the entry's LAST row, and only once streaming has ended —
+    /// "the turn isn't at a time yet" while it is still being written.
+    public var timestamp: Date?
+    /// Content fingerprint (FNV-1a over the row's rendered inputs).
+    public var version: UInt64
 
-    public init(id: String, kind: Kind) {
+    public init(
+        id: String,
+        kind: Kind,
+        turnStart: Bool = false,
+        entryID: String? = nil,
+        timestamp: Date? = nil,
+        version: UInt64 = 0
+    ) {
         self.id = id
         self.kind = kind
+        self.turnStart = turnStart
+        self.entryID = entryID ?? id
+        self.timestamp = timestamp
+        self.version = version
     }
 }
 
@@ -49,6 +78,13 @@ public struct SupermuxHarnessToolCall: Sendable, Equatable, Identifiable {
     public var resultText: String?
     /// The root `tool_use_result` payload, when the CLI sent one.
     public var toolUseResult: ClaudeJSONValue?
+    /// Per-file `+N −N` rows, the *thin* record of an edit.
+    ///
+    /// Claude Code sends a full `structuredPatch` inline, so the desktop
+    /// builder leaves this empty and ``detail`` resolves to a real diff. The
+    /// mobile projection, which strips patch bodies off the wire, fills it —
+    /// and a later full-diff fetch upgrades the detail back to `.diff`.
+    public var diffStats: [SupermuxHarnessDiffStat]
 
     public init(
         id: String,
@@ -56,7 +92,8 @@ public struct SupermuxHarnessToolCall: Sendable, Equatable, Identifiable {
         input: ClaudeJSONValue,
         status: Status,
         resultText: String? = nil,
-        toolUseResult: ClaudeJSONValue? = nil
+        toolUseResult: ClaudeJSONValue? = nil,
+        diffStats: [SupermuxHarnessDiffStat] = []
     ) {
         self.id = id
         self.name = name
@@ -64,15 +101,22 @@ public struct SupermuxHarnessToolCall: Sendable, Equatable, Identifiable {
         self.status = status
         self.resultText = resultText
         self.toolUseResult = toolUseResult
+        self.diffStats = diffStats
     }
 
     /// The humanized present/past-tense label pair for this tool.
+    ///
+    /// Retained for accessibility labels and the mobile DTO title. The chip's
+    /// visible verb is ``verb`` — one word, not a sentence.
     public var labels: ClaudeToolHumanizer.Labels {
         ClaudeToolHumanizer.labels(for: name)
     }
 
-    /// The single most identifying input value, shown beside the label
-    /// (a path for file tools, the command for Bash, the pattern for search).
+    /// The single most identifying input value (a path for file tools, the
+    /// command for Bash, the pattern for search), unprojected.
+    ///
+    /// ``chipSubject`` is what a chip renders; this is the raw lookup the
+    /// mobile DTO and diagnostics use.
     public var subject: String? {
         for key in ["file_path", "path", "notebook_path", "command", "pattern", "url", "query", "description"] {
             if let value = input[key]?.stringValue, !value.isEmpty {

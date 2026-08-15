@@ -1,5 +1,6 @@
 import SwiftUI
 import CmuxFoundation
+import SupermuxClaudeHarness
 
 /// A unified diff produced by an Edit/Write/MultiEdit tool call.
 ///

@@ -192,6 +192,8 @@ conflict surface:
    - `Packages/SupermuxKit/` — macOS domain models, services, persistence (Swift Package).
    - `Sources/Supermux/` — app-target UI + glue that needs app types (new files only).
    - `Packages/Shared/SupermuxMobileCore/` — the `mobile.supermux.*` wire contract.
+   - `Packages/Shared/SupermuxZeronUI/` — the shared Claude-harness chat design system (SwiftUI,
+     macOS 14+ / iOS 18+), plus the vendored Geist fonts and Solar icons.
    - `Packages/iOS/SupermuxMobileKit/` — iOS domain layer (Mac client, stores, capability gate).
    - `Packages/iOS/SupermuxMobileUI/` — iOS screens + its own localization catalog.
    New files never conflict on merge. (The `supermux-check-touchpoints.sh` fence-registration scan
@@ -237,7 +239,8 @@ git merge upstream/main
 # 3. If conflicts:
 #    - For files NOT in SUPERMUX-TOUCHPOINTS.md: take upstream's side unless the conflict is in a
 #      fork-owned dir (ours): Sources/Supermux/, Packages/SupermuxKit/,
-#      Packages/Shared/SupermuxMobileCore/, Packages/iOS/SupermuxMobile{Kit,UI}/.
+#      Packages/Shared/SupermuxMobileCore/, Packages/Shared/SupermuxClaudeHarness/,
+#      Packages/Shared/SupermuxZeronUI/, Packages/iOS/SupermuxMobile{Kit,UI}/.
 #    - For touchpoint files: take upstream's version of the surrounding code, then re-apply the
 #      fenced SUPERMUX block per SUPERMUX-TOUCHPOINTS.md instructions.
 #    - git grep -n "SUPERMUX:begin" -- ':!SUPERMUX*.md' — verify every registered fence still
@@ -286,6 +289,7 @@ Conflict heuristics:
 | `Packages/SupermuxKit/` | Supermux macOS domain package (models, services, persistence) |
 | `Sources/Supermux/` | App-target UI and glue code (new files only) |
 | `Packages/Shared/SupermuxMobileCore/` | `mobile.supermux.*` wire contract shared by Mac + phone |
+| `Packages/Shared/SupermuxZeronUI/` | Shared SwiftUI design system for the Claude harness chat pane (zeron port); vendored Geist fonts + Solar icons |
 | `Packages/iOS/SupermuxMobileKit/` | iOS domain layer (Mac client, stores, capability gate) |
 | `Packages/iOS/SupermuxMobileUI/` | iOS screens + its own `Localizable.xcstrings` |
 | `scripts/supermux-check-touchpoints.sh` | CI/manual check that fences and manifest agree |

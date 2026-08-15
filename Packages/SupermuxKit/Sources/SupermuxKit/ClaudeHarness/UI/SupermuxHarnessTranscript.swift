@@ -1,5 +1,6 @@
 import SwiftUI
 import CmuxFoundation
+import SupermuxClaudeHarness
 
 /// The scrolling transcript.
 ///
@@ -199,8 +200,14 @@ struct SupermuxHarnessRowView: View {
             SupermuxHarnessThinkingRow(
                 rowID: row.id, text: text, isStreaming: isStreaming, theme: theme
             )
-        case .toolCall(let call):
-            SupermuxHarnessToolCard(call: call, theme: theme)
+        case .toolGroup(let group):
+            // Interim: one card per call, stacked. The zeron port replaces this
+            // whole view with the railed group + 30 pt chips (plan §2.1 W2).
+            VStack(alignment: .leading, spacing: SupermuxHarnessTokens.rowSpacing) {
+                ForEach(group.tools) { call in
+                    SupermuxHarnessToolCard(call: call, theme: theme)
+                }
+            }
         case .result(let summary):
             SupermuxHarnessResultRow(summary: summary, theme: theme)
         case .notice(let notice):

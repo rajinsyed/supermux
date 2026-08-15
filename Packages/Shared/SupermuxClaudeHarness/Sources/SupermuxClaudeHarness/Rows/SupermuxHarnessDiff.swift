@@ -1,5 +1,4 @@
 import Foundation
-public import SupermuxClaudeHarness
 
 /// A parsed unified diff.
 ///
@@ -9,10 +8,68 @@ public import SupermuxClaudeHarness
 /// re-serialized into diff text and re-parsed.
 public struct SupermuxHarnessDiff: Sendable, Equatable {
     public let hunks: [Hunk]
+    /// Full-width meta rows the body renders ABOVE the hunks (truncation, and
+    /// whatever the renderer adds for file status). Part of the model because
+    /// the analytic body height counts them.
+    public let notices: [String]
+
+    public init(hunks: [Hunk], notices: [String] = []) {
+        self.hunks = hunks
+        self.notices = notices
+    }
 
     public var isEmpty: Bool { hunks.isEmpty }
     public var additions: Int { hunks.reduce(0) { $0 + $1.additions } }
     public var deletions: Int { hunks.reduce(0) { $0 + $1.deletions } }
+    /// Rendered diff rows across every hunk (the hunk headers are counted
+    /// separately, at their own height).
+    public var lineCount: Int { hunks.reduce(0) { $0 + $1.lines.count } }
+
+    /// Keeps hunks in order until the line budget is spent — the straddling
+    /// hunk is cut mid-hunk and later hunks are dropped — then appends the
+    /// counted notice.
+    ///
+    /// A transcript diff renders as ONE stacked element inside its row (the
+    /// changes pane virtualizes; this does not), so an unbounded whole-file
+    /// rewrite would build tens of thousands of views in a frame.
+    public func truncated(to maxLines: Int) -> SupermuxHarnessDiff {
+        let total = lineCount
+        guard maxLines >= 0, total > maxLines else { return self }
+        var kept: [Hunk] = []
+        var budget = maxLines
+        for hunk in hunks {
+            guard budget > 0 else { break }
+            if hunk.lines.count <= budget {
+                kept.append(hunk)
+                budget -= hunk.lines.count
+                continue
+            }
+            kept.append(
+                Hunk(
+                    id: hunk.id,
+                    oldStart: hunk.oldStart,
+                    newStart: hunk.newStart,
+                    lines: Array(hunk.lines.prefix(budget)),
+                    isSynthetic: hunk.isSynthetic
+                )
+            )
+            budget = 0
+        }
+        return SupermuxHarnessDiff(
+            hunks: kept,
+            notices: notices + [Self.truncationNotice(showing: maxLines, of: total)]
+        )
+    }
+
+    static func truncationNotice(showing: Int, of total: Int) -> String {
+        String(
+            format: String(
+                localized: "supermux.harness.diff.truncated",
+                defaultValue: "Diff truncated — showing first %1$lld of %2$lld lines"
+            ),
+            Int64(showing), Int64(total)
+        )
+    }
 
     public struct Hunk: Sendable, Equatable, Identifiable {
         public let id: String

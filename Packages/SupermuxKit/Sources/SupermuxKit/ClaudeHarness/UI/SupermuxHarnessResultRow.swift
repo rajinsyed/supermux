@@ -1,5 +1,6 @@
 import SwiftUI
 import CmuxFoundation
+import SupermuxClaudeHarness
 
 /// The one-line cost/duration/turns summary of a finished turn.
 struct SupermuxHarnessResultRow: View {

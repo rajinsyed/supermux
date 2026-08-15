@@ -159,4 +159,20 @@ struct SupermuxHarnessViewModelTests {
         #expect(model.startupError == nil)
         await registry.removeAll()
     }
+
+    /// Moved here with the row model: the projection now lives in
+    /// `SupermuxClaudeHarness`, but the derived session title is still the
+    /// view model's.
+    @Test func derivedTitleClipsOnAWordBoundary() {
+        let short = SupermuxHarnessViewModel.title(fromPrompt: "Fix the login bug")
+        #expect(short == "Fix the login bug")
+
+        let long = SupermuxHarnessViewModel.title(
+            fromPrompt: "Please refactor the entire authentication subsystem today\nsecond line"
+        )
+        #expect(long.count <= 41)
+        #expect(long.hasSuffix("…"))
+        // Clipped on a space, never mid-word.
+        #expect(!long.dropLast().hasSuffix(" "))
+    }
 }

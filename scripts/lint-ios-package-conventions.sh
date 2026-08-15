@@ -24,7 +24,7 @@ for d in Packages/Shared/CMUXMobileCore Packages/iOS/CmuxMobile* Packages/Shared
   [ -d "$d" ] && SCOPES+=("$d")
 done
 # SUPERMUX:begin lint-ios-conventions-fork-scopes (fork mobile packages join the iOS lint scope — see SUPERMUX-TOUCHPOINTS.md)
-for d in Packages/Shared/SupermuxMobileCore Packages/Shared/SupermuxClaudeHarness Packages/iOS/SupermuxMobile*; do
+for d in Packages/Shared/SupermuxMobileCore Packages/Shared/SupermuxClaudeHarness Packages/Shared/SupermuxZeronUI Packages/iOS/SupermuxMobile*; do
   [ -d "$d" ] && SCOPES+=("$d")
 done
 # SUPERMUX:end lint-ios-conventions-fork-scopes

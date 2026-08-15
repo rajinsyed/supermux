@@ -1471,6 +1471,13 @@ jobs:
           echo "::group::swift test Packages/Shared/SupermuxClaudeHarness"
           swift test --package-path Packages/Shared/SupermuxClaudeHarness
           echo "::endgroup::"
+          # SupermuxZeronUI is supermux-owned and absent from upstream's
+          # PACKAGES allowlist above; test it explicitly so its shared design
+          # system suite (token/metric fixtures, bezier fixtures, vendored
+          # font + icon assets) gates CI.
+          echo "::group::swift test Packages/Shared/SupermuxZeronUI"
+          swift test --package-path Packages/Shared/SupermuxZeronUI
+          echo "::endgroup::"
           # SUPERMUX:end ci-package-tests
 
   agent-session-web-resources:

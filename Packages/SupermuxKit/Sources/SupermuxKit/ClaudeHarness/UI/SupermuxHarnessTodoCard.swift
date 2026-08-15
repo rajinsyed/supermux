@@ -1,5 +1,6 @@
 import SwiftUI
 import CmuxFoundation
+import SupermuxClaudeHarness
 
 /// The plan a `TodoWrite` call wrote, with a segmented progress ring.
 ///

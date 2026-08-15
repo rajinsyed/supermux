@@ -1,0 +1,11 @@
+Icons: Solar Icons by 480 Design — https://creativecommons.org/licenses/by/4.0/
+Licensed under CC BY 4.0. Modified: re-exported to currentColor, several glyphs
+mirrored, and additional glyphs drawn in the same style.
+
+CC BY 4.0 §3(a) requires attribution reasonable for the medium, so this notice is
+also reproduced in the repository NOTICE and must be surfaced in the in-app
+Acknowledgements view — not left only in this file.
+
+The glyphs vendored here came through zeron/comet (MIT), which re-exported the
+Solar Linear set to `currentColor` and drew a handful of additional glyphs
+(`check`, `git-branch`) in the same style at heavier stroke weights.

@@ -1,0 +1,90 @@
+NOTICE
+======
+
+Supermux is a fork of cmux (https://github.com/manaflow-ai/cmux). This file records
+third-party material redistributed in supermux source and binaries, and the notices
+those licenses require to travel with it. Every notice below must also be surfaced in
+the in-app Acknowledgements view — several of these licenses require attribution
+"reasonable to the medium", which a repository file alone does not satisfy.
+
+
+-------------------------------------------------------------------------------
+zeron/comet — MIT License
+-------------------------------------------------------------------------------
+
+Portions of this software are derived from zeron/comet.
+
+zeron/comet
+Copyright (c) 2026 Wing
+Licensed under the MIT License.
+
+MIT License
+
+Copyright (c) 2026 Wing
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Where it applies: the Claude Code chat pane in Packages/Shared/SupermuxZeronUI is a
+SwiftUI port of zeron/comet's chat pane — its design tokens, layout metrics, motion
+curves, tool-chip geometry, markdown pipeline and diff body are derived from that
+source. The vendored icon set in that package also came through zeron/comet.
+
+
+-------------------------------------------------------------------------------
+Geist and Geist Mono — SIL Open Font License, Version 1.1
+-------------------------------------------------------------------------------
+
+Geist and Geist Mono
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
+Licensed under the SIL Open Font License, Version 1.1.
+
+The copyright line above is the one the vendored binaries carry in their own
+`name` table (nameID 0 / nameID 13) — it is NOT the older
+"Copyright (c) 2023 Vercel, in collaboration with basement.studio" that
+upstream's `LICENSE.txt` still shows. OFL §2 requires the license shipped
+alongside a face to be the one that face was released under, so `OFL.txt`
+reproduces upstream's `OFL.txt` verbatim, not `LICENSE.txt`.
+
+The full, verbatim license text ships with the fonts at
+
+    Packages/Shared/SupermuxZeronUI/Sources/SupermuxZeronUI/Resources/Fonts/OFL.txt
+
+and must be reproduced in the in-app Acknowledgements view. Upstream:
+https://github.com/vercel/geist-font
+
+Redistributed unmodified: Geist.ttf and GeistMono.ttf (variable, wght 100-900).
+The Reserved Font Name provisions of the OFL apply — do not ship a modified
+derivative under the Geist name.
+
+
+-------------------------------------------------------------------------------
+Solar Icons — Creative Commons Attribution 4.0 International (CC BY 4.0)
+-------------------------------------------------------------------------------
+
+Icons: Solar Icons by 480 Design — https://creativecommons.org/licenses/by/4.0/
+Licensed under CC BY 4.0. Modified: re-exported to currentColor, several glyphs
+mirrored, and additional glyphs drawn in the same style.
+
+Additional modification made by supermux: each vendored SVG's width/height
+attributes were rewritten from the "1em" extent zeron ships to the glyph's own
+viewBox extent, so Xcode's asset compiler derives the correct intrinsic point
+size. No path data, stroke weight, or color was changed.
+
+Where it lives:
+    Packages/Shared/SupermuxZeronUI/Sources/SupermuxZeronUI/Resources/Icons.xcassets
