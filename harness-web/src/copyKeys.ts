@@ -1,0 +1,219 @@
+export const copyDefaults = {
+  "supermux.harness.app.title": "Claude",
+  "supermux.harness.app.untitledSession": "New session",
+
+  "supermux.harness.empty.headline": "Claude Code, in your workspace",
+  "supermux.harness.empty.subhead": "Ask a question, describe a change, or paste an error.",
+  "supermux.harness.empty.workingIn": "Working in",
+  "supermux.harness.empty.recentSessions": "Recent sessions",
+  "supermux.harness.empty.suggestionsTitle": "Try one of these",
+  "supermux.harness.empty.suggestion1": "Explain how this project is structured",
+  "supermux.harness.empty.suggestion2": "Find and fix the failing test",
+  "supermux.harness.empty.suggestion3": "Review my uncommitted changes",
+
+  "supermux.harness.nocli.headline": "Claude Code CLI not found",
+  "supermux.harness.nocli.body":
+    "This pane drives the Claude Code command-line tool. Install it, then retry.",
+  "supermux.harness.nocli.install": "npm install -g @anthropic-ai/claude-code",
+  "supermux.harness.nocli.retry": "Retry detection",
+  "supermux.harness.nocli.docs": "Installation guide",
+  "supermux.harness.nocli.searchedPath": "Searched PATH and common version-manager directories.",
+
+  "supermux.harness.exited.headline": "Session ended",
+  "supermux.harness.exited.body": "The Claude process exited. Your transcript is preserved.",
+  "supermux.harness.exited.restart": "Start a new session",
+
+  "supermux.harness.composer.placeholder": "Message Claude…",
+  "supermux.harness.composer.placeholderRunning": "Send a follow-up — it will be queued",
+  "supermux.harness.composer.placeholderWaiting": "Respond to the request above",
+  "supermux.harness.composer.send": "Send",
+  "supermux.harness.composer.stop": "Stop",
+  "supermux.harness.composer.hintSend": "Enter to send",
+  "supermux.harness.composer.hintNewline": "Shift+Enter for a new line",
+  "supermux.harness.composer.hintInterrupt": "Esc to interrupt",
+  "supermux.harness.composer.hintMode": "Shift+Tab cycles permission mode",
+  "supermux.harness.composer.attach": "Attach files",
+  "supermux.harness.composer.removeAttachment": "Remove attachment",
+  "supermux.harness.composer.queued": "Queued",
+  "supermux.harness.composer.cancelQueued": "Cancel queued message",
+  "supermux.harness.composer.mentionTitle": "Files",
+  "supermux.harness.composer.mentionEmpty": "No matching files",
+  "supermux.harness.composer.commandTitle": "Commands",
+  "supermux.harness.composer.commandEmpty": "No matching commands",
+  "supermux.harness.composer.approxTokens": "~{count} tokens",
+
+  "supermux.harness.status.idle": "Ready",
+  "supermux.harness.status.thinking": "Claude is thinking…",
+  "supermux.harness.status.thinkingTokens": "Thinking · {tokens} tokens",
+  "supermux.harness.status.running": "Running {tool}",
+  "supermux.harness.status.waitingApproval": "Waiting for your approval",
+  "supermux.harness.status.compacting": "Compacting conversation…",
+  "supermux.harness.status.retrying": "Retrying in {seconds}s · attempt {attempt} of {max}",
+  "supermux.harness.status.starting": "Starting Claude…",
+  "supermux.harness.status.exited": "Process exited",
+  "supermux.harness.status.restart": "Restart",
+  "supermux.harness.status.workingFor": "Working for {duration}",
+  "supermux.harness.status.jumpToLatest": "Jump to latest",
+
+  "supermux.harness.turn.workedFor": "Worked for {duration}",
+  "supermux.harness.turn.stoppedAfter": "You stopped after {duration}",
+  "supermux.harness.turn.failedAfter": "Failed after {duration}",
+  "supermux.harness.turn.showWork": "Show work",
+  "supermux.harness.turn.hideWork": "Hide work",
+  "supermux.harness.turn.showFullMessage": "Show full message",
+  "supermux.harness.turn.showLess": "Show less",
+  "supermux.harness.turn.interrupted": "Interrupted",
+  "supermux.harness.turn.previousToolCalls": "{count} earlier tool calls",
+
+  "supermux.harness.thinking.label": "Thinking",
+  "supermux.harness.thinking.summary": "Thinking · {tokens} tokens · {duration}",
+  "supermux.harness.thinking.summaryNoTokens": "Thinking · {duration}",
+  "supermux.harness.thinking.redacted": "Reasoning is not shown for this account.",
+
+  "supermux.harness.tool.running": "Running",
+  "supermux.harness.tool.succeeded": "Done",
+  "supermux.harness.tool.failed": "Failed",
+  "supermux.harness.tool.denied": "Denied",
+  "supermux.harness.tool.aborted": "Interrupted",
+  "supermux.harness.tool.pending": "Preparing",
+  "supermux.harness.tool.noOutput": "No output",
+  "supermux.harness.tool.showMore": "Show {count} more lines",
+  "supermux.harness.tool.showLess": "Collapse output",
+  "supermux.harness.tool.copy": "Copy",
+  "supermux.harness.tool.copied": "Copied",
+  "supermux.harness.tool.wrap": "Wrap lines",
+  "supermux.harness.tool.openFile": "Open file",
+  "supermux.harness.tool.exitCode": "exit {code}",
+  "supermux.harness.tool.linesAdded": "+{count}",
+  "supermux.harness.tool.linesRemoved": "−{count}",
+  "supermux.harness.tool.filesFound": "{count} files",
+  "supermux.harness.tool.matchesFound": "{count} matches",
+  "supermux.harness.tool.linesRead": "{count} lines",
+  "supermux.harness.tool.created": "Created",
+  "supermux.harness.tool.updated": "Updated",
+  "supermux.harness.tool.searchResults": "{count} results",
+  "supermux.harness.tool.mcpServer": "MCP · {server}",
+  "supermux.harness.tool.rawInput": "Input",
+  "supermux.harness.tool.rawOutput": "Output",
+
+  "supermux.harness.subagent.badge": "Subagent",
+  "supermux.harness.subagent.background": "Background",
+  "supermux.harness.subagent.launched": "Launched {count} subagents",
+  "supermux.harness.subagent.tokens": "{tokens} tokens",
+  "supermux.harness.subagent.toolUses": "{count} tools",
+  "supermux.harness.subagent.showTranscript": "Show subagent work",
+  "supermux.harness.subagent.hideTranscript": "Hide subagent work",
+
+  "supermux.harness.todo.title": "Plan",
+  "supermux.harness.todo.progress": "{done}/{total}",
+  "supermux.harness.todo.expand": "Show all steps",
+  "supermux.harness.todo.collapse": "Collapse steps",
+
+  "supermux.harness.permission.title": "Permission needed",
+  "supermux.harness.permission.allowOnce": "Allow once",
+  "supermux.harness.permission.allowAlways": "Always allow",
+  "supermux.harness.permission.allowAlwaysRule": "Adds rule {rule}",
+  "supermux.harness.permission.deny": "Deny",
+  "supermux.harness.permission.denyReason": "Reason (optional)",
+  "supermux.harness.permission.denyAndStop": "Deny and stop",
+  "supermux.harness.permission.blockedPath": "Blocked path",
+  "supermux.harness.permission.moreWaiting": "{count} more waiting",
+  "supermux.harness.permission.destinationLocal": "this project",
+  "supermux.harness.permission.destinationProject": "the project settings",
+  "supermux.harness.permission.destinationUser": "all projects",
+  "supermux.harness.permission.destinationSession": "this session",
+
+  "supermux.harness.plan.badge": "Plan",
+  "supermux.harness.plan.title": "Claude has a plan",
+  "supermux.harness.plan.approveAuto": "Approve & auto-accept edits",
+  "supermux.harness.plan.approveManual": "Approve, ask before edits",
+  "supermux.harness.plan.keepPlanning": "Keep planning",
+  "supermux.harness.plan.keepPlanningMessage": "Keep planning — refine the approach first.",
+  "supermux.harness.plan.copy": "Copy plan",
+
+  "supermux.harness.question.badge": "Question",
+  "supermux.harness.question.other": "Something else",
+  "supermux.harness.question.otherPlaceholder": "Type your answer…",
+  "supermux.harness.question.submit": "Submit",
+  "supermux.harness.question.selectMultiple": "Select all that apply",
+  "supermux.harness.question.dismiss": "Skip",
+
+  "supermux.harness.header.rename": "Rename session",
+  "supermux.harness.header.renameSave": "Save",
+  "supermux.harness.header.renameCancel": "Cancel",
+  "supermux.harness.header.model": "Model",
+  "supermux.harness.header.effort": "Effort",
+  "supermux.harness.header.effortDefault": "Default",
+  "supermux.harness.header.permissionMode": "Permissions",
+  "supermux.harness.header.context": "Context",
+  "supermux.harness.header.contextUsed": "{used} of {total} used",
+  "supermux.harness.header.contextAutoCompact": "Auto-compacts at {threshold}",
+  "supermux.harness.header.cost": "Cost",
+  "supermux.harness.header.sessions": "Sessions",
+  "supermux.harness.header.sessionsSearch": "Search sessions",
+  "supermux.harness.header.sessionsEmpty": "No sessions yet for this folder",
+  "supermux.harness.header.resume": "Resume",
+  "supermux.harness.header.fork": "Fork",
+  "supermux.harness.header.more": "More",
+  "supermux.harness.header.compact": "Compact conversation",
+  "supermux.harness.header.clear": "Clear conversation",
+  "supermux.harness.header.export": "Export transcript",
+  "supermux.harness.header.openTerminal": "Open folder in terminal",
+  "supermux.harness.header.newSession": "New session",
+
+  "supermux.harness.mode.default": "Ask each time",
+  "supermux.harness.mode.defaultShort": "Ask",
+  "supermux.harness.mode.acceptEdits": "Auto-accept edits",
+  "supermux.harness.mode.acceptEditsShort": "Auto-edit",
+  "supermux.harness.mode.plan": "Plan only",
+  "supermux.harness.mode.planShort": "Plan",
+  "supermux.harness.mode.bypassPermissions": "Bypass all prompts",
+  "supermux.harness.mode.bypassPermissionsShort": "Bypass",
+
+  "supermux.harness.divider.compact": "Conversation compacted",
+  "supermux.harness.divider.compactTokens": "{tokens} tokens summarized",
+  "supermux.harness.divider.reset": "Conversation cleared",
+
+  "supermux.harness.banner.dismiss": "Dismiss",
+  "supermux.harness.banner.retryAttempt": "Attempt {attempt} of {max}",
+
+  "supermux.harness.error.generic": "Something went wrong",
+  "supermux.harness.error.rateLimit": "Usage limit reached",
+  "supermux.harness.error.billing": "Billing problem",
+  "supermux.harness.error.auth": "Authentication failed",
+  "supermux.harness.error.startFailed": "Could not start Claude",
+
+  "supermux.harness.a11y.transcript": "Conversation transcript",
+  "supermux.harness.a11y.composer": "Message composer",
+  "supermux.harness.a11y.permissionAlert": "Claude needs permission to continue",
+  "supermux.harness.a11y.timeline": "Conversation timeline",
+
+  "supermux.harness.time.seconds": "{value}s",
+  "supermux.harness.time.minutes": "{value}m {seconds}s",
+  "supermux.harness.time.hours": "{value}h {minutes}m",
+  "supermux.harness.time.justNow": "just now",
+  "supermux.harness.time.minutesAgo": "{value}m ago",
+  "supermux.harness.time.hoursAgo": "{value}h ago",
+  "supermux.harness.time.daysAgo": "{value}d ago"
+} as const;
+
+export type CopyKey = keyof typeof copyDefaults;
+
+export const copyKeys = Object.keys(copyDefaults) as CopyKey[];
+
+export function resolveCopy(dict: Record<string, string> | undefined): Record<CopyKey, string> {
+  const out = { ...copyDefaults } as Record<CopyKey, string>;
+  if (!dict) return out;
+  for (const key of copyKeys) {
+    const value = dict[key];
+    if (typeof value === "string" && value.length > 0) out[key] = value;
+  }
+  return out;
+}
+
+export function format(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => {
+    const value = values[name];
+    return value === undefined ? match : String(value);
+  });
+}
