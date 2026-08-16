@@ -206,17 +206,17 @@ final class SupermuxRunCoordinator {
         // keep focus on it: the run surface is launched in the background and
         // then moved to the front, and the move must not steal keyboard focus.
         let previousFocusedPanelId = workspace.focusedPanelId
-        // Launch through the interactive shell (see SupermuxCommandLaunch), the
-        // same path the restart branch above uses via sendText + Return: shell
-        // aliases/functions resolve and the surface survives the command exit.
-        guard let panel = workspace.newTerminalSurface(
-            inPane: paneId,
-            focus: false,
-            workingDirectory: workspace.currentDirectory,
-            initialInput: SupermuxCommandLaunch.shellInput(for: command)
-        ) else {
-            return .launchFailed
+        // Launch through the same ordered input path as the restart branch:
+        // shell aliases/functions resolve, and cold PTY startup cannot drop the
+        // command before the interactive shell receives it.
+        let panel = workspace.launchSupermuxCommandSurface(command: command) {
+            workspace.newTerminalSurface(
+                inPane: paneId,
+                focus: false,
+                workingDirectory: workspace.currentDirectory
+            )
         }
+        guard let panel else { return .launchFailed }
         // Always place the run surface as the first tab instead of at the end of
         // the pane's tab bar, so the project's dev-server lives in a predictable
         // spot. keepFocus: false re-focuses the user's surface after the move, so

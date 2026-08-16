@@ -92,17 +92,18 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             Self.logger.warning("setup script dropped: no pane in workspace \(workspace.id, privacy: .public)")
             return
         }
-        // Run as interactive-shell input (see SupermuxCommandLaunch) so aliases
-        // resolve and the surface survives the command's exit; the worktree
-        // environment is delivered through the PTY's startup environment so the
-        // script (e.g. `cp "$SUPERSET_ROOT_PATH/.env" .env`) sees it directly.
-        let panel = workspace.newTerminalSurface(
-            inPane: paneId,
-            focus: !request.preservesUserFocus,
-            workingDirectory: directory,
-            initialInput: SupermuxCommandLaunch.shellInput(for: setupScript),
-            startupEnvironment: request.setupEnvironment
-        )
+        // Submit through the ordered cold-surface input queue so the setup
+        // command cannot disappear during PTY startup. The worktree environment
+        // is delivered through the PTY's startup environment so the script (e.g.
+        // `cp "$SUPERSET_ROOT_PATH/.env" .env`) sees it directly.
+        let panel = workspace.launchSupermuxCommandSurface(command: setupScript) {
+            workspace.newTerminalSurface(
+                inPane: paneId,
+                focus: !request.preservesUserFocus,
+                workingDirectory: directory,
+                startupEnvironment: request.setupEnvironment
+            )
+        }
         if panel == nil {
             Self.logger.warning("setup script dropped: setup terminal failed to spawn in workspace \(workspace.id, privacy: .public)")
         }
@@ -127,12 +128,14 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         let resolved = SupermuxCommandLaunch.workingDirectory(
             focusedWorkspaceDirectory: workspace.currentDirectory, fallback: request.directory)
         let directory = (resolved as NSString).expandingTildeInPath
-        guard let panel = workspace.newTerminalSurface(
-            inPane: paneId,
-            focus: !request.preservesUserFocus,
-            workingDirectory: directory,
-            initialInput: SupermuxCommandLaunch.shellInput(for: command)
-        ) else { return }
+        let panel = workspace.launchSupermuxCommandSurface(command: command) {
+            workspace.newTerminalSurface(
+                inPane: paneId,
+                focus: !request.preservesUserFocus,
+                workingDirectory: directory
+            )
+        }
+        guard let panel else { return }
         // Open the action's tab as the first tab, matching the ⌘G run action.
         // On the desktop the foreground action keeps focus; a remote (mobile)
         // action must not yank the Mac user's keyboard focus (socket policy).
@@ -150,6 +153,28 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             workspaceId: workspaceId,
             projectId: projectId,
             directory: directory
+        )
+    }
+}
+
+extension Workspace {
+    /// Creates a blank terminal, then submits `command` through the ordered input
+    /// queue. Unlike Ghostty's one-shot startup input, queued input survives a
+    /// cold PTY spawn; a rejected submission removes the otherwise-empty tab.
+    @discardableResult
+    func launchSupermuxCommandSurface(
+        command: String,
+        createSurface: () -> TerminalPanel?
+    ) -> TerminalPanel? {
+        SupermuxCommandSurfaceLaunch().launch(
+            command: command,
+            createSurface: createSurface,
+            submitInput: { panel, input in
+                panel.sendInputResult(input).accepted
+            },
+            discardSurface: { panel in
+                _ = closePanel(panel.id, force: true)
+            }
         )
     }
 }

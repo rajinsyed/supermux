@@ -4,8 +4,8 @@ import Foundation
 /// preset, project app-action, or the ⌘G run command) in a workspace terminal.
 ///
 /// Supermux runs these commands as interactive-shell **input**
-/// (`initialInput` / `initialTerminalInput`, or `sendText` + Return for an
-/// existing surface) rather than as the surface's exec command
+/// (`initialTerminalInput` for a new workspace, or the ordered terminal-input
+/// queue for a new/existing surface) rather than as the surface's exec command
 /// (`initialCommand`). This is the one shared decision behind every command
 /// entrypoint; keep all of them routed through ``shellInput(for:)`` so they
 /// stay consistent.
@@ -25,9 +25,9 @@ public enum SupermuxCommandLaunch {
     /// Builds the terminal input that runs `command` as if the user typed it
     /// into the workspace's interactive shell and pressed Return.
     ///
-    /// The trailing newline submits the command. Delivered through
-    /// `initialInput` it is a raw PTY write at startup, so it executes rather
-    /// than being swallowed by bracketed paste.
+    /// The trailing newline submits the command. The ordered input path turns
+    /// it into a Return event, so it executes instead of remaining in the shell's
+    /// edit buffer under bracketed paste.
     /// - Parameter command: The shell command to run.
     /// - Returns: The command followed by a newline.
     public static func shellInput(for command: String) -> String {

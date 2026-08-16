@@ -548,15 +548,16 @@ struct SupermuxPresetsBarMount: View {
                 guard let workspace, preset.isLaunchable else { return }
                 guard let paneId = workspace.bonsplitController.focusedPaneId
                     ?? workspace.bonsplitController.allPaneIds.first else { return }
-                // Run the preset through the interactive shell (see
-                // SupermuxCommandLaunch): resolves shell aliases/functions and
-                // keeps the tab open after the command exits.
-                _ = workspace.newTerminalSurface(
-                    inPane: paneId,
-                    focus: true,
-                    workingDirectory: workspace.currentDirectory,
-                    initialInput: SupermuxCommandLaunch.shellInput(for: preset.command)
-                )
+                // Submit through the ordered input queue: aliases/functions
+                // resolve in the interactive shell, and a cold PTY cannot drop
+                // the preset command during startup.
+                _ = workspace.launchSupermuxCommandSurface(command: preset.command) {
+                    workspace.newTerminalSurface(
+                        inPane: paneId,
+                        focus: true,
+                        workingDirectory: workspace.currentDirectory
+                    )
+                }
             },
             onToggleRun: { [weak workspace] in
                 guard let workspace else { return }

@@ -105,15 +105,19 @@ extension TerminalController {
         case let .success(resolved): workspace = resolved
         }
         guard let paneId = workspace.bonsplitController.focusedPaneId
-            ?? workspace.bonsplitController.allPaneIds.first,
-            let panel = workspace.newTerminalSurface(
+            ?? workspace.bonsplitController.allPaneIds.first else {
+            return .err(code: "unavailable", message: "Failed to open a preset terminal", data: nil)
+        }
+        let panel = workspace.launchSupermuxCommandSurface(command: preset.command) {
+            workspace.newTerminalSurface(
                 inPane: paneId,
                 // Remote launch: preserve the Mac user's keyboard focus rather
                 // than yanking it to the new preset terminal (socket policy).
                 focus: false,
-                workingDirectory: workspace.currentDirectory,
-                initialInput: SupermuxCommandLaunch.shellInput(for: preset.command)
-            ) else {
+                workingDirectory: workspace.currentDirectory
+            )
+        }
+        guard let panel else {
             return .err(code: "unavailable", message: "Failed to open a preset terminal", data: nil)
         }
         return .ok([
