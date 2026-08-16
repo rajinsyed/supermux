@@ -22,6 +22,10 @@ let package = Package(
         .package(path: "../Shared/SupermuxMobileCore"),
         // Claude Code stream-json protocol model shared with the iOS harness UI.
         .package(path: "../Shared/SupermuxClaudeHarness"),
+        // The shared zeron design system (tokens, metrics, fonts, icons, and
+        // the platform-agnostic chat-pane views). macOS mounts it; iOS mounts
+        // the same package from SupermuxMobileUI.
+        .package(path: "../Shared/SupermuxZeronUI"),
     ],
     targets: [
         .target(
@@ -31,6 +35,7 @@ let package = Package(
                 .product(name: "CmuxGit", package: "CmuxGit"),
                 .product(name: "SupermuxMobileCore", package: "SupermuxMobileCore"),
                 .product(name: "SupermuxClaudeHarness", package: "SupermuxClaudeHarness"),
+                .product(name: "SupermuxZeronUI", package: "SupermuxZeronUI"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

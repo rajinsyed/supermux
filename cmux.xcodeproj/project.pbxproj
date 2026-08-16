@@ -2192,6 +2192,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		50BE000100000000000000E4 /* SupermuxWorkspaceSwitcherStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D4 /* SupermuxWorkspaceSwitcherStyle.swift */; };
 		50BE000100000000000000E6 /* SupermuxWorkspaceSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D6 /* SupermuxWorkspaceSwitcherView.swift */; };
 		50BE000100000000000000E3 /* SupermuxWorkspaceSwitcherViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D3 /* SupermuxWorkspaceSwitcherViewState.swift */; };
+		50BE000300000000000000A3 /* SupermuxZeronUI in Frameworks */ = {isa = PBXBuildFile; productRef = 50BE000300000000000000A2 /* SupermuxZeronUI */; };
 		D7AB00000000000000B041 /* SupersededPhoneDismissBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7AB00000000000000B040 /* SupersededPhoneDismissBuffer.swift */; };
 		875200000000000000000014 /* SurfacePaneMovement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 875200000000000000000004 /* SurfacePaneMovement.swift */; };
 		842300000000000000000007 /* SurfaceResumeAgentBindingGenerationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842300000000000000000008 /* SurfaceResumeAgentBindingGenerationTests.swift */; };
@@ -5513,6 +5514,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				F20F85FC5900550685FA33AD /* StackAuth in Frameworks */,
 				50BE000100000000000000A3 /* SupermuxKit in Frameworks */,
 				50BE000200000000000000A3 /* SupermuxMobileCore in Frameworks */,
+				50BE000300000000000000A3 /* SupermuxZeronUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -8380,6 +8382,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				A5B00002A1B2C3D4E5F60718 /* CMUXAgentLaunch */,
 				50BE000100000000000000A2 /* SupermuxKit */,
 				50BE000200000000000000A2 /* SupermuxMobileCore */,
+				50BE000300000000000000A2 /* SupermuxZeronUI */,
 				CA52A005CA52A005CA52A005 /* CmuxCanvas */,
 				CA53A005CA53A005CA53A005 /* CmuxCanvasUI */,
 				C5A1FED000000000000000C3 /* CmuxSwiftRender */,
@@ -8583,6 +8586,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				CC0033E15A1B2C3D4E5F0010 /* XCLocalSwiftPackageReference "CmuxDiffComments" */,
 				50BE000100000000000000A1 /* XCLocalSwiftPackageReference "SupermuxKit" */,
 				50BE000200000000000000A1 /* XCLocalSwiftPackageReference "SupermuxMobileCore" */,
+				50BE000300000000000000A1 /* XCLocalSwiftPackageReference "SupermuxZeronUI" */,
 				CA52A004CA52A004CA52A004 /* XCLocalSwiftPackageReference "CmuxCanvas" */,
 				CA53A004CA53A004CA53A004 /* XCLocalSwiftPackageReference "CmuxCanvasUI" */,
 				C5A1FED000000000000000C4 /* XCLocalSwiftPackageReference "CmuxSwiftRender" */,
@@ -11918,6 +11922,10 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/SupermuxKit;
 		};
+		50BE000300000000000000A1 /* XCLocalSwiftPackageReference "SupermuxZeronUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Shared/SupermuxZeronUI;
+		};
 		50BE000200000000000000A1 /* XCLocalSwiftPackageReference "SupermuxMobileCore" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/Shared/SupermuxMobileCore;
@@ -12166,6 +12174,11 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 			isa = XCSwiftPackageProductDependency;
 			package = 50BE000100000000000000A1 /* XCLocalSwiftPackageReference "SupermuxKit" */;
 			productName = SupermuxKit;
+		};
+		50BE000300000000000000A2 /* SupermuxZeronUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 50BE000300000000000000A1 /* XCLocalSwiftPackageReference "SupermuxZeronUI" */;
+			productName = SupermuxZeronUI;
 		};
 		CC0033E15A1B2C3D4E5F0011 /* CmuxDiffComments */ = {
 			isa = XCSwiftPackageProductDependency;

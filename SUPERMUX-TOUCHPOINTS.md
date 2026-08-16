@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **412**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **414**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -30,7 +30,7 @@ Rules for adding a touchpoint:
 | 244 | `CLAUDE.md` | `ios-dogfood-release-build` | Overrides upstream's "iOS builds open on the iPhone by default" section for this fork: `reload.sh --tag` ships a tagged DEV build the user cannot sign in to, so physical-phone dogfood uses a Release build with `CMUX_DEV_TAG=` empty and `CMUX_IOS_AUTH_ENV=production`. Records the exact invocation — the FIXED dogfood bundle id `com.supermux.ios.dogfood` (one persistent identity so sign-in/pairing survive across tags; per-tag `dev.cmux.ios.<tag>` is retired, and keychain-group sharing with the main install is forbidden — Iroh stores would mutually wipe), `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"`, the sanctioned per-build naming knob (#238/#239) — and the two overrides never to pass on it (`PRODUCT_DISPLAY_NAME`, `ASSETCATALOG_COMPILER_APPICON_NAME`) |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges (`selectWorkspaceRow`) and the actions-bundle Close Other/Below/Above closures exclude project-hidden workspaces (via a fenced parent-level `supermuxProjectHiddenWorkspaceIds()` helper — since upstream's 0.65 snapshot-boundary refactor moved row actions from `TabItemView` to the sidebar owner, the fenced logic lives in those parent functions; Move Up/Down stepping lives in the SHARED entrypoint, #131, so `moveWorkspaceRow` is back to the upstream one-liner), the actions bundle gets a fenced `supermuxMenuVisibility` provider (keyed by workspace id; consumed by #114, declared in #129, move enablement via the #131 stepped-plan check) so the four Move/Close menu items disable on real reachability instead of raw full-list indices, a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`, the row-input construction computes fenced `supermuxVisibleIndex`/`supermuxVisibleCount` (#132/#133) and `TabItemView.accessibilityTitle` announces "workspace N of M" against the visible list; renders the agent-activity indicator on flat-list workspace rows (indicator overlay in `TabItemView`; snapshot resolution moved to #128); gives the flat-list selection the faint accent tint used by nested project rows in `backgroundColor(for:)` (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06 via `isPointerHovering`); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
 | 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, and `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
-| 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
+| 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten). **Additive with one supermux-only exception:** the zeron chat-pane port (#414) DELETED 26 orphaned `supermux.harness.*` keys whose only callers were the ten harness UI files the port removed — see the #4b re-apply note |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width), with a third fallback putting the icon-only row in a horizontal `ScrollView` so mode buttons scroll instead of clipping at extreme narrowness; `right-sidebar-changes-mode-focushost` mounts `SupermuxChangesFocusHostBridge`/`SupermuxChangesFocusHostView` as the changes panel's background, registering a geometry-based focus host with the window's `MainWindowFocusController` |
 | 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
 | 7 | `Sources/RightSidebarToolPanel.swift` | `right-sidebar-changes-mode-*` | `.changes` joins the `.feed, .dock` no-op groups (sync/focus/intent/anchor, ×4) |
@@ -424,6 +424,7 @@ Rules for adding a touchpoint:
 | 408 | `Sources/Panels/AgentSessionPanel.swift` | `supermux-claude-harness-lifecycle` | One line in `close()` terminating the panel's harness session. **Required, not optional:** `AgentSessionPanelView` renders `Color.clear` whenever `isVisibleInUI` is false while the `claude` process must keep running, so teardown cannot live in `onDisappear` — and a missed teardown is a leaked child process, not a leaked view |
 | 409 | `Sources/ContentView.swift` | `supermux-claude-harness-palette` | Two one-line inserts registering the "New Claude Code Session" command: the contribution beside `.newSimulatorPane`, and `registry.registerSupermuxClaudeHarness(tabManager:)` beside `registerNewSimulatorPane`. Both bodies live in the fork-owned `Sources/Supermux/SupermuxClaudeHarnessLauncher.swift`, modeled on `SimulatorCommandPaletteIntegration.swift`, so only the two call lines are fenced |
 | 410 | `Sources/cmuxApp.swift` | `supermux-claude-harness-menu` | One File-menu `Button` opening a native Claude harness surface, mirroring `menu.file.newSimulatorPane`. It calls the same `SupermuxClaudeHarnessLauncher.open(tabManager:)` the palette uses — one shared action path, per the fork's shared-behavior rule |
+| 414 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the `SupermuxZeronUI` package (the zeron chat-pane design system) into the `cmux` target under the reserved `50BE0003…A1/A2/A3` ids — local package reference, product dependency, and Frameworks entry. `SupermuxKit` already depends on it transitively; the DIRECT link exists because `Sources/Supermux/SupermuxClaudeHarnessMount.swift` (#407) now constructs the `SupermuxZeronTheme` it hands to `SupermuxHarnessView`, and an app-target file cannot import a transitive package product. Registered separately from #3 (`SupermuxKit`) and #95 (`SupermuxMobileCore`) because it is a third package with its own id block |
 | 413 | `Sources/AppDelegate.swift` | `supermux-claude-harness-terminate` | One call in `applicationWillTerminate` (beside `CloudVMActionLauncher.shared.terminateAll()`): `SupermuxClaudeHarness.terminateAllForAppShutdown()` gives every live harness child stdin EOF + SIGTERM **synchronously** (no actor hop — a spawned task might never run before exit). Without it a child mid-turn relies on eventually noticing stdin EOF and can outlive the app |
 | 411 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-claude-button` | Two iOS-only fences mirroring #340b: the internal `@State supermuxClaude = SupermuxClaudeSectionModel()` beside the usage model (guarded by `#if os(iOS)`), and a `.supermuxClaudeDriver(model:connection:)` on the stable iOS `workspaceTable` right after the usage driver. The driver owns the harness session `.task` keyed on connection identity; cancellation (a navigation push) pauses the subscription but keeps the store, so the entry holds its badge and a pop resumes instead of reloading. Must stay on the stable iOS view — never inside the toolbar branch or a table cell |
 | 412 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Toolbar.swift` | `supermux-mobile-claude-button` | One fence: `SupermuxClaudeToolbarButton(model: supermuxClaude)` in the iOS `.topBarTrailing` `ToolbarItemGroup` directly after the #340 usage gauge, before upstream's `viewOptionsButton()`. Purely additive; renders nothing without `supermux.claude.v1`, so a fork phone paired with an upstream cmux Mac shows exactly upstream's toolbar. **The button must stay stateless** — the session lives in #411's list-owned `@State` because this whole toolbar branch sits inside `if showsNavigationToolbar` and is torn down on every push. The file's existing #340 `import SupermuxMobileUI` fence covers the import |
@@ -459,6 +460,14 @@ Four fences, all one- to four-liners. Everything they call lives in fork-owned f
 `if SupermuxClaudeHarness.handles(panel) { SupermuxClaudeHarnessMount(panel:isFocused:appearance:onRequestPanelFocus:) … } else { <upstream> }`.
 Note the fence appears twice (open and close of the `else`) because the upstream expression sits
 between them; keep both halves or the checker flags the file.
+
+The fence itself is unchanged by the zeron port (#414), but what the mount does with `appearance`
+is: it used to project all five `PanelAppearance` fields onto a `SupermuxHarnessThemeInput` and
+derive the pane's whole palette from the Ghostty theme, so a native Claude panel matched a webview
+Codex panel. That premise is gone — zeron is a fixed 44-token design system in exactly two
+appearances — and the mount now reads only `appearance.backgroundColor.isLightColor` and passes a
+`SupermuxZeronTheme(isDark:)`. **Deliberate consequence:** a Codex webview panel beside a Claude
+panel now looks different; only the light/dark axis still follows the terminal theme.
 
 **#408 `Sources/Panels/AgentSessionPanel.swift` — `supermux-claude-harness-lifecycle`.** First line
 of `close()`: `SupermuxClaudeHarness.closeSession(panelID: id)`.
@@ -1440,7 +1449,25 @@ in `Packages/SupermuxKit/Sources/SupermuxKit/ClaudeHarness/` and `Packages/Share
 which SwiftPM discovers automatically — that is exactly why the UI lives there and not in the app
 target.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `141`.
+The zeron chat-pane port (touchpoint #414) adds ONE more package to the app target — the
+`SupermuxZeronUI` design system — under the reserved `50BE0003…` prefix, in the same four places a
+local package needs:
+
+| ID | Section | Entry |
+|----|---------|-------|
+| `50BE000300000000000000A1` | XCLocalSwiftPackageReference | `relativePath = Packages/Shared/SupermuxZeronUI` (also listed in the project's `packageReferences`) |
+| `50BE000300000000000000A2` | XCSwiftPackageProductDependency | `productName = SupermuxZeronUI` (also listed in the `cmux` target's `packageProductDependencies`) |
+| `50BE000300000000000000A3` | PBXBuildFile | `SupermuxZeronUI in Frameworks` (also listed in the `cmux` target's Frameworks phase) |
+
+`SupermuxKit` already depends on the package, so this direct link exists for exactly one reason:
+`Sources/Supermux/SupermuxClaudeHarnessMount.swift` constructs the `SupermuxZeronTheme` it passes
+to `SupermuxHarnessView` (#414), and an app-target file cannot import a transitive package product.
+No source file is added — SwiftPM discovers the package's own sources.
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `141`, and
+`grep -c 50BE0003 cmux.xcodeproj/project.pbxproj` should print `11` (5 for
+`Workspace+SupermuxMobileUnread.swift` under #95, 6 for the `…A1`/`…A2`/`…A3` wiring above and its
+`packageReferences` / `packageProductDependencies` / Frameworks cross-references).
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
@@ -1464,6 +1491,19 @@ rewrites only `supermux.*` entries and leaves every other key byte-identical. On
 merge conflict here, union both sides (supermux keys never collide with cmux keys) or simply
 re-run the regen pipeline (see "Localization" in SUPERMUX.md). Verify no non-supermux key
 changed: `git diff <base> -- Resources/Localizable.xcstrings | grep '^[-+]' | grep -v supermux`.
+
+**One deletion, deliberately** (zeron chat-pane port, #414). Ten harness UI files were removed
+(`SupermuxHarnessTheme`, `Tokens`, `Markdown`, `ToolCard`, `TodoCard`, `DiffCard`, `HeaderBar`,
+`ProseRow`, `ThinkingRow`, `ResultRow`), and 26 `supermux.harness.*` keys lost their only callers
+with them — the whole `supermux.harness.state.*` family (the deleted header's status label), the
+todo-ring and burst strings, the old composer button labels, the pre-port `empty.*` copy, and the
+diff/cost strings the shared renderer now owns. All 26 are gone from the catalog. The port's own
+new strings live in the **package** catalog
+(`Packages/Shared/SupermuxZeronUI/Sources/SupermuxZeronUI/Resources/Localizable.xcstrings`, 73
+keys, en + ja, resolved with an explicit `bundle: .supermuxZeronUI`), NOT here: a shared SwiftPM
+package resolves `String(localized:)` against `Bundle.module`, so an app-catalog key would fall
+back to its English `defaultValue` for every Japanese user. To re-apply, drop the same 26 keys; a
+regen pipeline that re-adds them is over-generating from stale sources.
 
 ### 5–9. The `changes` right-sidebar mode (one feature, five files)
 

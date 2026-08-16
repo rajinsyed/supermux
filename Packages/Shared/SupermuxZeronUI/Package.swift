@@ -37,6 +37,11 @@ let package = Package(
                 // template/vector assertions live in an `actool` probe rather
                 // than in `swift test` (see SupermuxZeronIconBundle.swift).
                 .process("Resources/Icons.xcassets"),
+                // The package's OWN string catalog. `String(localized:bundle:)`
+                // resolves against `Bundle.module`, so an undeclared catalog
+                // falls back to every call site's `defaultValue` SILENTLY —
+                // the app-target catalog cannot serve a shared package.
+                .process("Resources/Localizable.xcstrings"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

@@ -1,5 +1,6 @@
 public import Foundation
 public import SupermuxClaudeHarness
+internal import SupermuxZeronUI
 
 /// The view-facing state of one Claude harness panel.
 ///
@@ -56,6 +57,140 @@ public final class SupermuxHarnessViewModel {
     /// The composer's live text (bound by the composer view).
     public var draft: String = ""
 
+    // MARK: - Presentation state (plan §3.6)
+    //
+    // Added by the zeron port. None of it touches the data path: every member
+    // below is derived from state the session already publishes, and nothing
+    // here is read by `ClaudeSession`, the RPC layer or the store.
+
+    /// The measured composer + status-strip height the transcript scrolls
+    /// under. Feeds the last row's bottom pad AND the edge fade's bottom band,
+    /// so one measurement drives both and they cannot drift.
+    ///
+    /// Written from the composer's `PreferenceKey` callback, never from `body`.
+    public var bottomClearance: CGFloat = 0
+
+    /// The own-send reservation (spec 07 §3.6).
+    ///
+    /// A locally-sent prompt reserves the viewport below itself so the reply
+    /// streams into empty space without the layout moving. The pure math lives
+    /// in `SupermuxZeronOwnTurnGlide`; this is the anchor it operates on.
+    public struct OwnTurnAnchor: Sendable, Equatable {
+        /// The row the prompt rendered into.
+        public var rowID: String
+        /// Reserved height still unconsumed by the turn's own content. Added to
+        /// the last row's bottom pad and shrinks 1:1 as the reply grows.
+        public var runway: CGFloat
+        /// Whether the anchor currently owns the viewport (the pin is released
+        /// for its duration).
+        public var held: Bool
+        /// Whether the entry glide has landed and the absolute hold is active.
+        public var positioned: Bool
+
+        public init(rowID: String, runway: CGFloat = 0, held: Bool = true, positioned: Bool = false) {
+            self.rowID = rowID
+            self.runway = runway
+            self.held = held
+            self.positioned = positioned
+        }
+    }
+
+    /// The live own-send anchor, or `nil` when no locally-sent turn owns the
+    /// viewport.
+    public var ownTurnAnchor: OwnTurnAnchor?
+
+    /// When the active turn started — the working trailer's elapsed base.
+    /// `nil` while idle.
+    public private(set) var turnStartedAt: Date?
+
+    /// Whole seconds since ``turnStartedAt``, republished once a second while a
+    /// turn runs.
+    ///
+    /// Deliberately a published integer rather than a `Date()` read inside
+    /// `body`: a view cannot derive a ticking value from a pure read, and a
+    /// per-view timer is the R12 CPU regression. One 1 Hz task per live panel
+    /// is the cheapest correct driver, and it stops the moment the turn ends.
+    public private(set) var elapsedSeconds: Int = 0
+
+    /// A prompt was handed to the session but the turn has not started.
+    ///
+    /// The status strip shows `"Sending…"` and the working trailer replaces its
+    /// flavour word with `"Sending"` and HIDES the timer — the send→turn
+    /// round-trip belongs to no turn, and counting it then restarting the timer
+    /// when the turn began was a user-reported bug in zeron.
+    public private(set) var isSendingBridge = false
+
+    /// `fnv1a(sessionKey)` — the deterministic flavour-word rotation seed, so
+    /// two devices watching one run show the same word.
+    public var flavourSeed: UInt64 {
+        SupermuxZeronWorkingTrailer.flavourSeed(sessionKey: sessionKey)
+    }
+
+    /// The session key the transcript and the flavour seed derive from: the
+    /// provider session id once known, the panel id before that.
+    public var sessionKey: String {
+        resumableSessionID ?? panelID.uuidString
+    }
+
+    /// The entry whose timestamp is revealed by hover. macOS only; the phone
+    /// has no pointer and reveals the last entry's label instead (plan §4).
+    public var hoveredEntryID: String?
+
+    /// Whether the working directory is inside a git work tree.
+    ///
+    /// zeron gates the whole composer footer row on `space.git_detected`, so
+    /// this — not ``gitBranch`` — is what decides whether the row exists. A
+    /// detached HEAD is a repository with no branch: the row still renders, with
+    /// `"No ref"` on the right.
+    public private(set) var isGitCheckout = false
+
+    /// The checkout's current branch, for the composer footer row.
+    ///
+    /// zeron has no panel header; the working directory and the git ref live in
+    /// the composer's footer (plan §2.1). `nil` on a detached HEAD or outside a
+    /// repository — see ``isGitCheckout`` for which of those hides the row.
+    public private(set) var gitBranch: String?
+
+    /// Whether the session's process failed — the status strip's `Errored`
+    /// indicator (spec 04 §6.1). Distinct from ``startupError``, which is a
+    /// message and renders as the composer's notice chip.
+    public var isRunFailed: Bool {
+        if case .failed = processPhase { return true }
+        return false
+    }
+
+    /// Records the composer + strip measurement, ignoring sub-0.5 pt jitter.
+    ///
+    /// zeron's own `set_bottom_clearance` applies the same filter
+    /// (`transcript.rs:1542-1551`): a fractional layout wobble would otherwise
+    /// republish on every frame and re-pad the last row of a live transcript.
+    public func setBottomClearance(_ value: CGFloat) {
+        guard abs(value - bottomClearance) >= 0.5 else { return }
+        bottomClearance = value
+    }
+
+    /// Resolves the footer row's git state once per working directory.
+    ///
+    /// Two reads through the package's existing worktree service: whether the
+    /// directory is a work tree at all (which gates the whole row) and its
+    /// branch (which may legitimately be `nil` on a detached HEAD).
+    ///
+    /// Both awaits re-check that the directory has not changed underneath them,
+    /// so a fast switch cannot land a stale repository's branch on the new one.
+    public func refreshGitBranch() async {
+        let directory = workingDirectory
+        let isRepository = await gitService.isGitRepository(at: directory)
+        guard workingDirectory == directory else { return }
+        isGitCheckout = isRepository
+        guard isRepository else {
+            gitBranch = nil
+            return
+        }
+        let branch = await gitService.currentBranch(repoRoot: directory)
+        guard workingDirectory == directory else { return }
+        gitBranch = branch
+    }
+
     // MARK: - Collaborators
 
     @ObservationIgnored private let registry: ClaudeSessionRegistry
@@ -69,6 +204,10 @@ public final class SupermuxHarnessViewModel {
     @ObservationIgnored private var observationTask: Task<Void, Never>?
     @ObservationIgnored private var flushTask: Task<Void, Never>?
     @ObservationIgnored private var needsFlush = false
+    /// The 1 Hz elapsed ticker. Runs only while a turn is live.
+    @ObservationIgnored private var elapsedTask: Task<Void, Never>?
+    /// Reads the footer row's branch label. Presentation only.
+    @ObservationIgnored private let gitService = SupermuxGitWorktreeService()
     /// Called once when the first prompt yields a tab title.
     @ObservationIgnored public var onDerivedTitle: ((String) -> Void)?
 
@@ -89,6 +228,7 @@ public final class SupermuxHarnessViewModel {
     deinit {
         observationTask?.cancel()
         flushTask?.cancel()
+        elapsedTask?.cancel()
     }
 
     // MARK: - Derived state
@@ -291,6 +431,8 @@ public final class SupermuxHarnessViewModel {
         observationTask = nil
         flushTask?.cancel()
         flushTask = nil
+        elapsedTask?.cancel()
+        elapsedTask = nil
         guard let sessionID else { return }
         await registry.remove(id: sessionID)
         session = nil
@@ -304,6 +446,9 @@ public final class SupermuxHarnessViewModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let session else { return }
         draft = ""
+        // The send→turn bridge opens here and closes when the turn phase leaves
+        // `.idle`. Presentation only: the enqueue below is unchanged.
+        isSendingBridge = true
         await session.enqueue(text: text)
         deriveTitleIfNeeded(from: text)
     }
@@ -414,6 +559,7 @@ public final class SupermuxHarnessViewModel {
             }
             self.processPhase = await session.processPhase
             self.turnPhase = await session.turnPhase
+            self.applyTurnClock(self.turnPhase)
             self.queue = await session.queuedInputs
             self.initialization = await session.systemInitialization
             self.latestResult = await session.latestResult
@@ -430,6 +576,7 @@ public final class SupermuxHarnessViewModel {
         case .stateChanged(let process, let turn):
             processPhase = process
             turnPhase = turn
+            applyTurnClock(turn)
             if case .running = process {
                 Task { [weak self] in await self?.refreshInitialization() }
             }
@@ -450,6 +597,46 @@ public final class SupermuxHarnessViewModel {
             )
         }
         scheduleFlush()
+    }
+
+    /// Starts, ticks, or stops the working trailer's elapsed clock.
+    ///
+    /// The turn's start instant is captured on the FIRST transition out of
+    /// `.idle`, not on send: the send→turn round-trip belongs to no turn, and
+    /// counting it then restarting once the turn began is exactly the bug the
+    /// `"Sending…"` bridge replaces.
+    private func applyTurnClock(_ turn: ClaudeTurnPhase) {
+        switch turn {
+        case .dispatching, .active, .interrupting:
+            isSendingBridge = false
+            guard turnStartedAt == nil else { return }
+            turnStartedAt = Date()
+            elapsedSeconds = 0
+            startElapsedTicker()
+        case .idle, .uncertain:
+            isSendingBridge = false
+            turnStartedAt = nil
+            elapsedSeconds = 0
+            elapsedTask?.cancel()
+            elapsedTask = nil
+        }
+    }
+
+    /// One 1 Hz task per live turn, cancelled the moment the turn ends.
+    ///
+    /// Not a `TimelineView` and not a view-owned timer: a view that derives a
+    /// ticking value from `Date()` inside `body` writes state during a view
+    /// update, and a per-view display link is the R12 CPU regression the shared
+    /// pulse clock exists to prevent.
+    private func startElapsedTicker() {
+        elapsedTask?.cancel()
+        elapsedTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled, let startedAt = self.turnStartedAt else { return }
+                self.elapsedSeconds = max(Int(Date().timeIntervalSince(startedAt)), 0)
+            }
+        }
     }
 
     private func refreshInitialization() async {

@@ -2,6 +2,7 @@ import AppKit
 import CmuxFoundation
 import Foundation
 import SupermuxKit
+import SupermuxZeronUI
 import SwiftUI
 
 /// Mounts the native Claude Code harness inside the upstream agent-session
@@ -28,7 +29,7 @@ struct SupermuxClaudeHarnessMount: View {
             if let model {
                 SupermuxHarnessView(
                     model: model,
-                    theme: SupermuxHarnessTheme.resolve(input: themeInput),
+                    theme: SupermuxZeronTheme(isDark: isDark),
                     // Read lazily, never at panel construction: upstream adopts
                     // the persisted id inside `applySessionPanelMetadata`,
                     // which runs after `newAgentSessionSurface` returns.
@@ -60,16 +61,21 @@ struct SupermuxClaudeHarnessMount: View {
         )
     }
 
-    /// Projects the app-internal `PanelAppearance` onto the package's theme
-    /// inputs, so native and webview agent panels resolve identical colours.
-    private var themeInput: SupermuxHarnessThemeInput {
-        SupermuxHarnessThemeInput(
-            backgroundColor: appearance.backgroundColor,
-            foregroundColor: appearance.foregroundColor,
-            accentColor: cmuxAccentNSColor(),
-            contentBackgroundColor: appearance.contentBackgroundColor,
-            drawsContentBackground: appearance.drawsContentBackground
-        )
+    /// The ONE input the zeron pane takes from the panel's appearance.
+    ///
+    /// The pane used to derive its whole palette from `PanelAppearance` (the
+    /// Ghostty theme's background, foreground, accent and content background)
+    /// so a native Claude panel matched a webview Codex panel under any Ghostty
+    /// theme. That premise is gone with the zeron port: zeron is a FIXED design
+    /// system with a 44-token palette in exactly two appearances, and reshading
+    /// it per terminal theme is precisely what the port replaces.
+    ///
+    /// **Deliberate consequence:** a Codex webview panel beside a Claude panel
+    /// now looks different. That is the requested behavior, not a regression.
+    /// Only the light/dark axis still follows the panel, so a light Ghostty
+    /// theme still yields a light chat pane.
+    private var isDark: Bool {
+        !appearance.backgroundColor.isLightColor
     }
 }
 
