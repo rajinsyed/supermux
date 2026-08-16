@@ -1,0 +1,382 @@
+import Foundation
+import Testing
+
+@testable import SupermuxKit
+
+@Suite(.serialized)
+struct SupermuxHarnessOutputLineBufferTests {
+    @Test func splitsCompleteLinesAcrossArbitraryChunksAndFlushesTrailingText() {
+        var buffer = SupermuxHarnessOutputLineBuffer()
+        #expect(buffer.append(Data("one\ntw".utf8)) == ["one\n"])
+        #expect(buffer.bufferedByteCount == 2)
+        #expect(buffer.append(Data("o\nthree".utf8)) == ["two\n"])
+        #expect(buffer.flush() == ["three"])
+        #expect(buffer.flush().isEmpty)
+        #expect(buffer.bufferedByteCount == 0)
+    }
+
+    @Test func preservesCRLFAndEmptyLines() {
+        var buffer = SupermuxHarnessOutputLineBuffer()
+        #expect(buffer.append(Data("one\r\n\ntwo\n".utf8)) == ["one\r\n", "\n", "two\n"])
+        #expect(buffer.flush().isEmpty)
+    }
+
+    @Test func forceFlushesOneMegabyteWithoutWaitingForNewline() {
+        var buffer = SupermuxHarnessOutputLineBuffer()
+        let data = Data(repeating: 0x61, count: SupermuxHarnessOutputLineBuffer.maximumBufferedBytes)
+        let output = buffer.append(data)
+        #expect(output.count == 1)
+        #expect(output[0].utf8.count == SupermuxHarnessOutputLineBuffer.maximumBufferedBytes + 1)
+        #expect(output[0].last == "\n")
+        #expect(buffer.bufferedByteCount == 0)
+    }
+
+    @Test func oversizedInputIsEmittedInBoundedSegments() {
+        var buffer = SupermuxHarnessOutputLineBuffer()
+        let maximum = SupermuxHarnessOutputLineBuffer.maximumBufferedBytes
+        let output = buffer.append(Data(repeating: 0x62, count: maximum * 2 + 3))
+        #expect(output.count == 2)
+        #expect(output.allSatisfy { $0.utf8.count == maximum + 1 })
+        #expect(buffer.bufferedByteCount == 3)
+        #expect(buffer.flush() == ["bbb"])
+    }
+
+    @Test func invalidUTF8UsesReplacementDecodingInsteadOfDroppingBytes() {
+        var buffer = SupermuxHarnessOutputLineBuffer()
+        #expect(buffer.append(Data([0xFF, 0x0A])) == ["�\n"])
+    }
+}
+
+@Suite(.serialized)
+struct SupermuxHarnessInputWriterTests {
+    @Test func serializesWritesAndCloseProducesEOF() async throws {
+        let pipe = Pipe()
+        let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)
+        try await writer.write(Data("first".utf8))
+        try await writer.write(Data("second".utf8))
+        await writer.close()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        #expect(String(decoding: data, as: UTF8.self) == "firstsecond")
+    }
+
+    @Test func rejectsSingleWriteLargerThanQueueCapacity() async {
+        let pipe = Pipe()
+        let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)
+        let data = Data(repeating: 0, count: 1024 * 1024 + 1)
+        do {
+            try await writer.write(data)
+            Issue.record("Expected queue-cap error")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .inputQueueFull)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        await writer.close()
+    }
+
+    @Test func closeFailsSubsequentNonemptyWrites() async {
+        let pipe = Pipe()
+        let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)
+        await writer.close()
+        do {
+            try await writer.write(Data("late".utf8))
+            Issue.record("Expected closed-input error")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .inputClosed)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test func writeFailureClosesWriterForLaterWrites() async throws {
+        let pipe = Pipe()
+        let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)
+        try pipe.fileHandleForWriting.close()
+        do {
+            try await writer.write(Data("first".utf8))
+            Issue.record("Expected file-handle write failure")
+        } catch {}
+        do {
+            try await writer.write(Data("second".utf8))
+            Issue.record("Expected closed-input error")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .inputClosed)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+}
+
+@Suite(.serialized) @MainActor
+struct SupermuxHarnessProcessSessionTests {
+    @MainActor
+    private final class Recorder {
+        var protocolLines: [SupermuxHarnessDecodedLine] = []
+        var stderrLines: [String] = []
+        var lifecycleEvents: [SupermuxHarnessProcessLifecycleEvent] = []
+        var timeline: [String] = []
+        private var protocolQueue: [SupermuxHarnessDecodedLine] = []
+        private var protocolWaiters: [CheckedContinuation<SupermuxHarnessDecodedLine, Never>] = []
+        private var exitQueue: [SupermuxHarnessProcessLifecycleEvent] = []
+        private var exitWaiters: [CheckedContinuation<SupermuxHarnessProcessLifecycleEvent, Never>] = []
+
+        func receiveProtocol(_ line: SupermuxHarnessDecodedLine) {
+            protocolLines.append(line)
+            timeline.append("stdout")
+            if protocolWaiters.isEmpty {
+                protocolQueue.append(line)
+            } else {
+                protocolWaiters.removeFirst().resume(returning: line)
+            }
+        }
+
+        func receiveStderr(_ line: String) {
+            stderrLines.append(line)
+            timeline.append("stderr")
+        }
+
+        func receiveLifecycle(_ event: SupermuxHarnessProcessLifecycleEvent) {
+            lifecycleEvents.append(event)
+            switch event {
+            case .started:
+                timeline.append("started")
+            case .exited:
+                timeline.append("exited")
+                if exitWaiters.isEmpty {
+                    exitQueue.append(event)
+                } else {
+                    exitWaiters.removeFirst().resume(returning: event)
+                }
+            }
+        }
+
+        func nextProtocolLine() async -> SupermuxHarnessDecodedLine {
+            if !protocolQueue.isEmpty { return protocolQueue.removeFirst() }
+            return await withCheckedContinuation { continuation in
+                protocolWaiters.append(continuation)
+            }
+        }
+
+        func nextExit() async -> SupermuxHarnessProcessLifecycleEvent {
+            if !exitQueue.isEmpty { return exitQueue.removeFirst() }
+            return await withCheckedContinuation { continuation in
+                exitWaiters.append(continuation)
+            }
+        }
+    }
+
+    @Test func oneProcessHandlesMultipleTurnsAndExitsOnlyAfterBothStreamsDrain() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder)
+        let script = #"""
+        IFS= read -r first || exit 90
+        printf '{"type":"keep_alive","turn":1}\n'
+        printf 'err-one\n' >&2
+        IFS= read -r second || exit 91
+        printf '{"type":"keep_alive","turn":2}\n'
+        printf 'err-two' >&2
+        exit 7
+        """#
+        let started = try session.start(plan: shellPlan(script))
+        #expect(session.isRunning)
+        #expect(session.activeRunID == started.runID)
+        #expect(started.processID > 0)
+
+        let encoder = SupermuxHarnessProtocolEncoder()
+        try await session.send(encoder.userMessage(text: "first", uuid: "one"))
+        let first = await recorder.nextProtocolLine()
+        #expect(first.object.integer(forKey: "turn") == 1)
+        try await session.send(encoder.userMessage(text: "second", uuid: "two"))
+        let second = await recorder.nextProtocolLine()
+        #expect(second.object.integer(forKey: "turn") == 2)
+        let exit = await recorder.nextExit()
+
+        #expect(exit == .exited(runID: started.runID, status: 7))
+        #expect(recorder.lifecycleEvents.first == .started(runID: started.runID, processID: started.processID))
+        #expect(recorder.stderrLines == ["err-one\n", "err-two"])
+        #expect(recorder.timeline.first == "started")
+        #expect(recorder.timeline.last == "exited")
+        #expect(!session.isRunning)
+        #expect(session.activeRunID == nil)
+    }
+
+    @Test func stdoutForwardsUnknownValidJSONDropsMalformedLinesAndFlushesTrailingJSON() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder)
+        let script = #"""
+        printf 'not-json\n'
+        printf '{"type":"future_frame","value":1}\n'
+        printf '{"type":"keep_alive","value":2}'
+        printf 'stderr-tail' >&2
+        """#
+        let started = try session.start(plan: shellPlan(script))
+        _ = await recorder.nextExit()
+
+        #expect(recorder.protocolLines.count == 2)
+        #expect(recorder.protocolLines[0].frame == nil)
+        #expect(recorder.protocolLines[0].object.integer(forKey: "value") == 1)
+        #expect(recorder.protocolLines[0].rawLine.hasSuffix("\n"))
+        guard case .keepAlive = recorder.protocolLines[1].frame else {
+            Issue.record("Expected trailing keep-alive")
+            return
+        }
+        #expect(recorder.protocolLines[1].object.integer(forKey: "value") == 2)
+        #expect(!recorder.protocolLines[1].rawLine.hasSuffix("\n"))
+        #expect(recorder.stderrLines == ["stderr-tail"])
+        #expect(recorder.lifecycleEvents.last == .exited(runID: started.runID, status: 0))
+    }
+
+    @Test func closeInputGracefullyEndsProcessAndRetainsSessionUntilExit() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder)
+        let script = #"""
+        while IFS= read -r line; do :; done
+        printf '{"type":"result","subtype":"success","is_error":false,"result":"eof"}\n'
+        """#
+        let started = try session.start(plan: shellPlan(script))
+        try await session.send(
+            SupermuxHarnessProtocolEncoder().userMessage(text: "turn", uuid: "one")
+        )
+        try await session.closeInput()
+        #expect(session.isRunning)
+        let resultLine = await recorder.nextProtocolLine()
+        guard case .result(let result) = resultLine.frame else {
+            Issue.record("Expected result after stdin EOF")
+            return
+        }
+        #expect(result.result == "eof")
+        #expect(await recorder.nextExit() == .exited(runID: started.runID, status: 0))
+        #expect(!session.isRunning)
+    }
+
+    @Test func startRejectsSecondProcessAndAllowsReuseAfterFirstExits() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder)
+        let waitingScript = #"""
+        printf '{"type":"keep_alive","ready":true}\n'
+        while IFS= read -r line; do :; done
+        """#
+        _ = try session.start(plan: shellPlan(waitingScript))
+        _ = await recorder.nextProtocolLine()
+        do {
+            _ = try session.start(plan: shellPlan("exit 0"))
+            Issue.record("Expected already-running error")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .alreadyRunning)
+        }
+        try await session.closeInput()
+        _ = await recorder.nextExit()
+
+        let second = try session.start(plan: shellPlan("exit 4"))
+        #expect(await recorder.nextExit() == .exited(runID: second.runID, status: 4))
+    }
+
+    @Test func failedLaunchCleansStateAndDoesNotEmitStarted() throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder)
+        let plan = SupermuxHarnessLaunchPlan(
+            executableURL: URL(fileURLWithPath: "/definitely/missing/supermux-harness"),
+            arguments: [],
+            environment: ProcessInfo.processInfo.environment,
+            workingDirectoryURL: FileManager.default.temporaryDirectory
+        )
+        #expect(throws: (any Error).self) {
+            _ = try session.start(plan: plan)
+        }
+        #expect(!session.isRunning)
+        #expect(session.activeRunID == nil)
+        #expect(recorder.lifecycleEvents.isEmpty)
+    }
+
+    @Test func terminateEscalatesFromIgnoredSIGTERMToSIGKILL() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder, escalationInterval: 0.05)
+        let script = #"""
+        trap '' TERM
+        printf '{"type":"keep_alive","ready":true}\n'
+        while :; do sleep 1; done
+        """#
+        let started = try session.start(plan: shellPlan(script))
+        _ = await recorder.nextProtocolLine()
+        try session.terminate()
+        let exit = await recorder.nextExit()
+        #expect(exit == .exited(runID: started.runID, status: 9))
+        #expect(!session.isRunning)
+    }
+
+    @Test func repeatingEscalationForceCompletesWhenDescendantKeepsPipesOpen() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder, escalationInterval: 0.05)
+        let script = #"""
+        trap '' TERM
+        sleep 1 &
+        printf '{"type":"keep_alive","ready":true}\n'
+        wait
+        """#
+        let started = try session.start(plan: shellPlan(script))
+        _ = await recorder.nextProtocolLine()
+        try session.terminate()
+        let exit = await recorder.nextExit()
+        #expect(exit == .exited(runID: started.runID, status: 9))
+        #expect(recorder.timeline.last == "exited")
+    }
+
+    @Test func closeIsIdempotentAndMissingProcessOperationsFail() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder, escalationInterval: 0.05)
+        session.close()
+        do {
+            try await session.send(
+                SupermuxHarnessProtocolEncoder().userMessage(text: "late", uuid: "late")
+            )
+            Issue.record("Expected not-running send error")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .notRunning)
+        }
+        do {
+            try await session.closeInput()
+            Issue.record("Expected not-running close-input error")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .notRunning)
+        }
+        do {
+            try session.terminate()
+            Issue.record("Expected not-running terminate error")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .notRunning)
+        }
+
+        let script = #"""
+        trap '' TERM
+        printf '{"type":"keep_alive","ready":true}\n'
+        while :; do sleep 1; done
+        """#
+        _ = try session.start(plan: shellPlan(script))
+        _ = await recorder.nextProtocolLine()
+        session.close()
+        session.close()
+        _ = await recorder.nextExit()
+        #expect(!session.isRunning)
+    }
+
+    private func makeSession(
+        recorder: Recorder,
+        escalationInterval: TimeInterval = 3
+    ) -> SupermuxHarnessProcessSession {
+        SupermuxHarnessProcessSession(
+            terminationEscalationInterval: escalationInterval,
+            protocolLineSink: { recorder.receiveProtocol($0) },
+            stderrSink: { recorder.receiveStderr($0) },
+            lifecycleSink: { recorder.receiveLifecycle($0) }
+        )
+    }
+
+    private func shellPlan(_ script: String) -> SupermuxHarnessLaunchPlan {
+        SupermuxHarnessLaunchPlan(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", script],
+            environment: ProcessInfo.processInfo.environment,
+            workingDirectoryURL: FileManager.default.temporaryDirectory
+        )
+    }
+}

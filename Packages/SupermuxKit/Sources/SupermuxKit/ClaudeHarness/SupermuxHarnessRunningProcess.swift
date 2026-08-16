@@ -1,0 +1,47 @@
+import Foundation
+
+@MainActor
+final class SupermuxHarnessRunningProcess {
+    let runID: String
+    let process: Process
+    let stdin: Pipe
+    let inputWriter: SupermuxHarnessInputWriter
+    var stdoutReadTask: Task<Void, Never>?
+    var stderrReadTask: Task<Void, Never>?
+    /// A repeating deadline source is required because pipe descendants may outlive the killed process.
+    var terminationEscalationTimer: (any DispatchSourceTimer)?
+    var pendingExitStatus: Int32?
+    var drainedStreams: Set<SupermuxHarnessProcessStream> = []
+    private var stdoutBuffer = SupermuxHarnessOutputLineBuffer()
+    private var stderrBuffer = SupermuxHarnessOutputLineBuffer()
+
+    init(runID: String, process: Process, stdin: Pipe, inputWriter: SupermuxHarnessInputWriter) {
+        self.runID = runID
+        self.process = process
+        self.stdin = stdin
+        self.inputWriter = inputWriter
+    }
+
+    func append(_ data: Data, stream: SupermuxHarnessProcessStream) -> [String] {
+        switch stream {
+        case .stdout:
+            stdoutBuffer.append(data)
+        case .stderr:
+            stderrBuffer.append(data)
+        }
+    }
+
+    func flush(stream: SupermuxHarnessProcessStream) -> [String] {
+        switch stream {
+        case .stdout:
+            stdoutBuffer.flush()
+        case .stderr:
+            stderrBuffer.flush()
+        }
+    }
+}
+
+enum SupermuxHarnessProcessStream: String, Sendable {
+    case stdout
+    case stderr
+}

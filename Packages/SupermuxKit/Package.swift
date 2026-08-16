@@ -41,6 +41,9 @@ let package = Package(
                 "SupermuxKit",
                 .product(name: "SupermuxMobileCore", package: "SupermuxMobileCore"),
             ],
+            resources: [
+                .process("Resources"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 .enableUpcomingFeature("ExistentialAny"),
