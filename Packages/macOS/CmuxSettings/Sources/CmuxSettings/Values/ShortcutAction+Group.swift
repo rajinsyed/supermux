@@ -31,6 +31,8 @@ extension ShortcutAction {
         // SUPERMUX:begin supermux-shortcut-groups
         case .supermuxToggleRun, .supermuxCommit, .supermuxCommitAccelerator:
             return .workspace
+        case .supermuxNewClaudeHarness:
+            return .navigation
         case .supermuxWorkspaceSwitcherNext, .supermuxWorkspaceSwitcherPrevious:
             return .navigation
         // SUPERMUX:end supermux-shortcut-groups

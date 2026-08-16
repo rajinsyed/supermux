@@ -7141,6 +7141,9 @@ struct ContentView: View {
         if CmuxFeatureFlags.shared.isSimulatorEnabled {
             contributions.append(.newSimulatorPane)
         }
+        // SUPERMUX:begin claude-harness-palette-contribution
+        contributions.append(.newClaudeHarnessPane)
+        // SUPERMUX:end claude-harness-palette-contribution
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeTab",
@@ -8336,6 +8339,9 @@ struct ContentView: View {
             }
         }
         registry.registerNewSimulatorPane(tabManager: tabManager, windowId: windowId)
+        // SUPERMUX:begin claude-harness-palette-contribution
+        registry.registerNewClaudeHarnessPane(tabManager: tabManager, windowId: windowId)
+        // SUPERMUX:end claude-harness-palette-contribution
         registry.register(commandId: "palette.closeTab") {
             tabManager.closeCurrentPanelWithConfirmation()
         }

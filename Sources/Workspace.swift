@@ -13201,6 +13201,10 @@ extension Workspace: BonsplitDelegate {
                 )
             case .newSimulator:
                 _ = newSimulatorSurface(inPane: pane, focus: true)
+            // SUPERMUX:begin claude-harness-executor-arm
+            case .newClaudeHarness:
+                _ = newSupermuxHarnessSurface(inPane: pane, focus: true)
+            // SUPERMUX:end claude-harness-executor-arm
             case .newTerminal, .newBrowser, .splitRight, .splitDown:
                 break
             }

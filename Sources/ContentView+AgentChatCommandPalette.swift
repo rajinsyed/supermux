@@ -10,6 +10,10 @@ extension ContentView {
             return CmuxSurfaceTabBarBuiltInAction.newBrowser.configID
         case "palette.newSimulatorPane":
             return CmuxSurfaceTabBarBuiltInAction.newSimulator.configID
+        // SUPERMUX:begin claude-harness-palette-id-map
+        case "palette.newClaudeHarnessPane":
+            return CmuxSurfaceTabBarBuiltInAction.newClaudeHarness.configID
+        // SUPERMUX:end claude-harness-palette-id-map
         case "palette.newAgentChat":
             return CmuxSurfaceTabBarBuiltInAction.newAgentChat.configID
         case "palette.terminalSplitRight":

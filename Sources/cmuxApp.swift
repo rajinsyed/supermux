@@ -763,6 +763,12 @@ struct cmuxApp: App {
                     }
                 }
 
+                // SUPERMUX:begin claude-harness-file-menu
+                splitCommandButton(title: String(localized: "supermux.harness.menu.file.newPane", defaultValue: "New Claude Pane"), shortcut: menuShortcut(for: .supermuxNewClaudeHarness)) {
+                    performNewClaudeHarnessPaneFromMenu()
+                }
+                // SUPERMUX:end claude-harness-file-menu
+
                 splitCommandButton(title: String(localized: "menu.file.newWorkspaceGroup", defaultValue: "New Workspace Group"), shortcut: menuShortcut(for: .newWorkspaceGroup)) {
                     _ = AppDelegate.shared?.createEmptyWorkspaceGroup(
                         tabManager: activeTabManager,

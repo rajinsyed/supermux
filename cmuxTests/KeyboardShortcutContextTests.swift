@@ -284,7 +284,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
 
     // SUPERMUX:begin settings-package-shortcut-action-drift
     func testSupermuxSettingsPackageActionsStayAligned() {
-        // The five supermux actions must exist in the CmuxSettings enum with
+        // The six supermux actions must exist in the CmuxSettings enum with
         // the app-target defaults and labels, and be visible in the Settings
         // shortcuts pane — otherwise they can be neither rebound nor seen by
         // the package's conflict detection.
@@ -294,6 +294,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
             (.supermuxWorkspaceSwitcherPrevious, ShortcutStroke(key: "`", command: true, shift: true)),
             (.supermuxCommit, ShortcutStroke(key: "\r", command: true)),
             (.supermuxCommitAccelerator, ShortcutStroke(key: "\r", command: true, shift: true)),
+            (.supermuxNewClaudeHarness, ShortcutStroke(key: "a", command: true, control: true)),
         ]
         let visible = Set(ShortcutAction.settingsVisibleActions)
         for (action, stroke) in expected {

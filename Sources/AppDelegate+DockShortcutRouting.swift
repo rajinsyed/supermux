@@ -110,14 +110,16 @@ extension KeyboardShortcutSettings.Action {
             .mainContainer
 
         // SUPERMUX:begin run-shortcut-dock-routing
-        // All five fork actions target app/workspace/project state (⌘G
-        // Run/Stop, the workspace switcher, Changes-panel commit), never a
-        // surface tree — so none of them reroute into the Dock.
+        // All fork actions target app/workspace/project state (⌘G Run/Stop,
+        // the workspace switcher, Changes-panel commit, the Claude pane in
+        // the main split tree), never the Dock's surface tree — so none of
+        // them reroute into the Dock.
         case .supermuxToggleRun,
              .supermuxWorkspaceSwitcherNext,
              .supermuxWorkspaceSwitcherPrevious,
              .supermuxCommit,
-             .supermuxCommitAccelerator:
+             .supermuxCommitAccelerator,
+             .supermuxNewClaudeHarness:
             .mainContainer
         // SUPERMUX:end run-shortcut-dock-routing
         }
