@@ -80,9 +80,11 @@ extension TerminalController {
             return .invalidDirection
         }
         let panelType = inputs.typeRaw.flatMap { surfacePanelType(forRawToken: $0) } ?? .terminal
-        if panelType == .agentSession {
+        // SUPERMUX:begin claude-harness-socket-split-guard
+        if panelType == .agentSession || panelType == .claudeHarness {
             return .agentSessionRejected(typeRawValue: panelType.rawValue)
         }
+        // SUPERMUX:end claude-harness-socket-split-guard
         let url = inputs.urlRaw.flatMap { URL(string: $0) }
         if panelType == .browser, BrowserAvailabilitySettings.isDisabled() {
             return .browserDisabled(surfaceBrowserDisabledOutcome(
@@ -397,6 +399,14 @@ extension TerminalController {
                 workingDirectory: inputs.workingDirectory,
                 focus: focus
             )?.id
+        // SUPERMUX:begin claude-harness-socket-create-arm
+        } else if panelType == .claudeHarness {
+            newPanelId = ws.newSupermuxHarnessSurface(
+                inPane: paneId,
+                workingDirectory: inputs.workingDirectory,
+                focus: focus
+            )?.id
+        // SUPERMUX:end claude-harness-socket-create-arm
         } else {
             switch ws.newTerminalSurfaceOutcome(
                 inPane: paneId,
