@@ -40,6 +40,40 @@ struct SupermuxZeronMarkdownText: View {
     let veilSpans: [SupermuxZeronVeilSpan]
     let onOpenURL: ((URL) -> Void)?
 
+    /// The attributed string, built ONCE per constructed block.
+    ///
+    /// It used to be a computed property that one `body` pass read three times —
+    /// `measuredHeight` → `cachedLayout`, `content(width:)` → `cachedLayout`, and
+    /// `textView(width:)` — so every pass built three identical
+    /// `NSAttributedString`s, each one allocating a font and a paragraph style
+    /// per run. A streaming paragraph re-renders at the veil's 30 fps, so that
+    /// was three full attribute builds per block per frame. Same hoist, and the
+    /// same reason, as ``SupermuxZeronAssistantRow``'s parse.
+    private let attributed: NSAttributedString
+
+    init(
+        flat: SupermuxZeronFlatText,
+        fontSize: CGFloat,
+        lineHeight: CGFloat,
+        theme: SupermuxZeronTheme,
+        veilSpans: [SupermuxZeronVeilSpan],
+        onOpenURL: ((URL) -> Void)?
+    ) {
+        self.flat = flat
+        self.fontSize = fontSize
+        self.lineHeight = lineHeight
+        self.theme = theme
+        self.veilSpans = veilSpans
+        self.onOpenURL = onOpenURL
+        self.attributed = SupermuxZeronTextKit.attributedString(
+            for: flat,
+            fontSize: fontSize,
+            lineHeight: lineHeight,
+            theme: theme,
+            veilSpans: veilSpans
+        )
+    }
+
     var body: some View {
         // The width is the only layout input; the height falls out of it.
         GeometryReader { proxy in
@@ -107,16 +141,6 @@ struct SupermuxZeronMarkdownText: View {
             attributed: attributed,
             width: width,
             selectable: true
-        )
-    }
-
-    private var attributed: NSAttributedString {
-        SupermuxZeronTextKit.attributedString(
-            for: flat,
-            fontSize: fontSize,
-            lineHeight: lineHeight,
-            theme: theme,
-            veilSpans: veilSpans
         )
     }
 

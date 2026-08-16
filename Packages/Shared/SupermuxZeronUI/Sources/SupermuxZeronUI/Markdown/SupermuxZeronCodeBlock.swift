@@ -41,6 +41,18 @@ public struct SupermuxZeronCodeBlock: View {
     /// and recolours in place, with zero layout change.
     private let highlight: [[SupermuxZeronHighlightSpan]]?
 
+    /// The split lines and each line's UTF-8 byte offset, computed ONCE per
+    /// constructed block.
+    ///
+    /// Both used to be computed on demand — `lines` re-split the WHOLE code text
+    /// on every access, and `lineByteStart(i)` subscripted it `i` times, so one
+    /// render of an n-line fence re-split the block `n(n-1)/2` times (4 950 full
+    /// splits for a 100-line block, each allocating 100 strings). While the fence
+    /// streams that ran per veil frame at 30 fps. Same fix, and the same reason,
+    /// as ``SupermuxZeronAssistantRow``'s hoisted parse.
+    private let lines: [String]
+    private let lineStarts: [Int]
+
     @State private var copiedAt: Date?
     @State private var isHoveringCopy = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -57,6 +69,19 @@ public struct SupermuxZeronCodeBlock: View {
         self.theme = theme
         self.veilSpans = veilSpans
         self.highlight = highlight
+        let lines = code.components(separatedBy: "\n")
+        self.lines = lines
+        // One prefix scan instead of a quadratic one. `+1` per line for the
+        // `\n` the split consumed — the exact arithmetic the old per-line loop
+        // performed.
+        var offset = 0
+        var starts: [Int] = []
+        starts.reserveCapacity(lines.count)
+        for line in lines {
+            starts.append(offset)
+            offset += line.utf8.count + 1
+        }
+        self.lineStarts = starts
     }
 
     /// The block's exact height. Analytic — never measured.
@@ -65,8 +90,6 @@ public struct SupermuxZeronCodeBlock: View {
             + 2 * Md.codePadY
             + (hasLanguage ? Md.codeHeaderBarHeight + 1 : 0)
     }
-
-    private var lines: [String] { code.components(separatedBy: "\n") }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -159,12 +182,10 @@ public struct SupermuxZeronCodeBlock: View {
         )
     }
 
-    /// The byte offset of a line's start in the whole code text — `+1` per line
-    /// for the `\n` the split consumed.
+    /// The byte offset of a line's start in the whole code text, from the
+    /// prefix table built in `init`.
     private func lineByteStart(_ index: Int) -> Int {
-        var offset = 0
-        for i in 0..<index { offset += lines[i].utf8.count + 1 }
-        return offset
+        lineStarts.indices.contains(index) ? lineStarts[index] : 0
     }
 
     // MARK: Copy button

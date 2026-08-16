@@ -188,6 +188,29 @@ public struct SupermuxZeronRowVeil: Sendable {
     /// render pass.
     public mutating func finishSeeding() { seeding = false }
 
+    /// The spans ``advance(element:text:now:)`` WOULD return, WITHOUT committing.
+    ///
+    /// The render pass calls this and the driver calls `advance`. Advancing is a
+    /// mutation, and a mutation performed while SwiftUI is evaluating the body
+    /// that reads it invalidates that body — an unbounded re-render loop
+    /// (cmux #2586). Splitting commit from projection is what lets `body` stay a
+    /// pure read while the veil still advances on the clock.
+    ///
+    /// It runs the SAME code on a local copy, so a projection and the commit
+    /// that follows it can never disagree.
+    public func projected(
+        element: Int,
+        text: String,
+        now: TimeInterval
+    ) -> [SupermuxZeronVeilSpan] {
+        // Seeding elements adopt the text as a baseline and fade nothing, which
+        // is what the copy below would also produce — returned directly so the
+        // projection never allocates for the attach pass.
+        if seeding, elems[element] == nil { return [] }
+        var copy = elems[element] ?? SupermuxZeronElemVeil()
+        return copy.advance(text: text, now: now)
+    }
+
     /// Advance one element and return its active spans.
     public mutating func advance(
         element: Int,

@@ -124,6 +124,38 @@ struct SupermuxZeronMarkdownTable: View {
     let veilSpans: [Int: [SupermuxZeronVeilSpan]]
     let onOpenURL: ((URL) -> Void)?
 
+    /// The column geometry and the table's height, measured ONCE per
+    /// constructed table.
+    ///
+    /// Both used to be computed properties, and `body` read them one after the
+    /// other: `Self.columns(contentWidths: measuredContentWidths)` shaped every
+    /// cell's runs to find the natural widths, and `.frame(height:)` then shaped
+    /// them ALL AGAIN and ran a full `NSTextLayoutManager` layout per cell on
+    /// top. Two shaping passes plus `rows × columns` TextKit layouts, on every
+    /// render pass — and a table inside a streaming reply re-renders at the
+    /// veil's 30 fps. Measuring in `init` makes it once per `(rows, theme)`,
+    /// which is the same hoist ``SupermuxZeronAssistantRow`` applies to its parse.
+    private let measured: Measured
+
+    init(
+        header: [[SupermuxZeronInlineRun]],
+        rows: [[[SupermuxZeronInlineRun]]],
+        align: [SupermuxZeronTableAlign],
+        theme: SupermuxZeronTheme,
+        elementID: Int,
+        veilSpans: [Int: [SupermuxZeronVeilSpan]],
+        onOpenURL: ((URL) -> Void)?
+    ) {
+        self.header = header
+        self.rows = rows
+        self.align = align
+        self.theme = theme
+        self.elementID = elementID
+        self.veilSpans = veilSpans
+        self.onOpenURL = onOpenURL
+        self.measured = Measured(header: header, rows: rows, theme: theme)
+    }
+
     /// Header first, then the body rows — one uniform list, which is what makes
     /// "a hairline for every index > 0" the whole chrome rule.
     private var allRows: [[[SupermuxZeronInlineRun]]] {
@@ -132,12 +164,10 @@ struct SupermuxZeronMarkdownTable: View {
 
     /// Ragged rows are tolerated: the column count is the widest row, and a
     /// missing cell renders as an empty padded box.
-    private var columnCount: Int {
-        allRows.map(\.count).max() ?? 0
-    }
+    private var columnCount: Int { measured.columnCount }
 
     var body: some View {
-        let geometry = Self.columns(contentWidths: measuredContentWidths)
+        let geometry = measured.geometry
         // The available width has to be read before the columns can be resolved,
         // and the resolution is what decides the rows' width — so the reader
         // supplies the input and the content sizes itself from it.
@@ -174,44 +204,81 @@ struct SupermuxZeronMarkdownTable: View {
         .frame(height: measuredHeight)
     }
 
-    /// The table's own height, measured from the resolved column widths.
+    /// The table's own height, measured in `init` from the resolved widths.
+    private var measuredHeight: CGFloat { measured.height }
+
+    // MARK: The one-shot measurement
+
+    /// Everything shaping the table costs, resolved once.
     ///
     /// A `GeometryReader` reports its parent's width but proposes nothing back,
     /// so the height has to be computed rather than inferred. Every cell is a
     /// fixed 22 pt line box plus 2 × 12 pt padding, and a row is as tall as its
-    /// tallest cell.
-    private var measuredHeight: CGFloat {
-        let geometry = Self.columns(contentWidths: measuredContentWidths)
-        let widths = geometry.resolved(available: geometry.naturals.reduce(0, +))
-        var total: CGFloat = 0
-        for (rowIndex, row) in allRows.enumerated() {
-            if rowIndex > 0 { total += Md.tableDividerWidth }
-            var tallest = Md.lineHeight
-            for column in 0..<columnCount where row.indices.contains(column) {
-                let isHeader = rowIndex == 0 && !header.isEmpty
-                let flat = SupermuxZeronFlatText.flatten(
-                    runs: row[column],
-                    theme: theme,
-                    baseWeight: isHeader ? .bold : .regular
-                )
-                let inner = max(widths[column] - 2 * Md.tableCellPadding, 1)
-                let layout = SupermuxZeronTextKit.layout(
-                    attributed: SupermuxZeronTextKit.attributedString(
-                        for: flat,
-                        fontSize: Md.textSize,
-                        lineHeight: Md.lineHeight,
-                        theme: theme
-                    ),
-                    text: flat.text,
-                    width: inner,
-                    codeRanges: flat.codeRanges,
-                    links: flat.links
-                )
-                tallest = max(tallest, layout.height)
+    /// tallest cell. The one shaping pass here feeds BOTH the column geometry
+    /// and the height, so they also provably agree.
+    fileprivate struct Measured {
+        let columnCount: Int
+        let geometry: SupermuxZeronTableColumns
+        let height: CGFloat
+
+        init(
+            header: [[SupermuxZeronInlineRun]],
+            rows: [[[SupermuxZeronInlineRun]]],
+            theme: SupermuxZeronTheme
+        ) {
+            let allRows = header.isEmpty ? rows : [header] + rows
+            let columnCount = allRows.map(\.count).max() ?? 0
+            self.columnCount = columnCount
+
+            // Flatten every cell ONCE and keep it: the natural widths and the
+            // per-cell layouts below both need the same flat runs.
+            let flats: [[SupermuxZeronFlatText?]] = allRows.enumerated().map { rowIndex, row in
+                (0..<columnCount).map { column in
+                    guard row.indices.contains(column) else { return nil }
+                    let isHeader = rowIndex == 0 && !header.isEmpty
+                    return SupermuxZeronFlatText.flatten(
+                        runs: row[column],
+                        theme: theme,
+                        baseWeight: isHeader ? .bold : .regular
+                    )
+                }
             }
-            total += tallest + 2 * Md.tableCellPadding
+
+            let contentWidths = (0..<columnCount).map { column in
+                flats.reduce(CGFloat(0)) { widest, row in
+                    guard let flat = row[column] else { return widest }
+                    return max(widest, SupermuxZeronMarkdownTable.unwrappedWidth(flat))
+                }
+            }
+            let geometry = SupermuxZeronMarkdownTable.columns(contentWidths: contentWidths)
+            self.geometry = geometry
+
+            let widths = geometry.resolved(available: geometry.naturals.reduce(0, +))
+            var total: CGFloat = 0
+            for (rowIndex, row) in flats.enumerated() {
+                if rowIndex > 0 { total += Md.tableDividerWidth }
+                var tallest = Md.lineHeight
+                for (column, flat) in row.enumerated() {
+                    guard let flat else { continue }
+                    let inner = max(widths[column] - 2 * Md.tableCellPadding, 1)
+                    let layout = SupermuxZeronTextKit.layout(
+                        attributed: SupermuxZeronTextKit.attributedString(
+                            for: flat,
+                            fontSize: Md.textSize,
+                            lineHeight: Md.lineHeight,
+                            theme: theme
+                        ),
+                        text: flat.text,
+                        width: inner,
+                        codeRanges: flat.codeRanges,
+                        links: flat.links
+                    )
+                    tallest = max(tallest, layout.height)
+                }
+                total += tallest + 2 * Md.tableCellPadding
+            }
+            self.height = total
         }
-        return total
     }
 
     private func cell(
@@ -259,30 +326,17 @@ struct SupermuxZeronMarkdownTable: View {
 
     /// `table_columns` (`render.rs:342`), as a pure function so it is testable
     /// without a view. See ``SupermuxZeronTableColumns``.
-    static func columns(contentWidths: [CGFloat]) -> SupermuxZeronTableColumns {
+    ///
+    /// `nonisolated` because ``Measured`` calls it from its own initializer,
+    /// which runs wherever the table is constructed; the function touches no
+    /// view state.
+    nonisolated static func columns(contentWidths: [CGFloat]) -> SupermuxZeronTableColumns {
         SupermuxZeronTableColumns(contentWidths: contentWidths)
     }
 
-    /// Per-column max-content width: each cell's flat text shaped UNWRAPPED at
-    /// 14 pt with its own runs, newlines replaced by spaces.
-    private var measuredContentWidths: [CGFloat] {
-        (0..<columnCount).map { column in
-            allRows.enumerated().reduce(CGFloat(0)) { widest, entry in
-                let (rowIndex, row) = entry
-                guard row.indices.contains(column) else { return widest }
-                let isHeader = rowIndex == 0 && !header.isEmpty
-                let flat = SupermuxZeronFlatText.flatten(
-                    runs: row[column],
-                    theme: theme,
-                    baseWeight: isHeader ? .bold : .regular
-                )
-                return max(widest, Self.unwrappedWidth(flat))
-            }
-        }
-    }
-
-    /// The unwrapped width of a flat cell.
-    private static func unwrappedWidth(_ flat: SupermuxZeronFlatText) -> CGFloat {
+    /// The unwrapped width of a flat cell — each cell's flat text shaped
+    /// UNWRAPPED at 14 pt with its own runs, newlines replaced by spaces.
+    nonisolated private static func unwrappedWidth(_ flat: SupermuxZeronFlatText) -> CGFloat {
         var width: CGFloat = 0
         for run in flat.runs {
             let font = run.isMono

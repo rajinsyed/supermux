@@ -84,6 +84,8 @@ public final class SupermuxZeronPulseClock {
     @ObservationIgnored private var leases: [String: Date] = [:]
     /// The running tick, or `nil` when parked.
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    /// Tasks suspended in ``nextFrame(leasedBy:)``, resumed by the next tick.
+    @ObservationIgnored private var waiters: [CheckedContinuation<Void, Never>] = []
     /// Injected clock, so tests can drive phase without waiting on wall time.
     @ObservationIgnored private let now: @Sendable () -> Date
 
@@ -153,6 +155,43 @@ public final class SupermuxZeronPulseClock {
         if leases.isEmpty { park() }
     }
 
+    /// Renews `holder`'s lease and SUSPENDS until the next published frame.
+    ///
+    /// The out-of-render half of the clock. ``phase(period:leasedBy:)`` is for a
+    /// loader whose whole animation is a pure function of the phase, so reading
+    /// it from `body` is safe. The streaming markdown veil is not that: advancing
+    /// it MUTATES per-chunk state, and a mutation performed during `body` makes
+    /// SwiftUI invalidate the view it is currently evaluating — an unbounded
+    /// re-render loop that pins the main thread at 100 % (cmux #2586; this file's
+    /// own R12 ban is about frame RATE, and that bug is about frame CAUSE).
+    ///
+    /// So the veil's driver awaits here from a `.task` and writes its result to
+    /// state OUTSIDE the render pass. Same 30 fps timer, same 300 ms lease, same
+    /// park behavior — the row simply gets the tick as a resumption rather than
+    /// as an observable read.
+    ///
+    /// Resumes on the next ``tick()``, and also when the clock parks or the
+    /// awaiting task is cancelled, so a caller can never be stranded. A spurious
+    /// wake is harmless: the caller re-advances and suspends again.
+    public func nextFrame(leasedBy holder: String) async {
+        renewLease(holder)
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                guard !Task.isCancelled else { return continuation.resume() }
+                waiters.append(continuation)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.resumeWaiters() }
+        }
+    }
+
+    /// Wake everything suspended in ``nextFrame(leasedBy:)``.
+    private func resumeWaiters() {
+        let resuming = waiters
+        waiters.removeAll()
+        for continuation in resuming { continuation.resume() }
+    }
+
     /// One tick: prune, park if empty, otherwise publish a frame.
     ///
     /// Exposed so tests can step the clock without a running task.
@@ -166,6 +205,7 @@ public final class SupermuxZeronPulseClock {
             return false
         }
         frame &+= 1
+        resumeWaiters()
         return true
     }
 
@@ -185,6 +225,9 @@ public final class SupermuxZeronPulseClock {
     private func park() {
         ticker?.cancel()
         ticker = nil
+        // A parked clock publishes no further frames, so anything suspended on
+        // one must be released rather than left waiting forever.
+        resumeWaiters()
     }
 
     /// The pure phase function: `fract(elapsed / period)`.
