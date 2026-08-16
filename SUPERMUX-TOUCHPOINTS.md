@@ -448,7 +448,7 @@ Rules for adding a touchpoint:
 | 429 | `Sources/Workspace+SidebarDirectories.swift` | `claude-harness-legacy-remote-directory` | Treats a legacy remote snapshot carrying a harness pane like an agent-session one for directory-provenance restore |
 | 430 | `Sources/cmuxApp.swift` | `claude-harness-debug-menu` | Mounts `SupermuxHarnessDebugMenuButtons()` in the DEBUG-only Debug menu |
 | 431 | `cmuxTests/SupermuxHarnessTests.swift` | `unfenced` | **Fork-owned new test file.** Trusted-shell-URL checks, harness snapshot round-trip/empty decode, `PanelType` claudeHarness decode, and `SessionPanelSnapshot` field carriage. pbxproj ids `50BE0001…012E`/`…012F` |
-| 432 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Claude harness into the app target: 13 app files under `Sources/Supermux/Harness/` (ids `50BE0001…0112`–`…012B`, 4 entries each; `Workspace+SupermuxHarness.swift` path quoted for the `+`), the `Resources/supermux-harness` folder reference (ids `…012C`/`…012D`, `lastKnownFileType = folder`), and `cmuxTests/SupermuxHarnessTests.swift` (ids `…012E`/`…012F`). Sixty `50BE0001` occurrences total |
+| 432 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Claude harness into the app target: 14 app files under `Sources/Supermux/Harness/` (ids `50BE0001…0112`–`…012B` plus `…0130`/`…0131` for `SupermuxHarnessWebRendererCoordinator+Bridge.swift`, 4 entries each; the two `+` paths quoted), the `Resources/supermux-harness` folder reference (ids `…012C`/`…012D`, `lastKnownFileType = folder`), and `cmuxTests/SupermuxHarnessTests.swift` (ids `…012E`/`…012F`). Sixty-four `50BE0001` occurrences total |
 
 ## How to re-apply
 
@@ -1392,7 +1392,7 @@ package-owned line-composition counterpart (#381) is discovered automatically by
 no pbxproj entry.
 
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `189`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `193`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
