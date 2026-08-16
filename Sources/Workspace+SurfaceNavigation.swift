@@ -207,6 +207,10 @@ extension Workspace {
             return SurfaceKind.mobilePairing.rawValue
         case .accountSignIn:
             return SurfaceKind.accountSignIn.rawValue
+        // SUPERMUX:begin claude-harness-surface-navigation
+        case .claudeHarness:
+            return SurfaceKind.claudeHarness.rawValue
+        // SUPERMUX:end claude-harness-surface-navigation
         }
     }
 

@@ -116,6 +116,9 @@ extension Workspace {
               snapshot.directoryIsTrustedRemoteReport == nil,
               snapshot.directoryRequiresRemoteTrust == nil else { return false }
         if let terminal = snapshot.terminal { return terminal.isRemoteTerminal != false }
+        // SUPERMUX:begin claude-harness-legacy-remote-directory
+        if snapshot.claudeHarness != nil { return true }
+        // SUPERMUX:end claude-harness-legacy-remote-directory
         return snapshot.agentSession != nil
     }
 

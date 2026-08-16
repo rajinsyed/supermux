@@ -155,6 +155,11 @@ extension Workspace {
         case .markdown, .filePreview, .rightSidebarTool, .customSidebar, .simulator, .agentSession, .extensionBrowser, .workspaceTodo, .notifications, .cloudVMLoading, .mobilePairing, .accountSignIn:
             unsupportedSurfaceCount += 1
             definition = CmuxSurfaceDefinition(type: .terminal)
+        // SUPERMUX:begin claude-harness-layout-capture
+        case .claudeHarness:
+            unsupportedSurfaceCount += 1
+            definition = CmuxSurfaceDefinition(type: .terminal)
+        // SUPERMUX:end claude-harness-layout-capture
         }
         // The declarative schema models only the single focused surface
         // (`focus`); per-pane tab selection is not representable without a

@@ -429,6 +429,27 @@ Rules for adding a touchpoint:
 | 413 | `Sources/ContentView.swift` | `pull-request-glyph-arrowhead` | Gives `PullRequestOpenIcon` its left-pointing arrowhead: upstream drew two branches joined by a bare connector, which is the `git-branch` glyph rather than `git-pull-request`. Rounds the 45° chamfer into an arc and detaches the two branch strokes, matching GitHub's octicon and SupermuxKit's `SupermuxPullRequestGlyph` |
 | 413b | `Sources/Sidebar/AppKitList/Cells/SidebarWorkspaceRowSlotViews.swift` | `pull-request-glyph-arrowhead` | The AppKit twin of #413 in `SidebarRowPullRequestIconView.draw`, so the AppKit sidebar list draws the same corrected glyph as the SwiftUI one (`NSBezierPath.appendArc(from:to:radius:)`; the view is `isFlipped`, so the y-down geometry ports unchanged) |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
+| 413 | `Sources/Panels/Panel.swift` | `claude-harness-panel-case`, `claude-harness-panel-decode` | Adds `case claudeHarness` to `PanelType` plus the case-insensitive decode fallback so old/foreign-cased snapshots restore the Claude harness pane |
+| 414 | `Packages/macOS/CmuxWorkspaces/Sources/CmuxWorkspaces/Core/Values/SurfaceKind.swift` | `claude-harness-surface-kind` | Additive `SurfaceKind.claudeHarness` static with the frozen wire string `claudeHarness` |
+| 415 | `Packages/macOS/CmuxWorkspaces/Tests/CmuxWorkspacesTests/Core/WorkspaceCoreValueTests.swift` | `claude-harness-surface-kind` | Pins the `claudeHarness` raw value in the frozen-wire-string test |
+| 416 | `Sources/Panels/PanelContentView.swift` | `claude-harness-panel-render`, `claude-harness-drop-target` | Renders `SupermuxHarnessPanelView` for `.claudeHarness` and includes the pane in the drop-target `return true` group |
+| 417 | `Sources/Canvas/WorkspaceCanvasHostView.swift` | `claude-harness-canvas-icon` | Default canvas icon (`sparkles`) for the harness pane |
+| 418 | `Sources/ContentView+SidebarSurfaceKind.swift` | `claude-harness-sidebar-kind` | Maps `.claudeHarness` to `.unknown` for the sidebar-extension surface kind |
+| 419 | `Sources/ContentView+CommandPaletteSurfaceMetadata.swift` | `claude-harness-palette-label`, `claude-harness-palette-keywords` | Command-palette label ("Claude", localized `supermux.harness.palette.kind`) and search keywords for the harness pane |
+| 420 | `Sources/ClosedItemHistory+PanelTitle.swift` | `claude-harness-closed-title` | Recently-closed fallback title for the harness pane |
+| 421 | `Sources/CmuxLifecycleEventPublishing.swift` | `claude-harness-lifecycle-kind` | Publishes surface kind `claude_harness` in cmux lifecycle events |
+| 422 | `Sources/Workspace+SurfaceNavigation.swift` | `claude-harness-surface-navigation` | Maps `.claudeHarness` to `SurfaceKind.claudeHarness.rawValue` in workspace state snapshots |
+| 423 | `Sources/PaneDropTargetView+FileDropTextDestination.swift` | `claude-harness-file-drop` | Adds `.claudeHarness` to the `return nil` group (no file-drop text destination) |
+| 424 | `Sources/Search/GlobalSearchDocuments.swift` | `claude-harness-global-search` | Indexes harness panes with `kind = .title` in global search |
+| 425 | `Sources/Workspace+LayoutCapture.swift` | `claude-harness-layout-capture` | Counts the harness pane as an unsupported surface in declarative layout capture (placeholder terminal) |
+| 426 | `Sources/Workspace.swift` | `claude-harness-snapshot`, `claude-harness-snapshot-arm`, `claude-harness-snapshot-field`, `claude-harness-restore-arm`, `claude-harness-transfer-in`, `claude-harness-attach-rollback` | Session snapshot local + arm + `SessionPanelSnapshot` field wiring, restore arm delegating to `restoreSupermuxHarnessPanel`, cross-workspace transfer re-install of the display-state subscription, and rollback detach on failed attach. The factory/subscription bodies live in the supermux-owned `Sources/Supermux/Harness/Workspace+SupermuxHarness.swift` |
+| 427 | `Sources/Workspace+PanelLifecycle.swift` | `claude-harness-discard-subscription` | One-line `discardSupermuxHarnessPanelSubscription` call on panel discard |
+| 428 | `Sources/SessionPersistence.swift` | `claude-harness-persistence-field` | Optional `claudeHarness: SessionSupermuxHarnessPanelSnapshot?` field on `SessionPanelSnapshot` |
+| 429 | `Sources/Workspace+SidebarDirectories.swift` | `claude-harness-legacy-remote-directory` | Treats a legacy remote snapshot carrying a harness pane like an agent-session one for directory-provenance restore |
+| 430 | `Sources/cmuxApp.swift` | `claude-harness-debug-menu` | Mounts `SupermuxHarnessDebugMenuButtons()` in the DEBUG-only Debug menu |
+| 431 | `cmuxTests/SupermuxHarnessTests.swift` | `unfenced` | **Fork-owned new test file.** Trusted-shell-URL checks, harness snapshot round-trip/empty decode, `PanelType` claudeHarness decode, and `SessionPanelSnapshot` field carriage. pbxproj ids `50BE0001…012E`/`…012F` |
+| 432 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Claude harness into the app target: 13 app files under `Sources/Supermux/Harness/` (ids `50BE0001…0112`–`…012B`, 4 entries each; `Workspace+SupermuxHarness.swift` path quoted for the `+`), the `Resources/supermux-harness` folder reference (ids `…012C`/`…012D`, `lastKnownFileType = folder`), and `cmuxTests/SupermuxHarnessTests.swift` (ids `…012E`/`…012F`). Sixty `50BE0001` occurrences total |
+
 ## How to re-apply
 
 ### 379. `CLAUDE.md` — `no-handoff-notify`
@@ -1371,7 +1392,7 @@ package-owned line-composition counterpart (#381) is discovered automatically by
 no pbxproj entry.
 
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `129`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `189`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
@@ -3759,3 +3780,45 @@ so the y-down coordinates port across unchanged — do not flip them.
 Verify by eye at real size, not just zoomed: the arrow has to survive 12pt. Render the glyph into
 its chip at 13/21 (phone) and 12/18 (desktop) and confirm the arrowhead is still legible and its
 barbs do not collide with the left branch's node.
+
+### 413–432. Claude harness pane — `claude-harness-*`
+
+The dedicated Claude Code harness pane (`PanelType.claudeHarness`): a WKWebView-hosted chat surface
+driving the Claude CLI over stream-json stdio. All logic lives in fork-owned files — the
+SupermuxKit engine under `Packages/SupermuxKit/Sources/SupermuxKit/ClaudeHarness/`, the app glue
+under `Sources/Supermux/Harness/`, the web app in `harness-web/` (built by
+`scripts/supermux-build-harness-web.sh` into the committed `Resources/supermux-harness/index.html`).
+The fences are thin switch arms; to re-apply after a merge:
+
+1. `Panel.swift`: add `case claudeHarness` at the end of `PanelType` plus a lowercase decode
+   fallback block before the `DecodingError` throw (#413).
+2. `SurfaceKind.swift`: additive `public static let claudeHarness = SurfaceKind(rawValue:
+   "claudeHarness")` — the raw string is frozen; the package test pins it (#414–#415).
+3. Every exhaustive `switch panel.panelType` / `switch snapshot.type` gains a `.claudeHarness` arm:
+   render `SupermuxHarnessPanelView` + drop-target `true` (#416), canvas icon `sparkles` (#417),
+   sidebar kind `.unknown` (#418), palette label/keywords (#419), closed-history title (#420),
+   lifecycle kind `claude_harness` (#421), surface-navigation raw value (#422), file-drop `nil`
+   (#423), global-search `.title` (#424), layout-capture unsupported (#425).
+4. `Workspace.swift` (#426): declare `var claudeHarnessSnapshot: SessionSupermuxHarnessPanelSnapshot?
+   = nil` beside the other per-kind locals; snapshot arm calls
+   `supermuxHarnessSessionSnapshot(for:)` and nils the other locals; pass
+   `claudeHarness: claudeHarnessSnapshot` in the `SessionPanelSnapshot` init; restore arm returns
+   `restoreSupermuxHarnessPanel(from:inPane:)`; in `attachDetachedSurface` re-install the
+   subscription via `installSupermuxHarnessPanelSubscription` after `updateWorkspaceId`, and in the
+   createTab-failure rollback clear `onDisplayStateChanged`.
+5. `Workspace+PanelLifecycle.swift` (#427): one `discardSupermuxHarnessPanelSubscription` call next
+   to the agent-session discard.
+6. `SessionPersistence.swift` (#428): optional `var claudeHarness:
+   SessionSupermuxHarnessPanelSnapshot? = nil` on `SessionPanelSnapshot`.
+7. `Workspace+SidebarDirectories.swift` (#429): in
+   `restoresLegacyRemoteDirectoryWithoutProvenance`, return `true` when `snapshot.claudeHarness`
+   is non-nil (before the agent-session fallback).
+8. `cmuxApp.swift` (#430): mount `SupermuxHarnessDebugMenuButtons()` inside the `#if DEBUG`
+   `CommandMenu("Debug")`, after the Iroh/AgentSession buttons.
+9. pbxproj (#431–#432): 4 entries per file with the reserved ids listed in the rows; re-run
+   `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj`, `./scripts/check-pbxproj.sh`,
+   and `./scripts/lint-pbxproj-test-wiring.sh`.
+
+Copy keys: every `supermux.harness.*` string in `Sources/Supermux/Harness/SupermuxHarnessCopy.swift`
+mirrors `harness-web/src/copyKeys.ts`; regenerate localizations with the loc scripts. Rebuild the
+web shell with `bun run harness-web:build` and commit the artifact.

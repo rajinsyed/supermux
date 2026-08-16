@@ -57,6 +57,8 @@ export function useHarness(store: HarnessStore): HarnessController {
     });
   }, [store]);
 
+  const restoredSessionId = useRef<string | undefined>(undefined);
+
   const reloadContext = useCallback(() => {
     bridge
       .context()
@@ -64,9 +66,20 @@ export function useHarness(store: HarnessStore): HarnessController {
         setContext(next);
         setTheme(next.theme);
         if (next.draft) setDraftState(next.draft);
+        const sessionId = next.restore?.sessionId;
+        if (sessionId && restoredSessionId.current !== sessionId) {
+          restoredSessionId.current = sessionId;
+          bridge
+            .loadSessionHistory({ sessionId })
+            .then((result) => {
+              store.dispatch({ kind: "reset" });
+              store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
+            })
+            .catch(() => undefined);
+        }
       })
       .catch(() => undefined);
-  }, [bridge]);
+  }, [bridge, store]);
 
   const refreshSessions = useCallback(() => {
     bridge
@@ -110,7 +123,7 @@ export function useHarness(store: HarnessStore): HarnessController {
       started.current = true;
       await bridge
         .start({
-          resumeSessionId,
+          resumeSessionId: resumeSessionId ?? context?.restore?.sessionId,
           forkSession: fork,
           model: context?.restore?.model,
           permissionMode: context?.restore?.permissionMode

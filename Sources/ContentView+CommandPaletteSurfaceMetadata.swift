@@ -32,6 +32,10 @@ extension ContentView {
             return String(localized: "command.mobileConnect.subtitle", defaultValue: "Tailscale")
         case .accountSignIn:
             return String(localized: "settings.section.account", defaultValue: "Account")
+        // SUPERMUX:begin claude-harness-palette-label
+        case .claudeHarness:
+            return String(localized: "supermux.harness.palette.kind", defaultValue: "Claude")
+        // SUPERMUX:end claude-harness-palette-label
         }
     }
     func commandPaletteSurfaceKeywords(for panelType: PanelType) -> [String] {
@@ -65,6 +69,10 @@ extension ContentView {
             return ContentView.commandPaletteMobileConnectKeywords
         case .accountSignIn:
             return ["account", "auth", "profile", "sign in"]
+        // SUPERMUX:begin claude-harness-palette-keywords
+        case .claudeHarness:
+            return ["claude", "harness", "anthropic", "chat", "ai", "agent"]
+        // SUPERMUX:end claude-harness-palette-keywords
         }
     }
 }

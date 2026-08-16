@@ -473,6 +473,9 @@ extension Workspace {
         let transferredRemoteCleanupConfiguration = transferredRemoteCleanupConfigurationsByPanelId.removeValue(forKey: panelId)
         panelSubscriptions.removeValue(forKey: panelId)?.cancel()
         discardAgentSessionPanelSubscription(panelId: panelId, panel: panel)
+        // SUPERMUX:begin claude-harness-discard-subscription
+        discardSupermuxHarnessPanelSubscription(panelId: panelId, panel: panel)
+        // SUPERMUX:end claude-harness-discard-subscription
         discardBrowserPanelSubscription(panelId: panelId, panel: panel)
         removeBrowserOpenTabSuggestionIfNeeded(panel: panel, panelId: panelId)
         if cleanupControllerSurfaceState {

@@ -45,6 +45,10 @@ extension ClosedItemHistoryStore {
             return String(localized: "mobile.pairing.window.title", defaultValue: "Tailscale Pairing")
         case .accountSignIn:
             return String(localized: "account.signIn.workspace.title", defaultValue: "Sign In")
+        // SUPERMUX:begin claude-harness-closed-title
+        case .claudeHarness:
+            return String(localized: "supermux.harness.panel.title", defaultValue: "Claude")
+        // SUPERMUX:end claude-harness-closed-title
         }
     }
 }

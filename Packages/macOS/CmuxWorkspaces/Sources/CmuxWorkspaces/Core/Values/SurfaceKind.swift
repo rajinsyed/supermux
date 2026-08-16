@@ -45,4 +45,8 @@ public struct SurfaceKind: RawRepresentable, Hashable, Sendable {
     public static let mobilePairing = SurfaceKind(rawValue: "mobilePairing")
     /// A transient Stack account sign-in pane.
     public static let accountSignIn = SurfaceKind(rawValue: "accountSignIn")
+    // SUPERMUX:begin claude-harness-surface-kind
+    /// A Claude harness pane.
+    public static let claudeHarness = SurfaceKind(rawValue: "claudeHarness")
+    // SUPERMUX:end claude-harness-surface-kind
 }

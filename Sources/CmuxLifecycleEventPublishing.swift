@@ -235,6 +235,10 @@ extension Workspace {
             return "mobile_pairing"
         case .accountSignIn:
             return "account_sign_in"
+        // SUPERMUX:begin claude-harness-lifecycle-kind
+        case .claudeHarness:
+            return "claude_harness"
+        // SUPERMUX:end claude-harness-lifecycle-kind
         }
     }
 }

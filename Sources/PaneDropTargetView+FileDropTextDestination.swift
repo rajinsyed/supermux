@@ -21,6 +21,10 @@ extension PaneDropTargetView {
              .agentSession, .project, .extensionBrowser, .workspaceTodo, .notifications, .cloudVMLoading,
              .mobilePairing, .accountSignIn:
             return nil
+        // SUPERMUX:begin claude-harness-file-drop
+        case .claudeHarness:
+            return nil
+        // SUPERMUX:end claude-harness-file-drop
         }
     }
 }

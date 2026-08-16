@@ -531,6 +531,10 @@ struct cmuxApp: App {
                     openSolid: { appDelegate.openDebugAgentSessionSolid(nil) }
                 )
 
+                // SUPERMUX:begin claude-harness-debug-menu
+                SupermuxHarnessDebugMenuButtons()
+                // SUPERMUX:end claude-harness-debug-menu
+
                 Button("Open Workspaces for All Workspace Colors") {
                     appDelegate.openDebugColorComparisonWorkspaces(nil)
                 }

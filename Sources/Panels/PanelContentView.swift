@@ -213,6 +213,19 @@ struct PanelContentView: View {
                     onRequestPanelFocus: onRequestPanelFocus
                 )
             }
+        // SUPERMUX:begin claude-harness-panel-render
+        case .claudeHarness:
+            if let harnessPanel = panel as? SupermuxHarnessPanel {
+                SupermuxHarnessPanelView(
+                    panel: harnessPanel,
+                    isFocused: isFocused,
+                    isVisibleInUI: isVisibleInUI,
+                    portalPriority: portalPriority,
+                    appearance: appearance,
+                    onRequestPanelFocus: onRequestPanelFocus
+                )
+            }
+        // SUPERMUX:end claude-harness-panel-render
         }
     }
 
@@ -232,6 +245,10 @@ struct PanelContentView: View {
         switch panel.panelType {
         case .markdown, .filePreview, .rightSidebarTool, .customSidebar, .simulator, .agentSession, .project, .extensionBrowser, .workspaceTodo, .notifications, .cloudVMLoading, .mobilePairing, .accountSignIn:
             return true
+        // SUPERMUX:begin claude-harness-drop-target
+        case .claudeHarness:
+            return true
+        // SUPERMUX:end claude-harness-drop-target
         case .terminal, .browser:
             return false
         }

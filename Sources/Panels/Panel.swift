@@ -19,6 +19,9 @@ public enum PanelType: String, Codable, Sendable {
     case cloudVMLoading
     case mobilePairing
     case accountSignIn
+    // SUPERMUX:begin claude-harness-panel-case
+    case claudeHarness
+    // SUPERMUX:end claude-harness-panel-case
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -63,6 +66,12 @@ public enum PanelType: String, Codable, Sendable {
             self = .accountSignIn
             return
         }
+        // SUPERMUX:begin claude-harness-panel-decode
+        if rawValue.lowercased() == Self.claudeHarness.rawValue.lowercased() {
+            self = .claudeHarness
+            return
+        }
+        // SUPERMUX:end claude-harness-panel-decode
         throw DecodingError.dataCorruptedError(
             in: container,
             debugDescription: "Unknown panel type: \(rawValue)"

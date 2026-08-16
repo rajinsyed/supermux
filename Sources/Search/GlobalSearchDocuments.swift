@@ -37,6 +37,10 @@ enum GlobalSearchDocuments {
         case .terminal, .filePreview, .rightSidebarTool, .customSidebar, .agentSession, .project,
              .extensionBrowser, .simulator, .workspaceTodo, .notifications, .cloudVMLoading, .mobilePairing, .accountSignIn:
             kind = .title
+        // SUPERMUX:begin claude-harness-global-search
+        case .claudeHarness:
+            kind = .title
+        // SUPERMUX:end claude-harness-global-search
         }
 
         return SearchIndexHit(

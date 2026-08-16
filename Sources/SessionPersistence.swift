@@ -1698,6 +1698,9 @@ struct SessionPanelSnapshot: Codable, Sendable {
     var project: SessionProjectPanelSnapshot?
     var workspaceTodo: SessionWorkspaceTodoPanelSnapshot? = nil
     var notificationsPanel: SessionNotificationsPanelSnapshot? = nil
+    // SUPERMUX:begin claude-harness-persistence-field
+    var claudeHarness: SessionSupermuxHarnessPanelSnapshot? = nil
+    // SUPERMUX:end claude-harness-persistence-field
 }
 extension SessionPanelSnapshot: WorkspaceSessionRemoteRestorePanelSnapshot {}
 
