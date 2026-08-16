@@ -238,6 +238,98 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(zero.events.isEmpty)
     }
 
+    @Test func cwdMungingCollisionsDoNotExposeAnotherDirectorysSessions() throws {
+        let root = try makeTemporaryDirectory(named: "cwd-collision")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        let requestedDirectory = root.appendingPathComponent("project-a", isDirectory: true)
+        let collidingDirectory = root.appendingPathComponent("project_a", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: requestedDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: collidingDirectory, withIntermediateDirectories: true)
+        let discovery = SupermuxHarnessSessionDiscovery(projectsRootURL: projects, fileManager: .default)
+        #expect(
+            discovery.mungedProjectDirectoryNames(for: requestedDirectory) ==
+                discovery.mungedProjectDirectoryNames(for: collidingDirectory)
+        )
+        let projectDirectory = try #require(discovery.projectDirectoryURLs(for: requestedDirectory).first)
+        try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
+        try writeSession(id: "foreign", directory: projectDirectory, records: [
+            [
+                "type": "user",
+                "uuid": "user",
+                "cwd": collidingDirectory.path,
+                "isSidechain": false,
+                "message": ["role": "user", "content": "private prompt"],
+            ],
+        ])
+
+        #expect(try discovery.listSessions(for: requestedDirectory).isEmpty)
+        #expect(throws: SupermuxHarnessSessionDiscoveryError.sessionNotFound("foreign")) {
+            _ = try discovery.loadHistory(for: requestedDirectory, sessionID: "foreign")
+        }
+        #expect(try discovery.listSessions(for: collidingDirectory).map(\.sessionID) == ["foreign"])
+        #expect(
+            try discovery.loadHistory(for: collidingDirectory, sessionID: "foreign")
+                .events.first?.string(forKey: "uuid") == "user"
+        )
+    }
+
+    @Test func discoveryRejectsSymlinkedProjectDirectoriesAndSessionFiles() throws {
+        let root = try makeTemporaryDirectory(named: "symlink-escape")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        let workingDirectory = root.appendingPathComponent("working", isDirectory: true)
+        let outsideProject = root.appendingPathComponent("outside-project", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideProject, withIntermediateDirectories: true)
+        let discovery = SupermuxHarnessSessionDiscovery(projectsRootURL: projects, fileManager: .default)
+        let projectDirectory = try #require(discovery.projectDirectoryURLs(for: workingDirectory).first)
+        try writeSession(id: "escaped-project", directory: outsideProject, records: [
+            [
+                "type": "user",
+                "uuid": "project-user",
+                "cwd": workingDirectory.path,
+                "message": ["role": "user", "content": "outside"],
+            ],
+        ])
+        try FileManager.default.createSymbolicLink(at: projectDirectory, withDestinationURL: outsideProject)
+
+        #expect(try discovery.listSessions(for: workingDirectory).isEmpty)
+        #expect(throws: SupermuxHarnessSessionDiscoveryError.sessionNotFound("escaped-project")) {
+            _ = try discovery.loadHistory(for: workingDirectory, sessionID: "escaped-project")
+        }
+
+        try FileManager.default.removeItem(at: projectDirectory)
+        try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
+        let outsideFile = try writeSession(id: "outside-file", directory: outsideProject, records: [
+            [
+                "type": "user",
+                "uuid": "file-user",
+                "cwd": workingDirectory.path,
+                "message": ["role": "user", "content": "outside file"],
+            ],
+        ])
+        let linkedFile = projectDirectory.appendingPathComponent("escaped-file.jsonl")
+        try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: outsideFile)
+
+        #expect(try discovery.listSessions(for: workingDirectory).isEmpty)
+        #expect(throws: SupermuxHarnessSessionDiscoveryError.sessionNotFound("escaped-file")) {
+            _ = try discovery.loadHistory(for: workingDirectory, sessionID: "escaped-file")
+        }
+    }
+
+    @Test func sessionListSkipsFileNamesThatHistoryCannotAddress() throws {
+        let sandbox = try makeSandbox(named: "invalid-list-id")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        try writeSession(id: "bad id", directory: directory, records: [])
+        try writeSession(id: "valid-id", directory: directory, records: [])
+
+        #expect(try sandbox.discovery.listSessions(for: sandbox.workingDirectory).map(\.sessionID) == ["valid-id"])
+    }
+
     @Test(arguments: ["", "../session", "folder/session", ".", "session.jsonl", "session id"])
     func historyRejectsInvalidSessionIdentifiers(_ sessionID: String) throws {
         let sandbox = try makeSandbox(named: "invalid-id")

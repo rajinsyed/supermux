@@ -216,6 +216,60 @@ struct SupermuxHarnessControlRouterTests {
         #expect(recorder.frames.count == 2)
     }
 
+    @Test func cancelledPermissionIsNotRestoredWhenItsInFlightSendFails() async throws {
+        @MainActor final class DeferredFailureSender {
+            var startedContinuation: CheckedContinuation<Void, Never>?
+            var sendContinuation: CheckedContinuation<Void, any Error>?
+
+            func send(_ frame: SupermuxHarnessEncodedFrame) async throws {
+                _ = frame
+                startedContinuation?.resume()
+                startedContinuation = nil
+                try await withCheckedThrowingContinuation { continuation in
+                    sendContinuation = continuation
+                }
+            }
+
+            func waitUntilStarted() async {
+                if sendContinuation != nil { return }
+                await withCheckedContinuation { continuation in
+                    startedContinuation = continuation
+                }
+            }
+
+            func fail() {
+                sendContinuation?.resume(throwing: SenderError.rejected)
+                sendContinuation = nil
+            }
+        }
+
+        let sender = DeferredFailureSender()
+        let router = SupermuxHarnessControlRouter(sender: { frame in
+            try await sender.send(frame)
+        })
+        router.consume(try permissionFrame(requestID: "permission", toolName: "Bash"))
+        let operation = Task {
+            try await router.respondToPermission(
+                requestID: "permission",
+                decision: .deny(message: "no", interrupt: false)
+            )
+        }
+        await sender.waitUntilStarted()
+        router.consume(try frame([
+            "type": "control_cancel_request",
+            "request_id": "permission",
+        ]))
+        sender.fail()
+
+        do {
+            try await operation.value
+            Issue.record("Expected sender failure")
+        } catch let error as SenderError {
+            #expect(error == .rejected)
+        }
+        #expect(router.pendingPermissionRequests.isEmpty)
+    }
+
     @Test func initializeReplaysAllSupportedPendingPermissionShapesAndDeduplicates() async throws {
         let recorder = FrameRecorder()
         let router = makeRouter(recorder: recorder, requestIDs: ["initialize"])

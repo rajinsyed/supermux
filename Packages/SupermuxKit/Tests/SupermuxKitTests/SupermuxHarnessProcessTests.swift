@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -319,6 +320,34 @@ struct SupermuxHarnessProcessSessionTests {
         let exit = await recorder.nextExit()
         #expect(exit == .exited(runID: started.runID, status: 9))
         #expect(recorder.timeline.last == "exited")
+    }
+
+    @Test func closeRetainsEscalationUntilAnIgnoringProcessIsKilled() async throws {
+        let recorder = Recorder()
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-harness-survived-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: marker) }
+        let quotedMarker = marker.path.replacingOccurrences(of: "'", with: "'\\''")
+        let script = """
+        trap '' TERM
+        printf '{"type":"keep_alive","ready":true}\\n'
+        sleep 0.3
+        printf survived > '\(quotedMarker)'
+        """
+
+        var session: SupermuxHarnessProcessSession? = makeSession(
+            recorder: recorder,
+            escalationInterval: 0.05
+        )
+        let started = try #require(try session?.start(plan: shellPlan(script)))
+        _ = await recorder.nextProtocolLine()
+        session?.close()
+        session = nil
+
+        try await ContinuousClock().sleep(for: .milliseconds(450))
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+        #expect(recorder.lifecycleEvents.contains(.exited(runID: started.runID, status: 9)))
+        _ = Darwin.kill(started.processID, SIGKILL)
     }
 
     @Test func closeIsIdempotentAndMissingProcessOperationsFail() async throws {

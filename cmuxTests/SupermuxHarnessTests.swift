@@ -72,6 +72,69 @@ struct SupermuxHarnessTests {
         #expect(lowercased == .claudeHarness)
     }
 
+    @MainActor
+    @Test
+    func testRemoteHarnessDirectoryCarriesTrustProvenance() throws {
+        let localDirectory = "/Users/alice/development"
+        let remoteDirectory = "/home/seepine/workspace"
+        let sshCommand = "ssh seepine@192.168.5.20"
+        let workspace = Workspace(workingDirectory: localDirectory, initialTerminalCommand: sshCommand)
+        let remotePanelId = try #require(workspace.focusedPanelId)
+        workspace.configureRemoteConnection(
+            sshRemoteConfiguration(command: sshCommand),
+            autoConnect: false
+        )
+        workspace.updateRemotePanelDirectory(panelId: remotePanelId, directory: remoteDirectory)
+        let paneId = try #require(workspace.bonsplitController.focusedPaneId)
+        let harnessPanel = try #require(workspace.newSupermuxHarnessSurface(
+            inPane: paneId,
+            workingDirectory: nil,
+            focus: true
+        ))
+
+        #expect(harnessPanel.workingDirectory == remoteDirectory)
+        #expect(workspace.remoteDirectoryReportPanelIds.contains(harnessPanel.id))
+        #expect(workspace.remoteDirectoryTrustRequiredPanelIds.contains(harnessPanel.id))
+        let panelSnapshot = try #require(
+            workspace.sessionSnapshot(includeScrollback: false).panels.first { $0.id == harnessPanel.id }
+        )
+        #expect(panelSnapshot.directoryIsTrustedRemoteReport == true)
+        #expect(panelSnapshot.directoryRequiresRemoteTrust == true)
+    }
+
+    @MainActor
+    @Test
+    func testTrustRequiredHarnessRestoreDoesNotUseSavedRemoteDirectoryAsLocal() throws {
+        let remoteDirectory = "/home/seepine/workspace"
+        let sshCommand = "ssh seepine@192.168.5.20"
+        let workspace = Workspace(
+            workingDirectory: "/Users/alice/development",
+            initialTerminalCommand: sshCommand
+        )
+        let remotePanelId = try #require(workspace.focusedPanelId)
+        workspace.configureRemoteConnection(
+            sshRemoteConfiguration(command: sshCommand),
+            autoConnect: false
+        )
+        workspace.updateRemotePanelDirectory(panelId: remotePanelId, directory: remoteDirectory)
+        let paneId = try #require(workspace.bonsplitController.focusedPaneId)
+        let harnessPanel = try #require(workspace.newSupermuxHarnessSurface(
+            inPane: paneId,
+            workingDirectory: nil,
+            focus: true
+        ))
+        workspace.disconnectRemoteConnection()
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+
+        let restored = Workspace()
+        let restoredPanelId = try #require(restored.restoreSessionSnapshot(snapshot)[harnessPanel.id])
+        let restoredHarness = try #require(restored.panels[restoredPanelId] as? SupermuxHarnessPanel)
+        #expect(restoredHarness.workingDirectory == nil)
+        #expect(restored.panelDirectories[restoredPanelId] == remoteDirectory)
+        #expect(restored.reportedPanelDirectory(panelId: restoredPanelId) == nil)
+        #expect(restored.remoteDirectoryTrustRequiredPanelIds.contains(restoredPanelId))
+    }
+
     @Test
     func testSessionPanelSnapshotCarriesClaudeHarnessField() throws {
         var harness = SessionSupermuxHarnessPanelSnapshot()
@@ -99,5 +162,20 @@ struct SupermuxHarnessTests {
         let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
         #expect(decoded.type == .claudeHarness)
         #expect(decoded.claudeHarness?.sessionId == "abc")
+    }
+
+    private func sshRemoteConfiguration(command: String) -> WorkspaceRemoteConfiguration {
+        WorkspaceRemoteConfiguration(
+            destination: "seepine@192.168.5.20",
+            port: nil,
+            identityFile: nil,
+            sshOptions: [],
+            localProxyPort: nil,
+            relayPort: 64007,
+            relayID: "relay-\(UUID().uuidString)",
+            relayToken: String(repeating: "a", count: 64),
+            localSocketPath: "/tmp/cmux-harness-\(UUID().uuidString).sock",
+            terminalStartupCommand: command
+        )
     }
 }
