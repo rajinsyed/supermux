@@ -275870,6 +275870,23 @@
         }
       }
     },
+    "supermux.harness.rewind.doneFilesFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation rewound; files could not be restored."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会話は巻き戻しましたが、ファイルは復元できませんでした。"
+          }
+        }
+      }
+    },
     "supermux.harness.rewind.failed" : {
       "extractionState" : "manual",
       "localizations" : {

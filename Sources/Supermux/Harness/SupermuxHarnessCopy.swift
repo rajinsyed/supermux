@@ -217,6 +217,7 @@ enum SupermuxHarnessCopy {
             "supermux.harness.rewind.confirm": String(localized: "supermux.harness.rewind.confirm", defaultValue: "Rewind & edit"),
             "supermux.harness.rewind.cancel": String(localized: "supermux.harness.rewind.cancel", defaultValue: "Cancel"),
             "supermux.harness.rewind.done": String(localized: "supermux.harness.rewind.done", defaultValue: "Rewound to before this message."),
+            "supermux.harness.rewind.doneFilesFailed": String(localized: "supermux.harness.rewind.doneFilesFailed", defaultValue: "Conversation rewound; files could not be restored."),
             "supermux.harness.rewind.failed": String(localized: "supermux.harness.rewind.failed", defaultValue: "Rewind failed"),
             "supermux.harness.mode.default": String(localized: "supermux.harness.mode.default", defaultValue: "Ask each time"),
             "supermux.harness.mode.defaultShort": String(localized: "supermux.harness.mode.defaultShort", defaultValue: "Ask"),

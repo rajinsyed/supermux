@@ -380,6 +380,33 @@ export function installMockBridge(store: HarnessStore): Scenario {
     store.dispatch({ kind: "contextUsage", usage: mockContextUsage(tokenTotal) });
   }, 0);
 
+  // The leg the real CLI runs after a turn ends: the open turn settles and the
+  // queue drains FIFO into real turns. Interrupt was the only drain trigger
+  // before, so the queue scenario's chips sat parked forever.
+  if (scenario.settleAfterMs !== undefined) {
+    window.setTimeout(() => {
+      store.receive([
+        {
+          kind: "protocol",
+          line: {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "Audit under way — snapshot arms compared.",
+            duration_ms: 2400,
+            terminal_reason: "completed",
+            uuid: `dev-settle-${Date.now()}`
+          } as ProtocolLine
+        }
+      ]);
+      let delay = 320;
+      for (const message of store.getSnapshot().queued) {
+        window.setTimeout(() => replyTo(message.text), delay);
+        delay += 520;
+      }
+    }, scenario.settleAfterMs);
+  }
+
   // A process that dies with messages still queued behind it. The CLI-side queue
   // dies with it, so the pane has to say those messages are still waiting and
   // re-send them once a run is back up.

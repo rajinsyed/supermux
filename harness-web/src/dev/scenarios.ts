@@ -92,6 +92,12 @@ export interface Scenario {
    * onto the wrong turn.
    */
   killAfterMs?: number;
+  /**
+   * Settle the scripted open turn this many ms in and then drain the queue
+   * FIFO, one reply per chip — the leg the real CLI runs after a turn ends,
+   * which the interrupt path alone left unreachable in the dev harness.
+   */
+  settleAfterMs?: number;
 }
 
 function streamingCut(): number {
@@ -212,7 +218,8 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
         hasSessions: true,
         cachedModels: true,
         processRunning: true,
-        queuedDrafts
+        queuedDrafts,
+        settleAfterMs: 2600
       };
     case "crash":
       // The queue outlives its process here: chips are waiting when the run dies,
