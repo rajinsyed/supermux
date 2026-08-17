@@ -20,6 +20,8 @@ public final class SupermuxHarnessProcessSession {
     private let lifecycleSink: SupermuxHarnessLifecycleSink
     private let terminationEscalationNanoseconds: Int
     private var runningProcess: SupermuxHarnessRunningProcess?
+    /// Keeps escalation alive after the panel releases its process-session owner.
+    private var terminationRetainer: SupermuxHarnessProcessSession?
 
     /// Creates a single-process session.
     ///
@@ -73,6 +75,8 @@ public final class SupermuxHarnessProcessSession {
             runID: runID,
             process: process,
             stdin: stdin,
+            stdout: stdout,
+            stderr: stderr,
             inputWriter: inputWriter
         )
         runningProcess = session
@@ -101,6 +105,7 @@ public final class SupermuxHarnessProcessSession {
 
         do {
             try process.run()
+            try? stdin.fileHandleForReading.close()
             try? stdout.fileHandleForWriting.close()
             try? stderr.fileHandleForWriting.close()
         } catch {
@@ -130,10 +135,18 @@ public final class SupermuxHarnessProcessSession {
     /// - Parameter frame: A newline-terminated frame produced by ``SupermuxHarnessProtocolEncoder``.
     /// - Throws: ``SupermuxHarnessProcessError/notRunning`` or an input-writer error.
     public func send(_ frame: SupermuxHarnessEncodedFrame) async throws {
-        guard let session = runningProcess else {
-            throw SupermuxHarnessProcessError.notRunning
-        }
-        try await session.inputWriter.write(frame.lineData)
+        try await sendFrame(frame, expectedRunID: nil)
+    }
+
+    /// Writes a frame only when the identified run is still the active process.
+    ///
+    /// - Parameters:
+    ///   - frame: A newline-terminated frame produced by ``SupermuxHarnessProtocolEncoder``.
+    ///   - runID: The run that owns the control request producing this frame.
+    /// - Throws: ``SupermuxHarnessProcessError/notRunning`` when another run replaced it, or an
+    ///   input-writer error.
+    public func send(_ frame: SupermuxHarnessEncodedFrame, forRunID runID: String) async throws {
+        try await sendFrame(frame, expectedRunID: runID)
     }
 
     /// Closes stdin without sending a signal, allowing Claude Code to end gracefully.
@@ -160,6 +173,20 @@ public final class SupermuxHarnessProcessSession {
     public func close() {
         guard let session = runningProcess else { return }
         requestTermination(session)
+    }
+
+    private func sendFrame(
+        _ frame: SupermuxHarnessEncodedFrame,
+        expectedRunID: String?
+    ) async throws {
+        guard let session = runningProcess,
+              expectedRunID == nil || session.runID == expectedRunID else {
+            throw SupermuxHarnessProcessError.notRunning
+        }
+        guard !session.isTerminating else {
+            throw SupermuxHarnessProcessError.inputClosed
+        }
+        try await session.inputWriter.write(frame.lineData)
     }
 
     private func makeReadTask(
@@ -224,10 +251,18 @@ public final class SupermuxHarnessProcessSession {
         }
         runningProcess = nil
         cancelTasks(session)
+        terminationRetainer = nil
         lifecycleSink(.exited(runID: session.runID, status: status))
     }
 
     private func requestTermination(_ session: SupermuxHarnessRunningProcess) {
+        terminationRetainer = self
+        if !session.isTerminating {
+            session.isTerminating = true
+            Task {
+                await session.inputWriter.close()
+            }
+        }
         if session.process.isRunning {
             session.process.terminate()
         }
@@ -265,6 +300,8 @@ public final class SupermuxHarnessProcessSession {
         session.process.terminationHandler = nil
         session.terminationEscalationTimer?.cancel()
         session.terminationEscalationTimer = nil
+        try? session.stdout.fileHandleForReading.close()
+        try? session.stderr.fileHandleForReading.close()
         session.stdoutReadTask?.cancel()
         session.stdoutReadTask = nil
         session.stderrReadTask?.cancel()

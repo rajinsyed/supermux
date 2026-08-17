@@ -19,6 +19,13 @@ extension Workspace {
             if let restored = restoreState?.workingDirectory { return restored }
             return usesRemoteDirectoryProvenance ? presentedCurrentDirectory : currentDirectory
         }()
+        let focusedPanelUsesRemoteFallback = focusedPanelId.map {
+            reportedPanelDirectory(panelId: $0) == nil && terminalPanel(for: $0) == nil
+        } ?? true
+        let trustsHarnessDirectory = workingDirectory == nil &&
+            restoreState?.workingDirectory == nil &&
+            (focusedPanelId.map { remoteDirectoryReportPanelIds.contains($0) } == true ||
+                (usesRemoteDirectoryProvenance && focusedPanelUsesRemoteFallback && directory != nil))
 
         let harnessPanel = SupermuxHarnessPanel(
             workspaceId: id,
@@ -44,6 +51,9 @@ extension Workspace {
             panelTitles.removeValue(forKey: harnessPanel.id)
             panelDirectories.removeValue(forKey: harnessPanel.id)
             return nil
+        }
+        if trustsHarnessDirectory, let directory {
+            _ = updateRemotePanelDirectory(panelId: harnessPanel.id, directory: directory)
         }
 
         bindSurface(newTabId, toPanelId: harnessPanel.id)
@@ -108,11 +118,19 @@ extension Workspace {
         harnessPanel.onDisplayStateChanged = nil
     }
 
-    func restoreSupermuxHarnessPanel(from snapshot: SessionPanelSnapshot, inPane paneId: PaneID) -> UUID? {
-        guard let harnessState = snapshot.claudeHarness else { return nil }
+    func restoreSupermuxHarnessPanel(
+        from snapshot: SessionPanelSnapshot,
+        inPane paneId: PaneID,
+        restoresSavedDirectory: Bool = true
+    ) -> UUID? {
+        guard var harnessState = snapshot.claudeHarness else { return nil }
+        let savedDirectory = harnessState.workingDirectory ?? snapshot.directory
+        if !restoresSavedDirectory {
+            harnessState.workingDirectory = nil
+        }
         guard let harnessPanel = newSupermuxHarnessSurface(
             inPane: paneId,
-            workingDirectory: harnessState.workingDirectory ?? snapshot.directory,
+            workingDirectory: restoresSavedDirectory ? savedDirectory : nil,
             restoreState: harnessState,
             focus: false
         ) else {

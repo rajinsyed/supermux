@@ -123,6 +123,41 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(try sandbox.discovery.listSessions(for: sandbox.workingDirectory, limit: -1).isEmpty)
     }
 
+    @Test func discoverySkipsOverlongRecordsAndContinuesAtTheNextLine() throws {
+        let sandbox = try makeSandbox(named: "overlong-record")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        let oversizedContent = String(
+            repeating: "x",
+            count: SupermuxLineReader.maximumLineBytes + 1
+        )
+        try writeSession(id: "bounded", directory: directory, records: [
+            [
+                "type": "user",
+                "uuid": "oversized",
+                "cwd": sandbox.workingDirectory.path,
+                "message": ["role": "user", "content": oversizedContent],
+            ],
+            [
+                "type": "user",
+                "uuid": "kept",
+                "cwd": sandbox.workingDirectory.path,
+                "message": ["role": "user", "content": "kept"],
+            ],
+        ])
+
+        let session = try #require(
+            sandbox.discovery.listSessions(for: sandbox.workingDirectory).first
+        )
+        #expect(session.messageCount == 1)
+        #expect(session.firstPrompt == "kept")
+        let history = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "bounded"
+        )
+        #expect(history.events.compactMap { $0.string(forKey: "uuid") } == ["kept"])
+    }
+
     @Test func duplicateSessionAcrossResolvedAndUnresolvedCandidatesUsesNewestFile() throws {
         let root = try makeTemporaryDirectory(named: "dedupe")
         defer { try? FileManager.default.removeItem(at: root) }

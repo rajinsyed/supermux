@@ -16,13 +16,21 @@ public final class SupermuxHarnessControlRouter {
         let continuation: CheckedContinuation<SupermuxHarnessJSONObject, any Error>
     }
 
+    private struct InFlightPermissionResponse {
+        let request: SupermuxHarnessPermissionRequest
+        let originalOrderIndex: Int
+        var isCancelled = false
+    }
+
     private let encoder: SupermuxHarnessProtocolEncoder
     private let decoder: SupermuxHarnessProtocolDecoder
     private let requestIDGenerator: SupermuxHarnessRequestIDGenerator
     private let sender: SupermuxHarnessControlFrameSender
     private var pendingClientRequests: [String: PendingClientRequest] = [:]
+    private var issuedClientRequestIDs: Set<String> = []
     private var pendingPermissions: [String: SupermuxHarnessPermissionRequest] = [:]
     private var permissionOrder: [String] = []
+    private var inFlightPermissionResponses: [String: InFlightPermissionResponse] = [:]
 
     /// Creates a router bound to one process session.
     ///
@@ -50,7 +58,7 @@ public final class SupermuxHarnessControlRouter {
     /// - Throws: Encoding, sending, close, or CLI response errors.
     public func issue(_ command: SupermuxHarnessControlCommand) async throws -> SupermuxHarnessJSONObject {
         guard !isClosed else { throw SupermuxHarnessControlRouterError.closed }
-        let requestID = requestIDGenerator()
+        let requestID = reserveClientRequestID()
         let frame = try encoder.controlRequest(command, requestID: requestID)
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -108,10 +116,9 @@ public final class SupermuxHarnessControlRouter {
         decision: SupermuxHarnessPermissionDecision
     ) async throws {
         guard !isClosed else { throw SupermuxHarnessControlRouterError.closed }
-        guard let request = removePermission(requestID: requestID) else {
+        guard pendingPermissions[requestID] != nil else {
             throw SupermuxHarnessControlRouterError.permissionRequestNotFound(requestID)
         }
-
         let frame: SupermuxHarnessEncodedFrame
         switch decision {
         case .allow(let updatedInput, let updatedPermissions):
@@ -127,13 +134,28 @@ public final class SupermuxHarnessControlRouter {
                 interrupt: interrupt
             )
         }
+        guard let pending = takePermission(requestID: requestID) else {
+            throw SupermuxHarnessControlRouterError.permissionRequestNotFound(requestID)
+        }
+        inFlightPermissionResponses[requestID] = InFlightPermissionResponse(
+            request: pending.request,
+            originalOrderIndex: pending.orderIndex
+        )
 
         do {
             try await sender(frame)
+            inFlightPermissionResponses.removeValue(forKey: requestID)
         } catch {
-            if !isClosed, pendingPermissions[requestID] == nil {
-                pendingPermissions[requestID] = request
-                permissionOrder.append(requestID)
+            let inFlight = inFlightPermissionResponses.removeValue(forKey: requestID)
+            if let inFlight,
+               !isClosed,
+               !inFlight.isCancelled,
+               pendingPermissions[requestID] == nil {
+                pendingPermissions[requestID] = inFlight.request
+                permissionOrder.insert(
+                    requestID,
+                    at: min(inFlight.originalOrderIndex, permissionOrder.count)
+                )
             }
             throw error
         }
@@ -158,6 +180,9 @@ public final class SupermuxHarnessControlRouter {
         let requests = pendingPermissionRequests
         pendingPermissions.removeAll()
         permissionOrder.removeAll()
+        for requestID in Array(inFlightPermissionResponses.keys) {
+            inFlightPermissionResponses[requestID]?.isCancelled = true
+        }
         for request in requests {
             guard let frame = try? encoder.canUseToolDenyResponse(
                 requestID: request.requestID,
@@ -171,20 +196,45 @@ public final class SupermuxHarnessControlRouter {
     }
 
     private func registerPermission(_ permission: SupermuxHarnessPermissionRequest) {
-        guard !isClosed, pendingPermissions[permission.requestID] == nil else { return }
+        guard !isClosed,
+              pendingPermissions[permission.requestID] == nil,
+              inFlightPermissionResponses[permission.requestID] == nil else {
+            return
+        }
         pendingPermissions[permission.requestID] = permission
         permissionOrder.append(permission.requestID)
     }
 
     private func cancelPermission(requestID: String) {
         _ = removePermission(requestID: requestID)
+        inFlightPermissionResponses[requestID]?.isCancelled = true
     }
 
     @discardableResult
     private func removePermission(requestID: String) -> SupermuxHarnessPermissionRequest? {
+        takePermission(requestID: requestID)?.request
+    }
+
+    private func takePermission(
+        requestID: String
+    ) -> (request: SupermuxHarnessPermissionRequest, orderIndex: Int)? {
         guard let request = pendingPermissions.removeValue(forKey: requestID) else { return nil }
+        let orderIndex = permissionOrder.firstIndex(of: requestID) ?? permissionOrder.endIndex
         permissionOrder.removeAll { $0 == requestID }
-        return request
+        return (request, orderIndex)
+    }
+
+    private func reserveClientRequestID() -> String {
+        let preferred = requestIDGenerator()
+        if !preferred.isEmpty, issuedClientRequestIDs.insert(preferred).inserted {
+            return preferred
+        }
+
+        var fallback = UUID().uuidString
+        while !issuedClientRequestIDs.insert(fallback).inserted {
+            fallback = UUID().uuidString
+        }
+        return fallback
     }
 
     private func resolveClientRequest(_ response: SupermuxHarnessControlResponseFrame) {

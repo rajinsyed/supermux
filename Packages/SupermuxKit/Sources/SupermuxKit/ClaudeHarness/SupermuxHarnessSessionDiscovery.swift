@@ -11,6 +11,22 @@ public struct SupermuxHarnessSessionDiscovery {
         var messageCount = 0
     }
 
+    private struct SessionSummary {
+        let metadata: SessionMetadata
+        let belongsToWorkingDirectory: Bool
+    }
+
+    private struct SessionRecordLink {
+        let parentUUID: String?
+        let isVisible: Bool
+    }
+
+    private struct SessionHistoryIndex {
+        let fileURL: URL
+        let linksByUUID: [String: SessionRecordLink]
+        let preferredLeafUUIDs: [String]
+    }
+
     private let projectsRootURL: URL
     private let fileManager: FileManager
 
@@ -56,6 +72,8 @@ public struct SupermuxHarnessSessionDiscovery {
 
     /// Lists persisted sessions for one working directory, newest first.
     ///
+    /// Malformed and overlong JSONL records are skipped without buffering the full file.
+    ///
     /// - Parameters:
     ///   - workingDirectoryURL: The working directory whose project folders should be probed.
     ///   - limit: Optional maximum result count. Values at or below zero return an empty list.
@@ -67,23 +85,33 @@ public struct SupermuxHarnessSessionDiscovery {
     ) throws -> [SupermuxHarnessDiscoveredSession] {
         if let limit, limit <= 0 { return [] }
         var sessionsByID: [String: SupermuxHarnessDiscoveredSession] = [:]
-        for directory in projectDirectoryURLs(for: workingDirectoryURL) {
-            guard fileManager.fileExists(atPath: directory.path) else { continue }
+        for candidateDirectory in projectDirectoryURLs(for: workingDirectoryURL) {
+            guard let directory = safeProjectDirectory(candidateDirectory) else { continue }
             let files = try fileManager.contentsOfDirectory(
                 at: directory,
-                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                includingPropertiesForKeys: [
+                    .contentModificationDateKey,
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey,
+                ],
                 options: [.skipsHiddenFiles]
             )
             for file in files where file.pathExtension.lowercased() == "jsonl" {
-                let values = try file.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
-                guard values.isRegularFile != false else { continue }
                 let sessionID = file.deletingPathExtension().lastPathComponent
+                guard isValidSessionID(sessionID), safeSessionFile(file, in: directory) else {
+                    continue
+                }
+                let values = try file.resourceValues(forKeys: [.contentModificationDateKey])
                 let updatedAt = values.contentModificationDate ?? .distantPast
                 if let existing = sessionsByID[sessionID], existing.updatedAt >= updatedAt {
                     continue
                 }
-                let records = try readRecords(from: file)
-                let metadata = metadata(from: records)
+                let summary = try sessionSummary(
+                    from: file,
+                    workingDirectoryURL: workingDirectoryURL
+                )
+                guard summary.belongsToWorkingDirectory else { continue }
+                let metadata = summary.metadata
                 let title = metadata.customTitle
                     ?? metadata.aiTitle
                     ?? metadata.summary
@@ -110,6 +138,8 @@ public struct SupermuxHarnessSessionDiscovery {
 
     /// Loads one session by walking its UUID parent chain and mapping records to live wire shapes.
     ///
+    /// The file is scanned in bounded chunks; malformed and overlong records are omitted.
+    ///
     /// - Parameters:
     ///   - workingDirectoryURL: The working directory whose project folders should be probed.
     ///   - sessionID: The persisted session filename without `.jsonl`.
@@ -124,62 +154,45 @@ public struct SupermuxHarnessSessionDiscovery {
         guard isValidSessionID(sessionID) else {
             throw SupermuxHarnessSessionDiscoveryError.invalidSessionID
         }
-        guard let file = sessionFile(
+        guard let index = try sessionHistoryIndex(
             for: workingDirectoryURL,
             sessionID: sessionID
         ) else {
             throw SupermuxHarnessSessionDiscoveryError.sessionNotFound(sessionID)
         }
-        let records = try readRecords(from: file)
-        var recordsByUUID: [String: [String: Any]] = [:]
-        var summaryLeaf: String?
-        var lastPromptLeaf: String?
-        var lastMainUUID: String?
-        for record in records {
-            let type = record["type"] as? String
-            if type == "summary", let leaf = nonemptyString(record["leafUuid"]) {
-                summaryLeaf = leaf
-            }
-            if type == "last-prompt", let leaf = nonemptyString(record["leafUuid"]) {
-                lastPromptLeaf = leaf
-            }
-            guard let uuid = nonemptyString(record["uuid"]), type == "user" || type == "assistant" else {
-                continue
-            }
-            recordsByUUID[uuid] = record
-            if record["isSidechain"] as? Bool != true {
-                lastMainUUID = uuid
-            }
-        }
-
-        var chain: [[String: Any]] = []
-        var cursor = [lastPromptLeaf, summaryLeaf, lastMainUUID]
-            .compactMap { $0 }
-            .first { recordsByUUID[$0] != nil }
+        var chainUUIDs: [String] = []
+        var cursor = index.preferredLeafUUIDs.first { index.linksByUUID[$0] != nil }
         var visited: Set<String> = []
-        while let uuid = cursor, visited.insert(uuid).inserted, let record = recordsByUUID[uuid] {
-            chain.append(record)
-            cursor = nonemptyString(record["parentUuid"])
-        }
-        chain.reverse()
-
-        var events = chain.compactMap { record -> SupermuxHarnessJSONObject? in
-            guard record["isMeta"] as? Bool != true,
-                  record["isSidechain"] as? Bool != true else {
-                return nil
+        while let uuid = cursor,
+              visited.insert(uuid).inserted,
+              let link = index.linksByUUID[uuid] {
+            if link.isVisible {
+                chainUUIDs.append(uuid)
             }
-            return protocolEvent(from: record, sessionID: sessionID)
+            cursor = link.parentUUID
         }
+        chainUUIDs.reverse()
+
         let truncated: Bool
         if let recordLimit {
             let boundedLimit = max(0, recordLimit)
-            truncated = events.count > boundedLimit
+            truncated = chainUUIDs.count > boundedLimit
             if truncated {
-                events = Array(events.suffix(boundedLimit))
+                chainUUIDs = Array(chainUUIDs.suffix(boundedLimit))
             }
         } else {
             truncated = false
         }
+        let selectedUUIDs = Set(chainUUIDs)
+        var eventsByUUID: [String: SupermuxHarnessJSONObject] = [:]
+        try forEachRecord(in: index.fileURL) { record in
+            guard let uuid = nonemptyString(record["uuid"]), selectedUUIDs.contains(uuid),
+                  let event = protocolEvent(from: record, sessionID: sessionID) else {
+                return
+            }
+            eventsByUUID[uuid] = event
+        }
+        let events = chainUUIDs.compactMap { eventsByUUID[$0] }
         return SupermuxHarnessHistoryPage(events: events, truncated: truncated)
     }
 
@@ -195,15 +208,129 @@ public struct SupermuxHarnessSessionDiscovery {
         return result
     }
 
-    private func sessionFile(for workingDirectoryURL: URL, sessionID: String) -> URL? {
-        for directory in projectDirectoryURLs(for: workingDirectoryURL) {
-            let candidate = directory.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
-            var isDirectory: ObjCBool = false
-            if fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory), !isDirectory.boolValue {
-                return candidate
+    private func sessionHistoryIndex(
+        for workingDirectoryURL: URL,
+        sessionID: String
+    ) throws -> SessionHistoryIndex? {
+        let expectedPaths = canonicalPaths(for: workingDirectoryURL)
+        for candidateDirectory in projectDirectoryURLs(for: workingDirectoryURL) {
+            guard let directory = safeProjectDirectory(candidateDirectory) else { continue }
+            let file = directory.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
+            guard safeSessionFile(file, in: directory) else { continue }
+            var linksByUUID: [String: SessionRecordLink] = [:]
+            var summaryLeaf: String?
+            var lastPromptLeaf: String?
+            var lastMainUUID: String?
+            var foundRecordedDirectory = false
+            var foundMatchingDirectory = false
+            try forEachRecord(in: file) { record in
+                let type = record["type"] as? String
+                if type == "summary", let leaf = nonemptyString(record["leafUuid"]) {
+                    summaryLeaf = leaf
+                }
+                if type == "last-prompt", let leaf = nonemptyString(record["leafUuid"]) {
+                    lastPromptLeaf = leaf
+                }
+                if let path = nonemptyString(record["cwd"]) {
+                    foundRecordedDirectory = true
+                    foundMatchingDirectory = foundMatchingDirectory ||
+                        recordedDirectory(path, matches: expectedPaths)
+                }
+                guard let uuid = nonemptyString(record["uuid"]),
+                      type == "user" || type == "assistant" else {
+                    return
+                }
+                let isSidechain = record["isSidechain"] as? Bool == true
+                linksByUUID[uuid] = SessionRecordLink(
+                    parentUUID: nonemptyString(record["parentUuid"]),
+                    isVisible: record["isMeta"] as? Bool != true &&
+                        !isSidechain &&
+                        record["message"] is [String: Any]
+                )
+                if !isSidechain {
+                    lastMainUUID = uuid
+                }
             }
+            guard !foundRecordedDirectory || foundMatchingDirectory else { continue }
+            return SessionHistoryIndex(
+                fileURL: file,
+                linksByUUID: linksByUUID,
+                preferredLeafUUIDs: [lastPromptLeaf, summaryLeaf, lastMainUUID].compactMap { $0 }
+            )
         }
         return nil
+    }
+
+    private func safeProjectDirectory(_ directory: URL) -> URL? {
+        guard let values = try? directory.resourceValues(forKeys: [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+        ]),
+        values.isDirectory == true,
+        values.isSymbolicLink != true else {
+            return nil
+        }
+        let resolvedRoot = projectsRootURL.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
+        guard isDescendant(resolvedDirectory, of: resolvedRoot) else { return nil }
+        return directory
+    }
+
+    private func safeSessionFile(_ file: URL, in directory: URL) -> Bool {
+        guard let values = try? file.resourceValues(forKeys: [
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]),
+        values.isRegularFile == true,
+        values.isSymbolicLink != true else {
+            return false
+        }
+        return isDescendant(
+            file.resolvingSymlinksInPath().standardizedFileURL,
+            of: directory.resolvingSymlinksInPath().standardizedFileURL
+        )
+    }
+
+    private func isDescendant(_ candidate: URL, of directory: URL) -> Bool {
+        let directoryComponents = directory.pathComponents
+        let candidateComponents = candidate.pathComponents
+        guard candidateComponents.count > directoryComponents.count else { return false }
+        return candidateComponents.prefix(directoryComponents.count).elementsEqual(directoryComponents)
+    }
+
+    private func sessionSummary(
+        from file: URL,
+        workingDirectoryURL: URL
+    ) throws -> SessionSummary {
+        let expectedPaths = canonicalPaths(for: workingDirectoryURL)
+        var metadata = SessionMetadata()
+        var foundRecordedDirectory = false
+        var foundMatchingDirectory = false
+        try forEachRecord(in: file) { record in
+            updateMetadata(&metadata, with: record)
+            if let path = nonemptyString(record["cwd"]) {
+                foundRecordedDirectory = true
+                foundMatchingDirectory = foundMatchingDirectory ||
+                    recordedDirectory(path, matches: expectedPaths)
+            }
+        }
+        return SessionSummary(
+            metadata: metadata,
+            belongsToWorkingDirectory: !foundRecordedDirectory || foundMatchingDirectory
+        )
+    }
+
+    private func recordedDirectory(_ path: String, matches expectedPaths: Set<String>) -> Bool {
+        guard (path as NSString).isAbsolutePath else { return false }
+        return !canonicalPaths(for: URL(fileURLWithPath: path, isDirectory: true))
+            .isDisjoint(with: expectedPaths)
+    }
+
+    private func canonicalPaths(for directory: URL) -> Set<String> {
+        [
+            directory.standardizedFileURL.path,
+            directory.resolvingSymlinksInPath().standardizedFileURL.path,
+        ]
     }
 
     private func isValidSessionID(_ sessionID: String) -> Bool {
@@ -216,50 +343,51 @@ public struct SupermuxHarnessSessionDiscovery {
         }
     }
 
-    private func readRecords(from file: URL) throws -> [[String: Any]] {
-        let data = try Data(contentsOf: file)
-        return data.split(separator: 0x0A).compactMap { line in
-            guard !line.isEmpty,
-                  let value = try? JSONSerialization.jsonObject(with: Data(line)),
+    private func forEachRecord(
+        in file: URL,
+        handle: ([String: Any]) -> Void
+    ) throws {
+        let didRead = SupermuxLineReader.forEachLine(in: file) { line in
+            guard let value = try? JSONSerialization.jsonObject(with: Data(line)),
                   let object = value as? [String: Any] else {
-                return nil
+                return
             }
-            return object
+            handle(object)
         }
+        guard didRead else { throw CocoaError(.fileReadNoSuchFile) }
     }
 
-    private func metadata(from records: [[String: Any]]) -> SessionMetadata {
-        var metadata = SessionMetadata()
-        for record in records {
-            let type = record["type"] as? String
-            if let value = nonemptyString(record["customTitle"]) {
-                metadata.customTitle = value
-            }
-            if type == "custom-title", let value = nonemptyString(record["customTitle"]) {
-                metadata.customTitle = value
-            }
-            if type == "ai-title", let value = nonemptyString(record["aiTitle"]) {
-                metadata.aiTitle = value
-            }
-            if type == "summary", let value = nonemptyString(record["summary"]) {
-                metadata.summary = value
-            }
-            guard type == "user" || type == "assistant",
-                  record["isMeta"] as? Bool != true,
-                  record["isSidechain"] as? Bool != true else {
-                continue
-            }
-            metadata.messageCount += 1
-            if let branch = nonemptyString(record["gitBranch"]) {
-                metadata.gitBranch = branch
-            }
-            if type == "user", metadata.firstPrompt == nil,
-               let message = record["message"] as? [String: Any],
-               let prompt = messageText(message) {
-                metadata.firstPrompt = prompt
-            }
+    private func updateMetadata(
+        _ metadata: inout SessionMetadata,
+        with record: [String: Any]
+    ) {
+        let type = record["type"] as? String
+        if let value = nonemptyString(record["customTitle"]) {
+            metadata.customTitle = value
         }
-        return metadata
+        if type == "custom-title", let value = nonemptyString(record["customTitle"]) {
+            metadata.customTitle = value
+        }
+        if type == "ai-title", let value = nonemptyString(record["aiTitle"]) {
+            metadata.aiTitle = value
+        }
+        if type == "summary", let value = nonemptyString(record["summary"]) {
+            metadata.summary = value
+        }
+        guard type == "user" || type == "assistant",
+              record["isMeta"] as? Bool != true,
+              record["isSidechain"] as? Bool != true else {
+            return
+        }
+        metadata.messageCount += 1
+        if let branch = nonemptyString(record["gitBranch"]) {
+            metadata.gitBranch = branch
+        }
+        if type == "user", metadata.firstPrompt == nil,
+           let message = record["message"] as? [String: Any],
+           let prompt = messageText(message) {
+            metadata.firstPrompt = prompt
+        }
     }
 
     private func messageText(_ message: [String: Any]) -> String? {

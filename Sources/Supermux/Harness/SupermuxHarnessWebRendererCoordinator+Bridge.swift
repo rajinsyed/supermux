@@ -28,9 +28,11 @@ extension SupermuxHarnessWebRendererCoordinator {
             }
             return context
         case "harness.listSessions":
-            return ["sessions": try controller.listSessions(limit: request.integer("limit"))]
+            return ["sessions": try await controller.listSessions(limit: request.integer("limit"))]
         case "harness.loadSessionHistory":
-            return try controller.loadSessionHistory(sessionId: try request.requiredString("sessionId"))
+            return try await controller.loadSessionHistory(
+                sessionId: try request.requiredString("sessionId")
+            )
         case "harness.start":
             controller.invalidateCLIStatus()
             let runId = try await controller.start(

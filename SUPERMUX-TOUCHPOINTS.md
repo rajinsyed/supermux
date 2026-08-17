@@ -442,7 +442,7 @@ Rules for adding a touchpoint:
 | 423 | `Sources/PaneDropTargetView+FileDropTextDestination.swift` | `claude-harness-file-drop` | Adds `.claudeHarness` to the `return nil` group (no file-drop text destination) |
 | 424 | `Sources/Search/GlobalSearchDocuments.swift` | `claude-harness-global-search` | Indexes harness panes with `kind = .title` in global search |
 | 425 | `Sources/Workspace+LayoutCapture.swift` | `claude-harness-layout-capture` | Counts the harness pane as an unsupported surface in declarative layout capture (placeholder terminal) |
-| 426 | `Sources/Workspace.swift` | `claude-harness-snapshot`, `claude-harness-snapshot-arm`, `claude-harness-snapshot-field`, `claude-harness-restore-arm`, `claude-harness-transfer-in`, `claude-harness-attach-rollback` | Session snapshot local + arm + `SessionPanelSnapshot` field wiring, restore arm delegating to `restoreSupermuxHarnessPanel`, cross-workspace transfer re-install of the display-state subscription, and rollback detach on failed attach. The factory/subscription bodies live in the supermux-owned `Sources/Supermux/Harness/Workspace+SupermuxHarness.swift` |
+| 426 | `Sources/Workspace.swift` | `claude-harness-snapshot`, `claude-harness-snapshot-arm`, `claude-harness-snapshot-field`, `claude-harness-restore-arm`, `claude-harness-transfer-in`, `claude-harness-attach-rollback` | Session snapshot local + arm + `SessionPanelSnapshot` field wiring, restore arm delegating to `restoreSupermuxHarnessPanel` while suppressing untrusted saved remote cwd values, cross-workspace transfer re-install of the display-state subscription, and rollback detach on failed attach. The factory/subscription bodies live in the supermux-owned `Sources/Supermux/Harness/Workspace+SupermuxHarness.swift` |
 | 427 | `Sources/Workspace+PanelLifecycle.swift` | `claude-harness-discard-subscription` | One-line `discardSupermuxHarnessPanelSubscription` call on panel discard |
 | 428 | `Sources/SessionPersistence.swift` | `claude-harness-persistence-field` | Optional `claudeHarness: SessionSupermuxHarnessPanelSnapshot?` field on `SessionPanelSnapshot` |
 | 429 | `Sources/Workspace+SidebarDirectories.swift` | `claude-harness-legacy-remote-directory` | Treats a legacy remote snapshot carrying a harness pane like an agent-session one for directory-provenance restore |
@@ -3815,8 +3815,9 @@ The fences are thin switch arms; to re-apply after a merge:
 4. `Workspace.swift` (#426): declare `var claudeHarnessSnapshot: SessionSupermuxHarnessPanelSnapshot?
    = nil` beside the other per-kind locals; snapshot arm calls
    `supermuxHarnessSessionSnapshot(for:)` and nils the other locals; pass
-   `claudeHarness: claudeHarnessSnapshot` in the `SessionPanelSnapshot` init; restore arm returns
-   `restoreSupermuxHarnessPanel(from:inPane:)`; in `attachDetachedSurface` re-install the
+   `claudeHarness: claudeHarnessSnapshot` in the `SessionPanelSnapshot` init; restore arm passes
+   `!restoresUntrustedSavedDirectory` to `restoreSupermuxHarnessPanel` so saved remote paths never
+   become local Claude cwd values; in `attachDetachedSurface` re-install the
    subscription via `installSupermuxHarnessPanelSubscription` after `updateWorkspaceId`, and in the
    createTab-failure rollback clear `onDisplayStateChanged`.
 5. `Workspace+PanelLifecycle.swift` (#427): one `discardSupermuxHarnessPanelSubscription` call next

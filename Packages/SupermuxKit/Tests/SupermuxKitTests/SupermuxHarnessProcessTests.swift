@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 import Testing
 
@@ -40,6 +39,13 @@ struct SupermuxHarnessOutputLineBufferTests {
         #expect(output.allSatisfy { $0.utf8.count == maximum + 1 })
         #expect(buffer.bufferedByteCount == 3)
         #expect(buffer.flush() == ["bbb"])
+    }
+
+    @Test func preservesMultibyteUTF8SplitAcrossChunks() {
+        var buffer = SupermuxHarnessOutputLineBuffer()
+        let bytes = Array("😀".utf8)
+        #expect(buffer.append(Data(bytes.prefix(2))).isEmpty)
+        #expect(buffer.append(Data(bytes.dropFirst(2)) + Data([0x0A])) == ["😀\n"])
     }
 
     @Test func invalidUTF8UsesReplacementDecodingInsteadOfDroppingBytes() {
@@ -272,6 +278,33 @@ struct SupermuxHarnessProcessSessionTests {
         #expect(await recorder.nextExit() == .exited(runID: second.runID, status: 4))
     }
 
+    @Test func runBoundWritesCannotReachAReplacementProcess() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder)
+        let first = try session.start(plan: shellPlan("exit 0"))
+        _ = await recorder.nextExit()
+
+        let replacementScript = #"""
+        printf '{"type":"keep_alive","ready":true}\n'
+        IFS= read -r line || exit 90
+        printf '{"type":"keep_alive","received":true}\n'
+        """#
+        let replacement = try session.start(plan: shellPlan(replacementScript))
+        _ = await recorder.nextProtocolLine()
+        let frame = try SupermuxHarnessProtocolEncoder().userMessage(text: "next", uuid: "next")
+
+        do {
+            try await session.send(frame, forRunID: first.runID)
+            Issue.record("Expected stale run write rejection")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .notRunning)
+        }
+        try await session.send(frame, forRunID: replacement.runID)
+        let received = await recorder.nextProtocolLine()
+        #expect(received.object.bool(forKey: "received") == true)
+        #expect(await recorder.nextExit() == .exited(runID: replacement.runID, status: 0))
+    }
+
     @Test func failedLaunchCleansStateAndDoesNotEmitStarted() throws {
         let recorder = Recorder()
         let session = makeSession(recorder: recorder)
@@ -339,6 +372,7 @@ struct SupermuxHarnessProcessSessionTests {
             recorder: recorder,
             escalationInterval: 0.05
         )
+        weak var releasedSession = session
         let started = try #require(try session?.start(plan: shellPlan(script)))
         _ = await recorder.nextProtocolLine()
         session?.close()
@@ -347,7 +381,7 @@ struct SupermuxHarnessProcessSessionTests {
         try await ContinuousClock().sleep(for: .milliseconds(450))
         #expect(!FileManager.default.fileExists(atPath: marker.path))
         #expect(recorder.lifecycleEvents.contains(.exited(runID: started.runID, status: 9)))
-        _ = Darwin.kill(started.processID, SIGKILL)
+        #expect(releasedSession == nil)
     }
 
     @Test func closeIsIdempotentAndMissingProcessOperationsFail() async throws {
@@ -383,6 +417,14 @@ struct SupermuxHarnessProcessSessionTests {
         _ = try session.start(plan: shellPlan(script))
         _ = await recorder.nextProtocolLine()
         session.close()
+        do {
+            try await session.send(
+                SupermuxHarnessProtocolEncoder().userMessage(text: "late", uuid: "late")
+            )
+            Issue.record("Expected terminating input to be closed")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .inputClosed)
+        }
         session.close()
         _ = await recorder.nextExit()
         #expect(!session.isRunning)

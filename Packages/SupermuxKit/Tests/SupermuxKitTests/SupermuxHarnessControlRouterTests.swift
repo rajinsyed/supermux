@@ -62,6 +62,38 @@ struct SupermuxHarnessControlRouterTests {
         #expect(response.integer(forKey: "totalTokens") == 123)
     }
 
+    @Test func generatedRequestIDsAreNeverReusedWithinARouter() async throws {
+        let recorder = FrameRecorder()
+        let router = makeRouter(recorder: recorder, requestIDs: ["duplicate", "duplicate"])
+
+        let firstOperation = Task { try await router.issue(.getContextUsage) }
+        let firstFrame = await recorder.next()
+        let firstID = try #require(try firstFrame.jsonObject().string(forKey: "request_id"))
+        router.consume(try frame([
+            "type": "control_response",
+            "response": [
+                "subtype": "success",
+                "request_id": firstID,
+                "response": ["sequence": 1],
+            ],
+        ]))
+        #expect(try await firstOperation.value.integer(forKey: "sequence") == 1)
+
+        let secondOperation = Task { try await router.issue(.getContextUsage) }
+        let secondFrame = await recorder.next()
+        let secondID = try #require(try secondFrame.jsonObject().string(forKey: "request_id"))
+        #expect(secondID != firstID)
+        router.consume(try frame([
+            "type": "control_response",
+            "response": [
+                "subtype": "success",
+                "request_id": secondID,
+                "response": ["sequence": 2],
+            ],
+        ]))
+        #expect(try await secondOperation.value.integer(forKey: "sequence") == 2)
+    }
+
     @Test func payloadlessSuccessReturnsEmptyObject() async throws {
         let recorder = FrameRecorder()
         let router = makeRouter(recorder: recorder, requestIDs: ["request"])

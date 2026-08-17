@@ -1870,7 +1870,11 @@ extension Workspace {
             return nil
         // SUPERMUX:begin claude-harness-restore-arm
         case .claudeHarness:
-            return restoreSupermuxHarnessPanel(from: snapshot, inPane: paneId)
+            return restoreSupermuxHarnessPanel(
+                from: snapshot,
+                inPane: paneId,
+                restoresSavedDirectory: !restoresUntrustedSavedDirectory
+            )
         // SUPERMUX:end claude-harness-restore-arm
         }
     }

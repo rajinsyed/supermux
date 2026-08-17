@@ -67,6 +67,7 @@ final class SupermuxHarnessSessionController {
                 return ["available": false, "error": error.localizedDescription]
             }
         }.value
+        guard !isClosed else { return status }
         cachedCLIStatus = status
         return status
     }
@@ -115,19 +116,18 @@ final class SupermuxHarnessSessionController {
             options: options
         )
 
-        let router = SupermuxHarnessControlRouter(sender: { [weak self] frame in
-            guard let self else { throw SupermuxHarnessProcessError.notRunning }
-            try await self.processSession.send(frame)
-        })
-        controlRouter = router
-
         let started: SupermuxHarnessStartedProcess
         do {
             started = try processSession.start(plan: plan)
         } catch {
-            controlRouter = nil
             throw SupermuxHarnessBridgeError.startFailed(error.localizedDescription)
         }
+        let runID = started.runID
+        let router = SupermuxHarnessControlRouter(sender: { [weak self] frame in
+            guard let self else { throw SupermuxHarnessProcessError.notRunning }
+            try await self.processSession.send(frame, forRunID: runID)
+        })
+        controlRouter = router
 
         if let model { snapshot.model = model }
         if let permissionMode { snapshot.permissionMode = permissionMode }
@@ -143,32 +143,47 @@ final class SupermuxHarnessSessionController {
     }
 
     func send(text: String, images: [SupermuxHarnessImage], uuid: String) async throws {
-        guard processSession.isRunning else { throw SupermuxHarnessBridgeError.sessionNotRunning }
+        guard !isClosed, processSession.isRunning else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
         let frame = try encoder.userMessage(text: text, images: images, uuid: uuid)
         try await processSession.send(frame)
     }
 
     func interrupt(cancelQueued: Bool) async throws {
-        guard let controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
-        _ = try await controlRouter.issue(.interrupt(cancelQueued: cancelQueued))
+        guard let router = controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
+        _ = try await router.issue(.interrupt(cancelQueued: cancelQueued))
+        guard !isClosed, controlRouter === router else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
     }
 
     func cancelQueued(messageUuid: String) async throws {
-        guard let controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
-        _ = try await controlRouter.issue(.cancelAsyncMessage(messageUUID: messageUuid))
+        guard let router = controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
+        _ = try await router.issue(.cancelAsyncMessage(messageUUID: messageUuid))
+        guard !isClosed, controlRouter === router else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
     }
 
     func stop() async {
-        if let controlRouter {
-            await controlRouter.close(denialMessage: Self.stoppedDenialMessage)
-            self.controlRouter = nil
+        let stoppedRunID = processSession.activeRunID
+        if let router = controlRouter {
+            await router.close(denialMessage: Self.stoppedDenialMessage)
+            if controlRouter === router {
+                controlRouter = nil
+            }
         }
+        guard processSession.activeRunID == stoppedRunID else { return }
         try? processSession.terminate()
     }
 
     func setModel(model: String, effort: String?) async throws {
-        guard let controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
-        _ = try await controlRouter.issue(.setModel(model: model, effort: effort))
+        guard let router = controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
+        _ = try await router.issue(.setModel(model: model, effort: effort))
+        guard !isClosed, controlRouter === router else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
         snapshot.model = model
     }
 
@@ -176,11 +191,15 @@ final class SupermuxHarnessSessionController {
         guard let permissionMode = SupermuxHarnessPermissionMode(rawValue: mode) else {
             throw SupermuxHarnessBridgeError.missingParameter("mode")
         }
-        guard let controlRouter else {
+        guard let router = controlRouter else {
+            guard !isClosed else { throw SupermuxHarnessBridgeError.sessionNotRunning }
             snapshot.permissionMode = mode
             return
         }
-        _ = try await controlRouter.issue(.setPermissionMode(permissionMode))
+        _ = try await router.issue(.setPermissionMode(permissionMode))
+        guard !isClosed, controlRouter === router else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
         snapshot.permissionMode = mode
     }
 
@@ -213,24 +232,35 @@ final class SupermuxHarnessSessionController {
     }
 
     func renameSession(title: String) async throws {
-        guard let controlRouter else {
+        guard let router = controlRouter else {
+            guard !isClosed else { throw SupermuxHarnessBridgeError.sessionNotRunning }
             snapshot.title = title
             titleSink?(title)
             return
         }
-        _ = try await controlRouter.issue(.renameSession(title: title))
+        _ = try await router.issue(.renameSession(title: title))
+        guard !isClosed, controlRouter === router else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
         snapshot.title = title
         titleSink?(title)
     }
 
     func getContextUsage() async throws -> [String: Any] {
-        guard let controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
-        return try await controlRouter.issue(.getContextUsage).rawValue
+        guard let router = controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
+        let payload = try await router.issue(.getContextUsage)
+        guard !isClosed, controlRouter === router else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
+        return payload.rawValue
     }
 
     func fileSuggestions(query: String) async -> [String: Any] {
-        guard let controlRouter, processSession.isRunning else { return ["paths": []] }
-        guard let payload = try? await controlRouter.issue(.fileSuggestions(query: query)) else {
+        guard let router = controlRouter, processSession.isRunning else { return ["paths": []] }
+        guard let payload = try? await router.issue(.fileSuggestions(query: query)),
+              !isClosed,
+              controlRouter === router,
+              processSession.isRunning else {
             return ["paths": []]
         }
         var result = payload.rawValue
@@ -240,10 +270,19 @@ final class SupermuxHarnessSessionController {
         return result
     }
 
-    func listSessions(limit: Int?) throws -> [[String: Any]] {
+    func listSessions(limit: Int?) async throws -> [[String: Any]] {
         guard let directoryURL = workingDirectoryURL else { return [] }
-        let discovery = makeDiscovery()
-        let sessions = try discovery.listSessions(for: directoryURL, limit: limit)
+        let projectsRootURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude", isDirectory: true)
+            .appendingPathComponent("projects", isDirectory: true)
+        let sessions = try await Task.detached(priority: .userInitiated) {
+            let discovery = SupermuxHarnessSessionDiscovery(
+                projectsRootURL: projectsRootURL,
+                fileManager: .default
+            )
+            return try discovery.listSessions(for: directoryURL, limit: limit)
+        }.value
+        guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
         return sessions.map { session in
             var entry: [String: Any] = [
                 "sessionId": session.sessionID,
@@ -257,16 +296,25 @@ final class SupermuxHarnessSessionController {
         }
     }
 
-    func loadSessionHistory(sessionId: String) throws -> [String: Any] {
+    func loadSessionHistory(sessionId: String) async throws -> [String: Any] {
         guard let directoryURL = workingDirectoryURL else {
             throw SupermuxHarnessBridgeError.workingDirectoryUnavailable
         }
-        let discovery = makeDiscovery()
-        let page = try discovery.loadHistory(
-            for: directoryURL,
-            sessionID: sessionId,
-            recordLimit: Self.historyRecordLimit
-        )
+        let projectsRootURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude", isDirectory: true)
+            .appendingPathComponent("projects", isDirectory: true)
+        let page = try await Task.detached(priority: .userInitiated) {
+            let discovery = SupermuxHarnessSessionDiscovery(
+                projectsRootURL: projectsRootURL,
+                fileManager: .default
+            )
+            return try discovery.loadHistory(
+                for: directoryURL,
+                sessionID: sessionId,
+                recordLimit: Self.historyRecordLimit
+            )
+        }.value
+        guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
         return [
             "events": page.events.map(\.rawValue),
             "truncated": page.truncated,
@@ -276,14 +324,15 @@ final class SupermuxHarnessSessionController {
     func close() {
         guard !isClosed else { return }
         isClosed = true
-        let router = controlRouter
-        controlRouter = nil
-        if let router {
-            Task { @MainActor in
-                await router.close(denialMessage: Self.closedDenialMessage)
-            }
+        guard let router = controlRouter else {
+            processSession.close()
+            return
         }
-        processSession.close()
+        controlRouter = nil
+        Task { @MainActor [self, router] in
+            await router.close(denialMessage: Self.closedDenialMessage)
+            processSession.close()
+        }
     }
 
     private var workingDirectoryURL: URL? {
@@ -292,15 +341,6 @@ final class SupermuxHarnessSessionController {
             return nil
         }
         return URL(fileURLWithPath: path, isDirectory: true)
-    }
-
-    private func makeDiscovery() -> SupermuxHarnessSessionDiscovery {
-        SupermuxHarnessSessionDiscovery(
-            projectsRootURL: FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".claude", isDirectory: true)
-                .appendingPathComponent("projects", isDirectory: true),
-            fileManager: .default
-        )
     }
 
     private func consumeProtocolLine(_ line: SupermuxHarnessDecodedLine) {
