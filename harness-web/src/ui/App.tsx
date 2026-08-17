@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveModel } from "../model/helpers";
+import { runningForegroundBash } from "../model/tasks";
 import type { HarnessStore } from "../model/store";
 import type { ImageAttachment } from "../model/types";
 import type { JsonObject } from "../protocol/types";
@@ -16,6 +17,7 @@ import { setModeSuggestion } from "./permission/permissionText";
 import { QuestionCard } from "./permission/QuestionCard";
 import { BannerStack } from "./status/BannerStack";
 import { StatusStrip } from "./status/StatusStrip";
+import { TasksStrip } from "./status/TasksStrip";
 import { TodoStrip } from "./status/TodoStrip";
 import { applyThemeVariables } from "./theme";
 import { TranscriptList } from "./transcript/TranscriptList";
@@ -132,6 +134,29 @@ function AppBody({
     model.activity.sessionState === "running" ||
     model.activity.status === "requesting" ||
     model.turns.some((turn) => turn.state === "streaming");
+
+  /**
+   * Ctrl+B, exactly as the CLI binds it: move the Bash that is blocking the turn
+   * into the background. The same action is a button on the running card — one
+   * shared path, so the two can never diverge — and this is the reflex a user
+   * arriving from the terminal will reach for first.
+   *
+   * Omitting the tool_use_id would background EVERY foreground task, which is
+   * the CLI's own fallback; the id is passed whenever a specific Bash is in
+   * flight so the key cannot silently move work the user was not looking at.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key !== "b" && event.key !== "B") return;
+      const target = runningForegroundBash(model);
+      if (!target) return;
+      event.preventDefault();
+      harness.bridge.backgroundTask({ toolUseId: target }).catch(() => undefined);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [harness.bridge, model]);
 
   const cliUnavailable = context !== undefined && context.cliStatus.available === false;
 
@@ -330,6 +355,7 @@ function AppBody({
           banners={model.banners}
           onDismiss={(id) => store.dispatch({ kind: "dismissBanner", id })}
         />
+        <TasksStrip tasks={model.backgroundTasks} tasksById={model.tasksById} />
         <TodoStrip todos={model.todos} />
         {rewindNote ? (
           <div

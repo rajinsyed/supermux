@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { CopyKey } from "../../copyKeys";
 import type { Banner } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { AlertTriangle, Close, Info, XCircle } from "../Icons";
@@ -30,7 +31,11 @@ export function BannerStack({
           <div key={banner.id} className={`banner is-${banner.severity}`} role="alert">
             <Icon size={13} className="banner-icon" />
             <div className="banner-body">
-              <span className="banner-title">{banner.title}</span>
+              <span className="banner-title">
+                {banner.titleKey
+                  ? copy(banner.titleKey as CopyKey, { subject: banner.title })
+                  : banner.title}
+              </span>
               {banner.retry ? (
                 <span className="banner-detail tnum">
                   {banner.retry.retryDelayMs

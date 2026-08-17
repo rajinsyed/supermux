@@ -1,4 +1,5 @@
 import { Fragment, memo, useMemo, useState } from "react";
+import { hasLiveBackgroundWork } from "../../model/tasks";
 import type { Block, Turn } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
 import { ChevronDown, ChevronRight, XCircle } from "../Icons";
@@ -38,7 +39,13 @@ function splitBlocks(turn: Turn): { work: Block[]; tail: Block[] } {
  */
 function isLive(block: Block): boolean {
   if (block.kind !== "tool") return false;
-  return block.status === "running" || block.status === "pending";
+  if (block.status === "running" || block.status === "pending") return true;
+  // A backgrounded command or an async agent returns its tool_result IMMEDIATELY
+  // — "running in background", "async_launched" — so the card settles while the
+  // work it launched keeps going for another minute. Judged on tool status alone
+  // it is history, and the live progress card the user is watching gets folded
+  // away behind "3 earlier tool calls" seconds after it appears.
+  return hasLiveBackgroundWork({ blocks: [block] } as Turn);
 }
 
 interface WorkSegment {

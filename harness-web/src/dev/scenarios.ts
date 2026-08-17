@@ -1,5 +1,20 @@
 import type { BinarySetting, ProtocolLine } from "../protocol/types";
 import { fixtures, richSession } from "./fixtures";
+import {
+  bgBackgroundResponse,
+  FOREGROUND_BASH_TOOL_USE_ID,
+  foregroundBashLaunch,
+  nestedFixture,
+  nestedTail,
+  rebaseRound3,
+  ROUND3_CUTS,
+  shellsOpening,
+  shellsStopResponse,
+  workflowFixture,
+  workflowTail,
+  type BackgroundTaskSummary
+} from "./fixtures/round3";
+import { round3SubagentTranscripts } from "./fixtures/subagentTranscripts";
 import { permissionCompletion, permissionResolution } from "./fixtures/permission";
 import { questionResolution } from "./fixtures/question";
 import { planApproval } from "./fixtures/plan";
@@ -28,7 +43,10 @@ export type ScenarioName =
   | "rewind"
   | "binary"
   | "firstopen"
-  | "crash";
+  | "crash"
+  | "shells"
+  | "nested"
+  | "workflow";
 
 export const SCENARIO_NAMES: ScenarioName[] = [
   "empty",
@@ -51,7 +69,10 @@ export const SCENARIO_NAMES: ScenarioName[] = [
   "rewind",
   "binary",
   "firstopen",
-  "crash"
+  "crash",
+  "shells",
+  "nested",
+  "workflow"
 ];
 
 export interface Scenario {
@@ -98,6 +119,31 @@ export interface Scenario {
    * which the interrupt path alone left unreachable in the dev harness.
    */
   settleAfterMs?: number;
+  /**
+   * Round 3. Frames replayed on a timer AFTER the opening slice, so the pane is
+   * genuinely mid-flight rather than showing a finished transcript of one: the
+   * workflow's agents advance under the reader, the nested tree completes
+   * inside-out, the shell keeps ticking.
+   */
+  liveTail?: { lines: ProtocolLine[]; startAfterMs: number; stepMs: number };
+  /**
+   * A foreground Bash left in flight after the opening slice, and what the CLI
+   * answers when it is moved to the background. This is the ONLY state in which
+   * "Move to background" and Ctrl+B are reachable, so a scenario that means to
+   * demonstrate them has to construct it deliberately.
+   */
+  foreground?: {
+    lines: ProtocolLine[];
+    toolUseId: string;
+    /** Given the strip as it stands, so a REPLACE cannot evict live tasks. */
+    response(keep: BackgroundTaskSummary[]): ProtocolLine[];
+  };
+  /** What the CLI answers when a task in this scenario is stopped. */
+  stopResponse?: ProtocolLine[];
+  /** Canned `readTaskOutput` tails, keyed by task id, appended to as it "runs". */
+  taskOutput?: Record<string, string[]>;
+  /** Canned `loadSubagentTranscript` replies, keyed by taskId or runId/agentId. */
+  subagentTranscripts?: Record<string, ProtocolLine[]>;
 }
 
 function streamingCut(): number {
@@ -234,6 +280,77 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
         processRunning: true,
         queuedDrafts,
         killAfterMs: 1600
+      };
+    case "shells":
+      // Feature 3, end to end. The opening slice launches a background shell —
+      // strip appears — and then leaves a FOREGROUND Bash in flight beside it,
+      // which is the only state where Move-to-background and Ctrl+B exist.
+      // Stop on the strip row replays the CLI's real kill sequence.
+      return {
+        name: key,
+        lines: rebaseRound3(shellsOpening),
+        cliAvailable: true,
+        hasSessions: true,
+        cachedModels: true,
+        processRunning: true,
+        foreground: {
+          lines: foregroundBashLaunch,
+          toolUseId: FOREGROUND_BASH_TOOL_USE_ID,
+          response: (keep: BackgroundTaskSummary[]) => bgBackgroundResponse(keep)
+        },
+        stopResponse: shellsStopResponse,
+        // The CLI streams no shell output at all, so the tail IS the feature:
+        // the view polls, and each poll must show more than the last or nothing
+        // has been demonstrated.
+        taskOutput: {
+          bnopezzr7: [
+            "tick-1\n",
+            "tick-1\ntick-2\n",
+            "tick-1\ntick-2\ntick-3\n",
+            "tick-1\ntick-2\ntick-3\ntick-4\n",
+            "tick-1\ntick-2\ntick-3\ntick-4\ntick-5\n"
+          ],
+          b20r5l4dg: [
+            "slow-1\n",
+            "slow-1\nslow-2\n",
+            "slow-1\nslow-2\nslow-3\n",
+            "slow-1\nslow-2\nslow-3\nslow-4\n"
+          ]
+        }
+      };
+    case "nested":
+      // Feature 1: outer agent spawns an inner one. The slice stops with BOTH
+      // running, so the tree is live; the tail completes them inside-out, which
+      // is where toolStats and the AgentOutput metrics land.
+      return {
+        name: key,
+        lines: rebaseRound3(nestedFixture.slice(0, ROUND3_CUTS.nested)),
+        cliAvailable: true,
+        hasSessions: true,
+        cachedModels: true,
+        processRunning: true,
+        liveTail: { lines: rebaseRound3(nestedTail), startAfterMs: 2600, stepMs: 900 },
+        subagentTranscripts: round3SubagentTranscripts
+      };
+    case "workflow":
+      // Feature 2: phases Gather/Merge with three agents. The slice stops at the
+      // first progress frame — both Gather agents queued — and the tail advances
+      // them live, lands the launching turn's `result` MID-WORKFLOW (the turn
+      // must not reopen when progress keeps arriving after it), settles the
+      // workflow in the background, and opens the CLI's own summary turn.
+      return {
+        name: key,
+        // Rebased: an agent's live elapsed is `now - startedAt`, and the probe's
+        // own epochs are months old, so verbatim replay opens the card already
+        // reporting hours.
+        lines: rebaseRound3(workflowFixture.slice(0, ROUND3_CUTS.workflow)),
+        cliAvailable: true,
+        hasSessions: true,
+        cachedModels: true,
+        processRunning: true,
+        liveTail: { lines: rebaseRound3(workflowTail), startAfterMs: 1800, stepMs: 1100 },
+        stopResponse: shellsStopResponse,
+        subagentTranscripts: round3SubagentTranscripts
       };
     case "sessions":
       // A pane with a LIVE session, which is what makes picking another session

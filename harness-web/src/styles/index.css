@@ -4,5 +4,8 @@
 @import "./transcript.css";
 @import "./tools.css";
 @import "./cards.css";
+/* After cards.css: .btn-quiet refines .btn, and at equal specificity the later
+   rule has to win (same ordering reason .icon-btn documents in styles.test.ts). */
+@import "./tasks.css";
 @import "./dock.css";
 @import "./modal.css";

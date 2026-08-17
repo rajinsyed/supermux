@@ -59,6 +59,66 @@ describe("subagent rows are fixed-height", () => {
   });
 });
 
+describe("live workflow and task rows are fixed-height", () => {
+  test("the workflow meta line shares the subagent card's 16px box", async () => {
+    // Aggregates change every couple of seconds while a workflow runs, and a
+    // meta line that grows on each of them reflows the whole transcript below.
+    const sheet = await css("tasks.css");
+    expect(ruleFor(sheet, ".wf-meta")).toMatch(/height:\s*16px/);
+    expect(ruleFor(sheet, ".wf-meta")).not.toMatch(/min-height/);
+    expect(ruleFor(sheet, ".subagent-stats")).toMatch(/height:\s*16px/);
+  });
+
+  test("the state chip is sized once and coloured per state", async () => {
+    // A row that changes queued → running → done must not change WIDTH doing it,
+    // or the whole agent list shuffles sideways as the workflow advances.
+    const sheet = await css("tasks.css");
+    const chip = ruleFor(sheet, ".wf-state");
+    expect(chip).toMatch(/min-width:\s*\d+ch/);
+    expect(chip).toMatch(/height:\s*16px/);
+    for (const state of ["is-running", "is-done", "is-error", "is-blocked", "is-cached"]) {
+      expect(sheet).toContain(`.wf-state.${state}`);
+    }
+  });
+
+  test("the live activity line clips instead of wrapping", async () => {
+    const sheet = await css("tasks.css");
+    for (const selector of [".wf-agent-live", ".task-activity", ".task-name"]) {
+      expect(ruleFor(sheet, selector)).toMatch(/white-space:\s*nowrap/);
+      expect(ruleFor(sheet, selector)).toMatch(/text-overflow:\s*ellipsis/);
+    }
+  });
+});
+
+describe("the tasks strip cannot displace the composer", () => {
+  test("the list caps its height and scrolls, like the todo strip", async () => {
+    const sheet = await css("tasks.css");
+    const rule = ruleFor(sheet, ".tasks-list");
+    expect(rule).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
+    expect(rule).toMatch(/overflow-y:\s*auto/);
+    expect(sheet).toMatch(/@media \(max-height: 560px\)[\s\S]*?\.tasks-list/);
+  });
+
+  test("a drill-in transcript scrolls inside the card rather than growing it", async () => {
+    // An agent transcript is unbounded; without a cap one drill-in can be longer
+    // than the pane and push everything after it off screen.
+    const sheet = await css("tasks.css");
+    const rule = ruleFor(sheet, ".drill-transcript");
+    expect(rule).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
+    expect(rule).toMatch(/overflow-y:\s*auto/);
+  });
+});
+
+describe("subagent nesting stops indenting before it runs out of pane", () => {
+  test("the deepest level flattens its indent", async () => {
+    // Nesting is unbounded on the wire (MAX_INDENT_DEPTH in SubagentCard.tsx);
+    // at 21px a step a depth-6 chain walks its content off a split pane.
+    const sheet = await css("tasks.css");
+    expect(sheet).toContain('.subagent-card[data-depth="3"] .subagent-children');
+    expect(sheet).toContain('.subagent-card[data-depth="3"] .subagent-drill');
+  });
+});
+
 describe("assistant text keeps one origin", () => {
   test("the work rail is drawn inside the indent, not added to it", async () => {
     const sheet = await css("transcript.css");
@@ -113,6 +173,7 @@ describe("keyboard focus is never the weaker affordance", () => {
     "dock.css",
     "layout.css",
     "modal.css",
+    "tasks.css",
     "tools.css",
     "transcript.css"
   ];

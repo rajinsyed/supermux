@@ -114,6 +114,42 @@ function bridgeError(code: string, userMessage: string): HarnessBridgeError {
   return new HarnessBridgeError({ code, userMessage });
 }
 
+interface StripTask {
+  task_id?: string;
+  task_type?: string;
+  description?: string;
+}
+
+/**
+ * Rewrite a canned task-lifecycle sequence onto another task id.
+ *
+ * Two things have to be retargeted, not one:
+ *  - the `task_id` on every system frame, because the fixture's sequence belongs
+ *    to the shells probe's shell and replaying it verbatim would report THAT as
+ *    killed while the task the user actually stopped kept running; and
+ *  - the `background_tasks_changed` payload, which is a REPLACE. The probe's
+ *    copy says `tasks: []` because that shell was the only one running. Fired
+ *    while other tasks are live it silently empties the strip — the real CLI
+ *    would send the REMAINING set, so `keep` is what the strip holds minus the
+ *    task being stopped.
+ */
+function retargetTask(
+  lines: ProtocolLine[],
+  taskId: string,
+  keep: StripTask[]
+): ProtocolLine[] {
+  const remaining = keep.filter((task) => task.task_id !== taskId);
+  return lines.map((line) => {
+    const frame = line as { type?: string; subtype?: string; task_id?: string };
+    if (frame.type !== "system") return line;
+    if (frame.subtype === "background_tasks_changed") {
+      return { ...frame, tasks: remaining } as ProtocolLine;
+    }
+    if (frame.task_id === undefined) return line;
+    return { ...frame, task_id: taskId } as ProtocolLine;
+  });
+}
+
 export function installMockBridge(store: HarnessStore): Scenario {
   const params = new URLSearchParams(window.location.search);
   const scenario = scenarioFor(params.get("scenario") ?? "rich", {
@@ -129,6 +165,9 @@ export function installMockBridge(store: HarnessStore): Scenario {
   let tokenTotal = 24800;
   let runCounter = 0;
   let running = false;
+  let backgrounded = false;
+  /** How far each task's canned output tail has been read. */
+  const outputCursor = new Map<string, number>();
   const replyTo = (text: string) => replyLines(store, text);
 
   /**
@@ -342,6 +381,64 @@ export function installMockBridge(store: HarnessStore): Scenario {
         deletions: 4
       };
     },
+    async stopTask({ taskId }) {
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+      const canned = scenario.stopResponse;
+      if (!canned) {
+        throw bridgeError("task_not_found", `No task ${taskId} is running.`);
+      }
+      // Retargeted at whatever was actually asked for: the canned frames are the
+      // shells probe's, so replaying them verbatim would kill a workflow by
+      // sending the shell's id and leave the real row spinning.
+      const strip = store.getSnapshot().backgroundTasks.map((task) => ({
+        task_id: task.taskId,
+        task_type: task.taskType,
+        description: task.description
+      }));
+      player.play(retargetTask(canned, taskId, strip));
+    },
+    async backgroundTask({ toolUseId }) {
+      await new Promise((resolve) => window.setTimeout(resolve, 160));
+      const foreground = scenario.foreground;
+      if (!foreground || (toolUseId && toolUseId !== foreground.toolUseId)) {
+        return { backgrounded: false };
+      }
+      if (backgrounded) return { backgrounded: true };
+      backgrounded = true;
+      // The strip as it stands right now, so the REPLACE frame the CLI answers
+      // with keeps the shells already in it.
+      const keep = store.getSnapshot().backgroundTasks.map((task) => ({
+        task_id: task.taskId,
+        task_type: task.taskType,
+        description: task.description
+      }));
+      player.play(foreground.response(keep));
+      return { backgrounded: true };
+    },
+    async loadSubagentTranscript({ taskId, workflowRunId, agentId }) {
+      await new Promise((resolve) => window.setTimeout(resolve, 240));
+      const table = scenario.subagentTranscripts ?? {};
+      const key = workflowRunId && agentId ? `${workflowRunId}/${agentId}` : taskId ?? "";
+      const events = table[key];
+      // Not an error: an agent that has only just been spawned has no file yet,
+      // and this is the state the "not available yet" copy exists for.
+      if (!events) return { events: [], truncated: false, missing: true };
+      return {
+        events,
+        truncated: false,
+        meta: { agentType: "general-purpose", description: key, spawnDepth: key.includes("/") ? 1 : 0 }
+      };
+    },
+    async readTaskOutput({ taskId }) {
+      await new Promise((resolve) => window.setTimeout(resolve, 130));
+      const frames = scenario.taskOutput?.[taskId];
+      if (!frames || frames.length === 0) return { text: "", truncated: false, missing: true };
+      // Each read advances one frame and then holds, so an open view genuinely
+      // grows while the task runs and stops growing when it ends.
+      const at = outputCursor.get(taskId) ?? 0;
+      outputCursor.set(taskId, Math.min(frames.length - 1, at + 1));
+      return { text: frames[at], truncated: false, missing: false };
+    },
     async rewind({ restoreFiles, resumeAtUuid }) {
       stopRun();
       await new Promise((resolve) => window.setTimeout(resolve, 260));
@@ -367,10 +464,16 @@ export function installMockBridge(store: HarnessStore): Scenario {
 
   window.setTimeout(() => {
     if (scenario.lines.length > 0) {
-      player.play(scenario.lines);
       // Playing history is not the same as having a process; scenarios that
       // want a live one say so, and that is what makes `start` refuse.
+      //
+      // The run starts BEFORE the replay, which is the order a real pane sees:
+      // `runStarted` settles whatever the previous process left open and clears
+      // the per-process task state, so doing it afterwards marked a scenario
+      // that deliberately stops MID-TURN — every round-3 one does — as a failed
+      // turn, and wiped the very background tasks it had just replayed.
       if (scenario.processRunning) startRun(scenario.restoreSessionId);
+      player.play(scenario.lines);
     }
     if (scenario.queuedDrafts) {
       window.setTimeout(() => {
@@ -422,6 +525,31 @@ export function installMockBridge(store: HarnessStore): Scenario {
       () => stopRun(1, "claude exited unexpectedly (signal 9)"),
       scenario.killAfterMs
     );
+  }
+
+  // Round 3: the part of the probe that has NOT happened yet, stepped out on a
+  // timer. Without it these scenarios would show a finished transcript of a live
+  // feature — a workflow whose agents were already done before the pane opened —
+  // and none of the live affordances (elapsed timers, advancing state chips,
+  // growing output tails) would ever be exercised.
+  if (scenario.liveTail) {
+    const { lines, startAfterMs, stepMs } = scenario.liveTail;
+    lines.forEach((line, i) => {
+      window.setTimeout(() => {
+        store.receive([{ kind: "protocol", line }]);
+      }, startAfterMs + i * stepMs);
+    });
+  }
+
+  // A foreground Bash left running beside the background one, so the
+  // move-to-background affordance has something to act on. It is played AFTER
+  // the opening slice so it lands on the open turn rather than ahead of it.
+  if (scenario.foreground) {
+    window.setTimeout(() => {
+      store.receive(
+        scenario.foreground!.lines.map((line) => ({ kind: "protocol" as const, line }))
+      );
+    }, 700);
   }
 
   // A pane whose binary has no cached catalog gets one pushed a beat later —

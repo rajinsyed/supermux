@@ -14,6 +14,7 @@ import {
   Globe,
   Layers,
   List,
+  Map as MapIcon,
   Search,
   Sparkle,
   Terminal,
@@ -37,7 +38,9 @@ import {
   toolMetrics
 } from "./ToolBodies";
 import { diffStats } from "../primitives/DiffView";
+import { BackgroundBashStrip, backgroundBashBadges } from "./BackgroundBash";
 import { SubagentCard } from "./SubagentCard";
+import { WorkflowCard } from "./WorkflowCard";
 import { toolFamily, toolHeadline, toolSubtitle, toolSubtitleFull, type ToolFamily } from "./toolMeta";
 
 const ICONS: Record<ToolFamily, (props: { size?: number }) => ReactNode> = {
@@ -50,6 +53,7 @@ const ICONS: Record<ToolFamily, (props: { size?: number }) => ReactNode> = {
   web: Globe,
   todo: List,
   task: Layers,
+  workflow: MapIcon,
   mcp: Brain,
   generic: Brain
 };
@@ -87,7 +91,12 @@ function StatusMark({ status }: { status: ToolStatus }) {
 function bodyFor(block: ToolBlock, family: ToolFamily): ReactNode {
   switch (family) {
     case "bash":
-      return <BashBody block={block} />;
+      return (
+        <>
+          <BashBody block={block} />
+          <BackgroundBashStrip block={block} />
+        </>
+      );
     case "edit":
       return <EditBody block={block} />;
     case "write":
@@ -112,6 +121,7 @@ function bodyFor(block: ToolBlock, family: ToolFamily): ReactNode {
 function badgesFor(block: ToolBlock, family: ToolFamily, copy: ReturnType<typeof useCopy>): ReactNode[] {
   const badges: ReactNode[] = [];
   if (family === "bash") {
+    badges.push(...backgroundBashBadges(block, copy));
     const code = bashExitCode(block.structured);
     if (code !== undefined && code !== 0) {
       badges.push(
@@ -203,6 +213,7 @@ export const ToolCard = memo(function ToolCard({
   const open = override ?? defaultOpen(block, family, live);
 
   if (family === "task") return <SubagentCard block={block} depth={depth} />;
+  if (family === "workflow") return <WorkflowCard block={block} />;
 
   const Icon = ICONS[family];
   const headline = toolHeadline(block.name, block.input);

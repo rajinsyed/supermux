@@ -1,0 +1,721 @@
+/* Round 3: workflows, subagent drill-ins, and background tasks.
+   Everything here is built from the same tokens as tools.css — the violet
+   family for agent work, the claude accent for live state, the surface ladder
+   for nesting — so a workflow card reads as the same object family as a tool
+   card rather than a panel bolted on beside one. */
+
+/* ---------- shared quiet action button ---------- */
+
+/* The action verb on a card row: smaller than .btn-tiny, no resting border, and
+   it only paints a surface when the pointer or the keyboard is on it. Card rows
+   carry two or three of these and a bordered button on each turns a 20px row
+   into a toolbar. */
+.btn-quiet {
+  height: 21px;
+  padding: 0 7px;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-radius: var(--r-xs);
+}
+
+.btn-quiet:hover:not(:disabled),
+.btn-quiet:focus-visible:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-quiet.is-danger:hover:not(:disabled),
+.btn-quiet.is-danger:focus-visible:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* The keycap the CLI binds the same action to. Muted enough to read as a hint
+   rather than a second label, and it drops out when there is no room for it. */
+.btn-kbd {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 0 3px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  line-height: 13px;
+}
+
+@media (max-width: 620px) {
+  .btn-kbd {
+    display: none;
+  }
+}
+
+/* ---------- subagent extras ---------- */
+
+/* Which model actually ran the agent — a chip rather than another grey metric,
+   because on a workflow row it is the difference between an opus agent and a
+   haiku one and it is the field a reader scans the column for. */
+.subagent-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 10px;
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* toolStats, on its own fixed line so it appears at completion without moving
+   the activity line above it — the same no-reflow rule the head follows. */
+.subagent-stats {
+  height: 16px;
+  line-height: 16px;
+  padding-left: 21px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-actions {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.subagent-toggle.is-drill:hover,
+.subagent-toggle.is-drill:focus-visible {
+  color: var(--claude);
+  background: var(--claude-faint);
+}
+
+/* The agent's own transcript, read off disk. Visually inside the card but
+   distinctly a different SOURCE from the inline children above it, so it gets
+   its own inset bed rather than the children rail. */
+.subagent-drill {
+  margin: 6px 0 0 21px;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-faint);
+  background: var(--surface-sunken);
+}
+
+/* Depth is capped at 3 (MAX_INDENT_DEPTH): unbounded nesting at 21px a step
+   walks the content off a split pane, and past three levels the rail alone
+   carries the hierarchy. */
+.subagent-card[data-depth="3"] .subagent-children,
+.subagent-card[data-depth="3"] .subagent-drill {
+  margin-left: 10px;
+}
+
+.drill-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(420px, 48vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.drill-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.drill-status.is-error {
+  color: var(--danger);
+}
+
+.drill-note {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* The drill-in renders with the same block renderers as the card's inline
+   children and sits inside the same card, so it needs a header to say it is a
+   different SOURCE — the agent's file on disk, not the frames this session
+   streamed. */
+.drill-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 5px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.drill-source {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+
+.drill-agent-type {
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  background: var(--violet-soft);
+  color: var(--violet);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ---------- workflow card ---------- */
+
+.workflow-card {
+  border-radius: var(--r-md);
+  border: 1px solid var(--claude-border);
+  background: var(--claude-faint);
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.workflow-card.is-done {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.workflow-card.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.wf-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 34px;
+}
+
+.wf-icon {
+  display: flex;
+  color: var(--claude);
+  flex: 0 0 auto;
+}
+
+.wf-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+
+.wf-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Same fixed-box discipline as .subagent-meta: aggregates change every couple of
+   seconds while a workflow runs, and a meta line that grows on each of them
+   reflows the whole transcript below the card. */
+.wf-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 16px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+}
+
+.wf-meta > * {
+  line-height: 16px;
+  flex: 0 0 auto;
+}
+
+.wf-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.wf-stop {
+  flex: 0 0 auto;
+}
+
+.wf-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.wf-empty {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 2px 0 2px 21px;
+}
+
+.wf-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.wf-phase {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wf-phase-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding-left: 21px;
+}
+
+.wf-phase-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.wf-phase-count {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.wf-agents {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 21px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wf-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-faint);
+  background: var(--surface-raised);
+}
+
+.wf-agent.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.wf-agent.is-queued {
+  opacity: 0.72;
+}
+
+.wf-agent-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 18px;
+}
+
+/* One chip carries the whole state machine, so it is sized once and coloured
+   per state — a row that changes state must not change width. */
+.wf-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 7ch;
+  padding: 0 6px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+}
+
+.wf-state.is-running {
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
+.wf-state.is-done {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.wf-state.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.wf-state.is-blocked {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.wf-state.is-cached {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+.wf-agent-label {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+  min-width: 6ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
+
+.wf-agent-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wf-agent-metrics,
+.wf-agent-elapsed {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.tool-badge.is-warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.tool-badge.is-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
+/* What the agent is doing right now, replaced by what it produced when it is
+   done. One clipped line either way, so the row height never changes. */
+.wf-agent-live {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 1px;
+}
+
+.wf-agent-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.wf-agent-toggle:hover,
+.wf-agent-toggle:focus-visible {
+  color: var(--claude);
+  background: var(--claude-faint);
+}
+
+.wf-agent-result {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-soft);
+  padding: 4px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-sunken);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow-y: auto;
+  user-select: text;
+}
+
+.wf-agent-result.is-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.wf-logs-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  margin-left: 21px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.wf-logs-toggle:hover,
+.wf-logs-toggle:focus-visible {
+  color: var(--claude);
+  background: var(--claude-faint);
+}
+
+.wf-logs {
+  list-style: none;
+  margin: 4px 0 0 21px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  border: 1px solid var(--border-faint);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-height: 180px;
+  overflow-y: auto;
+  user-select: text;
+}
+
+/* ---------- background bash ---------- */
+
+.bash-bg-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 10px 8px;
+}
+
+.bash-bg-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.bash-bg-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.bash-bg-summary {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- task output tail ---------- */
+
+.task-output {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-output-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.task-output-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--claude);
+}
+
+.task-output-note {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ---------- tasks strip ---------- */
+
+/* The CLI's /tasks panel, docked above the composer. It is only mounted while
+   the CLI reports a non-empty background set, so it costs nothing at rest and
+   never sits there as an empty header. */
+.tasks-strip {
+  padding: 0 var(--gutter);
+}
+
+.tasks-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  transition: background var(--dur) var(--ease);
+}
+
+.tasks-strip-head:hover,
+.tasks-strip-head:focus-visible {
+  background: var(--surface-hover);
+}
+
+.tasks-strip-title {
+  font-weight: 500;
+  color: var(--text-soft);
+}
+
+.tasks-strip-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* Capped and scrollable for the same reason the todo strip is: eight background
+   shells must not push the composer off a 600px pane. */
+.tasks-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 2px 8px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: min(220px, 30vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@media (max-height: 560px) {
+  .tasks-list {
+    max-height: min(132px, 24vh);
+  }
+}
+
+.task-row {
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-faint);
+  background: var(--surface-raised);
+  padding: 4px 6px;
+}
+
+.task-row.is-running {
+  border-color: var(--claude-border);
+  background: var(--claude-faint);
+}
+
+.task-row-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 22px;
+}
+
+.task-type {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  flex: 0 0 auto;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+.task-type.is-local_agent {
+  color: var(--violet);
+  background: var(--violet-soft);
+}
+
+.task-type.is-local_workflow {
+  color: var(--claude);
+  background: var(--claude-soft);
+}
+
+.task-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 0;
+}
+
+.task-name {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-activity {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  line-height: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-metrics,
+.task-elapsed,
+.task-status {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.task-action {
+  flex: 0 0 auto;
+}
+
+.task-error {
+  font-size: 10.5px;
+  color: var(--danger);
+  padding: 2px 0 0 25px;
+}
+
+.task-detail {
+  padding: 5px 4px 3px 25px;
+}
+
+/* On a narrow split the two verbs already say what they do; their carets and
+   icons carry the rest. */
+@media (max-width: 520px) {
+  .task-metrics {
+    display: none;
+  }
+}

@@ -13,20 +13,10 @@ import { thinkingFixture } from "./thinking";
 import { longformFixture } from "./longform";
 import { resumeFixture } from "./resume";
 import { rewindHistory } from "./rewind";
+import { bgFixture, nestedFixture, shellsFixture, workflowFixture } from "./round3";
+import { parseJsonl } from "./parse";
 
-export function parseJsonl(text: string): ProtocolLine[] {
-  const lines: ProtocolLine[] = [];
-  for (const raw of text.split("\n")) {
-    const trimmed = raw.trim();
-    if (!trimmed) continue;
-    try {
-      lines.push(JSON.parse(trimmed) as ProtocolLine);
-    } catch {
-      // tolerate truncated trailing lines
-    }
-  }
-  return lines;
-}
+export { parseJsonl };
 
 export const richSession: ProtocolLine[] = parseJsonl(richSessionRaw);
 
@@ -46,5 +36,9 @@ export const fixtures: Record<string, ProtocolLine[]> = {
   thinking: thinkingFixture,
   longform: longformFixture,
   resume: resumeFixture,
-  rewind: rewindHistory
+  rewind: rewindHistory,
+  shells: shellsFixture,
+  bg: bgFixture,
+  workflow: workflowFixture,
+  nested: nestedFixture
 };

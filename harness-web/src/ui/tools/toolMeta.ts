@@ -2,6 +2,7 @@ import type { JsonObject } from "../../protocol/types";
 import { basename, shortenPath, truncateMiddle } from "../format";
 
 export type ToolFamily =
+  | "workflow"
   | "bash"
   | "edit"
   | "write"
@@ -26,6 +27,10 @@ export function toolFamily(name: string): ToolFamily {
   if (name === "WebSearch" || name === "WebFetch") return "web";
   if (name === "TodoWrite") return "todo";
   if (name === "Task" || name === "Agent") return "task";
+  // Its own family, not a subagent: a Workflow launches MANY agents across
+  // phases and reports them through `workflow_progress`, which SubagentCard has
+  // no place to put.
+  if (name === "Workflow") return "workflow";
   if (name.startsWith("mcp__")) return "mcp";
   return "generic";
 }
@@ -69,6 +74,8 @@ export function toolHeadline(name: string, input: JsonObject): string {
     }
     case "task":
       return str(input.description) ?? name;
+    case "workflow":
+      return str(input.name) ?? str(input.scriptPath) ?? name;
     case "todo":
       return "Updated the plan";
     case "interactive":
@@ -134,6 +141,8 @@ export function toolVerb(name: string): string {
       return "Plan";
     case "task":
       return "Delegated";
+    case "workflow":
+      return "Ran a workflow";
     case "mcp":
       return "Called";
     default:
