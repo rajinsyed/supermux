@@ -272,6 +272,16 @@ export const Trash = (p: IconProps) =>
 
 export const ArrowLeft = (p: IconProps) => svg(<path d="M12.75 8H3.5M7.25 12 3.25 8l4-4" />, p);
 
+/** Counter-clockwise arrow: the direction of travel is the whole meaning here. */
+export const Rewind = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M2.75 8a5.25 5.25 0 1 0 1.6-3.78" />
+      <path d="M2.25 2.75v3h3" />
+    </>,
+    p
+  );
+
 export const Download = (p: IconProps) =>
   svg(
     <>

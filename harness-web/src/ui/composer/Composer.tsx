@@ -26,6 +26,12 @@ export interface ComposerProps {
   onCyclePermissionMode(): void;
   fetchFileSuggestions(query: string): Promise<string[]>;
   onPickFiles(): Promise<ImageAttachment[]>;
+  /**
+   * Hands the parent a way to put the caret here. A rewind refills the composer
+   * with the message being edited, and text that appears without focus reads as
+   * something that happened TO the pane rather than a field waiting for you.
+   */
+  registerFocus?(focus: () => void): void;
 }
 
 const MAX_HEIGHT = 260;
@@ -51,7 +57,18 @@ export function Composer(props: ComposerProps) {
     node.style.height = `${Math.min(MAX_HEIGHT, node.scrollHeight)}px`;
   }, [props.draft]);
 
-  const focus = useCallback(() => textarea.current?.focus(), []);
+  const focus = useCallback(() => {
+    const node = textarea.current;
+    if (!node) return;
+    node.focus();
+    // The caret lands after the prefilled text, which is where editing starts.
+    node.setSelectionRange(node.value.length, node.value.length);
+  }, []);
+
+  const register = props.registerFocus;
+  useEffect(() => {
+    register?.(focus);
+  }, [focus, register]);
 
   // Type-to-focus, but the pending permission/question card owns the keyboard
   // while it is up: its 1–9 / A / Enter / Esc shortcuts are the whole point of

@@ -125,6 +125,42 @@ export function resetConversation(model: TranscriptModel, index: TranscriptIndex
     session: { ...model.session, title: undefined },
     runPhase: model.runPhase,
     runId: model.runId,
+    // A property of the BINARY, not of the conversation: clearing it here would
+    // empty the model menu on every "New session".
+    cachedModels: model.cachedModels,
+    revision: model.revision + 1
+  };
+}
+
+/**
+ * Drop the turn that carries `uuid` and every turn after it — the transcript
+ * shape `--resume-session-at=<previous uuid>` produces on the CLI side. The
+ * local model has to move first: the restarted process replays nothing until
+ * its first frame, and leaving the dropped turns on screen in the meantime
+ * shows a conversation the session no longer has.
+ */
+export function truncateBeforeUserMessage(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  uuid: string
+): TranscriptModel {
+  const cut = model.turns.findIndex((turn) => turn.userUuid === uuid);
+  if (cut < 0) return model;
+  const turns = model.turns.slice(0, cut);
+  const kept = new Set(turns.map((turn) => turn.id));
+  for (const [toolUseId, location] of index.toolLocations) {
+    if (!kept.has(location.turnId)) index.toolLocations.delete(toolUseId);
+  }
+  return {
+    ...model,
+    turns,
+    // Everything below described the dropped turns: an approval prompt for a
+    // tool call that no longer exists cannot be answered, and a queued message
+    // was typed against a conversation that is being rewritten.
+    pending: [],
+    queued: [],
+    todos: [],
+    activity: { sessionState: "idle", status: null, thinkingTokens: 0 },
     revision: model.revision + 1
   };
 }

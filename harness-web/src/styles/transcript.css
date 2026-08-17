@@ -157,15 +157,16 @@
   line-height: 1.56;
 }
 
-/* The copy button is pinned over the bubble's top-right corner, and bubbles size
-   to their content — so a line that reaches the right edge runs under the glyph.
-   A float reserves the button's footprint on the first line only: the text flows
-   around it at rest, and nothing reflows when the button fades in on hover
-   (a hover-time padding change would shift the words under the pointer). */
+/* The hover tools are pinned over the bubble's top-right corner, and bubbles
+   size to their content — so a line that reaches the right edge runs under the
+   glyphs. A float reserves their footprint on the first line only: the text
+   flows around it at rest, and nothing reflows when they fade in on hover
+   (a hover-time padding change would shift the words under the pointer). The
+   width tracks the two-button row — rewind plus copy — not one button. */
 .user-msg-body::before {
   content: "";
   float: right;
-  width: 18px;
+  width: 42px;
   height: 20px;
 }
 
@@ -208,21 +209,29 @@
 }
 
 /* `.icon-btn` sets `position: relative` and cards.css is imported after this
-   sheet, so at equal specificity the button wins and this affordance falls back
-   into the flow — adding ~26px of dead height to every user bubble. Scoping the
-   override to `.user-msg` outranks it. */
-.user-msg .user-msg-copy {
+   sheet, so at equal specificity the buttons win and this affordance falls back
+   into the flow — adding ~26px of dead height to every user bubble. The row is
+   what gets pinned, so adding rewind beside copy cannot reintroduce that.
+   Scoping the override to `.user-msg` outranks cards.css. */
+.user-msg .user-msg-tools {
   position: absolute;
   top: 5px;
   right: 5px;
+  display: flex;
+  gap: 2px;
   opacity: 0;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
   transition: opacity var(--dur) var(--ease);
 }
 
-.user-msg:hover .user-msg-copy,
-.user-msg:focus-within .user-msg-copy {
+.user-msg .user-msg-tools .icon-btn {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+
+/* Focus-within, not only hover: tabbing to rewind must reveal the control the
+   focus ring is being drawn around, or the ring floats over nothing. */
+.user-msg:hover .user-msg-tools,
+.user-msg:focus-within .user-msg-tools {
   opacity: 1;
 }
 

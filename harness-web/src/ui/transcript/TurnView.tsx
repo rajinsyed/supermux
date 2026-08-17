@@ -71,10 +71,13 @@ function splitRunningWork(work: Block[]): RunningWork {
 
 export const TurnView = memo(function TurnView({
   turn,
-  isLast
+  isLast,
+  onRewind
 }: {
   turn: Turn;
   isLast: boolean;
+  /** Given the turn's user-message uuid; absent when the pane cannot rewind. */
+  onRewind?: (uuid: string) => void;
 }) {
   const copy = useCopy();
   const [override, setOverride] = useState<boolean | undefined>(undefined);
@@ -104,7 +107,13 @@ export const TurnView = memo(function TurnView({
   return (
     <article className={`turn is-${turn.state}`} data-turn-id={turn.id}>
       {turn.userText !== undefined ? (
-        <UserMessage text={turn.userText} images={turn.userImages} />
+        <UserMessage
+          text={turn.userText}
+          images={turn.userImages}
+          onRewind={
+            onRewind && turn.userUuid ? () => onRewind(turn.userUuid as string) : undefined
+          }
+        />
       ) : null}
 
       <div className="turn-body">

@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import type { ImageAttachment } from "../../model/types";
 import { useCopy } from "../CopyContext";
+import { Rewind } from "../Icons";
 import { CopyButton } from "../primitives/CopyButton";
 
 const COLLAPSE_LINES = 9;
@@ -8,10 +9,17 @@ const COLLAPSE_CHARS = 620;
 
 export const UserMessage = memo(function UserMessage({
   text,
-  images
+  images,
+  onRewind
 }: {
   text: string;
   images?: ImageAttachment[];
+  /**
+   * Absent when the message carries no uuid — a locally-synthesised turn with
+   * nothing for the CLI to rewind to. The button is omitted rather than shown
+   * disabled: a rewind affordance that cannot rewind is worse than none.
+   */
+  onRewind?: () => void;
 }) {
   const copy = useCopy();
   const [expanded, setExpanded] = useState(false);
@@ -37,7 +45,20 @@ export const UserMessage = memo(function UserMessage({
           </button>
         </div>
       ) : null}
-      <CopyButton text={text} className="user-msg-copy" />
+      <div className="user-msg-tools">
+        {onRewind ? (
+          <button
+            type="button"
+            className="icon-btn user-msg-rewind"
+            onClick={onRewind}
+            title={copy("supermux.harness.rewind.action")}
+            aria-label={copy("supermux.harness.rewind.action")}
+          >
+            <Rewind size={12} />
+          </button>
+        ) : null}
+        <CopyButton text={text} />
+      </div>
     </div>
   );
 });

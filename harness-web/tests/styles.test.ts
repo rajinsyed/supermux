@@ -107,7 +107,15 @@ describe("every interactive control answers the pointer", () => {
 });
 
 describe("keyboard focus is never the weaker affordance", () => {
-  const SHEETS = ["base.css", "cards.css", "dock.css", "layout.css", "tools.css", "transcript.css"];
+  const SHEETS = [
+    "base.css",
+    "cards.css",
+    "dock.css",
+    "layout.css",
+    "modal.css",
+    "tools.css",
+    "transcript.css"
+  ];
   /**
    * The only sanctioned exemption: a pointer-only affordance that is hidden
    * outright without a fine pointer and is kept out of the tab order
@@ -224,20 +232,31 @@ describe("disclosures animate rather than snap", () => {
   });
 });
 
-describe("the user copy button pins to its bubble", () => {
+describe("the user hover tools pin to their bubble", () => {
   test("the absolute rule outranks .icon-btn's position: relative", async () => {
     // `.icon-btn { position: relative }` lives in cards.css, which index.css
     // imports AFTER transcript.css. At equal specificity the later rule wins, so
-    // a bare `.user-msg-copy` selector loses and the button falls into the flow,
-    // adding ~26px of dead height to every user bubble.
+    // an unscoped selector loses and the buttons fall into the flow, adding
+    // ~26px of dead height to every user bubble. Pinning the ROW rather than
+    // each button is what let rewind join copy without reintroducing that.
     const transcript = await css("transcript.css");
     const cards = await css("cards.css");
-    expect(ruleFor(transcript, ".user-msg .user-msg-copy")).toMatch(/position:\s*absolute/);
-    expect(transcript).not.toMatch(/\n\.user-msg-copy\s*\{/);
+    expect(ruleFor(transcript, ".user-msg .user-msg-tools")).toMatch(/position:\s*absolute/);
+    expect(transcript).not.toMatch(/\n\.user-msg-tools\s*\{/);
     expect(ruleFor(cards, ".icon-btn")).toMatch(/position:\s*relative/);
     // Order matters for the fix to hold: assert the import order it relies on.
     const index = await css("index.css");
     expect(index.indexOf("transcript.css")).toBeLessThan(index.indexOf("cards.css"));
+  });
+
+  test("the reserved float covers both buttons, not one", async () => {
+    // The float reserves the tools' footprint on the first line so text never
+    // runs under them. Sized for one button it clears copy and leaves rewind
+    // sitting on the words.
+    const sheet = await css("transcript.css");
+    const reserve = ruleFor(sheet, ".user-msg-body::before");
+    const width = Number(/width:\s*(\d+)px/.exec(reserve)![1]);
+    expect(width).toBeGreaterThanOrEqual(40);
   });
 });
 

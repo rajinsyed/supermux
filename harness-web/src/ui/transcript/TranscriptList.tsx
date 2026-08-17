@@ -15,6 +15,7 @@ interface TranscriptListProps {
   contentRef?: RefObject<HTMLDivElement | null>;
   showPill: boolean;
   onJump: () => void;
+  onRewind?: (uuid: string) => void;
   header?: ReactNode;
   footer?: ReactNode;
 }
@@ -25,6 +26,7 @@ export function TranscriptList({
   contentRef,
   showPill,
   onJump,
+  onRewind,
   header,
   footer
 }: TranscriptListProps) {
@@ -90,7 +92,12 @@ export function TranscriptList({
             </div>
           ) : null}
           {shown.map((turn, i) => (
-            <TurnView key={turn.id} turn={turn} isLast={i === shown.length - 1} />
+            <TurnView
+              key={turn.id}
+              turn={turn}
+              isLast={i === shown.length - 1}
+              onRewind={onRewind}
+            />
           ))}
           {footer}
           <div className="transcript-pad" />
