@@ -20,6 +20,8 @@ interface Script {
   running: boolean;
   failStart?: string;
   failRestart?: string;
+  /** `rewind_files` refuses while the conversation rewind still succeeds. */
+  restoreFails?: boolean;
   restoreSessionId?: string;
   cachedModels?: boolean;
 }
@@ -118,7 +120,12 @@ function makeBridge(script: Script): HarnessBridge {
     async rewind(params) {
       note("rewind");
       script.rewindParams.push(params);
-      return { runId: "run-3" };
+      // Whatever was asked for happened, unless the script says otherwise: the
+      // half-failure is its own case, tested where it is the point.
+      if (script.restoreFails) {
+        return { runId: "run-3", filesRestored: false, reason: "no checkpoint" };
+      }
+      return { runId: "run-3", filesRestored: params.restoreFiles };
     }
   };
 }

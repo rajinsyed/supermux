@@ -91,7 +91,7 @@ function makeBridge(script: Script): HarnessBridge {
       return { canRewind: true, filesChanged: [], insertions: 0, deletions: 0 };
     },
     async rewind() {
-      return { runId: "run-rewind" };
+      return { runId: "run-rewind", filesRestored: true };
     }
   };
 }

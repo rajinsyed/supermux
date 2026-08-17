@@ -94,7 +94,7 @@ function makeBridge(wire: Wire): HarnessBridge {
       return { canRewind: true, filesChanged: [], insertions: 0, deletions: 0 };
     },
     async rewind() {
-      return { runId: "run-3" };
+      return { runId: "run-3", filesRestored: true };
     }
   };
 }

@@ -71,7 +71,15 @@ are interpolated by `format()`. No component hard-codes user-visible English.
 `http://127.0.0.1:5199/?scenario=<name>&theme=dark|light&speed=instant|fast|realtime`
 
 `empty`, `nocli`, `rich`, `streaming`, `thinking`, `permission`, `question`, `plan`, `todos`,
-`subagents`, `interrupt`, `errors`, `compact`, `queue`, `longform`, `sessions`, `resume`.
+`subagents`, `interrupt`, `errors`, `compact`, `queue`, `longform`, `sessions`, `resume`,
+`rewind`, `binary`, `firstopen`, `crash`.
+
+Two flags refine `rewind`, because the file half of a rewind can fail in two different places:
+
+| Flag | What the CLI does | What the pane must show |
+| --- | --- | --- |
+| `&degraded=1` | the dry run answers `canRewind:false` | no checkbox to arm, and the reason stated up front |
+| `&restorefail=1` | the dry run promises a restore, the real `rewind_files` then refuses | the conversation still rewinds, and the note says the files did not |
 
 `rich` replays the real 202-line CLI trace in `src/dev/fixtures/rich-session.jsonl`. `streaming`
 freezes that replay mid-stream so screenshots capture the live UI. `permission`, `question`, and

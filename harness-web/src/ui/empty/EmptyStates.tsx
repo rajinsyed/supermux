@@ -188,29 +188,56 @@ export function NoCliState({
   );
 }
 
+/**
+ * The last stderr lines worth showing, newest last.
+ *
+ * The CLI's own diagnostics go to stderr, and when a run dies they are usually
+ * the only statement of WHY — `runExited.error` is often just a signal number.
+ * Blank lines carry nothing, so they are dropped, and the list is capped: a wall
+ * of output in a transcript footer is not a diagnosis.
+ */
+export function stderrExcerpt(lines: string[], limit = 4): string[] {
+  return lines
+    .map((line) => line.replace(/\s+$/, ""))
+    .filter((line) => line.trim().length > 0)
+    .slice(-limit);
+}
+
 export function ExitedState({
   error,
   startFailed,
+  stderrTail,
   onRestart
 }: {
   error?: string;
   /** The process never came up at all, which is a different story to tell. */
   startFailed?: boolean;
+  /**
+   * What the process last said on stderr. `runExited.error` frequently reduces a
+   * death to "signal 9", while the line above it in stderr names the missing
+   * module, the expired credential, or the bad flag. The pane was already
+   * collecting these, forty at a time, and rendering them nowhere at all.
+   */
+  stderrTail?: string[];
   onRestart: () => void;
 }) {
   const copy = useCopy();
+  const excerpt = stderrExcerpt(stderrTail ?? []);
   return (
     <div className="exited-state">
       <span className="exited-icon">
         <AlertTriangle size={14} />
       </span>
-      <div>
+      <div className="exited-main">
         <div className="exited-title">
           {startFailed
             ? copy("supermux.harness.error.startFailed")
             : copy("supermux.harness.exited.headline")}
         </div>
         <div className="exited-body">{error ?? copy("supermux.harness.exited.body")}</div>
+        {excerpt.length > 0 ? (
+          <pre className="exited-stderr mono">{excerpt.join("\n")}</pre>
+        ) : null}
       </div>
       <button type="button" className="btn btn-tiny" onClick={onRestart}>
         <Refresh size={11} />

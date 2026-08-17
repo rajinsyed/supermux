@@ -9,6 +9,7 @@ import type {
   PermissionSuggestion,
   ProtocolLine,
   RewindPreview,
+  RewindResult,
   SessionSummary
 } from "./protocol/types";
 
@@ -77,12 +78,18 @@ export interface HarnessBridge {
    * the conversation truncated to just BEFORE it. `resumeAtUuid` is the uuid of
    * the PREVIOUS user message (`--resume-session-at`); omitting it means the
    * rewind target was the first message, so the new run is a fresh session.
+   *
+   * The reply reports the two halves separately: resolving at all means the
+   * conversation was rewound, and `filesRestored` says whether the file half
+   * actually happened. A `rewind_files` refusal is NOT an error — the
+   * conversation rewind still stands — so it comes back as
+   * `{filesRestored: false, reason}` rather than a rejection.
    */
   rewind(params: {
     userMessageUuid: string;
     restoreFiles: boolean;
     resumeAtUuid?: string;
-  }): Promise<{ runId: string }>;
+  }): Promise<RewindResult>;
 }
 
 export interface BridgeError {

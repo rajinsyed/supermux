@@ -117,7 +117,8 @@ function bridgeError(code: string, userMessage: string): HarnessBridgeError {
 export function installMockBridge(store: HarnessStore): Scenario {
   const params = new URLSearchParams(window.location.search);
   const scenario = scenarioFor(params.get("scenario") ?? "rich", {
-    degraded: params.get("degraded") === "1"
+    degraded: params.get("degraded") === "1",
+    restoreFails: params.get("restorefail") === "1"
   });
   const speed = (params.get("speed") as Speed) ?? "instant";
   const theme = themeFor(params.get("theme"));
@@ -294,22 +295,27 @@ export function installMockBridge(store: HarnessStore): Scenario {
         binary = { resolvedPath: "/opt/homebrew/bin/claude", version: "2.1.233" };
         return binary;
       }
-      // Mirrors the native validation the FIXES contract specifies: exists,
-      // executable, not a directory. The scripted rejections make each of those
-      // messages reachable in the dev harness.
-      if (!trimmed.startsWith("/")) {
+      // Mirrors SupermuxHarnessBinarySetting.setPath: a tilde is expanded, the
+      // result must be absolute, and it must name an existing executable regular
+      // file. The scripted rejections make each of those reachable here; a mock
+      // that accepted what Swift rejects would send the dev harness a message
+      // the app never shows.
+      const expanded = trimmed.startsWith("~/")
+        ? `/Users/dev${trimmed.slice(1)}`
+        : trimmed;
+      if (!expanded.startsWith("/")) {
         throw bridgeError("binary_invalid", "Enter an absolute path to the Claude executable.");
       }
-      if (trimmed.endsWith("/")) {
-        throw bridgeError("binary_invalid", `${trimmed} is a directory, not an executable.`);
+      if (expanded.endsWith("/") || expanded.includes("isdir")) {
+        throw bridgeError("binary_invalid", `${expanded} is a directory, not an executable.`);
       }
-      if (trimmed.includes("missing")) {
-        throw bridgeError("binary_invalid", `No file at ${trimmed}.`);
+      if (expanded.includes("missing")) {
+        throw bridgeError("binary_invalid", `No file at ${expanded}.`);
       }
-      if (trimmed.includes("noexec")) {
-        throw bridgeError("binary_invalid", `${trimmed} is not executable.`);
+      if (expanded.includes("noexec")) {
+        throw bridgeError("binary_invalid", `${expanded} is not executable.`);
       }
-      binary = { resolvedPath: trimmed, overridePath: trimmed, version: "2.1.233-ccx" };
+      binary = { resolvedPath: expanded, overridePath: expanded, version: "2.1.233-ccx" };
       return binary;
     },
     async rewindPreview() {
@@ -329,10 +335,24 @@ export function installMockBridge(store: HarnessStore): Scenario {
         deletions: 4
       };
     },
-    async rewind({ resumeAtUuid }) {
+    async rewind({ restoreFiles, resumeAtUuid }) {
       stopRun();
       await new Promise((resolve) => window.setTimeout(resolve, 260));
-      return { runId: startRun(resumeAtUuid) };
+      const runId = startRun(resumeAtUuid);
+      // The half-failure the controller used to swallow into a stderr line and
+      // report as success: `rewind_files` refuses, the CONVERSATION rewind still
+      // stands, and the pane has to say which half happened. It is not a
+      // rejection — a rejection would claim the whole rewind failed.
+      if (restoreFiles && scenario.restoreFails) {
+        return {
+          runId,
+          filesRestored: false,
+          reason: "rewind_files: no checkpoint recorded for this message"
+        };
+      }
+      // No restore was requested, so nothing was restored — the web layer keeps
+      // its conversation-only note for that, rather than reading it as a failure.
+      return { runId, filesRestored: restoreFiles };
     }
   };
 

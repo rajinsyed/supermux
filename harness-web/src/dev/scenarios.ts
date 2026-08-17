@@ -78,6 +78,12 @@ export interface Scenario {
   probeCatalogAfterMs?: number;
   /** The dry run answers canRewind:false — conversation-only degraded mode. */
   rewindUnavailable?: boolean;
+  /**
+   * The dry run promises a restore and the real `rewind_files` then refuses. The
+   * conversation still rewinds, so this is the one path where the two halves of
+   * a rewind disagree — and the one the pane used to report as flat success.
+   */
+  restoreFails?: boolean;
   /** Seed the binary setting, e.g. with an override already stored. */
   binary?: BinarySetting;
   /**
@@ -110,6 +116,13 @@ export interface ScenarioOptions {
    * reachable without a second scenario that differs in one boolean.
    */
   degraded?: boolean;
+  /**
+   * `?restorefail=1` on the rewind scenario. Distinct from `degraded`: there the
+   * dry run says up front that files cannot be restored and the checkbox is
+   * never armable, while here the preview promises a restore and the real one
+   * then fails — which is the only way to reach the degraded note.
+   */
+  restoreFails?: boolean;
 }
 
 export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenario {
@@ -155,7 +168,8 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
         cachedModels: true,
         processRunning: true,
         restoreSessionId: "rewind-session-7712",
-        rewindUnavailable: options.degraded === true
+        rewindUnavailable: options.degraded === true,
+        restoreFails: options.restoreFails === true
       };
     case "streaming":
       return {

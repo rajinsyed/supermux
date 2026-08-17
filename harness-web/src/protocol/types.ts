@@ -480,6 +480,25 @@ export interface RewindPreview {
   error?: string;
 }
 
+/**
+ * What a completed `harness.rewind` answers. The two halves of a rewind fail
+ * independently: the conversation restart is what the reply's existence reports,
+ * while `rewind_files` can refuse on its own — a session with no checkpoints, a
+ * CLI too old for the control request, a file the restore could not write. That
+ * half used to be swallowed into a stderr event and reported to the user as
+ * plain success, so the pane claimed to have restored files it had not touched.
+ */
+export interface RewindResult {
+  runId: string;
+  /**
+   * False whenever file restore was requested and did not happen, AND whenever
+   * it was never requested — the caller knows which of the two it asked for.
+   */
+  filesRestored: boolean;
+  /** Short cause, present only when a requested restore failed. */
+  reason?: string;
+}
+
 export interface ContextUsageCategory {
   name: string;
   tokens: number;

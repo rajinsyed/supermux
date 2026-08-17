@@ -564,7 +564,9 @@
 
 .exited-state {
   display: flex;
-  align-items: center;
+  /* Start, not center: the card grows downward once it carries a stderr
+     excerpt, and a centered icon then floats halfway down the block it labels. */
+  align-items: flex-start;
   gap: 10px;
   padding: 10px 12px;
   margin-top: 10px;
@@ -577,6 +579,15 @@
   display: flex;
   color: var(--danger);
   flex: 0 0 auto;
+  /* Optically on the title's cap height rather than its line box. */
+  margin-top: 1px;
+}
+
+.exited-main {
+  /* Without this the pre below refuses to shrink under its longest line and
+     pushes the Restart button out of the card. */
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .exited-title {
@@ -590,6 +601,27 @@
   color: var(--text-muted);
 }
 
+/* The CLI's own last words. Scrolls sideways rather than wrapping a stack
+   trace into unreadable ribbons, and caps its height so a chatty process
+   cannot push the composer off screen. */
+.exited-stderr {
+  margin: 6px 0 0;
+  padding: 6px 7px;
+  max-height: 84px;
+  overflow: auto;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--danger-border);
+  /* --surface-sunken, not --terminal-bg: the terminal token is dark ink in BOTH
+     themes, and --text-muted on it is unreadable under a light theme. */
+  background: var(--surface-sunken);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  white-space: pre;
+  user-select: text;
+}
+
 .exited-state .btn {
   margin-left: auto;
+  flex: 0 0 auto;
 }

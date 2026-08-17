@@ -60,6 +60,8 @@ export function RewindDialog({
   const checking = preview === undefined && !failed;
   const degraded = failed || (preview !== undefined && !preview.canRewind);
   const fileCount = preview?.filesChanged.length ?? 0;
+  /** Files will actually be overwritten: the one irreversible half of a rewind. */
+  const armed = restoreFiles && !degraded;
 
   return (
     <Modal title={copy("supermux.harness.rewind.title")} onClose={onCancel}>
@@ -115,11 +117,17 @@ export function RewindDialog({
           <button type="button" className="btn btn-secondary" onClick={onCancel}>
             {copy("supermux.harness.rewind.cancel")}
           </button>
+          {/* Dropping conversation is reversible — the session is still on disk
+              and can be resumed. Overwriting files on disk is not, and the same
+              accent-coloured button for both understates the second by drawing
+              it exactly like every ordinary confirm in the pane. The weight
+              tracks what is ARMED, not merely what is possible, so a
+              conversation-only rewind keeps the ordinary primary. */}
           <button
             type="button"
-            className="btn btn-primary"
+            className={`btn ${armed ? "btn-danger" : "btn-primary"}`}
             disabled={checking}
-            onClick={() => onConfirm(restoreFiles && !degraded)}
+            onClick={() => onConfirm(armed)}
           >
             {copy("supermux.harness.rewind.confirm")}
           </button>
