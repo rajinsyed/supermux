@@ -1,0 +1,313 @@
+/* ---------- modal shell ---------- */
+
+/* The scrim is what makes a dialog modal to the eye; without it a floating card
+   over a live transcript reads as another card in the transcript. It is ink
+   rather than a tint of --page-bg, because this pane supports a transparent
+   page and a tint of nothing suppresses nothing. */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
+  animation: scrim-in 120ms var(--ease);
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* --popover-bg, not --surface-raised: the raised token is a translucent overlay
+   meant to sit ON the page, and a dialog floating over a transcript needs an
+   OPAQUE panel or the words behind it read straight through the copy. */
+.modal {
+  width: min(460px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-strong);
+  background: var(--popover-bg);
+  box-shadow: var(--shadow-modal);
+  animation: modal-in 160ms var(--ease);
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-scrim,
+  .modal {
+    animation: none;
+  }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px 10px 14px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.modal-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.modal-close {
+  flex: 0 0 auto;
+}
+
+.modal-body {
+  padding: 14px;
+  overflow-y: auto;
+}
+
+/* ---------- binary settings ---------- */
+
+.binary-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.binary-resolved {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-faint);
+  background: var(--input-bg);
+}
+
+.binary-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* A path is the one string in this dialog a user must be able to read exactly,
+   so it wraps at its separators rather than ellipsizing into ambiguity. */
+.binary-path {
+  font-size: 11.5px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.binary-version {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.binary-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.binary-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.binary-input:focus {
+  border-color: var(--claude-border);
+  outline: none;
+}
+
+.binary-help,
+.binary-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.binary-note {
+  color: var(--text-muted);
+}
+
+.binary-error {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.binary-actions,
+.rewind-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.binary-actions-spacer {
+  flex: 1 1 auto;
+}
+
+.rewind-actions {
+  justify-content: flex-end;
+}
+
+.binary-saved {
+  font-size: 11px;
+  color: var(--success, var(--claude));
+}
+
+/* ---------- rewind ---------- */
+
+.rewind-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The message being rewound to is the thing being confirmed, so it is quoted
+   verbatim rather than summarised into a count. */
+.rewind-quote {
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--claude-border);
+  border-left-width: 2px;
+  background: var(--claude-faint);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 8.4em;
+  overflow-y: auto;
+}
+
+.rewind-body {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.rewind-files {
+  padding: 9px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-faint);
+  background: var(--input-bg);
+}
+
+.rewind-checking,
+.rewind-degraded {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.rewind-degraded {
+  color: var(--warning);
+  align-items: flex-start;
+}
+
+.rewind-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+/* Left to the UA this is the OS accent — system blue in a pane whose every
+   other control is Claude orange, and the one control here that carries a
+   destructive choice. */
+.rewind-check input[type="checkbox"] {
+  accent-color: var(--claude-strong);
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.rewind-check input:disabled + .rewind-check-label {
+  opacity: 0.5;
+}
+
+.rewind-check-label {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.rewind-stat {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* ---------- rewind confirmation ---------- */
+
+.rewind-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 var(--gutter) 4px;
+  padding: 6px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--claude-border);
+  background: var(--claude-faint);
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.rewind-note-x {
+  display: flex;
+  margin-left: auto;
+  padding: 2px;
+  border-radius: var(--r-xs);
+  color: var(--text-faint);
+}
+
+.rewind-note-x:hover,
+.rewind-note-x:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* ---------- model menu loading row ---------- */
+
+.menu-loading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 9px;
+  font-size: 12px;
+  color: var(--text-faint);
+}

@@ -135,7 +135,21 @@ export function EmptyState({
   );
 }
 
-export function NoCliState({ status, onRetry }: { status: CliStatus; onRetry: () => void }) {
+export function NoCliState({
+  status,
+  onRetry,
+  onSetBinary
+}: {
+  status: CliStatus;
+  onRetry: () => void;
+  /**
+   * PATH is not the only place a Claude entrypoint can live — a wrapper script
+   * or a proxy launcher is a perfectly ordinary setup, and "install it" is the
+   * wrong instruction for someone who already has one. Offering the override
+   * here is the difference between a dead end and a fix.
+   */
+  onSetBinary: () => void;
+}) {
   const copy = useCopy();
   const install = copy("supermux.harness.nocli.install");
   return (
@@ -157,6 +171,9 @@ export function NoCliState({ status, onRetry }: { status: CliStatus; onRetry: ()
         <button type="button" className="btn btn-primary" onClick={onRetry}>
           <Refresh size={12} />
           {copy("supermux.harness.nocli.retry")}
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={onSetBinary}>
+          {copy("supermux.harness.nocli.setBinary")}
         </button>
         <a
           className="btn btn-ghost"

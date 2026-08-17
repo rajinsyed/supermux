@@ -191,7 +191,16 @@ describe("ANSI terminal palette contrast", () => {
  * with `opacity` is now composited at its real alpha against the surface it
  * lands on.
  */
-const SHEETS = ["base.css", "cards.css", "content.css", "dock.css", "layout.css", "tools.css", "transcript.css"];
+const SHEETS = [
+  "base.css",
+  "cards.css",
+  "content.css",
+  "dock.css",
+  "layout.css",
+  "modal.css",
+  "tools.css",
+  "transcript.css"
+];
 
 async function sheet(name: string): Promise<string> {
   return Bun.file(new URL(`../src/styles/${name}`, import.meta.url).pathname).text();
@@ -228,7 +237,13 @@ function flatSurfaces(isDark: boolean): { vars: Record<string, string>; flat: Re
       page,
       card: composite(vars["--surface"], page),
       raised: composite(vars["--surface-raised"], page),
-      sunken: composite(vars["--surface-sunken"], page)
+      sunken: composite(vars["--surface-sunken"], page),
+      // Menus and modals paint on this opaque panel, not on the page. The
+      // binary dialog's help and note lines and the model menu's loading row
+      // are all --text-faint on exactly this bed.
+      popover: parse(vars["--popover-bg"]),
+      // The dialog's input well, over that panel.
+      popoverInput: composite(vars["--input-bg"], parse(vars["--popover-bg"]))
     }
   };
 }
@@ -284,6 +299,37 @@ describe("chrome text contrast", () => {
     // 10.5px was also under the 12px meta size the visual bar specifies.
     expect(/\.banner-detail\s*\{[^}]*\}/.exec(dock)![0]).toMatch(/font-size:\s*11\.5px/);
   });
+});
+
+/**
+ * Dialogs paint on an OPAQUE panel (--popover-bg), not on the page, and their
+ * status tones sit on their own tints over that panel. A validation error the
+ * user cannot read is the same as no error at all, and that copy is the only
+ * thing standing between a mistyped path and silent failure.
+ */
+describe("dialog status tones contrast", () => {
+  for (const isDark of [true, false]) {
+    const label = isDark ? "dark" : "light";
+    const { vars } = surfaces(isDark);
+    const panel = parse(vars["--popover-bg"]);
+
+    test(`the binary validation error clears AA on its tint (${label})`, () => {
+      const bed = composite(vars["--danger-soft"], panel);
+      expect(ratio(composite(vars["--danger"], bed), bed)).toBeGreaterThanOrEqual(AA_SMALL);
+    });
+
+    test(`the degraded-rewind warning clears AA on the panel (${label})`, () => {
+      expect(ratio(composite(vars["--warning"], panel), panel)).toBeGreaterThanOrEqual(AA_SMALL);
+    });
+
+    test(`the quoted message clears AA on its claude tint (${label})`, () => {
+      const bed = composite(vars["--claude-faint"], panel);
+      expect(ratio(composite(vars["--text"], bed), bed)).toBeGreaterThanOrEqual(AA_SMALL);
+      // The file-count stat beside the checkbox is the faintest tier here.
+      const well = composite(vars["--input-bg"], panel);
+      expect(ratio(composite(vars["--text-faint"], well), well)).toBeGreaterThanOrEqual(AA_SMALL);
+    });
+  }
 });
 
 describe("terminal chrome contrast", () => {

@@ -160,6 +160,15 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--violet-soft": dark ? "rgba(179, 156, 232, 0.15)" : "rgba(109, 79, 184, 0.10)",
     "--shadow": theme.shadow,
     "--shadow-lifted": dark ? "0 8px 26px rgba(0, 0, 0, 0.42)" : "0 8px 26px rgba(20, 18, 16, 0.10)",
+    // A modal scrim cannot be derived from the page background: the pane
+    // supports a TRANSPARENT page (it sits over the workspace), where any
+    // page-derived tint is nothing at all and the transcript shows straight
+    // through the dialog. Ink in both themes, heavier in light because the
+    // content it must suppress is itself light.
+    "--scrim": dark ? "rgba(0, 0, 0, 0.58)" : "rgba(20, 18, 16, 0.34)",
+    "--shadow-modal": dark
+      ? "0 18px 48px rgba(0, 0, 0, 0.58)"
+      : "0 18px 48px rgba(20, 18, 16, 0.22)",
     "--diff-add-bg": dark ? "rgba(126, 201, 154, 0.13)" : "rgba(46, 125, 79, 0.10)",
     "--diff-add-fg": dark ? "#9ad9b2" : "#1e683d",
     "--diff-del-bg": dark ? "rgba(255, 141, 126, 0.13)" : "rgba(179, 38, 30, 0.09)",
