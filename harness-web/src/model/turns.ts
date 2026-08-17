@@ -17,6 +17,7 @@ export function createModel(): TranscriptModel {
     turns: [],
     pending: [],
     queued: [],
+    stranded: [],
     todos: [],
     usage: emptyUsage(),
     activity: { sessionState: "idle", status: null, thinkingTokens: 0 },
@@ -122,12 +123,21 @@ export function resetConversation(model: TranscriptModel, index: TranscriptIndex
   return {
     ...createModel(),
     generation: model.generation + 1,
-    session: { ...model.session, title: undefined },
+    // A cleared pane is on NO session. Carrying the old id forward is what made
+    // "New session" resume the very conversation it had just discarded: the id
+    // is the pane's session identity, and every resume path reads it.
+    session: { ...model.session, title: undefined, sessionId: undefined },
     runPhase: model.runPhase,
     runId: model.runId,
     // A property of the BINARY, not of the conversation: clearing it here would
     // empty the model menu on every "New session".
     cachedModels: model.cachedModels,
+    // Not part of the conversation either: these are messages the user typed
+    // that no process ever answered. A reset replaces the transcript, and
+    // dropping them here would silently delete typed text at exactly the moment
+    // — a Restart after a crash — when the user most expects it to survive.
+    // Cancelling a chip, or an interrupt-with-cancel, is how they are discarded.
+    stranded: model.stranded,
     revision: model.revision + 1
   };
 }
@@ -159,6 +169,7 @@ export function truncateBeforeUserMessage(
     // was typed against a conversation that is being rewritten.
     pending: [],
     queued: [],
+    stranded: [],
     todos: [],
     activity: { sessionState: "idle", status: null, thinkingTokens: 0 },
     revision: model.revision + 1

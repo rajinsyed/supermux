@@ -80,6 +80,15 @@ export function useHarness(store: HarnessStore): HarnessController {
   }, [store]);
 
   const restoredSessionId = useRef<string | undefined>(undefined);
+  /**
+   * The restore snapshot describes the pane as it was SERIALIZED, and it is
+   * reread on every `harness.context` call — the binary dialog closing is one.
+   * Once the user has deliberately moved this pane (New Session, resuming
+   * another session, a rewind), that snapshot is history: replaying it would
+   * shove the discarded conversation back on screen over the one the user just
+   * chose. So a deliberate swap retires the snapshot permanently.
+   */
+  const snapshotRetired = useRef(false);
 
   const reloadContext = useCallback(() => {
     bridge
@@ -94,7 +103,7 @@ export function useHarness(store: HarnessStore): HarnessController {
           store.dispatch({ kind: "cachedModels", models: next.cachedModels });
         }
         const sessionId = next.restore?.sessionId;
-        if (sessionId && restoredSessionId.current !== sessionId) {
+        if (sessionId && !snapshotRetired.current && restoredSessionId.current !== sessionId) {
           restoredSessionId.current = sessionId;
           bridge
             .loadSessionHistory({ sessionId })
@@ -158,7 +167,12 @@ export function useHarness(store: HarnessStore): HarnessController {
    * the panel was serialized with, not the conversation on screen.
    */
   const currentSessionId = useCallback(
-    (): string | undefined => store.getSnapshot().session.sessionId ?? context?.restore?.sessionId,
+    (): string | undefined =>
+      store.getSnapshot().session.sessionId ??
+      // Only until the pane is deliberately moved: after a New Session the
+      // snapshot names the conversation the user just walked away from, and
+      // falling back to it turns the next send into a resume of it.
+      (snapshotRetired.current ? undefined : context?.restore?.sessionId),
     [context, store]
   );
 
@@ -234,23 +248,54 @@ export function useHarness(store: HarnessStore): HarnessController {
    */
   const sendChain = useRef<Promise<void>>(Promise.resolve());
 
+  /** One link of the send chain: start if needed, then put this message on the wire. */
+  const enqueueSend = useCallback(
+    (text: string, images: ImageAttachment[] | undefined, uuid: string) => {
+      sendChain.current = sendChain.current
+        .then(() => ensureStarted())
+        .then(() =>
+          bridge
+            .send({ text, images: images && images.length > 0 ? images : undefined, uuid })
+            .then(() => undefined)
+        )
+        .catch(() => undefined);
+    },
+    [bridge, ensureStarted]
+  );
+
   const send = useCallback(
     (text: string, images: ImageAttachment[]) => {
       const uuid = uuidv4();
       store.dispatch({ kind: "localSend", uuid, text, images, atMs: Date.now() });
       setDraftState("");
       bridge.saveDraft({ text: "" }).catch(() => undefined);
-      sendChain.current = sendChain.current
-        .then(() => ensureStarted())
-        .then(() =>
-          bridge
-            .send({ text, images: images.length > 0 ? images : undefined, uuid })
-            .then(() => undefined)
-        )
-        .catch(() => undefined);
+      enqueueSend(text, images, uuid);
     },
-    [bridge, ensureStarted, store]
+    [bridge, enqueueSend, store]
   );
+
+  /**
+   * Messages that were queued inside a run which died before answering them.
+   * The CLI-side queue died with the process, so re-sending is the only way they
+   * are ever answered — and it happens through the same chain, in the order they
+   * were typed, so they cannot overtake each other or anything typed since.
+   */
+  useEffect(() => {
+    if (model.stranded.length === 0) return;
+    if (model.runPhase !== "running") return;
+    const carried = model.stranded;
+    store.dispatch({ kind: "takeStranded" });
+    for (const message of carried) {
+      store.dispatch({
+        kind: "localSend",
+        uuid: message.uuid,
+        text: message.text,
+        images: message.images,
+        atMs: message.queuedAtMs
+      });
+      enqueueSend(message.text, message.images, message.uuid);
+    }
+  }, [enqueueSend, model.runPhase, model.stranded, store]);
 
   const interrupt = useCallback(
     (cancelQueued: boolean) => {
@@ -306,6 +351,12 @@ export function useHarness(store: HarnessStore): HarnessController {
   const restart = useCallback(
     (resumeSessionId?: string, fork?: boolean) => {
       const target = resumeSessionId ?? currentSessionId();
+      // Picking a session from the browser is a deliberate move off whatever the
+      // panel was serialized with; the snapshot must not be replayed over it.
+      if (resumeSessionId) {
+        snapshotRetired.current = true;
+        restoredSessionId.current = resumeSessionId;
+      }
       const load = target
         ? bridge
             .loadSessionHistory({ sessionId: target })
@@ -325,7 +376,16 @@ export function useHarness(store: HarnessStore): HarnessController {
   /** Explicitly NOT a resume: no session id goes down, and the pane is cleared. */
   const newSession = useCallback(() => {
     store.dispatch({ kind: "reset" });
+    // A reset KEEPS unanswered messages, because a Restart after a crash must
+    // not eat what the user typed. "New session" is the opposite intent — an
+    // empty pane — so it is the one path that discards them explicitly.
+    store.dispatch({ kind: "clearQueued" });
     restoredSessionId.current = undefined;
+    // The strongest possible statement that this pane is no longer on the
+    // snapshot's session: without it the next `harness.context` — the binary
+    // dialog closing is one — replays that conversation back into the pane the
+    // user just cleared.
+    snapshotRetired.current = true;
     void runRestart({}).catch(() => undefined);
   }, [runRestart, store]);
 
