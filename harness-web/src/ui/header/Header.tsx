@@ -108,6 +108,10 @@ export function Header(props: HeaderProps) {
             ref={input}
             className="title-input"
             value={draft}
+            aria-label={copy("supermux.harness.header.rename")}
+            title={`${copy("supermux.harness.header.renameSave")} ⏎ · ${copy(
+              "supermux.harness.header.renameCancel"
+            )} Esc`}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={() => setEditing(false)}
             onKeyDown={(event) => {
@@ -159,7 +163,7 @@ export function Header(props: HeaderProps) {
           trigger={() => (
             <span className={`mode-pill is-${session.permissionMode}`}>
               <Shield size={11} />
-              {modeLabel(session.permissionMode, copy, true)}
+              <span className="pill-label">{modeLabel(session.permissionMode, copy, true)}</span>
               <ChevronDown size={10} />
             </span>
           )}
@@ -188,7 +192,7 @@ export function Header(props: HeaderProps) {
           trigger={() => (
             <span className="model-pill">
               <Bolt size={11} />
-              {modelName}
+              <span className="pill-label">{modelName}</span>
               {effort ? <span className="effort-tag">{effort}</span> : null}
               <ChevronDown size={10} />
             </span>
@@ -269,7 +273,7 @@ export function Header(props: HeaderProps) {
                       <div className="session-info">
                         <span className="session-title">{item.title}</span>
                         <span className="session-meta tnum">
-                          {formatRelativeTime(item.updatedAtMs)}
+                          {formatRelativeTime(item.updatedAtMs, copy)}
                           {item.gitBranch ? ` · ${item.gitBranch}` : ""}
                           {item.messageCount ? ` · ${item.messageCount} msgs` : ""}
                         </span>

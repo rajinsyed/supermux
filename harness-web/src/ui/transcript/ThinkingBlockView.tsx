@@ -14,7 +14,7 @@ export const ThinkingBlockView = memo(function ThinkingBlockView({
   const copy = useCopy();
   const [open, setOpen] = useState(false);
   const rawDuration = block.endedAtMs !== undefined ? block.endedAtMs - block.startedAtMs : 0;
-  const duration = rawDuration >= 1000 ? formatDuration(rawDuration) : undefined;
+  const duration = rawDuration >= 1000 ? formatDuration(rawDuration, copy) : undefined;
 
   const summary =
     block.tokens && duration

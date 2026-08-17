@@ -1,8 +1,9 @@
-import { memo, useMemo, useState } from "react";
+import { Fragment, memo, useMemo, useState } from "react";
 import type { Block, Turn } from "../../model/types";
-import { useCopy } from "../CopyContext";
+import { plural, useCopy } from "../CopyContext";
 import { ChevronDown, ChevronRight, XCircle } from "../Icons";
 import { formatCost, formatDuration } from "../format";
+import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 import { WorkingDots } from "../primitives/Spinner";
 import { BlockView } from "./BlockView";
@@ -40,18 +41,32 @@ function isLive(block: Block): boolean {
   return block.status === "running" || block.status === "pending";
 }
 
-function splitRunningWork(work: Block[]): { earlier: Block[]; visible: Block[] } {
-  if (work.length <= LIVE_TAIL) return { earlier: [], visible: work };
+interface WorkSegment {
+  hidden: boolean;
+  blocks: Block[];
+}
+
+interface RunningWork {
+  earlier: Block[];
+  /** Runs of consecutive blocks, so revealing the hidden ones keeps work order. */
+  segments: WorkSegment[];
+}
+
+function splitRunningWork(work: Block[]): RunningWork {
+  if (work.length <= LIVE_TAIL) return { earlier: [], segments: [{ hidden: false, blocks: work }] };
   const keepFrom = work.length - LIVE_TAIL;
   const earlier: Block[] = [];
-  const visible: Block[] = [];
+  const segments: WorkSegment[] = [];
   work.forEach((block, index) => {
     // Anything still running stays on screen wherever it sits: a subagent that
     // spawned ten tools ago is the row a user most wants to watch.
-    if (index >= keepFrom || isLive(block)) visible.push(block);
-    else earlier.push(block);
+    const hidden = index < keepFrom && !isLive(block);
+    if (hidden) earlier.push(block);
+    const tail = segments[segments.length - 1];
+    if (tail && tail.hidden === hidden) tail.blocks.push(block);
+    else segments.push({ hidden, blocks: [block] });
   });
-  return { earlier, visible };
+  return { earlier, segments };
 }
 
 export const TurnView = memo(function TurnView({
@@ -70,20 +85,21 @@ export const TurnView = memo(function TurnView({
   const toolCount = useMemo(() => work.filter((b) => b.kind === "tool").length, [work]);
   const folded = override ?? (settled && turn.folded && !isLast && work.length > 0);
   const running = useMemo(() => splitRunningWork(work), [work]);
-  const earlierTools = useMemo(
-    () => running.earlier.filter((b) => b.kind === "tool").length,
-    [running.earlier]
-  );
+  const earlierCount = useMemo(() => {
+    const tools = running.earlier.filter((b) => b.kind === "tool").length;
+    return tools > 0 ? tools : running.earlier.length;
+  }, [running.earlier]);
   const duration =
     turn.result?.durationMs ??
     (turn.endedAtMs !== undefined ? turn.endedAtMs - turn.startedAtMs : undefined);
 
+  const durationText = formatDuration(duration, copy);
   const foldLabel =
     turn.state === "aborted"
-      ? copy("supermux.harness.turn.stoppedAfter", { duration: formatDuration(duration) })
+      ? copy("supermux.harness.turn.stoppedAfter", { duration: durationText })
       : turn.state === "error"
-        ? copy("supermux.harness.turn.failedAfter", { duration: formatDuration(duration) })
-        : copy("supermux.harness.turn.workedFor", { duration: formatDuration(duration) });
+        ? copy("supermux.harness.turn.failedAfter", { duration: durationText })
+        : copy("supermux.harness.turn.workedFor", { duration: durationText });
 
   return (
     <article className={`turn is-${turn.state}`} data-turn-id={turn.id}>
@@ -105,10 +121,19 @@ export const TurnView = memo(function TurnView({
                 <span className="fold-label">{foldLabel}</span>
                 {toolCount > 0 ? (
                   <span className="fold-count tnum">
-                    {copy("supermux.harness.turn.previousToolCalls", { count: toolCount })}
+                    {plural(
+                      copy,
+                      toolCount,
+                      "supermux.harness.turn.previousToolCallsOne",
+                      "supermux.harness.turn.previousToolCalls"
+                    )}
                   </span>
                 ) : null}
               </button>
+              {/* The settled fold stays an unwrapped swap: `.turn-work` owns the
+                  work rail as a pseudo-element at a negative offset, and the
+                  Disclosure's `overflow: hidden` would clip that rail away for
+                  the whole animation. */}
               {!folded ? (
                 <div className="turn-work">
                   {work.map((block) => (
@@ -128,15 +153,37 @@ export const TurnView = memo(function TurnView({
                 >
                   {showEarlier ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   <span className="tnum">
-                    {copy("supermux.harness.turn.previousToolCalls", {
-                      count: earlierTools > 0 ? earlierTools : running.earlier.length
-                    })}
+                    {plural(
+                      copy,
+                      earlierCount,
+                      "supermux.harness.turn.previousToolCallsOne",
+                      "supermux.harness.turn.previousToolCalls"
+                    )}
                   </span>
                 </button>
               ) : null}
-              {(showEarlier ? work : running.visible).map((block) => (
-                <BlockView key={block.key} block={block} />
-              ))}
+              {/* Hidden runs get the shared Disclosure so revealing them eases
+                  open like every other collapse, instead of jumping the
+                  reading position by hundreds of pixels in one frame. */}
+              {running.segments.map((segment) =>
+                segment.hidden ? (
+                  <Disclosure
+                    key={`hidden:${segment.blocks[0].key}`}
+                    open={showEarlier}
+                    className="turn-work-hidden"
+                  >
+                    {segment.blocks.map((block) => (
+                      <BlockView key={block.key} block={block} />
+                    ))}
+                  </Disclosure>
+                ) : (
+                  <Fragment key={`shown:${segment.blocks[0].key}`}>
+                    {segment.blocks.map((block) => (
+                      <BlockView key={block.key} block={block} />
+                    ))}
+                  </Fragment>
+                )
+              )}
             </div>
           )
         ) : null}
@@ -165,7 +212,7 @@ export const TurnView = memo(function TurnView({
 
         {turn.result && settled && turn.result.costDeltaUsd !== undefined && work.length > 0 ? (
           <div className="turn-footer tnum">
-            {formatDuration(duration)} · {formatCost(turn.result.costDeltaUsd)}
+            {durationText} · {formatCost(turn.result.costDeltaUsd)}
           </div>
         ) : null}
       </div>

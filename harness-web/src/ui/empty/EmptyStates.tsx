@@ -3,6 +3,7 @@ import type { CliStatus, SessionSummary } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
 import { AlertTriangle, ArrowUp, Folder, History, Refresh } from "../Icons";
 import { displayDirectory, formatRelativeTime } from "../format";
+import { CopyButton } from "../primitives/CopyButton";
 
 function ClaudeMark() {
   return (
@@ -82,7 +83,10 @@ export function EmptyState({
 
       <div className="empty-meta">
         {workingDirectory ? (
-          <span className="dir-chip mono" title={workingDirectory}>
+          <span
+            className="dir-chip mono"
+            title={`${copy("supermux.harness.empty.workingIn")} ${workingDirectory}`}
+          >
             <Folder size={11} />
             <span className="dir-chip-text">{displayDirectory(workingDirectory)}</span>
           </span>
@@ -120,7 +124,7 @@ export function EmptyState({
             >
               <span className="recent-title">{session.title}</span>
               <span className="recent-meta tnum">
-                {formatRelativeTime(session.updatedAtMs)}
+                {formatRelativeTime(session.updatedAtMs, copy)}
                 {session.gitBranch ? ` · ${session.gitBranch}` : ""}
               </span>
             </button>
@@ -133,6 +137,7 @@ export function EmptyState({
 
 export function NoCliState({ status, onRetry }: { status: CliStatus; onRetry: () => void }) {
   const copy = useCopy();
+  const install = copy("supermux.harness.nocli.install");
   return (
     <div className="empty is-error">
       <span className="empty-icon-warn">
@@ -140,7 +145,12 @@ export function NoCliState({ status, onRetry }: { status: CliStatus; onRetry: ()
       </span>
       <h2 className="empty-headline">{copy("supermux.harness.nocli.headline")}</h2>
       <p className="empty-sub">{copy("supermux.harness.nocli.body")}</p>
-      <pre className="install-cmd mono">{copy("supermux.harness.nocli.install")}</pre>
+      {/* Copying this line into a terminal is the one action this screen exists
+          for, so it gets the same affordance every other code surface has. */}
+      <div className="install-row">
+        <pre className="install-cmd mono">{install}</pre>
+        <CopyButton text={install} className="install-copy" />
+      </div>
       {status.error ? <p className="empty-error mono">{status.error}</p> : null}
       <p className="empty-note">{copy("supermux.harness.nocli.searchedPath")}</p>
       <div className="empty-actions">
@@ -161,7 +171,16 @@ export function NoCliState({ status, onRetry }: { status: CliStatus; onRetry: ()
   );
 }
 
-export function ExitedState({ error, onRestart }: { error?: string; onRestart: () => void }) {
+export function ExitedState({
+  error,
+  startFailed,
+  onRestart
+}: {
+  error?: string;
+  /** The process never came up at all, which is a different story to tell. */
+  startFailed?: boolean;
+  onRestart: () => void;
+}) {
   const copy = useCopy();
   return (
     <div className="exited-state">
@@ -169,7 +188,11 @@ export function ExitedState({ error, onRestart }: { error?: string; onRestart: (
         <AlertTriangle size={14} />
       </span>
       <div>
-        <div className="exited-title">{copy("supermux.harness.exited.headline")}</div>
+        <div className="exited-title">
+          {startFailed
+            ? copy("supermux.harness.error.startFailed")
+            : copy("supermux.harness.exited.headline")}
+        </div>
         <div className="exited-body">{error ?? copy("supermux.harness.exited.body")}</div>
       </div>
       <button type="button" className="btn btn-tiny" onClick={onRestart}>

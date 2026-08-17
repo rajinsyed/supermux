@@ -8,7 +8,7 @@ import {
   withTurn,
   type TranscriptIndex
 } from "./helpers";
-import type { Block, ImageAttachment, TranscriptModel, Turn } from "./types";
+import type { Block, ImageAttachment, NoticeErrorKind, TranscriptModel, Turn } from "./types";
 
 export function createModel(): TranscriptModel {
   return {
@@ -151,12 +151,13 @@ export function appendNotice(
   level: "info" | "warning" | "error",
   text: string,
   key: string,
-  turnIndex?: number
+  turnIndex?: number,
+  errorKind?: NoticeErrorKind
 ): TranscriptModel {
   const target = turnIndex ?? model.turns.length - 1;
   if (target < 0) return model;
   const turn = model.turns[target];
-  const notice: Block = { kind: "notice", key, level, text };
+  const notice: Block = { kind: "notice", key, level, text, errorKind };
   return withTurn(model, target, {
     ...turn,
     blocks: turn.blocks.concat(notice),

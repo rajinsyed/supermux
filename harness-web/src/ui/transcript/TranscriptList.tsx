@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Turn } from "../../model/types";
-import { useCopy } from "../CopyContext";
+import { plural, useCopy } from "../CopyContext";
 import { ArrowDown } from "../Icons";
 import { Timeline } from "./Timeline";
 import { TurnView } from "./TurnView";
@@ -64,7 +64,13 @@ export function TranscriptList({
 
   return (
     <div className={`transcript-wrap${showPill ? " has-pill" : ""}`}>
-      <div className="harness-scroll transcript" ref={scrollRef} tabIndex={-1}>
+      <div
+        className="harness-scroll transcript"
+        ref={scrollRef}
+        tabIndex={-1}
+        role="log"
+        aria-label={copy("supermux.harness.a11y.transcript")}
+      >
         <div className="transcript-inner" ref={contentRef}>
           {header}
           {hidden > 0 ? (
@@ -74,7 +80,12 @@ export function TranscriptList({
                 className="link-btn"
                 onClick={() => setVisible((current) => Math.min(turns.length, current + WINDOW_STEP))}
               >
-                {copy("supermux.harness.turn.earlierMessages", { count: hidden })}
+                {plural(
+                  copy,
+                  hidden,
+                  "supermux.harness.turn.earlierMessagesOne",
+                  "supermux.harness.turn.earlierMessages"
+                )}
               </button>
             </div>
           ) : null}

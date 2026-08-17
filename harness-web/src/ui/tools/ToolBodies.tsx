@@ -1,6 +1,7 @@
+import { getBridge } from "../../bridge";
 import type { JsonObject, StructuredPatchHunk } from "../../protocol/types";
 import type { ToolBlock } from "../../model/types";
-import { useCopy, type CopyFn } from "../CopyContext";
+import { plural, useCopy, type CopyFn } from "../CopyContext";
 import { languageForPath, shortenPath } from "../format";
 import { AnsiOutput } from "../primitives/AnsiOutput";
 import { CodeBlock } from "../primitives/CodeBlock";
@@ -43,6 +44,28 @@ export function BashBody({ block }: { block: ToolBlock }) {
   );
 }
 
+/**
+ * The card already knows the absolute path and the bridge already opens files in
+ * a preview panel; without this the reader has to retype the path by hand.
+ */
+function OpenFile({ path }: { path: string | undefined }) {
+  const copy = useCopy();
+  if (!path) return null;
+  // The card head already prints the path, so this row is the action alone.
+  return (
+    <div className="tool-file-row">
+      <button
+        type="button"
+        className="link-btn"
+        title={path}
+        onClick={() => void getBridge().openFile({ path }).catch(() => undefined)}
+      >
+        {copy("supermux.harness.tool.openFile")}
+      </button>
+    </div>
+  );
+}
+
 export function EditBody({ block }: { block: ToolBlock }) {
   const path = str(block.input.file_path) ?? str(block.structured?.filePath);
   const hunks = patchOf(block.structured);
@@ -55,6 +78,7 @@ export function EditBody({ block }: { block: ToolBlock }) {
         <div className="tool-body">
           {oldText ? <CodeBlock code={oldText} language={language} dense maxLines={8} /> : null}
           {newText ? <CodeBlock code={newText} language={language} dense maxLines={8} /> : null}
+          <OpenFile path={path} />
         </div>
       );
     }
@@ -63,6 +87,7 @@ export function EditBody({ block }: { block: ToolBlock }) {
   return (
     <div className="tool-body">
       <DiffView hunks={hunks} language={language} />
+      <OpenFile path={path} />
     </div>
   );
 }
@@ -75,6 +100,7 @@ export function WriteBody({ block }: { block: ToolBlock }) {
     return (
       <div className="tool-body">
         <DiffView hunks={hunks} language={language} />
+        <OpenFile path={path} />
       </div>
     );
   }
@@ -83,6 +109,7 @@ export function WriteBody({ block }: { block: ToolBlock }) {
   return (
     <div className="tool-body">
       <CodeBlock code={content} language={language} filename={path ? shortenPath(path, 2) : undefined} maxLines={18} />
+      <OpenFile path={path} />
     </div>
   );
 }
@@ -100,6 +127,7 @@ export function ReadBody({ block }: { block: ToolBlock }) {
         filename={path ? shortenPath(path, 2) : undefined}
         maxLines={16}
       />
+      <OpenFile path={path} />
     </div>
   );
 }
@@ -215,13 +243,27 @@ export function McpBody({ block }: { block: ToolBlock }) {
 }
 
 export function GenericBody({ block }: { block: ToolBlock }) {
+  const copy = useCopy();
   const input = JSON.stringify(block.input, null, 2);
   const output = block.resultText;
+  // The fallback renderer knows nothing about the tool, so the one thing it can
+  // still do for a reader is say which half of the dump is which.
   return (
     <div className="tool-body">
-      {input !== "{}" ? <CodeBlock code={input} language="json" dense maxLines={12} /> : null}
+      {input !== "{}" ? (
+        <>
+          <div className="tool-section-label">{copy("supermux.harness.tool.rawInput")}</div>
+          <CodeBlock code={input} language="json" dense maxLines={12} />
+        </>
+      ) : null}
       {output ? (
-        <AnsiOutput text={output} maxLines={14} tone={block.status === "error" ? "error" : "default"} />
+        <>
+          <div className="tool-section-label">{copy("supermux.harness.tool.rawOutput")}</div>
+          <AnsiOutput text={output} maxLines={14} tone={block.status === "error" ? "error" : "default"} />
+        </>
+      ) : null}
+      {input === "{}" && !output ? (
+        <div className="tool-waiting mono">{copy("supermux.harness.tool.noOutput")}</div>
       ) : null}
     </div>
   );
@@ -234,19 +276,50 @@ export function toolMetrics(block: ToolBlock, copy: CopyFn): string[] {
   const file = structured.file as JsonObject | undefined;
   const totalLines = num(file?.totalLines) ?? num(structured.numLines);
   if (totalLines !== undefined) {
-    out.push(copy("supermux.harness.tool.linesRead", { count: totalLines }));
+    out.push(
+      plural(copy, totalLines, "supermux.harness.tool.linesReadOne", "supermux.harness.tool.linesRead")
+    );
   }
   const numFiles = num(structured.numFiles);
   if (numFiles !== undefined) {
-    out.push(copy("supermux.harness.tool.filesFound", { count: numFiles }));
+    out.push(
+      plural(copy, numFiles, "supermux.harness.tool.filesFoundOne", "supermux.harness.tool.filesFound")
+    );
   }
-  const numMatches = num(structured.numMatches) ?? num(structured.total_deferred_tools);
+  // `numMatches` counts what a search FOUND; `total_deferred_tools` counts the
+  // catalogue it searched. Folding the second into the first is how a
+  // zero-match ToolSearch came to advertise "19 matches" beside a body reading
+  // "No matching deferred tools found".
+  const numMatches = num(structured.numMatches) ?? countOf(structured.matches);
   if (numMatches !== undefined) {
-    out.push(copy("supermux.harness.tool.matchesFound", { count: numMatches }));
+    out.push(
+      plural(copy, numMatches, "supermux.harness.tool.matchesFoundOne", "supermux.harness.tool.matchesFound")
+    );
+  }
+  const searched = num(structured.total_deferred_tools);
+  if (searched !== undefined) {
+    out.push(
+      plural(copy, searched, "supermux.harness.tool.toolsSearchedOne", "supermux.harness.tool.toolsSearched")
+    );
+  }
+  const results = countOf(structured.results);
+  if (results !== undefined) {
+    out.push(
+      plural(
+        copy,
+        results,
+        "supermux.harness.tool.searchResultsOne",
+        "supermux.harness.tool.searchResults"
+      )
+    );
   }
   const duration = num(structured.durationMs);
   if (duration !== undefined) {
     out.push(copy("supermux.harness.tool.durationMs", { count: duration }));
   }
   return out;
+}
+
+function countOf(value: unknown): number | undefined {
+  return Array.isArray(value) ? value.length : undefined;
 }

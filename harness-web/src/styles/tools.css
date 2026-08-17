@@ -189,6 +189,22 @@
   color: var(--text-faint);
 }
 
+/* A footer action, not a header: the diff or the file body is what the reader
+   came for, so it stays at the top of the card. */
+.tool-file-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -2px -4px 0 0;
+}
+
+.tool-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
 .result-list,
 .web-list {
   list-style: none;

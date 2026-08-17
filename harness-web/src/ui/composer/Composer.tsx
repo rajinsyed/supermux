@@ -83,7 +83,10 @@ export function Composer(props: ComposerProps) {
       if (!node) return;
       const prefix = props.draft.slice(0, popover.start);
       const suffix = props.draft.slice(caret);
-      const insert = popover.kind === "command" ? `${value} ` : `@${value} `;
+      // `popover.start` points AT the sigil, so the replaced range swallows it:
+      // both branches must put their own back, or an accepted `/compact`
+      // reaches the CLI as prose the model answers instead of a slash command.
+      const insert = popover.kind === "command" ? `/${value} ` : `@${value} `;
       const next = `${prefix}${insert}${suffix}`;
       props.onDraftChange(next);
       reset();
@@ -184,13 +187,15 @@ export function Composer(props: ComposerProps) {
     for (const file of files) readImage(file, (attachment) => setImages((prev) => prev.concat(attachment)));
   }, []);
 
-  const placeholder = props.planPending
-    ? copy("supermux.harness.composer.placeholderPlan")
-    : props.awaitingPermission
-      ? copy("supermux.harness.composer.placeholderWaiting")
-      : props.running
-        ? copy("supermux.harness.composer.placeholderRunning")
-        : copy("supermux.harness.composer.placeholder");
+  const placeholder = props.disabled
+    ? copy("supermux.harness.composer.placeholderNoCli")
+    : props.planPending
+      ? copy("supermux.harness.composer.placeholderPlan")
+      : props.awaitingPermission
+        ? copy("supermux.harness.composer.placeholderWaiting")
+        : props.running
+          ? copy("supermux.harness.composer.placeholderRunning")
+          : copy("supermux.harness.composer.placeholder");
 
   const canSend = props.draft.trim().length > 0 || images.length > 0;
   const tokens = approximateTokens(props.draft);
@@ -235,13 +240,22 @@ export function Composer(props: ComposerProps) {
         </div>
       ) : null}
 
-      {popover.kind && popover.items.length > 0 ? (
+      {popover.kind ? (
         <div className="popover" role="listbox">
           <div className="popover-title">
             {popover.kind === "command"
               ? copy("supermux.harness.composer.commandTitle")
               : copy("supermux.harness.composer.mentionTitle")}
           </div>
+          {/* A trigger that silently shows nothing reads as a broken popover.
+              Saying so costs one row and answers the question the user has. */}
+          {popover.items.length === 0 ? (
+            <div className="popover-empty">
+              {popover.kind === "command"
+                ? copy("supermux.harness.composer.commandEmpty")
+                : copy("supermux.harness.composer.mentionEmpty")}
+            </div>
+          ) : null}
           {popover.items.map((item, index) => (
             <button
               key={item.id}

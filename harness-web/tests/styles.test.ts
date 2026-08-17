@@ -104,3 +104,66 @@ describe("disclosures animate rather than snap", () => {
     expect(ruleFor(sheet, ".plan-body")).toMatch(/transition:\s*max-height 200ms var\(--ease\)/);
   });
 });
+
+describe("the user copy button pins to its bubble", () => {
+  test("the absolute rule outranks .icon-btn's position: relative", async () => {
+    // `.icon-btn { position: relative }` lives in cards.css, which index.css
+    // imports AFTER transcript.css. At equal specificity the later rule wins, so
+    // a bare `.user-msg-copy` selector loses and the button falls into the flow,
+    // adding ~26px of dead height to every user bubble.
+    const transcript = await css("transcript.css");
+    const cards = await css("cards.css");
+    expect(ruleFor(transcript, ".user-msg .user-msg-copy")).toMatch(/position:\s*absolute/);
+    expect(transcript).not.toMatch(/\n\.user-msg-copy\s*\{/);
+    expect(ruleFor(cards, ".icon-btn")).toMatch(/position:\s*relative/);
+    // Order matters for the fix to hold: assert the import order it relies on.
+    const index = await css("index.css");
+    expect(index.indexOf("transcript.css")).toBeLessThan(index.indexOf("cards.css"));
+  });
+});
+
+describe("the status indicator never touches the status text", () => {
+  test("both indicator variants end the same distance before the text origin", async () => {
+    const sheet = await css("dock.css");
+    const base = await css("base.css");
+    const indent = Number(/--dock-indent:\s*(\d+)px/.exec(base)![1]);
+    // Working dots are 3 × 4px + 2 × 3px gaps = 18px; the idle dot is 6px.
+    const dotsLeft = Number(
+      /\.status-strip > \.working-dots\s*\{[^}]*var\(--dock-indent\) - (\d+)px/.exec(sheet)![1]
+    );
+    const dotLeft = Number(
+      /\.status-strip > \.status-dot\s*\{[^}]*var\(--dock-indent\) - (\d+)px/.exec(sheet)![1]
+    );
+    expect(indent - dotsLeft + 18).toBe(indent - 6);
+    expect(indent - dotLeft + 6).toBe(indent - 6);
+  });
+});
+
+describe("the header survives a thin split pane", () => {
+  test("both groups can shrink, so neither overprints the other", async () => {
+    const sheet = await css("layout.css");
+    // A flex item without `min-width: 0` refuses to shrink below its content
+    // and simply overprints its neighbour — which is how the title button came
+    // to sit on top of the cost badge below ~440px.
+    for (const selector of [".header-left", ".header-right", ".menu"]) {
+      expect(ruleFor(sheet, selector)).toMatch(/min-width:\s*0/);
+    }
+    expect(ruleFor(sheet, ".header-left")).toMatch(/flex:\s*1 1 auto/);
+    expect(ruleFor(sheet, ".header-right")).toMatch(/flex:\s*0 1 auto/);
+  });
+
+  test("the elastic content ellipsizes rather than overflowing", async () => {
+    const sheet = await css("layout.css");
+    expect(ruleFor(sheet, ".title-btn")).toMatch(/overflow:\s*hidden/);
+    expect(ruleFor(sheet, ".pill-label")).toMatch(/text-overflow:\s*ellipsis/);
+    expect(ruleFor(sheet, ".pill-label")).toMatch(/min-width:\s*0/);
+    expect(ruleFor(sheet, ".mode-pill,\n.model-pill,\n.icon-pill")).toMatch(/min-width:\s*0/);
+  });
+
+  test("the cost badge steps aside before the title has to", async () => {
+    // The same figure is printed in every turn footer; the session title is
+    // nowhere else in the pane.
+    const sheet = await css("layout.css");
+    expect(sheet).toMatch(/@media \(max-width: 460px\)[\s\S]*?\.cost-badge[\s\S]*?display: none/);
+  });
+});

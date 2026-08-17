@@ -13,12 +13,21 @@ export function TodoStrip({ todos }: { todos: TodoItem[] }) {
   const current = todos.find((todo) => todo.status === "in_progress");
 
   return (
-    <div className={`todo-strip${open ? " is-open" : ""}`}>
+    // The strip is one dense line above the composer, so its name lives in the
+    // region label rather than costing a visible column of chrome.
+    <div
+      className={`todo-strip${open ? " is-open" : ""}`}
+      role="region"
+      aria-label={copy("supermux.harness.todo.title")}
+    >
       <button
         type="button"
         className="todo-strip-head"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-label={
+          open ? copy("supermux.harness.todo.collapse") : copy("supermux.harness.todo.expand")
+        }
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         <span className="todo-segments" aria-hidden="true">

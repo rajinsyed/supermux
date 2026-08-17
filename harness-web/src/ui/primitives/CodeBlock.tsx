@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useCopy } from "../CopyContext";
+import { plural, useCopy } from "../CopyContext";
 import { Wrap } from "../Icons";
 import { highlightToHtml } from "../highlight";
 import { CopyButton } from "./CopyButton";
@@ -59,7 +59,12 @@ export function CodeBlock({
       </pre>
       {clipped ? (
         <button type="button" className="code-block-more" onClick={() => setExpanded(true)}>
-          {copy("supermux.harness.tool.showMore", { count: lines.length - limit })}
+          {plural(
+            copy,
+            lines.length - limit,
+            "supermux.harness.tool.showMoreOne",
+            "supermux.harness.tool.showMore"
+          )}
         </button>
       ) : null}
       {limit > 0 && expanded && lines.length > limit ? (

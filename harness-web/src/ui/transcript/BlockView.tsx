@@ -1,5 +1,6 @@
 import { memo } from "react";
-import type { Block } from "../../model/types";
+import type { CopyKey } from "../../copyKeys";
+import type { Block, NoticeErrorKind } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { AlertTriangle, Info, Scissors, XCircle } from "../Icons";
 import { formatTokens } from "../format";
@@ -30,13 +31,22 @@ function DividerView({ block }: { block: Extract<Block, { kind: "divider" }> }) 
   );
 }
 
+const ERROR_TITLES: Record<NoticeErrorKind, CopyKey> = {
+  auth: "supermux.harness.error.auth",
+  billing: "supermux.harness.error.billing",
+  rateLimit: "supermux.harness.error.rateLimit",
+  generic: "supermux.harness.error.generic"
+};
+
 function NoticeView({ block }: { block: Extract<Block, { kind: "notice" }> }) {
+  const copy = useCopy();
   const Icon = block.level === "error" ? XCircle : block.level === "warning" ? AlertTriangle : Info;
+  const title = block.title ?? (block.errorKind ? copy(ERROR_TITLES[block.errorKind]) : undefined);
   return (
     <div className={`notice is-${block.level}`}>
       <Icon size={13} className="notice-icon" />
       <div className="notice-body">
-        {block.title ? <div className="notice-title">{block.title}</div> : null}
+        {title ? <div className="notice-title">{title}</div> : null}
         <Markdown text={block.text} />
       </div>
     </div>

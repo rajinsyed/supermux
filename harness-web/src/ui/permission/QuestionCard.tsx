@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PendingPermission } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { Check, Sparkle } from "../Icons";
@@ -47,6 +47,7 @@ export function QuestionCard({
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
   const cardRef = useRef<HTMLElement>(null);
+  const headingId = useId();
   // Set when auto-advance moves the active question, so focus follows the card
   // instead of being left wherever the pointer/composer put it.
   const claimFocus = useRef(true);
@@ -136,14 +137,20 @@ export function QuestionCard({
   ).length;
 
   return (
-    <section className="question-card" role="alertdialog" aria-live="assertive" ref={cardRef}>
+    <section
+      className="question-card"
+      role="alertdialog"
+      aria-live="assertive"
+      aria-labelledby={headingId}
+      ref={cardRef}
+    >
       <header className="question-head">
         <span className="question-icon">
           <Sparkle size={13} />
         </span>
         <div className="question-title">
           <span className="question-badge">{copy("supermux.harness.question.badge")}</span>
-          <h3>
+          <h3 id={headingId}>
             {request.title ?? request.display_name ?? copy("supermux.harness.question.title")}
           </h3>
         </div>
@@ -205,6 +212,7 @@ export function QuestionCard({
                   })}
                   <input
                     className="question-other"
+                    aria-label={copy("supermux.harness.question.other")}
                     placeholder={copy("supermux.harness.question.otherPlaceholder")}
                     value={other[question.question] ?? ""}
                     onChange={(event) =>

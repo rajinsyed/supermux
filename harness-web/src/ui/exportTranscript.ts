@@ -61,7 +61,7 @@ export function exportTranscript(model: TranscriptModel, copy: CopyFn): string {
     renderBlocks(turn.blocks, 0, out);
     if (turn.result) {
       out.push(
-        `_${formatDuration(turn.result.durationMs)} · ${formatCost(turn.result.costDeltaUsd)}_`
+        `_${formatDuration(turn.result.durationMs, copy)} · ${formatCost(turn.result.costDeltaUsd)}_`
       );
       out.push("");
     }

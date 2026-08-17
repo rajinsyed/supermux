@@ -38,12 +38,16 @@
   transform: translateY(-50%);
 }
 
+/* Both indicators end 6px before the shared text origin, so the label keeps the
+   same optical gap whichever one is showing. The dots cluster is 18px wide
+   (3 × 4px + 2 × 3px) and the idle dot 6px; anchoring the cluster at the gutter
+   left its third dot touching the first glyph of the status text. */
 .status-strip > .working-dots {
-  left: var(--gutter);
+  left: calc(var(--gutter) + var(--dock-indent) - 24px);
 }
 
 .status-strip > .status-dot {
-  left: calc(var(--gutter) + 6px);
+  left: calc(var(--gutter) + var(--dock-indent) - 12px);
 }
 
 .status-dot {
@@ -292,8 +296,9 @@
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  /* 1px border + 17px padding puts the caret on the dock's shared text origin. */
-  padding: 6px 6px 6px 17px;
+  /* 1px border + 23px padding puts the caret on the dock's shared text origin
+     (--gutter + --dock-indent). */
+  padding: 6px 6px 6px 23px;
   border-radius: var(--r-lg);
   border: 1px solid var(--border-strong);
   background: var(--input-bg);
@@ -481,6 +486,12 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.popover-empty {
+  padding: 5px 8px 7px;
+  font-size: 11.5px;
   color: var(--text-faint);
 }
 

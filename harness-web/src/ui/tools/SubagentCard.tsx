@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import type { Block, ToolBlock } from "../../model/types";
-import { useCopy } from "../CopyContext";
+import { plural, useCopy } from "../CopyContext";
 import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Layers } from "../Icons";
 import { formatCompactDuration, formatTokens } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
@@ -30,8 +30,17 @@ export const SubagentCard = memo(function SubagentCard({
   const type = info.subagentType ?? (block.input.subagent_type as string);
   const metrics: string[] = [];
   if (info.totalTokens) metrics.push(copy("supermux.harness.subagent.tokens", { tokens: formatTokens(info.totalTokens) }));
-  if (info.toolUses) metrics.push(copy("supermux.harness.subagent.toolUses", { count: info.toolUses }));
-  if (info.durationMs) metrics.push(formatCompactDuration(info.durationMs));
+  if (info.toolUses) {
+    metrics.push(
+      plural(
+        copy,
+        info.toolUses,
+        "supermux.harness.subagent.toolUsesOne",
+        "supermux.harness.subagent.toolUses"
+      )
+    );
+  }
+  if (info.durationMs) metrics.push(formatCompactDuration(info.durationMs, copy));
 
   const activity = running ? info.activity ?? info.lastToolName : info.summary;
 
@@ -44,6 +53,7 @@ export const SubagentCard = memo(function SubagentCard({
         <span className="subagent-identity">
           <span className="subagent-name">{description}</span>
           <span className="subagent-meta">
+            <span className="tool-badge is-quiet">{copy("supermux.harness.subagent.badge")}</span>
             {type ? <span className="subagent-type">{type}</span> : null}
             {info.background ? (
               <span className="tool-badge is-quiet">{copy("supermux.harness.subagent.background")}</span>

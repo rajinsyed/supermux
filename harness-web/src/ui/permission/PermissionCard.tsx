@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { PendingPermission } from "../../model/types";
 import type { PermissionSuggestion, StructuredPatchHunk } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
@@ -34,6 +34,7 @@ export function PermissionCard({
   const cardRef = useRef<HTMLElement>(null);
   const allowRef = useRef<HTMLButtonElement>(null);
   const denyRef = useRef<HTMLButtonElement>(null);
+  const headingId = useId();
   const always = alwaysAllowOffer(request, copy);
 
   useEffect(() => {
@@ -83,14 +84,26 @@ export function PermissionCard({
   useCardKeys(cardRef, onKey);
 
   return (
-    <section className="permission-card" role="alertdialog" aria-live="assertive" ref={cardRef}>
+    <section
+      className="permission-card"
+      role="alertdialog"
+      aria-live="assertive"
+      aria-labelledby={headingId}
+      aria-describedby={`${headingId}-desc`}
+      ref={cardRef}
+    >
+      {/* An alertdialog announces its name and description; the headline alone
+          says which command, not that a decision is being demanded. */}
+      <p id={`${headingId}-desc`} className="sr-only">
+        {copy("supermux.harness.a11y.permissionAlert")}
+      </p>
       <header className="permission-head">
         <span className="permission-icon">
           <Shield size={13} />
         </span>
         <div className="permission-title">
           <span className="permission-badge">{copy("supermux.harness.permission.title")}</span>
-          <h3>{permissionHeadline(request)}</h3>
+          <h3 id={headingId}>{permissionHeadline(request)}</h3>
           {request.decision_reason ? (
             <p className="permission-reason">{request.decision_reason}</p>
           ) : null}
@@ -196,7 +209,10 @@ export function PermissionCard({
                 {copy("supermux.harness.permission.allowAlways")}
                 <kbd>A</kbd>
               </span>
-              <span className="btn-sub mono">{always.rule}</span>
+              <span className="btn-sub">
+                {copy("supermux.harness.permission.allowAlwaysRule", { rule: always.rule })}
+                {` · ${always.destination}`}
+              </span>
             </button>
           ) : null}
           <span className="permission-spacer" />

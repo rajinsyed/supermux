@@ -1,4 +1,5 @@
 import { memo, useState, type ReactNode } from "react";
+import type { CopyKey } from "../../copyKeys";
 import type { ToolBlock, ToolStatus } from "../../model/types";
 import { bashExitCode } from "../../model/toolStatus";
 import { useCopy } from "../CopyContext";
@@ -53,11 +54,34 @@ const ICONS: Record<ToolFamily, (props: { size?: number }) => ReactNode> = {
   generic: Brain
 };
 
+const STATUS_LABELS: Record<ToolStatus, CopyKey> = {
+  pending: "supermux.harness.tool.pending",
+  running: "supermux.harness.tool.running",
+  success: "supermux.harness.tool.succeeded",
+  error: "supermux.harness.tool.failed",
+  denied: "supermux.harness.tool.denied",
+  aborted: "supermux.harness.tool.aborted"
+};
+
+/** The only outcome signal on a folded row was an icon with no accessible text. */
 function StatusMark({ status }: { status: ToolStatus }) {
-  if (status === "running" || status === "pending") return <Spinner size={12} />;
-  if (status === "error") return <XCircle size={13} className="mark-error" />;
-  if (status === "denied" || status === "aborted") return <AlertTriangle size={13} className="mark-warn" />;
-  return <CheckCircle size={13} className="mark-ok" />;
+  const copy = useCopy();
+  const label = copy(STATUS_LABELS[status]);
+  const mark =
+    status === "running" || status === "pending" ? (
+      <Spinner size={12} />
+    ) : status === "error" ? (
+      <XCircle size={13} className="mark-error" />
+    ) : status === "denied" || status === "aborted" ? (
+      <AlertTriangle size={13} className="mark-warn" />
+    ) : (
+      <CheckCircle size={13} className="mark-ok" />
+    );
+  return (
+    <span role="img" aria-label={label} title={label}>
+      {mark}
+    </span>
+  );
 }
 
 function bodyFor(block: ToolBlock, family: ToolFamily): ReactNode {
@@ -104,23 +128,25 @@ function badgesFor(block: ToolBlock, family: ToolFamily, copy: ReturnType<typeof
       if (stats.added > 0) {
         badges.push(
           <span key="add" className="tool-badge is-add tnum">
-            +{stats.added}
+            {copy("supermux.harness.tool.linesAdded", { count: stats.added })}
           </span>
         );
       }
       if (stats.removed > 0) {
         badges.push(
           <span key="del" className="tool-badge is-del tnum">
-            −{stats.removed}
+            {copy("supermux.harness.tool.linesRemoved", { count: stats.removed })}
           </span>
         );
       }
     }
     const type = block.structured?.type;
-    if (type === "create") {
+    if (type === "create" || type === "update") {
       badges.push(
-        <span key="new" className="tool-badge">
-          {copy("supermux.harness.tool.created")}
+        <span key="type" className="tool-badge">
+          {copy(
+            type === "create" ? "supermux.harness.tool.created" : "supermux.harness.tool.updated"
+          )}
         </span>
       );
     }
@@ -166,7 +192,7 @@ export const ToolCard = memo(function ToolCard({
   const subtitleFull = toolSubtitleFull(block.name, block.input);
   const badges = badgesFor(block, family, copy);
   const elapsed = block.endedAtMs !== undefined ? block.endedAtMs - block.startedAtMs : 0;
-  const duration = elapsed >= 250 ? formatCompactDuration(elapsed) : undefined;
+  const duration = elapsed >= 250 ? formatCompactDuration(elapsed, copy) : undefined;
 
   return (
     <div className={`tool-card is-${block.status}${open ? " is-open" : ""}`} data-family={family}>

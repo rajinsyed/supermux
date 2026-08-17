@@ -59,6 +59,7 @@ export function applyEvent(
         runPhase: "running",
         runId: event.runId,
         exitError: undefined,
+        startFailed: undefined,
         revision: model.revision + 1
       };
     case "runExited": {
@@ -67,6 +68,7 @@ export function applyEvent(
         ...closed,
         runPhase: "exited",
         exitError: event.error,
+        startFailed: undefined,
         activity: { ...closed.activity, sessionState: "idle", status: null },
         pending: [],
         revision: closed.revision + 1
@@ -280,6 +282,15 @@ export function applyLocalAction(
       return {
         ...model,
         session: { ...model.session, permissionMode: action.mode },
+        revision: model.revision + 1
+      };
+    case "startFailed":
+      return {
+        ...closeOpenTurns(model, nowMs, "error"),
+        runPhase: "exited",
+        exitError: action.error,
+        startFailed: true,
+        activity: { ...model.activity, sessionState: "idle", status: null },
         revision: model.revision + 1
       };
     case "dismissBanner":

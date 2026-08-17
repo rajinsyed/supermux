@@ -94,6 +94,18 @@
   gap: 6px;
 }
 
+/* The revealed run of earlier work is its own animated box, so it inherits the
+   parent column's rhythm rather than collapsing into one undivided slab. */
+.turn-work-hidden {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.turn-work-hidden:not(:last-child) {
+  margin-bottom: 6px;
+}
+
 .turn-work::before {
   content: "";
   position: absolute;
@@ -175,7 +187,11 @@
   margin-top: 3px;
 }
 
-.user-msg-copy {
+/* `.icon-btn` sets `position: relative` and cards.css is imported after this
+   sheet, so at equal specificity the button wins and this affordance falls back
+   into the flow — adding ~26px of dead height to every user bubble. Scoping the
+   override to `.user-msg` outranks it. */
+.user-msg .user-msg-copy {
   position: absolute;
   top: 5px;
   right: 5px;

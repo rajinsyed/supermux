@@ -64,6 +64,34 @@ describe("work-group overflow while a turn runs", () => {
     expect(container.querySelectorAll(".turn-work .tool-card.is-running").length).toBe(1);
   });
 
+  test("the hidden work is wrapped in the shared animated disclosure", () => {
+    const turn = streamingTurn();
+    const { container } = mount(turn);
+
+    // Round 2's Disclosure primitive drives every other collapse in the pane.
+    // A bare conditional swap here took the todos turn from 346px to 1072px in
+    // one frame, directly under the reading position.
+    expect(container.querySelector(".turn-work-hidden")).toBeNull();
+
+    fireEvent.click(container.querySelector(".work-overflow")!);
+
+    const revealed = container.querySelectorAll(".turn-work > .turn-work-hidden");
+    expect(revealed.length).toBeGreaterThan(0);
+    expect(revealed[0].children.length).toBeGreaterThan(0);
+  });
+
+  test("revealed work keeps its original order in the run", () => {
+    const turn = streamingTurn();
+    const { container } = mount(turn);
+    fireEvent.click(container.querySelector(".work-overflow")!);
+
+    const rendered = Array.from(
+      container.querySelectorAll<HTMLElement>(".turn-work .tool-card, .turn-work .subagent-card")
+    );
+    const expected = turn.blocks.filter((b) => b.kind === "tool");
+    expect(rendered.length).toBe(expected.length);
+  });
+
   test("a settled turn still shows all of its work behind the fold header", () => {
     const turn = streamingTurn();
     const { container } = mount({ ...turn, state: "complete", endedAtMs: turn.startedAtMs + 4000 });

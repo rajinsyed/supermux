@@ -13,7 +13,14 @@ import {
 } from "./blocks";
 import { asString, blockAtPath, findTurnIndex, isTaskTool, withTurn, type TranscriptIndex } from "./helpers";
 import { appendNotice, ensureTurn, nextBlockKey } from "./turns";
-import type { Block, TextBlock, ThinkingBlock, ToolBlock, TranscriptModel } from "./types";
+import type {
+  Block,
+  NoticeErrorKind,
+  TextBlock,
+  ThinkingBlock,
+  ToolBlock,
+  TranscriptModel
+} from "./types";
 
 export function applyAssistant(
   model: TranscriptModel,
@@ -40,7 +47,8 @@ export function applyAssistant(
       typeof line.error === "string"
         ? line.error
         : line.error.message ?? line.error.type ?? "Model error";
-    next = appendNotice(next, "error", text, `err:${line.uuid ?? next.revision}`, turnIndex);
+    const kind = errorKindOf(typeof line.error === "string" ? undefined : line.error.type);
+    next = appendNotice(next, "error", text, `err:${line.uuid ?? next.revision}`, turnIndex, kind);
     const turn = next.turns[turnIndex];
     return withTurn(next, turnIndex, {
       ...settleTurn(turn, nowMs),
@@ -59,6 +67,24 @@ export function applyAssistant(
     next = withTurn(next, turnIndex, { ...marked, blocks: flagAborted(marked.blocks, line.uuid) });
   }
   return next;
+}
+
+/**
+ * The CLI's `error.type` is a machine token; the transcript needs a heading a
+ * reader can act on ("Usage limit reached" tells you to wait or switch model,
+ * "rate_limit" does not).
+ */
+function errorKindOf(type: string | undefined): NoticeErrorKind {
+  switch (type) {
+    case "authentication_failed":
+      return "auth";
+    case "billing_error":
+      return "billing";
+    case "rate_limit":
+      return "rateLimit";
+    default:
+      return "generic";
+  }
 }
 
 function flagAborted(blocks: Block[], uuid: string | undefined): Block[] {

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useCopy } from "../CopyContext";
 import { formatDuration } from "../format";
 
 /**
@@ -39,13 +40,14 @@ export function Elapsed({
   suffix?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const copy = useCopy();
 
   useEffect(() => {
     let last = "";
     const write = () => {
       const node = ref.current;
       if (!node) return;
-      const next = `${prefix ?? ""}${formatDuration(Date.now() - startedAtMs)}${suffix ?? ""}`;
+      const next = `${prefix ?? ""}${formatDuration(Date.now() - startedAtMs, copy)}${suffix ?? ""}`;
       // Only touch the DOM when the rendered second actually changed.
       if (next === last) return;
       last = next;
@@ -58,7 +60,7 @@ export function Elapsed({
       subscribers.delete(write);
       releaseTicker();
     };
-  }, [startedAtMs, prefix, suffix]);
+  }, [copy, startedAtMs, prefix, suffix]);
 
   return <span ref={ref} className={className} />;
 }

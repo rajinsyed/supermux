@@ -1,18 +1,35 @@
-export function formatDuration(ms: number | undefined): string {
-  if (ms === undefined || !Number.isFinite(ms) || ms < 0) return "0s";
-  const totalSeconds = Math.round(ms / 1000);
-  if (totalSeconds < 60) return `${totalSeconds}s`;
+import type { CopyFn } from "./CopyContext";
+
+/**
+ * Every unit label here is a catalog string, not a hardcoded suffix: Japanese
+ * writes durations as 2分14秒, so "2m 14s" assembled in code can never be
+ * translated no matter what the catalog says.
+ */
+export function formatDuration(ms: number | undefined, copy: CopyFn): string {
+  const total = ms === undefined || !Number.isFinite(ms) || ms < 0 ? 0 : ms;
+  const totalSeconds = Math.round(total / 1000);
+  if (totalSeconds < 60) return copy("supermux.harness.time.seconds", { value: totalSeconds });
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  if (minutes < 60) return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+  if (minutes < 60) {
+    return copy("supermux.harness.time.minutes", {
+      value: minutes,
+      seconds: seconds.toString().padStart(2, "0")
+    });
+  }
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ${(minutes % 60).toString().padStart(2, "0")}m`;
+  return copy("supermux.harness.time.hours", {
+    value: hours,
+    minutes: (minutes % 60).toString().padStart(2, "0")
+  });
 }
 
-export function formatCompactDuration(ms: number | undefined): string {
+export function formatCompactDuration(ms: number | undefined, copy: CopyFn): string {
   if (ms === undefined || !Number.isFinite(ms)) return "";
-  if (ms < 1000) return `${Math.max(1, Math.round(ms))}ms`;
-  return formatDuration(ms);
+  if (ms < 1000) {
+    return copy("supermux.harness.tool.durationMs", { count: Math.max(1, Math.round(ms)) });
+  }
+  return formatDuration(ms, copy);
 }
 
 export function formatTokens(count: number | undefined): string {
@@ -30,15 +47,15 @@ export function formatCost(usd: number | undefined): string {
   return `$${usd.toFixed(2)}`;
 }
 
-export function formatRelativeTime(ms: number, nowMs = Date.now()): string {
+export function formatRelativeTime(ms: number, copy: CopyFn, nowMs = Date.now()): string {
   const delta = Math.max(0, nowMs - ms);
   const minutes = Math.floor(delta / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return copy("supermux.harness.time.justNow");
+  if (minutes < 60) return copy("supermux.harness.time.minutesAgo", { value: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return copy("supermux.harness.time.hoursAgo", { value: hours });
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return copy("supermux.harness.time.daysAgo", { value: days });
   return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 

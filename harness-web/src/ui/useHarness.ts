@@ -128,11 +128,17 @@ export function useHarness(store: HarnessStore): HarnessController {
           model: context?.restore?.model,
           permissionMode: context?.restore?.permissionMode
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           started.current = false;
+          // A silent failure here leaves the composer accepting messages that go
+          // nowhere; the exited state carries a Restart button.
+          store.dispatch({
+            kind: "startFailed",
+            error: error instanceof Error ? error.message : undefined
+          });
         });
     },
-    [bridge, context]
+    [bridge, context, store]
   );
 
   const send = useCallback(

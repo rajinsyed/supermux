@@ -31,11 +31,14 @@ export function StatusStrip({
   model,
   runPhase,
   activity,
+  cliUnavailable,
   onRestart
 }: {
   model: TranscriptModel;
   runPhase: RunPhase;
   activity: ActivityState;
+  /** No CLI on disk: the pane cannot start, so the strip must not read "Ready". */
+  cliUnavailable: boolean;
   onRestart: () => void;
 }) {
   const copy = useCopy();
@@ -47,11 +50,14 @@ export function StatusStrip({
   let content: React.ReactNode = copy("supermux.harness.status.idle");
   let live = false;
 
-  if (runPhase === "exited" && model.exitError) {
+  if (cliUnavailable) {
+    tone = "error";
+    content = copy("supermux.harness.status.noCli");
+  } else if (runPhase === "exited") {
     tone = "error";
     content = (
       <>
-        <span>{model.exitError}</span>
+        <span>{model.exitError ?? copy("supermux.harness.status.exited")}</span>
         <button type="button" className="btn btn-tiny" onClick={onRestart}>
           <Refresh size={11} />
           {copy("supermux.harness.status.restart")}

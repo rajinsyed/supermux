@@ -37,8 +37,10 @@ body {
   --gutter: 22px;
   /* One text origin for the whole dock: the status label, the textarea's own
      text, and the hint row all start exactly this far in from the gutter, with
-     the status indicator centred in the reserved space to their left. */
-  --dock-indent: 18px;
+     the status indicator centred in the reserved space to their left. It is 24
+     rather than 18 because the widest indicator — the three working dots — is
+     18px, and 18px of space left its last dot touching the status text. */
+  --dock-indent: 24px;
   /* Assistant content sits in a single column whose left edge never moves; the
      work rail is drawn inside this indent rather than adding to it. */
   --rail-indent: 13px;

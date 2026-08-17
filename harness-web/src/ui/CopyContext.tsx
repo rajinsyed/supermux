@@ -23,3 +23,13 @@ export function useCopy(): CopyFn {
     [dict]
   );
 }
+
+/**
+ * English inflects on count and Japanese does not, so a single "{count} earlier
+ * tool calls" template cannot serve both — and single-tool turns are the common
+ * case, which is exactly when the shared template reads wrong. Each counted
+ * string therefore owns a one-form and an other-form key.
+ */
+export function plural(copy: CopyFn, count: number, one: CopyKey, other: CopyKey): string {
+  return copy(count === 1 ? one : other, { count });
+}

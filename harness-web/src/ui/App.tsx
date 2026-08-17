@@ -226,7 +226,11 @@ function AppBody({
             <>
               {permissionPane}
               {model.runPhase === "exited" && model.turns.length > 0 ? (
-                <ExitedState error={model.exitError} onRestart={() => harness.restart()} />
+                <ExitedState
+                  error={model.exitError}
+                  startFailed={model.startFailed}
+                  onRestart={() => harness.restart()}
+                />
               ) : null}
             </>
           }
@@ -243,6 +247,7 @@ function AppBody({
           model={model}
           runPhase={model.runPhase}
           activity={model.activity}
+          cliUnavailable={cliUnavailable}
           onRestart={() => harness.restart()}
         />
         <Composer

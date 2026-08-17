@@ -33,10 +33,16 @@ export function BannerStack({
               <span className="banner-title">{banner.title}</span>
               {banner.retry ? (
                 <span className="banner-detail tnum">
-                  {copy("supermux.harness.banner.retryAttempt", {
-                    attempt: banner.retry.attempt,
-                    max: banner.retry.maxRetries ?? "?"
-                  })}
+                  {banner.retry.retryDelayMs
+                    ? copy("supermux.harness.status.retrying", {
+                        seconds: Math.max(1, Math.round(banner.retry.retryDelayMs / 1000)),
+                        attempt: banner.retry.attempt,
+                        max: banner.retry.maxRetries ?? "?"
+                      })
+                    : copy("supermux.harness.banner.retryAttempt", {
+                        attempt: banner.retry.attempt,
+                        max: banner.retry.maxRetries ?? "?"
+                      })}
                 </span>
               ) : banner.detail ? (
                 <span className="banner-detail">{banner.detail}</span>

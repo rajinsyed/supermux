@@ -151,6 +151,39 @@ describe("PlanCard keyboard", () => {
   });
 });
 
+describe("approval cards are named for a screen reader", () => {
+  // An `alertdialog` inherits `dialog`'s name-required rule. Unnamed, the
+  // assertive interruption announces as "dialog" and the user is asked to
+  // authorise a shell command with no idea which one.
+  const cases: Array<[string, React.ReactElement]> = [
+    ["permission", <PermissionCard pending={pendingFrom(fixtures.permission)} queueCount={0} onDecide={() => {}} />],
+    ["question", <QuestionCard pending={pendingFrom(fixtures.question)} onDecide={() => {}} />],
+    ["plan", <PlanCard pending={pendingFrom(fixtures.plan)} onDecide={() => {}} />]
+  ];
+
+  for (const [name, node] of cases) {
+    test(`the ${name} card's alertdialog points at its own heading`, () => {
+      const { container } = mount(node);
+      const dialog = container.querySelector('[role="alertdialog"]')!;
+      const labelledby = dialog.getAttribute("aria-labelledby");
+      expect(labelledby).toBeTruthy();
+      const heading = container.querySelector(`#${CSS.escape(labelledby!)}`);
+      expect(heading).not.toBeNull();
+      expect(heading!.tagName).toBe("H3");
+      expect((heading!.textContent ?? "").trim().length).toBeGreaterThan(0);
+    });
+  }
+
+  test("the permission card also describes what is being asked", () => {
+    const { container } = mount(cases[0][1]);
+    const dialog = container.querySelector('[role="alertdialog"]')!;
+    const describedby = dialog.getAttribute("aria-describedby")!;
+    expect(container.querySelector(`#${CSS.escape(describedby)}`)!.textContent).toBe(
+      "Claude needs permission to continue"
+    );
+  });
+});
+
 describe("PermissionCard keyboard still works", () => {
   const pending = pendingFrom(fixtures.permission);
 

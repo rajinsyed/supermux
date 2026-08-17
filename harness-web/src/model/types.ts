@@ -88,11 +88,15 @@ export interface DividerBlock {
   preTokens?: number;
 }
 
+/** Classified model errors the CLI reports, so the view can title them. */
+export type NoticeErrorKind = "auth" | "billing" | "rateLimit" | "generic";
+
 export interface NoticeBlock {
   kind: "notice";
   key: string;
   level: "info" | "warning" | "error";
   title?: string;
+  errorKind?: NoticeErrorKind;
   text: string;
 }
 
@@ -231,6 +235,8 @@ export interface TranscriptModel {
   runPhase: RunPhase;
   runId?: string;
   exitError?: string;
+  /** The process never started, as opposed to starting and later exiting. */
+  startFailed?: boolean;
   stderrTail: string[];
   revision: number;
 }
@@ -243,6 +249,7 @@ export type LocalAction =
   | { kind: "setTitle"; title: string }
   | { kind: "setModel"; model: string; effort?: EffortLevel }
   | { kind: "setPermissionMode"; mode: PermissionMode }
+  | { kind: "startFailed"; error?: string }
   | { kind: "dismissBanner"; id: string }
   | { kind: "toggleFold"; turnId: string; folded: boolean }
   | { kind: "reset" };

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { PendingPermission } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { Download, Map as MapIcon } from "../Icons";
@@ -24,6 +24,7 @@ export function PlanCard({
   const [expanded, setExpanded] = useState(plan.split("\n").length <= 24);
   const cardRef = useRef<HTMLElement>(null);
   const primary = useRef<HTMLButtonElement>(null);
+  const headingId = useId();
 
   useEffect(() => {
     primary.current?.focus();
@@ -62,14 +63,20 @@ export function PlanCard({
   useCardKeys(cardRef, onKey);
 
   return (
-    <section className="plan-card" role="alertdialog" aria-live="assertive" ref={cardRef}>
+    <section
+      className="plan-card"
+      role="alertdialog"
+      aria-live="assertive"
+      aria-labelledby={headingId}
+      ref={cardRef}
+    >
       <header className="plan-head">
         <span className="plan-icon">
           <MapIcon size={13} />
         </span>
         <div className="plan-title">
           <span className="plan-badge">{copy("supermux.harness.plan.badge")}</span>
-          <h3>{request.title ?? copy("supermux.harness.plan.title")}</h3>
+          <h3 id={headingId}>{request.title ?? copy("supermux.harness.plan.title")}</h3>
         </div>
         <CopyButton text={plan} label={copy("supermux.harness.plan.copy")} />
         <button

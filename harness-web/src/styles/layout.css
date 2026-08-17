@@ -30,19 +30,35 @@
   flex: 1 1 auto;
 }
 
+/* Neither group may overrun the other, so both carry `min-width: 0` (without it
+   a flex item refuses to shrink below its content and simply overprints its
+   neighbour). The right group shrinks only after the left has given up its
+   own slack, which is what `flex-shrink` 2 vs 1 encodes: below ~440px the
+   title button used to overprint the cost badge and the folder glyph. */
 .header-right {
   display: flex;
   align-items: center;
   gap: 5px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* The pills are the right group's only elastic content: their labels ellipsize
+   so the icon, the effort tag, and the chevron survive at any width. */
+.pill-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The title shrinks before the working-directory chip: the chip is already at
    its shortest useful form, the title is not. */
 .title-btn {
   max-width: 320px;
-  min-width: 6ch;
+  min-width: 3ch;
   flex: 1 1 auto;
+  overflow: hidden;
   padding: 3px 6px;
   margin-left: -6px;
   border-radius: var(--r-sm);
@@ -121,6 +137,16 @@
   color: var(--text-muted);
   background: var(--surface-sunken);
   border: 1px solid var(--border-faint);
+  flex: 0 0 auto;
+}
+
+/* In a thin split pane the title is worth more than a duplicate: the same cost
+   figure is printed in every turn footer, so it goes before the title has to
+   ellipsize down to a few characters. */
+@media (max-width: 460px) {
+  .header-right .cost-badge {
+    display: none;
+  }
 }
 
 /* ---------- pills & menus ---------- */
@@ -132,6 +158,8 @@
   align-items: center;
   gap: 5px;
   height: 26px;
+  min-width: 0;
+  max-width: 100%;
   padding: 0 8px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border);
@@ -191,6 +219,19 @@
 
 .menu {
   position: relative;
+  min-width: 0;
+}
+
+/* The mode and model menus are what give the header its slack; the two
+   icon-only menus and the context ring are already at their minimum. */
+.header-right > .menu:not(.menu-sessions) {
+  flex: 0 1 auto;
+}
+
+.menu-trigger {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .menu-pop {

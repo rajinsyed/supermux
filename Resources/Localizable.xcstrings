@@ -273915,23 +273915,6 @@
         }
       }
     },
-    "supermux.harness.subagent.launched" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Launched {count} subagents"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} 個のサブエージェントを起動"
-          }
-        }
-      }
-    },
     "supermux.harness.subagent.showTranscript" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -274680,23 +274663,6 @@
         }
       }
     },
-    "supermux.harness.turn.hideWork" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hide work"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作業内容を隠す"
-          }
-        }
-      }
-    },
     "supermux.harness.turn.interrupted" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -274761,23 +274727,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "折りたたむ"
-          }
-        }
-      }
-    },
-    "supermux.harness.turn.showWork" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show work"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作業内容を表示"
           }
         }
       }
@@ -275118,6 +275067,210 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ターン {seq}"
+          }
+        }
+      }
+    },
+    "supermux.harness.composer.placeholderNoCli" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install the Claude Code CLI to start"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code CLI をインストールして開始してください"
+          }
+        }
+      }
+    },
+    "supermux.harness.status.noCli" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code CLI not found"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code CLI が見つかりません"
+          }
+        }
+      }
+    },
+    "supermux.harness.subagent.toolUsesOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} tool"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} ツール"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.filesFoundOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} file"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} ファイル"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.linesReadOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} line"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} 行"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.matchesFoundOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} match"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} 件一致"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.searchResultsOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} result"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} 件の結果"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.showMoreOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show {count} more line"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "さらに {count} 行を表示"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.toolsSearched" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} tools searched"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} 件のツールを検索"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.toolsSearchedOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} tool searched"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} 件のツールを検索"
+          }
+        }
+      }
+    },
+    "supermux.harness.turn.earlierMessagesOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} earlier message"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前のメッセージ {count} 件"
+          }
+        }
+      }
+    },
+    "supermux.harness.turn.previousToolCallsOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} earlier tool call"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前のツール呼び出し {count} 件"
           }
         }
       }
