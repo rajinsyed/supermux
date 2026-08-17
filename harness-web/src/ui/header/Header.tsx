@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CopyKey } from "../../copyKeys";
-import { activeModelFor } from "../../model/helpers";
+import { resolveModel } from "../../model/helpers";
 import type { SessionMeta, UsageTotals } from "../../model/types";
 import type {
   ContextUsage,
@@ -183,15 +183,19 @@ export function Header(props: HeaderProps) {
   }, [editing]);
 
   const title = session.title ?? copy("supermux.harness.app.untitledSession");
-  const activeModel = activeModelFor(session);
-  const modelName = activeModel?.displayName ?? session.model ?? copy("supermux.harness.header.model");
+  const menuModels = modelMenuSource(session, props.cachedModels);
+  // ONE resolution for the pill, the checked row, and the effort submenu. The
+  // live catalog is authoritative when a process is up; before the first start
+  // `session.models` is empty and only the cached catalog can resolve anything,
+  // so a pill reading `activeModelFor(session)` alone printed the raw selector
+  // the user had just picked ("opus") beside a menu that had a "Opus 5" row
+  // checked. Same catalog, same binary — it resolves the pre-start selection
+  // exactly as well as the live one.
+  const activeRow = resolveModel(session, menuModels.models);
+  const modelName = activeRow?.displayName ?? session.model ?? copy("supermux.harness.header.model");
   // The chip must never outlive the capability it describes: a model that has no
   // effort levels shows no effort tag, whatever the session last carried.
-  const effort = clampEffort(activeModel, session.effort);
-  const menuModels = modelMenuSource(session, props.cachedModels);
-  // The live catalog resolves the active row; a cached one is the same catalog
-  // from the same binary, so it resolves the pre-start selection just as well.
-  const activeRow = activeModel ?? activeModelFor({ models: menuModels.models, model: session.model });
+  const effort = clampEffort(activeRow, session.effort);
 
   const filtered = props.sessions.filter((item) =>
     sessionQuery.trim().length === 0
@@ -471,8 +475,13 @@ export function Header(props: HeaderProps) {
               <MenuItem
                 icon={<Bolt size={12} />}
                 onClick={() => {
+                  // Focus back to the More trigger BEFORE the dialog mounts: the
+                  // dialog captures whatever holds focus so it can return it on
+                  // close, and this row is about to unmount with the popover.
+                  // Without the handover the dialog captures a detached node and
+                  // closing it drops focus onto <body>.
+                  close(true);
                   props.onOpenBinarySettings();
-                  close();
                 }}
               >
                 {copy("supermux.harness.header.binary")}

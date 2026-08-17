@@ -21,7 +21,15 @@ export function Menu({
   label
 }: {
   trigger: (open: boolean) => ReactNode;
-  children: (close: () => void) => ReactNode;
+  /**
+   * `close(true)` hands focus back to this menu's trigger. Rows that OPEN
+   * something say so, because the row itself unmounts with the popover: a dialog
+   * launched from a menu has no surviving element to return focus to when it
+   * closes, and focus lands on `<body>` — out of the app entirely. Rows that
+   * merely act (compact, clear, new session) leave focus alone, so the next
+   * printable key still reaches the composer.
+   */
+  children: (close: (restoreFocus?: boolean) => void) => ReactNode;
   align?: "start" | "end";
   className?: string;
   label: string;
@@ -92,7 +100,7 @@ export function Menu({
           ref={pop}
           onKeyDown={onPopKeyDown}
         >
-          {children(() => close(false))}
+          {children((restoreFocus = false) => close(restoreFocus))}
         </div>
       ) : null}
     </div>
