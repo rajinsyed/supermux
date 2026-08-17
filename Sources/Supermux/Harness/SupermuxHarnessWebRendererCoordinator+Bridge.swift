@@ -274,13 +274,72 @@ extension SupermuxHarnessWebRendererCoordinator {
     }
 
     private func postNotificationIfUnfocused(title: String, body: String) {
-        guard !isPanelFocused || webView?.window?.isKeyWindow != true else { return }
-        TerminalMutationBus.shared.enqueueNotification(
-            tabId: workspaceId,
-            surfaceId: panelId,
+        deliverHarnessNotification(title: title, subtitle: "", body: body, category: nil)
+    }
+
+    func postTurnCompleteNotificationIfUnfocused(_ frame: SupermuxHarnessResultFrame) {
+        let subtitle: String
+        if frame.isError {
+            subtitle = String(
+                localized: "supermux.harness.notification.turnFailed",
+                defaultValue: "Claude hit an error"
+            )
+        } else {
+            subtitle = String(
+                localized: "supermux.harness.notification.turnComplete",
+                defaultValue: "Claude finished responding"
+            )
+        }
+        deliverHarnessNotification(
+            title: String(localized: "supermux.harness.notification.title", defaultValue: "Claude"),
+            subtitle: subtitle,
+            body: frame.result.map { String($0.prefix(180)) } ?? "",
+            // Error results always deliver, mirroring the terminal hook's
+            // "error alerts always deliver" rule.
+            category: frame.isError ? nil : .turnComplete
+        )
+    }
+
+    func postPermissionNotificationIfUnfocused(toolName: String) {
+        let subtitle = toolName.isEmpty
+            ? String(
+                localized: "supermux.harness.notification.permissionNeeded",
+                defaultValue: "Claude needs your approval"
+            )
+            : String(
+                format: String(
+                    localized: "supermux.harness.notification.permissionNeededFormat",
+                    defaultValue: "Claude wants to use %@"
+                ),
+                toolName
+            )
+        deliverHarnessNotification(
+            title: String(localized: "supermux.harness.notification.title", defaultValue: "Claude"),
+            subtitle: subtitle,
+            body: "",
+            category: .needsPermission
+        )
+    }
+
+    /// The same policy gate, delivery path, and unread-badge store the
+    /// terminal's Claude Code hooks reach through `notify_target_async`:
+    /// `AgentNotificationDelivery` applies the user's per-category settings and
+    /// the notification store handles focus suppression, the sidebar unread
+    /// badge, and the system banner.
+    private func deliverHarnessNotification(
+        title: String,
+        subtitle: String,
+        body: String,
+        category: AgentNotifyCategory?
+    ) {
+        _ = AgentNotificationDelivery().enqueue(
+            workspaceID: workspaceId,
+            surfaceID: panelId,
             title: title,
-            subtitle: "",
+            subtitle: subtitle,
             body: body,
+            category: category,
+            pending: false,
             coalesces: true
         )
     }

@@ -48,7 +48,6 @@ function AppBody({
 }) {
   const copy = useCopy();
   const { model, context } = harness;
-  const notifiedTurns = useRef(0);
   const [binaryOpen, setBinaryOpen] = useState(false);
   const [rewindTarget, setRewindTarget] = useState<RewindTarget | undefined>(undefined);
   /**
@@ -68,28 +67,11 @@ function AppBody({
     model.pending.length
   ]);
 
-  useEffect(() => {
-    const settled = model.turns.filter((turn) => turn.state !== "streaming").length;
-    if (settled > notifiedTurns.current && notifiedTurns.current > 0 && document.hidden) {
-      harness.bridge
-        .notify({
-          title: copy("supermux.harness.app.title"),
-          body: model.session.title ?? copy("supermux.harness.turn.complete")
-        })
-        .catch(() => undefined);
-    }
-    notifiedTurns.current = settled;
-  }, [copy, harness.bridge, model.session.title, model.turns]);
-
-  useEffect(() => {
-    if (model.pending.length === 0 || !document.hidden) return;
-    harness.bridge
-      .notify({
-        title: copy("supermux.harness.app.title"),
-        body: copy("supermux.harness.permission.needed")
-      })
-      .catch(() => undefined);
-  }, [copy, harness.bridge, model.pending.length]);
+  // Turn-complete and permission notifications are posted by the NATIVE side
+  // from protocol frames, through the same policy gate and unread-badge store
+  // the terminal's Claude Code hooks use. A web-side `document.hidden` gate
+  // never fired for an embedded WKWebView (the page is "visible" even with the
+  // app in the background), which is why the pane showed no badge or banner.
 
   const pending = model.pending[0];
 

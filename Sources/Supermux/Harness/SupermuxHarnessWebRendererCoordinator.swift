@@ -67,6 +67,12 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         controller.pendingUserInputSink = { [weak self] needsInput in
             self?.onPendingUserInputChanged?(needsInput)
         }
+        controller.turnCompletedSink = { [weak self] frame in
+            self?.postTurnCompleteNotificationIfUnfocused(frame)
+        }
+        controller.permissionPromptSink = { [weak self] toolName in
+            self?.postPermissionNotificationIfUnfocused(toolName: toolName)
+        }
         controller.restoreStateRetirementSink = { [weak self] in
             self?.onRestoreStateRetired?()
         }

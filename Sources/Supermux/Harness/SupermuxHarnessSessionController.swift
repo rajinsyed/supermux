@@ -25,6 +25,8 @@ final class SupermuxHarnessSessionController {
     var runningStateSink: ((Bool) -> Void)?
     var titleSink: ((String?) -> Void)?
     var pendingUserInputSink: ((Bool) -> Void)?
+    var turnCompletedSink: ((SupermuxHarnessResultFrame) -> Void)?
+    var permissionPromptSink: ((String) -> Void)?
     var restoreStateRetirementSink: (() -> Void)?
 
     private(set) var workingDirectory: String?
@@ -798,11 +800,12 @@ final class SupermuxHarnessSessionController {
         if case .system(let frame)? = line.frame {
             consumeSystemFrame(frame)
         }
-        if case .result? = line.frame {
+        if case .result(let frame)? = line.frame {
             // The result frame is the CLI's only reliable end-of-turn signal
             // (`session_state_changed` never arrives from the real CLI), the
             // same boundary the terminal's Stop hook fires on.
             setTurnActive(false)
+            turnCompletedSink?(frame)
         }
         eventSink?(["kind": "protocol", "line": line.object.rawValue])
         emitPendingUserInputStateIfChanged()
@@ -822,10 +825,14 @@ final class SupermuxHarnessSessionController {
     /// Reports whether any can_use_tool request is waiting on the user, feeding
     /// the same needs-input indicator terminal tabs show for prompts.
     private func emitPendingUserInputStateIfChanged() {
-        let pending = controlRouter?.pendingPermissionRequests.isEmpty == false
+        let requests = controlRouter?.pendingPermissionRequests ?? []
+        let pending = !requests.isEmpty
         guard pending != lastEmittedPendingUserInput else { return }
         lastEmittedPendingUserInput = pending
         pendingUserInputSink?(pending)
+        if pending, let request = requests.first {
+            permissionPromptSink?(request.displayName ?? request.toolName ?? "")
+        }
     }
 
     /// Adopts the CLI's own topic title, matching the terminal's native tab
