@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { getBridge, installReceiver, type HarnessBridge } from "../bridge";
+import { getBridge, installReceiver, type HarnessBridge, type StartParams } from "../bridge";
 import { HarnessStore } from "../model/store";
 import type { ImageAttachment, TranscriptModel } from "../model/types";
 import type {
@@ -7,6 +7,7 @@ import type {
   HarnessContext,
   HarnessTheme,
   PermissionMode,
+  RewindPreview,
   SessionSummary
 } from "../protocol/types";
 import { defaultDarkTheme } from "./theme";
@@ -21,6 +22,14 @@ function uuidv4(): string {
   });
 }
 
+export interface RewindRequest {
+  /** The user message being rewound TO; its text goes back in the composer. */
+  uuid: string;
+  text: string;
+  /** The uuid to resume the conversation AT — absent when this is message one. */
+  resumeAtUuid?: string;
+}
+
 export interface HarnessController {
   model: TranscriptModel;
   theme: HarnessTheme;
@@ -28,11 +37,17 @@ export interface HarnessController {
   sessions: SessionSummary[];
   bridge: HarnessBridge;
   draft: string;
+  /** A restart is in flight: the old process is down, the new one is not up. */
+  restarting: boolean;
   setDraft(text: string): void;
   send(text: string, images: ImageAttachment[]): void;
   interrupt(cancelQueued: boolean): void;
   cancelQueued(uuid: string): void;
   restart(resumeSessionId?: string, fork?: boolean): void;
+  newSession(): void;
+  openSessionInNewPane(sessionId: string): void;
+  rewindPreview(uuid: string): Promise<RewindPreview>;
+  rewind(request: RewindRequest, restoreFiles: boolean): Promise<void>;
   setModel(model: string, effort?: EffortLevel): void;
   setPermissionMode(mode: PermissionMode): void;
   cyclePermissionMode(): void;
@@ -47,6 +62,7 @@ export function useHarness(store: HarnessStore): HarnessController {
   const [context, setContext] = useState<HarnessContext | undefined>(undefined);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [draft, setDraftState] = useState("");
+  const [restarting, setRestarting] = useState(false);
   const started = useRef(false);
   const bridge = useMemo(() => getBridge(), []);
 
@@ -66,6 +82,11 @@ export function useHarness(store: HarnessStore): HarnessController {
         setContext(next);
         setTheme(next.theme);
         if (next.draft) setDraftState(next.draft);
+        // A catalog from a previous run of this binary, so the model menu has
+        // rows before the first process ever starts.
+        if (next.cachedModels && next.cachedModels.length > 0) {
+          store.dispatch({ kind: "cachedModels", models: next.cachedModels });
+        }
         const sessionId = next.restore?.sessionId;
         if (sessionId && restoredSessionId.current !== sessionId) {
           restoredSessionId.current = sessionId;
@@ -117,17 +138,40 @@ export function useHarness(store: HarnessStore): HarnessController {
     [bridge]
   );
 
+  /**
+   * A model picked before any process exists cannot be pushed with `set_model`
+   * — there is nothing to push it to — so it is held here and passed as the
+   * `model` parameter of the first start.
+   */
+  const pendingModel = useRef<{ model: string; effort?: EffortLevel } | undefined>(undefined);
+
+  /**
+   * Which session this pane is actually on. Tracked from the live init frame,
+   * with the restore snapshot only as the pre-first-start fallback: resuming
+   * `context.restore.sessionId` after the pane has moved on reopens whatever
+   * the panel was serialized with, not the conversation on screen.
+   */
+  const currentSessionId = useCallback(
+    (): string | undefined => store.getSnapshot().session.sessionId ?? context?.restore?.sessionId,
+    [context, store]
+  );
+
+  const startOptions = useCallback(
+    (params: StartParams): StartParams => ({
+      ...params,
+      model: params.model ?? pendingModel.current?.model ?? context?.restore?.model,
+      effort: params.effort ?? pendingModel.current?.effort,
+      permissionMode: params.permissionMode ?? context?.restore?.permissionMode
+    }),
+    [context]
+  );
+
   const ensureStarted = useCallback(
     async (resumeSessionId?: string, fork?: boolean) => {
       if (started.current && !resumeSessionId) return;
       started.current = true;
       await bridge
-        .start({
-          resumeSessionId: resumeSessionId ?? context?.restore?.sessionId,
-          forkSession: fork,
-          model: context?.restore?.model,
-          permissionMode: context?.restore?.permissionMode
-        })
+        .start(startOptions({ resumeSessionId: resumeSessionId ?? currentSessionId(), forkSession: fork }))
         .catch((error: unknown) => {
           started.current = false;
           // A silent failure here leaves the composer accepting messages that go
@@ -138,7 +182,7 @@ export function useHarness(store: HarnessStore): HarnessController {
           });
         });
     },
-    [bridge, context, store]
+    [bridge, currentSessionId, startOptions, store]
   );
 
   const send = useCallback(
@@ -156,9 +200,12 @@ export function useHarness(store: HarnessStore): HarnessController {
 
   const interrupt = useCallback(
     (cancelQueued: boolean) => {
+      // The CLI drops the queue when asked to; the chips have to go with it, or
+      // the pane keeps queueing behind messages that will never be sent.
+      if (cancelQueued) store.dispatch({ kind: "clearQueued" });
       bridge.interrupt({ cancelQueued }).catch(() => undefined);
     },
-    [bridge]
+    [bridge, store]
   );
 
   const cancelQueued = useCallback(
@@ -169,26 +216,107 @@ export function useHarness(store: HarnessStore): HarnessController {
     [bridge, store]
   );
 
+  /**
+   * The one path that swaps which session the pane is running. `bridge.restart`
+   * tears the live process down and awaits it before starting again — calling
+   * `start` while a process is up is what produced "A Claude session is already
+   * running" on every session pick and every New Session.
+   */
+  const runRestart = useCallback(
+    async (params: StartParams): Promise<void> => {
+      setRestarting(true);
+      started.current = true;
+      try {
+        const { runId } = await bridge.restart(startOptions(params));
+        // The native side emits its own runStarted; replaying it here is
+        // idempotent and is what clears a startFailed left by the attempt the
+        // user is retrying, without waiting on event delivery to repaint.
+        store.receive([{ kind: "runStarted", runId }]);
+        store.flushNow();
+      } catch (error: unknown) {
+        started.current = false;
+        store.dispatch({
+          kind: "startFailed",
+          error: error instanceof Error ? error.message : undefined
+        });
+        throw error;
+      } finally {
+        setRestarting(false);
+      }
+    },
+    [bridge, startOptions, store]
+  );
+
   const restart = useCallback(
     (resumeSessionId?: string, fork?: boolean) => {
-      started.current = false;
-      if (resumeSessionId) {
-        bridge
-          .loadSessionHistory({ sessionId: resumeSessionId })
-          .then((result) => {
-            store.dispatch({ kind: "reset" });
-            store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
-          })
-          .catch(() => undefined);
-      }
-      void ensureStarted(resumeSessionId, fork);
+      const target = resumeSessionId ?? currentSessionId();
+      const load = target
+        ? bridge
+            .loadSessionHistory({ sessionId: target })
+            .then((result) => {
+              store.dispatch({ kind: "reset" });
+              store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
+            })
+            .catch(() => undefined)
+        : Promise.resolve();
+      void load.then(() =>
+        runRestart({ resumeSessionId: target, forkSession: fork }).catch(() => undefined)
+      );
     },
-    [bridge, ensureStarted, store]
+    [bridge, currentSessionId, runRestart, store]
+  );
+
+  /** Explicitly NOT a resume: no session id goes down, and the pane is cleared. */
+  const newSession = useCallback(() => {
+    store.dispatch({ kind: "reset" });
+    restoredSessionId.current = undefined;
+    void runRestart({}).catch(() => undefined);
+  }, [runRestart, store]);
+
+  const openSessionInNewPane = useCallback(
+    (sessionId: string) => {
+      bridge.openSessionInNewPane({ sessionId }).catch(() => undefined);
+    },
+    [bridge]
+  );
+
+  const rewindPreview = useCallback(
+    (uuid: string) => bridge.rewindPreview({ userMessageUuid: uuid }),
+    [bridge]
+  );
+
+  const rewind = useCallback(
+    async (request: RewindRequest, restoreFiles: boolean) => {
+      setRestarting(true);
+      started.current = true;
+      try {
+        await bridge.rewind({
+          userMessageUuid: request.uuid,
+          restoreFiles,
+          resumeAtUuid: request.resumeAtUuid
+        });
+        // Only after the native side confirms: a failed rewind that had already
+        // deleted the turns locally would leave the pane showing less
+        // conversation than the session still has.
+        store.dispatch({ kind: "truncateBeforeUserMessage", uuid: request.uuid });
+        setDraftState(request.text);
+        bridge.saveDraft({ text: request.text }).catch(() => undefined);
+      } finally {
+        setRestarting(false);
+      }
+    },
+    [bridge, store]
   );
 
   const setModel = useCallback(
     (next: string, effort?: EffortLevel) => {
       store.dispatch({ kind: "setModel", model: next, effort });
+      if (!started.current) {
+        // Nothing to tell yet — it rides along on the first start instead.
+        pendingModel.current = { model: next, effort };
+        return;
+      }
+      pendingModel.current = { model: next, effort };
       bridge.setModel({ model: next, effort }).catch(() => undefined);
     },
     [bridge, store]
@@ -215,11 +343,16 @@ export function useHarness(store: HarnessStore): HarnessController {
     sessions,
     bridge,
     draft,
+    restarting,
     setDraft,
     send,
     interrupt,
     cancelQueued,
     restart,
+    newSession,
+    openSessionInNewPane,
+    rewindPreview,
+    rewind,
     setModel,
     setPermissionMode,
     cyclePermissionMode,
