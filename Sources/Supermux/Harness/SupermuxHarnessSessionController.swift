@@ -16,11 +16,25 @@ final class SupermuxHarnessSessionController {
     private var processSession: SupermuxHarnessProcessSession!
     private var controlRouter: SupermuxHarnessControlRouter?
     private let encoder = SupermuxHarnessProtocolEncoder()
+    private let binarySetting: SupermuxHarnessBinarySetting
+    private let modelCatalogStore: SupermuxHarnessModelCatalogStore
+    private let modelCatalogProbe: SupermuxHarnessModelCatalogProbe
+    private var modelCatalogProbeTask: Task<Void, Never>?
+    private var modelCatalogProbeID: UUID?
     private var isClosed = false
     private var isStartPending = false
     private var cachedCLIStatus: [String: Any]?
 
-    init(workingDirectory: String?, restoreState: SessionSupermuxHarnessPanelSnapshot?) {
+    init(
+        workingDirectory: String?,
+        restoreState: SessionSupermuxHarnessPanelSnapshot?,
+        defaults: UserDefaults = .standard,
+        fileManager: FileManager = .default,
+        modelCatalogProbe: SupermuxHarnessModelCatalogProbe? = nil
+    ) {
+        binarySetting = SupermuxHarnessBinarySetting(defaults: defaults, fileManager: fileManager)
+        modelCatalogStore = SupermuxHarnessModelCatalogStore(defaults: defaults)
+        self.modelCatalogProbe = modelCatalogProbe ?? SupermuxHarnessModelCatalogProbe()
         self.workingDirectory = workingDirectory ?? restoreState?.workingDirectory
         if var restored = restoreState {
             restored.workingDirectory = self.workingDirectory
@@ -55,21 +69,57 @@ final class SupermuxHarnessSessionController {
 
     func cliStatus() async -> [String: Any] {
         if let cachedCLIStatus { return cachedCLIStatus }
-        let configuredExecutablePaths = AgentExecutableResolver.cmuxConfiguredExecutablePaths()
-        let status: [String: Any] = await Task.detached(priority: .userInitiated) {
-            let resolver = AgentExecutableResolver(configuredExecutablePaths: configuredExecutablePaths)
-            do {
-                let plan = try resolver.resolve(.claude)
-                return ["available": true, "path": plan.executableURL.path]
-            } catch let error as AgentExecutableResolverError {
-                return ["available": false, "error": error.message]
-            } catch {
-                return ["available": false, "error": error.localizedDescription]
+        let status: [String: Any]
+        do {
+            let plan = try await resolveClaudeLaunchPlan()
+            var available: [String: Any] = [
+                "available": true,
+                "path": plan.executableURL.path,
+            ]
+            if let version = await Self.claudeVersion(
+                executablePath: plan.executableURL.path,
+                environment: plan.environment
+            ) {
+                available["version"] = version
             }
-        }.value
+            status = available
+        } catch let error as AgentExecutableResolverError {
+            status = ["available": false, "error": error.message]
+        } catch {
+            status = ["available": false, "error": error.localizedDescription]
+        }
         guard !isClosed else { return status }
         cachedCLIStatus = status
         return status
+    }
+
+    func contextBootstrap() async -> (cliStatus: [String: Any], cachedModels: [[String: Any]]?) {
+        let status = await cliStatus()
+        guard let binaryPath = status["path"] as? String else {
+            return (status, nil)
+        }
+        let cachedModels = modelCatalogStore.snapshot(forBinaryPath: binaryPath)?.models
+            .map(\.rawValue)
+        if cachedModels?.isEmpty != false {
+            startModelCatalogProbeIfNeeded(expectedBinaryPath: binaryPath)
+        }
+        return (status, cachedModels?.isEmpty == false ? cachedModels : nil)
+    }
+
+    func binarySettingState() async -> [String: Any] {
+        let status = await cliStatus()
+        var setting: [String: Any] = [:]
+        if let path = status["path"] as? String { setting["resolvedPath"] = path }
+        if let version = status["version"] as? String { setting["version"] = version }
+        if let error = status["error"] as? String { setting["error"] = error }
+        if let overridePath = binarySetting.overridePath { setting["overridePath"] = overridePath }
+        return setting
+    }
+
+    func setBinaryPath(_ path: String?) async throws -> [String: Any] {
+        try binarySetting.setPath(path)
+        invalidateBinaryCaches()
+        return await binarySettingState()
     }
 
     func invalidateCLIStatus() {
@@ -87,18 +137,91 @@ final class SupermuxHarnessSessionController {
         guard !processSession.isRunning, !isStartPending else {
             throw SupermuxHarnessBridgeError.sessionAlreadyRunning
         }
+        isStartPending = true
+        defer { isStartPending = false }
+        return try await startRun(
+            resumeSessionId: resumeSessionId,
+            resumeSessionAt: nil,
+            forkSession: forkSession,
+            model: model,
+            permissionMode: permissionMode,
+            effort: effort
+        )
+    }
+
+    func restart(
+        resumeSessionId: String?,
+        forkSession: Bool,
+        model: String?,
+        permissionMode: String?,
+        effort: String?
+    ) async throws -> String {
+        try await restartRun(
+            resumeSessionId: resumeSessionId,
+            resumeSessionAt: nil,
+            forkSession: forkSession,
+            model: model,
+            permissionMode: permissionMode,
+            effort: effort
+        )
+    }
+
+    private func restartRun(
+        resumeSessionId: String?,
+        resumeSessionAt: String?,
+        forkSession: Bool,
+        model: String?,
+        permissionMode: String?,
+        effort: String?
+    ) async throws -> String {
+        guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
+        guard !isStartPending else { throw SupermuxHarnessBridgeError.sessionAlreadyRunning }
+        isStartPending = true
+        defer { isStartPending = false }
+
+        let stoppedRunID = processSession.activeRunID
+        if let router = controlRouter {
+            await router.close(denialMessage: Self.stoppedDenialMessage)
+            if controlRouter === router {
+                controlRouter = nil
+            }
+        }
+        if let stoppedRunID, processSession.activeRunID == stoppedRunID {
+            do {
+                _ = try await processSession.terminateAndWait(timeout: 10)
+            } catch SupermuxHarnessProcessError.notRunning {
+                // The fully-drained lifecycle event won the race with the explicit wait.
+            } catch {
+                throw SupermuxHarnessBridgeError.startFailed(error.localizedDescription)
+            }
+        }
+        guard !processSession.isRunning else {
+            throw SupermuxHarnessBridgeError.sessionAlreadyRunning
+        }
+        return try await startRun(
+            resumeSessionId: resumeSessionId,
+            resumeSessionAt: resumeSessionAt,
+            forkSession: forkSession,
+            model: model,
+            permissionMode: permissionMode,
+            effort: effort
+        )
+    }
+
+    private func startRun(
+        resumeSessionId: String?,
+        resumeSessionAt: String?,
+        forkSession: Bool,
+        model: String?,
+        permissionMode: String?,
+        effort: String?
+    ) async throws -> String {
         guard let directoryPath = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
               !directoryPath.isEmpty else {
             throw SupermuxHarnessBridgeError.workingDirectoryUnavailable
         }
-        isStartPending = true
-        defer { isStartPending = false }
-
-        let configuredExecutablePaths = AgentExecutableResolver.cmuxConfiguredExecutablePaths()
-        let resolvedPlan = try await Task.detached(priority: .userInitiated) {
-            let resolver = AgentExecutableResolver(configuredExecutablePaths: configuredExecutablePaths)
-            return try resolver.resolve(.claude)
-        }.value
+        cancelModelCatalogProbe()
+        let resolvedPlan = try await resolveClaudeLaunchPlan()
         guard !isClosed, !processSession.isRunning else {
             throw SupermuxHarnessBridgeError.sessionAlreadyRunning
         }
@@ -107,6 +230,7 @@ final class SupermuxHarnessSessionController {
         options.model = model
         options.permissionMode = permissionMode.flatMap(SupermuxHarnessPermissionMode.init(rawValue:))
         options.resumeSessionID = resumeSessionId
+        options.resumeSessionAt = resumeSessionAt
         options.forkSession = forkSession
         options.effort = effort
         let plan = SupermuxHarnessLaunchPlan(
@@ -131,13 +255,21 @@ final class SupermuxHarnessSessionController {
 
         if let model { snapshot.model = model }
         if let permissionMode { snapshot.permissionMode = permissionMode }
-        if let resumeSessionId, !forkSession { snapshot.sessionId = resumeSessionId }
+        snapshot.sessionId = forkSession ? nil : resumeSessionId
         runningStateSink?(true)
         var event: [String: Any] = ["kind": "runStarted", "runId": started.runID]
         if let resumeSessionId { event["resumedSessionId"] = resumeSessionId }
         eventSink?(event)
-        Task { @MainActor [weak router] in
-            _ = try? await router?.issue(.initialize)
+        let binaryPath = resolvedPlan.executableURL.path
+        Task { @MainActor [weak self, weak router] in
+            guard let self, let router else { return }
+            do {
+                let payload = try await router.issue(.initialize)
+                guard !self.isClosed, self.controlRouter === router else { return }
+                self.consumeInitializeCatalog(payload, binaryPath: binaryPath)
+            } catch {
+                // The live protocol line is still forwarded; catalog persistence is best-effort.
+            }
         }
         return started.runID
     }
@@ -176,6 +308,60 @@ final class SupermuxHarnessSessionController {
         }
         guard processSession.activeRunID == stoppedRunID else { return }
         try? processSession.terminate()
+    }
+
+    func rewindPreview(userMessageUuid: String) async -> [String: Any] {
+        do {
+            let router = try await ensureProcessForRewind()
+            let payload = try await router.issue(
+                .rewindFiles(userMessageID: userMessageUuid, dryRun: true)
+            )
+            guard !isClosed, controlRouter === router else {
+                throw SupermuxHarnessBridgeError.sessionNotRunning
+            }
+            return Self.normalizedRewindPreview(payload)
+        } catch {
+            return [
+                "canRewind": false,
+                "filesChanged": [],
+                "insertions": 0,
+                "deletions": 0,
+                "error": Self.rewindFilesUnavailableMessage,
+            ]
+        }
+    }
+
+    func rewind(
+        userMessageUuid: String,
+        restoreFiles: Bool,
+        resumeAtUuid: String?
+    ) async throws -> String {
+        guard let sessionID = currentSessionID else {
+            throw SupermuxHarnessBridgeError.sessionUnavailableForRewind
+        }
+        if restoreFiles {
+            do {
+                let router = try await ensureProcessForRewind()
+                _ = try await router.issue(
+                    .rewindFiles(userMessageID: userMessageUuid, dryRun: false)
+                )
+                guard !isClosed, controlRouter === router else {
+                    throw SupermuxHarnessBridgeError.sessionNotRunning
+                }
+            } catch {
+                eventSink?(["kind": "stderr", "text": Self.rewindFilesUnavailableMessage])
+            }
+        }
+
+        let normalizedResumeAt = Self.normalized(resumeAtUuid)
+        return try await restartRun(
+            resumeSessionId: normalizedResumeAt == nil ? nil : sessionID,
+            resumeSessionAt: normalizedResumeAt,
+            forkSession: false,
+            model: snapshot.model,
+            permissionMode: snapshot.permissionMode,
+            effort: nil
+        )
     }
 
     func setModel(model: String, effort: String?) async throws {
@@ -324,6 +510,7 @@ final class SupermuxHarnessSessionController {
     func close() {
         guard !isClosed else { return }
         isClosed = true
+        cancelModelCatalogProbe()
         guard let router = controlRouter else {
             processSession.close()
             return
@@ -333,6 +520,114 @@ final class SupermuxHarnessSessionController {
             await router.close(denialMessage: Self.closedDenialMessage)
             processSession.close()
         }
+    }
+
+    private func resolveClaudeLaunchPlan() async throws -> AgentSessionLaunchPlan {
+        var configuredExecutablePaths = AgentExecutableResolver.cmuxConfiguredExecutablePaths()
+        if let overridePath = binarySetting.validOverridePath {
+            configuredExecutablePaths[.claude] = overridePath
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            let resolver = AgentExecutableResolver(
+                configuredExecutablePaths: configuredExecutablePaths
+            )
+            return try resolver.resolve(.claude)
+        }.value
+    }
+
+    private func cancelModelCatalogProbe() {
+        modelCatalogProbeTask?.cancel()
+        modelCatalogProbeTask = nil
+        modelCatalogProbeID = nil
+    }
+
+    private func startModelCatalogProbeIfNeeded(expectedBinaryPath: String) {
+        guard !isClosed, modelCatalogProbeTask == nil else { return }
+        let probeID = UUID()
+        modelCatalogProbeID = probeID
+        modelCatalogProbeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.modelCatalogProbeID == probeID {
+                    self.modelCatalogProbeTask = nil
+                    self.modelCatalogProbeID = nil
+                }
+            }
+            do {
+                let resolvedPlan = try await self.resolveClaudeLaunchPlan()
+                guard !Task.isCancelled,
+                      !self.isClosed,
+                      resolvedPlan.executableURL.path == expectedBinaryPath else {
+                    return
+                }
+                let probePlan = SupermuxHarnessLaunchPlan(
+                    executableURL: resolvedPlan.executableURL,
+                    workingDirectoryURL: self.workingDirectoryURL
+                        ?? FileManager.default.homeDirectoryForCurrentUser,
+                    environment: resolvedPlan.environment
+                )
+                let catalog = try await self.modelCatalogProbe.probe(plan: probePlan)
+                guard !Task.isCancelled, !self.isClosed else { return }
+                self.consumeInitializeCatalog(catalog, binaryPath: expectedBinaryPath)
+            } catch {
+                // Context remains usable without a catalog; the next pane load can probe again.
+            }
+        }
+    }
+
+    private func consumeInitializeCatalog(
+        _ payload: SupermuxHarnessJSONObject,
+        binaryPath: String
+    ) {
+        consumeInitializeCatalog(
+            SupermuxHarnessInitializeCatalog(response: payload),
+            binaryPath: binaryPath
+        )
+    }
+
+    private func consumeInitializeCatalog(
+        _ catalog: SupermuxHarnessInitializeCatalog,
+        binaryPath: String
+    ) {
+        try? modelCatalogStore.store(catalog.models, forBinaryPath: binaryPath)
+        guard !catalog.models.isEmpty else { return }
+        eventSink?([
+            "kind": "modelCatalog",
+            "models": catalog.models.map(\.rawValue),
+        ])
+    }
+
+    private func invalidateBinaryCaches() {
+        cachedCLIStatus = nil
+        cancelModelCatalogProbe()
+        modelCatalogStore.invalidateAll()
+    }
+
+    private func ensureProcessForRewind() async throws -> SupermuxHarnessControlRouter {
+        if let router = controlRouter, processSession.isRunning {
+            return router
+        }
+        if processSession.isRunning {
+            _ = try await processSession.terminateAndWait(timeout: 10)
+        }
+        guard let sessionID = currentSessionID else {
+            throw SupermuxHarnessBridgeError.sessionUnavailableForRewind
+        }
+        _ = try await start(
+            resumeSessionId: sessionID,
+            forkSession: false,
+            model: snapshot.model,
+            permissionMode: snapshot.permissionMode,
+            effort: nil
+        )
+        guard let router = controlRouter else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
+        return router
+    }
+
+    private var currentSessionID: String? {
+        Self.normalized(snapshot.sessionId)
     }
 
     private var workingDirectoryURL: URL? {
@@ -389,6 +684,42 @@ final class SupermuxHarnessSessionController {
         }
     }
 
+    private nonisolated static func normalizedRewindPreview(
+        _ payload: SupermuxHarnessJSONObject
+    ) -> [String: Any] {
+        let raw = payload.rawValue
+        return [
+            "canRewind": payload.bool(forKey: "canRewind") ?? false,
+            "filesChanged": raw["filesChanged"] as? [String] ?? [],
+            "insertions": payload.integer(forKey: "insertions") ?? 0,
+            "deletions": payload.integer(forKey: "deletions") ?? 0,
+        ]
+    }
+
+    private nonisolated static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private nonisolated static func claudeVersion(
+        executablePath: String,
+        environment: [String: String]
+    ) async -> String? {
+        let runner = AgentForkCommandOutputRunner(
+            executable: executablePath,
+            arguments: ["--version"],
+            environment: environment,
+            workingDirectory: nil
+        )
+        let output = await withTaskCancellationHandler {
+            await runner.start()
+        } onCancel: {
+            runner.cancel()
+        }
+        return normalized(output)
+    }
+
     private nonisolated static func suggestionPaths(from payload: [String: Any]) -> [String] {
         if let paths = payload["suggestions"] as? [String] {
             return paths
@@ -400,6 +731,13 @@ final class SupermuxHarnessSessionController {
     }
 
     private nonisolated static var historyRecordLimit: Int { 400 }
+
+    private nonisolated static var rewindFilesUnavailableMessage: String {
+        String(
+            localized: "supermux.harness.rewind.unavailable",
+            defaultValue: "This session has no file checkpoints, so only the conversation can be rewound."
+        )
+    }
 
     private nonisolated static var defaultDenialMessage: String {
         String(

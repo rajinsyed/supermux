@@ -74,6 +74,9 @@ enum SupermuxHarnessBridgeError: LocalizedError {
     case sessionNotRunning
     case workingDirectoryUnavailable
     case permissionRequestNotFound
+    case invalidBinaryPath
+    case sessionUnavailableForRewind
+    case openPaneFailed
     case startFailed(String)
 
     var code: String {
@@ -85,6 +88,9 @@ enum SupermuxHarnessBridgeError: LocalizedError {
         case .sessionNotRunning: return "sessionNotRunning"
         case .workingDirectoryUnavailable: return "workingDirectoryUnavailable"
         case .permissionRequestNotFound: return "permissionRequestNotFound"
+        case .invalidBinaryPath: return "invalidBinaryPath"
+        case .sessionUnavailableForRewind: return "sessionUnavailableForRewind"
+        case .openPaneFailed: return "openPaneFailed"
         case .startFailed: return "startFailed"
         }
     }
@@ -111,7 +117,7 @@ enum SupermuxHarnessBridgeError: LocalizedError {
         case .sessionAlreadyRunning:
             return String(
                 localized: "supermux.harness.bridge.error.sessionAlreadyRunning",
-                defaultValue: "A Claude session is already running."
+                defaultValue: "Stop the current session or open a new Claude pane."
             )
         case .sessionNotRunning:
             return String(
@@ -127,6 +133,21 @@ enum SupermuxHarnessBridgeError: LocalizedError {
             return String(
                 localized: "supermux.harness.bridge.error.permissionRequestNotFound",
                 defaultValue: "The permission request is no longer pending."
+            )
+        case .invalidBinaryPath:
+            return String(
+                localized: "supermux.harness.bridge.error.invalidBinaryPath",
+                defaultValue: "Choose an existing executable file for the Claude binary."
+            )
+        case .sessionUnavailableForRewind:
+            return String(
+                localized: "supermux.harness.bridge.error.sessionUnavailableForRewind",
+                defaultValue: "This message is not attached to a resumable Claude session."
+            )
+        case .openPaneFailed:
+            return String(
+                localized: "supermux.harness.bridge.error.openPaneFailed",
+                defaultValue: "Could not open another Claude pane."
             )
         case .startFailed(let message):
             let format = String(

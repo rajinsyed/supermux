@@ -10,12 +10,13 @@ extension SupermuxHarnessWebRendererCoordinator {
         }
         switch request.method {
         case "harness.context":
+            let bootstrap = await controller.contextBootstrap()
             var context: [String: Any] = [
                 "panelId": panelId.uuidString,
                 "workspaceId": workspaceId.uuidString,
                 "theme": theme.dictionary,
                 "copy": SupermuxHarnessCopy.dictionary(),
-                "cliStatus": await controller.cliStatus(),
+                "cliStatus": bootstrap.cliStatus,
             ]
             if let workingDirectory = controller.workingDirectory {
                 context["workingDirectory"] = workingDirectory
@@ -25,6 +26,9 @@ extension SupermuxHarnessWebRendererCoordinator {
             }
             if let draft = controller.composerDraft, !draft.isEmpty {
                 context["draft"] = draft
+            }
+            if let cachedModels = bootstrap.cachedModels {
+                context["cachedModels"] = cachedModels
             }
             return context
         case "harness.listSessions":
@@ -43,6 +47,22 @@ extension SupermuxHarnessWebRendererCoordinator {
                 effort: request.string("effort")
             )
             return ["runId": runId]
+        case "harness.restart":
+            controller.invalidateCLIStatus()
+            let runId = try await controller.restart(
+                resumeSessionId: request.string("resumeSessionId"),
+                forkSession: request.bool("forkSession") ?? false,
+                model: request.string("model"),
+                permissionMode: request.string("permissionMode"),
+                effort: request.string("effort")
+            )
+            return ["runId": runId]
+        case "harness.openSessionInNewPane":
+            try openSessionInNewPane(
+                sessionId: try request.requiredString("sessionId"),
+                workingDirectory: controller.workingDirectory
+            )
+            return [:] as [String: Any]
         case "harness.send":
             let images = (request.objects("images") ?? []).compactMap { entry -> SupermuxHarnessImage? in
                 guard let mediaType = entry["mediaType"] as? String,
@@ -120,8 +140,46 @@ extension SupermuxHarnessWebRendererCoordinator {
         case "harness.saveDraft":
             controller.composerDraft = request.rawString("text")
             return [:] as [String: Any]
+        case "harness.getBinarySetting":
+            return await controller.binarySettingState()
+        case "harness.setBinaryPath":
+            return try await controller.setBinaryPath(request.rawString("path"))
+        case "harness.rewindPreview":
+            return await controller.rewindPreview(
+                userMessageUuid: try request.requiredString("userMessageUuid")
+            )
+        case "harness.rewind":
+            let runId = try await controller.rewind(
+                userMessageUuid: try request.requiredString("userMessageUuid"),
+                restoreFiles: request.bool("restoreFiles") ?? false,
+                resumeAtUuid: request.string("resumeAtUuid")
+            )
+            return ["runId": runId]
         default:
             throw SupermuxHarnessBridgeError.unsupportedMethod(request.method)
+        }
+    }
+
+    private func openSessionInNewPane(
+        sessionId: String,
+        workingDirectory: String?
+    ) throws {
+        guard let app = AppDelegate.shared,
+              let location = app.workspaceContainingPanel(
+                  panelId: panelId,
+                  preferredWorkspaceId: workspaceId
+              ),
+              let sourcePaneId = location.workspace.paneId(forPanelId: panelId) else {
+            throw SupermuxHarnessBridgeError.openPaneFailed
+        }
+        var restore = SessionSupermuxHarnessPanelSnapshot()
+        restore.workingDirectory = workingDirectory
+        restore.sessionId = sessionId
+        guard location.workspace.splitPaneWithSupermuxHarness(
+            targetPane: sourcePaneId,
+            restoreState: restore
+        ) != nil else {
+            throw SupermuxHarnessBridgeError.openPaneFailed
         }
     }
 

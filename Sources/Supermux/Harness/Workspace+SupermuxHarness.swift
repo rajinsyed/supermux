@@ -86,6 +86,71 @@ extension Workspace {
         return harnessPanel
     }
 
+    @discardableResult
+    func splitPaneWithSupermuxHarness(
+        targetPane paneId: PaneID,
+        restoreState: SessionSupermuxHarnessPanelSnapshot,
+        orientation: SplitOrientation = .horizontal,
+        insertFirst: Bool = false
+    ) -> SupermuxHarnessPanel? {
+        let directory = restoreState.workingDirectory
+            ?? (usesRemoteDirectoryProvenance ? presentedCurrentDirectory : currentDirectory)
+        let harnessPanel = SupermuxHarnessPanel(
+            workspaceId: id,
+            workingDirectory: directory,
+            restoreState: restoreState
+        )
+        panels[harnessPanel.id] = harnessPanel
+        panelTitles[harnessPanel.id] = harnessPanel.displayTitle
+        if let directory, !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            panelDirectories[harnessPanel.id] = directory
+        }
+
+        let newTab = Bonsplit.Tab(
+            title: harnessPanel.displayTitle,
+            icon: RenderableSystemSymbol.resolvedSurfaceTabIcon(harnessPanel.displayIcon),
+            kind: SurfaceKind.claudeHarness.rawValue,
+            isDirty: harnessPanel.isDirty,
+            isLoading: false,
+            isPinned: false
+        )
+        bindSurface(newTab.id, toPanelId: harnessPanel.id)
+        let previousHostedView = focusedTerminalInputTarget()?.panel.hostedView
+
+        isProgrammaticSplit = true
+        defer { isProgrammaticSplit = false }
+        guard let newPaneId = bonsplitController.splitPane(
+            paneId,
+            orientation: orientation,
+            withTab: newTab,
+            insertFirst: insertFirst
+        ) else {
+            panels.removeValue(forKey: harnessPanel.id)
+            panelTitles.removeValue(forKey: harnessPanel.id)
+            panelDirectories.removeValue(forKey: harnessPanel.id)
+            removeSurfaceMapping(forSurfaceId: newTab.id)
+            return nil
+        }
+
+        bonsplitController.selectTab(newTab.id)
+        suppressReparentFocusUntilLayoutFollowUp(
+            previousHostedView,
+            reason: "workspace.supermuxHarnessSplitReparent"
+        )
+        focusPanel(harnessPanel.id, previousHostedView: previousHostedView)
+        publishCmuxSplitCreated(
+            newPaneId,
+            sourcePaneId: paneId,
+            orientation: orientation,
+            surfaceId: harnessPanel.id,
+            kind: "claude_harness",
+            origin: "claude_harness_session_split",
+            focused: true
+        )
+        installSupermuxHarnessPanelSubscription(harnessPanel)
+        return harnessPanel
+    }
+
     func installSupermuxHarnessPanelSubscription(_ harnessPanel: SupermuxHarnessPanel) {
         harnessPanel.onDisplayStateChanged = { [weak self, weak harnessPanel] newTitle, displayIcon, isDirty in
             guard let self,
