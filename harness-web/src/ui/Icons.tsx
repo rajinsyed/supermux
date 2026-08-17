@@ -213,6 +213,13 @@ export const Folder = (p: IconProps) =>
 
 export const Plus = (p: IconProps) => svg(<path d="M8 3.25v9.5M3.25 8h9.5" />, p);
 
+/** A neutral container — the honest glyph for a task type this build does not recognise. */
+export const Box = (p: IconProps) =>
+  svg(
+    <path d="M8 1.9 13.5 5v6L8 14.1 2.5 11V5L8 1.9Zm-5.5 3L8 8m0 0 5.5-3.1M8 8v6.1" />,
+    p
+  );
+
 export const Stop = (p: IconProps) =>
   svg(<rect x="4.25" y="4.25" width="7.5" height="7.5" rx="1.5" fill="currentColor" stroke="none" />, p);
 

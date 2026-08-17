@@ -118,6 +118,39 @@ describe("WorkflowCard", () => {
     expect(bridge.calls).toEqual(["stopTask:wxajrgc4u"]);
   });
 
+  test("a STOPPED workflow shows a muted Stopped chip, not a green check", () => {
+    // The CLI's kill sequence ends with `task_notification {status: "stopped"}`
+    // — replay exactly that against the mid-flight workflow. The card must
+    // settle (no spinner, no Stop button) and must NOT claim success.
+    const index = createIndex();
+    let model = createModel();
+    for (const line of workflowFixture.slice(0, 37)) {
+      model = applyLine(model, index, line, Date.now());
+    }
+    model = applyLine(
+      model,
+      index,
+      {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "wxajrgc4u",
+        status: "stopped",
+        summary: "stopped by user",
+        uuid: "stop-test-1"
+      } as ProtocolLine,
+      Date.now()
+    );
+    const stoppedBlock = tools(model).find((tool) => tool.name === "Workflow")!;
+    const { container, queryByText } = mount(<ToolCard block={stoppedBlock} />);
+    const card = container.querySelector(".workflow-card")!;
+    expect(card.classList.contains("is-stopped")).toBe(true);
+    expect(card.classList.contains("is-done")).toBe(false);
+    expect(card.querySelector(".mark-ok")).toBeNull();
+    expect(card.querySelector(".wf-stopped-chip")!.textContent).toBe("Stopped");
+    expect(queryByText("Stop workflow")).toBeNull();
+    expect(card.querySelector(".wf-head .spinner")).toBeNull();
+  });
+
   test("a mid-flight workflow distinguishes queued from running", () => {
     // The wire says `start` for BOTH of these; only the presence of `startedAt`
     // separates an agent the scheduler has accepted from one that has actually
@@ -206,6 +239,87 @@ describe("SubagentCard", () => {
     expect(drill.textContent).toContain("echo drilled");
   });
 
+  test("drilling RECURSES: an agent card inside a loaded transcript can open its own", async () => {
+    // A transcript replayed off disk has no system/task_started frames, so the
+    // inner card's identity arrives only as tool_use_result.agentId. Without
+    // the agentId fallback the tree dead-ends at depth 1.
+    const bridge = installBridge({
+      loadSubagentTranscript: (params) => {
+        bridge.calls.push(`loadSubagentTranscript:${params.taskId ?? ""}`);
+        if (params.taskId === outer.subagent!.taskId) {
+          return Promise.resolve({
+            events: [
+              {
+                type: "assistant",
+                message: {
+                  id: "m_outer",
+                  role: "assistant",
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu_inner_drill",
+                      name: "Agent",
+                      input: { description: "Compute 17*3", prompt: "17*3" }
+                    }
+                  ]
+                },
+                uuid: "outer-drill-1"
+              } as ProtocolLine,
+              {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [
+                    { type: "tool_result", tool_use_id: "toolu_inner_drill", content: "51" }
+                  ]
+                },
+                tool_use_result: {
+                  status: "completed",
+                  agentId: "a9728442495aacb2c",
+                  content: [{ type: "text", text: "51" }]
+                },
+                uuid: "outer-drill-2"
+              } as ProtocolLine
+            ],
+            truncated: false
+          });
+        }
+        return Promise.resolve({
+          events: [
+            {
+              type: "assistant",
+              message: {
+                id: "m_inner",
+                role: "assistant",
+                content: [{ type: "text", text: "51" }]
+              },
+              uuid: "inner-drill-1"
+            } as ProtocolLine
+          ],
+          truncated: false
+        });
+      }
+    });
+    const { container, getByText } = mount(<ToolCard block={outer} />);
+    fireEvent.click(getByText("Open transcript"));
+    await flush(60);
+    const innerCard = container.querySelector(".drill-transcript .subagent-card")!;
+    expect(innerCard).not.toBeNull();
+    // The inner card must offer the SAME affordance...
+    const innerOpen = Array.from(
+      innerCard.querySelectorAll(".subagent-toggle.is-drill")
+    );
+    expect(innerOpen.length).toBe(1);
+    fireEvent.click(innerOpen[0]!);
+    await flush(60);
+    // ...and drill by the inner agent's own id.
+    expect(bridge.calls).toContain("loadSubagentTranscript:a9728442495aacb2c");
+    // The nested drill-in header carries the breadcrumb of the descent.
+    const trail = container.querySelector(".drill-trail");
+    expect(trail).not.toBeNull();
+    expect(trail!.textContent).toContain("Compute 17*3");
+  });
+
   test("completed toolStats render as a files/lines summary", () => {
     const withStats: ToolBlock = {
       ...outer,
@@ -238,6 +352,32 @@ describe("background Bash card", () => {
     const badges = container.querySelector(".tool-badges")!.textContent!;
     expect(badges).toContain("Background");
     expect(badges).toContain("Still running");
+  });
+
+  test("its card chrome follows the TASK, not the instant tool_result", () => {
+    // A backgrounded Bash's tool_result lands immediately ("running in
+    // background with ID…"), which is a success — but the command is still
+    // running, and a green check beside a "Still running" badge is one row
+    // contradicting itself.
+    // Through index 27: the backgrounded Bash's own tool_result has landed.
+    const live = replayThrough(shellsFixture, 27);
+    const bash = tools(live).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+    expect(bash.status).toBe("success"); // the block itself settled
+    const { container } = mount(<ToolCard block={bash} />);
+    const card = container.querySelector(".tool-card")!;
+    expect(card.classList.contains("is-running")).toBe(true);
+    expect(card.querySelector(".tool-status .mark-ok")).toBeNull();
+    expect(card.querySelector(".tool-status .spinner")).not.toBeNull();
+  });
+
+  test("once the task is stopped the card settles as stopped, not success", () => {
+    const settled = replayThrough(shellsFixture, shellsFixture.length);
+    const bash = tools(settled).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+    expect(bash.subagent?.status).toBe("stopped");
+    const { container } = mount(<ToolCard block={bash} />);
+    const card = container.querySelector(".tool-card")!;
+    expect(card.classList.contains("is-running")).toBe(false);
+    expect(card.querySelector(".tool-status .mark-ok")).toBeNull();
   });
 
   test("Show output tails the task file rather than the transcript", async () => {
@@ -346,15 +486,93 @@ describe("TasksStrip", () => {
     expect(bridge.calls).toContain("readTaskOutput");
   });
 
-  test("View on a workflow opens the transcript drill-in instead", async () => {
-    const bridge = installBridge({});
+  test("View on a workflow offers its agents; picking one drills by runId+agentId", async () => {
+    // A workflow ROOT has no transcript file — only its agents do — so the row
+    // must never fire `loadSubagentTranscript` for the run itself. The bridge
+    // contract rejects `{taskId, workflowRunId}` outright: taskId alone or
+    // workflowRunId+agentId are the only legal shapes.
+    const bridge = installBridge({
+      loadSubagentTranscript: (params) => {
+        const isLocal =
+          params.taskId !== undefined &&
+          params.workflowRunId === undefined &&
+          params.agentId === undefined;
+        const isWorkflow =
+          params.taskId === undefined &&
+          params.workflowRunId !== undefined &&
+          params.agentId !== undefined;
+        if (!isLocal && !isWorkflow) {
+          return Promise.reject(new Error("invalid loadSubagentTranscript payload"));
+        }
+        bridge.calls.push(
+          `loadSubagentTranscript:${params.workflowRunId ?? params.taskId}/${params.agentId ?? ""}`
+        );
+        return Promise.resolve({ events: [], truncated: false, missing: true });
+      }
+    });
     const live = replayThrough(workflowFixture, 35);
-    const { getByText } = mount(
+    const { container, getByText } = mount(
       <TasksStrip tasks={live.backgroundTasks} tasksById={live.tasksById} />
     );
     fireEvent.click(getByText("View"));
     await flush(60);
-    expect(bridge.calls).toContain("loadSubagentTranscript");
+    // No transcript request yet — the detail is an agent picker.
+    expect(bridge.calls).toEqual([]);
+    const agents = container.querySelectorAll(".task-wf-agent .wf-agent-toggle");
+    expect(agents.length).toBeGreaterThan(0);
+    fireEvent.click(agents[0]!);
+    await flush(60);
+    expect(bridge.calls).toEqual([
+      "loadSubagentTranscript:wf_c0f60243-4f1/aec2c2f1b40b1481e"
+    ]);
     expect(bridge.calls).not.toContain("readTaskOutput");
+  });
+
+  test("a settled row shows catalog copy and a glyph, never the raw wire token", () => {
+    const settled = replayThrough(shellsFixture, shellsFixture.length);
+    // Keep the strip populated: re-add the (now stopped) shell as membership.
+    const { container } = mount(
+      <TasksStrip
+        tasks={[{ taskId: "bnopezzr7", taskType: "local_bash" }]}
+        tasksById={settled.tasksById}
+      />
+    );
+    const status = container.querySelector(".task-status")!;
+    expect(status.classList.contains("is-stopped")).toBe(true);
+    expect(status.textContent).toBe("Stopped");
+    expect(status.querySelector("svg")).not.toBeNull();
+  });
+
+  test("an unknown task type is admitted as a generic Task, not asserted a shell", () => {
+    const { container } = mount(
+      <TasksStrip
+        tasks={[{ taskId: "t-x", taskType: "local_mcp", description: "Future thing" }]}
+        tasksById={{}}
+      />
+    );
+    const type = container.querySelector(".task-type")!;
+    expect(type.classList.contains("is-unknown")).toBe(true);
+    expect(type.getAttribute("title")).toBe("Task");
+  });
+
+  test("only one detail stays open at a time", async () => {
+    installBridge({});
+    const { container, getAllByText } = mount(
+      <TasksStrip
+        tasks={[
+          { taskId: "s1", taskType: "local_bash", description: "one" },
+          { taskId: "s2", taskType: "local_bash", description: "two" }
+        ]}
+        tasksById={{}}
+      />
+    );
+    const views = getAllByText("View");
+    fireEvent.click(views[0]!);
+    await flush(40);
+    fireEvent.click(views[1]!);
+    // The closing Disclosure keeps its content mounted for the collapse
+    // animation (~450ms worst case) before unmounting.
+    await flush(600);
+    expect(container.querySelectorAll(".task-output").length).toBe(1);
   });
 });

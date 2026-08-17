@@ -1,11 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import { getBridge } from "../../bridge";
 import { replayLines } from "../../model/transcript";
 import type { Block, TranscriptModel } from "../../model/types";
 import { useCopy } from "../CopyContext";
-import { Refresh } from "../Icons";
+import { ChevronRight, Refresh } from "../Icons";
 import { Spinner } from "../primitives/Spinner";
 import { BlockView } from "../transcript/BlockView";
+
+/**
+ * The chain of agents descended through to reach the current drill-in.
+ *
+ * Drilling recurses to arbitrary depth — an agent card inside a loaded
+ * transcript drills again with the same affordance — and three levels down the
+ * reader needs to know WHERE they are. Each drill-in appends its own label and
+ * renders the accumulated trail as a breadcrumb in its header.
+ */
+const DrillTrail = createContext<string[]>([]);
 
 export interface SubagentTranscriptKey {
   taskId?: string;
@@ -121,15 +139,24 @@ function blocksOf(model: TranscriptModel): Block[] {
 export function SubagentTranscriptView({
   target,
   open,
-  tick
+  tick,
+  label
 }: {
   target: SubagentTranscriptKey;
   open: boolean;
   /** Bumped by the reducer on every task frame; drives the live re-fetch. */
   tick?: number;
+  /** This agent's name in the breadcrumb trail of a nested descent. */
+  label?: string;
 }) {
   const copy = useCopy();
   const state = useSubagentTranscript(target, open, tick);
+  const parentTrail = useContext(DrillTrail);
+  const trail = useMemo(() => {
+    const own =
+      label ?? state.meta?.description ?? target.agentId ?? target.taskId ?? "";
+    return own ? [...parentTrail, own] : parentTrail;
+  }, [label, parentTrail, state.meta?.description, target.agentId, target.taskId]);
 
   if (state.phase === "loading") {
     return (
@@ -169,6 +196,16 @@ export function SubagentTranscriptView({
           agent runs. */}
       <div className="drill-head">
         <span className="drill-source">{copy("supermux.harness.subagent.fromDisk")}</span>
+        {trail.length > 1 ? (
+          <span className="drill-trail" title={trail.join(" › ")}>
+            {trail.map((step, i) => (
+              <span key={`${i}:${step}`} className="drill-trail-step">
+                {i > 0 ? <ChevronRight size={8} /> : null}
+                {step}
+              </span>
+            ))}
+          </span>
+        ) : null}
         {state.meta?.agentType ? (
           <span className="drill-agent-type">{state.meta.agentType}</span>
         ) : null}
@@ -184,9 +221,11 @@ export function SubagentTranscriptView({
         ) : null}
       </div>
       <div className="drill-transcript">
-        {blocks.map((block) => (
-          <BlockView key={block.key} block={block} />
-        ))}
+        <DrillTrail.Provider value={trail}>
+          {blocks.map((block) => (
+            <BlockView key={block.key} block={block} />
+          ))}
+        </DrillTrail.Provider>
       </div>
     </>
   );

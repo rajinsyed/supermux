@@ -440,15 +440,20 @@ function applyTaskToBlock(
     });
   // A subagent card settles on the task's terminal edge because its own
   // tool_result may never arrive (an async agent answers `async_launched` and
-  // then runs on). A workflow does NOT settle its card here: its tool_result
-  // already landed, and the card is a live progress surface after that.
-  const finished = status === "completed" || status === "failed";
+  // then runs on). Every terminal status settles it — the CLI's kill sequence
+  // ends in `stopped`, and a block that only settles on completed/failed spins
+  // forever on a task the user just killed. A workflow does NOT settle its card
+  // here: its tool_result already landed, and the card is a live progress
+  // surface after that (the `running` guard is what keeps it out).
+  const finished = isTaskSettled(status);
   const running = found.block.status === "running" || found.block.status === "pending";
+  const settledStatus =
+    status === "failed" ? "error" : status === "completed" ? "success" : "aborted";
   const nextBlock: ToolBlock = {
     ...found.block,
     subagent,
     workflow,
-    status: finished && running ? (status === "failed" ? "error" : "success") : found.block.status,
+    status: finished && running ? settledStatus : found.block.status,
     endedAtMs: finished && running ? found.block.endedAtMs ?? nowMs : found.block.endedAtMs
   };
   return writeBlock(model, found.location, nextBlock);

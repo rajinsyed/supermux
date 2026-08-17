@@ -165,6 +165,33 @@
   color: var(--violet);
 }
 
+/* The chain descended through to reach this transcript. Only shown past depth
+   one — a single-level drill-in's identity is the card it sits inside. */
+.drill-trail {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.drill-trail-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drill-trail-step:last-child {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
 .drill-agent-type {
   padding: 0 5px;
   border-radius: var(--r-xs);
@@ -190,6 +217,30 @@
 .workflow-card.is-done {
   border-color: var(--border);
   background: var(--surface-raised);
+}
+
+/* A run the user killed. Muted, not green: the partial totals are the honest
+   record of an interrupted run, and a checkmark would congratulate the user on
+   stopping it. */
+.workflow-card.is-stopped {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.wf-stopped-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 0 7px;
+  height: 17px;
+  border-radius: var(--r-pill);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
 }
 
 .workflow-card.is-error {
@@ -383,6 +434,12 @@
   color: var(--violet);
 }
 
+/* An agent the user's Stop caught mid-run: frozen, not still "Running". */
+.wf-state.is-stopped {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
 .wf-agent-label {
   font-size: 12px;
   color: var(--text);
@@ -539,6 +596,25 @@
   gap: 4px;
 }
 
+/* The tail is a QUOTED terminal, not a terminal: peripheral content inside a
+   pale task row must not be the highest-contrast object on the screen. The
+   terminal ink stays (ANSI colors are tuned against that bed and audited by
+   contrast.test.ts — a theme-light bed would silently flunk half the palette),
+   but the block is framed, inset, and height-capped so it reads as an excerpt
+   rather than a hole punched through a light pane. Shared by the strip row and
+   the Bash card's "Show output", so the two can never differ. */
+.task-output .terminal {
+  margin: 1px 0 2px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+}
+
+.task-output .terminal-body {
+  max-height: 180px;
+  font-size: 11px;
+  padding: 6px 9px;
+}
+
 .task-output-head {
   display: flex;
   align-items: center;
@@ -601,7 +677,14 @@
 }
 
 /* Capped and scrollable for the same reason the todo strip is: eight background
-   shells must not push the composer off a 600px pane. */
+   shells must not push the composer off a 600px pane. The clip is never silent:
+   the frame paints a fade over the fold and an "n more below" affordance, so a
+   hidden live row announces itself instead of being discoverable only by
+   scripting scrollTop. */
+.tasks-list-frame {
+  position: relative;
+}
+
 .tasks-list {
   list-style: none;
   margin: 0 0 4px;
@@ -614,6 +697,33 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
+}
+
+.tasks-list-frame.is-clipped .tasks-list {
+  mask-image: linear-gradient(to bottom, black calc(100% - 26px), transparent);
+}
+
+.tasks-more {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--popover-bg);
+  color: var(--text-muted);
+  font-size: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.tasks-more:hover,
+.tasks-more:focus-visible {
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 @media (max-height: 560px) {
@@ -696,6 +806,57 @@
   font-size: 10.5px;
   color: var(--text-faint);
   flex: 0 0 auto;
+}
+
+/* A settled row's outcome: catalog copy plus a glyph, never the raw wire
+   token. Colored by outcome so the strip reads at a glance. */
+.task-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.task-status.is-done {
+  color: var(--success);
+}
+
+.task-status.is-failed {
+  color: var(--danger);
+}
+
+.task-status.is-stopped {
+  color: var(--text-muted);
+}
+
+/* A task type this build does not recognise: neutral, not asserted-a-shell. */
+.task-type.is-unknown {
+  color: var(--text-faint);
+}
+
+/* The workflow row's View: the run has no transcript of its own, so the detail
+   is the same agent list the card shows, each drillable by runId + agentId. */
+.task-wf-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-wf-hint {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.task-wf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-wf-agent .subagent-drill {
+  margin-left: 14px;
 }
 
 .task-action {

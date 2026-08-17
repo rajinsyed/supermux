@@ -128,7 +128,7 @@ export const workflowTail: ProtocolLine[] = workflowFixture.slice(ROUND3_CUTS.wo
 /** The nested probe's completions, inner agent first. */
 export const nestedTail: ProtocolLine[] = nestedFixture.slice(ROUND3_CUTS.nested);
 
-/** When the probes were recorded — the base every wire epoch below sits on. */
+/** When the probes were recorded — the last-resort base for epoch rebasing. */
 const PROBE_EPOCH_MS = 1786991412505;
 
 const EPOCH_KEYS = new Set([
@@ -140,6 +140,43 @@ const EPOCH_KEYS = new Set([
 ]);
 
 /**
+ * The FIRST wire epoch a fixture carries — the moment its live story begins.
+ *
+ * This, not the probe's session init, is what a rebase must anchor on: the
+ * workflow's first `startedAt` sits 7.5 seconds after init, so shifting by
+ * `now - init` lands every agent's start 7.5 seconds in the FUTURE relative to
+ * the moment its row appears. `formatDuration` clamps the negative to 0, and an
+ * agent that settles before wall-clock catches up reads 0s for its entire
+ * lifetime — the one number the card exists to show, unverifiable in the
+ * scenario pinned to verify it. Anchoring on the fixture's own first epoch
+ * makes t=0 on screen t=0 in the fixture.
+ */
+export function epochBaseOf(lines: ProtocolLine[]): number {
+  let base: number | undefined;
+  const scan = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) scan(item);
+      return;
+    }
+    if (typeof value !== "object" || value === null) return;
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (EPOCH_KEYS.has(key) && typeof item === "number" && item > 1_000_000_000_000) {
+        if (base === undefined || item < base) base = item;
+      } else {
+        scan(item);
+      }
+    }
+  };
+  for (const line of lines) {
+    scan(line);
+    // The first epoch-carrying LINE anchors the story; later lines only carry
+    // later moments of it.
+    if (base !== undefined) return base;
+  }
+  return PROBE_EPOCH_MS;
+}
+
+/**
  * Shift every wire epoch in a probe so it reads as having happened just now.
  *
  * Live elapsed on a workflow agent is `now - startedAt`, and `startedAt` is the
@@ -147,11 +184,19 @@ const EPOCH_KEYS = new Set([
  * 1.7 seconds in August reports "1h 03m" and climbing — which makes the one
  * number the card exists to show impossible to check.
  *
+ * `baseMs` must be shared across every slice of one scenario (opening AND live
+ * tail), or an agent's `startedAt` would shift between frames and its elapsed
+ * would reset on every progress tick. Callers pass `epochBaseOf(fixture)`.
+ *
  * The DEV path only. The fixtures themselves stay byte-exact, so the model
  * tests keep asserting against what the CLI actually sent.
  */
-export function rebaseRound3(lines: ProtocolLine[], nowMs = Date.now()): ProtocolLine[] {
-  const delta = nowMs - PROBE_EPOCH_MS;
+export function rebaseRound3(
+  lines: ProtocolLine[],
+  baseMs = PROBE_EPOCH_MS,
+  nowMs = Date.now()
+): ProtocolLine[] {
+  const delta = nowMs - baseMs;
   const shift = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(shift);
     if (typeof value !== "object" || value === null) return value;
@@ -165,4 +210,81 @@ export function rebaseRound3(lines: ProtocolLine[], nowMs = Date.now()): Protoco
     return out;
   };
   return lines.map((line) => shift(line) as ProtocolLine);
+}
+
+/**
+ * The log lines the pinned workflow scenario feeds the card's log strip.
+ *
+ * The live probe happened to run a workflow that never called `log()`, so the
+ * strip — implemented, styled, unit-tested — was unreachable in every scenario
+ * and had never been SEEN rendered. ROUND3.md sanctions hand-extending the
+ * fixture with the documented `workflow_log` shape (§B.5) so the pinned
+ * scenario covers everything the card can draw. The list is cumulative, like
+ * the CLI's own resend-the-whole-list semantics.
+ */
+const WORKFLOW_LOGS = [
+  "workflow alpha-beta-demo: 2 phases, 3 agents declared",
+  "Phase Gather: dispatching agent-alpha and agent-beta in parallel",
+  "agent-alpha: done in 1.7s",
+  "agent-beta: done in 2.1s — phase Gather complete",
+  "Phase Merge: dispatching merger with both results",
+  "merger: done in 1.9s — workflow complete"
+];
+
+export function withWorkflowLogs(
+  lines: ProtocolLine[],
+  logs: string[] = WORKFLOW_LOGS
+): ProtocolLine[] {
+  let progressFrames = 0;
+  return lines.map((line) => {
+    const frame = line as { subtype?: string; workflow_progress?: unknown[] };
+    if (
+      frame.subtype !== "task_progress" ||
+      !Array.isArray(frame.workflow_progress) ||
+      frame.workflow_progress.length === 0
+    ) {
+      return line;
+    }
+    progressFrames += 1;
+    const visible = Math.min(logs.length, progressFrames + 1);
+    return {
+      ...frame,
+      workflow_progress: [
+        ...frame.workflow_progress,
+        ...logs.slice(0, visible).map((message) => ({ type: "workflow_log", message }))
+      ]
+    } as ProtocolLine;
+  });
+}
+
+/**
+ * The nested probe's agents did pure arithmetic, so their AgentOutputs carry no
+ * `toolStats` and the completion summary ("read N files, +X −Y") — promised by
+ * ROUND3.md §1 and pinned to this scenario — was undemonstrable. Hand-extended
+ * with the documented shape (§A.7); the byte-exact fixture stays untouched for
+ * the model tests.
+ */
+export function withNestedToolStats(lines: ProtocolLine[]): ProtocolLine[] {
+  return lines.map((line) => {
+    const frame = line as { type?: string; tool_use_result?: Record<string, unknown> };
+    if (frame.type !== "user") return line;
+    const result = frame.tool_use_result;
+    if (!result || result.agentId !== "a273351272d38e227") return line;
+    return {
+      ...frame,
+      tool_use_result: {
+        ...result,
+        totalToolUseCount: 3,
+        toolStats: {
+          readCount: 1,
+          searchCount: 0,
+          bashCount: 1,
+          editFileCount: 0,
+          linesAdded: 0,
+          linesRemoved: 0,
+          otherToolCount: 1
+        }
+      }
+    } as ProtocolLine;
+  });
 }

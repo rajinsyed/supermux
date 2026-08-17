@@ -2,6 +2,7 @@ import type { BinarySetting, ProtocolLine } from "../protocol/types";
 import { fixtures, richSession } from "./fixtures";
 import {
   bgBackgroundResponse,
+  epochBaseOf,
   FOREGROUND_BASH_TOOL_USE_ID,
   foregroundBashLaunch,
   nestedFixture,
@@ -10,6 +11,8 @@ import {
   ROUND3_CUTS,
   shellsOpening,
   shellsStopResponse,
+  withNestedToolStats,
+  withWorkflowLogs,
   workflowFixture,
   workflowTail,
   type BackgroundTaskSummary
@@ -288,7 +291,7 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
       // Stop on the strip row replays the CLI's real kill sequence.
       return {
         name: key,
-        lines: rebaseRound3(shellsOpening),
+        lines: rebaseRound3(shellsOpening, epochBaseOf(shellsOpening)),
         cliAvailable: true,
         hasSessions: true,
         cachedModels: true,
@@ -318,40 +321,61 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
           ]
         }
       };
-    case "nested":
+    case "nested": {
       // Feature 1: outer agent spawns an inner one. The slice stops with BOTH
       // running, so the tree is live; the tail completes them inside-out, which
-      // is where toolStats and the AgentOutput metrics land.
+      // is where toolStats and the AgentOutput metrics land. The toolStats
+      // themselves are hand-added (the probe's agents did pure arithmetic and
+      // reported none), so the completion summary is actually reachable here.
+      const nested = withNestedToolStats(nestedFixture);
+      const base = epochBaseOf(nested);
+      const now = Date.now();
       return {
         name: key,
-        lines: rebaseRound3(nestedFixture.slice(0, ROUND3_CUTS.nested)),
+        lines: rebaseRound3(nested.slice(0, ROUND3_CUTS.nested), base, now),
         cliAvailable: true,
         hasSessions: true,
         cachedModels: true,
         processRunning: true,
-        liveTail: { lines: rebaseRound3(nestedTail), startAfterMs: 2600, stepMs: 900 },
+        liveTail: {
+          lines: rebaseRound3(nested.slice(ROUND3_CUTS.nested), base, now),
+          startAfterMs: 2600,
+          stepMs: 900
+        },
         subagentTranscripts: round3SubagentTranscripts
       };
-    case "workflow":
+    }
+    case "workflow": {
       // Feature 2: phases Gather/Merge with three agents. The slice stops at the
       // first progress frame — both Gather agents queued — and the tail advances
       // them live, lands the launching turn's `result` MID-WORKFLOW (the turn
       // must not reopen when progress keeps arriving after it), settles the
       // workflow in the background, and opens the CLI's own summary turn.
+      // Logs are hand-added: the probe's workflow never called log(), which left
+      // the card's log strip unreachable in the one scenario pinned to show it.
+      const flow = withWorkflowLogs(workflowFixture);
+      // Rebased on the fixture's FIRST epoch (agent-alpha's queuedAt), shared by
+      // both slices: anchoring on the probe's session init put every startedAt
+      // ~7.5s in the future and the live elapsed read a clamped 0s for an
+      // agent's whole lifetime.
+      const base = epochBaseOf(flow);
+      const now = Date.now();
       return {
         name: key,
-        // Rebased: an agent's live elapsed is `now - startedAt`, and the probe's
-        // own epochs are months old, so verbatim replay opens the card already
-        // reporting hours.
-        lines: rebaseRound3(workflowFixture.slice(0, ROUND3_CUTS.workflow)),
+        lines: rebaseRound3(flow.slice(0, ROUND3_CUTS.workflow), base, now),
         cliAvailable: true,
         hasSessions: true,
         cachedModels: true,
         processRunning: true,
-        liveTail: { lines: rebaseRound3(workflowTail), startAfterMs: 1800, stepMs: 1100 },
+        liveTail: {
+          lines: rebaseRound3(flow.slice(ROUND3_CUTS.workflow), base, now),
+          startAfterMs: 1800,
+          stepMs: 1100
+        },
         stopResponse: shellsStopResponse,
         subagentTranscripts: round3SubagentTranscripts
       };
+    }
     case "sessions":
       // A pane with a LIVE session, which is what makes picking another session
       // from the browser exercise the replace-while-running path rather than a

@@ -126,10 +126,16 @@ export const SubagentCard = memo(function SubagentCard({
     ? info.activity ?? info.lastToolName ?? copy("supermux.harness.subagent.waiting")
     : info.summary;
   const nested = countNested(block.children);
-  // The drill-in is keyed on the agent's own id. A workflow agent is addressed
-  // by run + agent; an ordinary subagent by its task id.
-  const drillTarget = { taskId: info.taskId };
-  const canDrill = info.taskId !== undefined;
+  // The drill-in is keyed on the agent's own id. `taskId` arrives on
+  // system/task_started frames — which a transcript replayed OFF DISK never
+  // contains — while `agentId` arrives on the tool_use_result the disk file
+  // does carry, and the two are the same identifier (the CLI names the file
+  // agent-<taskId>.jsonl and reports that id as AgentOutput.agentId). Without
+  // the fallback, drilling dead-ends at depth 1: no card inside a loaded
+  // transcript could recurse.
+  const drillId = info.taskId ?? info.agentId;
+  const drillTarget = { taskId: drillId };
+  const canDrill = drillId !== undefined;
   const indent = Math.min(depth, MAX_INDENT_DEPTH);
 
   return (
@@ -212,6 +218,7 @@ export const SubagentCard = memo(function SubagentCard({
         <Disclosure open={openDrill} className="subagent-drill">
           <SubagentTranscriptView
             target={drillTarget}
+            label={description}
             open={openDrill}
             // Only while it still runs: a settled agent's file never changes
             // again, and re-fetching it on every later frame is pure churn.

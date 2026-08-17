@@ -24,6 +24,24 @@ export function isBackgroundBash(block: ToolBlock): boolean {
 }
 
 /**
+ * The status a backgrounded Bash's own chrome should wear.
+ *
+ * Its `tool_result` returns instantly ("Command running in background…"), so
+ * `block.status` says success while the command is still running — a green
+ * check on a row whose own badge says "Still running". The card's border,
+ * tint, and mark follow the TASK instead: running until the task settles, then
+ * the task's real outcome. Two sources of truth on one row must not disagree.
+ */
+export function backgroundBashStatus(block: ToolBlock): ToolBlock["status"] {
+  if (!isBackgroundBash(block)) return block.status;
+  const status = block.subagent?.status;
+  if (status === "completed") return "success";
+  if (status === "failed") return "error";
+  if (status === "killed" || status === "stopped") return "aborted";
+  return "running";
+}
+
+/**
  * The head chips a backgrounded command carries. Kept apart from the strip so a
  * FOLDED card still says the command is in the background and what it is doing —
  * which is the state a user scrolling back is most often in.
@@ -119,12 +137,15 @@ export function BackgroundBashStrip({ block }: { block: ToolBlock }) {
             className="btn btn-quiet"
             onClick={move}
             disabled={busy !== undefined}
+            // The tooltip explains what happens; the visible keycap chip
+            // already carries the key, so repeating "Ctrl+B" here explained
+            // nothing about the one affordance a terminal user has never seen.
             title={copy("supermux.harness.bash.moveToBackgroundHint")}
           >
             {busy === "move"
               ? copy("supermux.harness.bash.moving")
               : copy("supermux.harness.bash.moveToBackground")}
-            <span className="btn-kbd">{copy("supermux.harness.bash.moveToBackgroundHint")}</span>
+            <span className="btn-kbd">{copy("supermux.harness.bash.moveToBackgroundKey")}</span>
           </button>
         ) : null}
         {background && taskId ? (

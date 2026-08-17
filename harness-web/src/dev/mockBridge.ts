@@ -417,8 +417,22 @@ export function installMockBridge(store: HarnessStore): Scenario {
     },
     async loadSubagentTranscript({ taskId, workflowRunId, agentId }) {
       await new Promise((resolve) => window.setTimeout(resolve, 240));
+      // The REAL bridge accepts exactly two shapes — taskId alone, or
+      // workflowRunId+agentId together — and throws on anything else
+      // (SupermuxHarnessSessionController.loadSubagentTranscript). The mock
+      // enforces the same contract: a permissive mock once answered a
+      // malformed `{taskId, workflowRunId}` payload with a calm "missing"
+      // and hid a hard native-side error from every dev-harness pass.
+      const isLocal = taskId !== undefined && workflowRunId === undefined && agentId === undefined;
+      const isWorkflow = taskId === undefined && workflowRunId !== undefined && agentId !== undefined;
+      if (!isLocal && !isWorkflow) {
+        throw bridgeError(
+          "invalid_request",
+          "loadSubagentTranscript takes taskId alone, or workflowRunId+agentId."
+        );
+      }
       const table = scenario.subagentTranscripts ?? {};
-      const key = workflowRunId && agentId ? `${workflowRunId}/${agentId}` : taskId ?? "";
+      const key = isWorkflow ? `${workflowRunId}/${agentId}` : taskId ?? "";
       const events = table[key];
       // Not an error: an agent that has only just been spawned has no file yet,
       // and this is the state the "not available yet" copy exists for.

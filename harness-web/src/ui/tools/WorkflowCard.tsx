@@ -33,17 +33,26 @@ const STATE_LABELS: Record<WorkflowAgentState, CopyKey> = {
 function AgentRow({
   agent,
   runId,
-  tick
+  tick,
+  interrupted = false
 }: {
   agent: WorkflowAgent;
   runId?: string;
   /** Progress counter; a drill-in open on a running agent re-fetches on it. */
   tick?: number;
+  /**
+   * The workflow was stopped (or otherwise settled) with this agent still
+   * mid-run. Its last progress frame says "running" forever — no further frame
+   * will ever demote it — so the row freezes: stopped chip, no spinner, no
+   * climbing elapsed on work that is already dead.
+   */
+  interrupted?: boolean;
 }) {
   const copy = useCopy();
   const [openResult, setOpenResult] = useState(false);
   const [openDrill, setOpenDrill] = useState(false);
-  const running = agent.state === "running";
+  const running = agent.state === "running" && !interrupted;
+  const stoppedMidRun = agent.state === "running" && interrupted;
   const detail = agent.error ?? agent.resultPreview;
   const canDrill = runId !== undefined && agent.agentId !== undefined;
 
@@ -72,9 +81,11 @@ function AgentRow({
   return (
     <li className={`wf-agent is-${agent.state}`}>
       <div className="wf-agent-head">
-        <span className={`wf-state is-${agent.state}`}>
+        <span className={`wf-state is-${stoppedMidRun ? "stopped" : agent.state}`}>
           {running ? <Spinner size={9} /> : null}
-          {copy(STATE_LABELS[agent.state])}
+          {stoppedMidRun
+            ? copy("supermux.harness.workflow.stopped")
+            : copy(STATE_LABELS[agent.state])}
         </span>
         <span className="wf-agent-label" title={agent.promptPreview}>
           {agent.label}
@@ -145,6 +156,7 @@ function AgentRow({
           <Disclosure open={openDrill} className="subagent-drill">
             <SubagentTranscriptView
               target={{ workflowRunId: runId, agentId: agent.agentId }}
+              label={agent.label}
               open={openDrill}
               tick={running ? tick : undefined}
             />
@@ -169,7 +181,12 @@ export const WorkflowCard = memo(function WorkflowCard({ block }: { block: ToolB
     (block.input.name as string) ??
     copy("supermux.harness.workflow.untitled");
   const status = info.status ?? workflow?.status;
-  const finished = status === "completed" || status === "failed" || status === "killed";
+  // Three distinct ends, not two: `killed`/`stopped` is the user interrupting
+  // the run (the CLI's kill sequence ends with a `stopped` notification), and a
+  // green check on a workflow the user just killed congratulates them on the
+  // wrong thing. The partial totals ("0 of 2 done") stay as the honest record.
+  const stopped = status === "killed" || status === "stopped";
+  const finished = status === "completed" || status === "failed" || stopped;
   const failed = status === "failed" || (workflow?.totals.failed ?? 0) > 0;
   const runId = info.workflowRunId ?? workflow?.runId;
   const taskId = info.taskId;
@@ -207,7 +224,11 @@ export const WorkflowCard = memo(function WorkflowCard({ block }: { block: ToolB
   if (info.durationMs && finished) summary.push(formatCompactDuration(info.durationMs, copy));
 
   return (
-    <div className={`workflow-card${failed ? " is-error" : finished ? " is-done" : " is-running"}`}>
+    <div
+      className={`workflow-card${
+        failed ? " is-error" : stopped ? " is-stopped" : finished ? " is-done" : " is-running"
+      }`}
+    >
       <div className="wf-head">
         <span className="wf-icon">
           <MapIcon size={13} />
@@ -227,6 +248,11 @@ export const WorkflowCard = memo(function WorkflowCard({ block }: { block: ToolB
         {finished ? (
           failed ? (
             <AlertTriangle size={13} className="mark-warn" />
+          ) : stopped ? (
+            <span className="wf-stopped-chip">
+              <Stop size={9} />
+              {copy("supermux.harness.workflow.stopped")}
+            </span>
           ) : (
             <CheckCircle size={13} className="mark-ok" />
           )
@@ -290,6 +316,7 @@ export const WorkflowCard = memo(function WorkflowCard({ block }: { block: ToolB
                       agent={agent}
                       runId={runId}
                       tick={info.progressTick}
+                      interrupted={finished}
                     />
                   ))}
                 </ul>

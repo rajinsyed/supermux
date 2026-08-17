@@ -387,6 +387,66 @@ describe("nested subagents attach to the nested block", () => {
   });
 });
 
+describe("killed and stopped settle the launching block", () => {
+  test("a stopped notification alone settles a still-running tool block", () => {
+    // The CLI's kill sequence can end with ONLY `task_notification
+    // {status: "stopped"}` — no completed/failed ever arrives — and a block
+    // that settles only on those spins forever on work that is already dead.
+    // An async agent's tool_result may never arrive, so the terminal task
+    // frame is the ONLY settle its block gets — and the kill path's terminal
+    // frame says `stopped`, not completed/failed.
+    const index = createIndex();
+    let model = createModel();
+    const frames: ProtocolLine[] = [
+      {
+        type: "assistant",
+        message: {
+          id: "m_stop",
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_stop_test",
+              name: "Agent",
+              input: { description: "long audit", prompt: "audit" }
+            }
+          ]
+        },
+        uuid: "stop-a1"
+      } as ProtocolLine,
+      {
+        type: "system",
+        subtype: "task_started",
+        task_id: "t_stop_1",
+        tool_use_id: "toolu_stop_test",
+        task_type: "local_agent",
+        description: "long audit",
+        uuid: "stop-s1"
+      } as ProtocolLine
+    ];
+    for (const line of frames) model = applyLine(model, index, line, Date.now());
+    let block = tools(model).find((tool) => tool.toolUseId === "toolu_stop_test")!;
+    expect(block.status).toBe("running");
+    model = applyLine(
+      model,
+      index,
+      {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "t_stop_1",
+        status: "stopped",
+        summary: "stopped by user",
+        uuid: "stop-model-1"
+      } as ProtocolLine,
+      Date.now()
+    );
+    block = tools(model).find((tool) => tool.toolUseId === "toolu_stop_test")!;
+    expect(block.status).toBe("aborted");
+    expect(block.subagent?.status).toBe("stopped");
+    expect(block.endedAtMs).toBeDefined();
+  });
+});
+
 describe("a finished background task raises an inline notice", () => {
   test("the stopped shell's notification says it was STOPPED, not just its name", () => {
     // The task's own description ("Print six ticks…") is which task; the outcome

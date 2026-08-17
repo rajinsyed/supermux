@@ -173,6 +173,7 @@ export const copyDefaults = {
   "supermux.harness.workflow.progress": "{done} of {total} done",
   "supermux.harness.workflow.stop": "Stop workflow",
   "supermux.harness.workflow.stopping": "Stopping…",
+  "supermux.harness.workflow.stopped": "Stopped",
   "supermux.harness.workflow.stopFailed": "Could not stop the workflow.",
   "supermux.harness.workflow.state.queued": "Queued",
   "supermux.harness.workflow.state.running": "Running",
@@ -191,6 +192,7 @@ export const copyDefaults = {
   "supermux.harness.workflow.noAgents": "No agents have been scheduled yet.",
   "supermux.harness.workflow.unphased": "Unphased",
   "supermux.harness.workflow.openAgent": "Open agent transcript",
+  "supermux.harness.workflow.viewAgents": "Pick an agent to open its transcript:",
 
   "supermux.harness.tasks.title": "Background tasks",
   "supermux.harness.tasks.countOne": "{count} task",
@@ -200,6 +202,14 @@ export const copyDefaults = {
   "supermux.harness.tasks.typeShell": "Shell",
   "supermux.harness.tasks.typeAgent": "Agent",
   "supermux.harness.tasks.typeWorkflow": "Workflow",
+  // The SDK's task_type set is extensible; an unrecognised value gets a neutral
+  // label rather than being asserted to be a shell.
+  "supermux.harness.tasks.typeTask": "Task",
+  "supermux.harness.tasks.statusDone": "Done",
+  "supermux.harness.tasks.statusFailed": "Failed",
+  "supermux.harness.tasks.statusStopped": "Stopped",
+  "supermux.harness.tasks.statusSettled": "Settled",
+  "supermux.harness.tasks.moreBelow": "{count} more below",
   "supermux.harness.tasks.untitled": "Background task",
   "supermux.harness.tasks.stop": "Stop",
   "supermux.harness.tasks.stopping": "Stopping…",
@@ -218,7 +228,9 @@ export const copyDefaults = {
   "supermux.harness.bash.backgroundedByUser": "Moved to background",
   "supermux.harness.bash.autoBackgrounded": "Backgrounded after {duration}",
   "supermux.harness.bash.moveToBackground": "Move to background",
-  "supermux.harness.bash.moveToBackgroundHint": "Ctrl+B",
+  "supermux.harness.bash.moveToBackgroundHint":
+    "Keep this command running and hand the turn back — the CLI's Ctrl+B.",
+  "supermux.harness.bash.moveToBackgroundKey": "Ctrl+B",
   "supermux.harness.bash.moving": "Moving…",
   "supermux.harness.bash.moveFailed": "Could not move this command to the background.",
   "supermux.harness.bash.showOutput": "Show output",

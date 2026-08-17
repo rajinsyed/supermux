@@ -38,7 +38,7 @@ import {
   toolMetrics
 } from "./ToolBodies";
 import { diffStats } from "../primitives/DiffView";
-import { BackgroundBashStrip, backgroundBashBadges } from "./BackgroundBash";
+import { BackgroundBashStrip, backgroundBashBadges, backgroundBashStatus } from "./BackgroundBash";
 import { SubagentCard } from "./SubagentCard";
 import { WorkflowCard } from "./WorkflowCard";
 import { toolFamily, toolHeadline, toolSubtitle, toolSubtitleFull, type ToolFamily } from "./toolMeta";
@@ -204,13 +204,17 @@ export const ToolCard = memo(function ToolCard({
 }) {
   const copy = useCopy();
   const family = toolFamily(block.name);
-  const running = block.status === "running" || block.status === "pending";
+  // A backgrounded Bash's tool_result lands instantly, so the block's own
+  // status would paint a green check beside a "Still running" badge; its
+  // chrome follows the task's status instead.
+  const status = family === "bash" ? backgroundBashStatus(block) : block.status;
+  const running = status === "running" || status === "pending";
   // The default is re-derived rather than frozen at mount, so a card that lands
   // while its turn streams still opens once the turn settles — and a row that
   // later fails auto-opens on the failure instead of staying shut because it
   // was pending when it first rendered. A user toggle wins over both.
   const [override, setOverride] = useState<boolean | undefined>(undefined);
-  const open = override ?? defaultOpen(block, family, live);
+  const open = override ?? (status === "error" || defaultOpen(block, family, live));
 
   if (family === "task") return <SubagentCard block={block} depth={depth} />;
   if (family === "workflow") return <WorkflowCard block={block} />;
@@ -224,7 +228,7 @@ export const ToolCard = memo(function ToolCard({
   const duration = elapsed >= 250 ? formatCompactDuration(elapsed, copy) : undefined;
 
   return (
-    <div className={`tool-card is-${block.status}${open ? " is-open" : ""}`} data-family={family}>
+    <div className={`tool-card is-${status}${open ? " is-open" : ""}`} data-family={family}>
       <button
         type="button"
         className="tool-head"
@@ -254,7 +258,7 @@ export const ToolCard = memo(function ToolCard({
           <span className="tool-elapsed tnum">{duration}</span>
         ) : null}
         <span className="tool-status">
-          <StatusMark status={block.status} />
+          <StatusMark status={status} />
         </span>
       </button>
       <Disclosure open={open}>{bodyFor(block, family)}</Disclosure>

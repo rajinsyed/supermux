@@ -116,7 +116,16 @@ export const subagentsFixture: ProtocolLine[] = [
     content: [{ type: "text", text: "11 exhaustive switch sites over PanelType." }],
     totalDurationMs: 8412,
     totalTokens: 21806,
-    totalToolUseCount: 4
+    totalToolUseCount: 4,
+    toolStats: {
+      readCount: 2,
+      searchCount: 2,
+      bashCount: 0,
+      editFileCount: 0,
+      linesAdded: 0,
+      linesRemoved: 0,
+      otherToolCount: 0
+    }
   }),
   {
     type: "system",
