@@ -23,6 +23,7 @@ final class SupermuxHarnessSessionController {
     private var modelCatalogProbeID: UUID?
     private var isClosed = false
     private var isStartPending = false
+    private var binarySettingRevision = 0
     private var cachedCLIStatus: [String: Any]?
 
     init(
@@ -118,7 +119,9 @@ final class SupermuxHarnessSessionController {
 
     func setBinaryPath(_ path: String?) async throws -> [String: Any] {
         try binarySetting.setPath(path)
+        binarySettingRevision &+= 1
         invalidateBinaryCaches()
+        eventSink?(["kind": "modelCatalog", "models": []])
         return await binarySettingState()
     }
 
@@ -261,11 +264,16 @@ final class SupermuxHarnessSessionController {
         if let resumeSessionId { event["resumedSessionId"] = resumeSessionId }
         eventSink?(event)
         let binaryPath = resolvedPlan.executableURL.path
+        let binaryRevision = binarySettingRevision
         Task { @MainActor [weak self, weak router] in
             guard let self, let router else { return }
             do {
                 let payload = try await router.issue(.initialize)
-                guard !self.isClosed, self.controlRouter === router else { return }
+                guard !self.isClosed,
+                      self.controlRouter === router,
+                      self.binarySettingRevision == binaryRevision else {
+                    return
+                }
                 self.consumeInitializeCatalog(payload, binaryPath: binaryPath)
             } catch {
                 // The live protocol line is still forwarded; catalog persistence is best-effort.
@@ -342,11 +350,14 @@ final class SupermuxHarnessSessionController {
         if restoreFiles {
             do {
                 let router = try await ensureProcessForRewind()
-                _ = try await router.issue(
+                let payload = try await router.issue(
                     .rewindFiles(userMessageID: userMessageUuid, dryRun: false)
                 )
                 guard !isClosed, controlRouter === router else {
                     throw SupermuxHarnessBridgeError.sessionNotRunning
+                }
+                if payload.bool(forKey: "canRewind") == false {
+                    eventSink?(["kind": "stderr", "text": Self.rewindFilesUnavailableMessage])
                 }
             } catch {
                 eventSink?(["kind": "stderr", "text": Self.rewindFilesUnavailableMessage])
