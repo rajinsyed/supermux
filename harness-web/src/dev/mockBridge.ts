@@ -147,10 +147,10 @@ export function installMockBridge(store: HarnessStore): Scenario {
     return runId;
   };
 
-  const stopRun = (): void => {
+  const stopRun = (status = 0, error?: string): void => {
     if (!running) return;
     running = false;
-    store.receive([{ kind: "runExited", runId: `run-dev-${runCounter}`, status: 0 }]);
+    store.receive([{ kind: "runExited", runId: `run-dev-${runCounter}`, status, error }]);
   };
 
   let binary: BinarySetting = scenario.binary ?? {
@@ -203,9 +203,12 @@ export function installMockBridge(store: HarnessStore): Scenario {
       // this legal where `start` is not.
       stopRun();
       await new Promise((resolve) => window.setTimeout(resolve, 220));
-      const runId = startRun(resumeSessionId);
-      if (resumeSessionId) player.play(scenario.lines);
-      return { runId };
+      // History is NOT replayed here. The web layer loads it through
+      // `loadSessionHistory` before it restarts, exactly as it does against the
+      // native bridge; replaying it again from inside the restart reopened the
+      // last turn on top of the live run, and the first real reply was filed
+      // into that resurrected turn instead of its own.
+      return { runId: startRun(resumeSessionId) };
     },
     async openSessionInNewPane({ sessionId }) {
       // No pane factory in the browser harness; say what the native side would
@@ -356,6 +359,16 @@ export function installMockBridge(store: HarnessStore): Scenario {
     }
     store.dispatch({ kind: "contextUsage", usage: mockContextUsage(tokenTotal) });
   }, 0);
+
+  // A process that dies with messages still queued behind it. The CLI-side queue
+  // dies with it, so the pane has to say those messages are still waiting and
+  // re-send them once a run is back up.
+  if (scenario.killAfterMs !== undefined) {
+    window.setTimeout(
+      () => stopRun(1, "claude exited unexpectedly (signal 9)"),
+      scenario.killAfterMs
+    );
+  }
 
   // A pane whose binary has no cached catalog gets one pushed a beat later —
   // the "Loading models…" row is what fills that gap, and it has to be visible

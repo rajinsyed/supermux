@@ -27,7 +27,8 @@ export type ScenarioName =
   | "resume"
   | "rewind"
   | "binary"
-  | "firstopen";
+  | "firstopen"
+  | "crash";
 
 export const SCENARIO_NAMES: ScenarioName[] = [
   "empty",
@@ -49,7 +50,8 @@ export const SCENARIO_NAMES: ScenarioName[] = [
   "resume",
   "rewind",
   "binary",
-  "firstopen"
+  "firstopen",
+  "crash"
 ];
 
 export interface Scenario {
@@ -78,6 +80,12 @@ export interface Scenario {
   rewindUnavailable?: boolean;
   /** Seed the binary setting, e.g. with an override already stored. */
   binary?: BinarySetting;
+  /**
+   * Kill the run this many ms in, while messages are still queued behind it —
+   * the state in which a queue used to be handed to the NEXT run and promoted
+   * onto the wrong turn.
+   */
+  killAfterMs?: number;
 }
 
 function streamingCut(): number {
@@ -191,6 +199,20 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
         cachedModels: true,
         processRunning: true,
         queuedDrafts
+      };
+    case "crash":
+      // The queue outlives its process here: chips are waiting when the run dies,
+      // so the strip must keep saying so and the messages must be re-sent in
+      // order rather than promoted onto a later turn or dropped.
+      return {
+        name: key,
+        lines: fixtures.queue,
+        cliAvailable: true,
+        hasSessions: true,
+        cachedModels: true,
+        processRunning: true,
+        queuedDrafts,
+        killAfterMs: 1600
       };
     case "sessions":
       // A pane with a LIVE session, which is what makes picking another session
