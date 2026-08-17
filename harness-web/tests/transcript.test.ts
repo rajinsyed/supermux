@@ -625,3 +625,27 @@ describe("local actions", () => {
     expect(model.exitError).toBe("spawn failed");
   });
 });
+
+describe("session title and history truncation", () => {
+  test("a sessionTitle event names the session and later retitles win", () => {
+    const index = createIndex();
+    let model = createModel();
+    const { applyEvent } = require("../src/model/transcript") as typeof import("../src/model/transcript");
+    model = applyEvent(model, index, { kind: "sessionTitle", title: "Audit snapshot restore" }, 1);
+    expect(model.session.title).toBe("Audit snapshot restore");
+    // The CLI retitles as the topic evolves; the native side gates on renames,
+    // so the reducer must not freeze the first title it sees.
+    model = applyEvent(model, index, { kind: "sessionTitle", title: "Fix restore drift" }, 2);
+    expect(model.session.title).toBe("Fix restore drift");
+  });
+
+  test("historyTruncated survives replayed lines and clears on reset", () => {
+    const index = createIndex();
+    let model = createModel();
+    model = applyLocalAction(model, index, { kind: "historyTruncated" }, 1);
+    for (const line of fixtures.queue) model = applyLine(model, index, line, 2);
+    expect(model.historyTruncated).toBe(true);
+    model = applyLocalAction(model, index, { kind: "reset" }, 3);
+    expect(model.historyTruncated).toBeUndefined();
+  });
+});

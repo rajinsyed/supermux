@@ -523,4 +523,7 @@ export type NativeEvent =
   | { kind: "theme"; theme: HarnessTheme }
   // Pushed when a background catalog probe finishes, so a pane that opened with
   // no cached catalog fills its model menu without waiting for a first send.
-  | { kind: "modelCatalog"; models: ModelDescriptor[] };
+  | { kind: "modelCatalog"; models: ModelDescriptor[] }
+  // The CLI's auto-generated topic title, read from the session file after a
+  // turn — the same title the terminal shows in its tab. A user rename wins.
+  | { kind: "sessionTitle"; title: string };

@@ -251,6 +251,32 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(page.events.compactMap { $0.string(forKey: "uuid") } == ["u1", "a1", "u2", "a2"])
     }
 
+    @Test func sessionTitleFollowsPrecedenceAndReturnsNilWhenUntitled() throws {
+        let sandbox = try makeSandbox(named: "session-title")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        try writeSession(id: "titled", directory: directory, records: [
+            ["type": "user", "uuid": "u1", "isSidechain": false, "message": ["role": "user", "content": "first prompt"]],
+            ["type": "ai-title", "aiTitle": "Topic from the CLI"],
+        ])
+        try writeSession(id: "untitled", directory: directory, records: [
+            ["type": "queue-operation", "operation": "enqueue"],
+        ])
+
+        #expect(sandbox.discovery.sessionTitle(
+            for: sandbox.workingDirectory,
+            sessionID: "titled"
+        ) == "Topic from the CLI")
+        #expect(sandbox.discovery.sessionTitle(
+            for: sandbox.workingDirectory,
+            sessionID: "untitled"
+        ) == nil)
+        #expect(sandbox.discovery.sessionTitle(
+            for: sandbox.workingDirectory,
+            sessionID: "missing"
+        ) == nil)
+    }
+
     @Test func fixtureHistorySurfacesPersistedUserRecordUUIDs() throws {
         let sandbox = try makeSandbox(named: "fixture-user-uuids")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }

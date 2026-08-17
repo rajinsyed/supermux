@@ -258,6 +258,7 @@ export const copyDefaults = {
   "supermux.harness.divider.compact": "Conversation compacted",
   "supermux.harness.divider.compactTokens": "{tokens} tokens summarized",
   "supermux.harness.divider.reset": "Conversation cleared",
+  "supermux.harness.history.truncated": "Earlier messages in this session are not shown",
 
   "supermux.harness.banner.dismiss": "Dismiss",
   "supermux.harness.banner.retryAttempt": "Attempt {attempt} of {max}",

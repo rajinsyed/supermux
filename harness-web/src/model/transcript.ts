@@ -112,6 +112,11 @@ export function applyEvent(
       return { ...model, stderrTail: model.stderrTail.concat(event.text).slice(-40) };
     case "modelCatalog":
       return { ...model, cachedModels: event.models, revision: model.revision + 1 };
+    case "sessionTitle":
+      // The CLI's own topic title. The native side only emits this while the
+      // user has not renamed the session, and the CLI retitles as the topic
+      // evolves, so the latest event always wins here.
+      return { ...model, session: { ...model.session, title: event.title }, revision: model.revision + 1 };
     default:
       return model;
   }
@@ -428,6 +433,8 @@ export function applyLocalAction(
       return truncateBeforeUserMessage(model, index, action.uuid);
     case "cachedModels":
       return { ...model, cachedModels: action.models, revision: model.revision + 1 };
+    case "historyTruncated":
+      return { ...model, historyTruncated: true, revision: model.revision + 1 };
     case "reset":
       return resetConversation(model, index);
     default:

@@ -196,6 +196,37 @@ public struct SupermuxHarnessSessionDiscovery {
         return SupermuxHarnessHistoryPage(events: events, truncated: truncated)
     }
 
+    /// Returns the current display title for one persisted session, or nil when
+    /// the session has no title-bearing records yet.
+    ///
+    /// Precedence matches ``listSessions(for:limit:)``: custom title, then the
+    /// CLI's auto-generated topic title, then summary, then the first prompt.
+    ///
+    /// - Parameters:
+    ///   - workingDirectoryURL: The working directory whose project folders should be probed.
+    ///   - sessionID: The persisted session filename without `.jsonl`.
+    /// - Returns: The resolved title, or nil when the file is missing or untitled.
+    public func sessionTitle(
+        for workingDirectoryURL: URL,
+        sessionID: String
+    ) -> String? {
+        guard isValidSessionID(sessionID) else { return nil }
+        for candidateDirectory in projectDirectoryURLs(for: workingDirectoryURL) {
+            guard let directory = safeProjectDirectory(candidateDirectory) else { continue }
+            let file = directory.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
+            guard safeSessionFile(file, in: directory) else { continue }
+            var metadata = SessionMetadata()
+            try? forEachRecord(in: file) { record in
+                updateMetadata(&metadata, with: record)
+            }
+            return metadata.customTitle
+                ?? metadata.aiTitle
+                ?? metadata.summary
+                ?? metadata.firstPrompt
+        }
+        return nil
+    }
+
     private func mungedPath(_ path: String) -> String {
         var result = ""
         for scalar in path.unicodeScalars {

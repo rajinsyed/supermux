@@ -221,6 +221,13 @@ export function installMockBridge(store: HarnessStore): Scenario {
     },
     async send({ text }) {
       window.setTimeout(() => replyTo(text), 320);
+      // The native side reads the CLI's topic title off disk after each turn;
+      // here the first send stands in for it so the header retitle is visible.
+      if (!store.getSnapshot().session.title) {
+        window.setTimeout(() => {
+          store.receive([{ kind: "sessionTitle", title: "Snapshot restore audit" }]);
+        }, 900);
+      }
       return { sent: true };
     },
     async interrupt({ cancelQueued }) {

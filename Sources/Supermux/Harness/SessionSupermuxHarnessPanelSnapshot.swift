@@ -8,4 +8,7 @@ struct SessionSupermuxHarnessPanelSnapshot: Codable, Sendable {
     var model: String?
     var permissionMode: String?
     var title: String?
+    /// True when `title` came from an explicit rename rather than the CLI's
+    /// auto-generated topic title; only a rename blocks later retitling.
+    var titleIsCustom: Bool?
 }

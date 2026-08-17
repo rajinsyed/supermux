@@ -317,6 +317,14 @@ function AppBody({
                 onSuggestion={(text) => harness.setDraft(text)}
                 onResume={(sessionId) => harness.restart(sessionId, false)}
               />
+            ) : model.historyTruncated ? (
+              <div className="divider" role="separator">
+                <span className="divider-line" />
+                <span className="divider-sub">
+                  {copy("supermux.harness.history.truncated")}
+                </span>
+                <span className="divider-line" />
+              </div>
             ) : null
           }
           footer={

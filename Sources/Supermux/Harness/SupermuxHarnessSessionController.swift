@@ -296,10 +296,23 @@ final class SupermuxHarnessSessionController {
         if resumeSessionId == nil {
             restoreStateRetirementSink?()
         }
+        if resumeSessionId == nil || forkSession {
+            // A fresh or forked session starts untitled; the CLI titles it after
+            // its first turn. Keeping the previous session's title (or rename
+            // pin) would mislabel the new conversation.
+            snapshot.title = nil
+            snapshot.titleIsCustom = nil
+            titleSink?(nil)
+        }
         runningStateSink?(true)
         var event: [String: Any] = ["kind": "runStarted", "runId": started.runID]
         if let resumeSessionId { event["resumedSessionId"] = resumeSessionId }
         eventSink?(event)
+        if resumeSessionId != nil {
+            // A resumed session already has a topic title on disk; adopt it now
+            // rather than waiting for this pane's first completed turn.
+            refreshSessionTitleFromDisk()
+        }
         let binaryPath = resolvedPlan.executableURL.path
         let binaryRevision = binarySettingRevision
         Task { @MainActor [weak self, weak router] in
@@ -484,6 +497,7 @@ final class SupermuxHarnessSessionController {
         guard let router = controlRouter else {
             guard !isClosed else { throw SupermuxHarnessBridgeError.sessionNotRunning }
             snapshot.title = title
+            snapshot.titleIsCustom = true
             titleSink?(title)
             return
         }
@@ -492,6 +506,7 @@ final class SupermuxHarnessSessionController {
             throw SupermuxHarnessBridgeError.sessionNotRunning
         }
         snapshot.title = title
+        snapshot.titleIsCustom = true
         titleSink?(title)
     }
 
@@ -519,11 +534,15 @@ final class SupermuxHarnessSessionController {
         return result
     }
 
-    func listSessions(limit: Int?) async throws -> [[String: Any]] {
-        guard let directoryURL = workingDirectoryURL else { return [] }
-        let projectsRootURL = FileManager.default.homeDirectoryForCurrentUser
+    nonisolated static var claudeProjectsRootURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude", isDirectory: true)
             .appendingPathComponent("projects", isDirectory: true)
+    }
+
+    func listSessions(limit: Int?) async throws -> [[String: Any]] {
+        guard let directoryURL = workingDirectoryURL else { return [] }
+        let projectsRootURL = Self.claudeProjectsRootURL
         let sessions = try await Task.detached(priority: .userInitiated) {
             let discovery = SupermuxHarnessSessionDiscovery(
                 projectsRootURL: projectsRootURL,
@@ -763,7 +782,44 @@ final class SupermuxHarnessSessionController {
         if case .system(let frame)? = line.frame {
             consumeSystemFrame(frame)
         }
+        if case .result? = line.frame {
+            refreshSessionTitleFromDisk()
+        }
         eventSink?(["kind": "protocol", "line": line.object.rawValue])
+    }
+
+    /// Adopts the CLI's own topic title after each turn, matching the terminal's
+    /// native tab titling. The CLI writes an `ai-title` record into the session
+    /// JSONL rather than emitting a stream frame, so the file is the only source.
+    /// The CLI retitles as the topic evolves, so the latest disk title wins —
+    /// unless the user renamed the session, which pins the title for good.
+    private func refreshSessionTitleFromDisk() {
+        guard snapshot.titleIsCustom != true,
+              let directoryURL = workingDirectoryURL,
+              let sessionID = snapshot.sessionId, !sessionID.isEmpty else {
+            return
+        }
+        let projectsRootURL = Self.claudeProjectsRootURL
+        Task.detached(priority: .utility) { [weak self] in
+            let discovery = SupermuxHarnessSessionDiscovery(
+                projectsRootURL: projectsRootURL,
+                fileManager: .default
+            )
+            guard let title = discovery.sessionTitle(for: directoryURL, sessionID: sessionID) else {
+                return
+            }
+            await MainActor.run { [weak self] in
+                guard let self, !self.isClosed,
+                      self.snapshot.titleIsCustom != true,
+                      self.snapshot.sessionId == sessionID,
+                      self.snapshot.title != title else {
+                    return
+                }
+                self.snapshot.title = title
+                self.titleSink?(title)
+                self.eventSink?(["kind": "sessionTitle", "title": title])
+            }
+        }
     }
 
     private func consumeSystemFrame(_ frame: SupermuxHarnessSystemFrame) {

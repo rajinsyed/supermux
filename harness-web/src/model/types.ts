@@ -251,6 +251,11 @@ export interface TranscriptModel {
    * running session's capabilities.
    */
   cachedModels?: ModelDescriptor[];
+  /**
+   * The replayed history was cut at the native record limit, so turns older
+   * than the first one shown exist on disk but are not in this model.
+   */
+  historyTruncated?: boolean;
   stderrTail: string[];
   revision: number;
 }
@@ -282,4 +287,5 @@ export type LocalAction =
    */
   | { kind: "truncateBeforeUserMessage"; uuid: string }
   | { kind: "cachedModels"; models: ModelDescriptor[] }
+  | { kind: "historyTruncated" }
   | { kind: "reset" };

@@ -115,6 +115,7 @@ export function useHarness(store: HarnessStore): HarnessController {
             .loadSessionHistory({ sessionId })
             .then((result) => {
               store.dispatch({ kind: "reset" });
+              if (result.truncated) store.dispatch({ kind: "historyTruncated" });
               store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
             })
             .catch(() => undefined);
@@ -391,6 +392,7 @@ export function useHarness(store: HarnessStore): HarnessController {
             .loadSessionHistory({ sessionId: target })
             .then((result) => {
               store.dispatch({ kind: "reset" });
+              if (result.truncated) store.dispatch({ kind: "historyTruncated" });
               store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
             })
             .catch(() => undefined)
