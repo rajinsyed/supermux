@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { PendingPermission } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { Check, Sparkle } from "../Icons";
+import { prefersReducedMotion } from "../motion";
 import type { PermissionDecision } from "./PermissionCard";
 import { useCardKeys } from "./useCardKeys";
 
@@ -78,13 +79,18 @@ export function QuestionCard({
 
   // Moving to the next question must also move focus there: leaving it in the
   // composer means the next 1–9 keypress is typed as text instead of answering.
+  // `preventScroll` keeps the browser from fighting the follow-lock, so the
+  // scroll is done explicitly afterwards — otherwise focus lands below the fold
+  // on a short pane and the user answers a question they cannot see.
   useEffect(() => {
     if (!claimFocus.current) return;
     claimFocus.current = false;
     const first = cardRef.current?.querySelector<HTMLElement>(
       ".question-item.is-active .option"
     );
-    first?.focus({ preventScroll: true });
+    if (!first) return;
+    first.focus({ preventScroll: true });
+    first.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [active]);
 
   const submit = useCallback(() => {

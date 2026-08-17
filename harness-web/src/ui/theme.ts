@@ -134,6 +134,11 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--claude-btn-hover": dark ? "#f6b39a" : "#994026",
     "--on-claude": dark ? "#231a16" : "#ffffff",
     "--on-claude-chip": dark ? "rgba(255, 255, 255, 0.34)" : "rgba(0, 0, 0, 0.22)",
+    // Keyboard focus is where the user IS, so it must read at least as strongly
+    // as hover, which supplies a full surface + border + colour change. The ring
+    // is drawn as a box-shadow halo so it survives on tinted and dark surfaces
+    // alike, paired with the outline in base.css.
+    "--focus-ring": claude(dark ? 0.55 : 0.45),
     "--claude-soft": claude(dark ? 0.18 : 0.13),
     "--claude-faint": claude(dark ? 0.09 : 0.07),
     "--claude-border": claude(dark ? 0.34 : 0.3),

@@ -1,5 +1,17 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check } from "../Icons";
+
+const ITEM_SELECTOR = '[role="menuitem"], [role="menuitemradio"]';
+
+/** Every focusable stop inside the popup, in DOM order (menu rows plus inputs). */
+function stopsIn(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      `${ITEM_SELECTOR}, button:not([disabled]), input:not([disabled])`
+    )
+  );
+}
 
 export function Menu({
   trigger,
@@ -16,6 +28,13 @@ export function Menu({
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const close = useCallback((restoreFocus: boolean) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -25,7 +44,7 @@ export function Menu({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
-        setOpen(false);
+        close(true);
       }
     };
     window.addEventListener("mousedown", onDown);
@@ -34,11 +53,28 @@ export function Menu({
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [open]);
+  }, [close, open]);
+
+  // Arrow keys move between rows and Tab cycles inside the popup: leaving Tab to
+  // the browser walks into the NEXT header trigger while the popup stays mounted,
+  // which is how a keyboard user ends up operating one menu from another's row.
+  const onPopKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Tab") return;
+    const stops = event.key === "Tab" ? stopsIn(pop.current) : Array.from(
+      pop.current?.querySelectorAll<HTMLElement>(ITEM_SELECTOR) ?? []
+    );
+    if (stops.length === 0) return;
+    event.preventDefault();
+    const at = stops.indexOf(document.activeElement as HTMLElement);
+    const back = event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey);
+    const next = at < 0 ? (back ? stops.length - 1 : 0) : (at + (back ? -1 : 1) + stops.length) % stops.length;
+    stops[next].focus();
+  }, []);
 
   return (
     <div className={`menu${className ? ` ${className}` : ""}`} ref={root}>
       <button
+        ref={triggerRef}
         type="button"
         className={`menu-trigger${open ? " is-open" : ""}`}
         onClick={() => setOpen((v) => !v)}
@@ -49,8 +85,14 @@ export function Menu({
         {trigger(open)}
       </button>
       {open ? (
-        <div className={`menu-pop is-${align}`} role="menu">
-          {children(() => setOpen(false))}
+        <div
+          className={`menu-pop is-${align}`}
+          role="menu"
+          aria-label={label}
+          ref={pop}
+          onKeyDown={onPopKeyDown}
+        >
+          {children(() => close(false))}
         </div>
       ) : null}
     </div>
@@ -64,7 +106,8 @@ export function MenuItem({
   active,
   danger,
   detail,
-  badge
+  badge,
+  role = "menuitem"
 }: {
   children: ReactNode;
   /** Leading glyph; reserves its slot even when absent so labels stay aligned. */
@@ -75,12 +118,19 @@ export function MenuItem({
   detail?: string;
   /** Trailing tag such as "Default" — states a fact about the row, not its state. */
   badge?: string;
+  /**
+   * Single-select groups (model, effort, permission mode) are `menuitemradio` so
+   * the live choice is announced, not only drawn as a check glyph. Action-only
+   * rows stay plain `menuitem`, which has no checked state to report.
+   */
+  role?: "menuitem" | "menuitemradio";
 }) {
   return (
     <button
       type="button"
       className={`menu-item${active ? " is-active" : ""}${danger ? " is-danger" : ""}`}
-      role="menuitem"
+      role={role}
+      aria-checked={role === "menuitemradio" ? !!active : undefined}
       onClick={onClick}
     >
       <span className="menu-item-main">

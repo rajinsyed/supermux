@@ -46,7 +46,8 @@
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-.link-btn:hover {
+.link-btn:hover,
+.link-btn:focus-visible {
   color: var(--claude);
   background: var(--claude-faint);
 }
@@ -130,7 +131,8 @@
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
-.work-overflow:hover {
+.work-overflow:hover,
+.work-overflow:focus-visible {
   background: var(--surface-hover);
   color: var(--text-soft);
 }
@@ -153,6 +155,18 @@
   word-break: break-word;
   font-size: 13px;
   line-height: 1.56;
+}
+
+/* The copy button is pinned over the bubble's top-right corner, and bubbles size
+   to their content — so a line that reaches the right edge runs under the glyph.
+   A float reserves the button's footprint on the first line only: the text flows
+   around it at rest, and nothing reflows when the button fades in on hover
+   (a hover-time padding change would shift the words under the pointer). */
+.user-msg-body::before {
+  content: "";
+  float: right;
+  width: 18px;
+  height: 20px;
 }
 
 .user-msg-body.is-clipped {
@@ -220,7 +234,8 @@
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
-.fold-head:hover {
+.fold-head:hover,
+.fold-head:focus-visible {
   background: var(--surface-hover);
   color: var(--text-soft);
 }
@@ -316,7 +331,8 @@
 }
 
 /* Neutral hover like every other row; only the icon stays violet. */
-.thinking-head:hover {
+.thinking-head:hover,
+.thinking-head:focus-visible {
   color: var(--text-soft);
   background: var(--surface-hover);
 }
@@ -330,7 +346,8 @@
   opacity: 0.8;
 }
 
-.thinking-head:hover .thinking-icon {
+.thinking-head:hover .thinking-icon,
+.thinking-head:focus-visible .thinking-icon {
   opacity: 1;
 }
 
@@ -480,7 +497,8 @@
   animation: pop-in 150ms var(--ease);
 }
 
-.jump-pill:hover {
+.jump-pill:hover,
+.jump-pill:focus-visible {
   color: var(--claude);
   border-color: var(--claude-border);
 }

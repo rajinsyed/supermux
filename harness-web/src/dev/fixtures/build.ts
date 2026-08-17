@@ -46,10 +46,14 @@ export function initializeResponse(): ProtocolLine {
         agents: ["Explore", "Plan", "general-purpose"],
         output_style: "default",
         available_output_styles: ["default", "explanatory", "concise"],
+        // The catalog is keyed by SELECTOR, not by the resolved id `system/init`
+        // reports — exactly as the live CLI answers (see ctl_log.txt: values
+        // default | opus[1m] | sonnet | haiku). A fixture whose `value` happened
+        // to equal the init model is what hid the raw-id pill for three rounds.
         models: [
           {
-            value: "claude-opus-5",
-            resolvedModel: "claude-opus-5-20260401",
+            value: "opus",
+            resolvedModel: "claude-opus-5",
             displayName: "Opus 5",
             description: "Most capable. Best for hard reasoning and large refactors.",
             supportsEffort: true,
@@ -58,8 +62,8 @@ export function initializeResponse(): ProtocolLine {
             supportsFastMode: false
           },
           {
-            value: "claude-sonnet-5",
-            resolvedModel: "claude-sonnet-5-20260201",
+            value: "sonnet",
+            resolvedModel: "claude-sonnet-5",
             displayName: "Sonnet 5",
             description: "Balanced speed and capability. Recommended default.",
             supportsEffort: true,
@@ -68,7 +72,8 @@ export function initializeResponse(): ProtocolLine {
             supportsFastMode: true
           },
           {
-            value: "claude-haiku-4-5",
+            value: "haiku",
+            resolvedModel: "claude-haiku-4-5-20251001",
             displayName: "Haiku 4.5",
             description: "Fastest and cheapest. Good for small edits.",
             supportsEffort: false,

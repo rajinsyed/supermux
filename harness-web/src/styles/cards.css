@@ -237,8 +237,18 @@
   transition: background var(--dur) var(--ease);
 }
 
-.question-prompt:hover {
+.question-prompt:hover,
+.question-prompt:focus-visible {
   background: var(--surface-hover);
+}
+
+/* Full-bleed rows in a clipping card: the ring goes inside their own box (see
+   the same treatment on .tool-head), and the background change carries the rest
+   of the state. */
+.question-prompt:focus-visible,
+.plan-expand:focus-visible {
+  outline-offset: -2px;
+  box-shadow: none;
 }
 
 .question-header {
@@ -304,7 +314,8 @@
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-.option:hover {
+.option:hover,
+.option:focus-visible {
   border-color: var(--border-strong);
   background: var(--surface-hover);
 }
@@ -419,7 +430,8 @@
   color: var(--on-claude);
 }
 
-.btn-primary:hover:not(:disabled) {
+.btn-primary:hover:not(:disabled),
+.btn-primary:focus-visible:not(:disabled) {
   background: var(--claude-btn-hover);
 }
 
@@ -429,7 +441,8 @@
   color: var(--text-soft);
 }
 
-.btn-secondary:hover:not(:disabled) {
+.btn-secondary:hover:not(:disabled),
+.btn-secondary:focus-visible:not(:disabled) {
   border-color: var(--claude-border);
   color: var(--text);
 }
@@ -438,7 +451,8 @@
   color: var(--text-muted);
 }
 
-.btn-ghost:hover:not(:disabled) {
+.btn-ghost:hover:not(:disabled),
+.btn-ghost:focus-visible:not(:disabled) {
   background: var(--surface-hover);
   color: var(--text);
 }
@@ -450,7 +464,8 @@
   color: var(--on-danger);
 }
 
-.btn-danger:hover:not(:disabled) {
+.btn-danger:hover:not(:disabled),
+.btn-danger:focus-visible:not(:disabled) {
   background: var(--danger-hover);
 }
 
@@ -463,7 +478,8 @@
   color: var(--text-soft);
 }
 
-.btn-tiny:hover {
+.btn-tiny:hover,
+.btn-tiny:focus-visible {
   border-color: var(--claude-border);
   color: var(--text);
 }
@@ -510,7 +526,8 @@
   color: var(--on-claude);
 }
 
-.btn-send:hover:not(:disabled) {
+.btn-send:hover:not(:disabled),
+.btn-send:focus-visible:not(:disabled) {
   background: var(--claude-btn-hover);
 }
 
@@ -533,7 +550,8 @@
   color: var(--danger);
 }
 
-.btn-stop:hover {
+.btn-stop:hover,
+.btn-stop:focus-visible {
   background: color-mix(in srgb, var(--danger) 22%, transparent);
 }
 
@@ -578,7 +596,8 @@ kbd {
   position: relative;
 }
 
-.icon-btn:hover {
+.icon-btn:hover,
+.icon-btn:focus-visible {
   background: var(--surface-hover);
   color: var(--text-soft);
 }
@@ -596,10 +615,16 @@ kbd {
   color: var(--danger);
 }
 
+/* Opens DOWNWARD, into the card body. Every context that hosts a copy button
+   clips upward: a code block's `overflow: hidden` (needed for its rounded
+   corners) starts immediately below the header bar, and the tool card clips
+   again outside that — so a toast at `bottom: 100%` was painted nowhere at all
+   in the commonest case, and sliced in half on the plan card header. */
 .copy-toast {
   position: absolute;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
   right: 0;
+  z-index: 3;
   padding: 2px 6px;
   border-radius: var(--r-xs);
   background: var(--popover-bg);
@@ -736,7 +761,8 @@ kbd {
     color var(--dur) var(--ease);
 }
 
-.suggestion:hover {
+.suggestion:hover,
+.suggestion:focus-visible {
   border-color: var(--claude-border);
   background: var(--claude-faint);
   color: var(--text);
@@ -753,7 +779,8 @@ kbd {
   flex: 0 0 auto;
 }
 
-.suggestion:hover .suggestion-arrow {
+.suggestion:hover .suggestion-arrow,
+.suggestion:focus-visible .suggestion-arrow {
   opacity: 1;
   color: var(--claude);
 }
@@ -769,7 +796,8 @@ kbd {
   transition: background var(--dur) var(--ease);
 }
 
-.recent-session:hover {
+.recent-session:hover,
+.recent-session:focus-visible {
   background: var(--surface-hover);
 }
 

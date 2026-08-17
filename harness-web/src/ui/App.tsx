@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { activeModelFor } from "../model/helpers";
 import type { HarnessStore } from "../model/store";
 import type { ImageAttachment } from "../model/types";
 import { CopyProvider, useCopy } from "./CopyContext";
@@ -212,10 +213,7 @@ function AppBody({
             model.turns.length === 0 ? (
               <EmptyState
                 workingDirectory={context?.workingDirectory ?? model.session.cwd}
-                modelName={
-                  model.session.models.find((m) => m.value === model.session.model)?.displayName ??
-                  model.session.model
-                }
+                modelName={activeModelFor(model.session)?.displayName ?? model.session.model}
                 sessions={harness.sessions}
                 onSuggestion={(text) => harness.setDraft(text)}
                 onResume={(sessionId) => harness.restart(sessionId, false)}

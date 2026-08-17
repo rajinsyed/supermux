@@ -94,6 +94,40 @@ describe("QuestionCard keyboard", () => {
     expect(decisions.length).toBe(0);
   });
 
+  test("auto-advance brings the newly focused option into view", async () => {
+    // `focus({ preventScroll: true })` is deliberate — it stops the browser
+    // fighting the transcript's follow-lock — so the scroll has to be explicit.
+    // Without it, answering Q1 on a short pane silently moves focus below the
+    // fold and the next 1–9 keypress answers a question the user cannot see.
+    const calls: Array<{ target: Element; options: { block?: string } }> = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
+      calls.push({ target: this, options: (arg ?? {}) as { block?: string } });
+    };
+    try {
+      setup();
+      calls.length = 0;
+      press("2");
+      // The advance runs on a 200ms timer inside the card.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      });
+
+      const last = calls[calls.length - 1];
+      expect(last).toBeDefined();
+      expect(last.options.block).toBe("nearest");
+      // It is the option that just took focus, and it belongs to the question
+      // the advance moved to — not the one that was already on screen.
+      expect(last.target === document.activeElement).toBe(true);
+      const item = last.target.closest(".question-item");
+      const items = Array.from(document.querySelectorAll(".question-item"));
+      expect(item).not.toBeNull();
+      expect(items.indexOf(item!)).toBe(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   test("typed free text is merged with the picked options, not substituted for them", () => {
     const decisions = setup();
     const multi = questions.find((q) => q.multiSelect);

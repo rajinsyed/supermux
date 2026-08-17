@@ -16,6 +16,11 @@ const MSG_A = "msg_resume_history_1";
 const MSG_B = "msg_resume_history_2";
 
 export const resumeHistory: ProtocolLine[] = [
+  // Resuming still spawns a process, and the harness always performs the
+  // `initialize` handshake on start — so the model catalog is present here just
+  // as it is on a fresh session. Without it the header has no catalog to resolve
+  // init's resolved model id against and the pill prints the raw id.
+  initializeResponse(),
   initLine({ session_id: "resumed-session-4821" }),
   userLine("Why does the sidebar lose its scroll position when a workspace is restored?"),
   messageStart(MSG_A),
@@ -79,7 +84,6 @@ export const resumeHistory: ProtocolLine[] = [
 
 export const resumeFixture: ProtocolLine[] = [
   ...resumeHistory,
-  initializeResponse(),
   initLine({ session_id: "resumed-session-4821" }),
   userLine("Add a regression test for that."),
   sessionState("running"),

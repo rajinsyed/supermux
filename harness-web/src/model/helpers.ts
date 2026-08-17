@@ -1,4 +1,4 @@
-import type { JsonObject, PermissionMode } from "../protocol/types";
+import type { JsonObject, ModelDescriptor, PermissionMode } from "../protocol/types";
 import type {
   Block,
   PendingKind,
@@ -66,6 +66,25 @@ export function emptyUsage(): UsageTotals {
     cacheCreationTokens: 0,
     turns: 0
   };
+}
+
+/**
+ * `system/init` reports the RESOLVED model id ("claude-sonnet-5"), while the
+ * catalog from `initialize` is keyed by short selector ("sonnet"). The two
+ * namespaces never overlap on a real session, so matching only on `value` leaves
+ * the pill printing a raw id, no menu row checked, and the effort submenu — which
+ * is gated on the active model — unreachable. Both identifiers resolve here so
+ * the header and the empty state cannot drift apart.
+ */
+export function activeModelFor(
+  session: Pick<SessionMeta, "models" | "model">
+): ModelDescriptor | undefined {
+  const id = session.model;
+  if (!id) return undefined;
+  return (
+    session.models.find((m) => m.value === id) ??
+    session.models.find((m) => m.resolvedModel === id)
+  );
 }
 
 export function isPlainObject(value: unknown): value is JsonObject {

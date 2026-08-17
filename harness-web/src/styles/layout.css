@@ -65,7 +65,8 @@
   transition: background var(--dur) var(--ease);
 }
 
-.title-btn:hover {
+.title-btn:hover,
+.title-btn:focus-visible {
   background: var(--surface-hover);
 }
 
@@ -178,15 +179,31 @@
   justify-content: center;
 }
 
-.menu-trigger:hover .mode-pill,
+/* The neutral pills swap to the raised palette. `.mode-pill` is excluded unless
+   it is on the default mode, because the three other modes carry a SEMANTIC
+   colour (green auto-edit, violet plan, red bypass) — a flat override erases the
+   signal exactly while the pointer is on it. */
+.menu-trigger:hover .mode-pill.is-default,
 .menu-trigger:hover .model-pill,
 .menu-trigger:hover .icon-pill,
-.menu-trigger.is-open .mode-pill,
+.menu-trigger:focus-visible .mode-pill.is-default,
+.menu-trigger:focus-visible .model-pill,
+.menu-trigger:focus-visible .icon-pill,
+.menu-trigger.is-open .mode-pill.is-default,
 .menu-trigger.is-open .model-pill,
 .menu-trigger.is-open .icon-pill {
   background: var(--surface-active);
   border-color: var(--border-strong);
   color: var(--text);
+}
+
+/* A toned pill answers the pointer as a deepening of its own hue: the label
+   colour never moves, so the mode stays legible at a glance. */
+.menu-trigger:hover .mode-pill:not(.is-default),
+.menu-trigger:focus-visible .mode-pill:not(.is-default),
+.menu-trigger.is-open .mode-pill:not(.is-default) {
+  background: color-mix(in srgb, currentColor 20%, transparent);
+  border-color: color-mix(in srgb, currentColor 60%, transparent);
 }
 
 .mode-pill.is-acceptEdits {
@@ -291,7 +308,8 @@
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
-.menu-item:hover {
+.menu-item:hover,
+.menu-item:focus-visible {
   background: var(--surface-hover);
   color: var(--text);
 }
@@ -304,8 +322,10 @@
   color: var(--danger);
 }
 
-.menu-item.is-danger:hover {
+.menu-item.is-danger:hover,
+.menu-item.is-danger:focus-visible {
   background: var(--danger-soft);
+  color: var(--danger);
 }
 
 /* Copy owns the casing — `text-transform: capitalize` retitles sentence-case
@@ -429,7 +449,8 @@
   border-radius: var(--r-sm);
 }
 
-.session-row:hover {
+.session-row:hover,
+.session-row:focus-within {
   background: var(--surface-hover);
 }
 
@@ -483,8 +504,10 @@
   transition: border-color var(--dur) var(--ease);
 }
 
-.ctx-btn:hover {
+.ctx-btn:hover,
+.ctx-btn:focus-visible {
   border-color: var(--border-strong);
+  background: var(--surface-active);
 }
 
 .ctx-arc {

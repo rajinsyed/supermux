@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { activeModelFor } from "../../model/helpers";
 import type { SessionMeta, UsageTotals } from "../../model/types";
 import type {
   ContextUsage,
@@ -88,7 +89,7 @@ export function Header(props: HeaderProps) {
   }, [editing]);
 
   const title = session.title ?? copy("supermux.harness.app.untitledSession");
-  const activeModel = session.models.find((m) => m.value === session.model);
+  const activeModel = activeModelFor(session);
   const modelName = activeModel?.displayName ?? session.model ?? copy("supermux.harness.header.model");
   // The chip must never outlive the capability it describes: a model that has no
   // effort levels shows no effort tag, whatever the session last carried.
@@ -173,6 +174,7 @@ export function Header(props: HeaderProps) {
               {MODES.map((mode) => (
                 <MenuItem
                   key={mode}
+                  role="menuitemradio"
                   active={mode === session.permissionMode}
                   icon={<span className={`mode-dot is-${mode}`} />}
                   onClick={() => {
@@ -207,7 +209,8 @@ export function Header(props: HeaderProps) {
                   session.models.map((model) => (
                     <MenuItem
                       key={model.value}
-                      active={model.value === session.model}
+                      role="menuitemradio"
+                      active={model === activeModel}
                       detail={model.description}
                       onClick={() => {
                         props.onSetModel(model.value, clampEffort(model, session.effort));
@@ -224,6 +227,7 @@ export function Header(props: HeaderProps) {
                   {activeModel.supportedEffortLevels.map((level) => (
                     <MenuItem
                       key={level}
+                      role="menuitemradio"
                       active={level === effort}
                       badge={
                         level === activeModel.defaultEffortLevel
@@ -231,7 +235,9 @@ export function Header(props: HeaderProps) {
                           : undefined
                       }
                       onClick={() => {
-                        props.onSetModel(session.model ?? activeModel.value, level);
+                        // The catalog's `value` is the selector set_model takes;
+                        // session.model may hold the resolved id, which it rejects.
+                        props.onSetModel(activeModel.value, level);
                         close();
                       }}
                     >

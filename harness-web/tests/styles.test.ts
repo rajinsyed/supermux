@@ -4,12 +4,30 @@ async function css(name: string): Promise<string> {
   return Bun.file(new URL(`../src/styles/${name}`, import.meta.url).pathname).text();
 }
 
-/** The declaration block for one selector, so a rule can be asserted in isolation. */
+/**
+ * The declaration block a selector participates in, so a rule can be asserted in
+ * isolation. The selector may be one of several in a comma-separated group —
+ * `.btn-send:hover` sharing its block with `.btn-send:focus-visible` is the same
+ * rule, and a matcher that only accepts a lone selector would report it missing.
+ */
 function ruleFor(sheet: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(sheet);
+  const match = new RegExp(
+    `(?:^|\\n)(?:[^{}]*,\\s*)?${escaped}\\s*(?:,[^{}]*)?\\{([^}]*)\\}`
+  ).exec(sheet);
   if (!match) throw new Error(`no rule for ${selector}`);
   return match[1];
+}
+
+/** Every selector group in a sheet, split into its individual selectors. */
+function selectorGroups(sheet: string): string[][] {
+  const groups: string[][] = [];
+  const pattern = /(?:^|\n)((?:[^{}\n]+,\n)*[^{}\n]+)\{/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(sheet)) !== null) {
+    groups.push(match[1].split(",").map((one) => one.trim()).filter(Boolean));
+  }
+  return groups;
 }
 
 describe("tool row never collapses either label to zero", () => {
@@ -85,6 +103,104 @@ describe("every interactive control answers the pointer", () => {
   test("the primary button has one too", async () => {
     const sheet = await css("cards.css");
     expect(sheet).toContain(".btn-primary:hover:not(:disabled)");
+  });
+});
+
+describe("keyboard focus is never the weaker affordance", () => {
+  const SHEETS = ["base.css", "cards.css", "dock.css", "layout.css", "tools.css", "transcript.css"];
+  /**
+   * The only sanctioned exemption: a pointer-only affordance that is hidden
+   * outright without a fine pointer and is kept out of the tab order
+   * (`tabIndex={-1}` on every tick), so it has no keyboard state to design.
+   */
+  const POINTER_ONLY = new Set([".timeline-tick"]);
+
+  test("every class with a :hover treatment has a matching focus rule", async () => {
+    // Hover changes background AND border AND colour; a bare UA outline over an
+    // unchanged surface is not a designed focus state. Anything styled for the
+    // pointer must be styled for the keyboard, or the two drift apart again.
+    const missing: string[] = [];
+    for (const name of SHEETS) {
+      const sheet = await css(name);
+      for (const group of selectorGroups(sheet)) {
+        for (const selector of group) {
+          const match = /^(\.[A-Za-z0-9_-]+)(?::[a-z-]+(?:\([^)]*\))?)*:hover\b/.exec(selector);
+          if (!match) continue;
+          const base = match[1];
+          if (
+            POINTER_ONLY.has(base) ||
+            sheet.includes(`${base}:focus-visible`) ||
+            sheet.includes(`${base}:focus-within`)
+          ) {
+            continue;
+          }
+          missing.push(`${name} ${base}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  test("the shared ring is a visible halo, not just the UA outline", async () => {
+    const sheet = await css("base.css");
+    expect(ruleFor(sheet, ":focus-visible")).toMatch(/box-shadow:[^;]*var\(--focus-ring\)/);
+  });
+});
+
+describe("a semantic mode pill keeps its colour under the pointer", () => {
+  test("the neutral hover override cannot reach a toned pill", async () => {
+    const sheet = await css("layout.css");
+    // Bypass is the red "all prompts skipped" signal; the old blanket rule
+    // repainted it to the neutral grey exactly while the pointer was on it.
+    const groups = selectorGroups(sheet);
+    const neutral = groups.find((group) =>
+      group.some((s) => s === ".menu-trigger:hover .model-pill")
+    );
+    expect(neutral).toBeDefined();
+    expect(neutral!.some((s) => s === ".menu-trigger:hover .mode-pill")).toBe(false);
+    expect(neutral!.some((s) => s === ".menu-trigger:hover .mode-pill.is-default")).toBe(true);
+    expect(sheet).toContain(".menu-trigger:hover .mode-pill:not(.is-default)");
+    // The toned hover is a deepening of the pill's own hue, so the label colour
+    // — the thing that names the mode — never moves.
+    expect(ruleFor(sheet, ".menu-trigger:hover .mode-pill:not(.is-default)")).not.toMatch(
+      /(?:^|\s)color:/
+    );
+  });
+});
+
+describe("the copied toast is visible where copy buttons actually live", () => {
+  test("it opens downward, away from every clipping ancestor", async () => {
+    const cards = await css("cards.css");
+    const tools = await css("tools.css");
+    // `.code-block` and `.tool-card` both clip; the toast used to be painted
+    // entirely outside them at `bottom: calc(100% + 4px)`.
+    expect(ruleFor(tools, ".code-block")).toMatch(/overflow:\s*hidden/);
+    expect(ruleFor(tools, ".tool-card")).toMatch(/overflow:\s*hidden/);
+    const toast = ruleFor(cards, ".copy-toast");
+    expect(toast).toMatch(/top:\s*calc\(100% \+ 4px\)/);
+    expect(toast).not.toMatch(/bottom:/);
+  });
+});
+
+describe("the expanded todo strip cannot displace the transcript", () => {
+  test("the list caps its height and scrolls instead", async () => {
+    const sheet = await css("dock.css");
+    const rule = ruleFor(sheet, ".todo-strip-list");
+    expect(rule).toMatch(/max-height:\s*\d+px/);
+    expect(rule).toMatch(/overflow-y:\s*auto/);
+    // A short pane gives up even less: 500px tall is an ordinary cmux split.
+    expect(sheet).toMatch(/@media \(max-height: 560px\)[\s\S]*?\.todo-strip-list/);
+  });
+});
+
+describe("the user copy button never lands on the message text", () => {
+  test("the bubble reserves the button's footprint rather than overlapping it", async () => {
+    const sheet = await css("transcript.css");
+    // Reserved at rest, not on hover: a hover-time padding change reflows the
+    // words under the pointer.
+    const reserve = ruleFor(sheet, ".user-msg-body::before");
+    expect(reserve).toMatch(/float:\s*right/);
+    expect(reserve).toMatch(/width:\s*\d+px/);
   });
 });
 

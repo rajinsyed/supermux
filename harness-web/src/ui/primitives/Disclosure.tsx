@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { prefersReducedMotion } from "../motion";
 
 const DURATION_MS = 200;
 const FALLBACK_MS = 250;
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
 
 /**
  * A disclosure that animates between 0 and its natural height.

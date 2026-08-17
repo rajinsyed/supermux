@@ -6,11 +6,20 @@ import { CopyButton } from "./CopyButton";
 export function AnsiOutput({
   text,
   maxLines = 12,
-  tone = "default"
+  tone = "default",
+  wrap = false
 }: {
   text: string;
   maxLines?: number;
   tone?: "default" | "error";
+  /**
+   * Prose output — a failure message, not a rendered layout — wraps instead of
+   * scrolling sideways. A one-line ENOENT naming a 90-character path is exactly
+   * the string the reader opened the card for, and `pre` puts its second half
+   * behind a horizontal scrollbar. Structured output (aligned compiler
+   * diagnostics, tables) keeps `pre`, where a wrap would shear the columns.
+   */
+  wrap?: boolean;
 }) {
   const copy = useCopy();
   const [expanded, setExpanded] = useState(false);
@@ -28,7 +37,7 @@ export function AnsiOutput({
       <div className="terminal-copy">
         <CopyButton text={plain} />
       </div>
-      <pre className="terminal-body mono">
+      <pre className={`terminal-body mono${wrap ? " is-wrapped" : ""}`}>
         {shown.map((line, i) => (
           <div key={i} className="terminal-line">
             {line.spans.length === 0 ? (

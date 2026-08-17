@@ -235,7 +235,8 @@
   transition: background var(--dur) var(--ease);
 }
 
-.todo-strip-head:hover {
+.todo-strip-head:hover,
+.todo-strip-head:focus-visible {
   background: var(--surface-hover);
 }
 
@@ -276,6 +277,10 @@
   font-size: 11px;
 }
 
+/* The expanded plan must not displace the work it describes: at 800×500 an
+   uncapped seven-item list took 60% of the pane and sliced the running tool card
+   in half, and the same strings are already rendered in the TodoWrite card
+   above. Past the cap the list scrolls inside the strip. */
 .todo-strip-list {
   list-style: none;
   margin: 0 0 4px;
@@ -283,6 +288,17 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  max-height: 168px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@media (max-height: 560px) {
+  .todo-strip-list {
+    max-height: 104px;
+  }
 }
 
 /* ---------- composer ---------- */
@@ -442,7 +458,8 @@
   flex: 0 0 auto;
 }
 
-.queue-chip-x:hover {
+.queue-chip-x:hover,
+.queue-chip-x:focus-visible {
   background: var(--danger-soft);
   color: var(--danger);
 }
@@ -507,6 +524,7 @@
 }
 
 .popover-item.is-active,
+.popover-item:focus-visible,
 .popover-item:hover {
   background: var(--claude-faint);
 }

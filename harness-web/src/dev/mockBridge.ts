@@ -73,7 +73,7 @@ export function installMockBridge(store: HarnessStore): Scenario {
                 "spawn claude ENOENT — searched PATH, ~/.local/bin, ~/.bun/bin, nvm, volta, fnm, mise, asdf"
             },
         restore: scenario.restoreSessionId
-          ? { sessionId: scenario.restoreSessionId, model: "claude-sonnet-5", permissionMode: "default" }
+          ? { sessionId: scenario.restoreSessionId, model: "sonnet", permissionMode: "default" }
           : undefined
       };
     },

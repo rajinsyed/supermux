@@ -82,9 +82,15 @@ a:hover {
   outline: none;
 }
 
+/* Keyboard focus must never be the weaker of the two affordances: a bare UA
+   outline over an unchanged surface reads as a rendering artifact on rows this
+   dense, while hover changes background, border AND colour. Every control that
+   has a :hover rule pairs it with :focus-visible (see tests/styles.test.ts), and
+   this shared ring sits under all of them. */
 :focus-visible {
   outline: 2px solid var(--claude-strong);
-  outline-offset: 2px;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px var(--focus-ring);
   border-radius: var(--r-xs);
 }
 

@@ -33,8 +33,20 @@
   min-width: 0;
 }
 
-.tool-head:hover {
+.tool-head:hover,
+.tool-head:focus-visible {
   background: var(--surface-hover);
+}
+
+/* A full-bleed row inside an `overflow: hidden` card has no room outside itself
+   for a ring, so the outline is drawn INSIDE its own box. The shared halo is
+   dropped here: it would be clipped to a hairline on three sides. The paired
+   background change carries the state instead. */
+.tool-head:focus-visible,
+.code-block-head .icon-btn:focus-visible,
+.terminal-copy .icon-btn:focus-visible {
+  outline-offset: -2px;
+  box-shadow: none;
 }
 
 .tool-caret {
@@ -406,7 +418,8 @@
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-.subagent-toggle:hover {
+.subagent-toggle:hover,
+.subagent-toggle:focus-visible {
   color: var(--violet);
   background: var(--violet-soft);
 }
@@ -496,7 +509,10 @@
 
 .code-block-more:hover,
 .diff-more:hover,
-.terminal-more:hover {
+.terminal-more:hover,
+.code-block-more:focus-visible,
+.diff-more:focus-visible,
+.terminal-more:focus-visible {
   color: var(--claude);
   background: var(--claude-faint);
 }
@@ -509,7 +525,8 @@
   border-top-color: var(--terminal-border);
 }
 
-.terminal-more:hover {
+.terminal-more:hover,
+.terminal-more:focus-visible {
   color: var(--terminal-fg);
   background: rgba(255, 255, 255, 0.11);
 }
@@ -566,6 +583,13 @@
   min-height: 1.5em;
 }
 
+/* Prose output wraps rather than hiding its tail behind a scrollbar; the path in
+   an ENOENT is the whole reason the card is open. */
+.terminal-body.is-wrapped .terminal-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .terminal.is-error .terminal-body {
   color: var(--terminal-error);
 }
@@ -574,7 +598,8 @@
   color: var(--terminal-muted);
 }
 
-.terminal .copy-btn:hover {
+.terminal .copy-btn:hover,
+.terminal .copy-btn:focus-visible {
   color: var(--terminal-fg);
   background: rgba(255, 255, 255, 0.11);
 }
