@@ -45,6 +45,7 @@ final class SupermuxHarnessSessionController {
     private var cachedCLIStatus: [String: Any]?
     private var sessionFileWatcher: SupermuxHarnessSessionFileWatcher?
     private var watchedSessionID: String?
+    private var isTurnActive = false
 
     init(
         workingDirectory: String?,
@@ -311,7 +312,6 @@ final class SupermuxHarnessSessionController {
             sessionFileWatcher = nil
             watchedSessionID = nil
         }
-        runningStateSink?(true)
         var event: [String: Any] = ["kind": "runStarted", "runId": started.runID]
         if let resumeSessionId { event["resumedSessionId"] = resumeSessionId }
         eventSink?(event)
@@ -346,6 +346,7 @@ final class SupermuxHarnessSessionController {
         }
         let frame = try encoder.userMessage(text: text, images: images, uuid: uuid)
         try await processSession.send(frame)
+        setTurnActive(true)
     }
 
     func interrupt(cancelQueued: Bool) async throws {
@@ -797,8 +798,23 @@ final class SupermuxHarnessSessionController {
         if case .system(let frame)? = line.frame {
             consumeSystemFrame(frame)
         }
+        if case .result? = line.frame {
+            // The result frame is the CLI's only reliable end-of-turn signal
+            // (`session_state_changed` never arrives from the real CLI), the
+            // same boundary the terminal's Stop hook fires on.
+            setTurnActive(false)
+        }
         eventSink?(["kind": "protocol", "line": line.object.rawValue])
         emitPendingUserInputStateIfChanged()
+    }
+
+    /// Mirrors the terminal hooks' lifecycle: UserPromptSubmit → running,
+    /// Stop → idle. `send()` and status frames turn it on; the result frame
+    /// and process exit turn it off.
+    private func setTurnActive(_ active: Bool) {
+        guard isTurnActive != active else { return }
+        isTurnActive = active
+        runningStateSink?(active)
     }
 
     private var lastEmittedPendingUserInput = false
@@ -901,9 +917,18 @@ final class SupermuxHarnessSessionController {
             if let mode = frame.rawObject.string(forKey: "permissionMode") {
                 snapshot.permissionMode = mode
             }
+        case .status:
+            switch frame.rawObject.string(forKey: "status") {
+            case "requesting", "compacting":
+                // Queued messages drain into new turns with no send() on this
+                // side; the pre-request status frame is their start signal.
+                setTurnActive(true)
+            default:
+                break
+            }
         case .sessionStateChanged:
             if let state = frame.rawObject.string(forKey: "state") {
-                runningStateSink?(state != "idle")
+                setTurnActive(state != "idle")
             }
         default:
             break
@@ -922,7 +947,7 @@ final class SupermuxHarnessSessionController {
                     await router.close(denialMessage: Self.exitedDenialMessage)
                 }
             }
-            runningStateSink?(false)
+            setTurnActive(false)
             emitPendingUserInputStateIfChanged()
             eventSink?(["kind": "runExited", "runId": runID, "status": Int(status)])
         }

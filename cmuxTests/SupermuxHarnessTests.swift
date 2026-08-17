@@ -453,6 +453,59 @@ struct SupermuxHarnessTests {
     }
 
     @MainActor
+    @Test
+    func testRunningIndicatorFollowsTurnsNotProcessLifetime() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(restoreState: nil, defaults: defaults, process: process)
+        var runningStates: [Bool] = []
+        controller.runningStateSink = { runningStates.append($0) }
+
+        _ = try await controller.start(
+            resumeSessionId: nil,
+            forkSession: false,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+        // Starting the process is not a running turn: the terminal shows no
+        // spinner on SessionStart, only on prompt submit.
+        #expect(runningStates.isEmpty)
+
+        try await controller.send(text: "hello", images: [], uuid: UUID().uuidString)
+        #expect(runningStates == [true])
+
+        // The real CLI never emits session_state_changed; the result frame is
+        // the end-of-turn boundary and must clear the indicator.
+        try process.emitLine([
+            "type": "result",
+            "subtype": "success",
+            "is_error": false,
+            "result": "Done.",
+            "uuid": UUID().uuidString,
+        ])
+        #expect(runningStates == [true, false])
+
+        // A queued message drains into a new turn with no send() on this side;
+        // the pre-request status frame is its start signal.
+        try process.emitLine([
+            "type": "system",
+            "subtype": "status",
+            "status": "requesting",
+            "uuid": UUID().uuidString,
+        ])
+        #expect(runningStates == [true, false, true])
+        try process.emitLine([
+            "type": "result",
+            "subtype": "error_during_execution",
+            "is_error": true,
+            "terminal_reason": "aborted_streaming",
+            "uuid": UUID().uuidString,
+        ])
+        #expect(runningStates == [true, false, true, false])
+    }
+
+    @MainActor
     private func makeController(
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
         defaults: UserDefaults,
@@ -656,6 +709,10 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
                 ],
             ])
         }
+    }
+
+    func emitLine(_ object: [String: Any]) throws {
+        try emit(object)
     }
 
     private func emit(_ object: [String: Any]) throws {
