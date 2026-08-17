@@ -8,6 +8,9 @@ extension SupermuxHarnessWebRendererCoordinator {
         guard let controller = sessionController else {
             throw SupermuxHarnessBridgeError.invalidRequest
         }
+        if let reply = try await handleTaskBridgeRequest(request, controller: controller) {
+            return reply
+        }
         switch request.method {
         case "harness.context":
             let bootstrap = await controller.contextBootstrap()
@@ -156,6 +159,31 @@ extension SupermuxHarnessWebRendererCoordinator {
             )
         default:
             throw SupermuxHarnessBridgeError.unsupportedMethod(request.method)
+        }
+    }
+
+    func handleTaskBridgeRequest(
+        _ request: SupermuxHarnessBridgeRequest,
+        controller: SupermuxHarnessSessionController
+    ) async throws -> Any? {
+        switch request.method {
+        case "harness.stopTask":
+            try await controller.stopTask(taskId: try request.requiredString("taskId"))
+            return [:] as [String: Any]
+        case "harness.backgroundTask":
+            return try await controller.backgroundTask(toolUseId: request.string("toolUseId"))
+        case "harness.loadSubagentTranscript":
+            return try await controller.loadSubagentTranscript(
+                taskId: request.string("taskId"),
+                workflowRunId: request.string("workflowRunId"),
+                agentId: request.string("agentId")
+            )
+        case "harness.readTaskOutput":
+            return try await controller.readTaskOutput(
+                taskId: try request.requiredString("taskId")
+            )
+        default:
+            return nil
         }
     }
 

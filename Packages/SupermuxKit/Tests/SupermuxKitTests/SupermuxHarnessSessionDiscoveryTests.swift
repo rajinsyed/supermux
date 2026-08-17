@@ -40,14 +40,13 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(sandbox.discovery.projectDirectoryURLs(for: sandbox.workingDirectory).count == 1)
     }
 
-    @Test func tmpResolutionUsesPrivateTmpCandidateFirstWhenPlatformResolvesIt() {
+    @Test func tmpResolutionUsesPrivateTmpCandidateFirstAcrossFoundationVersions() {
         let discovery = SupermuxHarnessSessionDiscovery(
             projectsRootURL: URL(fileURLWithPath: "/unused"),
             fileManager: .default
         )
         let names = discovery.mungedProjectDirectoryNames(for: URL(fileURLWithPath: "/tmp"))
-        let resolved = URL(fileURLWithPath: "/tmp").resolvingSymlinksInPath().standardizedFileURL.path
-        #expect(names.first == munged(resolved))
+        #expect(names.first == munged("/private/tmp"))
         #expect(names.contains(munged("/tmp")))
     }
 

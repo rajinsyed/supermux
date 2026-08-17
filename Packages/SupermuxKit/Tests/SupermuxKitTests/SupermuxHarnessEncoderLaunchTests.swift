@@ -147,6 +147,36 @@ import Testing
         #expect(restore.bool(forKey: "dry_run") == false)
     }
 
+    @Test func stopTaskControlRequestEncodesTaskIdentifier() throws {
+        let (_, request) = try controlRequestParts(
+            encoder.controlRequest(.stopTask(taskID: "task-123"), requestID: "stop")
+        )
+        #expect(request.rawValue.count == 2)
+        #expect(request.string(forKey: "subtype") == "stop_task")
+        #expect(request.string(forKey: "task_id") == "task-123")
+    }
+
+    @Test func backgroundTasksControlRequestIncludesOrOmitsToolUseIdentifier() throws {
+        let (_, oneTask) = try controlRequestParts(
+            encoder.controlRequest(
+                .backgroundTasks(toolUseID: "toolu_123"),
+                requestID: "background-one"
+            )
+        )
+        #expect(oneTask.string(forKey: "subtype") == "background_tasks")
+        #expect(oneTask.string(forKey: "tool_use_id") == "toolu_123")
+
+        let (_, allTasks) = try controlRequestParts(
+            encoder.controlRequest(
+                .backgroundTasks(toolUseID: nil),
+                requestID: "background-all"
+            )
+        )
+        #expect(allTasks.rawValue.count == 1)
+        #expect(allTasks.string(forKey: "subtype") == "background_tasks")
+        #expect(allTasks.rawValue["tool_use_id"] == nil)
+    }
+
     @Test func contextUsageControlRequestHasNoExtraPayload() throws {
         let (_, request) = try controlRequestParts(
             encoder.getContextUsageControlRequest(requestID: "context")

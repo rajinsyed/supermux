@@ -29,6 +29,7 @@ public struct SupermuxHarnessSessionDiscovery {
 
     private let projectsRootURL: URL
     private let fileManager: FileManager
+    private let recordMapper = SupermuxHarnessSessionRecordMapper()
 
     /// Creates a persisted-session discovery service.
     ///
@@ -49,7 +50,7 @@ public struct SupermuxHarnessSessionDiscovery {
     /// - Returns: One or two Claude project directory names.
     public func mungedProjectDirectoryNames(for workingDirectoryURL: URL) -> [String] {
         let unresolved = workingDirectoryURL.standardizedFileURL
-        let resolved = unresolved.resolvingSymlinksInPath().standardizedFileURL
+        let resolved = claudeResolvedDirectoryURL(unresolved)
         var names: [String] = []
         for path in [resolved.path, unresolved.path] {
             let name = mungedPath(path)
@@ -187,7 +188,10 @@ public struct SupermuxHarnessSessionDiscovery {
         var eventsByUUID: [String: SupermuxHarnessJSONObject] = [:]
         try forEachRecord(in: index.fileURL) { record in
             guard let uuid = nonemptyString(record["uuid"]), selectedUUIDs.contains(uuid),
-                  let event = protocolEvent(from: record, sessionID: sessionID) else {
+                  let event = recordMapper.protocolEvent(
+                      from: record,
+                      fallbackSessionID: sessionID
+                  ) else {
                 return
             }
             eventsByUUID[uuid] = event
@@ -245,6 +249,17 @@ public struct SupermuxHarnessSessionDiscovery {
                 ?? metadata.firstPrompt
         }
         return nil
+    }
+
+    /// Claude records `/tmp` beneath its physical macOS path even on Foundation
+    /// versions where `resolvingSymlinksInPath()` leaves the `/tmp` alias intact.
+    private func claudeResolvedDirectoryURL(_ directory: URL) -> URL {
+        let resolved = directory.resolvingSymlinksInPath().standardizedFileURL
+        let path = resolved.path
+        guard path == "/tmp" || path.hasPrefix("/tmp/") else { return resolved }
+        // Do not call `standardizedFileURL` on the explicit physical path:
+        // macOS 14 Foundation aliases `/private/tmp` back to `/tmp` there.
+        return URL(fileURLWithPath: "/private\(path)", isDirectory: true)
     }
 
     private func mungedPath(_ path: String) -> String {
@@ -375,6 +390,11 @@ public struct SupermuxHarnessSessionDiscovery {
         )
     }
 
+    /// Checks a persisted absolute cwd against the same canonical aliases used by discovery.
+    func recordedDirectory(_ path: String, matches workingDirectoryURL: URL) -> Bool {
+        recordedDirectory(path, matches: canonicalPaths(for: workingDirectoryURL))
+    }
+
     private func recordedDirectory(_ path: String, matches expectedPaths: Set<String>) -> Bool {
         guard (path as NSString).isAbsolutePath else { return false }
         return !canonicalPaths(for: URL(fileURLWithPath: path, isDirectory: true))
@@ -382,9 +402,10 @@ public struct SupermuxHarnessSessionDiscovery {
     }
 
     private func canonicalPaths(for directory: URL) -> Set<String> {
-        [
-            directory.standardizedFileURL.path,
-            directory.resolvingSymlinksInPath().standardizedFileURL.path,
+        let standardized = directory.standardizedFileURL
+        return [
+            standardized.path,
+            claudeResolvedDirectoryURL(standardized).path,
         ]
     }
 
@@ -457,32 +478,6 @@ public struct SupermuxHarnessSessionDiscovery {
             return nonemptyString(object["text"])
         }.joined(separator: "\n")
         return nonemptyString(text)
-    }
-
-    private func protocolEvent(
-        from record: [String: Any],
-        sessionID: String
-    ) -> SupermuxHarnessJSONObject? {
-        guard let type = record["type"] as? String,
-              type == "user" || type == "assistant",
-              let message = record["message"] as? [String: Any] else {
-            return nil
-        }
-        var event: [String: Any] = [
-            "type": type,
-            "message": message,
-            "parent_tool_use_id": record["parent_tool_use_id"] ?? NSNull(),
-            "session_id": record["session_id"] ?? record["sessionId"] ?? sessionID,
-        ]
-        for key in ["uuid", "timestamp", "subagent_type", "task_description", "error", "aborted", "supersedes", "isReplay"] {
-            if let value = record[key] {
-                event[key] = value
-            }
-        }
-        if type == "user", let toolResult = record["toolUseResult"] {
-            event["tool_use_result"] = toolResult
-        }
-        return try? SupermuxHarnessJSONObject(rawValue: event)
     }
 
     private func nonemptyString(_ value: Any?) -> String? {

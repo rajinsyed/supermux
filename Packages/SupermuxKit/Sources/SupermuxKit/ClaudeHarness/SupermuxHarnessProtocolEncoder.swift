@@ -279,6 +279,12 @@ public struct SupermuxHarnessProtocolEncoder: Sendable {
         case .rewindFiles(let userMessageID, let dryRun):
             request["user_message_id"] = userMessageID
             request["dry_run"] = dryRun
+        case .stopTask(let taskID):
+            request["task_id"] = taskID
+        case .backgroundTasks(let toolUseID):
+            if let toolUseID {
+                request["tool_use_id"] = toolUseID
+            }
         }
         return request
     }

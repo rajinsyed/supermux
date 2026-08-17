@@ -506,16 +506,254 @@ struct SupermuxHarnessTests {
     }
 
     @MainActor
+    @Test
+    func testTaskCacheDerivesOutputPathAndRejectsUnknownTaskIDs() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-harness-task-cache-\(UUID().uuidString)", isDirectory: true)
+        let projects = container.appendingPathComponent("projects", isDirectory: true)
+        let taskRoot = container.appendingPathComponent("claude-501", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: taskRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: container) }
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(
+            restoreState: nil,
+            defaults: defaults,
+            process: process,
+            workingDirectory: "/tmp/harness task cache",
+            projectsRootURL: projects,
+            taskOutputRootURL: taskRoot
+        )
+        defer { controller.close() }
+        try process.emitLine([
+            "type": "system",
+            "subtype": "init",
+            "session_id": "session-1",
+        ])
+        try process.emitLine([
+            "type": "system",
+            "subtype": "task_started",
+            "task_id": "task-1",
+            "tool_use_id": "toolu_1",
+            "task_type": "local_bash",
+            "session_id": "session-1",
+        ])
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projects,
+            fileManager: .default
+        )
+        let mungedDirectory = try #require(
+            discovery.mungedProjectDirectoryNames(
+                for: URL(fileURLWithPath: "/tmp/harness task cache", isDirectory: true)
+            ).first
+        )
+        let outputURL = taskRoot
+            .appendingPathComponent(mungedDirectory, isDirectory: true)
+            .appendingPathComponent("session-1", isDirectory: true)
+            .appendingPathComponent("tasks", isDirectory: true)
+            .appendingPathComponent("task-1.output")
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "cached output".write(to: outputURL, atomically: true, encoding: .utf8)
+
+        let coordinator = SupermuxHarnessWebRendererCoordinator()
+        let request = try SupermuxHarnessBridgeRequest(body: [
+            "id": "read-output",
+            "method": "harness.readTaskOutput",
+            "params": ["taskId": "task-1"],
+        ])
+        let reply = try #require(
+            try await coordinator.handleTaskBridgeRequest(request, controller: controller)
+                as? [String: Any]
+        )
+        #expect(reply["text"] as? String == "cached output")
+        #expect(reply["truncated"] as? Bool == false)
+        #expect(reply["missing"] as? Bool == false)
+
+        do {
+            _ = try await controller.readTaskOutput(taskId: "not-observed")
+            Issue.record("Expected an unobserved task identifier to be rejected")
+        } catch let error as SupermuxHarnessBridgeError {
+            #expect(error.code == "invalidRequest")
+        }
+    }
+
+    @MainActor
+    @Test
+    func testToolResultCachesProtocolOutputPathBeforeTaskNotification() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-harness-task-result-\(UUID().uuidString)", isDirectory: true)
+        let taskRoot = container.appendingPathComponent("claude-501", isDirectory: true)
+        let outputURL = taskRoot
+            .appendingPathComponent("munged", isDirectory: true)
+            .appendingPathComponent("session", isDirectory: true)
+            .appendingPathComponent("tasks", isDirectory: true)
+            .appendingPathComponent("shell-1.output")
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "live shell output".write(to: outputURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: container) }
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(
+            restoreState: nil,
+            defaults: defaults,
+            process: process,
+            workingDirectory: nil,
+            taskOutputRootURL: taskRoot
+        )
+        defer { controller.close() }
+        try process.emitLine([
+            "type": "system",
+            "subtype": "task_started",
+            "task_id": "shell-1",
+            "tool_use_id": "toolu_shell",
+            "task_type": "local_bash",
+            "session_id": "session",
+        ])
+        try process.emitLine([
+            "type": "user",
+            "session_id": "session",
+            "message": [
+                "role": "user",
+                "content": [[
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_shell",
+                    "content": "Command running in background. Output is being written to: \(outputURL.path). You will be notified.",
+                ]],
+            ],
+            "tool_use_result": ["backgroundTaskId": "shell-1"],
+        ])
+
+        let reply = try await controller.readTaskOutput(taskId: "shell-1")
+        #expect(reply["text"] as? String == "live shell output")
+        #expect(reply["missing"] as? Bool == false)
+    }
+
+    @MainActor
+    @Test
+    func testRoundThreeBridgeRoutesControlsAndTranscriptPassthroughs() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-harness-round-three-\(UUID().uuidString)", isDirectory: true)
+        let projects = container.appendingPathComponent("projects", isDirectory: true)
+        let workingDirectory = container.appendingPathComponent("working", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: container) }
+        var restored = SessionSupermuxHarnessPanelSnapshot()
+        restored.sessionId = "session"
+        let process = MockSupermuxHarnessProcessSession()
+        process.responses["background_tasks"] = .success(["backgrounded": true])
+        let controller = makeController(
+            restoreState: restored,
+            defaults: defaults,
+            process: process,
+            workingDirectory: workingDirectory.path,
+            projectsRootURL: projects
+        )
+        defer { controller.close() }
+        _ = try await controller.start(
+            resumeSessionId: "session",
+            forkSession: false,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projects,
+            fileManager: .default
+        )
+        let projectDirectory = try #require(
+            discovery.projectDirectoryURLs(for: workingDirectory).first
+        )
+        let transcriptDirectory = projectDirectory
+            .appendingPathComponent("session", isDirectory: true)
+            .appendingPathComponent("subagents", isDirectory: true)
+        try FileManager.default.createDirectory(at: transcriptDirectory, withIntermediateDirectories: true)
+        let transcriptRecord: [String: Any] = [
+            "type": "assistant",
+            "uuid": "agent-answer",
+            "message": ["role": "assistant", "content": "done"],
+        ]
+        let transcriptData = try JSONSerialization.data(withJSONObject: transcriptRecord)
+        try (String(decoding: transcriptData, as: UTF8.self) + "\n").write(
+            to: transcriptDirectory.appendingPathComponent("agent-agent-1.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let metadata = try JSONSerialization.data(withJSONObject: [
+            "agentType": "general-purpose",
+            "description": "Inspect",
+            "spawnDepth": 1,
+        ])
+        try metadata.write(to: transcriptDirectory.appendingPathComponent("agent-agent-1.meta.json"))
+
+        let coordinator = SupermuxHarnessWebRendererCoordinator()
+        let stopRequest = try SupermuxHarnessBridgeRequest(body: [
+            "id": "stop",
+            "method": "harness.stopTask",
+            "params": ["taskId": "task-1"],
+        ])
+        let stopReply = try #require(
+            try await coordinator.handleTaskBridgeRequest(stopRequest, controller: controller)
+                as? [String: Any]
+        )
+        #expect(stopReply.isEmpty)
+
+        let backgroundRequest = try SupermuxHarnessBridgeRequest(body: [
+            "id": "background",
+            "method": "harness.backgroundTask",
+            "params": ["toolUseId": "toolu_1"],
+        ])
+        let backgroundReply = try #require(
+            try await coordinator.handleTaskBridgeRequest(backgroundRequest, controller: controller)
+                as? [String: Any]
+        )
+        #expect(backgroundReply["backgrounded"] as? Bool == true)
+
+        let transcriptRequest = try SupermuxHarnessBridgeRequest(body: [
+            "id": "transcript",
+            "method": "harness.loadSubagentTranscript",
+            "params": ["taskId": "agent-1"],
+        ])
+        let transcriptReply = try #require(
+            try await coordinator.handleTaskBridgeRequest(transcriptRequest, controller: controller)
+                as? [String: Any]
+        )
+        let events = try #require(transcriptReply["events"] as? [[String: Any]])
+        #expect(events.first?["uuid"] as? String == "agent-answer")
+        let meta = try #require(transcriptReply["meta"] as? [String: Any])
+        #expect(meta["agentType"] as? String == "general-purpose")
+        #expect(meta["spawnDepth"] as? Int == 1)
+        #expect(process.operations.contains(.control(subtype: "stop_task")))
+        #expect(process.operations.contains(.control(subtype: "background_tasks")))
+    }
+
+    @MainActor
     private func makeController(
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
         defaults: UserDefaults,
         process: MockSupermuxHarnessProcessSession,
+        workingDirectory: String? = "/tmp",
+        projectsRootURL: URL? = nil,
+        taskOutputRootURL: URL? = nil,
         modelCatalogProbe: (@MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog)? = nil
     ) -> SupermuxHarnessSessionController {
         SupermuxHarnessSessionController(
-            workingDirectory: "/tmp",
+            workingDirectory: workingDirectory,
             restoreState: restoreState,
             defaults: defaults,
+            projectsRootURL: projectsRootURL,
+            taskOutputRootURL: taskOutputRootURL,
             modelCatalogProbe: modelCatalogProbe,
             processSessionFactory: { protocolLineSink, stderrSink, lifecycleSink in
                 process.configure(

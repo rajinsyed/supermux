@@ -20,6 +20,10 @@ public enum SupermuxHarnessControlCommand: Sendable, Equatable {
     case fileSuggestions(query: String)
     /// Previews or restores files to their checkpoint at a user message.
     case rewindFiles(userMessageID: String, dryRun: Bool)
+    /// Stops one Claude task by its protocol task identifier.
+    case stopTask(taskID: String)
+    /// Moves one foreground tool task, or all foreground tasks, into the background.
+    case backgroundTasks(toolUseID: String?)
 
     var subtype: String {
         switch self {
@@ -33,6 +37,8 @@ public enum SupermuxHarnessControlCommand: Sendable, Equatable {
         case .cancelAsyncMessage: "cancel_async_message"
         case .fileSuggestions: "file_suggestions"
         case .rewindFiles: "rewind_files"
+        case .stopTask: "stop_task"
+        case .backgroundTasks: "background_tasks"
         }
     }
 }

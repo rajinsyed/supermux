@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import SupermuxKit
 
@@ -16,6 +17,12 @@ final class SupermuxHarnessSessionController {
     private struct SharedModelCatalogProbe {
         let id: UUID
         let task: Task<SupermuxHarnessInitializeCatalog, any Error>
+    }
+
+    private struct TaskRecord {
+        var taskType: String
+        var toolUseID: String?
+        var outputFile: String?
     }
 
     private static var liveControllers: [ObjectIdentifier: WeakController] = [:]
@@ -38,6 +45,10 @@ final class SupermuxHarnessSessionController {
     private let encoder = SupermuxHarnessProtocolEncoder()
     private let binarySetting: SupermuxHarnessBinarySetting
     private let modelCatalogStore: SupermuxHarnessModelCatalogStore
+    private let projectsRootURL: URL
+    private let taskOutputRootURL: URL
+    private let taskOutputCanonicalRootURL: URL
+    private let fileManager: FileManager
     private let modelCatalogProbe: @MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog
     private var modelCatalogProbeTask: Task<Void, Never>?
     private var modelCatalogProbeID: UUID?
@@ -45,6 +56,7 @@ final class SupermuxHarnessSessionController {
     private var isStartPending = false
     private var binarySettingRevision = 0
     private var cachedCLIStatus: [String: Any]?
+    private var taskRecordsByID: [String: TaskRecord] = [:]
     private var sessionFileWatcher: SupermuxHarnessSessionFileWatcher?
     private var watchedSessionID: String?
     private var isTurnActive = false
@@ -54,6 +66,8 @@ final class SupermuxHarnessSessionController {
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
+        projectsRootURL: URL? = nil,
+        taskOutputRootURL: URL? = nil,
         modelCatalogProbe: (@MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog)? = nil,
         processSessionFactory: @MainActor (
             @escaping SupermuxHarnessProtocolLineSink,
@@ -67,6 +81,21 @@ final class SupermuxHarnessSessionController {
             )
         }
     ) {
+        self.fileManager = fileManager
+        self.projectsRootURL = projectsRootURL ?? Self.claudeProjectsRootURL
+        if let taskOutputRootURL {
+            self.taskOutputRootURL = taskOutputRootURL
+            taskOutputCanonicalRootURL = taskOutputRootURL.resolvingSymlinksInPath()
+        } else {
+            self.taskOutputRootURL = URL(
+                fileURLWithPath: "/tmp/claude-\(getuid())",
+                isDirectory: true
+            )
+            taskOutputCanonicalRootURL = URL(
+                fileURLWithPath: "/private/tmp/claude-\(getuid())",
+                isDirectory: true
+            )
+        }
         binarySetting = SupermuxHarnessBinarySetting(defaults: defaults, fileManager: fileManager)
         modelCatalogStore = SupermuxHarnessModelCatalogStore(defaults: defaults)
         if let modelCatalogProbe {
@@ -263,6 +292,7 @@ final class SupermuxHarnessSessionController {
               !directoryPath.isEmpty else {
             throw SupermuxHarnessBridgeError.workingDirectoryUnavailable
         }
+        taskRecordsByID.removeAll()
         cancelModelCatalogProbe()
         let resolvedPlan = try await resolveClaudeLaunchPlan()
         guard !isClosed, !processSession.isRunning else {
@@ -365,6 +395,23 @@ final class SupermuxHarnessSessionController {
         guard !isClosed, controlRouter === router else {
             throw SupermuxHarnessBridgeError.sessionNotRunning
         }
+    }
+
+    func stopTask(taskId: String) async throws {
+        guard let router = controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
+        _ = try await router.issue(.stopTask(taskID: taskId))
+        guard !isClosed, controlRouter === router else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
+    }
+
+    func backgroundTask(toolUseId: String?) async throws -> [String: Any] {
+        guard let router = controlRouter else { throw SupermuxHarnessBridgeError.sessionNotRunning }
+        let payload = try await router.issue(.backgroundTasks(toolUseID: toolUseId))
+        guard !isClosed, controlRouter === router else {
+            throw SupermuxHarnessBridgeError.sessionNotRunning
+        }
+        return ["backgrounded": payload.bool(forKey: "backgrounded") ?? false]
     }
 
     func stop() async {
@@ -558,7 +605,7 @@ final class SupermuxHarnessSessionController {
 
     func listSessions(limit: Int?) async throws -> [[String: Any]] {
         guard let directoryURL = workingDirectoryURL else { return [] }
-        let projectsRootURL = Self.claudeProjectsRootURL
+        let projectsRootURL = self.projectsRootURL
         let sessions = try await Task.detached(priority: .userInitiated) {
             let discovery = SupermuxHarnessSessionDiscovery(
                 projectsRootURL: projectsRootURL,
@@ -584,9 +631,7 @@ final class SupermuxHarnessSessionController {
         guard let directoryURL = workingDirectoryURL else {
             throw SupermuxHarnessBridgeError.workingDirectoryUnavailable
         }
-        let projectsRootURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude", isDirectory: true)
-            .appendingPathComponent("projects", isDirectory: true)
+        let projectsRootURL = self.projectsRootURL
         let page = try await Task.detached(priority: .userInitiated) {
             let discovery = SupermuxHarnessSessionDiscovery(
                 projectsRootURL: projectsRootURL,
@@ -602,6 +647,109 @@ final class SupermuxHarnessSessionController {
         return [
             "events": page.events.map(\.rawValue),
             "truncated": page.truncated,
+        ]
+    }
+
+    func loadSubagentTranscript(
+        taskId: String?,
+        workflowRunId: String?,
+        agentId: String?
+    ) async throws -> [String: Any] {
+        guard let directoryURL = workingDirectoryURL else {
+            throw SupermuxHarnessBridgeError.workingDirectoryUnavailable
+        }
+        guard let sessionID = currentSessionID else {
+            throw SupermuxHarnessBridgeError.invalidRequest
+        }
+        let localTaskID = Self.normalized(taskId)
+        let runID = Self.normalized(workflowRunId)
+        let workflowAgentID = Self.normalized(agentId)
+        let isLocalRequest = localTaskID != nil && runID == nil && workflowAgentID == nil
+        let isWorkflowRequest = localTaskID == nil && runID != nil && workflowAgentID != nil
+        guard isLocalRequest || isWorkflowRequest else {
+            throw SupermuxHarnessBridgeError.invalidRequest
+        }
+
+        let projectsRootURL = self.projectsRootURL
+        let fileManager = self.fileManager
+        let page: SupermuxHarnessSubagentTranscriptPage
+        do {
+            page = try await Task.detached(priority: .userInitiated) {
+                let reader = SupermuxHarnessSubagentTranscriptReader(
+                    projectsRootURL: projectsRootURL,
+                    fileManager: fileManager
+                )
+                if let localTaskID {
+                    return try reader.loadLocalAgentTranscript(
+                        for: directoryURL,
+                        sessionID: sessionID,
+                        taskID: localTaskID
+                    )
+                }
+                return try reader.loadWorkflowAgentTranscript(
+                    for: directoryURL,
+                    sessionID: sessionID,
+                    workflowRunID: runID ?? "",
+                    agentID: workflowAgentID ?? ""
+                )
+            }.value
+        } catch is SupermuxHarnessSubagentTranscriptReaderError {
+            throw SupermuxHarnessBridgeError.invalidRequest
+        }
+        guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
+        var result: [String: Any] = [
+            "events": page.events.map(\.rawValue),
+            "truncated": page.truncated,
+        ]
+        if page.missing {
+            result["missing"] = true
+        }
+        if let metadata = page.metadata {
+            var meta: [String: Any] = [:]
+            if let agentType = metadata.agentType { meta["agentType"] = agentType }
+            if let description = metadata.description { meta["description"] = description }
+            if let spawnDepth = metadata.spawnDepth { meta["spawnDepth"] = spawnDepth }
+            result["meta"] = meta
+        }
+        return result
+    }
+
+    func readTaskOutput(taskId: String) async throws -> [String: Any] {
+        guard let record = taskRecordsByID[taskId] else {
+            throw SupermuxHarnessBridgeError.invalidRequest
+        }
+        let observedTaskIDs = Set(taskRecordsByID.keys)
+        let outputFile = record.outputFile
+        let expectedOutputFile = derivedTaskOutputFile(
+            taskID: taskId,
+            sessionID: currentSessionID
+        )
+        let taskOutputRootURL = self.taskOutputRootURL
+        let taskOutputCanonicalRootURL = self.taskOutputCanonicalRootURL
+        let fileManager = self.fileManager
+        let page: SupermuxHarnessTaskOutputPage
+        do {
+            page = try await Task.detached(priority: .userInitiated) {
+                let reader = SupermuxHarnessTaskOutputReader(
+                    temporaryRootURL: taskOutputRootURL,
+                    canonicalRootURL: taskOutputCanonicalRootURL,
+                    fileManager: fileManager
+                )
+                return try reader.read(
+                    taskID: taskId,
+                    observedTaskIDs: observedTaskIDs,
+                    outputFilePath: outputFile,
+                    expectedOutputFilePath: expectedOutputFile
+                )
+            }.value
+        } catch is SupermuxHarnessTaskOutputReaderError {
+            throw SupermuxHarnessBridgeError.invalidRequest
+        }
+        guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
+        return [
+            "text": page.text,
+            "truncated": page.truncated,
+            "missing": page.missing,
         ]
     }
 
@@ -795,8 +943,161 @@ final class SupermuxHarnessSessionController {
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 
+    private func consumeTaskRecordFromProtocolLine(_ line: SupermuxHarnessDecodedLine) {
+        guard case .user(let frame)? = line.frame,
+              let result = frame.toolUseResult else {
+            return
+        }
+        let backgroundTaskID = result.string(forKey: "backgroundTaskId")
+        let workflowTaskID = result.string(forKey: "taskId")
+        let agentTaskID = result.string(forKey: "agentId")
+        guard let taskID = backgroundTaskID ?? workflowTaskID ?? agentTaskID else { return }
+        let toolResult = Self.toolResultDetails(from: frame.message.rawValue["content"])
+        let inferredTaskType: String
+        if let taskType = result.string(forKey: "taskType") {
+            inferredTaskType = taskType
+        } else if backgroundTaskID != nil {
+            inferredTaskType = "local_bash"
+        } else if workflowTaskID != nil {
+            inferredTaskType = "local_workflow"
+        } else {
+            inferredTaskType = "local_agent"
+        }
+        let outputFile = result.string(forKey: "outputFile")
+            ?? result.string(forKey: "output_file")
+            ?? Self.outputFilePath(from: toolResult.text)
+        updateTaskRecord(
+            taskID: taskID,
+            taskType: inferredTaskType,
+            toolUseID: toolResult.toolUseID,
+            outputFile: outputFile,
+            sessionID: frame.sessionID
+        )
+    }
+
+    private func consumeTaskRecordFromSystemFrame(_ frame: SupermuxHarnessSystemFrame) {
+        if frame.subtype == .backgroundTasksChanged {
+            for task in frame.rawObject.objects(forKey: "tasks") ?? [] {
+                guard let taskID = task.string(forKey: "task_id") else { continue }
+                updateTaskRecord(
+                    taskID: taskID,
+                    taskType: task.string(forKey: "task_type"),
+                    toolUseID: nil,
+                    outputFile: nil,
+                    sessionID: frame.sessionID
+                )
+            }
+            return
+        }
+        switch frame.subtype {
+        case .taskStarted, .taskProgress, .taskUpdated, .taskNotification:
+            guard let taskID = frame.rawObject.string(forKey: "task_id") else { return }
+            updateTaskRecord(
+                taskID: taskID,
+                taskType: frame.rawObject.string(forKey: "task_type"),
+                toolUseID: frame.rawObject.string(forKey: "tool_use_id"),
+                outputFile: frame.rawObject.string(forKey: "output_file"),
+                sessionID: frame.sessionID
+            )
+        default:
+            break
+        }
+    }
+
+    private func updateTaskRecord(
+        taskID: String,
+        taskType: String?,
+        toolUseID: String?,
+        outputFile: String?,
+        sessionID: String?
+    ) {
+        var record = taskRecordsByID[taskID] ?? TaskRecord(
+            taskType: taskType ?? "unknown",
+            toolUseID: nil,
+            outputFile: nil
+        )
+        if let taskType { record.taskType = taskType }
+        if let toolUseID { record.toolUseID = toolUseID }
+        if let outputFile {
+            record.outputFile = outputFile
+        } else if record.outputFile == nil {
+            record.outputFile = derivedTaskOutputFile(
+                taskID: taskID,
+                sessionID: sessionID ?? currentSessionID
+            )
+        }
+        taskRecordsByID[taskID] = record
+    }
+
+    private func derivedTaskOutputFile(taskID: String, sessionID: String?) -> String? {
+        guard let directoryURL = workingDirectoryURL,
+              let sessionID,
+              Self.isSafePathIdentifier(taskID),
+              Self.isSafePathIdentifier(sessionID) else {
+            return nil
+        }
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projectsRootURL,
+            fileManager: fileManager
+        )
+        guard let mungedDirectory = discovery
+            .mungedProjectDirectoryNames(for: directoryURL)
+            .first else {
+            return nil
+        }
+        return taskOutputRootURL
+            .appendingPathComponent(mungedDirectory, isDirectory: true)
+            .appendingPathComponent(sessionID, isDirectory: true)
+            .appendingPathComponent("tasks", isDirectory: true)
+            .appendingPathComponent("\(taskID).output")
+            .path
+    }
+
+    private nonisolated static func toolResultDetails(
+        from content: Any?
+    ) -> (toolUseID: String?, text: String) {
+        guard let blocks = content as? [Any] else { return (nil, "") }
+        var toolUseID: String?
+        var textParts: [String] = []
+        for case let block as [String: Any] in blocks
+        where block["type"] as? String == "tool_result" {
+            if toolUseID == nil { toolUseID = block["tool_use_id"] as? String }
+            textParts.append(contentsOf: textPartsFromToolResultContent(block["content"]))
+        }
+        return (toolUseID, textParts.joined(separator: "\n"))
+    }
+
+    private nonisolated static func textPartsFromToolResultContent(_ content: Any?) -> [String] {
+        if let text = content as? String { return [text] }
+        guard let blocks = content as? [Any] else { return [] }
+        return blocks.compactMap { block in
+            guard let object = block as? [String: Any],
+                  object["type"] as? String == "text" else {
+                return nil
+            }
+            return object["text"] as? String
+        }
+    }
+
+    private nonisolated static func outputFilePath(from text: String) -> String? {
+        let marker = "Output is being written to: "
+        guard let markerRange = text.range(of: marker) else { return nil }
+        let remainder = text[markerRange.upperBound...]
+        guard let suffixRange = remainder.range(of: ".output") else { return nil }
+        let path = String(remainder[..<suffixRange.upperBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? nil : path
+    }
+
+    private nonisolated static func isSafePathIdentifier(_ value: String) -> Bool {
+        !value.isEmpty && value.unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_"
+        }
+    }
+
     private func consumeProtocolLine(_ line: SupermuxHarnessDecodedLine) {
         controlRouter?.consume(line)
+        consumeTaskRecordFromProtocolLine(line)
         if case .system(let frame)? = line.frame {
             consumeSystemFrame(frame)
         }
@@ -850,16 +1151,17 @@ final class SupermuxHarnessSessionController {
         if sessionFileWatcher != nil, watchedSessionID == sessionID { return }
         sessionFileWatcher?.cancel()
         watchedSessionID = sessionID
-        let projectsRootURL = Self.claudeProjectsRootURL
+        let projectsRootURL = self.projectsRootURL
         let discovery = SupermuxHarnessSessionDiscovery(
             projectsRootURL: projectsRootURL,
-            fileManager: .default
+            fileManager: fileManager
         )
         // The file may not exist until the CLI's first write; the watcher owns
         // the retry. Its URL is re-resolved lazily so munging stays in one place.
         let fileURL = discovery.sessionFileURL(for: directoryURL, sessionID: sessionID)
             ?? Self.expectedSessionFileURL(
                 discovery: discovery,
+                projectsRootURL: projectsRootURL,
                 workingDirectoryURL: directoryURL,
                 sessionID: sessionID
             )
@@ -870,11 +1172,12 @@ final class SupermuxHarnessSessionController {
 
     private nonisolated static func expectedSessionFileURL(
         discovery: SupermuxHarnessSessionDiscovery,
+        projectsRootURL: URL,
         workingDirectoryURL: URL,
         sessionID: String
     ) -> URL {
         let name = discovery.mungedProjectDirectoryNames(for: workingDirectoryURL).first ?? ""
-        return claudeProjectsRootURL
+        return projectsRootURL
             .appendingPathComponent(name, isDirectory: true)
             .appendingPathComponent(sessionID)
             .appendingPathExtension("jsonl")
@@ -886,11 +1189,12 @@ final class SupermuxHarnessSessionController {
               let sessionID = snapshot.sessionId, !sessionID.isEmpty else {
             return
         }
-        let projectsRootURL = Self.claudeProjectsRootURL
+        let projectsRootURL = self.projectsRootURL
+        let fileManager = self.fileManager
         Task.detached(priority: .utility) { [weak self] in
             let discovery = SupermuxHarnessSessionDiscovery(
                 projectsRootURL: projectsRootURL,
-                fileManager: .default
+                fileManager: fileManager
             )
             guard let title = discovery.sessionTitle(for: directoryURL, sessionID: sessionID) else {
                 return
@@ -910,6 +1214,7 @@ final class SupermuxHarnessSessionController {
     }
 
     private func consumeSystemFrame(_ frame: SupermuxHarnessSystemFrame) {
+        consumeTaskRecordFromSystemFrame(frame)
         switch frame.subtype {
         case .initialize:
             if let sessionID = frame.sessionID {
