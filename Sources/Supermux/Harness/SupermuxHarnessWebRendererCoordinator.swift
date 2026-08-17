@@ -27,6 +27,7 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
 
     var onSessionStateChanged: ((Bool) -> Void)?
     var onSessionTitleChanged: ((String?) -> Void)?
+    var onRestoreStateRetired: (() -> Void)?
 
     var persistedSnapshot: SessionSupermuxHarnessPanelSnapshot {
         sessionController?.snapshot ?? SessionSupermuxHarnessPanelSnapshot()
@@ -61,6 +62,9 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         }
         controller.titleSink = { [weak self] title in
             self?.onSessionTitleChanged?(title)
+        }
+        controller.restoreStateRetirementSink = { [weak self] in
+            self?.onRestoreStateRetired?()
         }
         sessionController = controller
     }

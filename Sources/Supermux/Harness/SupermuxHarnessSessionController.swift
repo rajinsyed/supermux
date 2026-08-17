@@ -8,17 +8,18 @@ final class SupermuxHarnessSessionController {
     var eventSink: (([String: Any]) -> Void)?
     var runningStateSink: ((Bool) -> Void)?
     var titleSink: ((String?) -> Void)?
+    var restoreStateRetirementSink: (() -> Void)?
 
     private(set) var workingDirectory: String?
     private(set) var snapshot = SessionSupermuxHarnessPanelSnapshot()
     var composerDraft: String?
 
-    private var processSession: SupermuxHarnessProcessSession!
+    private var processSession: (any SupermuxHarnessProcessSessionProtocol)!
     private var controlRouter: SupermuxHarnessControlRouter?
     private let encoder = SupermuxHarnessProtocolEncoder()
     private let binarySetting: SupermuxHarnessBinarySetting
     private let modelCatalogStore: SupermuxHarnessModelCatalogStore
-    private let modelCatalogProbe: SupermuxHarnessModelCatalogProbe
+    private let modelCatalogProbe: @MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog
     private var modelCatalogProbeTask: Task<Void, Never>?
     private var modelCatalogProbeID: UUID?
     private var isClosed = false
@@ -31,11 +32,29 @@ final class SupermuxHarnessSessionController {
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
-        modelCatalogProbe: SupermuxHarnessModelCatalogProbe? = nil
+        modelCatalogProbe: (@MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog)? = nil,
+        processSessionFactory: @MainActor (
+            @escaping SupermuxHarnessProtocolLineSink,
+            @escaping SupermuxHarnessStderrSink,
+            @escaping SupermuxHarnessLifecycleSink
+        ) -> any SupermuxHarnessProcessSessionProtocol = { protocolLineSink, stderrSink, lifecycleSink in
+            SupermuxHarnessProcessSession(
+                protocolLineSink: protocolLineSink,
+                stderrSink: stderrSink,
+                lifecycleSink: lifecycleSink
+            )
+        }
     ) {
         binarySetting = SupermuxHarnessBinarySetting(defaults: defaults, fileManager: fileManager)
         modelCatalogStore = SupermuxHarnessModelCatalogStore(defaults: defaults)
-        self.modelCatalogProbe = modelCatalogProbe ?? SupermuxHarnessModelCatalogProbe()
+        if let modelCatalogProbe {
+            self.modelCatalogProbe = modelCatalogProbe
+        } else {
+            let probe = SupermuxHarnessModelCatalogProbe()
+            self.modelCatalogProbe = { plan in
+                try await probe.probe(plan: plan)
+            }
+        }
         self.workingDirectory = workingDirectory ?? restoreState?.workingDirectory
         if var restored = restoreState {
             restored.workingDirectory = self.workingDirectory
@@ -43,14 +62,14 @@ final class SupermuxHarnessSessionController {
         } else {
             snapshot.workingDirectory = self.workingDirectory
         }
-        processSession = SupermuxHarnessProcessSession(
-            protocolLineSink: { [weak self] line in
+        processSession = processSessionFactory(
+            { [weak self] line in
                 self?.consumeProtocolLine(line)
             },
-            stderrSink: { [weak self] text in
+            { [weak self] text in
                 self?.eventSink?(["kind": "stderr", "text": text])
             },
-            lifecycleSink: { [weak self] event in
+            { [weak self] event in
                 self?.consumeLifecycleEvent(event)
             }
         )
@@ -577,7 +596,7 @@ final class SupermuxHarnessSessionController {
                         ?? FileManager.default.homeDirectoryForCurrentUser,
                     environment: resolvedPlan.environment
                 )
-                let catalog = try await self.modelCatalogProbe.probe(plan: probePlan)
+                let catalog = try await self.modelCatalogProbe(probePlan)
                 guard !Task.isCancelled, !self.isClosed else { return }
                 self.consumeInitializeCatalog(catalog, binaryPath: expectedBinaryPath)
             } catch {

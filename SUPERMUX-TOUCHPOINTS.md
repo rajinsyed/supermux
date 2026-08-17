@@ -448,7 +448,7 @@ Rules for adding a touchpoint:
 | 429 | `Sources/Workspace+SidebarDirectories.swift` | `claude-harness-legacy-remote-directory` | Treats a legacy remote snapshot carrying a harness pane like an agent-session one for directory-provenance restore |
 | 430 | `Sources/cmuxApp.swift` | `claude-harness-debug-menu` | Mounts `SupermuxHarnessDebugMenuButtons()` in the DEBUG-only Debug menu |
 | 431 | `cmuxTests/SupermuxHarnessTests.swift` | `unfenced` | **Fork-owned new test file.** Trusted-shell-URL checks, harness snapshot round-trip/empty decode, `PanelType` claudeHarness decode, and `SessionPanelSnapshot` field carriage. pbxproj ids `50BE0001…012E`/`…012F` |
-| 432 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Claude harness into the app target: 16 app files under `Sources/Supermux/Harness/` (ids `50BE0001…0112`–`…012B`, `…0130`/`…0131` for `SupermuxHarnessWebRendererCoordinator+Bridge.swift`, `…0132`/`…0133` for `SupermuxHarnessCommandPaletteIntegration.swift`, and `…0134`/`…0135` for `SupermuxHarnessBinarySetting.swift`, 4 entries each; the two `+` paths quoted), the `Resources/supermux-harness` folder reference (ids `…012C`/`…012D`, `lastKnownFileType = folder`), and `cmuxTests/SupermuxHarnessTests.swift` (ids `…012E`/`…012F`). Seventy-two `50BE0001` occurrences total |
+| 432 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Claude harness into the app target: 17 app files under `Sources/Supermux/Harness/` (ids `50BE0001…0112`–`…012B`, `…0130`/`…0131` for `SupermuxHarnessWebRendererCoordinator+Bridge.swift`, `…0132`/`…0133` for `SupermuxHarnessCommandPaletteIntegration.swift`, `…0134`/`…0135` for `SupermuxHarnessBinarySetting.swift`, and `…0136`/`…0137` for `SupermuxHarnessProcessSessionProtocol.swift`, 4 entries each; the two `+` paths quoted), the `Resources/supermux-harness` folder reference (ids `…012C`/`…012D`, `lastKnownFileType = folder`), and `cmuxTests/SupermuxHarnessTests.swift` (ids `…012E`/`…012F`). Seventy-six `50BE0001` occurrences total |
 | 433 | `Sources/CmuxSurfaceTabBarBuiltInAction.swift` | `claude-harness-builtin-action` | Adds `case newClaudeHarness = "cmux.newClaudeHarness"` (config aliases `claude-harness`, `claudeharness`, `claude`, `harness`), palette metadata (`supermux.harness.command.newPane.title`), `sparkles` icon, and the nil `bonsplitAction` grouping — the shared action id every entrypoint (palette, File menu, shortcut, plus-button, tab bar) routes through |
 | 434 | `Sources/Workspace.swift` | `claude-harness-executor-arm` | Surface-tab-bar built-in button executor arm: `.newClaudeHarness` calls `newSupermuxHarnessSurface(inPane:focus: true)` beside the Simulator arm |
 | 435 | `Sources/AppDelegate.swift` | `claude-harness-configured-action`, `claude-harness-shortcut-dispatch` | `executeConfiguredCmuxAction` arm delegating to `performConfiguredNewClaudeHarnessAction` (fork-owned, in `SupermuxHarnessCommandPaletteIntegration.swift`), and the ⌃⌘A keyboard dispatch (`supermuxNewClaudeHarness`, non-repeat, beeps on failure) |
@@ -1404,8 +1404,11 @@ file `50BE0001…0111` for `SupermuxNotificationRowBody.swift`, wired in the sam
 package-owned line-composition counterpart (#381) is discovered automatically by SwiftPM and needs
 no pbxproj entry.
 
+The Claude harness process seam (touchpoint #432) adds file reference `50BE0001…0136` and build
+file `50BE0001…0137` for `SupermuxHarnessProcessSessionProtocol.swift`, wired in the same four
+places so controller orchestration can use a protocol-injected process in app-target tests.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `201`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `205`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 

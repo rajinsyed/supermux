@@ -40,6 +40,9 @@ final class SupermuxHarnessPanel: Panel {
         self.rendererSession.onSessionTitleChanged = { [weak self] title in
             self?.setSessionTitle(title)
         }
+        self.rendererSession.onRestoreStateRetired = { [weak self] in
+            self?.retireRestoreState()
+        }
     }
 
     nonisolated static var defaultTitle: String {
@@ -80,6 +83,10 @@ final class SupermuxHarnessPanel: Panel {
 
     func updateWorkspaceId(_ newWorkspaceId: UUID) {
         workspaceId = newWorkspaceId
+    }
+
+    func retireRestoreState() {
+        restoreState = nil
     }
 
     func triggerFlash(reason: WorkspaceAttentionFlashReason) {

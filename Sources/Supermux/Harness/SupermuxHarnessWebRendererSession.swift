@@ -13,6 +13,11 @@ final class SupermuxHarnessWebRendererSession {
             ownedCoordinator.onSessionTitleChanged = onSessionTitleChanged
         }
     }
+    var onRestoreStateRetired: (() -> Void)? {
+        didSet {
+            ownedCoordinator.onRestoreStateRetired = onRestoreStateRetired
+        }
+    }
 
     var persistedSnapshot: SessionSupermuxHarnessPanelSnapshot {
         ownedCoordinator.persistedSnapshot
