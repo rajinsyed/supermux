@@ -1,4 +1,5 @@
 import type {
+  BinarySetting,
   ContextUsage,
   EffortLevel,
   HarnessContext,
@@ -7,6 +8,7 @@ import type {
   PermissionMode,
   PermissionSuggestion,
   ProtocolLine,
+  RewindPreview,
   SessionSummary
 } from "./protocol/types";
 
@@ -16,17 +18,32 @@ export interface ImagePayload {
   name?: string;
 }
 
+export interface StartParams {
+  resumeSessionId?: string;
+  forkSession?: boolean;
+  model?: string;
+  permissionMode?: PermissionMode;
+  effort?: EffortLevel;
+}
+
 export interface HarnessBridge {
   context(): Promise<HarnessContext>;
   listSessions(params?: { limit?: number }): Promise<{ sessions: SessionSummary[] }>;
   loadSessionHistory(params: { sessionId: string }): Promise<{ events: ProtocolLine[]; truncated: boolean }>;
-  start(params?: {
-    resumeSessionId?: string;
-    forkSession?: boolean;
-    model?: string;
-    permissionMode?: PermissionMode;
-    effort?: EffortLevel;
-  }): Promise<{ runId: string }>;
+  start(params?: StartParams): Promise<{ runId: string }>;
+  /**
+   * Stop whatever is running (awaiting full teardown) and start again. `start`
+   * keeps its already-running guard for direct calls; every user-facing
+   * "resume this session" / "new session" path goes through here, which is why
+   * picking a session while a process ran used to fail outright.
+   *
+   * An absent `resumeSessionId` means a genuinely fresh session — the native
+   * side must NOT fall back to the restore snapshot. Resume policy lives in the
+   * web layer, which is the only place that knows which session the pane is on.
+   */
+  restart(params?: StartParams): Promise<{ runId: string }>;
+  /** Open another Claude pane already pointed at `sessionId`. */
+  openSessionInNewPane(params: { sessionId: string }): Promise<void>;
   send(params: { text: string; images?: ImagePayload[]; uuid: string }): Promise<{ sent: boolean }>;
   interrupt(params: { cancelQueued: boolean }): Promise<void>;
   cancelQueued(params: { messageUuid: string }): Promise<void>;
@@ -50,6 +67,22 @@ export interface HarnessBridge {
   saveFile(params: { suggestedName: string; text: string }): Promise<{ saved: boolean }>;
   notify(params: { title: string; body: string }): Promise<void>;
   saveDraft(params: { text: string }): Promise<void>;
+  getBinarySetting(): Promise<BinarySetting>;
+  /** An empty or absent path clears the override. Rejects on a bad path. */
+  setBinaryPath(params: { path?: string }): Promise<BinarySetting>;
+  /** Dry run: what a rewind to this user message would restore. */
+  rewindPreview(params: { userMessageUuid: string }): Promise<RewindPreview>;
+  /**
+   * Restore files to their state when `userMessageUuid` was sent, then restart
+   * the conversation truncated to just BEFORE it. `resumeAtUuid` is the uuid of
+   * the PREVIOUS user message (`--resume-session-at`); omitting it means the
+   * rewind target was the first message, so the new run is a fresh session.
+   */
+  rewind(params: {
+    userMessageUuid: string;
+    restoreFiles: boolean;
+    resumeAtUuid?: string;
+  }): Promise<{ runId: string }>;
 }
 
 export interface BridgeError {
@@ -112,6 +145,8 @@ const nativeBridge: HarnessBridge = {
   listSessions: (params) => callNative("harness.listSessions", params),
   loadSessionHistory: (params) => callNative("harness.loadSessionHistory", params),
   start: (params) => callNative("harness.start", params),
+  restart: (params) => callNative("harness.restart", params),
+  openSessionInNewPane: (params) => callNative("harness.openSessionInNewPane", params),
   send: (params) => callNative("harness.send", params),
   interrupt: (params) => callNative("harness.interrupt", params),
   cancelQueued: (params) => callNative("harness.cancelQueued", params),
@@ -127,7 +162,11 @@ const nativeBridge: HarnessBridge = {
   copyText: (params) => callNative("harness.copyText", params),
   saveFile: (params) => callNative("harness.saveFile", params),
   notify: (params) => callNative("harness.notify", params),
-  saveDraft: (params) => callNative("harness.saveDraft", params)
+  saveDraft: (params) => callNative("harness.saveDraft", params),
+  getBinarySetting: () => callNative("harness.getBinarySetting"),
+  setBinaryPath: (params) => callNative("harness.setBinaryPath", params),
+  rewindPreview: (params) => callNative("harness.rewindPreview", params),
+  rewind: (params) => callNative("harness.rewind", params)
 };
 
 export function getBridge(): HarnessBridge {

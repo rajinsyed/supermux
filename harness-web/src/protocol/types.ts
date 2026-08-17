@@ -451,6 +451,33 @@ export interface HarnessContext {
   cliStatus: CliStatus;
   restore?: { sessionId: string; model?: string; permissionMode?: PermissionMode };
   draft?: string;
+  /**
+   * The model catalog persisted from a previous `initialize` handshake, keyed on
+   * the resolved binary. It exists so the model menu has rows to show BEFORE the
+   * first process start — the live catalog only arrives with the first run.
+   */
+  cachedModels?: ModelDescriptor[];
+}
+
+/** Where the harness will look for the Claude binary, and what it found. */
+export interface BinarySetting {
+  /** What resolution actually settled on, override or not. */
+  resolvedPath?: string;
+  /** The user's explicit override, if one is stored. */
+  overridePath?: string;
+  version?: string;
+  /** Why resolution failed, when it did. */
+  error?: string;
+}
+
+/** Dry-run answer from the CLI's `rewind_files` control request. */
+export interface RewindPreview {
+  canRewind: boolean;
+  filesChanged: string[];
+  insertions: number;
+  deletions: number;
+  /** Set when the CLI refused outright rather than answering with canRewind. */
+  error?: string;
 }
 
 export interface ContextUsageCategory {
@@ -474,4 +501,7 @@ export type NativeEvent =
   | { kind: "runStarted"; runId: string; resumedSessionId?: string }
   | { kind: "runExited"; runId: string; status: number; error?: string }
   | { kind: "stderr"; text: string }
-  | { kind: "theme"; theme: HarnessTheme };
+  | { kind: "theme"; theme: HarnessTheme }
+  // Pushed when a background catalog probe finishes, so a pane that opened with
+  // no cached catalog fills its model menu without waiting for a first send.
+  | { kind: "modelCatalog"; models: ModelDescriptor[] };

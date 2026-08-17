@@ -237,6 +237,13 @@ export interface TranscriptModel {
   exitError?: string;
   /** The process never started, as opposed to starting and later exiting. */
   startFailed?: boolean;
+  /**
+   * A catalog pushed by the native side after a background `initialize` probe,
+   * for a pane that has never run a process. Kept apart from `session.models`,
+   * which describes the LIVE run, so a stale probe can never masquerade as the
+   * running session's capabilities.
+   */
+  cachedModels?: ModelDescriptor[];
   stderrTail: string[];
   revision: number;
 }
@@ -244,6 +251,8 @@ export interface TranscriptModel {
 export type LocalAction =
   | { kind: "localSend"; uuid: string; text: string; images?: ImageAttachment[]; atMs: number }
   | { kind: "cancelQueued"; uuid: string }
+  /** Interrupt-with-cancel drops the whole queue on the CLI side; mirror it. */
+  | { kind: "clearQueued" }
   | {
       kind: "permissionResolved";
       requestId: string;
@@ -258,4 +267,10 @@ export type LocalAction =
   | { kind: "startFailed"; error?: string }
   | { kind: "dismissBanner"; id: string }
   | { kind: "toggleFold"; turnId: string; folded: boolean }
+  /**
+   * Drop the turn carrying this user message and everything after it, matching
+   * what `--resume-session-at` does to the conversation on the CLI side.
+   */
+  | { kind: "truncateBeforeUserMessage"; uuid: string }
+  | { kind: "cachedModels"; models: ModelDescriptor[] }
   | { kind: "reset" };
