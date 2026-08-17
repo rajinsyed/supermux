@@ -13,6 +13,9 @@ final class SupermuxHarnessPanel: Panel {
 
     private(set) var displayTitle: String
     private(set) var isDirty: Bool = false
+    private(set) var needsUserInput: Bool = false
+    /// The Claude brand mark, same asset the terminal's Claude Code tabs use.
+    let displayIconAsset = "AgentIcons/Claude"
     var displayIcon: String? {
         isDirty ? "sparkle" : "sparkles"
     }
@@ -21,6 +24,19 @@ final class SupermuxHarnessPanel: Panel {
         didSet {
             onDisplayStateChanged?(displayTitle, displayIcon, isDirty)
         }
+    }
+
+    /// Mirrors the agent lifecycle terminal tabs report (`running`/`needsInput`/
+    /// `idle`) so the workspace can feed the shared status-indicator machinery.
+    var onAgentLifecycleChanged: ((SupermuxHarnessAgentLifecycle) -> Void)? {
+        didSet {
+            onAgentLifecycleChanged?(agentLifecycle)
+        }
+    }
+
+    var agentLifecycle: SupermuxHarnessAgentLifecycle {
+        if needsUserInput { return .needsInput }
+        return isDirty ? .running : .idle
     }
 
     init(
@@ -39,6 +55,9 @@ final class SupermuxHarnessPanel: Panel {
         }
         self.rendererSession.onSessionTitleChanged = { [weak self] title in
             self?.setSessionTitle(title)
+        }
+        self.rendererSession.onPendingUserInputChanged = { [weak self] needsInput in
+            self?.setNeedsUserInput(needsInput)
         }
         self.rendererSession.onRestoreStateRetired = { [weak self] in
             self?.retireRestoreState()
@@ -97,6 +116,13 @@ final class SupermuxHarnessPanel: Panel {
         guard isDirty != isRunning else { return }
         isDirty = isRunning
         emitDisplayStateChanged()
+        onAgentLifecycleChanged?(agentLifecycle)
+    }
+
+    private func setNeedsUserInput(_ needsInput: Bool) {
+        guard needsUserInput != needsInput else { return }
+        needsUserInput = needsInput
+        onAgentLifecycleChanged?(agentLifecycle)
     }
 
     private func setSessionTitle(_ title: String?) {
@@ -110,4 +136,12 @@ final class SupermuxHarnessPanel: Panel {
     private func emitDisplayStateChanged() {
         onDisplayStateChanged?(displayTitle, displayIcon, isDirty)
     }
+}
+
+/// The harness pane's contribution to the shared agent status indicator,
+/// matching the states terminal Claude Code tabs report.
+enum SupermuxHarnessAgentLifecycle {
+    case idle
+    case running
+    case needsInput
 }

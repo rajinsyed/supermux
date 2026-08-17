@@ -24,6 +24,7 @@ final class SupermuxHarnessSessionController {
     var eventSink: (([String: Any]) -> Void)?
     var runningStateSink: ((Bool) -> Void)?
     var titleSink: ((String?) -> Void)?
+    var pendingUserInputSink: ((Bool) -> Void)?
     var restoreStateRetirementSink: (() -> Void)?
 
     private(set) var workingDirectory: String?
@@ -42,6 +43,8 @@ final class SupermuxHarnessSessionController {
     private var isStartPending = false
     private var binarySettingRevision = 0
     private var cachedCLIStatus: [String: Any]?
+    private var sessionFileWatcher: SupermuxHarnessSessionFileWatcher?
+    private var watchedSessionID: String?
 
     init(
         workingDirectory: String?,
@@ -299,10 +302,14 @@ final class SupermuxHarnessSessionController {
         if resumeSessionId == nil || forkSession {
             // A fresh or forked session starts untitled; the CLI titles it after
             // its first turn. Keeping the previous session's title (or rename
-            // pin) would mislabel the new conversation.
+            // pin) would mislabel the new conversation, and the old session's
+            // watcher would keep pushing the old title over the new one.
             snapshot.title = nil
             snapshot.titleIsCustom = nil
             titleSink?(nil)
+            sessionFileWatcher?.cancel()
+            sessionFileWatcher = nil
+            watchedSessionID = nil
         }
         runningStateSink?(true)
         var event: [String: Any] = ["kind": "runStarted", "runId": started.runID]
@@ -310,9 +317,10 @@ final class SupermuxHarnessSessionController {
         eventSink?(event)
         if resumeSessionId != nil {
             // A resumed session already has a topic title on disk; adopt it now
-            // rather than waiting for this pane's first completed turn.
+            // rather than waiting for a write to wake the watcher.
             refreshSessionTitleFromDisk()
         }
+        watchSessionFileForTitles()
         let binaryPath = resolvedPlan.executableURL.path
         let binaryRevision = binarySettingRevision
         Task { @MainActor [weak self, weak router] in
@@ -486,6 +494,7 @@ final class SupermuxHarnessSessionController {
                 interrupt: interrupt
             )
         }
+        defer { emitPendingUserInputStateIfChanged() }
         do {
             try await controlRouter.respondToPermission(requestID: requestId, decision: decision)
         } catch SupermuxHarnessControlRouterError.permissionRequestNotFound {
@@ -498,6 +507,8 @@ final class SupermuxHarnessSessionController {
             guard !isClosed else { throw SupermuxHarnessBridgeError.sessionNotRunning }
             snapshot.title = title
             snapshot.titleIsCustom = true
+            sessionFileWatcher?.cancel()
+            sessionFileWatcher = nil
             titleSink?(title)
             return
         }
@@ -507,6 +518,8 @@ final class SupermuxHarnessSessionController {
         }
         snapshot.title = title
         snapshot.titleIsCustom = true
+        sessionFileWatcher?.cancel()
+        sessionFileWatcher = nil
         titleSink?(title)
     }
 
@@ -594,6 +607,8 @@ final class SupermuxHarnessSessionController {
         isClosed = true
         Self.liveControllers.removeValue(forKey: ObjectIdentifier(self))
         cancelModelCatalogProbe()
+        sessionFileWatcher?.cancel()
+        sessionFileWatcher = nil
         guard let router = controlRouter else {
             processSession.close()
             return
@@ -782,17 +797,66 @@ final class SupermuxHarnessSessionController {
         if case .system(let frame)? = line.frame {
             consumeSystemFrame(frame)
         }
-        if case .result? = line.frame {
-            refreshSessionTitleFromDisk()
-        }
         eventSink?(["kind": "protocol", "line": line.object.rawValue])
+        emitPendingUserInputStateIfChanged()
     }
 
-    /// Adopts the CLI's own topic title after each turn, matching the terminal's
-    /// native tab titling. The CLI writes an `ai-title` record into the session
-    /// JSONL rather than emitting a stream frame, so the file is the only source.
+    private var lastEmittedPendingUserInput = false
+
+    /// Reports whether any can_use_tool request is waiting on the user, feeding
+    /// the same needs-input indicator terminal tabs show for prompts.
+    private func emitPendingUserInputStateIfChanged() {
+        let pending = controlRouter?.pendingPermissionRequests.isEmpty == false
+        guard pending != lastEmittedPendingUserInput else { return }
+        lastEmittedPendingUserInput = pending
+        pendingUserInputSink?(pending)
+    }
+
+    /// Adopts the CLI's own topic title, matching the terminal's native tab
+    /// titling. The CLI writes `ai-title` records into the session JSONL rather
+    /// than emitting a stream frame, so the file is the only source; a watcher
+    /// on that file makes retitles land as they are written, not at turn ends.
     /// The CLI retitles as the topic evolves, so the latest disk title wins —
     /// unless the user renamed the session, which pins the title for good.
+    private func watchSessionFileForTitles() {
+        guard snapshot.titleIsCustom != true,
+              let directoryURL = workingDirectoryURL,
+              let sessionID = snapshot.sessionId, !sessionID.isEmpty else {
+            return
+        }
+        if sessionFileWatcher != nil, watchedSessionID == sessionID { return }
+        sessionFileWatcher?.cancel()
+        watchedSessionID = sessionID
+        let projectsRootURL = Self.claudeProjectsRootURL
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projectsRootURL,
+            fileManager: .default
+        )
+        // The file may not exist until the CLI's first write; the watcher owns
+        // the retry. Its URL is re-resolved lazily so munging stays in one place.
+        let fileURL = discovery.sessionFileURL(for: directoryURL, sessionID: sessionID)
+            ?? Self.expectedSessionFileURL(
+                discovery: discovery,
+                workingDirectoryURL: directoryURL,
+                sessionID: sessionID
+            )
+        sessionFileWatcher = SupermuxHarnessSessionFileWatcher(fileURL: fileURL) { [weak self] in
+            self?.refreshSessionTitleFromDisk()
+        }
+    }
+
+    private nonisolated static func expectedSessionFileURL(
+        discovery: SupermuxHarnessSessionDiscovery,
+        workingDirectoryURL: URL,
+        sessionID: String
+    ) -> URL {
+        let name = discovery.mungedProjectDirectoryNames(for: workingDirectoryURL).first ?? ""
+        return claudeProjectsRootURL
+            .appendingPathComponent(name, isDirectory: true)
+            .appendingPathComponent(sessionID)
+            .appendingPathExtension("jsonl")
+    }
+
     private func refreshSessionTitleFromDisk() {
         guard snapshot.titleIsCustom != true,
               let directoryURL = workingDirectoryURL,
@@ -827,6 +891,9 @@ final class SupermuxHarnessSessionController {
         case .initialize:
             if let sessionID = frame.sessionID {
                 snapshot.sessionId = sessionID
+                // A fresh session's id first appears here; the watcher retries
+                // until the CLI's first write creates the file.
+                watchSessionFileForTitles()
             }
             if let model = frame.rawObject.string(forKey: "model") {
                 snapshot.model = model
@@ -856,6 +923,7 @@ final class SupermuxHarnessSessionController {
                 }
             }
             runningStateSink?(false)
+            emitPendingUserInputStateIfChanged()
             eventSink?(["kind": "runExited", "runId": runID, "status": Int(status)])
         }
     }

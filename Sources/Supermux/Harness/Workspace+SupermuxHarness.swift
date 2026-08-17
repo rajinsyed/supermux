@@ -41,6 +41,7 @@ extension Workspace {
         guard let newTabId = bonsplitController.createTab(
             title: harnessPanel.displayTitle,
             icon: RenderableSystemSymbol.resolvedSurfaceTabIcon(harnessPanel.displayIcon),
+            iconAsset: harnessPanel.displayIconAsset,
             kind: SurfaceKind.claudeHarness.rawValue,
             isDirty: harnessPanel.isDirty,
             isLoading: false,
@@ -109,6 +110,7 @@ extension Workspace {
         let newTab = Bonsplit.Tab(
             title: harnessPanel.displayTitle,
             icon: RenderableSystemSymbol.resolvedSurfaceTabIcon(harnessPanel.displayIcon),
+            iconAsset: harnessPanel.displayIconAsset,
             kind: SurfaceKind.claudeHarness.rawValue,
             isDirty: harnessPanel.isDirty,
             isLoading: false,
@@ -152,6 +154,24 @@ extension Workspace {
     }
 
     func installSupermuxHarnessPanelSubscription(_ harnessPanel: SupermuxHarnessPanel) {
+        harnessPanel.onAgentLifecycleChanged = { [weak self, weak harnessPanel] lifecycle in
+            guard let self, let harnessPanel else { return }
+            // Same key + lifecycle store terminal Claude Code tabs use, so the
+            // sidebar and tab indicators (working spinner / needs-input dot /
+            // ready dot) render identically for the harness pane.
+            switch lifecycle {
+            case .running:
+                self.setAgentLifecycle(key: "claude_code", panelId: harnessPanel.id, lifecycle: .running)
+            case .needsInput:
+                self.setAgentLifecycle(key: "claude_code", panelId: harnessPanel.id, lifecycle: .needsInput)
+            case .idle:
+                // Idle renders as the green ready-for-review dot, which is only
+                // meaningful after a turn actually ran. A fresh pane's initial
+                // idle emission must not paint one.
+                guard self.agentLifecycleStatesByPanelId[harnessPanel.id]?["claude_code"] != nil else { return }
+                self.setAgentLifecycle(key: "claude_code", panelId: harnessPanel.id, lifecycle: .idle)
+            }
+        }
         harnessPanel.onDisplayStateChanged = { [weak self, weak harnessPanel] newTitle, displayIcon, isDirty in
             guard let self,
                   let harnessPanel,
@@ -178,9 +198,10 @@ extension Workspace {
     }
 
     func discardSupermuxHarnessPanelSubscription(panelId: UUID, panel: (any Panel)?) {
-        _ = panelId
         guard let harnessPanel = panel as? SupermuxHarnessPanel else { return }
         harnessPanel.onDisplayStateChanged = nil
+        harnessPanel.onAgentLifecycleChanged = nil
+        _ = clearAgentLifecycle(key: "claude_code", panelId: panelId)
     }
 
     func restoreSupermuxHarnessPanel(

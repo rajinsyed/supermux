@@ -13,6 +13,11 @@ final class SupermuxHarnessWebRendererSession {
             ownedCoordinator.onSessionTitleChanged = onSessionTitleChanged
         }
     }
+    var onPendingUserInputChanged: ((Bool) -> Void)? {
+        didSet {
+            ownedCoordinator.onPendingUserInputChanged = onPendingUserInputChanged
+        }
+    }
     var onRestoreStateRetired: (() -> Void)? {
         didSet {
             ownedCoordinator.onRestoreStateRetired = onRestoreStateRetired

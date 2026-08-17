@@ -196,6 +196,26 @@ public struct SupermuxHarnessSessionDiscovery {
         return SupermuxHarnessHistoryPage(events: events, truncated: truncated)
     }
 
+    /// Returns the on-disk file for one persisted session, or nil when no
+    /// candidate project directory holds it.
+    ///
+    /// - Parameters:
+    ///   - workingDirectoryURL: The working directory whose project folders should be probed.
+    ///   - sessionID: The persisted session filename without `.jsonl`.
+    /// - Returns: The session file URL, or nil when missing or unsafe.
+    public func sessionFileURL(
+        for workingDirectoryURL: URL,
+        sessionID: String
+    ) -> URL? {
+        guard isValidSessionID(sessionID) else { return nil }
+        for candidateDirectory in projectDirectoryURLs(for: workingDirectoryURL) {
+            guard let directory = safeProjectDirectory(candidateDirectory) else { continue }
+            let file = directory.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
+            if safeSessionFile(file, in: directory) { return file }
+        }
+        return nil
+    }
+
     /// Returns the current display title for one persisted session, or nil when
     /// the session has no title-bearing records yet.
     ///
