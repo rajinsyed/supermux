@@ -185,6 +185,25 @@ public struct SupermuxHarnessProtocolEncoder: Sendable {
         try controlRequest(.fileSuggestions(query: query), requestID: requestID)
     }
 
+    /// Encodes a file-checkpoint rewind request.
+    ///
+    /// - Parameters:
+    ///   - requestID: The unique request identifier.
+    ///   - userMessageID: The client-stamped UUID of the user message whose checkpoint should be used.
+    ///   - dryRun: Whether to preview changed files without restoring them.
+    /// - Returns: A newline-terminated encoded frame.
+    /// - Throws: A JSON serialization error.
+    public func rewindFilesControlRequest(
+        requestID: String,
+        userMessageID: String,
+        dryRun: Bool
+    ) throws -> SupermuxHarnessEncodedFrame {
+        try controlRequest(
+            .rewindFiles(userMessageID: userMessageID, dryRun: dryRun),
+            requestID: requestID
+        )
+    }
+
     /// Encodes an allow response to a pending `can_use_tool` request.
     ///
     /// - Parameters:
@@ -257,6 +276,9 @@ public struct SupermuxHarnessProtocolEncoder: Sendable {
             request["message_uuid"] = messageUUID
         case .fileSuggestions(let query):
             request["query"] = query
+        case .rewindFiles(let userMessageID, let dryRun):
+            request["user_message_id"] = userMessageID
+            request["dry_run"] = dryRun
         }
         return request
     }

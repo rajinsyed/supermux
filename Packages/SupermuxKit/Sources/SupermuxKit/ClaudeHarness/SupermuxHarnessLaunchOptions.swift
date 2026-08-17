@@ -6,6 +6,8 @@ public struct SupermuxHarnessLaunchOptions: Equatable, Sendable {
     public var permissionMode: SupermuxHarnessPermissionMode?
     /// A session identifier to resume.
     public var resumeSessionID: String?
+    /// The user-message UUID at which a resumed conversation should stop.
+    public var resumeSessionAt: String?
     /// Whether a resumed session should fork to a new identifier.
     public var forkSession: Bool
     /// An account-supported effort level.
@@ -19,6 +21,7 @@ public struct SupermuxHarnessLaunchOptions: Equatable, Sendable {
     ///   - model: Optional model selector.
     ///   - permissionMode: Optional initial permission mode.
     ///   - resumeSessionID: Optional session to resume.
+    ///   - resumeSessionAt: Optional user-message UUID at which to truncate the resumed session.
     ///   - forkSession: Whether to fork the resumed session.
     ///   - effort: Optional effort level.
     ///   - replayUserMessages: Whether to replay user messages on resume.
@@ -26,6 +29,7 @@ public struct SupermuxHarnessLaunchOptions: Equatable, Sendable {
         model: String? = nil,
         permissionMode: SupermuxHarnessPermissionMode? = nil,
         resumeSessionID: String? = nil,
+        resumeSessionAt: String? = nil,
         forkSession: Bool = false,
         effort: String? = nil,
         replayUserMessages: Bool = false
@@ -33,6 +37,7 @@ public struct SupermuxHarnessLaunchOptions: Equatable, Sendable {
         self.model = model
         self.permissionMode = permissionMode
         self.resumeSessionID = resumeSessionID
+        self.resumeSessionAt = resumeSessionAt
         self.forkSession = forkSession
         self.effort = effort
         self.replayUserMessages = replayUserMessages

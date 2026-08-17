@@ -6,7 +6,7 @@ public struct SupermuxHarnessLaunchPlan: Equatable, Sendable {
     public let executableURL: URL
     /// The required and optional Claude Code arguments.
     public let arguments: [String]
-    /// The inherited environment with `PWD` set to the working directory.
+    /// The inherited environment with `PWD` and SDK file checkpointing configured.
     public let environment: [String: String]
     /// The process working directory.
     public let workingDirectoryURL: URL
@@ -19,8 +19,8 @@ public struct SupermuxHarnessLaunchPlan: Equatable, Sendable {
     /// - Parameters:
     ///   - executableURL: The executable selected by the app-side resolver.
     ///   - workingDirectoryURL: The directory in which Claude should operate.
-    ///   - environment: The environment to inherit and pass through.
-    ///   - options: Optional model, permission, resume, fork, effort, and replay controls.
+    ///   - environment: The environment to inherit before forcing SDK file checkpointing on.
+    ///   - options: Optional model, permission, resume, resume-at, fork, effort, and replay controls.
     public init(
         executableURL: URL,
         workingDirectoryURL: URL,
@@ -30,6 +30,7 @@ public struct SupermuxHarnessLaunchPlan: Equatable, Sendable {
         let directory = workingDirectoryURL.standardizedFileURL
         var launchEnvironment = environment
         launchEnvironment["PWD"] = directory.path
+        launchEnvironment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] = "1"
 
         var launchArguments = [
             "-p",
@@ -47,6 +48,9 @@ public struct SupermuxHarnessLaunchPlan: Equatable, Sendable {
         }
         if let sessionID = options.resumeSessionID, !sessionID.isEmpty {
             launchArguments.append(contentsOf: ["--resume", sessionID])
+            if let resumeSessionAt = options.resumeSessionAt, !resumeSessionAt.isEmpty {
+                launchArguments.append("--resume-session-at=\(resumeSessionAt)")
+            }
         }
         if options.forkSession {
             launchArguments.append("--fork-session")

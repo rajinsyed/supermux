@@ -20,6 +20,8 @@ public final class SupermuxHarnessProcessSession {
     private let lifecycleSink: SupermuxHarnessLifecycleSink
     private let terminationEscalationNanoseconds: Int
     private var runningProcess: SupermuxHarnessRunningProcess?
+    private var completedExit: (runID: String, status: Int32)?
+    private var exitWaiters: [UUID: (runID: String, continuation: CheckedContinuation<Int32?, Never>)] = [:]
     /// Keeps escalation alive after the panel releases its process-session owner.
     private var terminationRetainer: SupermuxHarnessProcessSession?
 
@@ -56,6 +58,7 @@ public final class SupermuxHarnessProcessSession {
             throw SupermuxHarnessProcessError.alreadyRunning
         }
 
+        completedExit = nil
         let runID = UUID().uuidString
         let process = Process()
         process.executableURL = plan.executableURL
@@ -169,10 +172,96 @@ public final class SupermuxHarnessProcessSession {
         requestTermination(session)
     }
 
+    /// Terminates the active process and waits for its exit plus both drained output streams.
+    ///
+    /// The process first receives SIGTERM. If no fully-drained exit arrives before the deadline,
+    /// the process receives SIGKILL and the method continues waiting for the lifecycle exit event.
+    ///
+    /// - Parameter timeout: Seconds to wait before the hard-kill fallback. The controller uses 10 seconds.
+    /// - Returns: The process termination status from the fully-drained exit event.
+    /// - Throws: ``SupermuxHarnessProcessError/notRunning`` when no process is active.
+    public func terminateAndWait(timeout: TimeInterval = 10) async throws -> Int32 {
+        guard let session = runningProcess else {
+            throw SupermuxHarnessProcessError.notRunning
+        }
+        let runID = session.runID
+        requestTermination(session, installEscalation: false)
+        if let status = await exitStatusBeforeDeadline(runID: runID, timeout: timeout) {
+            return status
+        }
+        hardKill(runID: runID)
+        installTerminationEscalationTimer(session)
+        guard let status = await waitForExit(runID: runID) else {
+            throw SupermuxHarnessProcessError.notRunning
+        }
+        return status
+    }
+
     /// Terminates the active process when present and otherwise does nothing.
     public func close() {
         guard let session = runningProcess else { return }
         requestTermination(session)
+    }
+
+    private enum ExitDeadlineResult: Sendable {
+        case exited(Int32)
+        case timedOut
+        case cancelled
+    }
+
+    private func exitStatusBeforeDeadline(runID: String, timeout: TimeInterval) async -> Int32? {
+        await withTaskGroup(of: ExitDeadlineResult.self) { group in
+            group.addTask { [weak self] in
+                guard let self, let status = await self.waitForExit(runID: runID) else {
+                    return .cancelled
+                }
+                return .exited(status)
+            }
+            group.addTask {
+                let nanoseconds = Int64(max(0, timeout) * 1_000_000_000)
+                try? await ContinuousClock().sleep(for: .nanoseconds(nanoseconds))
+                return Task.isCancelled ? .cancelled : .timedOut
+            }
+            let first = await group.next() ?? .cancelled
+            group.cancelAll()
+            if case .exited(let status) = first {
+                return status
+            }
+            return nil
+        }
+    }
+
+    private func waitForExit(runID: String) async -> Int32? {
+        if let completedExit, completedExit.runID == runID {
+            return completedExit.status
+        }
+        guard runningProcess?.runID == runID else { return nil }
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if let completedExit, completedExit.runID == runID {
+                    continuation.resume(returning: completedExit.status)
+                    return
+                }
+                guard runningProcess?.runID == runID else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                exitWaiters[waiterID] = (runID, continuation)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let waiter = self?.exitWaiters.removeValue(forKey: waiterID) else { return }
+                waiter.continuation.resume(returning: nil)
+            }
+        }
+    }
+
+    private func hardKill(runID: String) {
+        guard let session = runningProcess, session.runID == runID else { return }
+        if session.process.isRunning {
+            _ = Darwin.kill(session.process.processIdentifier, SIGKILL)
+        }
     }
 
     private func sendFrame(
@@ -250,12 +339,21 @@ public final class SupermuxHarnessProcessSession {
             return
         }
         runningProcess = nil
+        completedExit = (session.runID, status)
         cancelTasks(session)
         terminationRetainer = nil
         lifecycleSink(.exited(runID: session.runID, status: status))
+        let waiters = exitWaiters.filter { $0.value.runID == session.runID }
+        for waiterID in waiters.keys {
+            guard let waiter = exitWaiters.removeValue(forKey: waiterID) else { continue }
+            waiter.continuation.resume(returning: status)
+        }
     }
 
-    private func requestTermination(_ session: SupermuxHarnessRunningProcess) {
+    private func requestTermination(
+        _ session: SupermuxHarnessRunningProcess,
+        installEscalation: Bool = true
+    ) {
         terminationRetainer = self
         if !session.isTerminating {
             session.isTerminating = true
@@ -266,7 +364,9 @@ public final class SupermuxHarnessProcessSession {
         if session.process.isRunning {
             session.process.terminate()
         }
-        installTerminationEscalationTimer(session)
+        if installEscalation {
+            installTerminationEscalationTimer(session)
+        }
     }
 
     private func installTerminationEscalationTimer(_ session: SupermuxHarnessRunningProcess) {
@@ -288,7 +388,7 @@ public final class SupermuxHarnessProcessSession {
     private func handleTerminationEscalation(runID: String) {
         guard let session = runningProcess, session.runID == runID else { return }
         if session.process.isRunning {
-            _ = Darwin.kill(session.process.processIdentifier, SIGKILL)
+            hardKill(runID: runID)
             return
         }
         guard session.pendingExitStatus != nil else { return }

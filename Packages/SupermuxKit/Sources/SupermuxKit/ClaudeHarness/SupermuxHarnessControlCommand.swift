@@ -18,6 +18,8 @@ public enum SupermuxHarnessControlCommand: Sendable, Equatable {
     case cancelAsyncMessage(messageUUID: String)
     /// Requests CLI-side file suggestions for an at-mention query.
     case fileSuggestions(query: String)
+    /// Previews or restores files to their checkpoint at a user message.
+    case rewindFiles(userMessageID: String, dryRun: Bool)
 
     var subtype: String {
         switch self {
@@ -30,6 +32,7 @@ public enum SupermuxHarnessControlCommand: Sendable, Equatable {
         case .renameSession: "rename_session"
         case .cancelAsyncMessage: "cancel_async_message"
         case .fileSuggestions: "file_suggestions"
+        case .rewindFiles: "rewind_files"
         }
     }
 }
