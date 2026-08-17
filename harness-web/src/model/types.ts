@@ -226,6 +226,13 @@ export interface TranscriptModel {
   turns: Turn[];
   pending: PendingPermission[];
   queued: QueuedMessage[];
+  /**
+   * Messages that were queued inside a run which then died before answering
+   * them. They cannot stay in `queued`, where the next run's first frame would
+   * promote them onto the wrong turn, and they must not be silently dropped —
+   * the user typed them. The hook re-sends them, in order, once a run is up.
+   */
+  stranded: QueuedMessage[];
   todos: TodoItem[];
   usage: UsageTotals;
   contextUsage?: ContextUsage;
@@ -253,6 +260,8 @@ export type LocalAction =
   | { kind: "cancelQueued"; uuid: string }
   /** Interrupt-with-cancel drops the whole queue on the CLI side; mirror it. */
   | { kind: "clearQueued" }
+  /** The hook has taken the stranded messages and is re-sending them. */
+  | { kind: "takeStranded" }
   | {
       kind: "permissionResolved";
       requestId: string;

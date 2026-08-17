@@ -48,7 +48,10 @@ export function StatusStrip({
   const pending = model.pending.length > 0;
   const tool = liveTool(model);
   const running = activity.sessionState === "running" || activity.status === "requesting";
-  const queued = model.queued.length;
+  // Stranded messages are queued work too — they are waiting on the next run.
+  // Counting only `queued` would print "Ready" over a strip full of chips, which
+  // is the contradiction this strip exists to avoid.
+  const queued = model.queued.length + model.stranded.length;
 
   let tone = "idle";
   let content: React.ReactNode = copy("supermux.harness.status.idle");

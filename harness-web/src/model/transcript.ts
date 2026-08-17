@@ -65,15 +65,28 @@ export function applyEvent(
   switch (event.kind) {
     case "protocol":
       return applyLine(model, index, event.line, nowMs);
-    case "runStarted":
+    case "runStarted": {
+      // No turn can still be live at the instant a process starts: the run that
+      // was producing it is gone. A turn left open here comes from replayed
+      // history whose recording stops mid-turn — a session that crashed while
+      // Claude was working is exactly that — and it stays "streaming" forever,
+      // so `ensureTurn` hands the NEW run's output to it and the transcript
+      // files the next answer under the previous prompt.
+      const settled = closeOpenTurns(model, nowMs, "error");
       return {
-        ...model,
+        ...settled,
         runPhase: "running",
         runId: event.runId,
         exitError: undefined,
         startFailed: undefined,
-        revision: model.revision + 1
+        // Same reasoning for the activity flags: "running"/"compacting" read off
+        // replayed history describes work the dead process was doing. Carried
+        // into the new run they make a fresh pane claim to be thinking, and a
+        // send sits queued behind activity that will never end on its own.
+        activity: { ...settled.activity, sessionState: "idle", status: null, thinkingTokens: 0 },
+        revision: settled.revision + 1
       };
+    }
     case "runExited": {
       const closed = closeOpenTurns(model, nowMs, event.status === 0 ? "complete" : "error");
       return {
@@ -83,6 +96,15 @@ export function applyEvent(
         startFailed: undefined,
         activity: { ...closed.activity, sessionState: "idle", status: null },
         pending: [],
+        // The queue lived inside the process that just died: those messages were
+        // handed to a CLI that will never answer them. Left in `queued` they are
+        // not merely stale chips — `ensureTurn` promotes queued[0] onto the first
+        // frame of the NEXT run, so a later message renders under an earlier
+        // message's text and the transcript attributes the wrong prompt to the
+        // wrong answer. They are not discarded either: the user typed them, so
+        // they move aside for the hook to re-send, in order, once a run is up.
+        queued: [],
+        stranded: closed.stranded.concat(closed.queued),
         revision: closed.revision + 1
       };
     }
@@ -335,15 +357,22 @@ export function applyLocalAction(
       return {
         ...model,
         queued: model.queued.filter((q) => q.uuid !== action.uuid),
+        // A chip the user dismisses is dismissed whichever list it is sitting in;
+        // otherwise cancelling a stranded message would re-send it anyway.
+        stranded: model.stranded.filter((q) => q.uuid !== action.uuid),
         revision: model.revision + 1
       };
     // An interrupt that cancels the queue drops them on the CLI side, so the
     // chips have to go too: a queue that only LOOKS full now blocks every later
     // send from opening a turn, and the pane would sit "queued" forever.
     case "clearQueued":
-      return model.queued.length === 0
+      return model.queued.length === 0 && model.stranded.length === 0
         ? model
-        : { ...model, queued: [], revision: model.revision + 1 };
+        : { ...model, queued: [], stranded: [], revision: model.revision + 1 };
+    case "takeStranded":
+      return model.stranded.length === 0
+        ? model
+        : { ...model, stranded: [], revision: model.revision + 1 };
     case "permissionResolved": {
       const resolved = model.pending.find((p) => p.requestId === action.requestId);
       const next: TranscriptModel = {
@@ -377,6 +406,11 @@ export function applyLocalAction(
         exitError: action.error,
         startFailed: true,
         activity: { ...model.activity, sessionState: "idle", status: null },
+        // Nothing ever received these: the process never came up. Same reason as
+        // `runExited` — a surviving queue is promoted onto a later run's turns —
+        // and the same remedy: held for re-send rather than thrown away.
+        queued: [],
+        stranded: model.stranded.concat(model.queued),
         revision: model.revision + 1
       };
     case "dismissBanner":

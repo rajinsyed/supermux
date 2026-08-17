@@ -347,7 +347,10 @@ function AppBody({
           onPlanKeepPlanning={() =>
             decidePlan(copy("supermux.harness.plan.keepPlanningMessage"))
           }
-          queued={model.queued}
+          // Stranded messages are still waiting to be sent, so they stay on the
+          // strip: a chip that disappears when the process dies reads as a
+          // message that was delivered.
+          queued={model.stranded.length > 0 ? model.stranded.concat(model.queued) : model.queued}
           commands={model.session.commands}
           permissionMode={model.session.permissionMode}
           draft={harness.draft}
