@@ -1,0 +1,4 @@
+{"type":"user","uuid":"user-message-uuid-one","parentUuid":null,"isSidechain":false,"message":{"role":"user","content":"First prompt"}}
+{"type":"assistant","uuid":"assistant-message-uuid-one","parentUuid":"user-message-uuid-one","isSidechain":false,"message":{"role":"assistant","content":"First answer"}}
+{"type":"user","uuid":"user-message-uuid-two","parentUuid":"assistant-message-uuid-one","isSidechain":false,"message":{"role":"user","content":"Second prompt"}}
+{"type":"last-prompt","leafUuid":"user-message-uuid-two"}

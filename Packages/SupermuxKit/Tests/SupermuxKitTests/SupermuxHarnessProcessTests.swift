@@ -384,6 +384,70 @@ struct SupermuxHarnessProcessSessionTests {
         #expect(releasedSession == nil)
     }
 
+    @Test func terminateAndWaitReturnsOnlyAfterExitedLifecycleAndBothStreamsDrain() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder, escalationInterval: 5)
+        let script = #"""
+        trap 'printf '\''{"type":"keep_alive","shutdown":true}\n'\''; printf '\''shutdown-err'\'' >&2; exit 0' TERM
+        printf '{"type":"keep_alive","ready":true}\n'
+        while :; do sleep 0.02; done
+        """#
+        let started = try session.start(plan: shellPlan(script))
+        _ = await recorder.nextProtocolLine()
+
+        let status = try await session.terminateAndWait(timeout: 1)
+
+        #expect(status == 0)
+        #expect(recorder.protocolLines.last?.object.bool(forKey: "shutdown") == true)
+        #expect(recorder.stderrLines.last == "shutdown-err")
+        #expect(recorder.timeline.last == "exited")
+        #expect(recorder.lifecycleEvents.last == .exited(runID: started.runID, status: 0))
+        #expect(!session.isRunning)
+    }
+
+    @Test func terminateAndWaitHardKillsAfterItsDeadline() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder, escalationInterval: 5)
+        let script = #"""
+        trap '' TERM
+        printf '{"type":"keep_alive","ready":true}\n'
+        while :; do sleep 1; done
+        """#
+        let started = try session.start(plan: shellPlan(script))
+        _ = await recorder.nextProtocolLine()
+
+        let status = try await session.terminateAndWait(timeout: 0.03)
+
+        #expect(status == 9)
+        #expect(recorder.lifecycleEvents.last == .exited(runID: started.runID, status: 9))
+        #expect(!session.isRunning)
+    }
+
+    @Test func awaitedTerminationOrdersOldExitBeforeReplacementStart() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder, escalationInterval: 5)
+        let first = try session.start(plan: shellPlan(#"""
+        trap 'exit 0' TERM
+        printf '{"type":"keep_alive","oldReady":true}\n'
+        while :; do sleep 0.02; done
+        """#))
+        _ = await recorder.nextProtocolLine()
+
+        #expect(try await session.terminateAndWait(timeout: 1) == 0)
+        let second = try session.start(plan: shellPlan("exit 0"))
+        _ = await recorder.nextExit()
+
+        let oldExit = recorder.lifecycleEvents.firstIndex(of: .exited(runID: first.runID, status: 0))
+        let replacementStart = recorder.lifecycleEvents.firstIndex(
+            of: .started(runID: second.runID, processID: second.processID)
+        )
+        #expect(oldExit != nil)
+        #expect(replacementStart != nil)
+        if let oldExit, let replacementStart {
+            #expect(oldExit < replacementStart)
+        }
+    }
+
     @Test func closeIsIdempotentAndMissingProcessOperationsFail() async throws {
         let recorder = Recorder()
         let session = makeSession(recorder: recorder, escalationInterval: 0.05)

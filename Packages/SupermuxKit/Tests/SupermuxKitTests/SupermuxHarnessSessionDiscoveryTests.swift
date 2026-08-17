@@ -224,6 +224,30 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(fourth.string(forKey: "timestamp") == "t4")
     }
 
+    @Test func fixtureHistorySurfacesPersistedUserRecordUUIDs() throws {
+        let sandbox = try makeSandbox(named: "fixture-user-uuids")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        let fixture = try #require(Bundle.module.url(
+            forResource: "session-history-uuids",
+            withExtension: "jsonl"
+        ))
+        try FileManager.default.copyItem(
+            at: fixture,
+            to: directory.appendingPathComponent("fixture-session.jsonl")
+        )
+
+        let page = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "fixture-session"
+        )
+        let userUUIDs = page.events.compactMap { event in
+            event.string(forKey: "type") == "user" ? event.string(forKey: "uuid") : nil
+        }
+
+        #expect(userUUIDs == ["user-message-uuid-one", "user-message-uuid-two"])
+    }
+
     @Test func historyLeafPreferenceIsLastPromptThenSummaryThenLastMainRecord() throws {
         let sandbox = try makeSandbox(named: "leaf-preference")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }

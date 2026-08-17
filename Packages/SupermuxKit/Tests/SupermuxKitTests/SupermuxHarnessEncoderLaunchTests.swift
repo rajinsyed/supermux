@@ -127,6 +127,26 @@ import Testing
         #expect(reset.rawValue["max_thinking_tokens"] is NSNull)
     }
 
+    @Test func rewindFilesControlRequestEncodesMessageUUIDAndDryRunMode() throws {
+        let (_, preview) = try controlRequestParts(
+            encoder.controlRequest(
+                .rewindFiles(userMessageID: "user-message-uuid", dryRun: true),
+                requestID: "rewind-preview"
+            )
+        )
+        #expect(preview.string(forKey: "subtype") == "rewind_files")
+        #expect(preview.string(forKey: "user_message_id") == "user-message-uuid")
+        #expect(preview.bool(forKey: "dry_run") == true)
+
+        let (_, restore) = try controlRequestParts(
+            encoder.controlRequest(
+                .rewindFiles(userMessageID: "user-message-uuid", dryRun: false),
+                requestID: "rewind"
+            )
+        )
+        #expect(restore.bool(forKey: "dry_run") == false)
+    }
+
     @Test func contextUsageControlRequestHasNoExtraPayload() throws {
         let (_, request) = try controlRequestParts(
             encoder.getContextUsageControlRequest(requestID: "context")
@@ -218,6 +238,7 @@ import Testing
         #expect(plan.environment["PATH"] == "/custom/path")
         #expect(plan.environment["HOME"] == "/home/test")
         #expect(plan.environment["PWD"] == directory.standardizedFileURL.path)
+        #expect(plan.environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] == "1")
     }
 
     @Test func launchPlanAppendsAllOptionalArgumentsInStableOrder() {
@@ -229,15 +250,17 @@ import Testing
                 model: "claude-haiku-4-5",
                 permissionMode: .plan,
                 resumeSessionID: "session",
+                resumeSessionAt: "user-message-uuid",
                 forkSession: true,
                 effort: "high",
                 replayUserMessages: true
             )
         )
-        #expect(Array(plan.arguments.suffix(10)) == [
+        #expect(Array(plan.arguments.suffix(11)) == [
             "--model", "claude-haiku-4-5",
             "--permission-mode", "plan",
             "--resume", "session",
+            "--resume-session-at=user-message-uuid",
             "--fork-session",
             "--effort", "high",
             "--replay-user-messages",
@@ -262,6 +285,27 @@ import Testing
         #expect(!plan.arguments.contains("--effort"))
         #expect(plan.arguments.contains("--fork-session"))
         #expect(plan.arguments.contains("--replay-user-messages"))
+    }
+
+    @Test func launchPlanEmitsResumeSessionAtOnlyAlongsideResume() {
+        let withoutResume = SupermuxHarnessLaunchPlan(
+            executableURL: URL(fileURLWithPath: "/opt/claude"),
+            workingDirectoryURL: URL(fileURLWithPath: "/workspace"),
+            environment: [:],
+            options: SupermuxHarnessLaunchOptions(resumeSessionAt: "user-message-uuid")
+        )
+        #expect(!withoutResume.arguments.contains("--resume-session-at=user-message-uuid"))
+
+        let withResume = SupermuxHarnessLaunchPlan(
+            executableURL: URL(fileURLWithPath: "/opt/claude"),
+            workingDirectoryURL: URL(fileURLWithPath: "/workspace"),
+            environment: [:],
+            options: SupermuxHarnessLaunchOptions(
+                resumeSessionID: "session",
+                resumeSessionAt: "user-message-uuid"
+            )
+        )
+        #expect(withResume.arguments.contains("--resume-session-at=user-message-uuid"))
     }
 
     private func controlRequestParts(
