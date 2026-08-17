@@ -287,6 +287,22 @@
   color: var(--text);
 }
 
+/* The file half failed. Same strip, warning tone: a note saying files could not
+   be restored, painted in the same accent as a plain success, understates the
+   one fact the user has to act on. */
+.rewind-note.is-degraded {
+  /* --warning-dot is the saturated end of the warning ramp; there is no
+     --warning-border token, and the soft fill alone reads as a tint rather than
+     a state. */
+  border-color: var(--warning-dot);
+  background: var(--warning-soft);
+}
+
+.rewind-note.is-degraded > svg {
+  flex: 0 0 auto;
+  color: var(--warning);
+}
+
 .rewind-note-x {
   display: flex;
   margin-left: auto;

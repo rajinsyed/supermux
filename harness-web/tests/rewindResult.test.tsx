@@ -127,9 +127,13 @@ describe("the rewind note reports which half of the rewind happened", () => {
     });
     await rewindThirdMessage(true);
 
-    const note = document.querySelector(".rewind-note")!.textContent ?? "";
-    expect(note).toContain("Conversation rewound; files could not be restored.");
-    expect(note).not.toBe(copyDefaults["supermux.harness.rewind.done"]);
+    const note = document.querySelector(".rewind-note")!;
+    expect(note.textContent).toContain("Conversation rewound; files could not be restored.");
+    expect(note.textContent).not.toBe(copyDefaults["supermux.harness.rewind.done"]);
+    // And it LOOKS like the warning it is: the same accent as a plain success
+    // understates the one fact the user has to act on.
+    expect(note.className).toContain("is-degraded");
+    expect(note.getAttribute("role")).toBe("alert");
   });
 
   test("the reason travels with it, so the user is not left guessing", async () => {
@@ -147,9 +151,9 @@ describe("the rewind note reports which half of the rewind happened", () => {
   test("a restore that succeeded still reads as done", async () => {
     window.supermuxHarnessMock = makeBridge({ runId: "run-3", filesRestored: true });
     await rewindThirdMessage(true);
-    expect(document.querySelector(".rewind-note")!.textContent).toContain(
-      copyDefaults["supermux.harness.rewind.done"]
-    );
+    const note = document.querySelector(".rewind-note")!;
+    expect(note.textContent).toContain(copyDefaults["supermux.harness.rewind.done"]);
+    expect(note.className).not.toContain("is-degraded");
   });
 
   test("a conversation-only rewind is a success, not a failed restore", async () => {
@@ -157,9 +161,10 @@ describe("the rewind note reports which half of the rewind happened", () => {
     // failure would put a warning on every deliberate conversation-only rewind.
     window.supermuxHarnessMock = makeBridge({ runId: "run-3", filesRestored: false });
     await rewindThirdMessage(false);
-    const note = document.querySelector(".rewind-note")!.textContent ?? "";
-    expect(note).toContain(copyDefaults["supermux.harness.rewind.done"]);
-    expect(note).not.toContain("files could not be restored");
+    const note = document.querySelector(".rewind-note")!;
+    expect(note.textContent).toContain(copyDefaults["supermux.harness.rewind.done"]);
+    expect(note.textContent).not.toContain("files could not be restored");
+    expect(note.className).not.toContain("is-degraded");
   });
 
   test("the degraded half does not undo the conversation half", async () => {

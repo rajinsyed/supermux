@@ -7,7 +7,7 @@ import { CopyProvider, useCopy } from "./CopyContext";
 import { Composer } from "./composer/Composer";
 import { EmptyState, ExitedState, NoCliState } from "./empty/EmptyStates";
 import { Header } from "./header/Header";
-import { Close } from "./Icons";
+import { AlertTriangle, Close } from "./Icons";
 import { BinaryDialog } from "./settings/BinaryDialog";
 import { RewindDialog, type RewindTarget } from "./transcript/RewindDialog";
 import { PermissionCard, type PermissionDecision } from "./permission/PermissionCard";
@@ -51,7 +51,15 @@ function AppBody({
   const notifiedTurns = useRef(0);
   const [binaryOpen, setBinaryOpen] = useState(false);
   const [rewindTarget, setRewindTarget] = useState<RewindTarget | undefined>(undefined);
-  const [rewindNote, setRewindNote] = useState<string | undefined>(undefined);
+  /**
+   * The rewind receipt. `degraded` is carried alongside the text rather than
+   * sniffed back out of it: the strip has to LOOK like a warning when the file
+   * half failed, and a note that reads "could not be restored" in the same
+   * accent as a plain success is the same understatement in a different place.
+   */
+  const [rewindNote, setRewindNote] = useState<
+    { text: string; degraded?: boolean } | undefined
+  >(undefined);
   const composerFocus = useRef<(() => void) | undefined>(undefined);
 
   const { ref: scrollRef, contentRef, showPill, scrollToBottom } = useScrollFollow([
@@ -205,22 +213,23 @@ function AppBody({
           // changes when a restore was actually ASKED for: a conversation-only
           // rewind reports success, because that is all it promised.
           const failed = restoreFiles && !result.filesRestored;
-          setRewindNote(
-            failed
-              ? result.reason
-                ? `${copy("supermux.harness.rewind.doneFilesFailed")} ${result.reason}`
-                : copy("supermux.harness.rewind.doneFilesFailed")
-              : copy("supermux.harness.rewind.done")
-          );
+          const base = failed
+            ? copy("supermux.harness.rewind.doneFilesFailed")
+            : copy("supermux.harness.rewind.done");
+          setRewindNote({
+            text: failed && result.reason ? `${base} ${result.reason}` : base,
+            degraded: failed
+          });
           // The composer is prefilled with the original text; putting the caret
           // in it is the difference between "here is your message back" and
           // "find the box and click it yourself".
           composerFocus.current?.();
         })
         .catch((error: unknown) => {
-          setRewindNote(
-            error instanceof Error ? error.message : copy("supermux.harness.rewind.failed")
-          );
+          setRewindNote({
+            text: error instanceof Error ? error.message : copy("supermux.harness.rewind.failed"),
+            degraded: true
+          });
         });
     },
     [copy, harness, rewindTarget]
@@ -333,8 +342,15 @@ function AppBody({
         />
         <TodoStrip todos={model.todos} />
         {rewindNote ? (
-          <div className="rewind-note" role="status">
-            {rewindNote}
+          <div
+            className={`rewind-note${rewindNote.degraded ? " is-degraded" : ""}`}
+            // A degraded note reports a failure, and `status` is announced only
+            // when the screen reader gets round to it; `alert` interrupts, which
+            // is right for "the files on disk are not what you just asked for".
+            role={rewindNote.degraded ? "alert" : "status"}
+          >
+            {rewindNote.degraded ? <AlertTriangle size={12} /> : null}
+            {rewindNote.text}
             <button
               type="button"
               className="rewind-note-x"
