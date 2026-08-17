@@ -251,7 +251,7 @@ function makeBridge(wire: { sent: string[]; starts: number }): HarnessBridge {
       return { canRewind: true, filesChanged: [], insertions: 0, deletions: 0 };
     },
     async rewind() {
-      return { runId: "run-rewind" };
+      return { runId: "run-rewind", filesRestored: true };
     }
   };
 }
@@ -288,6 +288,87 @@ describe("stranded messages are re-sent, in order, once a run is back up", () =>
 
     expect(wire.sent).toEqual(["first", "second", "third", "second", "third"]);
     expect(store.getSnapshot().stranded).toEqual([]);
+  });
+
+  /**
+   * The crash boundary. Everything stranded was typed BEFORE the exit, so
+   * anything typed after it belongs behind them — on the wire, not merely in the
+   * chip strip. The re-send used to wait for `runStarted`, while a message typed
+   * in the gap had nothing to wait for and went straight out: it reached the CLI
+   * first and was answered first, under a queue strip still listing the stranded
+   * chips ahead of it. That is the same "a later message jumped the line" report
+   * the send chain was built to end, arriving through the one door the chain did
+   * not cover.
+   */
+  test("a message typed between the exit and the restart lands BEHIND the stranded ones", async () => {
+    const wire = { sent: [] as string[], starts: 0 };
+    window.supermuxHarnessMock = makeBridge(wire);
+    const store = new HarnessStore();
+    const out: { current?: HarnessController } = {};
+    render(<Probe store={store} out={out} />);
+    await flush();
+
+    await act(async () => {
+      out.current!.send("first", []);
+      out.current!.send("second", []);
+      out.current!.send("third", []);
+    });
+    await flush();
+    expect(wire.sent).toEqual(["first", "second", "third"]);
+
+    await act(async () => {
+      store.receive([{ kind: "runExited", runId: "run-1", status: 1 }]);
+      store.flushNow();
+    });
+    expect(store.getSnapshot().stranded.map((q) => q.text)).toEqual(["second", "third"]);
+
+    // The gap: the process is down, no run has started, and the user types.
+    await act(async () => {
+      out.current!.send("typed after the crash", []);
+    });
+    await flush();
+
+    // The stranded pair, in their original order, then the new one.
+    expect(wire.sent.slice(3)).toEqual(["second", "third", "typed after the crash"]);
+    expect(store.getSnapshot().stranded).toEqual([]);
+  });
+
+  test("the on-screen order after a crash-gap send matches the delivery order", async () => {
+    // Half the original report was that the transcript and the CLI disagreed
+    // about order, so asserting the wire alone leaves the visible half
+    // unguarded. The comparison is against each message's LAST delivery: a
+    // stranded message is legitimately on the wire twice — once into the process
+    // that died holding it, once into the run that answers it — and only the
+    // second delivery is the one the transcript is describing.
+    const wire = { sent: [] as string[], starts: 0 };
+    window.supermuxHarnessMock = makeBridge(wire);
+    const store = new HarnessStore();
+    const out: { current?: HarnessController } = {};
+    render(<Probe store={store} out={out} />);
+    await flush();
+
+    await act(async () => {
+      out.current!.send("first", []);
+      out.current!.send("second", []);
+    });
+    await flush();
+    await act(async () => {
+      store.receive([{ kind: "runExited", runId: "run-1", status: 1 }]);
+      store.flushNow();
+    });
+    await act(async () => {
+      out.current!.send("third", []);
+    });
+    await flush();
+
+    const model = store.getSnapshot();
+    const onScreen = model.turns
+      .map((turn) => turn.userText)
+      .concat(model.queued.map((q) => q.text))
+      .filter((text): text is string => Boolean(text));
+    const delivered = onScreen.slice().sort((a, b) => wire.sent.lastIndexOf(a) - wire.sent.lastIndexOf(b));
+    expect(onScreen).toEqual(delivered);
+    expect(onScreen).toEqual(["first", "second", "third"]);
   });
 
   test("New Session is the one path that throws them away instead", async () => {

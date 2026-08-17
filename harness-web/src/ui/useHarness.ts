@@ -8,6 +8,7 @@ import type {
   HarnessTheme,
   PermissionMode,
   RewindPreview,
+  RewindResult,
   SessionSummary
 } from "../protocol/types";
 import { defaultDarkTheme } from "./theme";
@@ -47,7 +48,12 @@ export interface HarnessController {
   newSession(): void;
   openSessionInNewPane(sessionId: string): void;
   rewindPreview(uuid: string): Promise<RewindPreview>;
-  rewind(request: RewindRequest, restoreFiles: boolean): Promise<void>;
+  /**
+   * Resolves once the conversation has been rewound. The file half reports
+   * separately in the result, because it can fail on its own without
+   * invalidating the rewind.
+   */
+  rewind(request: RewindRequest, restoreFiles: boolean): Promise<RewindResult>;
   setModel(model: string, effort?: EffortLevel): void;
   setPermissionMode(mode: PermissionMode): void;
   cyclePermissionMode(): void;
@@ -263,27 +269,21 @@ export function useHarness(store: HarnessStore): HarnessController {
     [bridge, ensureStarted]
   );
 
-  const send = useCallback(
-    (text: string, images: ImageAttachment[]) => {
-      const uuid = uuidv4();
-      store.dispatch({ kind: "localSend", uuid, text, images, atMs: Date.now() });
-      setDraftState("");
-      bridge.saveDraft({ text: "" }).catch(() => undefined);
-      enqueueSend(text, images, uuid);
-    },
-    [bridge, enqueueSend, store]
-  );
-
   /**
-   * Messages that were queued inside a run which died before answering them.
-   * The CLI-side queue died with the process, so re-sending is the only way they
-   * are ever answered — and it happens through the same chain, in the order they
-   * were typed, so they cannot overtake each other or anything typed since.
+   * Put the messages a dead run never answered back on the wire, in the order
+   * they were typed. `model.stranded` is the record the reducer captured AT THE
+   * EXIT BOUNDARY, so everything in it was typed before anything that arrives
+   * afterwards — draining it through the same chain is what keeps that true on
+   * the wire as well as on screen.
+   *
+   * One function, two callers, because a crash has exactly two ways out and they
+   * must not disagree about order: a run comes back up (the effect below), or
+   * the user types the next message first (`send`, which drains this ahead of
+   * its own message rather than jumping the line).
    */
-  useEffect(() => {
-    if (model.stranded.length === 0) return;
-    if (model.runPhase !== "running") return;
-    const carried = model.stranded;
+  const flushStranded = useCallback((): boolean => {
+    const carried = store.getSnapshot().stranded;
+    if (carried.length === 0) return false;
     store.dispatch({ kind: "takeStranded" });
     for (const message of carried) {
       store.dispatch({
@@ -295,7 +295,36 @@ export function useHarness(store: HarnessStore): HarnessController {
       });
       enqueueSend(message.text, message.images, message.uuid);
     }
-  }, [enqueueSend, model.runPhase, model.stranded, store]);
+    return true;
+  }, [enqueueSend, store]);
+
+  const send = useCallback(
+    (text: string, images: ImageAttachment[]) => {
+      // BEFORE this message, always. A send typed after a crash used to reach
+      // `bridge.send` first and be answered first: it had a live chain to append
+      // to, while the stranded messages were still waiting for a `runStarted`
+      // that this very send was about to trigger. The chips said one order and
+      // the CLI answered another.
+      flushStranded();
+      const uuid = uuidv4();
+      store.dispatch({ kind: "localSend", uuid, text, images, atMs: Date.now() });
+      setDraftState("");
+      bridge.saveDraft({ text: "" }).catch(() => undefined);
+      enqueueSend(text, images, uuid);
+    },
+    [bridge, enqueueSend, flushStranded, store]
+  );
+
+  /**
+   * The other way out of a crash: a run came back up — a Restart, or a resume —
+   * with nobody having typed since. The CLI-side queue died with the process, so
+   * re-sending is the only way these are ever answered.
+   */
+  useEffect(() => {
+    if (model.stranded.length === 0) return;
+    if (model.runPhase !== "running") return;
+    flushStranded();
+  }, [flushStranded, model.runPhase, model.stranded]);
 
   const interrupt = useCallback(
     (cancelQueued: boolean) => {
@@ -402,13 +431,13 @@ export function useHarness(store: HarnessStore): HarnessController {
   );
 
   const rewind = useCallback(
-    async (request: RewindRequest, restoreFiles: boolean) => {
+    async (request: RewindRequest, restoreFiles: boolean): Promise<RewindResult> => {
       setRestarting(true);
       // A rewind restarts the process, so it is a start in flight for the same
       // reason a restart is.
       starting.current = true;
       try {
-        await bridge.rewind({
+        const result = await bridge.rewind({
           userMessageUuid: request.uuid,
           restoreFiles,
           resumeAtUuid: request.resumeAtUuid
@@ -419,6 +448,10 @@ export function useHarness(store: HarnessStore): HarnessController {
         store.dispatch({ kind: "truncateBeforeUserMessage", uuid: request.uuid });
         setDraftState(request.text);
         bridge.saveDraft({ text: request.text }).catch(() => undefined);
+        // A file restore that failed does NOT invalidate the conversation
+        // rewind, so it comes back in the result rather than as a rejection —
+        // the caller decides what to say about the half that did not happen.
+        return result;
       } finally {
         starting.current = false;
         setRestarting(false);
