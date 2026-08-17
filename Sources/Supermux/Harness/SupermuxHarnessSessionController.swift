@@ -5,6 +5,22 @@ import SupermuxKit
 /// forwarding, control routing, permission fail-safety, and persisted state.
 @MainActor
 final class SupermuxHarnessSessionController {
+    private final class WeakController {
+        weak var value: SupermuxHarnessSessionController?
+
+        init(_ value: SupermuxHarnessSessionController) {
+            self.value = value
+        }
+    }
+
+    private struct SharedModelCatalogProbe {
+        let id: UUID
+        let task: Task<SupermuxHarnessInitializeCatalog, any Error>
+    }
+
+    private static var liveControllers: [ObjectIdentifier: WeakController] = [:]
+    private static var modelCatalogProbesByBinaryPath: [String: SharedModelCatalogProbe] = [:]
+
     var eventSink: (([String: Any]) -> Void)?
     var runningStateSink: ((Bool) -> Void)?
     var titleSink: ((String?) -> Void)?
@@ -73,6 +89,7 @@ final class SupermuxHarnessSessionController {
                 self?.consumeLifecycleEvent(event)
             }
         )
+        Self.liveControllers[ObjectIdentifier(self)] = WeakController(self)
     }
 
     var isRunning: Bool {
@@ -138,9 +155,7 @@ final class SupermuxHarnessSessionController {
 
     func setBinaryPath(_ path: String?) async throws -> [String: Any] {
         try binarySetting.setPath(path)
-        binarySettingRevision &+= 1
-        invalidateBinaryCaches()
-        eventSink?(["kind": "modelCatalog", "models": []])
+        Self.broadcastBinarySettingInvalidation()
         return await binarySettingState()
     }
 
@@ -278,6 +293,9 @@ final class SupermuxHarnessSessionController {
         if let model { snapshot.model = model }
         if let permissionMode { snapshot.permissionMode = permissionMode }
         snapshot.sessionId = forkSession ? nil : resumeSessionId
+        if resumeSessionId == nil {
+            restoreStateRetirementSink?()
+        }
         runningStateSink?(true)
         var event: [String: Any] = ["kind": "runStarted", "runId": started.runID]
         if let resumeSessionId { event["resumedSessionId"] = resumeSessionId }
@@ -362,10 +380,12 @@ final class SupermuxHarnessSessionController {
         userMessageUuid: String,
         restoreFiles: Bool,
         resumeAtUuid: String?
-    ) async throws -> String {
+    ) async throws -> [String: Any] {
         guard let sessionID = currentSessionID else {
             throw SupermuxHarnessBridgeError.sessionUnavailableForRewind
         }
+        var filesRestored = false
+        var restoreFailureReason: String?
         if restoreFiles {
             do {
                 let router = try await ensureProcessForRewind()
@@ -376,15 +396,20 @@ final class SupermuxHarnessSessionController {
                     throw SupermuxHarnessBridgeError.sessionNotRunning
                 }
                 if payload.bool(forKey: "canRewind") == false {
-                    eventSink?(["kind": "stderr", "text": Self.rewindFilesUnavailableMessage])
+                    restoreFailureReason = Self.rewindFailureReason(from: payload)
+                } else {
+                    filesRestored = true
                 }
             } catch {
-                eventSink?(["kind": "stderr", "text": Self.rewindFilesUnavailableMessage])
+                restoreFailureReason = Self.rewindFailureReason(from: error)
+            }
+            if let restoreFailureReason {
+                eventSink?(["kind": "stderr", "text": restoreFailureReason])
             }
         }
 
         let normalizedResumeAt = Self.normalized(resumeAtUuid)
-        return try await restartRun(
+        let runID = try await restartRun(
             resumeSessionId: normalizedResumeAt == nil ? nil : sessionID,
             resumeSessionAt: normalizedResumeAt,
             forkSession: false,
@@ -392,6 +417,14 @@ final class SupermuxHarnessSessionController {
             permissionMode: snapshot.permissionMode,
             effort: nil
         )
+        var reply: [String: Any] = [
+            "runId": runID,
+            "filesRestored": filesRestored,
+        ]
+        if let restoreFailureReason {
+            reply["reason"] = restoreFailureReason
+        }
+        return reply
     }
 
     func setModel(model: String, effort: String?) async throws {
@@ -540,6 +573,7 @@ final class SupermuxHarnessSessionController {
     func close() {
         guard !isClosed else { return }
         isClosed = true
+        Self.liveControllers.removeValue(forKey: ObjectIdentifier(self))
         cancelModelCatalogProbe()
         guard let router = controlRouter else {
             processSession.close()
@@ -574,6 +608,7 @@ final class SupermuxHarnessSessionController {
     private func startModelCatalogProbeIfNeeded(expectedBinaryPath: String) {
         guard !isClosed, modelCatalogProbeTask == nil else { return }
         let probeID = UUID()
+        let binaryRevision = binarySettingRevision
         modelCatalogProbeID = probeID
         modelCatalogProbeTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -587,6 +622,7 @@ final class SupermuxHarnessSessionController {
                 let resolvedPlan = try await self.resolveClaudeLaunchPlan()
                 guard !Task.isCancelled,
                       !self.isClosed,
+                      self.binarySettingRevision == binaryRevision,
                       resolvedPlan.executableURL.path == expectedBinaryPath else {
                     return
                 }
@@ -596,8 +632,17 @@ final class SupermuxHarnessSessionController {
                         ?? FileManager.default.homeDirectoryForCurrentUser,
                     environment: resolvedPlan.environment
                 )
-                let catalog = try await self.modelCatalogProbe(probePlan)
-                guard !Task.isCancelled, !self.isClosed else { return }
+                let sharedProbe = Self.sharedModelCatalogProbe(
+                    binaryPath: expectedBinaryPath,
+                    plan: probePlan,
+                    operation: self.modelCatalogProbe
+                )
+                let catalog = try await sharedProbe.value
+                guard !Task.isCancelled,
+                      !self.isClosed,
+                      self.binarySettingRevision == binaryRevision else {
+                    return
+                }
                 self.consumeInitializeCatalog(catalog, binaryPath: expectedBinaryPath)
             } catch {
                 // Context remains usable without a catalog; the next pane load can probe again.
@@ -625,6 +670,51 @@ final class SupermuxHarnessSessionController {
             "kind": "modelCatalog",
             "models": catalog.models.map(\.rawValue),
         ])
+    }
+
+    private static func sharedModelCatalogProbe(
+        binaryPath: String,
+        plan: SupermuxHarnessLaunchPlan,
+        operation: @escaping @MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog
+    ) -> Task<SupermuxHarnessInitializeCatalog, any Error> {
+        if let existing = modelCatalogProbesByBinaryPath[binaryPath] {
+            return existing.task
+        }
+        let probeID = UUID()
+        let task = Task { @MainActor in
+            do {
+                return try await operation(plan)
+            } catch {
+                if modelCatalogProbesByBinaryPath[binaryPath]?.id == probeID {
+                    modelCatalogProbesByBinaryPath.removeValue(forKey: binaryPath)
+                }
+                throw error
+            }
+        }
+        modelCatalogProbesByBinaryPath[binaryPath] = SharedModelCatalogProbe(
+            id: probeID,
+            task: task
+        )
+        return task
+    }
+
+    private static func broadcastBinarySettingInvalidation() {
+        for probe in modelCatalogProbesByBinaryPath.values {
+            probe.task.cancel()
+        }
+        modelCatalogProbesByBinaryPath.removeAll()
+
+        let live = liveControllers.compactMapValues(\.value)
+        liveControllers = live.mapValues(WeakController.init)
+        for controller in live.values {
+            controller.handleBinarySettingInvalidation()
+        }
+    }
+
+    private func handleBinarySettingInvalidation() {
+        binarySettingRevision &+= 1
+        invalidateBinaryCaches()
+        eventSink?(["kind": "modelCatalog", "models": []])
     }
 
     private func invalidateBinaryCaches() {
@@ -724,6 +814,23 @@ final class SupermuxHarnessSessionController {
             "insertions": payload.integer(forKey: "insertions") ?? 0,
             "deletions": payload.integer(forKey: "deletions") ?? 0,
         ]
+    }
+
+    private nonisolated static func rewindFailureReason(
+        from payload: SupermuxHarnessJSONObject
+    ) -> String {
+        normalized(payload.string(forKey: "reason"))
+            ?? normalized(payload.string(forKey: "error"))
+            ?? rewindFilesUnavailableMessage
+    }
+
+    private nonisolated static func rewindFailureReason(from error: any Error) -> String {
+        if let routerError = error as? SupermuxHarnessControlRouterError,
+           case .requestFailed(_, let message) = routerError,
+           let message = normalized(message) {
+            return message
+        }
+        return rewindFilesUnavailableMessage
     }
 
     private nonisolated static func normalized(_ value: String?) -> String? {

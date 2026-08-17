@@ -14,7 +14,11 @@ struct SupermuxHarnessBinarySetting {
 
     /// The stored override exactly as normalized when it was saved.
     var overridePath: String? {
-        normalizedPath(defaults.string(forKey: Self.defaultsKey))
+        guard let expanded = expandedPath(defaults.string(forKey: Self.defaultsKey)),
+              (expanded as NSString).isAbsolutePath else {
+            return nil
+        }
+        return standardizedPath(expanded)
     }
 
     /// The stored override when it still names an executable regular file.
@@ -26,10 +30,14 @@ struct SupermuxHarnessBinarySetting {
     /// Validates and saves a path, or clears the setting for nil and empty input.
     @discardableResult
     func setPath(_ rawPath: String?) throws -> String? {
-        guard let path = normalizedPath(rawPath) else {
+        guard let expanded = expandedPath(rawPath) else {
             defaults.removeObject(forKey: Self.defaultsKey)
             return nil
         }
+        guard (expanded as NSString).isAbsolutePath else {
+            throw SupermuxHarnessBridgeError.invalidBinaryPath
+        }
+        let path = standardizedPath(expanded)
         guard isExecutableFile(atPath: path) else {
             throw SupermuxHarnessBridgeError.invalidBinaryPath
         }
@@ -37,12 +45,15 @@ struct SupermuxHarnessBinarySetting {
         return path
     }
 
-    private func normalizedPath(_ rawPath: String?) -> String? {
+    private func expandedPath(_ rawPath: String?) -> String? {
         guard let rawPath else { return nil }
         let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let expanded = (trimmed as NSString).expandingTildeInPath
-        return URL(fileURLWithPath: expanded, isDirectory: false).standardizedFileURL.path
+        return (trimmed as NSString).expandingTildeInPath
+    }
+
+    private func standardizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path, isDirectory: false).standardizedFileURL.path
     }
 
     private func isExecutableFile(atPath path: String) -> Bool {

@@ -149,12 +149,11 @@ extension SupermuxHarnessWebRendererCoordinator {
                 userMessageUuid: try request.requiredString("userMessageUuid")
             )
         case "harness.rewind":
-            let runId = try await controller.rewind(
+            return try await controller.rewind(
                 userMessageUuid: try request.requiredString("userMessageUuid"),
                 restoreFiles: request.bool("restoreFiles") ?? false,
                 resumeAtUuid: request.string("resumeAtUuid")
             )
-            return ["runId": runId]
         default:
             throw SupermuxHarnessBridgeError.unsupportedMethod(request.method)
         }

@@ -275088,6 +275088,23 @@
         }
       }
     },
+    "supermux.harness.composer.placeholderRestarting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restarting Claude…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude を再起動しています…"
+          }
+        }
+      }
+    },
     "supermux.harness.status.noCli" : {
       "extractionState" : "manual",
       "localizations" : {

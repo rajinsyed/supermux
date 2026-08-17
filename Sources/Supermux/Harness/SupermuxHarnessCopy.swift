@@ -30,6 +30,7 @@ enum SupermuxHarnessCopy {
             "supermux.harness.composer.placeholderWaiting": String(localized: "supermux.harness.composer.placeholderWaiting", defaultValue: "Respond to the request above"),
             "supermux.harness.composer.placeholderPlan": String(localized: "supermux.harness.composer.placeholderPlan", defaultValue: "Approve the plan, or say what to change"),
             "supermux.harness.composer.placeholderNoCli": String(localized: "supermux.harness.composer.placeholderNoCli", defaultValue: "Install the Claude Code CLI to start"),
+            "supermux.harness.composer.placeholderRestarting": String(localized: "supermux.harness.composer.placeholderRestarting", defaultValue: "Restarting Claude…"),
             "supermux.harness.composer.send": String(localized: "supermux.harness.composer.send", defaultValue: "Send"),
             "supermux.harness.composer.stop": String(localized: "supermux.harness.composer.stop", defaultValue: "Stop"),
             "supermux.harness.composer.hintSend": String(localized: "supermux.harness.composer.hintSend", defaultValue: "Enter to send"),
