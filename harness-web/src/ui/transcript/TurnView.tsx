@@ -114,9 +114,9 @@ export const TurnView = memo(function TurnView({
           </div>
         ) : null}
 
-        {turn.result && settled && turn.result.totalCostUsd !== undefined && work.length > 0 ? (
+        {turn.result && settled && turn.result.costDeltaUsd !== undefined && work.length > 0 ? (
           <div className="turn-footer tnum">
-            {formatDuration(duration)} · {formatCost(turn.result.totalCostUsd)}
+            {formatDuration(duration)} · {formatCost(turn.result.costDeltaUsd)}
           </div>
         ) : null}
       </div>

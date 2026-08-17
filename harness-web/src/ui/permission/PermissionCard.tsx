@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PendingPermission } from "../../model/types";
 import type { PermissionSuggestion, StructuredPatchHunk } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
-import { Shield, ShieldCheck, XCircle } from "../Icons";
+import { ArrowLeft, Shield, ShieldCheck, XCircle } from "../Icons";
 import { languageForPath, shortenPath } from "../format";
 import { CodeBlock } from "../primitives/CodeBlock";
 import { DiffView } from "../primitives/DiffView";
 import { toolFamily } from "../tools/toolMeta";
 import { alwaysAllowOffer, permissionHeadline } from "./permissionText";
+import { useCardKeys } from "./useCardKeys";
 
 export interface PermissionDecision {
   behavior: "allow" | "deny";
@@ -30,17 +31,37 @@ export function PermissionCard({
   const request = pending.request;
   const [showDeny, setShowDeny] = useState(false);
   const [reason, setReason] = useState("");
+  const cardRef = useRef<HTMLElement>(null);
   const allowRef = useRef<HTMLButtonElement>(null);
+  const denyRef = useRef<HTMLButtonElement>(null);
   const always = alwaysAllowOffer(request, copy);
 
   useEffect(() => {
-    allowRef.current?.focus();
+    setShowDeny(false);
+    setReason("");
   }, [pending.requestId]);
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) return;
+    if (!showDeny) allowRef.current?.focus();
+  }, [pending.requestId, showDeny]);
+
+  const closeDeny = useCallback(() => {
+    setShowDeny(false);
+    setReason("");
+  }, []);
+
+  // Only the top-level action row answers the request from the keyboard. Once
+  // the deny sub-state is open, Escape backs out of it instead — a mis-click on
+  // Deny must not be a one-way door into the reason prompt.
+  const onKey = useCallback(
+    (event: KeyboardEvent) => {
+      if (showDeny) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeDeny();
+        }
+        return;
+      }
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         onDecide({ behavior: "allow", updatedInput: request.input });
@@ -53,15 +74,16 @@ export function PermissionCard({
         });
       } else if (event.key === "Escape") {
         event.preventDefault();
-        onDecide({ behavior: "deny", message: copy("supermux.harness.permission.deny") });
+        setShowDeny(true);
       }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [always, onDecide, request.input, copy]);
+    },
+    [always, closeDeny, onDecide, request.input, showDeny]
+  );
+
+  useCardKeys(cardRef, onKey);
 
   return (
-    <section className="permission-card" role="alertdialog" aria-live="assertive">
+    <section className="permission-card" role="alertdialog" aria-live="assertive" ref={cardRef}>
       <header className="permission-head">
         <span className="permission-icon">
           <Shield size={13} />
@@ -93,14 +115,33 @@ export function PermissionCard({
 
       {showDeny ? (
         <div className="permission-deny-row">
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon-only"
+            onClick={closeDeny}
+            title={copy("supermux.harness.permission.denyBack")}
+            aria-label={copy("supermux.harness.permission.denyBack")}
+          >
+            <ArrowLeft size={12} />
+          </button>
           <input
             className="permission-reason-input"
             placeholder={copy("supermux.harness.permission.denyReason")}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeDeny();
+              } else if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                denyRef.current?.click();
+              }
+            }}
             autoFocus
           />
           <button
+            ref={denyRef}
             type="button"
             className="btn btn-danger"
             onClick={() =>
@@ -111,6 +152,7 @@ export function PermissionCard({
             }
           >
             {copy("supermux.harness.permission.deny")}
+            <kbd>⏎</kbd>
           </button>
           <button
             type="button"

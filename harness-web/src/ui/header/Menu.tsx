@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Check } from "../Icons";
 
 export function Menu({
   trigger,
@@ -58,12 +59,15 @@ export function Menu({
 
 export function MenuItem({
   children,
+  icon,
   onClick,
   active,
   danger,
   detail
 }: {
   children: ReactNode;
+  /** Leading glyph; reserves its slot even when absent so labels stay aligned. */
+  icon?: ReactNode;
   onClick: () => void;
   active?: boolean;
   danger?: boolean;
@@ -76,7 +80,13 @@ export function MenuItem({
       role="menuitem"
       onClick={onClick}
     >
-      <span className="menu-item-main">{children}</span>
+      <span className="menu-item-main">
+        <span className="menu-item-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <span className="menu-item-label">{children}</span>
+        {active ? <Check size={12} /> : null}
+      </span>
       {detail ? <span className="menu-item-detail">{detail}</span> : null}
     </button>
   );

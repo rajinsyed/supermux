@@ -36,7 +36,7 @@ import {
 } from "./ToolBodies";
 import { diffStats } from "../primitives/DiffView";
 import { SubagentCard } from "./SubagentCard";
-import { toolFamily, toolHeadline, toolSubtitle, type ToolFamily } from "./toolMeta";
+import { toolFamily, toolHeadline, toolSubtitle, toolSubtitleFull, type ToolFamily } from "./toolMeta";
 
 const ICONS: Record<ToolFamily, (props: { size?: number }) => ReactNode> = {
   interactive: Sparkle,
@@ -124,7 +124,7 @@ function badgesFor(block: ToolBlock, family: ToolFamily, copy: ReturnType<typeof
       );
     }
   }
-  for (const metric of toolMetrics(block)) {
+  for (const metric of toolMetrics(block, copy)) {
     badges.push(
       <span key={metric} className="tool-badge is-quiet tnum">
         {metric}
@@ -162,6 +162,7 @@ export const ToolCard = memo(function ToolCard({
   const Icon = ICONS[family];
   const headline = toolHeadline(block.name, block.input);
   const subtitle = toolSubtitle(block.name, block.input);
+  const subtitleFull = toolSubtitleFull(block.name, block.input);
   const badges = badgesFor(block, family, copy);
   const elapsed = block.endedAtMs !== undefined ? block.endedAtMs - block.startedAtMs : 0;
   const duration = elapsed >= 250 ? formatCompactDuration(elapsed) : undefined;
@@ -181,8 +182,14 @@ export const ToolCard = memo(function ToolCard({
           <Icon size={13} />
         </span>
         <span className="tool-title">
-          <span className="tool-headline">{headline}</span>
-          {subtitle ? <span className="tool-subtitle">{subtitle}</span> : null}
+          <span className="tool-headline" title={headline}>
+            {headline}
+          </span>
+          {subtitle ? (
+            <span className="tool-subtitle" title={subtitleFull}>
+              {subtitle}
+            </span>
+          ) : null}
         </span>
         <span className="tool-badges">{badges}</span>
         {running ? (

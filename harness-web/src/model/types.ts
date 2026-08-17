@@ -113,7 +113,10 @@ export interface TurnResult {
   text?: string;
   durationMs?: number;
   numTurns?: number;
+  /** The CLI's running session total at this result (`total_cost_usd`). */
   totalCostUsd?: number;
+  /** What THIS turn added to that total. */
+  costDeltaUsd?: number;
   terminalReason?: string;
   inputTokens?: number;
   outputTokens?: number;

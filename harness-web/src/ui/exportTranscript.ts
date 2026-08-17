@@ -1,4 +1,5 @@
 import type { Block, TranscriptModel } from "../model/types";
+import type { CopyFn } from "./CopyContext";
 import { formatCost, formatDuration } from "./format";
 
 function renderBlocks(blocks: Block[], depth: number, out: string[]): void {
@@ -41,9 +42,9 @@ function renderBlocks(blocks: Block[], depth: number, out: string[]): void {
   }
 }
 
-export function exportTranscript(model: TranscriptModel): string {
+export function exportTranscript(model: TranscriptModel, copy: CopyFn): string {
   const out: string[] = [];
-  out.push(`# ${model.session.title ?? "Claude session"}`);
+  out.push(`# ${model.session.title ?? copy("supermux.harness.turn.exportTitle")}`);
   out.push("");
   if (model.session.cwd) out.push(`Working directory: \`${model.session.cwd}\``);
   if (model.session.model) out.push(`Model: ${model.session.model}`);
@@ -60,7 +61,7 @@ export function exportTranscript(model: TranscriptModel): string {
     renderBlocks(turn.blocks, 0, out);
     if (turn.result) {
       out.push(
-        `_${formatDuration(turn.result.durationMs)} · ${formatCost(turn.result.totalCostUsd)}_`
+        `_${formatDuration(turn.result.durationMs)} · ${formatCost(turn.result.costDeltaUsd)}_`
       );
       out.push("");
     }

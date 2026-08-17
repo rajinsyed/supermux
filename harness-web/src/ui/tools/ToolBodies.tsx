@@ -1,6 +1,6 @@
 import type { JsonObject, StructuredPatchHunk } from "../../protocol/types";
 import type { ToolBlock } from "../../model/types";
-import { useCopy } from "../CopyContext";
+import { useCopy, type CopyFn } from "../CopyContext";
 import { languageForPath, shortenPath } from "../format";
 import { AnsiOutput } from "../primitives/AnsiOutput";
 import { CodeBlock } from "../primitives/CodeBlock";
@@ -129,6 +129,7 @@ export function SearchBody({ block }: { block: ToolBlock }) {
 }
 
 export function WebBody({ block }: { block: ToolBlock }) {
+  const copy = useCopy();
   const results = block.structured?.results;
   if (Array.isArray(results) && results.length > 0) {
     return (
@@ -136,7 +137,9 @@ export function WebBody({ block }: { block: ToolBlock }) {
         <ul className="web-list">
           {(results as Array<{ title?: string; url?: string }>).slice(0, 10).map((result, i) => (
             <li key={i}>
-              <span className="web-title">{result.title ?? result.url ?? "Result"}</span>
+              <span className="web-title">
+                {result.title ?? result.url ?? copy("supermux.harness.tool.webResult")}
+              </span>
               {result.url ? <span className="web-url mono">{result.url}</span> : null}
             </li>
           ))}
@@ -224,18 +227,26 @@ export function GenericBody({ block }: { block: ToolBlock }) {
   );
 }
 
-export function toolMetrics(block: ToolBlock): string[] {
+export function toolMetrics(block: ToolBlock, copy: CopyFn): string[] {
   const out: string[] = [];
   const structured = block.structured;
   if (!structured) return out;
   const file = structured.file as JsonObject | undefined;
   const totalLines = num(file?.totalLines) ?? num(structured.numLines);
-  if (totalLines !== undefined) out.push(`${totalLines} lines`);
+  if (totalLines !== undefined) {
+    out.push(copy("supermux.harness.tool.linesRead", { count: totalLines }));
+  }
   const numFiles = num(structured.numFiles);
-  if (numFiles !== undefined) out.push(`${numFiles} files`);
+  if (numFiles !== undefined) {
+    out.push(copy("supermux.harness.tool.filesFound", { count: numFiles }));
+  }
   const numMatches = num(structured.numMatches) ?? num(structured.total_deferred_tools);
-  if (numMatches !== undefined) out.push(`${numMatches} matches`);
+  if (numMatches !== undefined) {
+    out.push(copy("supermux.harness.tool.matchesFound", { count: numMatches }));
+  }
   const duration = num(structured.durationMs);
-  if (duration !== undefined) out.push(`${duration}ms`);
+  if (duration !== undefined) {
+    out.push(copy("supermux.harness.tool.durationMs", { count: duration }));
+  }
   return out;
 }

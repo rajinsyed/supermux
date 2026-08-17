@@ -84,21 +84,18 @@ export function toolHeadline(name: string, input: JsonObject): string {
   }
 }
 
-export function toolSubtitle(name: string, input: JsonObject): string | undefined {
+/** The unabbreviated subtitle, for the head's `title` tooltip. */
+export function toolSubtitleFull(name: string, input: JsonObject): string | undefined {
   const family = toolFamily(name);
   switch (family) {
     case "bash":
       return str(input.description);
     case "edit":
     case "write":
-    case "read": {
-      const path = str(input.file_path) ?? str(input.filePath) ?? str(input.notebook_path);
-      return path ? shortenPath(path, 3) : undefined;
-    }
-    case "search": {
-      const path = str(input.path) ?? str(input.glob);
-      return path ? shortenPath(path, 3) : undefined;
-    }
+    case "read":
+      return str(input.file_path) ?? str(input.filePath) ?? str(input.notebook_path);
+    case "search":
+      return str(input.path) ?? str(input.glob);
     case "task":
       return str(input.subagent_type);
     case "mcp":
@@ -106,6 +103,16 @@ export function toolSubtitle(name: string, input: JsonObject): string | undefine
     default:
       return undefined;
   }
+}
+
+export function toolSubtitle(name: string, input: JsonObject): string | undefined {
+  const full = toolSubtitleFull(name, input);
+  if (full === undefined) return undefined;
+  const family = toolFamily(name);
+  if (family === "edit" || family === "write" || family === "read" || family === "search") {
+    return shortenPath(full, 3);
+  }
+  return full;
 }
 
 export function toolVerb(name: string): string {

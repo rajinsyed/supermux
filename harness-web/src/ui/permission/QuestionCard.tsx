@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PendingPermission } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { Check, Sparkle } from "../Icons";
 import type { PermissionDecision } from "./PermissionCard";
+import { useCardKeys } from "./useCardKeys";
 
 interface QuestionOption {
   label: string;
@@ -15,6 +16,8 @@ interface QuestionSpec {
   multiSelect?: boolean;
   options?: QuestionOption[];
 }
+
+const ADVANCE_MS = 200;
 
 export function QuestionCard({
   pending,
@@ -33,6 +36,10 @@ export function QuestionCard({
   const [active, setActive] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
+  const cardRef = useRef<HTMLElement>(null);
+  // Set when auto-advance moves the active question, so focus follows the card
+  // instead of being left wherever the pointer/composer put it.
+  const claimFocus = useRef(true);
 
   const current = questions[active];
 
@@ -49,11 +56,25 @@ export function QuestionCard({
         return { ...prev, [question.question]: [label] };
       });
       if (!question.multiSelect && active < questions.length - 1) {
-        window.setTimeout(() => setActive((v) => Math.min(questions.length - 1, v + 1)), 200);
+        window.setTimeout(() => {
+          claimFocus.current = true;
+          setActive((v) => Math.min(questions.length - 1, v + 1));
+        }, ADVANCE_MS);
       }
     },
     [active, questions.length]
   );
+
+  // Moving to the next question must also move focus there: leaving it in the
+  // composer means the next 1–9 keypress is typed as text instead of answering.
+  useEffect(() => {
+    if (!claimFocus.current) return;
+    claimFocus.current = false;
+    const first = cardRef.current?.querySelector<HTMLElement>(
+      ".question-item.is-active .option"
+    );
+    first?.focus({ preventScroll: true });
+  }, [active]);
 
   const submit = useCallback(() => {
     const payload: Record<string, string> = {};
@@ -63,16 +84,15 @@ export function QuestionCard({
       const value = free && free.length > 0 ? free : picked.join(", ");
       if (value) payload[question.question] = value;
     }
+    if (Object.keys(payload).length === 0) return;
     onDecide({
       behavior: "allow",
       updatedInput: { questions: request.input.questions, answers: payload }
     });
   }, [answers, other, onDecide, questions, request.input.questions]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+  const onKey = useCallback(
+    (event: KeyboardEvent) => {
       if (!current) return;
       const digit = Number.parseInt(event.key, 10);
       if (Number.isFinite(digit) && digit >= 1 && digit <= (current.options?.length ?? 0)) {
@@ -84,10 +104,11 @@ export function QuestionCard({
         event.preventDefault();
         submit();
       }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [current, submit, toggle]);
+    },
+    [current, submit, toggle]
+  );
+
+  useCardKeys(cardRef, onKey);
 
   const answeredCount = questions.filter((q) => {
     const free = other[q.question]?.trim();
@@ -95,14 +116,16 @@ export function QuestionCard({
   }).length;
 
   return (
-    <section className="question-card" role="alertdialog" aria-live="assertive">
+    <section className="question-card" role="alertdialog" aria-live="assertive" ref={cardRef}>
       <header className="question-head">
         <span className="question-icon">
           <Sparkle size={13} />
         </span>
         <div className="question-title">
           <span className="question-badge">{copy("supermux.harness.question.badge")}</span>
-          <h3>{request.title ?? request.display_name ?? "Claude has a question"}</h3>
+          <h3>
+            {request.title ?? request.display_name ?? copy("supermux.harness.question.title")}
+          </h3>
         </div>
         {questions.length > 1 ? (
           <span className="question-progress tnum">
@@ -114,6 +137,8 @@ export function QuestionCard({
       <div className="question-list">
         {questions.map((question, index) => {
           const selected = answers[question.question] ?? [];
+          const free = other[question.question]?.trim();
+          const answer = free && free.length > 0 ? free : selected.join(", ");
           const isActive = index === active;
           return (
             <div
@@ -167,11 +192,16 @@ export function QuestionCard({
                     }
                   />
                 </div>
-              ) : (
+              ) : answer ? (
                 <div className="question-answer">
-                  {selected.join(", ") ||
-                    other[question.question] ||
-                    (question.options ?? []).map((o) => o.label).join(" · ")}
+                  <span className="answer-chip">
+                    <Check size={11} />
+                    {answer}
+                  </span>
+                </div>
+              ) : (
+                <div className="question-answer is-unanswered">
+                  {copy("supermux.harness.question.unanswered")}
                 </div>
               )}
             </div>
@@ -193,7 +223,9 @@ export function QuestionCard({
         <button
           type="button"
           className="btn btn-ghost"
-          onClick={() => onDecide({ behavior: "deny", message: "Dismissed" })}
+          onClick={() =>
+            onDecide({ behavior: "deny", message: copy("supermux.harness.question.dismissed") })
+          }
         >
           {copy("supermux.harness.question.dismiss")}
         </button>

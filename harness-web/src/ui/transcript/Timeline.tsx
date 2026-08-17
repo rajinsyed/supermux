@@ -56,6 +56,10 @@ export function Timeline({ turns, scrollRef }: TimelineProps) {
         <button
           key={turn.id}
           type="button"
+          // Pointer-only affordance (see the @media (pointer: fine) rule): it
+          // must not put 24 invisible stops ahead of the composer in the tab
+          // order. The turns themselves are reachable by scrolling.
+          tabIndex={-1}
           className={`timeline-tick is-${turn.state}`}
           data-turn-tick={turn.id}
           onClick={() => goTo(turn.id)}
@@ -63,12 +67,17 @@ export function Timeline({ turns, scrollRef }: TimelineProps) {
             setHover({ index, top: event.currentTarget.offsetTop })
           }
           onMouseLeave={() => setHover(null)}
-          aria-label={turn.userText?.slice(0, 60) ?? `Turn ${turn.seq}`}
+          aria-label={
+            turn.userText?.slice(0, 60) ??
+            copy("supermux.harness.turn.turnNumber", { seq: turn.seq })
+          }
         />
       ))}
       {preview ? (
         <div className="timeline-preview" style={{ top: hover!.top - 12 }}>
-          <div className="timeline-preview-user">{preview.userText ?? `Turn ${preview.seq}`}</div>
+          <div className="timeline-preview-user">
+            {preview.userText ?? copy("supermux.harness.turn.turnNumber", { seq: preview.seq })}
+          </div>
           <div className="timeline-preview-body">{previewText(preview)}</div>
         </div>
       ) : null}

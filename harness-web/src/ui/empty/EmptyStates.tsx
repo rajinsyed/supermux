@@ -54,12 +54,14 @@ export function EmptyState({
 
       <div className="empty-meta">
         {workingDirectory ? (
-          <span className="dir-chip mono">
+          <span className="dir-chip mono" title={workingDirectory}>
             <Folder size={11} />
-            {displayDirectory(workingDirectory)}
+            <span className="dir-chip-text">{displayDirectory(workingDirectory)}</span>
           </span>
         ) : null}
-        {modelName ? <span className="empty-model">{modelName}</span> : null}
+        <span className={`empty-model${modelName ? "" : " is-pending"}`}>
+          {modelName ?? copy("supermux.harness.empty.detectingModel")}
+        </span>
       </div>
 
       <div className="empty-suggestions">

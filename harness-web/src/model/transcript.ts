@@ -157,8 +157,19 @@ function applyResult(
   const aborted =
     line.subtype === "error_during_execution" && (line.terminal_reason ?? "").startsWith("aborted");
   const delta = line.usage ?? {};
+  // `total_cost_usd` is the CLI's running session total, not this turn's spend:
+  // in the reference trace the three results carry 0.2286 → 0.3238 → 0.3585,
+  // each equal to its own cumulative `modelUsage[*].costUSD`. So the header
+  // takes the latest value as-is, and the per-turn footer takes the delta
+  // against the previous result. Take the max so a session that resumes into a
+  // lower reported total never walks the header backwards.
+  const previousCost = model.usage.costUsd;
+  const reportedCost = line.total_cost_usd;
+  const costUsd =
+    reportedCost === undefined ? previousCost : Math.max(previousCost, reportedCost);
+  const costDeltaUsd = reportedCost === undefined ? undefined : Math.max(0, reportedCost - previousCost);
   const usage = {
-    costUsd: line.total_cost_usd ?? model.usage.costUsd,
+    costUsd,
     inputTokens: model.usage.inputTokens + (delta.input_tokens ?? 0),
     outputTokens: model.usage.outputTokens + (delta.output_tokens ?? 0),
     thinkingTokens: model.usage.thinkingTokens + (delta.output_tokens_details?.thinking_tokens ?? 0),
@@ -185,7 +196,8 @@ function applyResult(
       text: line.result,
       durationMs: line.duration_ms,
       numTurns: line.num_turns,
-      totalCostUsd: line.total_cost_usd,
+      totalCostUsd: reportedCost,
+      costDeltaUsd,
       terminalReason: line.terminal_reason,
       inputTokens: delta.input_tokens,
       outputTokens: delta.output_tokens,

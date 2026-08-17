@@ -37,8 +37,12 @@
   flex: 0 0 auto;
 }
 
+/* The title shrinks before the working-directory chip: the chip is already at
+   its shortest useful form, the title is not. */
 .title-btn {
   max-width: 320px;
+  min-width: 6ch;
+  flex: 1 1 auto;
   padding: 3px 6px;
   margin-left: -6px;
   border-radius: var(--r-sm);
@@ -81,9 +85,33 @@
   color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;
+  max-width: 260px;
+}
+
+.header-left .dir-chip {
+  flex: 0 0 auto;
+}
+
+.dir-chip svg {
+  flex: 0 0 auto;
+}
+
+.dir-chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 260px;
+  white-space: nowrap;
+}
+
+/* Below ~900px the chip collapses to its folder glyph; the full path stays in
+   the title attribute. */
+@media (max-width: 900px) {
+  .header-left .dir-chip {
+    padding: 2px 5px;
+  }
+
+  .header-left .dir-chip .dir-chip-text {
+    display: none;
+  }
 }
 
 .cost-badge {
@@ -239,24 +267,44 @@
   background: var(--danger-soft);
 }
 
+/* Copy owns the casing — `text-transform: capitalize` retitles sentence-case
+   labels and mangles non-Latin locales. */
 .menu-item-main {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 12.5px;
-  text-transform: capitalize;
 }
 
-.menu-item-main svg:last-child {
-  margin-left: auto;
+/* Only the trailing check floats right; a leading icon must stay put or every
+   label lands on a different left edge. */
+.menu-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.menu-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  flex: 0 0 auto;
+}
+
+.menu-item-main > svg:not(:first-child) {
+  flex: 0 0 auto;
   color: var(--claude);
+}
+
+.menu-item-main > svg:first-child {
+  flex: 0 0 auto;
 }
 
 .menu-item-detail {
   font-size: 11px;
   line-height: 1.4;
   color: var(--text-faint);
-  text-transform: none;
 }
 
 .menu-empty {
@@ -274,15 +322,15 @@
 }
 
 .mode-dot.is-acceptEdits {
-  background: var(--success);
+  background: var(--success-dot, var(--success));
 }
 
 .mode-dot.is-plan {
-  background: var(--violet);
+  background: var(--violet-dot, var(--violet));
 }
 
 .mode-dot.is-bypassPermissions {
-  background: var(--danger);
+  background: var(--danger-dot, var(--danger));
 }
 
 /* ---------- sessions ---------- */
@@ -446,16 +494,16 @@
   display: block;
   height: 100%;
   border-radius: var(--r-pill);
-  background: var(--success);
+  background: var(--success-dot, var(--success));
   transition: width 480ms var(--ease);
 }
 
 .ctx-bar-fill.is-warn {
-  background: var(--warning);
+  background: var(--warning-dot, var(--warning));
 }
 
 .ctx-bar-fill.is-danger {
-  background: var(--danger);
+  background: var(--danger-dot, var(--danger));
 }
 
 .ctx-cats {

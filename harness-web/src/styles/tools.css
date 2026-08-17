@@ -65,6 +65,8 @@
   flex: 1 1 auto;
 }
 
+/* The filename is what an engineer scans for, so the subtitle absorbs all
+   truncation first: the headline only shrinks once the subtitle is gone. */
 .tool-headline {
   font-family: var(--mono);
   font-size: 11.5px;
@@ -72,6 +74,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 8ch;
 }
 
 .tool-card[data-family="read"] .tool-headline,
@@ -86,7 +90,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 0 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .tool-badges {
@@ -440,6 +445,19 @@
   background: var(--claude-faint);
 }
 
+/* The terminal is dark in both themes, so its own chrome cannot inherit the
+   page palette or the affordance disappears against the black body. */
+.terminal-more {
+  color: var(--terminal-muted);
+  background: var(--terminal-chrome);
+  border-top-color: var(--terminal-border);
+}
+
+.terminal-more:hover {
+  color: var(--terminal-fg);
+  background: rgba(255, 255, 255, 0.11);
+}
+
 /* ---------- terminal ---------- */
 
 .terminal {
@@ -471,7 +489,8 @@
   transition: opacity var(--dur) var(--ease);
 }
 
-.terminal:hover .terminal-copy {
+.terminal:hover .terminal-copy,
+.terminal:focus-within .terminal-copy {
   opacity: 1;
 }
 
@@ -492,7 +511,16 @@
 }
 
 .terminal.is-error .terminal-body {
-  color: var(--diff-del-fg);
+  color: var(--terminal-error);
+}
+
+.terminal .copy-btn {
+  color: var(--terminal-muted);
+}
+
+.terminal .copy-btn:hover {
+  color: var(--terminal-fg);
+  background: rgba(255, 255, 255, 0.11);
 }
 
 /* ---------- diff ---------- */

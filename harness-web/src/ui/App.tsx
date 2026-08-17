@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { HarnessStore } from "../model/store";
 import type { ImageAttachment } from "../model/types";
-import { CopyProvider } from "./CopyContext";
+import { CopyProvider, useCopy } from "./CopyContext";
 import { Composer } from "./composer/Composer";
 import { EmptyState, ExitedState, NoCliState } from "./empty/EmptyStates";
 import { Header } from "./header/Header";
@@ -19,14 +19,32 @@ import { useHarness } from "./useHarness";
 
 export function App({ store }: { store: HarnessStore }) {
   const harness = useHarness(store);
-  const { model, theme, context } = harness;
-  const notifiedTurns = useRef(0);
 
   useEffect(() => {
-    applyThemeVariables(document.documentElement, theme);
-  }, [theme]);
+    applyThemeVariables(document.documentElement, harness.theme);
+  }, [harness.theme]);
 
-  const { ref: scrollRef, showPill, scrollToBottom } = useScrollFollow([
+  // Split so everything below can call useCopy(); the provider has to be an
+  // ancestor of its consumers.
+  return (
+    <CopyProvider dict={harness.context?.copy}>
+      <AppBody store={store} harness={harness} />
+    </CopyProvider>
+  );
+}
+
+function AppBody({
+  store,
+  harness
+}: {
+  store: HarnessStore;
+  harness: ReturnType<typeof useHarness>;
+}) {
+  const copy = useCopy();
+  const { model, context } = harness;
+  const notifiedTurns = useRef(0);
+
+  const { ref: scrollRef, contentRef, showPill, scrollToBottom } = useScrollFollow([
     model.revision,
     model.turns.length,
     model.pending.length
@@ -36,18 +54,24 @@ export function App({ store }: { store: HarnessStore }) {
     const settled = model.turns.filter((turn) => turn.state !== "streaming").length;
     if (settled > notifiedTurns.current && notifiedTurns.current > 0 && document.hidden) {
       harness.bridge
-        .notify({ title: "Claude", body: model.session.title ?? "Turn complete" })
+        .notify({
+          title: copy("supermux.harness.app.title"),
+          body: model.session.title ?? copy("supermux.harness.turn.complete")
+        })
         .catch(() => undefined);
     }
     notifiedTurns.current = settled;
-  }, [harness.bridge, model.session.title, model.turns]);
+  }, [copy, harness.bridge, model.session.title, model.turns]);
 
   useEffect(() => {
     if (model.pending.length === 0 || !document.hidden) return;
     harness.bridge
-      .notify({ title: "Claude", body: "Permission needed" })
+      .notify({
+        title: copy("supermux.harness.app.title"),
+        body: copy("supermux.harness.permission.needed")
+      })
       .catch(() => undefined);
-  }, [harness.bridge, model.pending.length]);
+  }, [copy, harness.bridge, model.pending.length]);
 
   const pending = model.pending[0];
 
@@ -114,109 +138,108 @@ export function App({ store }: { store: HarnessStore }) {
   }, [decide, model.pending.length, pending]);
 
   return (
-    <CopyProvider dict={context?.copy}>
-      <div className="app">
-        <Header
-          degraded={cliUnavailable}
-          session={model.session}
-          usage={model.usage}
-          contextUsage={model.contextUsage}
-          workingDirectory={context?.workingDirectory ?? model.session.cwd}
-          sessions={harness.sessions}
-          onRename={(title) => {
-            store.dispatch({ kind: "setTitle", title });
-            harness.bridge.renameSession({ title }).catch(() => undefined);
-          }}
-          onSetModel={harness.setModel}
-          onSetPermissionMode={harness.setPermissionMode}
-          onResumeSession={(sessionId, fork) => harness.restart(sessionId, fork)}
-          onLoadSessions={harness.refreshSessions}
-          onCompact={() => harness.send("/compact", [])}
-          onClear={() => {
-            store.dispatch({ kind: "reset" });
-            harness.send("/clear", []);
-          }}
-          onExport={() => {
-            const markdown = exportTranscript(model);
-            harness.bridge.copyText({ text: markdown }).catch(() => undefined);
-          }}
-          onOpenTerminal={() => {
-            const dir = context?.workingDirectory ?? model.session.cwd;
-            if (dir) harness.bridge.openFile({ path: dir }).catch(() => undefined);
-          }}
-          onNewSession={() => {
-            store.dispatch({ kind: "reset" });
-            harness.restart();
-          }}
-        />
+    <div className="app">
+      <Header
+        degraded={cliUnavailable}
+        session={model.session}
+        usage={model.usage}
+        contextUsage={model.contextUsage}
+        workingDirectory={context?.workingDirectory ?? model.session.cwd}
+        sessions={harness.sessions}
+        onRename={(title) => {
+          store.dispatch({ kind: "setTitle", title });
+          harness.bridge.renameSession({ title }).catch(() => undefined);
+        }}
+        onSetModel={harness.setModel}
+        onSetPermissionMode={harness.setPermissionMode}
+        onResumeSession={(sessionId, fork) => harness.restart(sessionId, fork)}
+        onLoadSessions={harness.refreshSessions}
+        onCompact={() => harness.send("/compact", [])}
+        onClear={() => {
+          store.dispatch({ kind: "reset" });
+          harness.send("/clear", []);
+        }}
+        onExport={() => {
+          const markdown = exportTranscript(model, copy);
+          harness.bridge.copyText({ text: markdown }).catch(() => undefined);
+        }}
+        onOpenTerminal={() => {
+          const dir = context?.workingDirectory ?? model.session.cwd;
+          if (dir) harness.bridge.openFile({ path: dir }).catch(() => undefined);
+        }}
+        onNewSession={() => {
+          store.dispatch({ kind: "reset" });
+          harness.restart();
+        }}
+      />
 
-        {cliUnavailable ? (
-          <div className="harness-scroll transcript">
-            <div className="transcript-inner">
-              <NoCliState status={context!.cliStatus} onRetry={harness.reloadContext} />
-            </div>
+      {cliUnavailable ? (
+        <div className="harness-scroll transcript">
+          <div className="transcript-inner">
+            <NoCliState status={context!.cliStatus} onRetry={harness.reloadContext} />
           </div>
-        ) : (
-          <TranscriptList
-            turns={model.turns}
-            scrollRef={scrollRef}
-            showPill={showPill}
-            onJump={() => scrollToBottom(true)}
-            header={
-              model.turns.length === 0 ? (
-                <EmptyState
-                  workingDirectory={context?.workingDirectory ?? model.session.cwd}
-                  modelName={
-                    model.session.models.find((m) => m.value === model.session.model)?.displayName ??
-                    model.session.model
-                  }
-                  sessions={harness.sessions}
-                  onSuggestion={(text) => harness.setDraft(text)}
-                  onResume={(sessionId) => harness.restart(sessionId, false)}
-                />
-              ) : null
-            }
-            footer={
-              <>
-                {permissionPane}
-                {model.runPhase === "exited" && model.turns.length > 0 ? (
-                  <ExitedState error={model.exitError} onRestart={() => harness.restart()} />
-                ) : null}
-              </>
-            }
-          />
-        )}
-
-        <div className="dock">
-          <BannerStack
-            banners={model.banners}
-            onDismiss={(id) => store.dispatch({ kind: "dismissBanner", id })}
-          />
-          <TodoStrip todos={model.todos} />
-          <StatusStrip
-            model={model}
-            runPhase={model.runPhase}
-            activity={model.activity}
-            onRestart={() => harness.restart()}
-          />
-          <Composer
-            disabled={cliUnavailable}
-            running={running}
-            awaitingPermission={model.pending.length > 0}
-            queued={model.queued}
-            commands={model.session.commands}
-            permissionMode={model.session.permissionMode}
-            draft={harness.draft}
-            onDraftChange={harness.setDraft}
-            onSend={harness.send}
-            onInterrupt={harness.interrupt}
-            onCancelQueued={harness.cancelQueued}
-            onCyclePermissionMode={harness.cyclePermissionMode}
-            fetchFileSuggestions={fetchFileSuggestions}
-            onPickFiles={pickFiles}
-          />
         </div>
+      ) : (
+        <TranscriptList
+          turns={model.turns}
+          scrollRef={scrollRef}
+          contentRef={contentRef}
+          showPill={showPill}
+          onJump={() => scrollToBottom(true)}
+          header={
+            model.turns.length === 0 ? (
+              <EmptyState
+                workingDirectory={context?.workingDirectory ?? model.session.cwd}
+                modelName={
+                  model.session.models.find((m) => m.value === model.session.model)?.displayName ??
+                  model.session.model
+                }
+                sessions={harness.sessions}
+                onSuggestion={(text) => harness.setDraft(text)}
+                onResume={(sessionId) => harness.restart(sessionId, false)}
+              />
+            ) : null
+          }
+          footer={
+            <>
+              {permissionPane}
+              {model.runPhase === "exited" && model.turns.length > 0 ? (
+                <ExitedState error={model.exitError} onRestart={() => harness.restart()} />
+              ) : null}
+            </>
+          }
+        />
+      )}
+
+      <div className="dock">
+        <BannerStack
+          banners={model.banners}
+          onDismiss={(id) => store.dispatch({ kind: "dismissBanner", id })}
+        />
+        <TodoStrip todos={model.todos} />
+        <StatusStrip
+          model={model}
+          runPhase={model.runPhase}
+          activity={model.activity}
+          onRestart={() => harness.restart()}
+        />
+        <Composer
+          disabled={cliUnavailable}
+          running={running}
+          awaitingPermission={model.pending.length > 0}
+          queued={model.queued}
+          commands={model.session.commands}
+          permissionMode={model.session.permissionMode}
+          draft={harness.draft}
+          onDraftChange={harness.setDraft}
+          onSend={harness.send}
+          onInterrupt={harness.interrupt}
+          onCancelQueued={harness.cancelQueued}
+          onCyclePermissionMode={harness.cyclePermissionMode}
+          fetchFileSuggestions={fetchFileSuggestions}
+          onPickFiles={pickFiles}
+        />
       </div>
-    </CopyProvider>
+    </div>
   );
 }

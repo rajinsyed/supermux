@@ -11,6 +11,8 @@ const WINDOW_STEP = 18;
 interface TranscriptListProps {
   turns: Turn[];
   scrollRef: RefObject<HTMLDivElement | null>;
+  /** Observed for size changes so late-growing cards keep the bottom pinned. */
+  contentRef?: RefObject<HTMLDivElement | null>;
   showPill: boolean;
   onJump: () => void;
   header?: ReactNode;
@@ -20,6 +22,7 @@ interface TranscriptListProps {
 export function TranscriptList({
   turns,
   scrollRef,
+  contentRef,
   showPill,
   onJump,
   header,
@@ -62,7 +65,7 @@ export function TranscriptList({
   return (
     <div className="transcript-wrap">
       <div className="harness-scroll transcript" ref={scrollRef} tabIndex={-1}>
-        <div className="transcript-inner">
+        <div className="transcript-inner" ref={contentRef}>
           {header}
           {hidden > 0 ? (
             <div ref={sentinel} className="transcript-earlier">
@@ -71,7 +74,7 @@ export function TranscriptList({
                 className="link-btn"
                 onClick={() => setVisible((current) => Math.min(turns.length, current + WINDOW_STEP))}
               >
-                {copy("supermux.harness.turn.previousToolCalls", { count: hidden })}
+                {copy("supermux.harness.turn.earlierMessages", { count: hidden })}
               </button>
             </div>
           ) : null}

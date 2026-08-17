@@ -4,7 +4,6 @@ import type { ContextUsage, EffortLevel, PermissionMode, SessionSummary } from "
 import { useCopy } from "../CopyContext";
 import {
   Bolt,
-  Check,
   ChevronDown,
   Folder,
   History,
@@ -12,7 +11,8 @@ import {
   Plus,
   Scissors,
   Shield,
-  Terminal
+  Terminal,
+  Trash
 } from "../Icons";
 import { displayDirectory, formatCost, formatRelativeTime } from "../format";
 import { ContextRing } from "./ContextRing";
@@ -114,7 +114,7 @@ export function Header(props: HeaderProps) {
         {props.workingDirectory ? (
           <span className="dir-chip mono" title={props.workingDirectory}>
             <Folder size={11} />
-            {displayDirectory(props.workingDirectory)}
+            <span className="dir-chip-text">{displayDirectory(props.workingDirectory)}</span>
           </span>
         ) : null}
       </div>
@@ -146,14 +146,13 @@ export function Header(props: HeaderProps) {
                 <MenuItem
                   key={mode}
                   active={mode === session.permissionMode}
+                  icon={<span className={`mode-dot is-${mode}`} />}
                   onClick={() => {
                     props.onSetPermissionMode(mode);
                     close();
                   }}
                 >
-                  <span className={`mode-dot is-${mode}`} />
                   {modeLabel(mode, copy)}
-                  {mode === session.permissionMode ? <Check size={12} /> : null}
                 </MenuItem>
               ))}
             </MenuSection>
@@ -188,7 +187,6 @@ export function Header(props: HeaderProps) {
                       }}
                     >
                       {model.displayName}
-                      {model.value === session.model ? <Check size={12} /> : null}
                     </MenuItem>
                   ))
                 )}
@@ -205,7 +203,6 @@ export function Header(props: HeaderProps) {
                       }}
                     >
                       {level}
-                      {level === session.effort ? <Check size={12} /> : null}
                     </MenuItem>
                   ))}
                 </MenuSection>
@@ -289,43 +286,44 @@ export function Header(props: HeaderProps) {
           {(close) => (
             <MenuSection>
               <MenuItem
+                icon={<Plus size={12} />}
                 onClick={() => {
                   props.onNewSession();
                   close();
                 }}
               >
-                <Plus size={12} />
                 {copy("supermux.harness.header.newSession")}
               </MenuItem>
               <MenuItem
+                icon={<Scissors size={12} />}
                 onClick={() => {
                   props.onCompact();
                   close();
                 }}
               >
-                <Scissors size={12} />
                 {copy("supermux.harness.header.compact")}
               </MenuItem>
               <MenuItem
+                icon={<History size={12} />}
                 onClick={() => {
                   props.onExport();
                   close();
                 }}
               >
-                <History size={12} />
                 {copy("supermux.harness.header.export")}
               </MenuItem>
               <MenuItem
+                icon={<Terminal size={12} />}
                 onClick={() => {
                   props.onOpenTerminal();
                   close();
                 }}
               >
-                <Terminal size={12} />
                 {copy("supermux.harness.header.openTerminal")}
               </MenuItem>
               <MenuItem
                 danger
+                icon={<Trash size={12} />}
                 onClick={() => {
                   props.onClear();
                   close();

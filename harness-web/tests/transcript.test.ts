@@ -92,6 +92,47 @@ describe("rich-session.jsonl replay", () => {
     expect(model.usage.thinkingTokens).toBeGreaterThan(0);
   });
 
+  test("header cost is the session total and each turn footer is that turn's delta", () => {
+    // The three results carry total_cost_usd 0.2286081 / 0.32379915 / 0.3585183.
+    // Each equals its own cumulative modelUsage["claude-sonnet-5"].costUSD (whose
+    // token counts also accumulate: cacheRead 143802 → 244263 → 331016), so
+    // total_cost_usd is the CLI's running SESSION total, not the per-turn spend.
+    expect(model.usage.costUsd).toBeCloseTo(0.3585183, 7);
+    const totals = model.turns.map((turn) => turn.result?.totalCostUsd);
+    expect(totals).toEqual([0.2286081, 0.32379915000000004, 0.3585183]);
+
+    const deltas = model.turns.map((turn) => turn.result?.costDeltaUsd);
+    expect(deltas[0]).toBeCloseTo(0.2286081, 7);
+    expect(deltas[1]).toBeCloseTo(0.09519105, 7);
+    expect(deltas[2]).toBeCloseTo(0.03471915, 7);
+    // The deltas must reconstruct the header total exactly.
+    expect(deltas.reduce((sum, d) => sum! + d!, 0)).toBeCloseTo(model.usage.costUsd, 7);
+  });
+
+  test("a result that reports a lower running total never walks the header backwards", () => {
+    const index = createIndex();
+    let m = createModel();
+    const result = (cost: number, uuid: string): ProtocolLine =>
+      ({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "ok",
+        duration_ms: 100,
+        num_turns: 1,
+        total_cost_usd: cost,
+        uuid
+      }) as ProtocolLine;
+    const user = (uuid: string): ProtocolLine =>
+      ({ type: "user", message: { role: "user", content: "go" }, uuid }) as ProtocolLine;
+    m = applyLine(m, index, user("u1"), 1);
+    m = applyLine(m, index, result(0.5, "r1"), 1);
+    m = applyLine(m, index, user("u2"), 2);
+    m = applyLine(m, index, result(0.2, "r2"), 2);
+    expect(m.usage.costUsd).toBeCloseTo(0.5, 7);
+    expect(m.turns[m.turns.length - 1].result?.costDeltaUsd).toBe(0);
+  });
+
   test("renders Edit results from structuredPatch", () => {
     const edits = tools(model).filter((t) => t.name === "Edit");
     expect(edits.length).toBe(2);

@@ -36,16 +36,16 @@
 }
 
 .status-dot.is-idle {
-  background: var(--success);
+  background: var(--success-dot, var(--success));
   opacity: 0.62;
 }
 
 .status-dot.is-error {
-  background: var(--danger);
+  background: var(--danger-dot, var(--danger));
 }
 
 .status-dot.is-attention {
-  background: var(--warning);
+  background: var(--warning-dot, var(--warning));
 }
 
 .status-strip.is-attention {
@@ -190,7 +190,7 @@
   height: 3px;
   margin: -2px 8px 0;
   border-radius: var(--r-pill);
-  background: var(--warning);
+  background: var(--warning-dot, var(--warning));
   opacity: 0.4;
 }
 
@@ -230,7 +230,7 @@
 }
 
 .todo-seg.is-completed {
-  background: var(--success);
+  background: var(--success-dot, var(--success));
 }
 
 .todo-seg.is-in_progress {

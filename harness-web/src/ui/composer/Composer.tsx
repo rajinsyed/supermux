@@ -48,8 +48,14 @@ export function Composer(props: ComposerProps) {
 
   const focus = useCallback(() => textarea.current?.focus(), []);
 
+  // Type-to-focus, but the pending permission/question card owns the keyboard
+  // while it is up: its 1–9 / A / Enter / Esc shortcuts are the whole point of
+  // the inline takeover, and stealing focus here turns them into typed text.
+  const awaitingPermission = props.awaitingPermission;
   useEffect(() => {
+    if (awaitingPermission) return;
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target) {
@@ -62,7 +68,7 @@ export function Composer(props: ComposerProps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focus]);
+  }, [awaitingPermission, focus]);
 
   const applyCompletion = useCallback(
     (value: string) => {

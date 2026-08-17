@@ -20,8 +20,10 @@
   gap: 4px;
 }
 
+/* Breathing room under the last card so a growing permission/question footer is
+   never flush against the dock's top edge. */
 .transcript-pad {
-  height: 14px;
+  height: 22px;
   flex: 0 0 auto;
 }
 
@@ -240,7 +242,11 @@
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
+/* Open, the block is a content card like the tool cards around it — hugging the
+   label leaves a box that stops mid-sentence relative to its neighbours. */
 .thinking.is-open {
+  align-self: stretch;
+  width: 100%;
   border-color: var(--border-faint);
   background: var(--surface-sunken);
 }
@@ -256,14 +262,23 @@
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
+/* Neutral hover like every other row; only the icon stays violet. */
 .thinking-head:hover {
-  color: var(--violet);
-  background: var(--violet-soft);
+  color: var(--text-soft);
+  background: var(--surface-hover);
+}
+
+.thinking.is-open .thinking-head {
+  width: 100%;
 }
 
 .thinking-icon {
   color: var(--violet);
   opacity: 0.8;
+}
+
+.thinking-head:hover .thinking-icon {
+  opacity: 1;
 }
 
 .thinking-body {
@@ -430,7 +445,10 @@
   transition: opacity 200ms var(--ease);
 }
 
-.transcript-wrap:hover .timeline {
+/* Anything revealed only on :hover is invisible to keyboard users, so a focus
+   anywhere in the transcript reveals the rail too. */
+.transcript-wrap:hover .timeline,
+.transcript-wrap:focus-within .timeline {
   opacity: 1;
 }
 
@@ -458,11 +476,11 @@
 }
 
 .timeline-tick.is-aborted {
-  background: var(--warning);
+  background: var(--warning-dot, var(--warning));
 }
 
 .timeline-tick.is-error {
-  background: var(--danger);
+  background: var(--danger-dot, var(--danger));
 }
 
 .timeline-preview {
@@ -499,7 +517,9 @@
   overflow: hidden;
 }
 
-@media (pointer: coarse) {
+/* Pointer-only affordance: hidden outright where there is no fine pointer, and
+   never in the tab order (see the tabIndex={-1} on each tick). */
+@media not (pointer: fine) {
   .timeline {
     display: none;
   }

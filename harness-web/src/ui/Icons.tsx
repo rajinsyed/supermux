@@ -259,3 +259,15 @@ export const Refresh = (p: IconProps) =>
     </>,
     p
   );
+
+export const Trash = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M2.75 4.25h10.5" />
+      <path d="M6.25 4.25V3a.75.75 0 0 1 .75-.75h2a.75.75 0 0 1 .75.75v1.25" />
+      <path d="M4.25 4.25 4.9 13a.75.75 0 0 0 .75.7h4.7a.75.75 0 0 0 .75-.7l.65-8.75" />
+    </>,
+    p
+  );
+
+export const ArrowLeft = (p: IconProps) => svg(<path d="M12.75 8H3.5M7.25 12 3.25 8l4-4" />, p);

@@ -72,6 +72,18 @@ function parseRgb(color: string): [number, number, number] | undefined {
  * only ships alpha-blended surfaces, so derive an opaque tone from the page
  * background (falling back to a neutral when it is "transparent").
  */
+/**
+ * The native theme ships `mutedText` at 0.58 alpha and `softText` at 0.78,
+ * tuned for the markdown panels. In this pane those tokens carry 10.5–12.5px
+ * body text over sunken surfaces, where 0.58 lands at 3.8:1 — under the 4.5:1
+ * AA floor for small text. Re-derive the secondary tiers from the theme's own
+ * ink at alphas that clear AA on the darkest surface the pane paints.
+ */
+function inkAlpha(theme: HarnessTheme, alpha: number): string {
+  const ink = parseRgb(theme.text) ?? (theme.isDark ? [236, 234, 240] : [28, 26, 24]);
+  return `rgba(${ink[0]}, ${ink[1]}, ${ink[2]}, ${alpha})`;
+}
+
 function popoverBackground(theme: HarnessTheme): string {
   const base = parseRgb(theme.pageBackground) ?? (theme.isDark ? [22, 22, 26] : [251, 250, 249]);
   const lift = theme.isDark ? 12 : -6;
@@ -93,30 +105,53 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--input-bg": theme.inputBackground,
     "--code-bg": dark ? "rgba(0, 0, 0, 0.30)" : "rgba(20, 18, 16, 0.045)",
     "--code-header-bg": dark ? "rgba(0, 0, 0, 0.20)" : "rgba(20, 18, 16, 0.028)",
+    // The terminal is a dark surface in BOTH themes, so everything drawn on it
+    // derives from the terminal palette rather than the page palette.
     "--terminal-bg": dark ? "rgba(0, 0, 0, 0.38)" : "rgba(24, 22, 20, 0.94)",
-    "--terminal-fg": dark ? "rgba(236, 234, 240, 0.92)" : "rgba(248, 246, 244, 0.94)",
+    "--terminal-fg": "rgba(248, 246, 244, 0.94)",
+    "--terminal-muted": "rgba(248, 246, 244, 0.68)",
+    "--terminal-error": "#ffa79a",
+    "--terminal-chrome": "rgba(255, 255, 255, 0.06)",
+    "--terminal-border": "rgba(255, 255, 255, 0.10)",
     "--border": theme.border,
     "--border-strong": theme.borderStrong,
     "--border-faint": overlay(dark, dark ? 0.05 : 0.05),
     "--text": theme.text,
-    "--text-soft": theme.softText,
-    "--text-muted": theme.mutedText,
-    "--text-faint": dark ? "rgba(236, 234, 240, 0.36)" : "rgba(28, 26, 24, 0.38)",
+    "--text-soft": inkAlpha(theme, dark ? 0.84 : 0.82),
+    "--text-muted": inkAlpha(theme, dark ? 0.72 : 0.7),
+    // Content, not decoration: every consumer renders 10–12px text that must
+    // clear WCAG AA against the surface behind it.
+    "--text-faint": inkAlpha(theme, dark ? 0.62 : 0.64),
     "--accent": theme.accent,
     "--accent-soft": theme.accentSoft,
-    "--claude": dark ? "#e2896c" : "#c25f3e",
+    // Accents split into a TEXT tone and a chrome tone. The chrome tones stay
+    // vivid for borders, carets, dots, and fills; the text tones are darkened
+    // (light) / lightened (dark) until they clear AA on the sunken and soft-tint
+    // surfaces they actually land on, since each is used for real label text.
+    "--claude": dark ? "#eb9d83" : "#ad4a27",
     "--claude-strong": dark ? "#f0a184" : "#d97757",
+    "--claude-btn": dark ? "#f0a184" : "#b0502c",
+    "--claude-btn-hover": dark ? "#f6b39a" : "#994026",
+    "--on-claude": dark ? "#231a16" : "#ffffff",
+    "--on-claude-chip": dark ? "rgba(255, 255, 255, 0.34)" : "rgba(0, 0, 0, 0.22)",
     "--claude-soft": claude(dark ? 0.18 : 0.13),
     "--claude-faint": claude(dark ? 0.09 : 0.07),
     "--claude-border": claude(dark ? 0.34 : 0.3),
-    "--danger": theme.danger,
+    "--danger": dark ? "#ff9d8e" : "#a3221b",
+    "--danger-dot": theme.danger,
+    "--danger-hover": dark ? "#ffb0a3" : "#8a1c16",
+    "--on-danger": dark ? "#2a1512" : "#ffffff",
+    "--on-danger-chip": dark ? "rgba(255, 255, 255, 0.34)" : "rgba(0, 0, 0, 0.22)",
     "--danger-soft": dark ? "rgba(255, 141, 126, 0.16)" : "rgba(179, 38, 30, 0.10)",
     "--danger-border": dark ? "rgba(255, 141, 126, 0.34)" : "rgba(179, 38, 30, 0.26)",
-    "--success": dark ? "#7ec99a" : "#2e7d4f",
+    "--success": dark ? "#8ed3a8" : "#1e6b41",
+    "--success-dot": dark ? "#7ec99a" : "#2e7d4f",
     "--success-soft": dark ? "rgba(126, 201, 154, 0.15)" : "rgba(46, 125, 79, 0.10)",
-    "--warning": dark ? "#e8bd6d" : "#9a6b0f",
+    "--warning": dark ? "#ecc47d" : "#7d5300",
+    "--warning-dot": dark ? "#e8bd6d" : "#9a6b0f",
     "--warning-soft": dark ? "rgba(232, 189, 109, 0.15)" : "rgba(154, 107, 15, 0.10)",
-    "--violet": dark ? "#b39ce8" : "#6d4fb8",
+    "--violet": dark ? "#c0abee" : "#5b3fa3",
+    "--violet-dot": dark ? "#b39ce8" : "#6d4fb8",
     "--violet-soft": dark ? "rgba(179, 156, 232, 0.15)" : "rgba(109, 79, 184, 0.10)",
     "--shadow": theme.shadow,
     "--shadow-lifted": dark ? "0 8px 26px rgba(0, 0, 0, 0.42)" : "0 8px 26px rgba(20, 18, 16, 0.10)",
@@ -124,11 +159,11 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--diff-add-fg": dark ? "#9ad9b2" : "#1f6b3f",
     "--diff-del-bg": dark ? "rgba(255, 141, 126, 0.13)" : "rgba(179, 38, 30, 0.09)",
     "--diff-del-fg": dark ? "#ffa79a" : "#a1231c",
-    "--diff-gutter": dark ? "rgba(236, 234, 240, 0.30)" : "rgba(28, 26, 24, 0.34)",
+    "--diff-gutter": dark ? "rgba(236, 234, 240, 0.60)" : "rgba(28, 26, 24, 0.68)",
     "--hl-keyword": dark ? "#c89ae0" : "#8250b8",
     "--hl-string": dark ? "#9ad9b2" : "#1f6b3f",
     "--hl-number": dark ? "#e8bd6d" : "#9a6b0f",
-    "--hl-comment": dark ? "rgba(236, 234, 240, 0.38)" : "rgba(28, 26, 24, 0.42)",
+    "--hl-comment": dark ? "rgba(236, 234, 240, 0.62)" : "rgba(28, 26, 24, 0.66)",
     "--hl-function": dark ? "#7aa2f7" : "#2c5f9e",
     "--hl-type": dark ? "#e2896c" : "#b8562f",
     "--hl-attr": dark ? "#8fd3d0" : "#0f6f6c"

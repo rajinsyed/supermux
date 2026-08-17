@@ -10,6 +10,7 @@ export const copyDefaults = {
   "supermux.harness.empty.suggestion1": "Explain how this project is structured",
   "supermux.harness.empty.suggestion2": "Find and fix the failing test",
   "supermux.harness.empty.suggestion3": "Review my uncommitted changes",
+  "supermux.harness.empty.detectingModel": "Detecting model…",
 
   "supermux.harness.nocli.headline": "Claude Code CLI not found",
   "supermux.harness.nocli.body":
@@ -64,6 +65,10 @@ export const copyDefaults = {
   "supermux.harness.turn.showLess": "Show less",
   "supermux.harness.turn.interrupted": "Interrupted",
   "supermux.harness.turn.previousToolCalls": "{count} earlier tool calls",
+  "supermux.harness.turn.earlierMessages": "{count} earlier messages",
+  "supermux.harness.turn.turnNumber": "Turn {seq}",
+  "supermux.harness.turn.complete": "Turn complete",
+  "supermux.harness.turn.exportTitle": "Claude session",
 
   "supermux.harness.thinking.label": "Thinking",
   "supermux.harness.thinking.summary": "Thinking · {tokens} tokens · {duration}",
@@ -81,6 +86,7 @@ export const copyDefaults = {
   "supermux.harness.tool.showLess": "Collapse output",
   "supermux.harness.tool.copy": "Copy",
   "supermux.harness.tool.copied": "Copied",
+  "supermux.harness.tool.copyFailed": "Copy failed",
   "supermux.harness.tool.wrap": "Wrap lines",
   "supermux.harness.tool.openFile": "Open file",
   "supermux.harness.tool.exitCode": "exit {code}",
@@ -95,6 +101,8 @@ export const copyDefaults = {
   "supermux.harness.tool.mcpServer": "MCP · {server}",
   "supermux.harness.tool.rawInput": "Input",
   "supermux.harness.tool.rawOutput": "Output",
+  "supermux.harness.tool.durationMs": "{count}ms",
+  "supermux.harness.tool.webResult": "Result",
 
   "supermux.harness.subagent.badge": "Subagent",
   "supermux.harness.subagent.background": "Background",
@@ -122,6 +130,8 @@ export const copyDefaults = {
   "supermux.harness.permission.destinationProject": "the project settings",
   "supermux.harness.permission.destinationUser": "all projects",
   "supermux.harness.permission.destinationSession": "this session",
+  "supermux.harness.permission.denyBack": "Back",
+  "supermux.harness.permission.needed": "Permission needed",
 
   "supermux.harness.plan.badge": "Plan",
   "supermux.harness.plan.title": "Claude has a plan",
@@ -132,11 +142,14 @@ export const copyDefaults = {
   "supermux.harness.plan.copy": "Copy plan",
 
   "supermux.harness.question.badge": "Question",
+  "supermux.harness.question.title": "Claude has a question",
   "supermux.harness.question.other": "Something else",
   "supermux.harness.question.otherPlaceholder": "Type your answer…",
   "supermux.harness.question.submit": "Submit",
   "supermux.harness.question.selectMultiple": "Select all that apply",
   "supermux.harness.question.dismiss": "Skip",
+  "supermux.harness.question.dismissed": "Dismissed",
+  "supermux.harness.question.unanswered": "Not answered yet",
 
   "supermux.harness.header.rename": "Rename session",
   "supermux.harness.header.renameSave": "Save",
