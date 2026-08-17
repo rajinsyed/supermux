@@ -87,6 +87,28 @@ export function activeModelFor(
   );
 }
 
+/**
+ * The active model resolved against BOTH catalogs the pane can have.
+ *
+ * `session.models` only exists once a process has run its `initialize`
+ * handshake, so on a pane that has never started it is empty — and a model the
+ * user picks before the first send has nothing to resolve against. It rendered
+ * as the bare selector the menu sends on the wire ("opus"), sitting next to a
+ * menu whose "Opus 5" row was correctly checked from the cached catalog. The
+ * cache is that same catalog from that same binary, so it answers just as well.
+ */
+export function resolveModel(
+  session: Pick<SessionMeta, "models" | "model">,
+  cachedModels: ModelDescriptor[] | undefined
+): ModelDescriptor | undefined {
+  return (
+    activeModelFor(session) ??
+    (cachedModels && cachedModels.length > 0
+      ? activeModelFor({ models: cachedModels, model: session.model })
+      : undefined)
+  );
+}
+
 export function isPlainObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

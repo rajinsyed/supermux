@@ -217,6 +217,72 @@ describe("the model menu is never an empty popup", () => {
     expect(sent).toEqual([["haiku", undefined]]);
   });
 
+  /**
+   * A model picked before the first start is held in the reducer as the SELECTOR
+   * the menu sends on the wire ("opus"), and `session.models` is still empty
+   * because no process has run its `initialize` handshake. The pill resolved only
+   * against that empty catalog, so it printed the bare selector — in the same
+   * header as a menu whose "Opus 5" row was correctly checked from the cache. Two
+   * controls, one selection, two different names for it.
+   */
+  describe("a pre-start selection reads as a name in the pill, not a wire token", () => {
+    // The selector as the MENU sends it, straight from the real trace: this is
+    // literally the string the pill was printing.
+    const cold = () => ({ ...emptySession(), model: "opus[1m]" });
+
+    test("the pill prints the display name from the cached catalog", () => {
+      const { container } = mount(cold(), { cachedModels: cached });
+      const pill = container.querySelector(".model-pill .pill-label")!;
+      expect(pill.textContent).toBe("Opus (1M context)");
+      expect(pill.textContent).not.toBe("opus[1m]");
+    });
+
+    test("the effort tag comes with it, clamped to what that model supports", () => {
+      // The tag is gated on the resolved model's capabilities, so a pill that
+      // failed to resolve could not show one at all — the selection looked like
+      // it had lost its effort level as well as its name.
+      const { container } = mount({ ...cold(), effort: "xhigh" }, { cachedModels: cached });
+      expect(container.querySelector(".effort-tag")!.textContent).toBe("Extra high");
+    });
+
+    test("an effort level the picked model does not support shows no tag", () => {
+      // haiku advertises no effort levels in the catalog; a tag here would
+      // promise a setting the CLI rejects.
+      const { container } = mount(
+        { ...emptySession(), model: "haiku", effort: "high" },
+        { cachedModels: cached }
+      );
+      expect(container.querySelector(".effort-tag")).toBeNull();
+    });
+
+    test("the pill and the checked menu row name the same model", () => {
+      // The disagreement is the bug: one resolution now feeds both.
+      const { container } = mount(cold(), { cachedModels: cached });
+      fireEvent.click(screen.getByLabelText("Model"));
+      const checked = container.querySelectorAll('[role="menuitemradio"][aria-checked="true"]');
+      expect(checked.length).toBe(1);
+      expect(checked[0].textContent).toContain(
+        container.querySelector(".model-pill .pill-label")!.textContent!
+      );
+    });
+
+    test("the effort submenu is reachable on a pre-start selection", () => {
+      const { container } = mount(cold(), { cachedModels: cached });
+      fireEvent.click(screen.getByLabelText("Model"));
+      const titles = Array.from(container.querySelectorAll(".menu-section-title")).map(
+        (node) => node.textContent
+      );
+      expect(titles).toContain("Effort");
+    });
+
+    test("with no catalog at all the selector is still shown rather than nothing", () => {
+      // Falling back to the raw value is correct when there is genuinely nothing
+      // to resolve against; the bug was doing it while a catalog was right there.
+      const { container } = mount(cold());
+      expect(container.querySelector(".model-pill .pill-label")!.textContent).toBe("opus[1m]");
+    });
+  });
+
   test("with nothing yet it shows a spinner row instead of a void", () => {
     const { container } = mount(emptySession());
     fireEvent.click(screen.getByLabelText("Model"));
