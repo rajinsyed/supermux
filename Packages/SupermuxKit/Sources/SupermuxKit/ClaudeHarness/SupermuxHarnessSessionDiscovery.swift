@@ -236,18 +236,22 @@ public struct SupermuxHarnessSessionDiscovery {
                     foundMatchingDirectory = foundMatchingDirectory ||
                         recordedDirectory(path, matches: expectedPaths)
                 }
-                guard let uuid = nonemptyString(record["uuid"]),
-                      type == "user" || type == "assistant" else {
+                // Every uuid-bearing record joins the index: real parentUuid chains
+                // route through attachment/system/file-history records, and dropping
+                // those from the index used to sever the walk a step or two in.
+                guard let uuid = nonemptyString(record["uuid"]) else {
                     return
                 }
+                let isConversation = type == "user" || type == "assistant"
                 let isSidechain = record["isSidechain"] as? Bool == true
                 linksByUUID[uuid] = SessionRecordLink(
                     parentUUID: nonemptyString(record["parentUuid"]),
-                    isVisible: record["isMeta"] as? Bool != true &&
+                    isVisible: isConversation &&
+                        record["isMeta"] as? Bool != true &&
                         !isSidechain &&
                         record["message"] is [String: Any]
                 )
-                if !isSidechain {
+                if isConversation, !isSidechain {
                     lastMainUUID = uuid
                 }
             }

@@ -224,6 +224,33 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(fourth.string(forKey: "timestamp") == "t4")
     }
 
+    @Test func historyWalksThroughAttachmentAndSystemRecordsInTheParentChain() throws {
+        // Real sessions interleave hook attachments, system records, and
+        // file-history snapshots into the uuid chain. Indexing only
+        // user/assistant records severed the walk at the first such bridge and
+        // resumed panes showed just the trailing assistant messages.
+        let sandbox = try makeSandbox(named: "bridge-records")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        try writeSession(id: "bridged", directory: directory, records: [
+            ["type": "user", "uuid": "u1", "parentUuid": NSNull(), "isSidechain": false, "message": ["role": "user", "content": "first prompt"]],
+            ["type": "attachment", "uuid": "att1", "parentUuid": "u1", "attachment": ["type": "hook_success"]],
+            ["type": "assistant", "uuid": "a1", "parentUuid": "att1", "isSidechain": false, "message": ["role": "assistant", "content": "first answer"]],
+            ["type": "system", "uuid": "sys1", "parentUuid": "a1", "subtype": "informational"],
+            ["type": "user", "uuid": "u2", "parentUuid": "sys1", "isSidechain": false, "message": ["role": "user", "content": "second prompt"]],
+            ["type": "file-history-snapshot", "uuid": "fh1", "parentUuid": "u2", "messageId": "u2"],
+            ["type": "assistant", "uuid": "a2", "parentUuid": "fh1", "isSidechain": false, "message": ["role": "assistant", "content": "second answer"]],
+            ["type": "attachment", "uuid": "att2", "parentUuid": "a2", "attachment": ["type": "hook_success"]],
+            ["type": "last-prompt", "leafUuid": "att2"],
+        ])
+
+        let page = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "bridged"
+        )
+        #expect(page.events.compactMap { $0.string(forKey: "uuid") } == ["u1", "a1", "u2", "a2"])
+    }
+
     @Test func fixtureHistorySurfacesPersistedUserRecordUUIDs() throws {
         let sandbox = try makeSandbox(named: "fixture-user-uuids")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
