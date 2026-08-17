@@ -1,0 +1,100 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+const DURATION_MS = 200;
+const FALLBACK_MS = 250;
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/**
+ * A disclosure that animates between 0 and its natural height.
+ *
+ * Collapsing a 180px tool card in a single frame throws away the reader's scroll
+ * anchor under the cursor, and on a transcript this dense that happens on every
+ * click. The measure is a double-rAF — one frame to lay the content out, one to
+ * commit the start value so the browser has two distinct heights to interpolate
+ * — with `overflow: hidden` and the explicit height applied ONLY while animating
+ * so an open body can still size itself and overflow (sticky heads, popovers).
+ * `transitionend` finishes the animation; a timeout covers the case where the
+ * two heights are equal and no transition ever fires.
+ *
+ * The content stays mounted for the duration of the closing animation, then
+ * unmounts — collapsed bodies cost nothing at rest.
+ */
+export function Disclosure({
+  open,
+  className,
+  children
+}: {
+  open: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  const [mounted, setMounted] = useState(open);
+  const node = useRef<HTMLDivElement>(null);
+  const previous = useRef(open);
+
+  useEffect(() => {
+    if (open) setMounted(true);
+  }, [open]);
+
+  useEffect(() => {
+    const element = node.current;
+    const was = previous.current;
+    if (was === open) return;
+    // Opening mounts the content in this same commit, so the very first pass has
+    // no node yet. Leaving `previous` alone lets the next pass — which does have
+    // one — run the animation, instead of silently skipping the open direction.
+    if (!element && open) return;
+    previous.current = open;
+    if (!element || prefersReducedMotion()) {
+      if (!open) setMounted(false);
+      return;
+    }
+
+    const target = open ? element.scrollHeight : 0;
+    element.style.overflow = "hidden";
+    element.style.height = `${open ? 0 : element.scrollHeight}px`;
+
+    let timer = 0;
+    const settle = () => {
+      element.style.height = "";
+      element.style.overflow = "";
+      element.style.transition = "";
+      element.removeEventListener("transitionend", onEnd);
+      if (timer) window.clearTimeout(timer);
+      if (!open) setMounted(false);
+    };
+    const onEnd = (event: TransitionEvent) => {
+      if (event.propertyName === "height" && event.target === element) settle();
+    };
+    element.addEventListener("transitionend", onEnd);
+
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        element.style.transition = `height ${DURATION_MS}ms var(--ease)`;
+        element.style.height = `${target}px`;
+      });
+    });
+    timer = window.setTimeout(settle, DURATION_MS + FALLBACK_MS);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      settle();
+    };
+    // `mounted` is a dependency because opening mounts the content one commit
+    // later than the prop change; without it the open direction never animates.
+  }, [open, mounted]);
+
+  if (!mounted) return null;
+  return (
+    <div className={className} ref={node}>
+      {children}
+    </div>
+  );
+}

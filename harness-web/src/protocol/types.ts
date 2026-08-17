@@ -12,6 +12,7 @@ export interface ModelDescriptor {
   description?: string;
   supportsEffort?: boolean;
   supportedEffortLevels?: EffortLevel[];
+  defaultEffortLevel?: EffortLevel;
   supportsFastMode?: boolean;
 }
 

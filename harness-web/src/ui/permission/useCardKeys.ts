@@ -14,6 +14,12 @@ import { useEffect, type RefObject } from "react";
  * 2. Text inputs must keep their own keys, but only the ones INSIDE the card
  *    (the deny reason, the free-text answer). A keystroke in the composer is a
  *    different question — see `swallowsPrintableKeys` in Composer.
+ *
+ * The exemption in (1) is what makes a toggle-shaped control dangerous: an
+ * `aria-pressed` option is selected with Space, and Enter on it must still mean
+ * "submit the card". Such controls handle Enter themselves (see QuestionCard's
+ * option `onKeyDown`), so they are excluded from the exemption here and keep
+ * only Space.
  */
 export function useCardKeys(
   cardRef: RefObject<HTMLElement | null>,
@@ -29,11 +35,13 @@ export function useCardKeys(
           return;
         }
         // A focused control inside the card owns its own activation keys.
-        if (
-          cardRef.current?.contains(target) &&
-          target.closest("button, a, [role='button'], [role='menuitem']")
-        ) {
-          if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") return;
+        const control = cardRef.current?.contains(target)
+          ? target.closest("button, a, [role='button'], [role='menuitem']")
+          : null;
+        if (control) {
+          const isToggle = control.getAttribute("aria-pressed") !== null;
+          if (event.key === " " || event.key === "Spacebar") return;
+          if (event.key === "Enter" && !isToggle) return;
         }
       }
       handler(event);

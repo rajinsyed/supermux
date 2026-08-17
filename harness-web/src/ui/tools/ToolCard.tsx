@@ -19,6 +19,7 @@ import {
   XCircle
 } from "../Icons";
 import { formatCompactDuration } from "../format";
+import { Disclosure } from "../primitives/Disclosure";
 import { Spinner } from "../primitives/Spinner";
 import { Elapsed } from "../primitives/Elapsed";
 import {
@@ -201,7 +202,7 @@ export const ToolCard = memo(function ToolCard({
           <StatusMark status={block.status} />
         </span>
       </button>
-      {open ? bodyFor(block, family) : null}
+      <Disclosure open={open}>{bodyFor(block, family)}</Disclosure>
     </div>
   );
 });

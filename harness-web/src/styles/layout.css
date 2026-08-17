@@ -301,6 +301,18 @@
   flex: 0 0 auto;
 }
 
+.menu-item-badge {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .menu-item-detail {
   font-size: 11px;
   line-height: 1.4;

@@ -47,6 +47,7 @@ export interface HarnessBridge {
   pickFiles(): Promise<{ images: ImagePayload[]; paths: string[] }>;
   openFile(params: { path: string; line?: number }): Promise<void>;
   copyText(params: { text: string }): Promise<void>;
+  saveFile(params: { suggestedName: string; text: string }): Promise<{ saved: boolean }>;
   notify(params: { title: string; body: string }): Promise<void>;
   saveDraft(params: { text: string }): Promise<void>;
 }
@@ -124,6 +125,7 @@ const nativeBridge: HarnessBridge = {
   pickFiles: () => callNative("harness.pickFiles"),
   openFile: (params) => callNative("harness.openFile", params),
   copyText: (params) => callNative("harness.copyText", params),
+  saveFile: (params) => callNative("harness.saveFile", params),
   notify: (params) => callNative("harness.notify", params),
   saveDraft: (params) => callNative("harness.saveDraft", params)
 };

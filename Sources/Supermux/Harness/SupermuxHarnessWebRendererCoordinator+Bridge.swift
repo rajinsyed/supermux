@@ -105,6 +105,12 @@ extension SupermuxHarnessWebRendererCoordinator {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
             return [:] as [String: Any]
+        case "harness.saveFile":
+            let saved = await saveTextFile(
+                suggestedName: try request.requiredString("suggestedName"),
+                text: try request.requiredRawString("text")
+            )
+            return ["saved": saved]
         case "harness.notify":
             postNotificationIfUnfocused(
                 title: try request.requiredString("title"),
@@ -116,6 +122,25 @@ extension SupermuxHarnessWebRendererCoordinator {
             return [:] as [String: Any]
         default:
             throw SupermuxHarnessBridgeError.unsupportedMethod(request.method)
+        }
+    }
+
+    /// `<a download>` is inert inside a file://-loaded WKWebView, so a save is
+    /// only real when it goes through the native panel.
+    private func saveTextFile(suggestedName: String, text: String) async -> Bool {
+        let panel = NSSavePanel()
+        panel.title = String(
+            localized: "supermux.harness.saveFile.title",
+            defaultValue: "Save file"
+        )
+        panel.nameFieldStringValue = (suggestedName as NSString).lastPathComponent
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
         }
     }
 

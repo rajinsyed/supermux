@@ -54,6 +54,7 @@ export function initializeResponse(): ProtocolLine {
             description: "Most capable. Best for hard reasoning and large refactors.",
             supportsEffort: true,
             supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+            defaultEffortLevel: "high",
             supportsFastMode: false
           },
           {
@@ -63,6 +64,7 @@ export function initializeResponse(): ProtocolLine {
             description: "Balanced speed and capability. Recommended default.",
             supportsEffort: true,
             supportedEffortLevels: ["low", "medium", "high"],
+            defaultEffortLevel: "medium",
             supportsFastMode: true
           },
           {

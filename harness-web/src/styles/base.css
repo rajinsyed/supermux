@@ -35,6 +35,13 @@ body {
   --r-pill: 999px;
   --content-max: 760px;
   --gutter: 22px;
+  /* One text origin for the whole dock: the status label, the textarea's own
+     text, and the hint row all start exactly this far in from the gutter, with
+     the status indicator centred in the reserved space to their left. */
+  --dock-indent: 18px;
+  /* Assistant content sits in a single column whose left edge never moves; the
+     work rail is drawn inside this indent rather than adding to it. */
+  --rail-indent: 13px;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
   --dur: 150ms;
 }

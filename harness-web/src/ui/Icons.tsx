@@ -271,3 +271,12 @@ export const Trash = (p: IconProps) =>
   );
 
 export const ArrowLeft = (p: IconProps) => svg(<path d="M12.75 8H3.5M7.25 12 3.25 8l4-4" />, p);
+
+export const Download = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M8 2.25v7.5M5 7l3 3 3-3" />
+      <path d="M2.75 11.25v1.5a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1v-1.5" />
+    </>,
+    p
+  );

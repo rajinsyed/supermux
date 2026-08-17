@@ -3,6 +3,7 @@ import type { Block, ToolBlock } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Layers } from "../Icons";
 import { formatCompactDuration, formatTokens } from "../format";
+import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 import { Spinner } from "../primitives/Spinner";
 import { ToolCard } from "./ToolCard";
@@ -75,13 +76,11 @@ export const SubagentCard = memo(function SubagentCard({
               ? copy("supermux.harness.subagent.hideTranscript")
               : copy("supermux.harness.subagent.showTranscript")}
           </button>
-          {open ? (
-            <div className="subagent-children">
-              {block.children.map((child) => (
-                <ChildBlock key={child.key} block={child} depth={depth + 1} />
-              ))}
-            </div>
-          ) : null}
+          <Disclosure open={open} className="subagent-children">
+            {block.children.map((child) => (
+              <ChildBlock key={child.key} block={child} depth={depth + 1} />
+            ))}
+          </Disclosure>
         </>
       ) : null}
     </div>

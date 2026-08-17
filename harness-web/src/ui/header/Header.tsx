@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { SessionMeta, UsageTotals } from "../../model/types";
-import type { ContextUsage, EffortLevel, PermissionMode, SessionSummary } from "../../protocol/types";
+import type {
+  ContextUsage,
+  EffortLevel,
+  ModelDescriptor,
+  PermissionMode,
+  SessionSummary
+} from "../../protocol/types";
 import { useCopy } from "../CopyContext";
 import {
   Bolt,
@@ -19,6 +25,21 @@ import { ContextRing } from "./ContextRing";
 import { Menu, MenuItem, MenuSection } from "./Menu";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
+
+/**
+ * Effort is a per-model capability, so it cannot travel across a model switch
+ * unchanged: sending `max` to a model that tops out at `high` makes the CLI
+ * reject it while the pill keeps advertising a setting that does not exist.
+ */
+export function clampEffort(
+  model: ModelDescriptor | undefined,
+  effort: EffortLevel | undefined
+): EffortLevel | undefined {
+  if (!effort || !model?.supportsEffort) return undefined;
+  const levels = model.supportedEffortLevels;
+  if (!levels || levels.length === 0) return undefined;
+  return levels.includes(effort) ? effort : undefined;
+}
 
 export function modeLabel(mode: PermissionMode, copy: ReturnType<typeof useCopy>, short = false): string {
   switch (mode) {
@@ -69,6 +90,9 @@ export function Header(props: HeaderProps) {
   const title = session.title ?? copy("supermux.harness.app.untitledSession");
   const activeModel = session.models.find((m) => m.value === session.model);
   const modelName = activeModel?.displayName ?? session.model ?? copy("supermux.harness.header.model");
+  // The chip must never outlive the capability it describes: a model that has no
+  // effort levels shows no effort tag, whatever the session last carried.
+  const effort = clampEffort(activeModel, session.effort);
 
   const filtered = props.sessions.filter((item) =>
     sessionQuery.trim().length === 0
@@ -165,7 +189,7 @@ export function Header(props: HeaderProps) {
             <span className="model-pill">
               <Bolt size={11} />
               {modelName}
-              {session.effort ? <span className="effort-tag">{session.effort}</span> : null}
+              {effort ? <span className="effort-tag">{effort}</span> : null}
               <ChevronDown size={10} />
             </span>
           )}
@@ -182,7 +206,7 @@ export function Header(props: HeaderProps) {
                       active={model.value === session.model}
                       detail={model.description}
                       onClick={() => {
-                        props.onSetModel(model.value, session.effort);
+                        props.onSetModel(model.value, clampEffort(model, session.effort));
                         close();
                       }}
                     >
@@ -196,7 +220,12 @@ export function Header(props: HeaderProps) {
                   {activeModel.supportedEffortLevels.map((level) => (
                     <MenuItem
                       key={level}
-                      active={level === session.effort}
+                      active={level === effort}
+                      badge={
+                        level === activeModel.defaultEffortLevel
+                          ? copy("supermux.harness.header.effortDefault")
+                          : undefined
+                      }
                       onClick={() => {
                         props.onSetModel(session.model ?? activeModel.value, level);
                         close();

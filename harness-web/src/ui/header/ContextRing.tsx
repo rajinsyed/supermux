@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ContextUsage } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
 import { formatTokens } from "../format";
@@ -10,27 +10,62 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export function ContextRing({ usage }: { usage?: ContextUsage }) {
   const copy = useCopy();
-  const [open, setOpen] = useState(false);
+  // Hover alone made this a button that did nothing for keyboard and touch, so
+  // the breakdown opens on pointer, focus, AND click, and Escape closes it.
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  const close = useCallback(() => {
+    setPinned(false);
+    setHovered(false);
+    setFocused(false);
+  }, []);
+
+  useEffect(() => {
+    if (!pinned) return;
+    const onDown = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) close();
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [close, pinned]);
+
   if (!usage || !usage.maxTokens) return null;
 
+  const open = hovered || pinned || focused;
   const percentage = Math.max(0, Math.min(100, usage.percentage ?? 0));
   const tone = percentage >= 90 ? "danger" : percentage >= 70 ? "warn" : "ok";
   const offset = CIRCUMFERENCE * (1 - percentage / 100);
   const categories = (usage.categories ?? []).filter((c) => c.tokens > 0);
+  const summary = copy("supermux.harness.header.contextUsed", {
+    used: formatTokens(usage.totalTokens),
+    total: formatTokens(usage.maxTokens)
+  });
 
   return (
     <div
       className="ctx"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      ref={root}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <button
         type="button"
         className={`ctx-btn is-${tone}`}
-        aria-label={copy("supermux.harness.header.contextUsed", {
-          used: formatTokens(usage.totalTokens),
-          total: formatTokens(usage.maxTokens)
-        })}
+        aria-label={`${copy("supermux.harness.header.context")} — ${summary}`}
+        aria-expanded={open}
+        onClick={() => setPinned((v) => !v)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.preventDefault();
+            close();
+            event.currentTarget.blur();
+          }
+        }}
       >
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
           <circle
@@ -60,12 +95,7 @@ export function ContextRing({ usage }: { usage?: ContextUsage }) {
         <div className="ctx-pop" role="tooltip">
           <div className="ctx-pop-head">
             <span>{copy("supermux.harness.header.context")}</span>
-            <span className="tnum">
-              {copy("supermux.harness.header.contextUsed", {
-                used: formatTokens(usage.totalTokens),
-                total: formatTokens(usage.maxTokens)
-              })}
-            </span>
+            <span className="tnum">{summary}</span>
           </div>
           <div className="ctx-bar">
             <span className={`ctx-bar-fill is-${tone}`} style={{ width: `${percentage}%` }} />

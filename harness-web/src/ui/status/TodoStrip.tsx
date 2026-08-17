@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { TodoItem } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
 import { ChevronDown, ChevronRight } from "../Icons";
+import { Disclosure } from "../primitives/Disclosure";
 
 export function TodoStrip({ todos }: { todos: TodoItem[] }) {
   const copy = useCopy();
@@ -30,7 +31,7 @@ export function TodoStrip({ todos }: { todos: TodoItem[] }) {
           {copy("supermux.harness.todo.progress", { done, total: todos.length })}
         </span>
       </button>
-      {open ? (
+      <Disclosure open={open}>
         <ul className="todo-strip-list">
           {todos.map((todo, i) => (
             <li key={i} className={`todo-item is-${todo.status}`}>
@@ -41,7 +42,7 @@ export function TodoStrip({ todos }: { todos: TodoItem[] }) {
             </li>
           ))}
         </ul>
-      ) : null}
+      </Disclosure>
     </div>
   );
 }

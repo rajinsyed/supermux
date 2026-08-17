@@ -19,6 +19,16 @@ interface QuestionSpec {
 
 const ADVANCE_MS = 200;
 
+/**
+ * A question can be answered by picking options, by typing, or by both. Letting
+ * free text silently win drops selections the user can still see ticked, so the
+ * submitted value is always everything they expressed, in the order they see it.
+ */
+function mergeAnswer(picked: string[], free: string | undefined): string {
+  const typed = free?.trim() ?? "";
+  return picked.concat(typed.length > 0 ? [typed] : []).join(", ");
+}
+
 export function QuestionCard({
   pending,
   onDecide
@@ -79,9 +89,7 @@ export function QuestionCard({
   const submit = useCallback(() => {
     const payload: Record<string, string> = {};
     for (const question of questions) {
-      const free = other[question.question]?.trim();
-      const picked = answers[question.question] ?? [];
-      const value = free && free.length > 0 ? free : picked.join(", ");
+      const value = mergeAnswer(answers[question.question] ?? [], other[question.question]);
       if (value) payload[question.question] = value;
     }
     if (Object.keys(payload).length === 0) return;
@@ -110,10 +118,22 @@ export function QuestionCard({
 
   useCardKeys(cardRef, onKey);
 
-  const answeredCount = questions.filter((q) => {
-    const free = other[q.question]?.trim();
-    return (answers[q.question]?.length ?? 0) > 0 || (free && free.length > 0);
-  }).length;
+  // An option is a toggle: Space flips it, Enter submits the card. The browser
+  // fires click for BOTH on a <button>, so Enter is intercepted here — otherwise
+  // the auto-advance that focuses an option makes the card unsubmittable by
+  // keyboard, which is the whole point of the numbered shortcuts.
+  const onOptionKey = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey) return;
+      event.preventDefault();
+      submit();
+    },
+    [submit]
+  );
+
+  const answeredCount = questions.filter(
+    (q) => mergeAnswer(answers[q.question] ?? [], other[q.question]).length > 0
+  ).length;
 
   return (
     <section className="question-card" role="alertdialog" aria-live="assertive" ref={cardRef}>
@@ -137,8 +157,7 @@ export function QuestionCard({
       <div className="question-list">
         {questions.map((question, index) => {
           const selected = answers[question.question] ?? [];
-          const free = other[question.question]?.trim();
-          const answer = free && free.length > 0 ? free : selected.join(", ");
+          const answer = mergeAnswer(selected, other[question.question]);
           const isActive = index === active;
           return (
             <div
@@ -170,6 +189,7 @@ export function QuestionCard({
                         type="button"
                         className={`option${on ? " is-on" : ""}`}
                         onClick={() => toggle(question, option.label)}
+                        onKeyDown={onOptionKey}
                         aria-pressed={on}
                       >
                         <span className="option-key tnum">{optionIndex + 1}</span>
@@ -190,7 +210,19 @@ export function QuestionCard({
                     onChange={(event) =>
                       setOther((prev) => ({ ...prev, [question.question]: event.target.value }))
                     }
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" || event.shiftKey) return;
+                      event.preventDefault();
+                      submit();
+                    }}
                   />
+                  {selected.length > 0 && (other[question.question] ?? "").trim().length > 0 ? (
+                    // Both were expressed, so both are sent — say so, rather than
+                    // leaving chips ticked next to text and no clue which wins.
+                    <span className="question-merged">
+                      {copy("supermux.harness.question.willSend", { answer })}
+                    </span>
+                  ) : null}
                 </div>
               ) : answer ? (
                 <div className="question-answer">

@@ -5,6 +5,11 @@
   display: flex;
 }
 
+/* The pill lands outside the scroller, so the wrap must not clip it. */
+.transcript-wrap.has-pill {
+  padding-bottom: 33px;
+}
+
 .transcript {
   flex: 1 1 auto;
   min-height: 0;
@@ -62,11 +67,16 @@
   padding-top: 4px;
 }
 
+/* Assistant content keeps ONE text origin for the whole turn. The work group's
+   rail used to add 14px of padding, so a paragraph slid sideways the moment a
+   later block reclassified it from tail to work — text must never reflow under
+   a reader. The indent lives here permanently and the rail is drawn into it. */
 .turn-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  padding-left: var(--rail-indent);
 }
 
 .turn-body:empty {
@@ -78,12 +88,39 @@
 }
 
 .turn-work {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-left: 11px;
-  border-left: 1px solid var(--border);
-  margin-left: 2px;
+}
+
+.turn-work::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--rail-indent) * -1 + 2px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+/* ---------- running work overflow ---------- */
+
+.work-overflow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 3px 9px 3px 5px;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.work-overflow:hover {
+  background: var(--surface-hover);
+  color: var(--text-soft);
 }
 
 /* ---------- user message ---------- */
@@ -403,9 +440,12 @@
 
 /* ---------- jump pill + timeline ---------- */
 
+/* The pill sits in reserved space BELOW the scroller (see .transcript-wrap
+   .has-pill), never over it, so it can not cover the last line of the
+   transcript — a reader must not lose content to an affordance about content. */
 .jump-pill {
   position: absolute;
-  bottom: 14px;
+  bottom: 3px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
@@ -420,7 +460,7 @@
   box-shadow: var(--shadow-lifted);
   color: var(--text-soft);
   font-size: 11.5px;
-  z-index: 20;
+  z-index: 30;
   animation: pop-in 150ms var(--ease);
 }
 

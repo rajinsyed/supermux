@@ -10,6 +10,11 @@ export interface ComposerProps {
   disabled: boolean;
   running: boolean;
   awaitingPermission: boolean;
+  /** A plan card is up: the composer's primary action answers it. */
+  planPending: boolean;
+  onPlanImplement(): void;
+  onPlanRefine(text: string): void;
+  onPlanKeepPlanning(): void;
   queued: QueuedMessage[];
   commands: SlashCommandDescriptor[];
   permissionMode: PermissionMode;
@@ -51,7 +56,9 @@ export function Composer(props: ComposerProps) {
   // Type-to-focus, but the pending permission/question card owns the keyboard
   // while it is up: its 1–9 / A / Enter / Esc shortcuts are the whole point of
   // the inline takeover, and stealing focus here turns them into typed text.
-  const awaitingPermission = props.awaitingPermission;
+  // A plan card is the exception — it claims only Enter and Esc, and typing IS
+  // the refine path, so printable keys still belong to the composer.
+  const awaitingPermission = props.awaitingPermission && !props.planPending;
   useEffect(() => {
     if (awaitingPermission) return;
     const onKey = (event: KeyboardEvent) => {
@@ -92,6 +99,15 @@ export function Composer(props: ComposerProps) {
 
   const submit = useCallback(() => {
     const text = props.draft.trim();
+    // One mutation path for the plan decision: Enter and the primary button must
+    // not disagree about whether typed text refines the plan or approves it.
+    if (props.planPending) {
+      if (text) props.onPlanRefine(text);
+      else props.onPlanImplement();
+      setImages([]);
+      reset();
+      return;
+    }
     if (!text && images.length === 0) return;
     props.onSend(text, images);
     setImages([]);
@@ -133,7 +149,9 @@ export function Composer(props: ComposerProps) {
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        if (props.running) {
+        if (props.planPending) {
+          props.onPlanKeepPlanning();
+        } else if (props.running) {
           props.onInterrupt(escArmed);
           setEscArmed(true);
           window.setTimeout(() => setEscArmed(false), 1600);
@@ -166,11 +184,13 @@ export function Composer(props: ComposerProps) {
     for (const file of files) readImage(file, (attachment) => setImages((prev) => prev.concat(attachment)));
   }, []);
 
-  const placeholder = props.awaitingPermission
-    ? copy("supermux.harness.composer.placeholderWaiting")
-    : props.running
-      ? copy("supermux.harness.composer.placeholderRunning")
-      : copy("supermux.harness.composer.placeholder");
+  const placeholder = props.planPending
+    ? copy("supermux.harness.composer.placeholderPlan")
+    : props.awaitingPermission
+      ? copy("supermux.harness.composer.placeholderWaiting")
+      : props.running
+        ? copy("supermux.harness.composer.placeholderRunning")
+        : copy("supermux.harness.composer.placeholder");
 
   const canSend = props.draft.trim().length > 0 || images.length > 0;
   const tokens = approximateTokens(props.draft);
@@ -272,7 +292,20 @@ export function Composer(props: ComposerProps) {
           >
             <Paperclip size={13} />
           </button>
-          {props.running ? (
+          {props.planPending ? (
+            // Under a pending plan the primary next action is the plan
+            // decision, not a generic send: approving it is one click, and the
+            // moment the user starts typing that same button refines instead.
+            <button
+              type="button"
+              className="btn btn-primary btn-plan-action"
+              onClick={() => (canSend ? props.onPlanRefine(props.draft.trim()) : props.onPlanImplement())}
+            >
+              {canSend
+                ? copy("supermux.harness.plan.refine")
+                : copy("supermux.harness.plan.implement")}
+            </button>
+          ) : props.running ? (
             <button
               type="button"
               className="btn btn-stop"
@@ -297,16 +330,17 @@ export function Composer(props: ComposerProps) {
       </div>
 
       <div className="composer-hints">
-        <span>{copy("supermux.harness.composer.hintSend")}</span>
-        <span className="dot" />
-        <span>{copy("supermux.harness.composer.hintNewline")}</span>
-        <span className="dot" />
-        <span>{copy("supermux.harness.composer.hintMode")}</span>
+        <span className="composer-hint">{copy("supermux.harness.composer.hintSend")}</span>
+        <span className="composer-hint is-hint-newline">
+          {copy("supermux.harness.composer.hintNewline")}
+        </span>
+        <span className="composer-hint is-hint-mode">
+          {copy("supermux.harness.composer.hintMode")}
+        </span>
         {props.running ? (
-          <>
-            <span className="dot" />
-            <span>{copy("supermux.harness.composer.hintInterrupt")}</span>
-          </>
+          <span className="composer-hint is-hint-interrupt">
+            {copy("supermux.harness.composer.hintInterrupt")}
+          </span>
         ) : null}
         <span className="composer-hints-spacer" />
         {tokens > 24 ? (

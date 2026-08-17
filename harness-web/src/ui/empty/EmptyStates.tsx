@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { CliStatus, SessionSummary } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
 import { AlertTriangle, ArrowUp, Folder, History, Refresh } from "../Icons";
@@ -22,6 +23,33 @@ function ClaudeMark() {
           strokeLinejoin="round"
         />
       </svg>
+    </span>
+  );
+}
+
+const DETECT_TIMEOUT_MS = 2500;
+
+/**
+ * "Detecting model…" is a progress string, and a progress string that never
+ * resolves is a lie. If the CLI has not reported a model by the time the pane is
+ * plainly idle, fall back to the neutral label rather than claiming work is
+ * still happening.
+ */
+function ModelChip({ modelName }: { modelName?: string }) {
+  const copy = useCopy();
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (modelName) return;
+    const timer = window.setTimeout(() => setTimedOut(true), DETECT_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [modelName]);
+
+  if (modelName) return <span className="empty-model">{modelName}</span>;
+  if (timedOut) return <span className="empty-model">{copy("supermux.harness.header.model")}</span>;
+  return (
+    <span className="empty-model is-pending">
+      {copy("supermux.harness.empty.detectingModel")}
     </span>
   );
 }
@@ -59,9 +87,7 @@ export function EmptyState({
             <span className="dir-chip-text">{displayDirectory(workingDirectory)}</span>
           </span>
         ) : null}
-        <span className={`empty-model${modelName ? "" : " is-pending"}`}>
-          {modelName ?? copy("supermux.harness.empty.detectingModel")}
-        </span>
+        <ModelChip modelName={modelName} />
       </div>
 
       <div className="empty-suggestions">

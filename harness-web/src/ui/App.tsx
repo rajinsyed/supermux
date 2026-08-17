@@ -7,6 +7,7 @@ import { EmptyState, ExitedState, NoCliState } from "./empty/EmptyStates";
 import { Header } from "./header/Header";
 import { PermissionCard, type PermissionDecision } from "./permission/PermissionCard";
 import { PlanCard } from "./permission/PlanCard";
+import { setModeSuggestion } from "./permission/permissionText";
 import { QuestionCard } from "./permission/QuestionCard";
 import { BannerStack } from "./status/BannerStack";
 import { StatusStrip } from "./status/StatusStrip";
@@ -125,6 +126,27 @@ function AppBody({
 
   const cliUnavailable = context !== undefined && context.cliStatus.available === false;
 
+  const planPending = pending?.kind === "plan" || pending?.kind === "enterPlan";
+
+  // The plan card and the composer answer the SAME request, so both go through
+  // one decision path rather than each keeping its own copy of the protocol.
+  const decidePlan = useCallback(
+    (refinement?: string) => {
+      if (!pending) return;
+      if (refinement) {
+        decide({ behavior: "deny", message: refinement });
+        harness.setDraft("");
+        return;
+      }
+      decide({
+        behavior: "allow",
+        updatedInput: pending.request.input,
+        updatedPermissions: [setModeSuggestion(pending.request, "acceptEdits")]
+      });
+    },
+    [decide, harness, pending]
+  );
+
   const permissionPane = useMemo(() => {
     if (!pending) return null;
     const queueCount = model.pending.length - 1;
@@ -227,6 +249,12 @@ function AppBody({
           disabled={cliUnavailable}
           running={running}
           awaitingPermission={model.pending.length > 0}
+          planPending={planPending}
+          onPlanImplement={() => decidePlan()}
+          onPlanRefine={(text) => decidePlan(text)}
+          onPlanKeepPlanning={() =>
+            decidePlan(copy("supermux.harness.plan.keepPlanningMessage"))
+          }
           queued={model.queued}
           commands={model.session.commands}
           permissionMode={model.session.permissionMode}

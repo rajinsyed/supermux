@@ -124,8 +124,7 @@
   color: var(--text-muted);
 }
 
-.permission-preview,
-.plan-body {
+.permission-preview {
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -187,13 +186,21 @@
   border-color: var(--danger-border);
 }
 
+/* The clip reveals rather than snaps. Unlike the mounted/unmounted disclosures
+   the plan body is always rendered, so its own max-height carries the motion;
+   200vh is a ceiling no plan reaches, which keeps the easing honest. */
 .plan-body {
-  max-height: none;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 200vh;
+  overflow: hidden;
+  transition: max-height 200ms var(--ease);
 }
 
 .plan-body.is-clipped {
   max-height: 380px;
-  overflow: hidden;
   mask-image: linear-gradient(to bottom, #000 74%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, #000 74%, transparent 100%);
 }
@@ -363,6 +370,15 @@
   font-size: 12px;
 }
 
+.question-merged {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  padding: 1px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .question-other:focus {
   border-style: solid;
   border-color: var(--claude-border);
@@ -483,19 +499,29 @@
   white-space: nowrap;
 }
 
+/* The most-clicked control in the pane, so it answers the pointer like every
+   other button: same token, same easing as .btn-primary. */
 .btn-send {
   width: 28px;
   height: 28px;
   padding: 0;
   border-radius: var(--r-md);
-  background: var(--claude-strong);
-  color: #fff;
+  background: var(--claude-btn);
+  color: var(--on-claude);
+}
+
+.btn-send:hover:not(:disabled) {
+  background: var(--claude-btn-hover);
 }
 
 .btn-send:disabled {
   background: var(--surface-active);
   color: var(--text-faint);
   opacity: 1;
+}
+
+.btn-plan-action {
+  padding: 0 13px;
 }
 
 .btn-stop {

@@ -63,7 +63,8 @@ export function MenuItem({
   onClick,
   active,
   danger,
-  detail
+  detail,
+  badge
 }: {
   children: ReactNode;
   /** Leading glyph; reserves its slot even when absent so labels stay aligned. */
@@ -72,6 +73,8 @@ export function MenuItem({
   active?: boolean;
   danger?: boolean;
   detail?: string;
+  /** Trailing tag such as "Default" — states a fact about the row, not its state. */
+  badge?: string;
 }) {
   return (
     <button
@@ -85,6 +88,7 @@ export function MenuItem({
           {icon}
         </span>
         <span className="menu-item-label">{children}</span>
+        {badge ? <span className="menu-item-badge">{badge}</span> : null}
         {active ? <Check size={12} /> : null}
       </span>
       {detail ? <span className="menu-item-detail">{detail}</span> : null}

@@ -27,6 +27,7 @@ export const copyDefaults = {
   "supermux.harness.composer.placeholder": "Message Claude…",
   "supermux.harness.composer.placeholderRunning": "Send a follow-up — it will be queued",
   "supermux.harness.composer.placeholderWaiting": "Respond to the request above",
+  "supermux.harness.composer.placeholderPlan": "Approve the plan, or say what to change",
   "supermux.harness.composer.send": "Send",
   "supermux.harness.composer.stop": "Stop",
   "supermux.harness.composer.hintSend": "Enter to send",
@@ -140,6 +141,9 @@ export const copyDefaults = {
   "supermux.harness.plan.keepPlanning": "Keep planning",
   "supermux.harness.plan.keepPlanningMessage": "Keep planning — refine the approach first.",
   "supermux.harness.plan.copy": "Copy plan",
+  "supermux.harness.plan.download": "Download plan as Markdown",
+  "supermux.harness.plan.implement": "Implement",
+  "supermux.harness.plan.refine": "Refine",
 
   "supermux.harness.question.badge": "Question",
   "supermux.harness.question.title": "Claude has a question",
@@ -150,6 +154,7 @@ export const copyDefaults = {
   "supermux.harness.question.dismiss": "Skip",
   "supermux.harness.question.dismissed": "Dismissed",
   "supermux.harness.question.unanswered": "Not answered yet",
+  "supermux.harness.question.willSend": "Will send: {answer}",
 
   "supermux.harness.header.rename": "Rename session",
   "supermux.harness.header.renameSave": "Save",

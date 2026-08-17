@@ -156,17 +156,21 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--shadow": theme.shadow,
     "--shadow-lifted": dark ? "0 8px 26px rgba(0, 0, 0, 0.42)" : "0 8px 26px rgba(20, 18, 16, 0.10)",
     "--diff-add-bg": dark ? "rgba(126, 201, 154, 0.13)" : "rgba(46, 125, 79, 0.10)",
-    "--diff-add-fg": dark ? "#9ad9b2" : "#1f6b3f",
+    "--diff-add-fg": dark ? "#9ad9b2" : "#1e683d",
     "--diff-del-bg": dark ? "rgba(255, 141, 126, 0.13)" : "rgba(179, 38, 30, 0.09)",
     "--diff-del-fg": dark ? "#ffa79a" : "#a1231c",
     "--diff-gutter": dark ? "rgba(236, 234, 240, 0.60)" : "rgba(28, 26, 24, 0.68)",
-    "--hl-keyword": dark ? "#c89ae0" : "#8250b8",
-    "--hl-string": dark ? "#9ad9b2" : "#1f6b3f",
-    "--hl-number": dark ? "#e8bd6d" : "#9a6b0f",
-    "--hl-comment": dark ? "rgba(236, 234, 240, 0.62)" : "rgba(28, 26, 24, 0.66)",
-    "--hl-function": dark ? "#7aa2f7" : "#2c5f9e",
-    "--hl-type": dark ? "#e2896c" : "#b8562f",
-    "--hl-attr": dark ? "#8fd3d0" : "#0f6f6c"
+    // Syntax tokens land on THREE surfaces, not one: the flat code background
+    // and the two diff tints, which are the darker worst case in light mode.
+    // Each light value is derived to clear AA against all three (see
+    // tests/contrast.test.ts) — the flat surface alone is not the bar.
+    "--hl-keyword": dark ? "#c89ae0" : "#7246a1",
+    "--hl-string": dark ? "#9ad9b2" : "#1e683d",
+    "--hl-number": dark ? "#e8bd6d" : "#79540c",
+    "--hl-comment": dark ? "rgba(236, 234, 240, 0.62)" : "rgba(28, 26, 24, 0.72)",
+    "--hl-function": dark ? "#7aa2f7" : "#2b5c9a",
+    "--hl-type": dark ? "#e2896c" : "#924425",
+    "--hl-attr": dark ? "#8fd3d0" : "#0e6663"
   };
 }
 

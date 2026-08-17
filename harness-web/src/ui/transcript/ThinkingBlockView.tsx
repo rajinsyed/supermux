@@ -3,6 +3,7 @@ import type { ThinkingBlock } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { Brain, ChevronDown, ChevronRight } from "../Icons";
 import { formatDuration, formatTokens } from "../format";
+import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 
 export const ThinkingBlockView = memo(function ThinkingBlockView({
@@ -46,15 +47,13 @@ export const ThinkingBlockView = memo(function ThinkingBlockView({
           <span className="thinking-label">{summary}</span>
         )}
       </button>
-      {open ? (
-        <div className="thinking-body">
-          {block.text.trim().length > 0 ? (
-            block.text.split(/\n{2,}/).map((paragraph, i) => <p key={i}>{paragraph}</p>)
-          ) : (
-            <p className="thinking-redacted">{copy("supermux.harness.thinking.redacted")}</p>
-          )}
-        </div>
-      ) : null}
+      <Disclosure open={open} className="thinking-body">
+        {block.text.trim().length > 0 ? (
+          block.text.split(/\n{2,}/).map((paragraph, i) => <p key={i}>{paragraph}</p>)
+        ) : (
+          <p className="thinking-redacted">{copy("supermux.harness.thinking.redacted")}</p>
+        )}
+      </Disclosure>
     </div>
   );
 });

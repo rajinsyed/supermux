@@ -248,18 +248,26 @@
   color: var(--diff-del-fg);
 }
 
-/* ---------- ANSI ---------- */
+/* ---------- ANSI ----------
+
+   The terminal is a DARK surface in both themes and in both the plain and the
+   error-tinted card, so this palette is tuned against that composite (roughly
+   rgb(19,19,21) … rgb(37,35,33)) rather than the page palette. The dim colors —
+   black, bright-black, blue, magenta, red — carry real signal in compiler
+   output (the `-->` source gutter is blue, the `^~~~` caret is red), so each is
+   lifted until it clears AA on the darkest and the lightest of those beds.
+   Covered by tests/contrast.test.ts. */
 
 :root {
-  --ansi-black: #4b4b52;
-  --ansi-red: #e35a4f;
+  --ansi-black: #959599;
+  --ansi-red: #e77269;
   --ansi-green: #4fa96b;
   --ansi-yellow: #c98b1f;
-  --ansi-blue: #4b81c6;
-  --ansi-magenta: #a568c4;
-  --ansi-cyan: #2f9c9a;
+  --ansi-blue: #6b98d0;
+  --ansi-magenta: #b482ce;
+  --ansi-cyan: #3fa3a2;
   --ansi-white: #cfcdd4;
-  --ansi-bright-black: #6f6f79;
+  --ansi-bright-black: #94949c;
   --ansi-bright-red: #ff8d7e;
   --ansi-bright-green: #7ec99a;
   --ansi-bright-yellow: #e8bd6d;

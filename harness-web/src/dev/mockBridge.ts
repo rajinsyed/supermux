@@ -176,6 +176,11 @@ export function installMockBridge(store: HarnessStore): Scenario {
     async copyText({ text }) {
       await navigator.clipboard?.writeText(text).catch(() => undefined);
     },
+    async saveFile() {
+      // No native save panel in the dev harness; savePlanMarkdown falls back to
+      // an anchor download, which is exactly what a real browser should do.
+      return { saved: false };
+    },
     async notify() {},
     async saveDraft() {}
   };
