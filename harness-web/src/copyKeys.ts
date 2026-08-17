@@ -30,6 +30,10 @@ export const copyDefaults = {
   "supermux.harness.composer.placeholderWaiting": "Respond to the request above",
   "supermux.harness.composer.placeholderPlan": "Approve the plan, or say what to change",
   "supermux.harness.composer.placeholderNoCli": "Install the Claude Code CLI to start",
+  // A restart disables the composer for a second or two, and the no-CLI copy —
+  // the only other reason it is ever disabled — told the user to install
+  // software they plainly already have.
+  "supermux.harness.composer.placeholderRestarting": "Restarting Claude…",
   "supermux.harness.composer.send": "Send",
   "supermux.harness.composer.stop": "Stop",
   "supermux.harness.composer.hintSend": "Enter to send",
@@ -235,6 +239,11 @@ export const copyDefaults = {
   "supermux.harness.rewind.confirm": "Rewind & edit",
   "supermux.harness.rewind.cancel": "Cancel",
   "supermux.harness.rewind.done": "Rewound to before this message.",
+  // The conversation half succeeded and the file half did not. Saying only
+  // "Rewound" here is the lie: the working tree still holds the changes the
+  // user asked to undo.
+  "supermux.harness.rewind.doneFilesFailed":
+    "Conversation rewound; files could not be restored.",
   "supermux.harness.rewind.failed": "Rewind failed",
 
   "supermux.harness.mode.default": "Ask each time",

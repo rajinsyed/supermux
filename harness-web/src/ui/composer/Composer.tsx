@@ -8,6 +8,13 @@ import { useComposerPopover } from "./usePopover";
 
 export interface ComposerProps {
   disabled: boolean;
+  /**
+   * WHY the composer is disabled, when the reason is a restart rather than a
+   * missing CLI. Both states disable it, and collapsing them onto one string
+   * told a user mid-restart to "Install the Claude Code CLI" — advice about
+   * software they were visibly already running.
+   */
+  restarting?: boolean;
   running: boolean;
   awaitingPermission: boolean;
   /** A plan card is up: the composer's primary action answers it. */
@@ -204,15 +211,19 @@ export function Composer(props: ComposerProps) {
     for (const file of files) readImage(file, (attachment) => setImages((prev) => prev.concat(attachment)));
   }, []);
 
-  const placeholder = props.disabled
-    ? copy("supermux.harness.composer.placeholderNoCli")
-    : props.planPending
-      ? copy("supermux.harness.composer.placeholderPlan")
-      : props.awaitingPermission
-        ? copy("supermux.harness.composer.placeholderWaiting")
-        : props.running
-          ? copy("supermux.harness.composer.placeholderRunning")
-          : copy("supermux.harness.composer.placeholder");
+  // A restart is temporary and a missing CLI is not, so the restart reads first:
+  // the pane can be mid-restart with the CLI perfectly present.
+  const placeholder = props.restarting
+    ? copy("supermux.harness.composer.placeholderRestarting")
+    : props.disabled
+      ? copy("supermux.harness.composer.placeholderNoCli")
+      : props.planPending
+        ? copy("supermux.harness.composer.placeholderPlan")
+        : props.awaitingPermission
+          ? copy("supermux.harness.composer.placeholderWaiting")
+          : props.running
+            ? copy("supermux.harness.composer.placeholderRunning")
+            : copy("supermux.harness.composer.placeholder");
 
   const canSend = props.draft.trim().length > 0 || images.length > 0;
   const tokens = approximateTokens(props.draft);

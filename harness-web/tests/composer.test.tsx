@@ -18,13 +18,14 @@ interface Harness {
   rerender(next: string): void;
 }
 
-function mount(options: { disabled?: boolean } = {}): Harness {
+function mount(options: { disabled?: boolean; restarting?: boolean } = {}): Harness {
   const sent: string[] = [];
   let draft = "";
   const view = (text: string) => (
     <CopyProvider dict={undefined}>
       <Composer
         disabled={options.disabled ?? false}
+        restarting={options.restarting}
         running={false}
         awaitingPermission={false}
         planPending={false}
@@ -142,5 +143,32 @@ describe("composer with no CLI", () => {
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     expect(input.placeholder).toBe("Install the Claude Code CLI to start");
     expect(input.disabled).toBe(true);
+  });
+});
+
+/**
+ * A restart and a missing CLI both disable the composer, and the placeholder is
+ * the only thing that says which. Reading it off `disabled` alone told a user
+ * mid-restart — every New Session, every session resume, every rewind — to
+ * "Install the Claude Code CLI", advice about software they were plainly already
+ * running, on a pane that was about to work again by itself in a second.
+ */
+describe("composer during a restart", () => {
+  test("it names the restart rather than telling the user to install a CLI they have", () => {
+    mount({ disabled: true, restarting: true });
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(input.placeholder).toBe("Restarting Claude…");
+    expect(input.placeholder).not.toBe("Install the Claude Code CLI to start");
+    // Still refused: a send during the teardown reaches a dying process.
+    expect(input.disabled).toBe(true);
+  });
+
+  test("a genuinely missing CLI still gets the install copy", () => {
+    // The restart is the SPECIAL case; the general one must not be swallowed by
+    // it, or the fix trades one wrong string for another.
+    mount({ disabled: true, restarting: false });
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).placeholder).toBe(
+      "Install the Claude Code CLI to start"
+    );
   });
 });

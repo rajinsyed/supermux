@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { activeModelFor } from "../model/helpers";
+import { resolveModel } from "../model/helpers";
 import type { HarnessStore } from "../model/store";
 import type { ImageAttachment } from "../model/types";
 import type { JsonObject } from "../protocol/types";
@@ -197,8 +197,21 @@ function AppBody({
       setRewindTarget(undefined);
       harness
         .rewind(target, restoreFiles)
-        .then(() => {
-          setRewindNote(copy("supermux.harness.rewind.done"));
+        .then((result) => {
+          // A rewind has two halves that fail independently. The conversation
+          // half succeeded — the promise resolved — but `rewind_files` can still
+          // have refused, and reporting the flat success string there tells the
+          // user their working tree was restored when it was not. The note only
+          // changes when a restore was actually ASKED for: a conversation-only
+          // rewind reports success, because that is all it promised.
+          const failed = restoreFiles && !result.filesRestored;
+          setRewindNote(
+            failed
+              ? result.reason
+                ? `${copy("supermux.harness.rewind.doneFilesFailed")} ${result.reason}`
+                : copy("supermux.harness.rewind.doneFilesFailed")
+              : copy("supermux.harness.rewind.done")
+          );
           // The composer is prefilled with the original text; putting the caret
           // in it is the difference between "here is your message back" and
           // "find the box and click it yourself".
@@ -283,7 +296,14 @@ function AppBody({
             model.turns.length === 0 ? (
               <EmptyState
                 workingDirectory={context?.workingDirectory ?? model.session.cwd}
-                modelName={activeModelFor(model.session)?.displayName ?? model.session.model}
+                // The empty state is BY DEFINITION pre-start, so `session.models`
+                // is empty here more often than not and the cached catalog is the
+                // only thing that can turn a selector into a name. Same fallback
+                // the header pill uses, or the two chips on one screen disagree.
+                modelName={
+                  resolveModel(model.session, model.cachedModels)?.displayName ??
+                  model.session.model
+                }
                 sessions={harness.sessions}
                 onSuggestion={(text) => harness.setDraft(text)}
                 onResume={(sessionId) => harness.restart(sessionId, false)}
@@ -297,6 +317,7 @@ function AppBody({
                 <ExitedState
                   error={model.exitError}
                   startFailed={model.startFailed}
+                  stderrTail={model.stderrTail}
                   onRestart={() => harness.restart()}
                 />
               ) : null}
@@ -336,6 +357,8 @@ function AppBody({
           // A send during a restart reaches a process that is being torn down
           // and is simply lost, so the composer says so instead of accepting it.
           disabled={cliUnavailable || harness.restarting}
+          // Both states disable the composer; only this one says which.
+          restarting={harness.restarting}
           running={running}
           registerFocus={(focus) => {
             composerFocus.current = focus;
