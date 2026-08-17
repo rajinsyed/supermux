@@ -1,5 +1,5 @@
 import type { ActivityState, RunPhase, TranscriptModel } from "../../model/types";
-import { useCopy } from "../CopyContext";
+import { plural, useCopy } from "../CopyContext";
 import { Refresh } from "../Icons";
 import { formatTokens } from "../format";
 import { Elapsed } from "../primitives/Elapsed";
@@ -32,6 +32,7 @@ export function StatusStrip({
   runPhase,
   activity,
   cliUnavailable,
+  restarting,
   onRestart
 }: {
   model: TranscriptModel;
@@ -39,12 +40,15 @@ export function StatusStrip({
   activity: ActivityState;
   /** No CLI on disk: the pane cannot start, so the strip must not read "Ready". */
   cliUnavailable: boolean;
+  /** The old process is down and the new one is not up yet. */
+  restarting?: boolean;
   onRestart: () => void;
 }) {
   const copy = useCopy();
   const pending = model.pending.length > 0;
   const tool = liveTool(model);
   const running = activity.sessionState === "running" || activity.status === "requesting";
+  const queued = model.queued.length;
 
   let tone = "idle";
   let content: React.ReactNode = copy("supermux.harness.status.idle");
@@ -53,6 +57,10 @@ export function StatusStrip({
   if (cliUnavailable) {
     tone = "error";
     content = copy("supermux.harness.status.noCli");
+  } else if (restarting) {
+    tone = "busy";
+    live = true;
+    content = copy("supermux.harness.status.restarting");
   } else if (runPhase === "exited") {
     tone = "error";
     content = (
@@ -92,6 +100,18 @@ export function StatusStrip({
     tone = "busy";
     live = true;
     content = copy("supermux.harness.status.starting");
+  } else if (queued > 0) {
+    // Messages are waiting to be sent, so the pane is NOT ready — it had been
+    // printing "Ready" over a full queue strip, which is where the impression
+    // that a later message had jumped the line came from.
+    tone = "busy";
+    live = true;
+    content = plural(
+      copy,
+      queued,
+      "supermux.harness.status.queuedOne",
+      "supermux.harness.status.queued"
+    );
   }
 
   return (

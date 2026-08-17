@@ -26,7 +26,13 @@ import { applyAssistant } from "./assistantLines";
 import { applyStreamEvent } from "./streamEvents";
 import { applyUser } from "./userLines";
 import { applySystem } from "./systemLines";
-import { closeOpenTurns, createModel, resetConversation, startUserTurn } from "./turns";
+import {
+  closeOpenTurns,
+  createModel,
+  resetConversation,
+  startUserTurn,
+  truncateBeforeUserMessage
+} from "./turns";
 import type {
   LocalAction,
   PendingPermission,
@@ -82,6 +88,8 @@ export function applyEvent(
     }
     case "stderr":
       return { ...model, stderrTail: model.stderrTail.concat(event.text).slice(-40) };
+    case "modelCatalog":
+      return { ...model, cachedModels: event.models, revision: model.revision + 1 };
     default:
       return model;
   }
@@ -300,7 +308,15 @@ export function applyLocalAction(
 ): TranscriptModel {
   switch (action.kind) {
     case "localSend": {
-      const busy = model.activity.sessionState !== "idle" || activeTurnIndex(model) >= 0;
+      // A non-empty queue is itself a busy signal. Without that clause a message
+      // typed in the gap between one `result` and the next turn's first frame —
+      // where sessionState is already `idle` and no turn is open — skipped the
+      // queue and opened its own turn, so it rendered and answered AHEAD of
+      // chips that had been waiting longer. The queue is FIFO or it is nothing.
+      const busy =
+        model.queued.length > 0 ||
+        model.activity.sessionState !== "idle" ||
+        activeTurnIndex(model) >= 0;
       if (busy) {
         return {
           ...model,
@@ -321,6 +337,13 @@ export function applyLocalAction(
         queued: model.queued.filter((q) => q.uuid !== action.uuid),
         revision: model.revision + 1
       };
+    // An interrupt that cancels the queue drops them on the CLI side, so the
+    // chips have to go too: a queue that only LOOKS full now blocks every later
+    // send from opening a turn, and the pane would sit "queued" forever.
+    case "clearQueued":
+      return model.queued.length === 0
+        ? model
+        : { ...model, queued: [], revision: model.revision + 1 };
     case "permissionResolved": {
       const resolved = model.pending.find((p) => p.requestId === action.requestId);
       const next: TranscriptModel = {
@@ -367,6 +390,10 @@ export function applyLocalAction(
       if (turnIndex < 0) return model;
       return withTurn(model, turnIndex, { ...model.turns[turnIndex], folded: action.folded });
     }
+    case "truncateBeforeUserMessage":
+      return truncateBeforeUserMessage(model, index, action.uuid);
+    case "cachedModels":
+      return { ...model, cachedModels: action.models, revision: model.revision + 1 };
     case "reset":
       return resetConversation(model, index);
     default:
