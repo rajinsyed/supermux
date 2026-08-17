@@ -413,8 +413,8 @@
 /* ---------- sessions ---------- */
 
 .menu-sessions .menu-pop {
-  min-width: 400px;
-  max-width: 460px;
+  min-width: 460px;
+  max-width: 520px;
 }
 
 .session-meta {
@@ -478,9 +478,13 @@
   color: var(--text-faint);
 }
 
+/* Three actions now, so the row is wider: `flex: 0 0 auto` keeps them whole and
+   lets the title ellipsize instead, and the popup is widened to match. A
+   shrinking action group clips its own labels into nonsense. */
 .session-actions {
   display: flex;
   gap: 4px;
+  flex: 0 0 auto;
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
 }

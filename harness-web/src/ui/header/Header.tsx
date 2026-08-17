@@ -23,6 +23,7 @@ import {
   Trash
 } from "../Icons";
 import { displayDirectory, formatCost, formatRelativeTime } from "../format";
+import { Spinner } from "../primitives/Spinner";
 import { ContextRing } from "./ContextRing";
 import { Menu, MenuItem, MenuSection } from "./Menu";
 
@@ -72,6 +73,80 @@ export function modeLabel(mode: PermissionMode, copy: ReturnType<typeof useCopy>
   }
 }
 
+/**
+ * The catalog only reaches a pane through the `initialize` handshake of a RUNNING
+ * process, so a pane on first open has `session.models = []` and the model menu
+ * used to be blank — no rows, no current model, nothing to pick. Three sources
+ * in falling order of authority, and a spinner rather than an empty popup when
+ * none of them has answered yet.
+ */
+export function modelMenuSource(
+  session: Pick<SessionMeta, "models">,
+  cachedModels: ModelDescriptor[] | undefined
+): { models: ModelDescriptor[]; loading: boolean } {
+  if (session.models.length > 0) return { models: session.models, loading: false };
+  if (cachedModels && cachedModels.length > 0) return { models: cachedModels, loading: false };
+  return { models: [], loading: true };
+}
+
+const CATALOG_TIMEOUT_MS = 8000;
+
+/**
+ * "Loading…" that never resolves is the same lie an empty menu tells, just
+ * slower. If no catalog has arrived by the time a probe would plainly have
+ * failed, name the model the session reports and stop claiming work.
+ */
+function ModelRows({
+  models,
+  loading,
+  fallbackName,
+  activeRow,
+  onPick
+}: {
+  models: ModelDescriptor[];
+  loading: boolean;
+  fallbackName?: string;
+  activeRow?: ModelDescriptor;
+  onPick(model: ModelDescriptor): void;
+}) {
+  const copy = useCopy();
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => setTimedOut(true), CATALOG_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
+
+  if (loading) {
+    if (!timedOut) {
+      return (
+        <div className="menu-loading">
+          <Spinner size={11} />
+          <span>{copy("supermux.harness.header.modelsLoading")}</span>
+        </div>
+      );
+    }
+    return <div className="menu-empty">{fallbackName ?? "—"}</div>;
+  }
+
+  return (
+    <>
+      {models.map((model) => (
+        <MenuItem
+          key={model.value}
+          role="menuitemradio"
+          active={model === activeRow}
+          detail={model.description}
+          onClick={() => onPick(model)}
+        >
+          {model.displayName}
+        </MenuItem>
+      ))}
+    </>
+  );
+}
+
 export interface HeaderProps {
   degraded?: boolean;
   session: SessionMeta;
@@ -79,16 +154,20 @@ export interface HeaderProps {
   contextUsage?: ContextUsage;
   workingDirectory?: string;
   sessions: SessionSummary[];
+  /** Catalog persisted from an earlier run of this binary; see modelMenuSource. */
+  cachedModels?: ModelDescriptor[];
   onRename(title: string): void;
   onSetModel(model: string, effort?: EffortLevel): void;
   onSetPermissionMode(mode: PermissionMode): void;
   onResumeSession(sessionId: string, fork: boolean): void;
+  onOpenSessionInNewPane(sessionId: string): void;
   onLoadSessions(): void;
   onCompact(): void;
   onClear(): void;
   onExport(): void;
   onOpenTerminal(): void;
   onNewSession(): void;
+  onOpenBinarySettings(): void;
 }
 
 export function Header(props: HeaderProps) {
@@ -109,6 +188,10 @@ export function Header(props: HeaderProps) {
   // The chip must never outlive the capability it describes: a model that has no
   // effort levels shows no effort tag, whatever the session last carried.
   const effort = clampEffort(activeModel, session.effort);
+  const menuModels = modelMenuSource(session, props.cachedModels);
+  // The live catalog resolves the active row; a cached one is the same catalog
+  // from the same binary, so it resolves the pre-start selection just as well.
+  const activeRow = activeModel ?? activeModelFor({ models: menuModels.models, model: session.model });
 
   const filtered = props.sessions.filter((item) =>
     sessionQuery.trim().length === 0
@@ -218,41 +301,35 @@ export function Header(props: HeaderProps) {
           {(close) => (
             <>
               <MenuSection title={copy("supermux.harness.header.model")}>
-                {session.models.length === 0 ? (
-                  <div className="menu-empty">{session.model ?? "—"}</div>
-                ) : (
-                  session.models.map((model) => (
-                    <MenuItem
-                      key={model.value}
-                      role="menuitemradio"
-                      active={model === activeModel}
-                      detail={model.description}
-                      onClick={() => {
-                        props.onSetModel(model.value, clampEffort(model, session.effort));
-                        close();
-                      }}
-                    >
-                      {model.displayName}
-                    </MenuItem>
-                  ))
-                )}
+                {/* A menu that opens on nothing reads as broken; before the
+                    first start the catalog is genuinely still on its way. */}
+                <ModelRows
+                  models={menuModels.models}
+                  loading={menuModels.loading}
+                  fallbackName={session.model}
+                  activeRow={activeRow}
+                  onPick={(model) => {
+                    props.onSetModel(model.value, clampEffort(model, session.effort));
+                    close();
+                  }}
+                />
               </MenuSection>
-              {activeModel?.supportsEffort && activeModel.supportedEffortLevels?.length ? (
+              {activeRow?.supportsEffort && activeRow.supportedEffortLevels?.length ? (
                 <MenuSection title={copy("supermux.harness.header.effort")}>
-                  {activeModel.supportedEffortLevels.map((level) => (
+                  {activeRow.supportedEffortLevels.map((level) => (
                     <MenuItem
                       key={level}
                       role="menuitemradio"
                       active={level === effort}
                       badge={
-                        level === activeModel.defaultEffortLevel
+                        level === activeRow.defaultEffortLevel
                           ? copy("supermux.harness.header.effortDefault")
                           : undefined
                       }
                       onClick={() => {
                         // The catalog's `value` is the selector set_model takes;
                         // session.model may hold the resolved id, which it rejects.
-                        props.onSetModel(activeModel.value, level);
+                        props.onSetModel(activeRow.value, level);
                         close();
                       }}
                     >
@@ -303,6 +380,7 @@ export function Header(props: HeaderProps) {
                         <button
                           type="button"
                           className="btn btn-tiny"
+                          title={copy("supermux.harness.header.resumeHint")}
                           onClick={() => {
                             props.onResumeSession(item.sessionId, false);
                             close();
@@ -313,12 +391,27 @@ export function Header(props: HeaderProps) {
                         <button
                           type="button"
                           className="btn btn-tiny btn-ghost"
+                          title={copy("supermux.harness.header.forkHint")}
                           onClick={() => {
                             props.onResumeSession(item.sessionId, true);
                             close();
                           }}
                         >
                           {copy("supermux.harness.header.fork")}
+                        </button>
+                        {/* One live process per pane is by design, so "run two
+                            sessions at once" has to be a visible affordance
+                            rather than something a user has to infer. */}
+                        <button
+                          type="button"
+                          className="btn btn-tiny btn-ghost"
+                          title={copy("supermux.harness.header.openInNewPaneHint")}
+                          onClick={() => {
+                            props.onOpenSessionInNewPane(item.sessionId);
+                            close();
+                          }}
+                        >
+                          {copy("supermux.harness.header.openInNewPane")}
                         </button>
                       </div>
                     </li>
@@ -374,6 +467,15 @@ export function Header(props: HeaderProps) {
                 }}
               >
                 {copy("supermux.harness.header.openTerminal")}
+              </MenuItem>
+              <MenuItem
+                icon={<Bolt size={12} />}
+                onClick={() => {
+                  props.onOpenBinarySettings();
+                  close();
+                }}
+              >
+                {copy("supermux.harness.header.binary")}
               </MenuItem>
               <MenuItem
                 danger

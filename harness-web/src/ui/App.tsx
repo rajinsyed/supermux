@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { activeModelFor } from "../model/helpers";
 import type { HarnessStore } from "../model/store";
 import type { ImageAttachment } from "../model/types";
@@ -7,6 +7,9 @@ import { CopyProvider, useCopy } from "./CopyContext";
 import { Composer } from "./composer/Composer";
 import { EmptyState, ExitedState, NoCliState } from "./empty/EmptyStates";
 import { Header } from "./header/Header";
+import { Close } from "./Icons";
+import { BinaryDialog } from "./settings/BinaryDialog";
+import { RewindDialog, type RewindTarget } from "./transcript/RewindDialog";
 import { PermissionCard, type PermissionDecision } from "./permission/PermissionCard";
 import { PlanCard } from "./permission/PlanCard";
 import { setModeSuggestion } from "./permission/permissionText";
@@ -46,6 +49,10 @@ function AppBody({
   const copy = useCopy();
   const { model, context } = harness;
   const notifiedTurns = useRef(0);
+  const [binaryOpen, setBinaryOpen] = useState(false);
+  const [rewindTarget, setRewindTarget] = useState<RewindTarget | undefined>(undefined);
+  const [rewindNote, setRewindNote] = useState<string | undefined>(undefined);
+  const composerFocus = useRef<(() => void) | undefined>(undefined);
 
   const { ref: scrollRef, contentRef, showPill, scrollToBottom } = useScrollFollow([
     model.revision,
@@ -159,6 +166,53 @@ function AppBody({
     [decide, harness, pending]
   );
 
+  /**
+   * "Rewind to message N" means the conversation is resumed AT message N-1, so
+   * the target's predecessor is what the CLI needs. No predecessor means N is
+   * the first message and the new run is a fresh session, which is why
+   * `resumeAtUuid` is optional rather than defaulted.
+   */
+  const openRewind = useCallback(
+    (uuid: string) => {
+      const index = model.turns.findIndex((turn) => turn.userUuid === uuid);
+      if (index < 0) return;
+      const turn = model.turns[index];
+      let resumeAtUuid: string | undefined;
+      for (let i = index - 1; i >= 0; i -= 1) {
+        if (model.turns[i].userUuid) {
+          resumeAtUuid = model.turns[i].userUuid;
+          break;
+        }
+      }
+      setRewindNote(undefined);
+      setRewindTarget({ uuid, text: turn.userText ?? "", resumeAtUuid });
+    },
+    [model.turns]
+  );
+
+  const confirmRewind = useCallback(
+    (restoreFiles: boolean) => {
+      const target = rewindTarget;
+      if (!target) return;
+      setRewindTarget(undefined);
+      harness
+        .rewind(target, restoreFiles)
+        .then(() => {
+          setRewindNote(copy("supermux.harness.rewind.done"));
+          // The composer is prefilled with the original text; putting the caret
+          // in it is the difference between "here is your message back" and
+          // "find the box and click it yourself".
+          composerFocus.current?.();
+        })
+        .catch((error: unknown) => {
+          setRewindNote(
+            error instanceof Error ? error.message : copy("supermux.harness.rewind.failed")
+          );
+        });
+    },
+    [copy, harness, rewindTarget]
+  );
+
   const permissionPane = useMemo(() => {
     if (!pending) return null;
     const queueCount = model.pending.length - 1;
@@ -180,6 +234,7 @@ function AppBody({
         contextUsage={model.contextUsage}
         workingDirectory={context?.workingDirectory ?? model.session.cwd}
         sessions={harness.sessions}
+        cachedModels={model.cachedModels}
         onRename={(title) => {
           store.dispatch({ kind: "setTitle", title });
           harness.bridge.renameSession({ title }).catch(() => undefined);
@@ -187,6 +242,7 @@ function AppBody({
         onSetModel={harness.setModel}
         onSetPermissionMode={harness.setPermissionMode}
         onResumeSession={(sessionId, fork) => harness.restart(sessionId, fork)}
+        onOpenSessionInNewPane={harness.openSessionInNewPane}
         onLoadSessions={harness.refreshSessions}
         onCompact={() => harness.send("/compact", [])}
         onClear={() => {
@@ -201,16 +257,18 @@ function AppBody({
           const dir = context?.workingDirectory ?? model.session.cwd;
           if (dir) harness.bridge.openFile({ path: dir }).catch(() => undefined);
         }}
-        onNewSession={() => {
-          store.dispatch({ kind: "reset" });
-          harness.restart();
-        }}
+        onNewSession={harness.newSession}
+        onOpenBinarySettings={() => setBinaryOpen(true)}
       />
 
       {cliUnavailable ? (
         <div className="harness-scroll transcript">
           <div className="transcript-inner">
-            <NoCliState status={context!.cliStatus} onRetry={harness.reloadContext} />
+            <NoCliState
+              status={context!.cliStatus}
+              onRetry={harness.reloadContext}
+              onSetBinary={() => setBinaryOpen(true)}
+            />
           </div>
         </div>
       ) : (
@@ -220,6 +278,7 @@ function AppBody({
           contentRef={contentRef}
           showPill={showPill}
           onJump={() => scrollToBottom(true)}
+          onRewind={openRewind}
           header={
             model.turns.length === 0 ? (
               <EmptyState
@@ -252,16 +311,35 @@ function AppBody({
           onDismiss={(id) => store.dispatch({ kind: "dismissBanner", id })}
         />
         <TodoStrip todos={model.todos} />
+        {rewindNote ? (
+          <div className="rewind-note" role="status">
+            {rewindNote}
+            <button
+              type="button"
+              className="rewind-note-x"
+              onClick={() => setRewindNote(undefined)}
+              aria-label={copy("supermux.harness.banner.dismiss")}
+            >
+              <Close size={10} />
+            </button>
+          </div>
+        ) : null}
         <StatusStrip
           model={model}
           runPhase={model.runPhase}
           activity={model.activity}
           cliUnavailable={cliUnavailable}
+          restarting={harness.restarting}
           onRestart={() => harness.restart()}
         />
         <Composer
-          disabled={cliUnavailable}
+          // A send during a restart reaches a process that is being torn down
+          // and is simply lost, so the composer says so instead of accepting it.
+          disabled={cliUnavailable || harness.restarting}
           running={running}
+          registerFocus={(focus) => {
+            composerFocus.current = focus;
+          }}
           awaitingPermission={model.pending.length > 0}
           planPending={planPending}
           onPlanImplement={() => decidePlan()}
@@ -282,6 +360,28 @@ function AppBody({
           onPickFiles={pickFiles}
         />
       </div>
+
+      {binaryOpen ? (
+        <BinaryDialog
+          onClose={() => {
+            setBinaryOpen(false);
+            // The resolved path may have moved, and the model catalog is keyed
+            // on the binary — both live in the context reply.
+            harness.reloadContext();
+          }}
+          load={harness.bridge.getBinarySetting}
+          save={(path) => harness.bridge.setBinaryPath({ path })}
+        />
+      ) : null}
+
+      {rewindTarget ? (
+        <RewindDialog
+          target={rewindTarget}
+          onCancel={() => setRewindTarget(undefined)}
+          onConfirm={confirmRewind}
+          loadPreview={harness.rewindPreview}
+        />
+      ) : null}
     </div>
   );
 }

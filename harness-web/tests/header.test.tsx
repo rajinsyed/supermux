@@ -5,7 +5,7 @@ import { activeModelFor, emptySession, emptyUsage } from "../src/model/helpers";
 import { replayLines } from "../src/model/transcript";
 import type { SessionMeta } from "../src/model/types";
 import { CopyProvider } from "../src/ui/CopyContext";
-import { Header } from "../src/ui/header/Header";
+import { Header, modelMenuSource, type HeaderProps } from "../src/ui/header/Header";
 
 afterEach(cleanup);
 
@@ -14,18 +14,20 @@ const NOOP = {
   onSetModel: () => {},
   onSetPermissionMode: () => {},
   onResumeSession: () => {},
+  onOpenSessionInNewPane: () => {},
   onLoadSessions: () => {},
   onCompact: () => {},
   onClear: () => {},
   onExport: () => {},
   onOpenTerminal: () => {},
-  onNewSession: () => {}
+  onNewSession: () => {},
+  onOpenBinarySettings: () => {}
 };
 
-function mount(session: SessionMeta) {
+function mount(session: SessionMeta, extra: Partial<HeaderProps> = {}) {
   return render(
     <CopyProvider dict={undefined}>
-      <Header session={session} usage={emptyUsage()} sessions={[]} {...NOOP} />
+      <Header session={session} usage={emptyUsage()} sessions={[]} {...NOOP} {...extra} />
     </CopyProvider>
   );
 }
@@ -148,6 +150,148 @@ describe("the active model resolves across both identifier namespaces", () => {
     expect(container.querySelector(".model-pill .pill-label")!.textContent).toBe(
       "some-future-model"
     );
+  });
+});
+
+/**
+ * The catalog reaches a pane only through the `initialize` handshake of a
+ * RUNNING process, so before the first send `session.models` is empty — and the
+ * model menu opened onto nothing at all.
+ */
+describe("the model menu is never an empty popup", () => {
+  const cached = replayLines(richSession).session.models;
+
+  test("the live catalog wins when a process is running", () => {
+    const live = realSession();
+    const source = modelMenuSource(live, [{ value: "stale", displayName: "Stale" }]);
+    expect(source.models).toBe(live.models);
+    expect(source.loading).toBe(false);
+  });
+
+  test("a cached catalog fills the menu before any process has started", () => {
+    const source = modelMenuSource({ models: [] }, cached);
+    expect(source.models).toBe(cached);
+    expect(source.loading).toBe(false);
+  });
+
+  test("with neither source it reports loading rather than empty", () => {
+    expect(modelMenuSource({ models: [] }, undefined)).toEqual({ models: [], loading: true });
+    expect(modelMenuSource({ models: [] }, [])).toEqual({ models: [], loading: true });
+  });
+
+  test("a first-open pane renders rows from the cache, not a blank menu", () => {
+    const cold = { ...emptySession(), model: "claude-sonnet-5" };
+    const { container } = mount(cold, { cachedModels: cached });
+    fireEvent.click(screen.getByLabelText("Model"));
+    // The model section only — the effort section below it is populated from
+    // whichever row resolved as active.
+    const rows = container
+      .querySelectorAll(".menu-section")[0]
+      .querySelectorAll('[role="menuitemradio"]');
+    expect(rows.length).toBe(cached.length);
+    expect(container.querySelector(".menu-loading")).toBeNull();
+  });
+
+  test("the cached rows resolve the active model the same way the live ones do", () => {
+    // The catalog is keyed by selector and init reports the resolved id, so a
+    // cache that failed to resolve would leave every row unchecked.
+    const cold = { ...emptySession(), model: "claude-sonnet-5" };
+    const { container } = mount(cold, { cachedModels: cached });
+    fireEvent.click(screen.getByLabelText("Model"));
+    const checked = container.querySelectorAll('[role="menuitemradio"][aria-checked="true"]');
+    expect(checked.length).toBe(1);
+    expect(checked[0].textContent).toContain("Sonnet");
+  });
+
+  test("a pre-start pick reports the catalog selector, ready for the first start", () => {
+    const sent: Array<[string, string | undefined]> = [];
+    const cold = { ...emptySession(), model: "claude-sonnet-5" };
+    mount(cold, {
+      cachedModels: cached,
+      onSetModel: (model, effort) => sent.push([model, effort])
+    });
+    fireEvent.click(screen.getByLabelText("Model"));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Haiku/ }));
+    // The selector, not the resolved id: it is what `set_model` and the first
+    // start's `model` parameter both take.
+    expect(sent).toEqual([["haiku", undefined]]);
+  });
+
+  test("with nothing yet it shows a spinner row instead of a void", () => {
+    const { container } = mount(emptySession());
+    fireEvent.click(screen.getByLabelText("Model"));
+    const loading = container.querySelector(".menu-loading");
+    expect(loading).not.toBeNull();
+    expect(loading!.textContent).toContain("Loading models…");
+    expect(container.querySelector(".spinner")).not.toBeNull();
+  });
+});
+
+describe("the session browser exposes both ways to open a session", () => {
+  const sessions = [
+    { sessionId: "s-1", title: "Fix sidebar scroll", updatedAtMs: Date.now() - 60000 }
+  ];
+
+  test("resume replaces this pane's session", () => {
+    const calls: Array<[string, boolean]> = [];
+    mount(realSession(), {
+      sessions,
+      onResumeSession: (id, fork) => calls.push([id, fork])
+    });
+    fireEvent.click(screen.getByLabelText("Sessions"));
+    fireEvent.click(screen.getByText("Resume"));
+    expect(calls).toEqual([["s-1", false]]);
+  });
+
+  test("fork is still its own affordance", () => {
+    const calls: Array<[string, boolean]> = [];
+    mount(realSession(), {
+      sessions,
+      onResumeSession: (id, fork) => calls.push([id, fork])
+    });
+    fireEvent.click(screen.getByLabelText("Sessions"));
+    fireEvent.click(screen.getByText("Fork"));
+    expect(calls).toEqual([["s-1", true]]);
+  });
+
+  test("a session can be opened beside this one instead of replacing it", () => {
+    // One live process per pane is by design; running two sessions at once has
+    // to be discoverable rather than something a user infers from an error.
+    const opened: string[] = [];
+    mount(realSession(), {
+      sessions,
+      onOpenSessionInNewPane: (id) => opened.push(id)
+    });
+    fireEvent.click(screen.getByLabelText("Sessions"));
+    fireEvent.click(screen.getByText("New pane"));
+    expect(opened).toEqual(["s-1"]);
+  });
+
+  test("each row action says what it does to the current pane", () => {
+    const { container } = mount(realSession(), { sessions });
+    fireEvent.click(screen.getByLabelText("Sessions"));
+    const titles = Array.from(
+      container.querySelectorAll(".session-actions button")
+    ).map((node) => node.getAttribute("title"));
+    expect(titles).toEqual([
+      "Replaces this pane's session",
+      "Branch into a copy, leaving this one untouched",
+      "Open beside this one, both live at once"
+    ]);
+  });
+});
+
+describe("the overflow menu reaches the binary setting", () => {
+  test("Claude binary… is one click from the header", () => {
+    let opened = 0;
+    mount(realSession(), {
+      onOpenBinarySettings: () => {
+        opened += 1;
+      }
+    });
+    fireEvent.click(screen.getByLabelText("More"));
+    fireEvent.click(screen.getByText("Claude binary…"));
+    expect(opened).toBe(1);
   });
 });
 
