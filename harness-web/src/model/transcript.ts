@@ -26,6 +26,7 @@ import { applyAssistant } from "./assistantLines";
 import { applyStreamEvent } from "./streamEvents";
 import { applyUser } from "./userLines";
 import { applySystem } from "./systemLines";
+import { hasLiveBackgroundWork } from "./tasks";
 import {
   closeOpenTurns,
   createModel,
@@ -34,6 +35,7 @@ import {
   truncateBeforeUserMessage
 } from "./turns";
 import type {
+  Block,
   LocalAction,
   PendingPermission,
   ToolBlock,
@@ -84,6 +86,13 @@ export function applyEvent(
         // into the new run they make a fresh pane claim to be thinking, and a
         // send sits queued behind activity that will never end on its own.
         activity: { ...settled.activity, sessionState: "idle", status: null, thinkingTokens: 0 },
+        // Background tasks belong to the PROCESS, not the conversation: the SDK
+        // scopes both the set and its ids per process, and it re-sends the whole
+        // set on (re)start. Carried across a restart the strip would offer Stop
+        // and View on shells that died with the old process, against task ids the
+        // new one has never heard of.
+        backgroundTasks: [],
+        tasksById: {},
         revision: settled.revision + 1
       };
     }
@@ -239,6 +248,7 @@ function applyResult(
   const turn = next.turns[turnIndex];
   const settled = aborted ? markTurnAborted(turn, nowMs) : settleTurn(turn, nowMs);
   const state: Turn["state"] = aborted ? "aborted" : line.is_error ? "error" : "complete";
+  const live = hasLiveBackgroundWork(settled);
   return withTurn(next, turnIndex, {
     ...settled,
     state,
@@ -258,7 +268,15 @@ function applyResult(
       cacheCreationTokens: delta.cache_creation_input_tokens
     },
     errorText: settled.errorText ?? (line.is_error && !aborted ? line.result : undefined),
-    folded: state === "complete"
+    // A completed turn folds — EXCEPT one that launched work still running in
+    // the background. A workflow's `result` arrives the instant it is launched
+    // and its agents run for another ten seconds; folding on that frame made the
+    // live progress card the user was watching disappear mid-flight, leaving the
+    // pane claiming the turn was over while three agents were still going. The
+    // fold is deferred, not cancelled: systemLines applies it when the task
+    // reaches its terminal edge.
+    folded: state === "complete" && !live,
+    foldWhenTasksSettle: state === "complete" && live ? true : undefined
   });
 }
 
@@ -427,7 +445,14 @@ export function applyLocalAction(
     case "toggleFold": {
       const turnIndex = findTurnIndex(model, action.turnId);
       if (turnIndex < 0) return model;
-      return withTurn(model, turnIndex, { ...model.turns[turnIndex], folded: action.folded });
+      return withTurn(model, turnIndex, {
+        ...model.turns[turnIndex],
+        folded: action.folded,
+        // A deliberate open or close retires the pending auto-fold: a turn the
+        // user has just opened must not collapse under them the moment its
+        // background work happens to finish.
+        foldWhenTasksSettle: undefined
+      });
     }
     case "truncateBeforeUserMessage":
       return truncateBeforeUserMessage(model, index, action.uuid);

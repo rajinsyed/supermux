@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { taskBridgeStub } from "./bridgeStub";
 import { act, cleanup, render } from "@testing-library/react";
 import type { HarnessBridge, StartParams } from "../src/bridge";
 import { HarnessBridgeError } from "../src/bridge";
@@ -126,7 +127,8 @@ function makeBridge(script: Script): HarnessBridge {
         return { runId: "run-3", filesRestored: false, reason: "no checkpoint" };
       }
       return { runId: "run-3", filesRestored: params.restoreFiles };
-    }
+    },
+    ...taskBridgeStub
   };
 }
 

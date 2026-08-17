@@ -1,5 +1,15 @@
+/**
+ * Three keys were retired in round 3 after the reachability test below caught
+ * them rendering nowhere: `app.title` (the document title is baked into the
+ * build's `<head>`, not read at runtime), `turn.complete` and
+ * `permission.needed` (the native notification path uses its OWN
+ * `supermux.harness.notification.*` keys, and `permission.needed` was a
+ * verbatim duplicate of `permission.title`). A dead key is not free — it reaches
+ * translators through the extract → merge pipeline and is paid for in every
+ * language while appearing in none. Their SupermuxHarnessCopy.swift and
+ * Localizable.xcstrings rows should go with them.
+ */
 export const copyDefaults = {
-  "supermux.harness.app.title": "Claude",
   "supermux.harness.app.untitledSession": "New session",
 
   "supermux.harness.empty.headline": "Claude Code, in your workspace",
@@ -78,7 +88,6 @@ export const copyDefaults = {
   "supermux.harness.turn.earlierMessagesOne": "{count} earlier message",
   "supermux.harness.turn.earlierMessages": "{count} earlier messages",
   "supermux.harness.turn.turnNumber": "Turn {seq}",
-  "supermux.harness.turn.complete": "Turn complete",
   "supermux.harness.turn.exportTitle": "Claude session",
 
   "supermux.harness.thinking.label": "Thinking",
@@ -129,6 +138,96 @@ export const copyDefaults = {
   "supermux.harness.subagent.toolUses": "{count} tools",
   "supermux.harness.subagent.showTranscript": "Show subagent work",
   "supermux.harness.subagent.hideTranscript": "Hide subagent work",
+  "supermux.harness.subagent.openTranscript": "Open transcript",
+  "supermux.harness.subagent.closeTranscript": "Close transcript",
+  "supermux.harness.subagent.transcriptLoading": "Reading the agent's transcript…",
+  "supermux.harness.subagent.transcriptMissing":
+    "No transcript on disk yet — it appears once the agent writes its first message.",
+  "supermux.harness.subagent.transcriptEmpty": "The agent has not recorded anything yet.",
+  "supermux.harness.subagent.transcriptFailed": "Could not read the agent's transcript.",
+  "supermux.harness.subagent.transcriptTruncated": "Only the most recent messages are shown.",
+  "supermux.harness.subagent.transcriptRefresh": "Refresh",
+  "supermux.harness.subagent.filesReadOne": "read {count} file",
+  "supermux.harness.subagent.filesRead": "read {count} files",
+  "supermux.harness.subagent.filesEditedOne": "edited {count} file",
+  "supermux.harness.subagent.filesEdited": "edited {count} files",
+  "supermux.harness.subagent.searchesOne": "{count} search",
+  "supermux.harness.subagent.searches": "{count} searches",
+  "supermux.harness.subagent.commandsOne": "{count} command",
+  "supermux.harness.subagent.commands": "{count} commands",
+  "supermux.harness.subagent.lineDelta": "+{added} −{removed}",
+  "supermux.harness.subagent.spawnDepth": "Depth {depth}",
+  "supermux.harness.subagent.fromDisk": "Agent transcript",
+  "supermux.harness.subagent.waiting": "Waiting to start…",
+  "supermux.harness.subagent.nestedOne": "{count} nested agent",
+  "supermux.harness.subagent.nested": "{count} nested agents",
+
+  "supermux.harness.workflow.badge": "Workflow",
+  "supermux.harness.workflow.untitled": "Workflow",
+  "supermux.harness.workflow.starting": "Starting the workflow…",
+  "supermux.harness.workflow.phasesOne": "{count} phase",
+  "supermux.harness.workflow.phases": "{count} phases",
+  "supermux.harness.workflow.agentsOne": "{count} agent",
+  "supermux.harness.workflow.agents": "{count} agents",
+  "supermux.harness.workflow.phasePending": "Not started",
+  "supermux.harness.workflow.progress": "{done} of {total} done",
+  "supermux.harness.workflow.stop": "Stop workflow",
+  "supermux.harness.workflow.stopping": "Stopping…",
+  "supermux.harness.workflow.stopFailed": "Could not stop the workflow.",
+  "supermux.harness.workflow.state.queued": "Queued",
+  "supermux.harness.workflow.state.running": "Running",
+  "supermux.harness.workflow.state.done": "Done",
+  "supermux.harness.workflow.state.error": "Failed",
+  "supermux.harness.workflow.state.blocked": "Blocked",
+  "supermux.harness.workflow.state.cached": "Cached",
+  "supermux.harness.workflow.attempt": "Attempt {count}",
+  "supermux.harness.workflow.isolationWorktree": "Worktree",
+  "supermux.harness.workflow.isolationRemote": "Remote",
+  "supermux.harness.workflow.showResult": "Show result",
+  "supermux.harness.workflow.hideResult": "Hide result",
+  "supermux.harness.workflow.showLogsOne": "{count} log line",
+  "supermux.harness.workflow.showLogs": "{count} log lines",
+  "supermux.harness.workflow.hideLogs": "Hide log",
+  "supermux.harness.workflow.noAgents": "No agents have been scheduled yet.",
+  "supermux.harness.workflow.unphased": "Unphased",
+  "supermux.harness.workflow.openAgent": "Open agent transcript",
+
+  "supermux.harness.tasks.title": "Background tasks",
+  "supermux.harness.tasks.countOne": "{count} task",
+  "supermux.harness.tasks.count": "{count} tasks",
+  "supermux.harness.tasks.collapse": "Hide background tasks",
+  "supermux.harness.tasks.expand": "Show background tasks",
+  "supermux.harness.tasks.typeShell": "Shell",
+  "supermux.harness.tasks.typeAgent": "Agent",
+  "supermux.harness.tasks.typeWorkflow": "Workflow",
+  "supermux.harness.tasks.untitled": "Background task",
+  "supermux.harness.tasks.stop": "Stop",
+  "supermux.harness.tasks.stopping": "Stopping…",
+  "supermux.harness.tasks.stopFailed": "Could not stop this task.",
+  "supermux.harness.tasks.view": "View",
+  "supermux.harness.tasks.hide": "Hide",
+  "supermux.harness.tasks.outputTitle": "Output",
+  "supermux.harness.tasks.outputLoading": "Reading output…",
+  "supermux.harness.tasks.outputEmpty": "No output yet.",
+  "supermux.harness.tasks.outputMissing": "This task has not written an output file yet.",
+  "supermux.harness.tasks.outputFailed": "Could not read the output.",
+  "supermux.harness.tasks.outputTruncated": "Showing the end of the output.",
+  "supermux.harness.tasks.outputLive": "Live",
+
+  "supermux.harness.bash.background": "Background",
+  "supermux.harness.bash.backgroundedByUser": "Moved to background",
+  "supermux.harness.bash.autoBackgrounded": "Backgrounded after {duration}",
+  "supermux.harness.bash.moveToBackground": "Move to background",
+  "supermux.harness.bash.moveToBackgroundHint": "Ctrl+B",
+  "supermux.harness.bash.moving": "Moving…",
+  "supermux.harness.bash.moveFailed": "Could not move this command to the background.",
+  "supermux.harness.bash.showOutput": "Show output",
+  "supermux.harness.bash.hideOutput": "Hide output",
+  "supermux.harness.bash.stop": "Stop",
+  "supermux.harness.bash.statusRunning": "Still running",
+  "supermux.harness.bash.statusCompleted": "Finished",
+  "supermux.harness.bash.statusFailed": "Failed",
+  "supermux.harness.bash.statusKilled": "Stopped",
 
   "supermux.harness.todo.title": "Plan",
   "supermux.harness.todo.progress": "{done}/{total}",
@@ -150,7 +249,6 @@ export const copyDefaults = {
   "supermux.harness.permission.destinationUser": "all projects",
   "supermux.harness.permission.destinationSession": "this session",
   "supermux.harness.permission.denyBack": "Back",
-  "supermux.harness.permission.needed": "Permission needed",
 
   "supermux.harness.plan.badge": "Plan",
   "supermux.harness.plan.title": "Claude has a plan",
@@ -259,6 +357,11 @@ export const copyDefaults = {
   "supermux.harness.divider.compactTokens": "{tokens} tokens summarized",
   "supermux.harness.divider.reset": "Conversation cleared",
   "supermux.harness.history.truncated": "Earlier messages in this session are not shown",
+
+  // The reducer knows the outcome; `{subject}` is the task's own description.
+  "supermux.harness.notice.taskFinished": "Background task finished — {subject}",
+  "supermux.harness.notice.taskStopped": "Background task stopped — {subject}",
+  "supermux.harness.notice.taskFailed": "Background task failed — {subject}",
 
   "supermux.harness.banner.dismiss": "Dismiss",
   "supermux.harness.banner.retryAttempt": "Attempt {attempt} of {max}",

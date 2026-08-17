@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { taskBridgeStub } from "./bridgeStub";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { HarnessBridge } from "../src/bridge";
 import { copyDefaults } from "../src/copyKeys";
@@ -78,7 +79,8 @@ function makeBridge(reply: RewindResult): HarnessBridge {
     },
     async rewind() {
       return reply;
-    }
+    },
+    ...taskBridgeStub
   };
 }
 

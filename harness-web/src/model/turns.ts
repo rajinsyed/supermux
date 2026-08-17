@@ -23,6 +23,7 @@ export function createModel(): TranscriptModel {
     activity: { sessionState: "idle", status: null, thinkingTokens: 0 },
     banners: [],
     backgroundTasks: [],
+    tasksById: {},
     runPhase: "idle",
     stderrTail: [],
     revision: 0
@@ -181,13 +182,16 @@ export function pushBanner(
   severity: "info" | "warning" | "error",
   title: string,
   detail: string | undefined,
-  nowMs: number
+  nowMs: number,
+  /** A catalog key that phrases `title`, when the reducer knows the outcome. */
+  titleKey?: string
 ): TranscriptModel {
   const banner = {
     id: `banner:${nowMs}:${model.revision}:${model.banners.length}`,
     severity,
     title,
     detail,
+    titleKey,
     createdAtMs: nowMs
   };
   return { ...model, banners: model.banners.concat(banner).slice(-5), revision: model.revision + 1 };

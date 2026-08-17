@@ -124,6 +124,40 @@ export interface TaskUsage {
   duration_ms?: number;
 }
 
+/** One item of `task_progress.workflow_progress`, upserted by (type, index). */
+export type WorkflowProgressItem =
+  | { type: "workflow_phase"; index: number; title?: string; kind?: string }
+  | {
+      type: "workflow_agent";
+      index: number;
+      label?: string;
+      phaseIndex?: number;
+      phaseTitle?: string;
+      agentId?: string;
+      agentType?: string;
+      isolation?: "worktree" | "remote" | string;
+      model?: string;
+      fallbackModel?: string;
+      state?: "start" | "done" | "error" | string;
+      startedAt?: number;
+      queuedAt?: number;
+      attempt?: number;
+      lastAttemptReason?: string;
+      lastToolName?: string;
+      lastToolSummary?: string;
+      promptPreview?: string;
+      lastProgressAt?: number;
+      tokens?: number;
+      toolCalls?: number;
+      durationMs?: number;
+      resultPreview?: string;
+      error?: string;
+      blocked?: boolean;
+      cached?: boolean;
+    }
+  | { type: "workflow_log"; message?: string }
+  | { type: string; [key: string]: Json | undefined };
+
 export interface SystemTaskLine {
   type: "system";
   subtype: "task_started" | "task_progress" | "task_updated" | "task_notification";
@@ -131,14 +165,26 @@ export interface SystemTaskLine {
   tool_use_id?: string;
   description?: string;
   subagent_type?: string;
+  /** local_bash | local_agent | local_workflow. */
   task_type?: string;
+  workflow_name?: string;
+  workflow_progress?: WorkflowProgressItem[];
   prompt?: string;
   status?: string;
   summary?: string;
   output_file?: string;
   last_tool_name?: string;
   usage?: TaskUsage;
-  patch?: { status?: string; end_time?: number; [key: string]: Json | undefined };
+  skip_transcript?: boolean;
+  patch?: {
+    status?: string;
+    end_time?: number;
+    description?: string;
+    error?: string;
+    is_backgrounded?: boolean;
+    total_paused_ms?: number;
+    [key: string]: Json | undefined;
+  };
   uuid?: string;
 }
 
@@ -147,9 +193,12 @@ export interface SystemBackgroundTasksLine {
   subtype: "background_tasks_changed";
   tasks?: Array<{
     task_id?: string;
+    task_type?: string;
     description?: string;
     status?: string;
     subagent_type?: string;
+    command?: string;
+    agent_type?: string;
     usage?: TaskUsage;
   }>;
   uuid?: string;
@@ -497,6 +546,30 @@ export interface RewindResult {
   filesRestored: boolean;
   /** Short cause, present only when a requested restore failed. */
   reason?: string;
+}
+
+/**
+ * A subagent's own transcript, read off disk
+ * (`<session>/subagents/agent-<taskId>.jsonl`, or
+ * `<session>/subagents/workflows/<runId>/agent-<agentId>.jsonl`) and mapped into
+ * the SAME protocol shapes the live stream produces, so the drill-in replays
+ * through the ordinary reducer instead of a second renderer.
+ *
+ * `missing: true` is the calm answer for a file that does not exist yet — an
+ * agent that has only just been spawned has no file, and that is not an error.
+ */
+export interface SubagentTranscript {
+  events: ProtocolLine[];
+  truncated: boolean;
+  missing?: boolean;
+  meta?: { agentType?: string; description?: string; spawnDepth?: number };
+}
+
+/** Tail of a background shell's output file. */
+export interface TaskOutput {
+  text: string;
+  truncated: boolean;
+  missing: boolean;
 }
 
 export interface ContextUsageCategory {

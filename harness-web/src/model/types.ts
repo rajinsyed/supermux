@@ -43,8 +43,21 @@ export interface ThinkingBlock {
 
 export type ToolStatus = "pending" | "running" | "success" | "error" | "denied" | "aborted";
 
+/** `AgentOutput.toolStats` — what the agent actually did, once it is done. */
+export interface SubagentToolStats {
+  readCount?: number;
+  searchCount?: number;
+  bashCount?: number;
+  editFileCount?: number;
+  linesAdded?: number;
+  linesRemoved?: number;
+  otherToolCount?: number;
+}
+
 export interface SubagentInfo {
   taskId?: string;
+  /** `local_agent` | `local_bash` | `local_workflow`, straight off the wire. */
+  taskType?: string;
   subagentType?: string;
   description?: string;
   status?: string;
@@ -55,7 +68,104 @@ export interface SubagentInfo {
   totalTokens?: number;
   toolUses?: number;
   durationMs?: number;
+  workflowName?: string;
+  /** `wf_…`, from the launching tool_use_result — the drill-in key. */
+  workflowRunId?: string;
+  /** `resolvedModel` from AgentOutput, for the model chip. */
+  model?: string;
+  /** AgentOutput.agentId — a stable id even before the task frames land. */
+  agentId?: string;
+  /** AgentOutput.toolStats, for the completed "read 12 · edited 3 · +40 −7" row. */
+  toolStats?: SubagentToolStats;
+  /** BashOutput.backgroundedByUser — the ctrl+B path, not run_in_background. */
+  backgroundedByUser?: boolean;
+  /** BashOutput.timedOutAfterMs — the CLI auto-backgrounded on timeout. */
+  timedOutAfterMs?: number;
+  /**
+   * The task is in (or has been in) the CLI's background set. A foreground Bash
+   * also gets a task_id, so this — not the presence of a task — is what makes a
+   * card a background card.
+   */
   background?: boolean;
+  /**
+   * Bumped on every task frame for this id, so a drill-in that is open while the
+   * agent still runs has something to re-fetch on.
+   */
+  progressTick?: number;
+}
+
+export type WorkflowAgentState =
+  | "queued"
+  | "running"
+  | "done"
+  | "error"
+  | "blocked"
+  | "cached";
+
+export interface WorkflowPhase {
+  index: number;
+  title: string;
+  kind?: string;
+}
+
+export interface WorkflowAgent {
+  index: number;
+  label: string;
+  phaseIndex?: number;
+  phaseTitle?: string;
+  agentId?: string;
+  agentType?: string;
+  isolation?: string;
+  model?: string;
+  fallbackModel?: string;
+  /**
+   * The display state. The wire only says start | done | error; queued is a
+   * `start` that has no `startedAt` yet, and blocked/cached are flags the CLI
+   * sets alongside it. Collapsing them here keeps one chip per row rather than
+   * making every renderer re-derive the same precedence.
+   */
+  state: WorkflowAgentState;
+  wireState?: string;
+  queuedAt?: number;
+  startedAt?: number;
+  lastProgressAt?: number;
+  attempt?: number;
+  lastAttemptReason?: string;
+  lastToolName?: string;
+  lastToolSummary?: string;
+  promptPreview?: string;
+  tokens?: number;
+  toolCalls?: number;
+  durationMs?: number;
+  resultPreview?: string;
+  error?: string;
+  blocked?: boolean;
+  cached?: boolean;
+}
+
+export interface WorkflowTotals {
+  agents: number;
+  done: number;
+  running: number;
+  failed: number;
+  tokens: number;
+  toolCalls: number;
+}
+
+/**
+ * A `workflow_progress` array folded into something renderable. The wire sends a
+ * cumulative list of items keyed by `(type, index)` which are REPLACED in place
+ * as agents advance, so each list keeps its arrival order and an upsert can
+ * never reorder a phase or an agent under the reader.
+ */
+export interface WorkflowProgress {
+  name?: string;
+  runId?: string;
+  status?: string;
+  phases: WorkflowPhase[];
+  agents: WorkflowAgent[];
+  logs: string[];
+  totals: WorkflowTotals;
 }
 
 export interface ToolBlock {
@@ -77,6 +187,8 @@ export interface ToolBlock {
   endedAtMs?: number;
   children: Block[];
   subagent?: SubagentInfo;
+  /** Present only on a Workflow tool block that has reported progress. */
+  workflow?: WorkflowProgress;
   aborted?: boolean;
 }
 
@@ -142,6 +254,14 @@ export interface Turn {
   result?: TurnResult;
   errorText?: string;
   folded: boolean;
+  /**
+   * The `result` wanted to fold this turn and could not: it still owned a
+   * background task that was running. The fold is honoured when that task
+   * settles, and dropped the moment the user folds or unfolds by hand — a turn
+   * that collapses under the reader while they are reading it is worse than one
+   * that stays open.
+   */
+  foldWhenTasksSettle?: boolean;
   revision: number;
 }
 
@@ -206,18 +326,67 @@ export interface Banner {
   severity: "info" | "warning" | "error";
   title: string;
   detail?: string;
+  /**
+   * A catalog key for the title, when the REDUCER is the thing that knows what
+   * happened. `title` then carries the subject the key interpolates — a task
+   * description, a workflow name. Most banners come off the wire already
+   * phrased, and those set `title` alone.
+   */
+  titleKey?: string;
   createdAtMs: number;
   retry?: { attempt: number; maxRetries?: number; retryDelayMs?: number };
 }
 
+/**
+ * A row of the tasks strip. Membership comes from `background_tasks_changed`
+ * ONLY (REPLACE semantics) — a foreground Bash gets a task_id too, so task
+ * frames may never add a row by themselves. The detail is read from
+ * `tasksById`, which is why the strip keeps working when the launching turn is
+ * folded, scrolled away, or already settled by its `result`.
+ */
 export interface BackgroundTask {
   taskId: string;
+  taskType?: string;
   description?: string;
   subagentType?: string;
   status?: string;
   totalTokens?: number;
   toolUses?: number;
   durationMs?: number;
+}
+
+export type TaskType = "local_bash" | "local_agent" | "local_workflow" | string;
+
+/**
+ * Everything the pane knows about one task_id, accumulated across
+ * task_started / task_progress / task_updated / task_notification. Kept beside
+ * the transcript rather than only on the launching ToolBlock because the strip,
+ * the drill-in, and the output tail all outlive the turn that started the task.
+ */
+export interface TaskRecord {
+  taskId: string;
+  taskType?: TaskType;
+  toolUseId?: string;
+  description?: string;
+  /** pending | running | completed | failed | killed | paused | stopped. */
+  status?: string;
+  workflowName?: string;
+  workflowRunId?: string;
+  subagentType?: string;
+  activity?: string;
+  lastToolName?: string;
+  summary?: string;
+  error?: string;
+  outputFile?: string;
+  totalTokens?: number;
+  toolUses?: number;
+  durationMs?: number;
+  isBackgrounded?: boolean;
+  startedAtMs: number;
+  endedAtMs?: number;
+  /** Incremented on every frame for this task; a drill-in re-fetches on it. */
+  progressTick: number;
+  workflow?: WorkflowProgress;
 }
 
 export interface TranscriptModel {
@@ -239,6 +408,12 @@ export interface TranscriptModel {
   activity: ActivityState;
   banners: Banner[];
   backgroundTasks: BackgroundTask[];
+  /**
+   * Every task the process has told us about, keyed by task_id. Cleared on
+   * `runStarted`: the SDK scopes task ids per PROCESS, so ids from a dead run
+   * would otherwise enrich rows belonging to a new one.
+   */
+  tasksById: Record<string, TaskRecord>;
   runPhase: RunPhase;
   runId?: string;
   exitError?: string;

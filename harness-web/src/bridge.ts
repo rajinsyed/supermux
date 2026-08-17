@@ -10,7 +10,9 @@ import type {
   ProtocolLine,
   RewindPreview,
   RewindResult,
-  SessionSummary
+  SessionSummary,
+  SubagentTranscript,
+  TaskOutput
 } from "./protocol/types";
 
 export interface ImagePayload {
@@ -90,6 +92,28 @@ export interface HarnessBridge {
     restoreFiles: boolean;
     resumeAtUuid?: string;
   }): Promise<RewindResult>;
+  /** `control_request {subtype: "stop_task", task_id}` — kills a background task. */
+  stopTask(params: { taskId: string }): Promise<void>;
+  /**
+   * `control_request {subtype: "background_tasks", tool_use_id?}` — the CLI's
+   * ctrl+B. Omitting `toolUseId` backgrounds every foreground task at once.
+   */
+  backgroundTask(params: { toolUseId?: string }): Promise<{ backgrounded: boolean }>;
+  /**
+   * A subagent's full transcript from disk. `taskId` addresses a `local_agent`;
+   * `workflowRunId` + `agentId` address one agent of a workflow run.
+   */
+  loadSubagentTranscript(params: {
+    taskId?: string;
+    workflowRunId?: string;
+    agentId?: string;
+  }): Promise<SubagentTranscript>;
+  /**
+   * Tail of a background shell's output file (~last 64KB). The payload carries
+   * ONLY the task id: the native side resolves the path from the frames it saw,
+   * never from anything the web layer hands it.
+   */
+  readTaskOutput(params: { taskId: string }): Promise<TaskOutput>;
 }
 
 export interface BridgeError {
@@ -173,7 +197,11 @@ const nativeBridge: HarnessBridge = {
   getBinarySetting: () => callNative("harness.getBinarySetting"),
   setBinaryPath: (params) => callNative("harness.setBinaryPath", params),
   rewindPreview: (params) => callNative("harness.rewindPreview", params),
-  rewind: (params) => callNative("harness.rewind", params)
+  rewind: (params) => callNative("harness.rewind", params),
+  stopTask: (params) => callNative("harness.stopTask", params),
+  backgroundTask: (params) => callNative("harness.backgroundTask", params),
+  loadSubagentTranscript: (params) => callNative("harness.loadSubagentTranscript", params),
+  readTaskOutput: (params) => callNative("harness.readTaskOutput", params)
 };
 
 export function getBridge(): HarnessBridge {
