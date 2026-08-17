@@ -63,7 +63,13 @@ export function useHarness(store: HarnessStore): HarnessController {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [draft, setDraftState] = useState("");
   const [restarting, setRestarting] = useState(false);
-  const started = useRef(false);
+  /**
+   * A spawn is in flight. NOT "this pane has ever started": that question is
+   * answered by `model.runPhase`, which the native side keeps honest through
+   * runStarted/runExited. This ref exists only so two concurrent sends cannot
+   * each spawn a process before either one's phase change lands.
+   */
+  const starting = useRef(false);
   const bridge = useMemo(() => getBridge(), []);
 
   useEffect(() => {
@@ -168,22 +174,65 @@ export function useHarness(store: HarnessStore): HarnessController {
 
   const ensureStarted = useCallback(
     async (resumeSessionId?: string, fork?: boolean) => {
-      if (started.current && !resumeSessionId) return;
-      started.current = true;
+      // Whether a process exists is the RUN PHASE's answer, not a latch private
+      // to this hook. That latch was wrong in BOTH directions:
+      //  - it never cleared on exit, so a pane whose process had died kept
+      //    accepting messages and forwarding them to nothing at all; and
+      //  - it started false on a pane the native side had already started (a
+      //    restored pane, or any run this hook did not itself initiate), so the
+      //    first send called `start` against a live process and was refused with
+      //    "A Claude session is already running in this pane" — the very error
+      //    this round exists to remove, arriving from the other direction.
+      // So the phase decides whether a process is there, and `starting` is kept
+      // only as the in-flight guard against a duplicate spawn.
+      if (resumeSessionId === undefined) {
+        const phase = store.getSnapshot().runPhase;
+        if (phase === "running" || phase === "starting") return;
+        if (starting.current) return;
+      }
+      starting.current = true;
       await bridge
         .start(startOptions({ resumeSessionId: resumeSessionId ?? currentSessionId(), forkSession: fork }))
+        .then(({ runId }) => {
+          // The native side emits its own runStarted; applying it here is
+          // idempotent and moves the pane out of `exited` immediately, so the
+          // sends already queued behind this one on the chain do not each read
+          // a stale exited phase and spawn a process of their own.
+          store.receive([{ kind: "runStarted", runId }]);
+          store.flushNow();
+        })
         .catch((error: unknown) => {
-          started.current = false;
           // A silent failure here leaves the composer accepting messages that go
           // nowhere; the exited state carries a Restart button.
           store.dispatch({
             kind: "startFailed",
             error: error instanceof Error ? error.message : undefined
           });
+        })
+        // Whether it started or failed, this attempt is over: the guard exists
+        // only to stop two spawns racing, so leaving it set on the success path
+        // would freeze the pane's idea of "a start is in flight" forever.
+        .finally(() => {
+          starting.current = false;
         });
     },
     [bridge, currentSessionId, startOptions, store]
   );
+
+  /**
+   * The tail of the send chain. Ordering the on-screen queue is only half the
+   * problem: what the CLI answers is the order `bridge.send` is CALLED in, and
+   * that used to be a race. The FIRST send of a pane awaits the process spawn,
+   * while every later one has nothing to await — so a message typed second
+   * reached the CLI first and was answered first, under a transcript that still
+   * listed them the other way round. That is the "a later message jumped ahead
+   * of the queued chips" report, and no reducer change can fix it, because the
+   * reducer never sees the wire. Every send now appends to one promise, so the
+   * calls leave in the order they were typed no matter what any of them waits
+   * on. Each link swallows its own rejection: a single failed send must not
+   * break the chain and strand every message behind it.
+   */
+  const sendChain = useRef<Promise<void>>(Promise.resolve());
 
   const send = useCallback(
     (text: string, images: ImageAttachment[]) => {
@@ -191,9 +240,14 @@ export function useHarness(store: HarnessStore): HarnessController {
       store.dispatch({ kind: "localSend", uuid, text, images, atMs: Date.now() });
       setDraftState("");
       bridge.saveDraft({ text: "" }).catch(() => undefined);
-      void ensureStarted().then(() =>
-        bridge.send({ text, images: images.length > 0 ? images : undefined, uuid }).catch(() => undefined)
-      );
+      sendChain.current = sendChain.current
+        .then(() => ensureStarted())
+        .then(() =>
+          bridge
+            .send({ text, images: images.length > 0 ? images : undefined, uuid })
+            .then(() => undefined)
+        )
+        .catch(() => undefined);
     },
     [bridge, ensureStarted, store]
   );
@@ -225,7 +279,9 @@ export function useHarness(store: HarnessStore): HarnessController {
   const runRestart = useCallback(
     async (params: StartParams): Promise<void> => {
       setRestarting(true);
-      started.current = true;
+      // A restart IS a start in flight: without this, a send racing the restart
+      // would see a phase that is not yet `running` and spawn a second process.
+      starting.current = true;
       try {
         const { runId } = await bridge.restart(startOptions(params));
         // The native side emits its own runStarted; replaying it here is
@@ -234,13 +290,13 @@ export function useHarness(store: HarnessStore): HarnessController {
         store.receive([{ kind: "runStarted", runId }]);
         store.flushNow();
       } catch (error: unknown) {
-        started.current = false;
         store.dispatch({
           kind: "startFailed",
           error: error instanceof Error ? error.message : undefined
         });
         throw error;
       } finally {
+        starting.current = false;
         setRestarting(false);
       }
     },
@@ -288,7 +344,9 @@ export function useHarness(store: HarnessStore): HarnessController {
   const rewind = useCallback(
     async (request: RewindRequest, restoreFiles: boolean) => {
       setRestarting(true);
-      started.current = true;
+      // A rewind restarts the process, so it is a start in flight for the same
+      // reason a restart is.
+      starting.current = true;
       try {
         await bridge.rewind({
           userMessageUuid: request.uuid,
@@ -302,6 +360,7 @@ export function useHarness(store: HarnessStore): HarnessController {
         setDraftState(request.text);
         bridge.saveDraft({ text: request.text }).catch(() => undefined);
       } finally {
+        starting.current = false;
         setRestarting(false);
       }
     },
@@ -311,12 +370,12 @@ export function useHarness(store: HarnessStore): HarnessController {
   const setModel = useCallback(
     (next: string, effort?: EffortLevel) => {
       store.dispatch({ kind: "setModel", model: next, effort });
-      if (!started.current) {
-        // Nothing to tell yet — it rides along on the first start instead.
-        pendingModel.current = { model: next, effort };
-        return;
-      }
+      // Held either way, because it is also what a later restart re-sends.
       pendingModel.current = { model: next, effort };
+      // `set_model` needs a live process to receive it. Pushing it at a pane
+      // that has none is not merely useless — the rejection surfaces as a
+      // failure for a choice the menu already shows as taken.
+      if (store.getSnapshot().runPhase !== "running") return;
       bridge.setModel({ model: next, effort }).catch(() => undefined);
     },
     [bridge, store]
