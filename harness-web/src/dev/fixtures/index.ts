@@ -12,6 +12,7 @@ import { todosFixture } from "./todos";
 import { thinkingFixture } from "./thinking";
 import { longformFixture } from "./longform";
 import { resumeFixture } from "./resume";
+import { rewindHistory } from "./rewind";
 
 export function parseJsonl(text: string): ProtocolLine[] {
   const lines: ProtocolLine[] = [];
@@ -44,5 +45,6 @@ export const fixtures: Record<string, ProtocolLine[]> = {
   todos: todosFixture,
   thinking: thinkingFixture,
   longform: longformFixture,
-  resume: resumeFixture
+  resume: resumeFixture,
+  rewind: rewindHistory
 };

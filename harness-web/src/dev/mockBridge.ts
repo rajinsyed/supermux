@@ -1,8 +1,9 @@
 import type { HarnessBridge } from "../bridge";
+import { HarnessBridgeError } from "../bridge";
 import { copyDefaults } from "../copyKeys";
 import type { HarnessStore } from "../model/store";
-import type { NativeEvent, ProtocolLine } from "../protocol/types";
-import { MOCK_FILES, mockContextUsage, mockSessions, themeFor } from "./mockData";
+import type { BinarySetting, ModelDescriptor, NativeEvent, ProtocolLine } from "../protocol/types";
+import { MOCK_FILES, mockContextUsage, mockModels, mockSessions, themeFor } from "./mockData";
 import { delayFor, scenarioFor, type Scenario, type Speed } from "./scenarios";
 
 interface Player {
@@ -47,20 +48,32 @@ function createPlayer(store: HarnessStore, speed: Speed, freezeAt?: number): Pla
 }
 
 /**
+ * A monotonic counter, NOT `Date.now()`. The reducer dedups on frame uuid, and
+ * several queued replies land inside the same millisecond — timestamp uuids
+ * collided, the duplicates were dropped, and the dev harness showed a queue
+ * that never drained. That is a defect in the mock, and it masked the very
+ * drain behaviour the queue scenario exists to demonstrate.
+ */
+let replySeq = 0;
+
+/**
  * One canned turn, shaped like the REAL CLI: a `result` and no trailing
  * `session_state_changed`, which is the frame sequence the live probes actually
  * produce. The mock used to append its own `state: idle` frame, which is exactly
  * what hid the stuck-busy bug from the dev harness.
  */
+
 function replyLines(store: HarnessStore, text: string): void {
-  const messageId = `msg_dev_${Date.now()}`;
+  replySeq += 1;
+  const seq = replySeq;
+  const messageId = `msg_dev_${seq}`;
   store.receive([
     {
       kind: "protocol",
       line: {
         type: "stream_event",
         event: { type: "message_start", message: { id: messageId, model: "claude-sonnet-5" } },
-        uuid: `dev-ms-${Date.now()}`
+        uuid: `dev-ms-${seq}`
       } as ProtocolLine
     },
     {
@@ -77,7 +90,7 @@ function replyLines(store: HarnessStore, text: string): void {
             }
           ]
         },
-        uuid: `dev-a-${Date.now()}`
+        uuid: `dev-a-${seq}`
       } as ProtocolLine
     },
     {
@@ -91,15 +104,21 @@ function replyLines(store: HarnessStore, text: string): void {
         num_turns: 1,
         total_cost_usd: 0.0031,
         usage: { input_tokens: 12, output_tokens: 42 },
-        uuid: `dev-r-${Date.now()}`
+        uuid: `dev-r-${seq}`
       } as ProtocolLine
     }
   ]);
 }
 
+function bridgeError(code: string, userMessage: string): HarnessBridgeError {
+  return new HarnessBridgeError({ code, userMessage });
+}
+
 export function installMockBridge(store: HarnessStore): Scenario {
   const params = new URLSearchParams(window.location.search);
-  const scenario = scenarioFor(params.get("scenario") ?? "rich");
+  const scenario = scenarioFor(params.get("scenario") ?? "rich", {
+    degraded: params.get("degraded") === "1"
+  });
   const speed = (params.get("speed") as Speed) ?? "instant";
   const theme = themeFor(params.get("theme"));
   const sessions = scenario.hasSessions ? mockSessions() : [];
@@ -107,7 +126,41 @@ export function installMockBridge(store: HarnessStore): Scenario {
 
   let stage = 0;
   let tokenTotal = 24800;
+  let runCounter = 0;
+  let running = false;
   const replyTo = (text: string) => replyLines(store, text);
+
+  /**
+   * The mock's model of the Swift controller: exactly one live process, and a
+   * plain `start` against a live one FAILS. That refusal is the whole of issues
+   * 1 and 3 — a mock that quietly accepted it could not have shown them.
+   */
+  const nextRunId = (): string => {
+    runCounter += 1;
+    return `run-dev-${runCounter}`;
+  };
+
+  const startRun = (resumeSessionId?: string): string => {
+    const runId = nextRunId();
+    running = true;
+    store.receive([{ kind: "runStarted", runId, resumedSessionId: resumeSessionId }]);
+    return runId;
+  };
+
+  const stopRun = (): void => {
+    if (!running) return;
+    running = false;
+    store.receive([{ kind: "runExited", runId: `run-dev-${runCounter}`, status: 0 }]);
+  };
+
+  let binary: BinarySetting = scenario.binary ?? {
+    resolvedPath: "/opt/homebrew/bin/claude",
+    version: "2.1.233"
+  };
+
+  const cachedModels: ModelDescriptor[] | undefined = scenario.cachedModels
+    ? mockModels()
+    : undefined;
 
   const bridge: HarnessBridge = {
     async context() {
@@ -118,7 +171,7 @@ export function installMockBridge(store: HarnessStore): Scenario {
         theme,
         copy: { ...copyDefaults },
         cliStatus: scenario.cliAvailable
-          ? { available: true, version: "2.1.233", path: "/opt/homebrew/bin/claude" }
+          ? { available: true, version: binary.version, path: binary.resolvedPath }
           : {
               available: false,
               error:
@@ -126,7 +179,8 @@ export function installMockBridge(store: HarnessStore): Scenario {
             },
         restore: scenario.restoreSessionId
           ? { sessionId: scenario.restoreSessionId, model: "sonnet", permissionMode: "default" }
-          : undefined
+          : undefined,
+        cachedModels
       };
     },
     async listSessions() {
@@ -135,8 +189,31 @@ export function installMockBridge(store: HarnessStore): Scenario {
     async loadSessionHistory() {
       return { events: scenario.lines, truncated: false };
     },
-    async start() {
-      return { runId: "run-dev-1" };
+    async start({ resumeSessionId } = {}) {
+      if (running) {
+        throw bridgeError(
+          "session_already_running",
+          "A Claude session is already running in this pane. Stop it or open a new Claude pane."
+        );
+      }
+      return { runId: startRun(resumeSessionId) };
+    },
+    async restart({ resumeSessionId } = {}) {
+      // Tear the old one down FIRST and let it fully exit, which is what makes
+      // this legal where `start` is not.
+      stopRun();
+      await new Promise((resolve) => window.setTimeout(resolve, 220));
+      const runId = startRun(resumeSessionId);
+      if (resumeSessionId) player.play(scenario.lines);
+      return { runId };
+    },
+    async openSessionInNewPane({ sessionId }) {
+      // No pane factory in the browser harness; say what the native side would
+      // have done so the affordance is still verifiable here.
+      window.setTimeout(
+        () => window.alert(`Would open a new Claude pane resuming ${sessionId}`),
+        0
+      );
     },
     async send({ text }) {
       window.setTimeout(() => replyTo(text), 320);
@@ -170,7 +247,9 @@ export function installMockBridge(store: HarnessStore): Scenario {
       }
     },
     async cancelQueued() {},
-    async stop() {},
+    async stop() {
+      stopRun();
+    },
     async setModel() {},
     async setPermissionMode() {},
     async respondPermission() {
@@ -200,13 +279,69 @@ export function installMockBridge(store: HarnessStore): Scenario {
       return { saved: false };
     },
     async notify() {},
-    async saveDraft() {}
+    async saveDraft() {},
+    async getBinarySetting() {
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
+      return binary;
+    },
+    async setBinaryPath({ path }) {
+      await new Promise((resolve) => window.setTimeout(resolve, 160));
+      const trimmed = path?.trim();
+      if (!trimmed) {
+        binary = { resolvedPath: "/opt/homebrew/bin/claude", version: "2.1.233" };
+        return binary;
+      }
+      // Mirrors the native validation the FIXES contract specifies: exists,
+      // executable, not a directory. The scripted rejections make each of those
+      // messages reachable in the dev harness.
+      if (!trimmed.startsWith("/")) {
+        throw bridgeError("binary_invalid", "Enter an absolute path to the Claude executable.");
+      }
+      if (trimmed.endsWith("/")) {
+        throw bridgeError("binary_invalid", `${trimmed} is a directory, not an executable.`);
+      }
+      if (trimmed.includes("missing")) {
+        throw bridgeError("binary_invalid", `No file at ${trimmed}.`);
+      }
+      if (trimmed.includes("noexec")) {
+        throw bridgeError("binary_invalid", `${trimmed} is not executable.`);
+      }
+      binary = { resolvedPath: trimmed, overridePath: trimmed, version: "2.1.233-ccx" };
+      return binary;
+    },
+    async rewindPreview() {
+      await new Promise((resolve) => window.setTimeout(resolve, 260));
+      // A session recorded before SDK file checkpointing answers exactly this,
+      // which is the degraded conversation-only path.
+      if (scenario.rewindUnavailable) {
+        return { canRewind: false, filesChanged: [], insertions: 0, deletions: 0 };
+      }
+      return {
+        canRewind: true,
+        filesChanged: [
+          "/Users/dev/projects/supermux/Sources/SessionIndexView.swift",
+          "/Users/dev/projects/supermux/Sources/Workspace.swift"
+        ],
+        insertions: 12,
+        deletions: 4
+      };
+    },
+    async rewind({ resumeAtUuid }) {
+      stopRun();
+      await new Promise((resolve) => window.setTimeout(resolve, 260));
+      return { runId: startRun(resumeAtUuid) };
+    }
   };
 
   window.supermuxHarnessMock = bridge;
 
   window.setTimeout(() => {
-    if (scenario.lines.length > 0) player.play(scenario.lines);
+    if (scenario.lines.length > 0) {
+      player.play(scenario.lines);
+      // Playing history is not the same as having a process; scenarios that
+      // want a live one say so, and that is what makes `start` refuse.
+      if (scenario.processRunning) startRun(scenario.restoreSessionId);
+    }
     if (scenario.queuedDrafts) {
       window.setTimeout(() => {
         scenario.queuedDrafts!.forEach((text, i) => {
@@ -221,6 +356,16 @@ export function installMockBridge(store: HarnessStore): Scenario {
     }
     store.dispatch({ kind: "contextUsage", usage: mockContextUsage(tokenTotal) });
   }, 0);
+
+  // A pane whose binary has no cached catalog gets one pushed a beat later —
+  // the "Loading models…" row is what fills that gap, and it has to be visible
+  // in the dev harness or nobody can check it.
+  if (scenario.probeCatalogAfterMs !== undefined) {
+    window.setTimeout(
+      () => store.receive([{ kind: "modelCatalog", models: mockModels() }]),
+      scenario.probeCatalogAfterMs
+    );
+  }
 
   return scenario;
 }

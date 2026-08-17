@@ -1,10 +1,11 @@
-import type { ProtocolLine } from "../protocol/types";
+import type { BinarySetting, ProtocolLine } from "../protocol/types";
 import { fixtures, richSession } from "./fixtures";
 import { permissionCompletion, permissionResolution } from "./fixtures/permission";
 import { questionResolution } from "./fixtures/question";
 import { planApproval } from "./fixtures/plan";
 import { queuedDrafts } from "./fixtures/queue";
 import { resumeHistory } from "./fixtures/resume";
+import { rewindHistory } from "./fixtures/rewind";
 
 export type ScenarioName =
   | "empty"
@@ -23,7 +24,10 @@ export type ScenarioName =
   | "queue"
   | "longform"
   | "sessions"
-  | "resume";
+  | "resume"
+  | "rewind"
+  | "binary"
+  | "firstopen";
 
 export const SCENARIO_NAMES: ScenarioName[] = [
   "empty",
@@ -42,7 +46,10 @@ export const SCENARIO_NAMES: ScenarioName[] = [
   "queue",
   "longform",
   "sessions",
-  "resume"
+  "resume",
+  "rewind",
+  "binary",
+  "firstopen"
 ];
 
 export interface Scenario {
@@ -58,6 +65,19 @@ export interface Scenario {
   freezeAt?: number;
   queuedDrafts?: string[];
   restoreSessionId?: string;
+  /**
+   * A live process exists from the start, so `start` refuses and only `restart`
+   * can swap sessions — the exact state issues 1 and 3 were reported in.
+   */
+  processRunning?: boolean;
+  /** Serve a persisted catalog from `harness.context`, as a warm pane would. */
+  cachedModels?: boolean;
+  /** Push a probed catalog this many ms in, for the cold "Loading models…" path. */
+  probeCatalogAfterMs?: number;
+  /** The dry run answers canRewind:false — conversation-only degraded mode. */
+  rewindUnavailable?: boolean;
+  /** Seed the binary setting, e.g. with an override already stored. */
+  binary?: BinarySetting;
 }
 
 function streamingCut(): number {
@@ -76,13 +96,59 @@ function streamingCut(): number {
   return Math.min(40, richSession.length);
 }
 
-export function scenarioFor(name: string): Scenario {
+export interface ScenarioOptions {
+  /**
+   * `?degraded=1` on the rewind scenario, so the conversation-only fallback is
+   * reachable without a second scenario that differs in one boolean.
+   */
+  degraded?: boolean;
+}
+
+export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenario {
   const key = (SCENARIO_NAMES as string[]).includes(name) ? (name as ScenarioName) : "rich";
   switch (key) {
     case "empty":
-      return { name: key, lines: [], cliAvailable: true, hasSessions: false };
+      // A warm binary: the catalog was persisted by an earlier run, so the model
+      // menu is populated before this pane has ever started a process.
+      return { name: key, lines: [], cliAvailable: true, hasSessions: false, cachedModels: true };
     case "nocli":
       return { name: key, lines: [], cliAvailable: false, hasSessions: false };
+    case "firstopen":
+      // The cold half of issue 5: no cache for this binary, so the menu shows
+      // the loading row until the background probe answers.
+      return {
+        name: key,
+        lines: [],
+        cliAvailable: true,
+        hasSessions: false,
+        probeCatalogAfterMs: 2400
+      };
+    case "binary":
+      return {
+        name: key,
+        lines: [],
+        cliAvailable: true,
+        hasSessions: false,
+        cachedModels: true,
+        binary: {
+          resolvedPath: "/Users/dev/.local/bin/ccx",
+          overridePath: "/Users/dev/.local/bin/ccx",
+          version: "2.1.233-ccx"
+        }
+      };
+    case "rewind":
+      // Multi-turn history with stable user uuids, so every bubble has a rewind
+      // target and the truncation is visible.
+      return {
+        name: key,
+        lines: rewindHistory,
+        cliAvailable: true,
+        hasSessions: true,
+        cachedModels: true,
+        processRunning: true,
+        restoreSessionId: "rewind-session-7712",
+        rewindUnavailable: options.degraded === true
+      };
     case "streaming":
       return {
         name: key,
@@ -122,16 +188,30 @@ export function scenarioFor(name: string): Scenario {
         lines: fixtures.queue,
         cliAvailable: true,
         hasSessions: true,
+        cachedModels: true,
+        processRunning: true,
         queuedDrafts
       };
     case "sessions":
-      return { name: key, lines: [], cliAvailable: true, hasSessions: true };
+      // A pane with a LIVE session, which is what makes picking another session
+      // from the browser exercise the replace-while-running path rather than a
+      // cold first start.
+      return {
+        name: key,
+        lines: fixtures.resume,
+        cliAvailable: true,
+        hasSessions: true,
+        cachedModels: true,
+        processRunning: true,
+        restoreSessionId: "resumed-session-4821"
+      };
     case "resume":
       return {
         name: key,
         lines: resumeHistory,
         cliAvailable: true,
         hasSessions: true,
+        cachedModels: true,
         restoreSessionId: "resumed-session-4821"
       };
     default:

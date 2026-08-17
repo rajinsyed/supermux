@@ -1,4 +1,9 @@
-import type { ContextUsage, HarnessTheme, SessionSummary } from "../protocol/types";
+import type {
+  ContextUsage,
+  HarnessTheme,
+  ModelDescriptor,
+  SessionSummary
+} from "../protocol/types";
 import { defaultDarkTheme, defaultLightTheme } from "../ui/theme";
 
 export function themeFor(name: string | null): HarnessTheme {
@@ -50,6 +55,43 @@ export function mockSessions(now = Date.now()): SessionSummary[] {
       firstPrompt: "Audit Localizable.xcstrings for missing ja translations",
       gitBranch: "main",
       messageCount: 12
+    }
+  ];
+}
+
+/**
+ * The catalog a persisted `initialize` response would carry — keyed by SELECTOR,
+ * with `resolvedModel` holding the id `system/init` reports, exactly as the live
+ * CLI answers. Anything else and the cached rows fail to resolve the active
+ * model the same way the live ones do.
+ */
+export function mockModels(): ModelDescriptor[] {
+  return [
+    {
+      value: "opus",
+      resolvedModel: "claude-opus-5",
+      displayName: "Opus 5",
+      description: "Most capable. Best for hard reasoning and large refactors.",
+      supportsEffort: true,
+      supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+      defaultEffortLevel: "high"
+    },
+    {
+      value: "sonnet",
+      resolvedModel: "claude-sonnet-5",
+      displayName: "Sonnet 5",
+      description: "Balanced speed and capability. Recommended default.",
+      supportsEffort: true,
+      supportedEffortLevels: ["low", "medium", "high"],
+      defaultEffortLevel: "medium",
+      supportsFastMode: true
+    },
+    {
+      value: "haiku",
+      resolvedModel: "claude-haiku-4-5-20251001",
+      displayName: "Haiku 4.5",
+      description: "Fastest and cheapest. Good for small edits.",
+      supportsFastMode: true
     }
   ];
 }
