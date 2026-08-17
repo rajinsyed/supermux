@@ -71,7 +71,6 @@ export const errorsFixture: ProtocolLine[] = [
     2,
     "The build fails because `PanelContentView` references a `.harness` case that the `PanelType` enum never gained. I'll add the case."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({
     subtype: "error_during_execution",
@@ -104,7 +103,6 @@ export const errorsFixture: ProtocolLine[] = [
     uuid: uid("asst-err"),
     timestamp: new Date().toISOString()
   } as ProtocolLine,
-  sessionState("idle"),
   resultLine({
     subtype: "error_during_execution",
     is_error: true,

@@ -108,7 +108,6 @@ export const planApproval: ProtocolLine[] = [
     3,
     "Approved — switching to acceptEdits and starting with the mount-point move in `TerminalPanelView.swift`."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({ result: "Plan approved; implementation started." })
 ];

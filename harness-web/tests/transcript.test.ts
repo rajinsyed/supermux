@@ -353,6 +353,128 @@ describe("resume fixture", () => {
   });
 });
 
+/**
+ * The real CLI never emits `system/session_state_changed`: `grep -c` returns 0 on
+ * the checked-in 202-line trace AND on all five live probe logs, which carry only
+ * init / status / thinking_tokens / permission_denied / can_use_tool. Treating
+ * that frame as the sole writer of `sessionState` latched the pane to "running"
+ * after the first turn — permanent "Claude is thinking…", a Stop button, a
+ * "will be queued" composer, and a queue that never drained. The `result` frame
+ * is the only end-of-turn signal that actually arrives, so it settles the flag.
+ */
+describe("idleness without a session_state_changed frame", () => {
+  const bareTurn: ProtocolLine[] = [
+    { type: "system", subtype: "session_state_changed", state: "running", uuid: "s1" } as ProtocolLine,
+    { type: "user", message: { role: "user", content: "audit the reducer" }, uuid: "u1" } as ProtocolLine,
+    {
+      type: "assistant",
+      message: { id: "m1", role: "assistant", content: [{ type: "text", text: "Done." }] },
+      uuid: "a1"
+    } as ProtocolLine,
+    {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "Done.",
+      duration_ms: 900,
+      uuid: "r1"
+    } as ProtocolLine
+  ];
+
+  test("the fixtures no longer hand-write the frame the CLI never sends", async () => {
+    const root = new URL("../src/dev/fixtures/", import.meta.url).pathname;
+    const files = Array.from(new Bun.Glob("*.ts").scanSync({ cwd: root, absolute: true }));
+    const source = (await Promise.all(files.map((path) => Bun.file(path).text()))).join("\n");
+    expect(source).not.toContain('sessionState("idle")');
+    // The real capture is the reference for what the CLI does emit.
+    const trace = await Bun.file(
+      new URL("../src/dev/fixtures/rich-session.jsonl", import.meta.url).pathname
+    ).text();
+    expect(trace).not.toContain("session_state_changed");
+  });
+
+  test("a bare result settles the session to idle", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of bareTurn) model = applyLine(model, index, line, 1000);
+    expect(model.turns[0].state).toBe("complete");
+    expect(model.activity.sessionState).toBe("idle");
+    expect(model.activity.status).toBeNull();
+  });
+
+  test("the next message sends immediately instead of queueing forever", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of bareTurn) model = applyLine(model, index, line, 1000);
+    model = applyLocalAction(
+      model,
+      index,
+      { kind: "localSend", uuid: "next-1", text: "are you there", atMs: 1100 },
+      1100
+    );
+    expect(model.queued.length).toBe(0);
+    expect(model.turns.length).toBe(2);
+    expect(model.turns[1].userText).toBe("are you there");
+  });
+
+  test("an interrupt result also releases the pane", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of fixtures.queue) model = applyLine(model, index, line, 1000);
+    expect(model.activity.sessionState).toBe("running");
+    model = applyLine(
+      model,
+      index,
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        result: "Interrupted by user",
+        terminal_reason: "aborted_streaming",
+        uuid: "r-int"
+      } as ProtocolLine,
+      1200
+    );
+    expect(model.turns[0].state).toBe("aborted");
+    expect(model.activity.sessionState).toBe("idle");
+  });
+
+  test("a mid-turn permission still holds the pane in requires_action", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of fixtures.permission) model = applyLine(model, index, line, 1000);
+    expect(model.pending.length).toBe(1);
+    model = applyLine(model, index, { type: "result", subtype: "success", uuid: "r-mid" } as ProtocolLine, 1100);
+    // The turn ended but the user still owes an answer; going idle here would
+    // send the next message into a process that is waiting on a decision.
+    expect(model.activity.sessionState).toBe("requires_action");
+  });
+
+  test("an explicit session_state_changed still wins for CLIs that send one", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of bareTurn) model = applyLine(model, index, line, 1000);
+    model = applyLine(
+      model,
+      index,
+      { type: "system", subtype: "session_state_changed", state: "running", uuid: "s2" } as ProtocolLine,
+      1100
+    );
+    expect(model.activity.sessionState).toBe("running");
+  });
+
+  test("every scenario ends idle once its last result lands", () => {
+    const stuck: string[] = [];
+    for (const [name, lines] of Object.entries(fixtures)) {
+      const model = replayLines(lines as ProtocolLine[]);
+      const settled = model.turns.length > 0 && model.turns.every((t) => t.state !== "streaming");
+      if (!settled || model.pending.length > 0) continue;
+      if (model.activity.sessionState !== "idle") stuck.push(`${name}=${model.activity.sessionState}`);
+    }
+    expect(stuck).toEqual([]);
+  });
+});
+
 describe("local actions", () => {
   test("a send while running becomes a queued chip and can be cancelled", () => {
     const index = createIndex();
@@ -421,6 +543,74 @@ describe("local actions", () => {
     const texts = walk(model).filter((b) => b.kind === "text");
     expect(texts.length).toBe(1);
     expect(texts[0].kind === "text" && texts[0].text).toBe("final answer");
+  });
+
+  test("an answered question stays in the transcript as a Q&A record", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of fixtures.question) model = applyLine(model, index, line, 1000);
+    const pending = model.pending[0];
+    expect(pending.kind).toBe("question");
+    const questions = pending.request.input.questions;
+
+    model = applyLocalAction(
+      model,
+      index,
+      {
+        kind: "permissionResolved",
+        requestId: pending.requestId,
+        behavior: "allow",
+        updatedInput: {
+          questions,
+          answers: {
+            "Which authentication provider should the dashboard use?": "Stack Auth",
+            "Which surfaces need to be gated behind login on day one?": "Billing, Team settings"
+          }
+        } as never
+      },
+      1100
+    );
+
+    // Before the fix the exchange vanished completely: the only trace was the
+    // model happening to restate the choice in prose.
+    const asked = tools(model).find((t) => t.name === "AskUserQuestion");
+    expect(asked).toBeDefined();
+    expect(asked!.status).toBe("success");
+    expect(asked!.toolUseId).toBe(pending.request.tool_use_id!);
+    const recorded = asked!.input.answers as Record<string, string>;
+    expect(recorded["Which authentication provider should the dashboard use?"]).toBe("Stack Auth");
+    expect(Array.isArray(asked!.input.questions)).toBe(true);
+  });
+
+  test("a dismissed question is recorded as denied, keeping the question text", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of fixtures.question) model = applyLine(model, index, line, 1000);
+    model = applyLocalAction(
+      model,
+      index,
+      { kind: "permissionResolved", requestId: model.pending[0].requestId, behavior: "deny" },
+      1100
+    );
+    const asked = tools(model).find((t) => t.name === "AskUserQuestion");
+    expect(asked?.status).toBe("denied");
+    expect(Array.isArray(asked?.input.questions)).toBe(true);
+  });
+
+  test("resolving an ordinary tool permission adds no duplicate card", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of fixtures.permission) model = applyLine(model, index, line, 1000);
+    const before = tools(model).length;
+    model = applyLocalAction(
+      model,
+      index,
+      { kind: "permissionResolved", requestId: model.pending[0].requestId, behavior: "allow" },
+      1100
+    );
+    // The Bash call already has its own streamed card; a second one would print
+    // the command twice.
+    expect(tools(model).length).toBe(before);
   });
 
   test("a run exit closes any open turn", () => {

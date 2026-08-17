@@ -28,7 +28,6 @@ export const compactFixture: ProtocolLine[] = [
     0,
     "We replaced the per-frame display link with Ghostty's own wakeup path, removed the manual `ghostty_surface_draw` loop, and moved the search overlay into the portal layer."
   ),
-  sessionState("idle"),
   resultLine({ result: "Summarized renderer changes.", num_turns: 1, total_cost_usd: 0.0611 }),
   userLine("/compact focus on the renderer decisions"),
   statusLine("compacting"),
@@ -61,7 +60,6 @@ export const compactFixture: ProtocolLine[] = [
     1,
     "Added `RendererWakeupTests` asserting no display link is installed. Remember it needs pbxproj wiring or it silently never runs."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({
     result: "Added RendererWakeupTests.",

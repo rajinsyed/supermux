@@ -46,6 +46,57 @@ function createPlayer(store: HarnessStore, speed: Speed, freezeAt?: number): Pla
   };
 }
 
+/**
+ * One canned turn, shaped like the REAL CLI: a `result` and no trailing
+ * `session_state_changed`, which is the frame sequence the live probes actually
+ * produce. The mock used to append its own `state: idle` frame, which is exactly
+ * what hid the stuck-busy bug from the dev harness.
+ */
+function replyLines(store: HarnessStore, text: string): void {
+  const messageId = `msg_dev_${Date.now()}`;
+  store.receive([
+    {
+      kind: "protocol",
+      line: {
+        type: "stream_event",
+        event: { type: "message_start", message: { id: messageId, model: "claude-sonnet-5" } },
+        uuid: `dev-ms-${Date.now()}`
+      } as ProtocolLine
+    },
+    {
+      kind: "protocol",
+      line: {
+        type: "assistant",
+        message: {
+          id: messageId,
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: `Mock reply — you sent: “${text.slice(0, 120)}”. Wire the native bridge for real answers.`
+            }
+          ]
+        },
+        uuid: `dev-a-${Date.now()}`
+      } as ProtocolLine
+    },
+    {
+      kind: "protocol",
+      line: {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "Mock reply delivered.",
+        duration_ms: 820,
+        num_turns: 1,
+        total_cost_usd: 0.0031,
+        usage: { input_tokens: 12, output_tokens: 42 },
+        uuid: `dev-r-${Date.now()}`
+      } as ProtocolLine
+    }
+  ]);
+}
+
 export function installMockBridge(store: HarnessStore): Scenario {
   const params = new URLSearchParams(window.location.search);
   const scenario = scenarioFor(params.get("scenario") ?? "rich");
@@ -56,6 +107,7 @@ export function installMockBridge(store: HarnessStore): Scenario {
 
   let stage = 0;
   let tokenTotal = 24800;
+  const replyTo = (text: string) => replyLines(store, text);
 
   const bridge: HarnessBridge = {
     async context() {
@@ -87,55 +139,10 @@ export function installMockBridge(store: HarnessStore): Scenario {
       return { runId: "run-dev-1" };
     },
     async send({ text }) {
-      window.setTimeout(() => {
-        const messageId = `msg_dev_${Date.now()}`;
-        store.receive([
-          { kind: "protocol", line: { type: "system", subtype: "session_state_changed", state: "running" } as ProtocolLine },
-          {
-            kind: "protocol",
-            line: {
-              type: "stream_event",
-              event: { type: "message_start", message: { id: messageId, model: "claude-sonnet-5" } },
-              uuid: `dev-ms-${Date.now()}`
-            } as ProtocolLine
-          },
-          {
-            kind: "protocol",
-            line: {
-              type: "assistant",
-              message: {
-                id: messageId,
-                role: "assistant",
-                content: [
-                  {
-                    type: "text",
-                    text: `Mock reply — you sent: “${text.slice(0, 120)}”. Wire the native bridge for real answers.`
-                  }
-                ]
-              },
-              uuid: `dev-a-${Date.now()}`
-            } as ProtocolLine
-          },
-          { kind: "protocol", line: { type: "system", subtype: "session_state_changed", state: "idle" } as ProtocolLine },
-          {
-            kind: "protocol",
-            line: {
-              type: "result",
-              subtype: "success",
-              is_error: false,
-              result: "Mock reply delivered.",
-              duration_ms: 820,
-              num_turns: 1,
-              total_cost_usd: 0.0031,
-              usage: { input_tokens: 12, output_tokens: 42 },
-              uuid: `dev-r-${Date.now()}`
-            } as ProtocolLine
-          }
-        ]);
-      }, 320);
+      window.setTimeout(() => replyTo(text), 320);
       return { sent: true };
     },
-    async interrupt() {
+    async interrupt({ cancelQueued }) {
       store.receive([
         {
           kind: "protocol",
@@ -150,6 +157,17 @@ export function installMockBridge(store: HarnessStore): Scenario {
           } as ProtocolLine
         }
       ]);
+      // The CLI keeps running whatever is still queued after an interrupt
+      // (`still_queued` on the receipt), so the chips drain into real turns —
+      // `ensureTurn` promotes queued[0] on the first frame of each. Without
+      // this leg the dev harness left chips parked forever and made a drained
+      // queue indistinguishable from a stuck one.
+      if (cancelQueued) return;
+      let delay = 240;
+      for (const message of store.getSnapshot().queued) {
+        window.setTimeout(() => replyTo(message.text), delay);
+        delay += 420;
+      }
     },
     async cancelQueued() {},
     async stop() {},

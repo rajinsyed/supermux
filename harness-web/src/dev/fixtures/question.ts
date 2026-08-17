@@ -81,7 +81,6 @@ export const questionResolution: ProtocolLine[] = [
     2,
     "Stack Auth it is — I'll reuse the existing session cookie so the dashboard inherits the web app's login, and gate **Billing** and **Team settings** behind the middleware while leaving analytics and the status page public."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({ result: "Auth strategy confirmed: Stack Auth, gating Billing and Team settings." })
 ];

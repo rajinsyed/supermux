@@ -93,7 +93,6 @@ export const resumeFixture: ProtocolLine[] = [
     "msg_resume_live",
     "Adding `SessionIndexScrollRestoreTests` that snapshots the offset, triggers a restore, and asserts the offset is unchanged."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({ result: "Added SessionIndexScrollRestoreTests." })
 ];

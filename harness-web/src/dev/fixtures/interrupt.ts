@@ -61,7 +61,6 @@ export const interruptFixture: ProtocolLine[] = [
     level: "warning",
     uuid: "info-interrupt"
   } as ProtocolLine,
-  sessionState("idle"),
   statusLine(null),
   resultLine({
     subtype: "error_during_execution",
@@ -79,7 +78,6 @@ export const interruptFixture: ProtocolLine[] = [
     "msg_interrupt_0002",
     "Three packages reference `LegacyLogger`: `CmuxFoundation` (41 call sites), `CmuxWorkspaces` (12), and the app target (164)."
   ),
-  sessionState("idle"),
   resultLine({
     result: "Three packages reference LegacyLogger.",
     num_turns: 1,

@@ -182,6 +182,110 @@ describe("ANSI terminal palette contrast", () => {
   });
 });
 
+/**
+ * The failure this suite kept missing: a token that clears AA on its own, then
+ * knocked below it by an `opacity` on the SAME element. `.divider-sub` was
+ * `--text-faint` × 0.72 = 2.95:1 in light, and `.banner-detail` was the warning
+ * amber × 0.78 = 3.53:1 on its own tint. Neither is a syntax, diff, or ANSI
+ * token, so nothing above audited them. Every rule in the sheets that dims text
+ * with `opacity` is now composited at its real alpha against the surface it
+ * lands on.
+ */
+const SHEETS = ["base.css", "cards.css", "content.css", "dock.css", "layout.css", "tools.css", "transcript.css"];
+
+async function sheet(name: string): Promise<string> {
+  return Bun.file(new URL(`../src/styles/${name}`, import.meta.url).pathname).text();
+}
+
+/**
+ * `.selector { color: var(--text-*); opacity: N }` — a text tier dimmed a second
+ * time. `opacity: 0` is excluded: that is a hover reveal, not a rendered tone.
+ * Icon and syntax tokens are out of scope here; they are audited on their own
+ * beds above and by the ANSI/hljs suites.
+ */
+async function attenuatedTextRules(): Promise<Array<{ where: string; token: string; alpha: number }>> {
+  const found: Array<{ where: string; token: string; alpha: number }> = [];
+  for (const name of SHEETS) {
+    const css = await sheet(name);
+    for (const match of css.matchAll(/(?:^|\n)([^{}\n]+)\{([^}]*)\}/g)) {
+      const body = match[2];
+      const alpha = /(?<!-)opacity:\s*([\d.]+)/.exec(body);
+      if (!alpha || Number(alpha[1]) >= 1 || Number(alpha[1]) === 0) continue;
+      const token = /(?:^|;|\s)color:\s*var\((--text-[a-z-]+)\)/.exec(body);
+      if (!token) continue;
+      found.push({ where: `${name} ${match[1].trim()}`, token: token[1], alpha: Number(alpha[1]) });
+    }
+  }
+  return found;
+}
+
+function flatSurfaces(isDark: boolean): { vars: Record<string, string>; flat: Record<string, RGB> } {
+  const { vars } = surfaces(isDark);
+  const page = parse(vars["--page-bg"]);
+  return {
+    vars,
+    flat: {
+      page,
+      card: composite(vars["--surface"], page),
+      raised: composite(vars["--surface-raised"], page),
+      sunken: composite(vars["--surface-sunken"], page)
+    }
+  };
+}
+
+describe("chrome text contrast", () => {
+  test("no rule dims an already-muted text token below AA", async () => {
+    const rules = await attenuatedTextRules();
+    const failures: string[] = [];
+    for (const isDark of [true, false]) {
+      const label = isDark ? "dark" : "light";
+      const { vars, flat } = flatSurfaces(isDark);
+      for (const rule of rules) {
+        const color = vars[rule.token];
+        if (!color) continue;
+        for (const [name, bed] of Object.entries(flat)) {
+          const fg = composite(color, bed);
+          const composited = [0, 1, 2].map(
+            (i) => fg[i] * rule.alpha + bed[i] * (1 - rule.alpha)
+          ) as RGB;
+          const value = ratio(composited, bed);
+          if (value < AA_SMALL) {
+            failures.push(`${label} ${rule.where} on ${name}=${value.toFixed(2)}`);
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  test("the secondary text tiers clear AA unattenuated on every flat surface", async () => {
+    const failures: string[] = [];
+    for (const isDark of [true, false]) {
+      const label = isDark ? "dark" : "light";
+      const { vars, flat } = flatSurfaces(isDark);
+      for (const token of ["--text-faint", "--text-muted", "--text-soft"]) {
+        for (const [name, bed] of Object.entries(flat)) {
+          const value = ratio(composite(vars[token], bed), bed);
+          if (value < AA_SMALL) failures.push(`${label} ${token} on ${name}=${value.toFixed(2)}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  test("the two rules that failed the browser sweep carry no opacity at all", async () => {
+    // Composited: 2.95:1 (light) / 3.93:1 (dark) for the compaction token count,
+    // and 3.53:1 for the api_retry countdown on its amber bed. Both were the
+    // only real numbers in their row.
+    const transcript = await sheet("transcript.css");
+    const dock = await sheet("dock.css");
+    expect(/\.divider-sub\s*\{[^}]*\}/.exec(transcript)![0]).not.toMatch(/opacity/);
+    expect(/\.banner-detail\s*\{[^}]*\}/.exec(dock)![0]).not.toMatch(/opacity/);
+    // 10.5px was also under the 12px meta size the visual bar specifies.
+    expect(/\.banner-detail\s*\{[^}]*\}/.exec(dock)![0]).toMatch(/font-size:\s*11\.5px/);
+  });
+});
+
 describe("terminal chrome contrast", () => {
   for (const isDark of [true, false]) {
     const label = isDark ? "dark" : "light";

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { CopyKey } from "../../copyKeys";
 import { activeModelFor } from "../../model/helpers";
 import type { SessionMeta, UsageTotals } from "../../model/types";
 import type {
@@ -40,6 +41,20 @@ export function clampEffort(
   const levels = model.supportedEffortLevels;
   if (!levels || levels.length === 0) return undefined;
   return levels.includes(effort) ? effort : undefined;
+}
+
+const EFFORT_LABELS: Record<string, CopyKey> = {
+  low: "supermux.harness.effort.low",
+  medium: "supermux.harness.effort.medium",
+  high: "supermux.harness.effort.high",
+  xhigh: "supermux.harness.effort.xhigh",
+  max: "supermux.harness.effort.max"
+};
+
+/** `xhigh` is a wire token, not a label; every neighbouring row is prose. */
+export function effortLabel(level: string, copy: ReturnType<typeof useCopy>): string {
+  const key = EFFORT_LABELS[level];
+  return key ? copy(key) : level;
 }
 
 export function modeLabel(mode: PermissionMode, copy: ReturnType<typeof useCopy>, short = false): string {
@@ -195,7 +210,7 @@ export function Header(props: HeaderProps) {
             <span className="model-pill">
               <Bolt size={11} />
               <span className="pill-label">{modelName}</span>
-              {effort ? <span className="effort-tag">{effort}</span> : null}
+              {effort ? <span className="effort-tag">{effortLabel(effort, copy)}</span> : null}
               <ChevronDown size={10} />
             </span>
           )}
@@ -241,7 +256,7 @@ export function Header(props: HeaderProps) {
                         close();
                       }}
                     >
-                      {level}
+                      {effortLabel(level, copy)}
                     </MenuItem>
                   ))}
                 </MenuSection>

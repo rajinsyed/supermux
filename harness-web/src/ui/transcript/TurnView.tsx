@@ -179,7 +179,10 @@ export const TurnView = memo(function TurnView({
                 ) : (
                   <Fragment key={`shown:${segment.blocks[0].key}`}>
                     {segment.blocks.map((block) => (
-                      <BlockView key={block.key} block={block} />
+                      // Marked live: this is the one row the tail keeps on
+                      // screen, so nothing about it may auto-size and drag the
+                      // settled transcript above it up and down.
+                      <BlockView key={block.key} block={block} live />
                     ))}
                   </Fragment>
                 )

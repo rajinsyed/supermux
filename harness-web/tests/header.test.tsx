@@ -90,8 +90,28 @@ describe("the active model resolves across both identifier namespaces", () => {
       </CopyProvider>
     );
     fireEvent.click(screen.getByLabelText("Model"));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "high" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "High" }));
     expect(sent).toEqual([["sonnet", "high"]]);
+  });
+
+  test("effort rows read as labels, never as the raw wire tokens", () => {
+    // `xhigh` is a protocol token no user would write, and it sat lowercase
+    // beside "Auto-edit" and "Opus (1M context)". The pill printed the same
+    // value uppercased, so the menu and the pill disagreed about one setting.
+    const { container } = mount(realSession());
+    fireEvent.click(screen.getByLabelText("Model"));
+    const rows = Array.from(
+      container.querySelectorAll(".menu-section")[1].querySelectorAll(".menu-item")
+    ).map((node) => node.textContent ?? "");
+    expect(rows.some((row) => row.startsWith("Extra high"))).toBe(true);
+    expect(rows.some((row) => row.includes("xhigh"))).toBe(false);
+    for (const row of rows) expect(row).toMatch(/^[A-Z]/);
+  });
+
+  test("the pill and the menu print one effort value the same way", () => {
+    const session = replayLines(richSession).session;
+    const { container } = mount({ ...session, effort: "xhigh" });
+    expect(container.querySelector(".effort-tag")!.textContent).toBe("Extra high");
   });
 
   test("no scenario ever prints a raw model id in the pill", () => {

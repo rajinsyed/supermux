@@ -186,7 +186,10 @@ describe("the expanded todo strip cannot displace the transcript", () => {
   test("the list caps its height and scrolls instead", async () => {
     const sheet = await css("dock.css");
     const rule = ruleFor(sheet, ".todo-strip-list");
-    expect(rule).toMatch(/max-height:\s*\d+px/);
+    // Viewport-relative, not a flat pixel value: 168px is a quarter of a tall
+    // pane but a third of a 600px one, where the fixed cap left the TodoWrite
+    // card above clipped mid-glyph behind the dock.
+    expect(rule).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
     expect(rule).toMatch(/overflow-y:\s*auto/);
     // A short pane gives up even less: 500px tall is an ordinary cmux split.
     expect(sheet).toMatch(/@media \(max-height: 560px\)[\s\S]*?\.todo-strip-list/);

@@ -102,6 +102,88 @@ describe("work-group overflow while a turn runs", () => {
   });
 });
 
+/**
+ * `LIVE_TAIL = 1` means the streaming turn shows exactly ONE work row, so that
+ * row's height is the layout. `defaultOpen` auto-expanded bash/todo/task/patched
+ * edit but left read/search shut, so as a turn cycled Read → Edit → Bash → Read
+ * the single row swapped between a collapsed strip and an open terminal card —
+ * measured on `longform` at 9.63 shifts/second, largest 132px, of settled text
+ * the reader was mid-paragraph on. Auto-expansion now waits for the turn to
+ * settle, which is a boundary the reader already expects to reflow.
+ */
+describe("the live work row does not auto-size while a turn streams", () => {
+  function toolTurn(): Turn {
+    const model = replayLines(fixtures.longform);
+    const turn = model.turns[0];
+    return { ...turn, state: "streaming", endedAtMs: undefined, result: undefined };
+  }
+
+  test("the streaming tail renders every family collapsed, whatever it is", () => {
+    const turn = toolTurn();
+    const families = new Set<string>();
+    // Walk the run: every tool in it becomes the live row at some point.
+    for (const block of turn.blocks) {
+      if (block.kind !== "tool") continue;
+      const single = { ...turn, blocks: [block] };
+      const { container, unmount } = mount(single);
+      const card = container.querySelector(".tool-card");
+      if (card) {
+        families.add(card.getAttribute("data-family") ?? "");
+        expect(card.classList.contains("is-open")).toBe(false);
+        expect(container.querySelector(".tool-body")).toBeNull();
+      }
+      unmount();
+    }
+    // The bug needed at least one auto-opening family and one collapsed one in
+    // the same run; assert the fixture still supplies the mix.
+    expect(families.has("bash")).toBe(true);
+    expect(families.has("read")).toBe(true);
+    expect(families.has("edit")).toBe(true);
+  });
+
+  test("the same rows auto-open again once the turn settles", () => {
+    const turn = toolTurn();
+    const bash = turn.blocks.find((b) => b.kind === "tool" && b.name === "Bash");
+    expect(bash).toBeDefined();
+    const settled = { ...turn, state: "complete" as const, folded: false, endedAtMs: turn.startedAtMs + 4000, blocks: [bash!] };
+    const { container } = mount(settled);
+    expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(true);
+  });
+
+  test("a failure still auto-opens even while the turn streams", () => {
+    // The error text is the whole reason the card is tinted; hiding it to keep
+    // the row short would trade one defect for a worse one.
+    const turn = toolTurn();
+    const tool = turn.blocks.find((b) => b.kind === "tool")!;
+    const failed = { ...tool, status: "error" as const, resultText: "Error: ENOENT" };
+    const { container } = mount({ ...turn, blocks: [failed] });
+    expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(true);
+  });
+
+  test("the user can still open a live row by hand", () => {
+    const turn = toolTurn();
+    const tool = turn.blocks.find((b) => b.kind === "tool")!;
+    const { container } = mount({ ...turn, blocks: [tool] });
+    fireEvent.click(container.querySelector(".tool-head")!);
+    expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(true);
+  });
+
+  test("a settled turn's rows never depend on the live flag", () => {
+    // Nothing above the live row may be marked live: that is what let a card
+    // deep in the transcript change height when a turn below it streamed.
+    const model = replayLines(fixtures.longform);
+    const { container } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={{ ...model.turns[0], folded: false }} isLast={false} />
+      </CopyProvider>
+    );
+    const cards = container.querySelectorAll(".turn-work > .tool-card");
+    expect(cards.length).toBeGreaterThan(3);
+    const opened = Array.from(cards).filter((c) => c.classList.contains("is-open"));
+    expect(opened.length).toBeGreaterThan(0);
+  });
+});
+
 describe("effort clamping across a model switch", () => {
   const opus = {
     value: "claude-opus-5",

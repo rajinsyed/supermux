@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { activeModelFor } from "../model/helpers";
 import type { HarnessStore } from "../model/store";
 import type { ImageAttachment } from "../model/types";
+import type { JsonObject } from "../protocol/types";
 import { CopyProvider, useCopy } from "./CopyContext";
 import { Composer } from "./composer/Composer";
 import { EmptyState, ExitedState, NoCliState } from "./empty/EmptyStates";
@@ -86,7 +87,17 @@ function AppBody({
   const decide = useCallback(
     (decision: PermissionDecision) => {
       if (!pending) return;
-      store.dispatch({ kind: "permissionResolved", requestId: pending.requestId });
+      store.dispatch({
+        kind: "permissionResolved",
+        requestId: pending.requestId,
+        behavior: decision.behavior,
+        // Carried so the reducer can leave a record of an answered question in
+        // the transcript; the answers only exist in this payload.
+        updatedInput:
+          decision.updatedInput && typeof decision.updatedInput === "object"
+            ? (decision.updatedInput as JsonObject)
+            : undefined
+      });
       harness.bridge
         .respondPermission({
           requestId: pending.requestId,

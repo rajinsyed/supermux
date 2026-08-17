@@ -161,8 +161,19 @@ function badgesFor(block: ToolBlock, family: ToolFamily, copy: ReturnType<typeof
   return badges;
 }
 
-function defaultOpen(block: ToolBlock, family: ToolFamily): boolean {
+/**
+ * `live` means the row is the visible tail of a turn that is still streaming.
+ * Auto-expansion is suppressed there: the tail is ONE row, and letting its
+ * height depend on which tool family happens to be current makes it swap
+ * between a ~32px collapsed strip and a ~172px open terminal card several times
+ * a second. Because the transcript is bottom-anchored, every one of those swaps
+ * translates the settled text above it — measured at 9.6 shifts/second, up to
+ * 132px, on `longform`. Expansion resumes the moment the turn settles, which is
+ * a boundary the reader already expects to reflow.
+ */
+function defaultOpen(block: ToolBlock, family: ToolFamily, live: boolean): boolean {
   if (block.status === "error") return true;
+  if (live) return false;
   if (family === "todo" || family === "task") return true;
   if (family === "bash") return true;
   if (family === "edit") {
@@ -174,15 +185,22 @@ function defaultOpen(block: ToolBlock, family: ToolFamily): boolean {
 
 export const ToolCard = memo(function ToolCard({
   block,
-  depth = 0
+  depth = 0,
+  live = false
 }: {
   block: ToolBlock;
   depth?: number;
+  live?: boolean;
 }) {
   const copy = useCopy();
   const family = toolFamily(block.name);
   const running = block.status === "running" || block.status === "pending";
-  const [open, setOpen] = useState(() => defaultOpen(block, family));
+  // The default is re-derived rather than frozen at mount, so a card that lands
+  // while its turn streams still opens once the turn settles — and a row that
+  // later fails auto-opens on the failure instead of staying shut because it
+  // was pending when it first rendered. A user toggle wins over both.
+  const [override, setOverride] = useState<boolean | undefined>(undefined);
+  const open = override ?? defaultOpen(block, family, live);
 
   if (family === "task") return <SubagentCard block={block} depth={depth} />;
 
@@ -199,7 +217,7 @@ export const ToolCard = memo(function ToolCard({
       <button
         type="button"
         className="tool-head"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOverride(!open)}
         aria-expanded={open}
       >
         <span className="tool-caret" aria-hidden="true">

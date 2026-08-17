@@ -157,7 +157,6 @@ export const subagentsFixture: ProtocolLine[] = [
     2,
     "Both audits are in.\n\n- **Switch sites:** 11 total. Two in `Workspace.swift` use `default:` and will silently swallow a new panel case — those need explicit arms.\n- **Localization:** 6 `supermux.*` keys have English but no Japanese; the merge script will fail the catalog check until they are filled in."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({
     result: "11 switch sites (2 unsafe), 6 localization keys missing ja.",

@@ -505,14 +505,32 @@
 }
 
 /* The exact rule being added to settings — safety-critical detail, not a hint. */
+/* The always-allow sublabel prints the exact rule a click grants for good. A
+   single ellipsised line cut it mid-glob — `Edit(/Users/dev/projects/supermux/…`
+   — hiding precisely the part that decides one directory versus the whole tree.
+   It wraps and breaks inside the path instead, so the rule is readable BEFORE
+   the button is pressed. The clamp is a backstop for a pathological path, not
+   the normal case; `title` still carries the full string either way. */
 .btn-sub {
   font-size: 10.5px;
   color: var(--text-muted);
   font-weight: 400;
-  max-width: 260px;
+  max-width: min(62ch, 100%);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+/* The stacked button sizes to its own label rather than being frozen at the
+   width of the action row's other buttons, so a long rule uses the card's
+   width instead of wrapping inside a 225px column. */
+.btn-stacked {
+  max-width: 100%;
 }
 
 /* The most-clicked control in the pane, so it answers the pointer like every

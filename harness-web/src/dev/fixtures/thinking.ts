@@ -47,7 +47,6 @@ export const thinkingFixture: ProtocolLine[] = [
     1,
     "It is an AttributeGraph cycle, not a busy loop. Rows below the `LazyVStack` boundary hold a reference to the observable store, so every store change invalidates every row — and a row that writes state during `body` re-enters immediately.\n\nThe fix is the `SessionIndexView` pattern: pass value snapshots and closures below the lazy boundary, never the store itself."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({
     result: "AttributeGraph cycle from a store reference below the LazyVStack boundary.",
@@ -77,7 +76,6 @@ export const thinkingFixture: ProtocolLine[] = [
     1,
     "`TabItemView` is on the keystroke path, so it is worse: it re-renders on every character typed. It already avoids the store reference, but it recomputes its title attributes each pass — cache those."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({
     result: "TabItemView avoids the store reference but recomputes title attributes per keystroke.",

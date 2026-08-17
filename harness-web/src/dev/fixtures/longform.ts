@@ -106,7 +106,6 @@ function buildLongSession(): ProtocolLine[] {
         `Pass ${turn + 1} complete. Found ${(turn % 4) + 1} drift sites; the risky ones use \`default:\` and swallow new cases.`
       )
     );
-    lines.push(sessionState("idle"));
     lines.push(statusLine(null));
     lines.push(
       resultLine({

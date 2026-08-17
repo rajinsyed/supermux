@@ -271,13 +271,25 @@ export function InteractiveBody({ block }: { block: ToolBlock }) {
   }
   const questions = block.input.questions;
   if (Array.isArray(questions)) {
+    // The answers ride back on the same input the card submitted, keyed by the
+    // question text. Rendering both halves is what makes the settled card a
+    // record of the exchange rather than a list of things you were once asked.
+    const answers = (block.input.answers ?? {}) as Record<string, unknown>;
     return (
       <div className="tool-body">
-        <ul className="result-list">
-          {(questions as Array<{ question?: string }>).map((q, i) => (
-            <li key={i}>{q.question}</li>
-          ))}
-        </ul>
+        <dl className="qa-list">
+          {(questions as Array<{ question?: string; header?: string }>).map((q, i) => {
+            const answer = q.question ? str(answers[q.question]) : undefined;
+            return (
+              <div key={i} className="qa-row">
+                <dt className="qa-question">{q.header ? `${q.header} · ` : ""}{q.question}</dt>
+                <dd className={`qa-answer${answer ? "" : " is-unanswered"}`}>
+                  {answer ?? "—"}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
         <ErrorText block={block} />
       </div>
     );

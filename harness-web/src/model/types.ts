@@ -244,7 +244,13 @@ export interface TranscriptModel {
 export type LocalAction =
   | { kind: "localSend"; uuid: string; text: string; images?: ImageAttachment[]; atMs: number }
   | { kind: "cancelQueued"; uuid: string }
-  | { kind: "permissionResolved"; requestId: string }
+  | {
+      kind: "permissionResolved";
+      requestId: string;
+      behavior?: "allow" | "deny";
+      /** What was sent back, so an answered question can be recorded verbatim. */
+      updatedInput?: JsonObject;
+    }
   | { kind: "contextUsage"; usage: ContextUsage }
   | { kind: "setTitle"; title: string }
   | { kind: "setModel"; model: string; effort?: EffortLevel }

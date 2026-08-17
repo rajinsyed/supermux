@@ -204,9 +204,15 @@
   line-height: 1.42;
 }
 
+/* The countdown carries the two numbers the user is waiting on, so it is the
+   least droppable line in the banner. At `opacity: 0.78` the already-muted amber
+   composited to 3.53:1 on its own tint in light mode — below AA at 10.5px, and
+   below the 12px meta size the visual bar sets. The tone stays secondary by
+   mixing the banner's own hue toward its bed (4.85:1 light / 7.05:1 dark)
+   instead of fading the whole element. */
 .banner-detail {
-  font-size: 10.5px;
-  opacity: 0.78;
+  font-size: 11.5px;
+  color: color-mix(in srgb, currentColor 92%, transparent);
 }
 
 .banner-peek {
@@ -281,6 +287,11 @@
    uncapped seven-item list took 60% of the pane and sliced the running tool card
    in half, and the same strings are already rendered in the TodoWrite card
    above. Past the cap the list scrolls inside the strip. */
+/* The expanded strip repeats the TodoWrite card verbatim, so it must never win
+   the argument for space against the transcript that holds the original. The cap
+   is viewport-relative rather than a flat pixel value: 168px is a quarter of a
+   tall pane but a third of a 600px one, where the fixed cap left the card above
+   clipped mid-glyph behind the dock. */
 .todo-strip-list {
   list-style: none;
   margin: 0 0 4px;
@@ -288,7 +299,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  max-height: 168px;
+  max-height: min(168px, 24vh);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -297,7 +308,7 @@
 
 @media (max-height: 560px) {
   .todo-strip-list {
-    max-height: 104px;
+    max-height: min(104px, 20vh);
   }
 }
 

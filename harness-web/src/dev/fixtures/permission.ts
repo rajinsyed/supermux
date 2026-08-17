@@ -140,7 +140,6 @@ export const permissionCompletion: ProtocolLine[] = [
     MSG,
     "Migrations applied (2 new, 1 already present) and `applyPatch` is now `applyDiff` across `patch.ts` — both the declaration and the recursive call site."
   ),
-  sessionState("idle"),
   statusLine(null),
   resultLine({
     result:

@@ -36,6 +36,9 @@ export function PermissionCard({
   const denyRef = useRef<HTMLButtonElement>(null);
   const headingId = useId();
   const always = alwaysAllowOffer(request, copy);
+  const sublabel = always
+    ? `${copy("supermux.harness.permission.allowAlwaysRule", { rule: always.rule })} · ${always.destination}`
+    : "";
 
   useEffect(() => {
     setShowDeny(false);
@@ -209,9 +212,14 @@ export function PermissionCard({
                 {copy("supermux.harness.permission.allowAlways")}
                 <kbd>A</kbd>
               </span>
-              <span className="btn-sub">
-                {copy("supermux.harness.permission.allowAlwaysRule", { rule: always.rule })}
-                {` · ${always.destination}`}
+              {/* The rule is the whole decision: a glob that grants one
+                  directory and one that grants the entire tree differ only in
+                  the tail that a single ellipsised line throws away. So the
+                  sublabel wraps — the card is the transcript's tail element and
+                  has the vertical room — and still carries the full string as a
+                  tooltip for the pathological case. */}
+              <span className="btn-sub" title={sublabel}>
+                {sublabel}
               </span>
             </button>
           ) : null}

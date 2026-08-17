@@ -53,7 +53,14 @@ function NoticeView({ block }: { block: Extract<Block, { kind: "notice" }> }) {
   );
 }
 
-export const BlockView = memo(function BlockView({ block }: { block: Block }) {
+export const BlockView = memo(function BlockView({
+  block,
+  live = false
+}: {
+  block: Block;
+  /** The block is the visible tail of a turn that is still streaming. */
+  live?: boolean;
+}) {
   switch (block.kind) {
     case "text":
       return (
@@ -64,7 +71,7 @@ export const BlockView = memo(function BlockView({ block }: { block: Block }) {
     case "thinking":
       return <ThinkingBlockView block={block} />;
     case "tool":
-      return <ToolCard block={block} />;
+      return <ToolCard block={block} live={live} />;
     case "divider":
       return <DividerView block={block} />;
     case "notice":

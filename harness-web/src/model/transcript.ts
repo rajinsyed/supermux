@@ -9,7 +9,7 @@ import type {
   SystemLine,
   UserLine
 } from "../protocol/types";
-import { markTurnAborted, settleTurn } from "./blocks";
+import { insertBlock, locateTool, markTurnAborted, settleTurn } from "./blocks";
 import {
   activeTurnIndex,
   asString,
@@ -27,7 +27,13 @@ import { applyStreamEvent } from "./streamEvents";
 import { applyUser } from "./userLines";
 import { applySystem } from "./systemLines";
 import { closeOpenTurns, createModel, resetConversation, startUserTurn } from "./turns";
-import type { LocalAction, TranscriptModel, Turn } from "./types";
+import type {
+  LocalAction,
+  PendingPermission,
+  ToolBlock,
+  TranscriptModel,
+  Turn
+} from "./types";
 
 export { createIndex } from "./helpers";
 export type { TranscriptIndex } from "./helpers";
@@ -179,10 +185,19 @@ function applyResult(
     cacheCreationTokens: model.usage.cacheCreationTokens + (delta.cache_creation_input_tokens ?? 0),
     turns: model.usage.turns + 1
   };
+  // `result` is the only end-of-turn signal the CLI reliably emits: the live
+  // probes (ctl/perm/plan/int logs) and the 202-line reference trace contain
+  // ZERO `session_state_changed` frames. Treating that frame as the sole writer
+  // of `sessionState` latched the pane to "running" forever after the first
+  // turn — Stop button up, composer queueing, queue never draining. So the
+  // result settles the flag too, unless a `can_use_tool` is still outstanding,
+  // in which case the turn genuinely waits on the user. A CLI that does emit
+  // `session_state_changed` still overrides this (systemLines.ts).
+  const sessionState = model.pending.length === 0 ? "idle" : model.activity.sessionState;
   const next: TranscriptModel = {
     ...model,
     usage,
-    activity: { ...model.activity, status: null, thinkingTokens: 0 },
+    activity: { ...model.activity, sessionState, status: null, thinkingTokens: 0 },
     revision: model.revision + 1
   };
   if (turnIndex < 0) return next;
@@ -233,6 +248,50 @@ function applyControlRequest(
   };
 }
 
+/**
+ * An AskUserQuestion arrives ONLY as a `can_use_tool` control request — unlike
+ * Bash or ExitPlanMode, no `assistant` frame ever announces it — so answering it
+ * used to erase the exchange entirely: neither the question, nor the options,
+ * nor the choice survived anywhere in the transcript. Scrolling back to see what
+ * you were asked and what you picked is ordinary. On resolution the request is
+ * therefore materialised as a settled interactive block carrying both the
+ * original input and the submitted answers, which `InteractiveBody` renders.
+ *
+ * Scoped to the interactive tools and guarded on the id not already being on
+ * screen, so an ordinary Bash or Edit approval — which does have its own
+ * streamed block — is never duplicated here.
+ */
+function recordAnsweredRequest(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  resolved: PendingPermission,
+  action: Extract<LocalAction, { kind: "permissionResolved" }>,
+  nowMs: number
+): TranscriptModel {
+  const toolUseId = resolved.request.tool_use_id;
+  if (resolved.kind !== "question") return model;
+  if (!toolUseId || locateTool(model, index, toolUseId)) return model;
+  const turnIndex = model.turns.length - 1;
+  if (turnIndex < 0) return model;
+  const denied = action.behavior === "deny";
+  const input = (denied ? resolved.request.input : action.updatedInput ?? resolved.request.input) as JsonObject;
+  const block: ToolBlock = {
+    kind: "tool",
+    key: `answered:${resolved.requestId}`,
+    messageId: `answered:${resolved.requestId}`,
+    toolUseId,
+    name: resolved.request.tool_name,
+    input,
+    inputComplete: true,
+    status: denied ? "denied" : "success",
+    streaming: false,
+    startedAtMs: resolved.receivedAtMs,
+    endedAtMs: nowMs,
+    children: []
+  };
+  return insertBlock(model, index, turnIndex, block).model;
+}
+
 export function applyLocalAction(
   model: TranscriptModel,
   index: TranscriptIndex,
@@ -262,12 +321,16 @@ export function applyLocalAction(
         queued: model.queued.filter((q) => q.uuid !== action.uuid),
         revision: model.revision + 1
       };
-    case "permissionResolved":
-      return {
+    case "permissionResolved": {
+      const resolved = model.pending.find((p) => p.requestId === action.requestId);
+      const next: TranscriptModel = {
         ...model,
         pending: model.pending.filter((p) => p.requestId !== action.requestId),
         revision: model.revision + 1
       };
+      if (!resolved) return next;
+      return recordAnsweredRequest(next, index, resolved, action, nowMs);
+    }
     case "contextUsage":
       return { ...model, contextUsage: action.usage, revision: model.revision + 1 };
     case "setTitle":

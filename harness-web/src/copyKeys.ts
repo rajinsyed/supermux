@@ -172,6 +172,14 @@ export const copyDefaults = {
   "supermux.harness.header.model": "Model",
   "supermux.harness.header.effort": "Effort",
   "supermux.harness.header.effortDefault": "Default",
+  // The wire tokens are low | medium | high | xhigh | max. The set is closed and
+  // enumerated in the contract, so each gets a display string rather than
+  // leaking `xhigh` into a menu beside "Auto-edit" and "Opus (1M context)".
+  "supermux.harness.effort.low": "Low",
+  "supermux.harness.effort.medium": "Medium",
+  "supermux.harness.effort.high": "High",
+  "supermux.harness.effort.xhigh": "Extra high",
+  "supermux.harness.effort.max": "Max",
   "supermux.harness.header.permissionMode": "Permissions",
   "supermux.harness.header.context": "Context",
   "supermux.harness.header.contextUsed": "{used} of {total} used",

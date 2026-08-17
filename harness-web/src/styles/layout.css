@@ -224,14 +224,18 @@
   background: var(--danger-soft);
 }
 
+/* The pill and the model menu print the SAME value, so they print it the same
+   way: both go through `effortLabel`. `text-transform: uppercase` is dropped
+   with the raw tokens — it shouted `HIGH` while the menu read `high`, and it
+   would shout `EXTRA HIGH` across a pill that has to survive a thin split. */
 .effort-tag {
   padding: 0 4px;
   border-radius: var(--r-xs);
   background: var(--claude-soft);
   color: var(--claude);
   font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .menu {
