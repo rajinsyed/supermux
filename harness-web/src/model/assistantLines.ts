@@ -1,24 +1,24 @@
 import type { AssistantLine, ContentBlock, JsonObject } from "../protocol/types";
+import { applyAssistantToThread, registerRootSpawns } from "./agentThreads";
 import {
   evictUuids,
   findOpenBlock,
   insertBlock,
-  makeTextBlock,
-  makeThinkingBlock,
-  makeToolBlock,
   markTurnAborted,
+  mergeTextBlock,
+  mergeThinkingBlock,
+  mergeToolUseBlock,
   readTool,
   settleTurn,
   writeBlock
 } from "./blocks";
-import { asString, blockAtPath, findTurnIndex, isTaskTool, withTurn, type TranscriptIndex } from "./helpers";
+import { asString, blockAtPath, findTurnIndex, withTurn, type TranscriptIndex } from "./helpers";
 import { appendNotice, ensureTurn, nextBlockKey } from "./turns";
 import type {
   Block,
   NoticeErrorKind,
   TextBlock,
   ThinkingBlock,
-  ToolBlock,
   TranscriptModel
 } from "./types";
 
@@ -37,6 +37,11 @@ export function applyAssistant(
     next = evictUuids(next, new Set(line.supersedes));
   }
   const parent = line.parent_tool_use_id ?? null;
+  // The SAME frame builds two things: the inline block tree the transcript
+  // nests under the launching Task card, and the agent's own thread, which is
+  // what the agent view renders. One frame, two folds — never two sources.
+  if (parent) next = applyAssistantToThread(next, line, parent, nowMs);
+  else next = registerRootSpawns(next, line.message.content, nowMs);
   const ensured = ensureTurn(next, index, nowMs, parent);
   next = ensured.model;
   let turnIndex = ensured.turnIndex;
@@ -111,85 +116,50 @@ function mergeAssistantBlock(
   if (content.type === "text") {
     const text = asString((content as { text?: string }).text) ?? "";
     const path = findOpenBlock(turn, messageId, "text", index);
-    if (path) {
-      const existing = blockAtPath(turn, path) as TextBlock;
-      index.finalizedBlocks.add(existing.key);
-      return writeBlock(model, { turnIndex, path }, {
-        ...existing,
-        text,
-        streaming: false,
-        uuid: line.uuid
-      });
-    }
-    const block = makeTextBlock(nextBlockKey(index, messageId), messageId, text, false);
-    block.uuid = line.uuid;
+    const existing = path ? (blockAtPath(turn, path) as TextBlock) : undefined;
+    const block = mergeTextBlock(
+      existing,
+      existing?.key ?? nextBlockKey(index, messageId),
+      messageId,
+      text,
+      line.uuid
+    );
     index.finalizedBlocks.add(block.key);
+    if (path) return writeBlock(model, { turnIndex, path }, block);
     return insertBlock(model, index, turnIndex, block, parent).model;
   }
   if (content.type === "thinking") {
     const text = asString((content as { thinking?: string }).thinking) ?? "";
     const signature = asString((content as { signature?: string }).signature);
     const path = findOpenBlock(turn, messageId, "thinking", index);
-    if (path) {
-      const existing = blockAtPath(turn, path) as ThinkingBlock;
-      index.finalizedBlocks.add(existing.key);
-      return writeBlock(model, { turnIndex, path }, {
-        ...existing,
-        text: text.length > 0 ? text : existing.text,
-        signature,
-        streaming: false,
-        endedAtMs: existing.endedAtMs ?? nowMs,
-        uuid: line.uuid
-      });
-    }
-    const block = makeThinkingBlock(nextBlockKey(index, messageId), messageId, text, false, nowMs);
-    block.uuid = line.uuid;
-    block.signature = signature;
-    block.endedAtMs = nowMs;
-    block.tokens = model.activity.thinkingTokens;
+    const existing = path ? (blockAtPath(turn, path) as ThinkingBlock) : undefined;
+    const block = mergeThinkingBlock(
+      existing,
+      existing?.key ?? nextBlockKey(index, messageId),
+      messageId,
+      text,
+      signature,
+      line.uuid,
+      nowMs,
+      model.activity.thinkingTokens
+    );
     index.finalizedBlocks.add(block.key);
+    if (path) return writeBlock(model, { turnIndex, path }, block);
     return insertBlock(model, index, turnIndex, block, parent).model;
   }
   if (content.type === "tool_use") {
     const tool = content as { id: string; name: string; input?: JsonObject };
     const existing = readTool(model, index, tool.id);
-    if (existing) {
-      index.finalizedBlocks.add(existing.block.key);
-      return writeBlock(model, existing.location, {
-        ...existing.block,
-        input: tool.input ?? existing.block.input,
-        inputComplete: true,
-        streaming: false,
-        status: existing.block.status === "pending" ? "running" : existing.block.status,
-        uuid: line.uuid,
-        subagent: isTaskTool(tool.name)
-          ? {
-              ...existing.block.subagent,
-              subagentType: asString(tool.input?.subagent_type) ?? existing.block.subagent?.subagentType,
-              description: asString(tool.input?.description) ?? existing.block.subagent?.description,
-              status: existing.block.subagent?.status ?? "running"
-            }
-          : existing.block.subagent
-      });
-    }
-    const block = makeToolBlock(
-      nextBlockKey(index, messageId),
+    const block = mergeToolUseBlock(
+      existing?.block,
+      existing?.block.key ?? nextBlockKey(index, messageId),
       messageId,
-      tool.id,
-      tool.name,
-      tool.input ?? {},
-      false,
+      tool,
+      line.uuid,
       nowMs
     );
-    block.uuid = line.uuid;
-    if (isTaskTool(tool.name)) {
-      block.subagent = {
-        subagentType: asString(tool.input?.subagent_type),
-        description: asString(tool.input?.description),
-        status: "running"
-      };
-    }
     index.finalizedBlocks.add(block.key);
+    if (existing) return writeBlock(model, existing.location, block);
     return insertBlock(model, index, turnIndex, block, parent).model;
   }
   return model;

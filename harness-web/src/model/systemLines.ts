@@ -1,4 +1,5 @@
 import type { SystemLine } from "../protocol/types";
+import { applyTaskToThread } from "./agentThreads";
 import { evictUuids, readTool, writeBlock } from "./blocks";
 import {
   activeTurnIndex,
@@ -455,6 +456,11 @@ function applyTaskLine(
       )
     };
   }
+  // Task frames enrich the AGENT THREAD's meta too — status, activity, tallies
+  // — keyed on the same tool_use_id. They never create one: `task_started`
+  // fires for foreground Bash as well, and a dock built from task frames would
+  // list every shell in the session as an agent.
+  next = applyTaskToThread(next, toolUseId, record, nowMs);
   next = applyTaskToBlock(next, index, toolUseId, raw, subtype, record, nowMs);
   if (isTaskSettled(record.status)) next = applyDeferredFolds(next);
   // One announcement per task. The status is latched, so a replayed `completed`

@@ -1,10 +1,10 @@
 import type { JsonObject, UserLine } from "../protocol/types";
+import { applyAgentOutputToThread, applyUserToThread } from "./agentThreads";
 import { readTool, writeBlock } from "./blocks";
 import { asNumber, asString, isPlainObject, type TranscriptIndex } from "./helpers";
 import { classifyToolStatus, extractTodos } from "./toolStatus";
 import { startUserTurn } from "./turns";
 import type {
-  Block,
   SubagentInfo,
   SubagentToolStats,
   TaskRecord,
@@ -26,12 +26,16 @@ export function applyUser(
   const content = line.message.content;
   const parent = line.parent_tool_use_id ?? null;
 
+  // One frame, two folds — the agent's own thread and the inline tree. The
+  // thread pass runs first so a tool_result settles the thread's copy of the
+  // block whether or not the inline copy is still on screen.
+  let next = parent ? applyUserToThread(model, line, parent, nowMs) : model;
+
   if (typeof content === "string") {
-    if (parent || line.isReplay) return model;
-    return startUserTurn(model, index, content, undefined, nowMs, line.uuid);
+    if (parent || line.isReplay) return next;
+    return startUserTurn(next, index, content, undefined, nowMs, line.uuid);
   }
 
-  let next = model;
   for (const item of content ?? []) {
     if (item.type === "tool_result") {
       const result = item as { tool_use_id: string; content?: unknown; is_error?: boolean };
@@ -40,36 +44,16 @@ export function applyUser(
     }
     if (item.type === "text") {
       const text = asString((item as { text?: string }).text) ?? "";
-      if (parent) {
-        next = appendSubagentText(next, index, parent, text, line.uuid);
-        continue;
-      }
+      // A forwarded subagent message belongs to its THREAD, which the pass above
+      // already recorded. Round 3 also pasted it into the inline card as an
+      // anonymous notice; round 4 does not, because the inline surface is now a
+      // one-line row and the conversation is read in the agent view.
+      if (parent) continue;
       if (line.isReplay) continue;
       next = startUserTurn(next, index, text, undefined, nowMs, line.uuid);
     }
   }
   return next;
-}
-
-function appendSubagentText(
-  model: TranscriptModel,
-  index: TranscriptIndex,
-  parentToolUseId: string,
-  text: string,
-  uuid?: string
-): TranscriptModel {
-  const found = readTool(model, index, parentToolUseId);
-  if (!found) return model;
-  const block: Block = {
-    kind: "notice",
-    key: `sub:${uuid ?? `${parentToolUseId}:${found.block.children.length}`}`,
-    level: "info",
-    text
-  };
-  return writeBlock(model, found.location, {
-    ...found.block,
-    children: found.block.children.concat(block)
-  });
 }
 
 /**
@@ -208,6 +192,10 @@ function applyToolResult(
     endedAtMs: nowMs
   };
   let next = writeBlock(resolved, found.location, nextBlock);
+  // The Agent tool_result lands on the MAIN turn (parent null), so this is
+  // where a thread learns its model, agentId and final tallies when no task
+  // frame carried them.
+  next = applyAgentOutputToThread(next, toolUseId, structured, nowMs);
   if (subagent?.taskId) {
     const record = recordFromResult(next.tasksById[subagent.taskId], subagent, nowMs);
     if (record) {

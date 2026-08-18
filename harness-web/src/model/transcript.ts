@@ -9,6 +9,7 @@ import type {
   SystemLine,
   UserLine
 } from "../protocol/types";
+import { appendPendingRelay, hydrateThread, isThreadRunning } from "./agentThreads";
 import { insertBlock, locateTool, markTurnAborted, settleTurn } from "./blocks";
 import {
   activeTurnIndex,
@@ -35,6 +36,7 @@ import {
   truncateBeforeUserMessage
 } from "./turns";
 import type {
+  AgentThread,
   Block,
   LocalAction,
   PendingPermission,
@@ -93,6 +95,12 @@ export function applyEvent(
         // new one has never heard of.
         backgroundTasks: [],
         tasksById: {},
+        // Threads SURVIVE a restart — a resumed session's agents are still worth
+        // reading — but none of them is still running: the process that was
+        // producing their frames is gone. Left "running" they would spin a
+        // status dot and a live elapsed timer forever, on a dock row for work
+        // that ended when the run did.
+        agentThreads: settleLiveThreads(settled.agentThreads, nowMs),
         revision: settled.revision + 1
       };
     }
@@ -164,6 +172,36 @@ export function applyLine(
     default:
       return model;
   }
+}
+
+/**
+ * Every still-running thread, marked finished at `nowMs`.
+ *
+ * Used at the process boundary only. A thread's status normally comes off the
+ * wire; a run that dies stops sending, so nothing would ever move these — and a
+ * dock row with a spinning dot and an elapsed counter climbing past the process
+ * that owned it is the same lie the tasks strip already refuses to tell.
+ */
+function settleLiveThreads(
+  threads: Record<string, AgentThread>,
+  nowMs: number
+): Record<string, AgentThread> {
+  let changed = false;
+  const out: Record<string, AgentThread> = {};
+  for (const [id, thread] of Object.entries(threads)) {
+    if (!isThreadRunning(thread)) {
+      out[id] = thread;
+      continue;
+    }
+    changed = true;
+    out[id] = {
+      ...thread,
+      status: "stopped",
+      endedAtMs: thread.endedAtMs ?? nowMs,
+      revision: thread.revision + 1
+    };
+  }
+  return changed ? out : threads;
 }
 
 function applyControlResponse(
@@ -238,7 +276,7 @@ function applyResult(
   // in which case the turn genuinely waits on the user. A CLI that does emit
   // `session_state_changed` still overrides this (systemLines.ts).
   const sessionState = model.pending.length === 0 ? "idle" : model.activity.sessionState;
-  const next: TranscriptModel = {
+  let next: TranscriptModel = {
     ...model,
     usage,
     activity: { ...model.activity, sessionState, status: null, thinkingTokens: 0 },
@@ -246,6 +284,16 @@ function applyResult(
   };
   if (turnIndex < 0) return next;
   const turn = next.turns[turnIndex];
+  // The turn that carried a relay has answered — main ran SendMessage and said
+  // RELAYED. That is not the same as the agent having the message (it reads its
+  // mailbox at its next tool round), so the record advances one step, not two.
+  const relay = turn.userUuid ? next.relays[turn.userUuid] : undefined;
+  if (relay && relay.state === "sending") {
+    next = {
+      ...next,
+      relays: { ...next.relays, [relay.uuid]: { ...relay, state: "relayed" } }
+    };
+  }
   const settled = aborted ? markTurnAborted(turn, nowMs) : settleTurn(turn, nowMs);
   const state: Turn["state"] = aborted ? "aborted" : line.is_error ? "error" : "complete";
   const live = hasLiveBackgroundWork(settled);
@@ -353,28 +401,60 @@ export function applyLocalAction(
 ): TranscriptModel {
   switch (action.kind) {
     case "localSend": {
+      // A relay is recorded BEFORE the turn or the chip, so both surfaces know
+      // from the first frame that this message is addressed to an agent: the
+      // main transcript renders it as a "→ sent to X" chip rather than a bubble
+      // the user never wrote, and the agent view shows the text as pending.
+      let next = model;
+      if (action.relay) {
+        next = {
+          ...model,
+          relays: {
+            ...model.relays,
+            [action.uuid]: {
+              uuid: action.uuid,
+              toolUseId: action.relay.toolUseId,
+              description: action.relay.description,
+              text: action.text,
+              sentAtMs: action.atMs,
+              state: "sending",
+              backgrounded: action.backgrounded
+            }
+          }
+        };
+        next = appendPendingRelay(next, action.relay.toolUseId, action.uuid, action.text, nowMs);
+      }
       // A non-empty queue is itself a busy signal. Without that clause a message
       // typed in the gap between one `result` and the next turn's first frame —
       // where sessionState is already `idle` and no turn is open — skipped the
       // queue and opened its own turn, so it rendered and answered AHEAD of
       // chips that had been waiting longer. The queue is FIFO or it is nothing.
       const busy =
-        model.queued.length > 0 ||
-        model.activity.sessionState !== "idle" ||
-        activeTurnIndex(model) >= 0;
+        next.queued.length > 0 ||
+        next.activity.sessionState !== "idle" ||
+        activeTurnIndex(next) >= 0;
       if (busy) {
         return {
-          ...model,
-          queued: model.queued.concat({
+          ...next,
+          queued: next.queued.concat({
             uuid: action.uuid,
             text: action.text,
             images: action.images,
-            queuedAtMs: action.atMs
+            queuedAtMs: action.atMs,
+            relay: action.relay
           }),
-          revision: model.revision + 1
+          revision: next.revision + 1
         };
       }
-      return startUserTurn(model, index, action.text, action.images, action.atMs, action.uuid);
+      return startUserTurn(next, index, action.text, action.images, action.atMs, action.uuid);
+    }
+    case "hydrateThread": {
+      const thread = model.agentThreads[action.toolUseId];
+      // Live frames always win. A disk replay is the FALLBACK for a thread that
+      // never received any — a resumed session, a forwarding gap — and folding
+      // it into a thread that has live blocks would draw every message twice.
+      if (!thread || thread.hasLiveFrames || thread.hydratedFromDisk) return model;
+      return hydrateThreadFromDisk(model, action.toolUseId, action.events, nowMs);
     }
     case "cancelQueued":
       return {
@@ -472,4 +552,41 @@ export function replayLines(lines: ProtocolLine[], nowMs = Date.now()): Transcri
   let model = createModel();
   for (const line of lines) model = applyLine(model, index, line, nowMs);
   return model;
+}
+
+/**
+ * The disk fallback for an agent view whose thread never received live frames.
+ *
+ * The agent's own session file is replayed through an ISOLATED reducer — its
+ * frames carry the same tool_use ids and turn uuids as the live session, and
+ * folding them into the pane's model would file a subagent's Bash card under
+ * the turn that spawned it. The blocks that come out are the same `Block` union
+ * the live path builds, so the agent view renders both identically; only the
+ * prompt is lifted, because a replayed session records it as a turn's user text
+ * rather than as a thread block.
+ */
+export function threadBlocksFromLines(lines: ProtocolLine[], nowMs = Date.now()): Block[] {
+  const replayed = replayLines(lines, nowMs);
+  const out: Block[] = [];
+  for (const turn of replayed.turns) {
+    if (turn.userText) {
+      out.push({
+        kind: "userText",
+        key: `${turn.id}:prompt`,
+        text: turn.userText,
+        prompt: out.length === 0
+      });
+    }
+    for (const block of turn.blocks) out.push(block);
+  }
+  return out;
+}
+
+function hydrateThreadFromDisk(
+  model: TranscriptModel,
+  toolUseId: string,
+  events: ProtocolLine[],
+  nowMs: number
+): TranscriptModel {
+  return hydrateThread(model, toolUseId, threadBlocksFromLines(events, nowMs), nowMs);
 }

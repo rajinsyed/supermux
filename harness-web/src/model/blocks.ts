@@ -151,6 +151,105 @@ export function makeToolBlock(
   };
 }
 
+/**
+ * The three merges below are the SHARED semantics of "a content block arrived".
+ *
+ * Two containers now build blocks: a turn, addressed by path through the index,
+ * and an agent thread, addressed by position in a flat list. What differs is
+ * WHERE the block is written; what must not differ is what a text/thinking/
+ * tool_use block becomes when it arrives or arrives again — which fields a
+ * repeat overwrites, when a tool block leaves `pending`, and what a Task tool
+ * carries in `subagent`. Keeping that in one place is why the agent view can
+ * render with the main chat's renderers and stay honest about the same frames.
+ */
+export function mergeTextBlock(
+  existing: TextBlock | undefined,
+  key: string,
+  messageId: string,
+  text: string,
+  uuid: string | undefined
+): TextBlock {
+  if (!existing) {
+    const block = makeTextBlock(key, messageId, text, false);
+    block.uuid = uuid;
+    return block;
+  }
+  return { ...existing, text, streaming: false, uuid };
+}
+
+export function mergeThinkingBlock(
+  existing: ThinkingBlock | undefined,
+  key: string,
+  messageId: string,
+  text: string,
+  signature: string | undefined,
+  uuid: string | undefined,
+  atMs: number,
+  tokens: number
+): ThinkingBlock {
+  if (!existing) {
+    const block = makeThinkingBlock(key, messageId, text, false, atMs);
+    block.uuid = uuid;
+    block.signature = signature;
+    block.endedAtMs = atMs;
+    block.tokens = tokens;
+    return block;
+  }
+  return {
+    ...existing,
+    // A repeat with no text is the completion frame for one already streamed;
+    // it must not blank what is on screen.
+    text: text.length > 0 ? text : existing.text,
+    signature,
+    streaming: false,
+    endedAtMs: existing.endedAtMs ?? atMs,
+    uuid
+  };
+}
+
+export function mergeToolUseBlock(
+  existing: ToolBlock | undefined,
+  key: string,
+  messageId: string,
+  tool: { id: string; name: string; input?: JsonObject },
+  uuid: string | undefined,
+  atMs: number
+): ToolBlock {
+  const isTask = tool.name === "Task" || tool.name === "Agent";
+  if (!existing) {
+    const block = makeToolBlock(key, messageId, tool.id, tool.name, tool.input ?? {}, false, atMs);
+    block.uuid = uuid;
+    if (isTask) {
+      block.subagent = {
+        subagentType: typeof tool.input?.subagent_type === "string" ? tool.input.subagent_type : undefined,
+        description: typeof tool.input?.description === "string" ? tool.input.description : undefined,
+        status: "running"
+      };
+    }
+    return block;
+  }
+  return {
+    ...existing,
+    input: tool.input ?? existing.input,
+    inputComplete: true,
+    streaming: false,
+    status: existing.status === "pending" ? "running" : existing.status,
+    uuid,
+    subagent: isTask
+      ? {
+          ...existing.subagent,
+          subagentType:
+            (typeof tool.input?.subagent_type === "string" ? tool.input.subagent_type : undefined) ??
+            existing.subagent?.subagentType,
+          description:
+            (typeof tool.input?.description === "string" ? tool.input.description : undefined) ??
+            existing.subagent?.description,
+          status: existing.subagent?.status ?? "running"
+        }
+      : existing.subagent
+  };
+}
+
 export function evictUuids(model: TranscriptModel, uuids: Set<string>): TranscriptModel {
   if (uuids.size === 0) return model;
   let changed = false;

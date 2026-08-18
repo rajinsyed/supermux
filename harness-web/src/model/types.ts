@@ -6,6 +6,7 @@ import type {
   McpServerDescriptor,
   ModelDescriptor,
   PermissionMode,
+  ProtocolLine,
   SessionState,
   SlashCommandDescriptor,
   TodoItem
@@ -227,7 +228,39 @@ export interface ImageBlock {
   dataBase64: string;
 }
 
-export type Block = TextBlock | ThinkingBlock | ToolBlock | DividerBlock | NoticeBlock | ImageBlock;
+/**
+ * A user-side message INSIDE an agent thread.
+ *
+ * A turn carries its user text on the turn itself, so the main chat never
+ * needed this. An agent thread has no turns — it is one flat conversation — and
+ * two different things arrive on its user side: the prompt the parent wrote for
+ * it (frame one), and anything delivered to it mid-run through the mailbox,
+ * which is where a relayed message lands. Rendering both as an anonymous
+ * `notice` — what round 3 did — hid the fact that the user had spoken to the
+ * agent at all.
+ */
+export interface UserTextBlock {
+  kind: "userText";
+  key: string;
+  uuid?: string;
+  text: string;
+  /** The agent's opening prompt, rather than a message sent to it later. */
+  prompt?: boolean;
+  /**
+   * Shown optimistically: the composer sent it, and the forwarded thread has not
+   * echoed it back yet. Cleared when the real delivery arrives.
+   */
+  pending?: boolean;
+}
+
+export type Block =
+  | TextBlock
+  | ThinkingBlock
+  | ToolBlock
+  | DividerBlock
+  | NoticeBlock
+  | ImageBlock
+  | UserTextBlock;
 
 export type TurnState = "queued" | "streaming" | "complete" | "aborted" | "error";
 
@@ -282,11 +315,52 @@ export interface PendingPermission {
   receivedAtMs: number;
 }
 
+/**
+ * A message the composer sent to MAIN in order to reach a subagent.
+ *
+ * There is no wire subtype that prompts a running agent directly (round-4
+ * probe: an outbound user frame carrying `parent_tool_use_id` is ignored as
+ * targeting and lands in main's queue), so the only route is to ask main to
+ * pass it on with SendMessage. That makes one user act into two facts — a main
+ * turn that must not read as the user talking to Claude, and a message the
+ * AGENT view has to show as the user's own — which is why the target rides on
+ * the message rather than being re-derived later from the text.
+ */
+export interface RelayTarget {
+  /** The agent thread this message is FOR. */
+  toolUseId: string;
+  /** Its description, for the chip: "→ sent to Slow summarizer". */
+  description?: string;
+}
+
+export type RelayState = "sending" | "relayed" | "delivered";
+
+export interface RelayRecord {
+  uuid: string;
+  toolUseId: string;
+  text: string;
+  description?: string;
+  sentAtMs: number;
+  /**
+   * `sending` until main answers, `relayed` once the turn carrying the request
+   * settles (main ran SendMessage and said RELAYED), `delivered` when the agent
+   * itself shows a user-side message afterwards — the mailbox drop landing at
+   * its next tool round. Three states because the two later ones are genuinely
+   * different news: relayed means main did its part, delivered means the agent
+   * has it.
+   */
+  state: RelayState;
+  /** The agent was backgrounded first so main could act on the relay. */
+  backgrounded?: boolean;
+}
+
 export interface QueuedMessage {
   uuid: string;
   text: string;
   images?: ImageAttachment[];
   queuedAtMs: number;
+  /** Set when this message is a relay: it is addressed to an agent, not to main. */
+  relay?: RelayTarget;
 }
 
 export interface SessionMeta {
@@ -404,6 +478,56 @@ export interface TaskRecord {
   notified?: boolean;
 }
 
+/**
+ * One agent's own conversation, built LIVE from forwarded frames.
+ *
+ * Round-4 wire fact: with `forwardSubagentText` set, a subagent's text and
+ * thinking arrive as ordinary `assistant`/`user` frames whose
+ * `parent_tool_use_id` is its IMMEDIATE parent Agent tool_use id. So the whole
+ * tree falls out of one rule — thread(X) is every frame with parent X, and an
+ * Agent tool_use with id Y inside thread X opens child thread Y — and the main
+ * chat is simply the thread whose parent is null.
+ *
+ * The blocks are the SAME `Block` union the turns carry, so the agent view can
+ * render with the main chat's renderers rather than a second, thinner set that
+ * drifts from it.
+ */
+export interface AgentThread {
+  toolUseId: string;
+  /** The Task input's `description` — the agent's name everywhere it appears. */
+  description?: string;
+  subagentType?: string;
+  taskId?: string;
+  /** The wire's task status, or `running` before any task frame lands. */
+  status?: string;
+  /** Live activity while it runs, from `task_progress`. */
+  activity?: string;
+  lastToolName?: string;
+  summary?: string;
+  model?: string;
+  agentId?: string;
+  totalTokens?: number;
+  toolUses?: number;
+  durationMs?: number;
+  background?: boolean;
+  /** Null for the main thread; the parent Agent's tool_use id otherwise. */
+  parentToolUseId?: string;
+  /** Child threads, in the order their Agent tool_use blocks arrived. */
+  childIds: string[];
+  blocks: Block[];
+  startedAtMs: number;
+  endedAtMs?: number;
+  /**
+   * A disk transcript was replayed into this thread because no live frames ever
+   * arrived (a resumed session, or forwarding that started late). Live frames
+   * take over: the flag exists so a second replay cannot double the blocks.
+   */
+  hydratedFromDisk?: boolean;
+  /** Live frames have been seen, so a disk replay would be a duplicate. */
+  hasLiveFrames?: boolean;
+  revision: number;
+}
+
 export interface TranscriptModel {
   generation: number;
   session: SessionMeta;
@@ -429,6 +553,16 @@ export interface TranscriptModel {
    * would otherwise enrich rows belonging to a new one.
    */
   tasksById: Record<string, TaskRecord>;
+  /**
+   * Every agent thread this session has seen, keyed by the Agent tool_use id.
+   * Rows PERSIST after completion, like the CLI's dock: an agent that finished
+   * two minutes ago is still the thing you want to read.
+   */
+  agentThreads: Record<string, AgentThread>;
+  /** Root threads in spawn order — the dock's top-level agent rows. */
+  agentRootIds: string[];
+  /** Relayed messages, keyed by the uuid of the main-thread user message. */
+  relays: Record<string, RelayRecord>;
   runPhase: RunPhase;
   runId?: string;
   exitError?: string;
@@ -451,7 +585,23 @@ export interface TranscriptModel {
 }
 
 export type LocalAction =
-  | { kind: "localSend"; uuid: string; text: string; images?: ImageAttachment[]; atMs: number }
+  | {
+      kind: "localSend";
+      uuid: string;
+      text: string;
+      images?: ImageAttachment[];
+      atMs: number;
+      /** Present when the composer was inside an agent view: this is a relay. */
+      relay?: RelayTarget;
+      /** The relay backgrounded the agent's Task first, so main could act. */
+      backgrounded?: boolean;
+    }
+  /**
+   * A disk transcript, replayed into a thread that never received live frames.
+   * The events are already parsed protocol lines, so the SAME reducer path that
+   * builds a live thread builds this one.
+   */
+  | { kind: "hydrateThread"; toolUseId: string; events: ProtocolLine[] }
   | { kind: "cancelQueued"; uuid: string }
   /** Interrupt-with-cancel drops the whole queue on the CLI side; mirror it. */
   | { kind: "clearQueued" }

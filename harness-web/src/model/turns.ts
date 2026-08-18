@@ -8,7 +8,14 @@ import {
   withTurn,
   type TranscriptIndex
 } from "./helpers";
-import type { Block, ImageAttachment, NoticeErrorKind, TranscriptModel, Turn } from "./types";
+import type {
+  Block,
+  ImageAttachment,
+  NoticeErrorKind,
+  RelayRecord,
+  TranscriptModel,
+  Turn
+} from "./types";
 
 export function createModel(): TranscriptModel {
   return {
@@ -24,6 +31,9 @@ export function createModel(): TranscriptModel {
     banners: [],
     backgroundTasks: [],
     tasksById: {},
+    agentThreads: {},
+    agentRootIds: [],
+    relays: {},
     runPhase: "idle",
     stderrTail: [],
     revision: 0
@@ -162,9 +172,18 @@ export function truncateBeforeUserMessage(
   for (const [toolUseId, location] of index.toolLocations) {
     if (!kept.has(location.turnId)) index.toolLocations.delete(toolUseId);
   }
+  // A relay is remembered so the MAIN transcript can draw its user message as a
+  // chip instead of a bubble. Once that turn is gone the record describes
+  // nothing on screen, and keeping it would compact a LATER message that
+  // happened to reuse the uuid.
+  const relays: Record<string, RelayRecord> = {};
+  for (const [uuid, relay] of Object.entries(model.relays)) {
+    if (kept.has(uuid)) relays[uuid] = relay;
+  }
   return {
     ...model,
     turns,
+    relays,
     // Everything below described the dropped turns: an approval prompt for a
     // tool call that no longer exists cannot be answered, and a queued message
     // was typed against a conversation that is being rewritten.

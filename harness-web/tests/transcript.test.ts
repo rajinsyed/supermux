@@ -296,10 +296,24 @@ describe("subagents fixture", () => {
     expect(tasks[1].subagent?.summary).toContain("6 supermux.* keys");
   });
 
-  test("nests subagent tool calls and text under the parent Task", () => {
+  test("nests subagent tool calls under the parent Task", () => {
     const task = tools(model).find((t) => t.subagent?.subagentType === "Explore");
     expect(task!.children.some((c) => c.kind === "tool" && c.name === "Grep")).toBe(true);
-    expect(task!.children.some((c) => c.kind === "notice")).toBe(true);
+  });
+
+  /**
+   * Round 4 moved the agent's own words OUT of the inline card. They used to be
+   * pasted in as anonymous `notice` blocks, which is why the inline card had to
+   * grow into a full nested transcript; now they build the agent's THREAD, the
+   * inline surface is a one-line row, and the conversation is read in the agent
+   * view. The same frames, folded once each — not dropped.
+   */
+  test("subagent text builds the agent's thread rather than an inline notice", () => {
+    const task = tools(model).find((t) => t.subagent?.subagentType === "Explore")!;
+    expect(task.children.some((c) => c.kind === "notice")).toBe(false);
+    const thread = model.agentThreads[task.toolUseId];
+    expect(thread).toBeDefined();
+    expect(thread.blocks.some((b) => b.kind === "userText")).toBe(true);
   });
 
   test("tracks background tasks separately", () => {
