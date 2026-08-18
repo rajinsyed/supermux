@@ -1,9 +1,11 @@
 import { useCopy } from "../CopyContext";
-import { ArrowLeft, ChevronRight } from "../Icons";
+import { ArrowLeft, Close } from "../Icons";
+import { ChevronRight } from "../Icons";
 import type { HarnessView } from "./viewStack";
 
 /**
- * Where you are, and one press back.
+ * The framed view's header: back arrow, the trail, and a close that returns
+ * straight to the main chat — Cursor's subagent-panel chrome.
  *
  * The trail is the STACK, not a computed path: an agent reached from a workflow
  * reads "Claude › alpha-beta-demo › merger", and Escape retraces exactly those
@@ -30,13 +32,12 @@ export function ViewBreadcrumb({
     <div className="view-crumbs">
       <button
         type="button"
-        className="btn btn-quiet view-back"
+        className="icon-btn view-back"
         onClick={onBack}
         title={copy("supermux.harness.view.backTo", { label: labelFor(parent) })}
         aria-label={copy("supermux.harness.view.backTo", { label: labelFor(parent) })}
       >
-        <ArrowLeft size={12} />
-        {copy("supermux.harness.view.back")}
+        <ArrowLeft size={13} />
       </button>
       <nav className="view-crumb-trail" aria-label={copy("supermux.harness.view.rootCrumb")}>
         {stack.map((view, index) => {
@@ -57,6 +58,16 @@ export function ViewBreadcrumb({
           );
         })}
       </nav>
+      <span className="view-crumbs-spacer" />
+      <button
+        type="button"
+        className="icon-btn view-close"
+        onClick={() => onOpen({ kind: "main" })}
+        title={copy("supermux.harness.view.close")}
+        aria-label={copy("supermux.harness.view.close")}
+      >
+        <Close size={12} />
+      </button>
     </div>
   );
 }

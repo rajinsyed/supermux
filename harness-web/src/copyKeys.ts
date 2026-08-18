@@ -63,8 +63,6 @@ export const copyDefaults = {
   "supermux.harness.composer.placeholderRestarting": "Restarting Claude…",
   "supermux.harness.composer.send": "Send",
   "supermux.harness.composer.stop": "Stop",
-  "supermux.harness.composer.hintSend": "Enter to send",
-  "supermux.harness.composer.hintNewline": "Shift+Enter for a new line",
   "supermux.harness.composer.hintInterrupt": "Esc to interrupt",
   "supermux.harness.composer.hintMode": "Shift+Tab cycles permission mode",
   "supermux.harness.composer.attach": "Attach files",
@@ -75,7 +73,6 @@ export const copyDefaults = {
   "supermux.harness.composer.mentionEmpty": "No matching files",
   "supermux.harness.composer.commandTitle": "Commands",
   "supermux.harness.composer.commandEmpty": "No matching commands",
-  "supermux.harness.composer.approxTokens": "~{count} tokens",
 
   "supermux.harness.status.idle": "Ready",
   "supermux.harness.status.thinking": "Claude is thinking…",
@@ -244,14 +241,17 @@ export const copyDefaults = {
   // conversation was rewound past the turn that launched the run.
   "supermux.harness.workflow.browser.gone": "This workflow is no longer available.",
 
-  // --- Round 4: the agents dock, above the composer ---
+  // --- The working panel (agents dock), floating above the composer ---
+  // Cursor-style header: "3 working · Stop all". `title` survives as the
+  // region's accessible name and the collapsed chip's label.
   "supermux.harness.dock.title": "Agents",
+  "supermux.harness.dock.workingOne": "{count} working",
+  "supermux.harness.dock.working": "{count} working",
+  "supermux.harness.dock.stopAll": "Stop all",
   "supermux.harness.dock.main": "Claude",
   "supermux.harness.dock.mainHint": "Main conversation",
   "supermux.harness.dock.collapse": "Hide agents",
   "supermux.harness.dock.expand": "Show agents",
-  "supermux.harness.dock.countOne": "{count} agent",
-  "supermux.harness.dock.count": "{count} agents",
   "supermux.harness.dock.open": "Open",
   "supermux.harness.dock.stop": "Stop",
   "supermux.harness.dock.stopping": "Stopping…",
@@ -268,11 +268,10 @@ export const copyDefaults = {
   "supermux.harness.dock.statusIdle": "Idle",
   "supermux.harness.dock.workflowAgents": "{done}/{total} agents",
   "supermux.harness.dock.a11y": "Agents and background tasks",
-  "supermux.harness.dock.keyHint": "↑↓ select · ⏎ open · esc back",
 
-  // --- Round 4: full-chat agent views ---
-  "supermux.harness.view.back": "Back",
+  // --- Full-chat agent views, framed like Cursor's subagent panel ---
   "supermux.harness.view.backTo": "Back to {label}",
+  "supermux.harness.view.close": "Close",
   "supermux.harness.view.rootCrumb": "Claude",
   "supermux.harness.agentView.prompt": "Prompt",
   "supermux.harness.agentView.empty": "This agent has not said anything yet.",

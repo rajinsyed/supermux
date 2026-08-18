@@ -306,7 +306,8 @@ describe("escape navigation", () => {
     expect(trail.textContent).toContain("Claude");
     expect(trail.textContent).toContain("Outer relay");
     expect(container.querySelector(".view-crumb-current")!.textContent).toBe("Outer relay");
-    fireEvent.click(getByText("Back"));
+    // Icon-only now; its accessible name still says where it goes.
+    fireEvent.click(container.querySelector(".view-back")!);
     expect(getByTestId("view").textContent).toBe("main");
   });
 

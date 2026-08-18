@@ -27,10 +27,10 @@ function RowIcon({ kind }: { kind: DockRow["kind"] }) {
 /**
  * The row's state as one word.
  *
- * Every non-main row in the dock is RUNNING by construction — the model drops a
- * row the moment its work is terminal — so there is no settled vocabulary here
- * any more. Main is the exception: it stays whether or not a turn is in flight,
- * and Idle is what it says when nothing is.
+ * Every non-main row in the panel is RUNNING by construction — the model drops
+ * a row the moment its work is terminal — so there is no settled vocabulary
+ * here any more. Main is the exception: it stays whether or not a turn is in
+ * flight, and Idle is what it says when nothing is.
  */
 function statusKey(row: DockRow): CopyKey | undefined {
   if (row.running) return "supermux.harness.dock.statusRunning";
@@ -141,11 +141,12 @@ const DockRowView = memo(function DockRowView({
 });
 
 /**
- * The CLI's agents dock, above the composer.
+ * The working panel: Cursor's "3 Working · Stop All" glass island above the
+ * composer.
  *
  * Rows are `main` first, then running agents in tree order (nested ones
  * indented under their parent), then running workflows and shells. A row is
- * REMOVED the instant its work is terminal: the dock says what is happening
+ * REMOVED the instant its work is terminal: the panel says what is happening
  * now, and the transcript's own compact agent/workflow rows are where finished
  * work is read.
  */
@@ -161,11 +162,21 @@ export const AgentsDock = memo(function AgentsDock({
   const copy = useCopy();
   const [open, setOpen] = useState(true);
   const [focusIndex, setFocusIndex] = useState(0);
+  const [stoppingAll, setStoppingAll] = useState(false);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const agentCount = rows.filter((row) => row.kind !== "main").length;
+  const workingCount = rows.filter((row) => row.kind !== "main" && row.running).length;
+  const stoppable = rows.filter((row) => row.stopTaskId !== undefined);
   const clamped = Math.min(focusIndex, Math.max(0, rows.length - 1));
+
+  const stopAll = useCallback(() => {
+    if (stoppable.length === 0) return;
+    setStoppingAll(true);
+    void Promise.allSettled(
+      stoppable.map((row) => getBridge().stopTask({ taskId: row.stopTaskId as string }))
+    ).finally(() => setStoppingAll(false));
+  }, [stoppable]);
 
   const focusRow = useCallback((index: number) => {
     setFocusIndex(index);
@@ -201,30 +212,30 @@ export const AgentsDock = memo(function AgentsDock({
       }
       // Escape is deliberately NOT handled here: it belongs to the view stack,
       // which pops one level per press wherever focus happens to be. Swallowing
-      // it in the dock would make esc mean two different things depending on
+      // it in the panel would make esc mean two different things depending on
       // whether a row had focus.
     },
     [clamped, focusRow, onOpen, rows]
   );
 
   /**
-   * Was the reader's focus IN the dock, recorded as it happens.
+   * Was the reader's focus IN the panel, recorded as it happens.
    *
    * It cannot be read back after the fact: removing the focused element resets
    * `document.activeElement` to the body, so by the time the effect below runs,
-   * the one row that could prove the reader was in the dock is exactly the row
-   * that is gone. Answering "is focus in the dock" from the body would decline
+   * the one row that could prove the reader was in the panel is exactly the row
+   * that is gone. Answering "is focus in the panel" from the body would decline
    * to restore in precisely the case restoration exists for.
    */
   const hadFocus = useRef(false);
 
   /**
-   * Rows now VANISH under the reader — an agent finishing removes its row — so
-   * the roving tabstop has to survive its own row disappearing.
+   * Rows VANISH under the reader — an agent finishing removes its row — so the
+   * roving tabstop has to survive its own row disappearing.
    *
    * Two halves. The index is clamped back into range (above) so the walker
    * never points past the end, and DOM focus is moved to the row that took its
-   * place — but only when the focus WAS in the dock. Stealing focus from the
+   * place — but only when the focus WAS in the panel. Stealing focus from the
    * composer because a background shell happened to finish would eat the next
    * character the user typed, which is the far worse failure.
    */
@@ -235,7 +246,7 @@ export const AgentsDock = memo(function AgentsDock({
     if (hadFocus.current) refs.current[clamped]?.focus();
   }, [clamped, focusIndex, rows.length]);
 
-  // A row the reader has just opened is scrolled into the dock's own viewport:
+  // A row the reader has just opened is scrolled into the panel's own viewport:
   // the list is height-capped past ~4 rows, and an agent selected from the chat
   // could otherwise be highlighted entirely below the fold.
   const activeKey = viewKey(activeView);
@@ -249,35 +260,53 @@ export const AgentsDock = memo(function AgentsDock({
   }, [activeKey, open, rows]);
 
   // Nothing but main is running, so there is nothing to dock. The empty shell
-  // — a header reading "0 agents" over an empty list — is chrome that says
+  // — a header reading "0 working" over an empty list — is chrome that says
   // less than its own absence.
   if (rows.length <= 1) return null;
 
   return (
-    <div className="agents-dock">
-      <button
-        type="button"
-        className="agents-dock-head"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        <span className="agents-dock-title">{copy("supermux.harness.dock.title")}</span>
-        <span className="agents-dock-count tnum">
-          {plural(copy, agentCount, "supermux.harness.dock.countOne", "supermux.harness.dock.count")}
+    <div className="agents-dock" role="region" aria-label={copy("supermux.harness.dock.a11y")}>
+      <div className="agents-dock-head">
+        <button
+          type="button"
+          className="agents-dock-fold icon-btn"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-label={
+            open ? copy("supermux.harness.dock.collapse") : copy("supermux.harness.dock.expand")
+          }
+        >
+          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        </button>
+        <span className="agents-dock-title">
+          {plural(
+            copy,
+            workingCount,
+            "supermux.harness.dock.workingOne",
+            "supermux.harness.dock.working"
+          )}
         </span>
-        <span className="agents-dock-hint">{copy("supermux.harness.dock.keyHint")}</span>
-        <span className="sr-only">
-          {open ? copy("supermux.harness.dock.collapse") : copy("supermux.harness.dock.expand")}
-        </span>
-      </button>
+        <span className="agents-dock-spacer" />
+        {stoppable.length > 0 ? (
+          <button
+            type="button"
+            className="agents-dock-stopall"
+            onClick={stopAll}
+            disabled={stoppingAll}
+          >
+            {stoppingAll
+              ? copy("supermux.harness.dock.stopping")
+              : copy("supermux.harness.dock.stopAll")}
+          </button>
+        ) : null}
+      </div>
       <Disclosure open={open}>
         <ul
           className="agents-dock-list"
           ref={listRef}
           role="listbox"
           tabIndex={-1}
-          aria-label={copy("supermux.harness.dock.a11y")}
+          aria-label={copy("supermux.harness.dock.title")}
           onKeyDown={onKeyDown}
           // Bubbling focus events, so this is one listener for every row rather
           // than a handler per button — and it stays correct as rows come and go.
@@ -285,7 +314,7 @@ export const AgentsDock = memo(function AgentsDock({
             hadFocus.current = true;
           }}
           onBlur={(event) => {
-            // A blur INSIDE the list (row to row) is not leaving the dock, and
+            // A blur INSIDE the list (row to row) is not leaving the panel, and
             // a blur caused by the focused row being removed reports no
             // relatedTarget at all — which is the case that must keep the flag.
             const next = event.relatedTarget;

@@ -1,32 +1,327 @@
-.permission-card,
-.plan-card,
-.question-card {
-  margin: 12px 0 4px;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--claude-border);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-lifted);
-  overflow: hidden;
-  animation: card-in 200ms var(--ease);
+/* ---------------------------------------------------------------------------
+   Buttons, small primitives, and the three decision cards (permission, plan,
+   question). The decision cards are the Beautiful-UI "approval card" pattern:
+   they render at the transcript tail as focused glass panels — the one moment
+   the interface interrupts, so they get the strongest chrome in the pane.
+--------------------------------------------------------------------------- */
+
+/* ---------- buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
-@keyframes card-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
+.btn kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--on-claude-chip);
+  color: inherit;
+  opacity: 0.9;
+}
+
+.btn-primary {
+  background: var(--claude-btn);
+  color: var(--on-claude);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--claude-btn-hover);
+}
+
+.btn-primary:focus-visible {
+  background: var(--claude-btn-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+}
+
+.btn-secondary {
+  background: var(--surface-active);
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.btn-secondary:focus-visible {
+  color: var(--text);
+}
+
+.btn-secondary kbd,
+.btn-ghost kbd {
+  background: var(--surface-active);
+  color: var(--text-faint);
+}
+
+.btn-ghost {
+  color: var(--text-muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-ghost:focus-visible {
+  color: var(--text);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.5;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+.btn-danger:focus-visible {
+  background: var(--danger-hover);
+}
+
+.btn-danger kbd {
+  background: var(--on-danger-chip);
+}
+
+.btn-tiny {
+  padding: 2px 9px;
+  font-size: 11px;
+  border-radius: var(--r-sm);
+  background: var(--surface-active);
+  color: var(--text-soft);
+}
+
+.btn-tiny:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-tiny:focus-visible {
+  color: var(--text);
+}
+
+.btn-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.btn-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-sub {
+  font-size: 10.5px;
+  font-weight: 400;
+  opacity: 0.85;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.btn-icon-only {
+  padding: 5px;
+}
+
+/* The composer's round send control — Cursor's grammar: a filled circle at the
+   trailing edge of the input pill. */
+.btn-send {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--claude-btn);
+  color: var(--on-claude);
+  flex: 0 0 auto;
+}
+
+.btn-send:hover:not(:disabled) {
+  background: var(--claude-btn-hover);
+}
+
+.btn-send:focus-visible {
+  background: var(--claude-btn-hover);
+}
+
+.btn-send:disabled {
+  background: var(--surface-active);
+  color: var(--text-faint);
+}
+
+.btn-stop {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--text);
+  color: var(--page-bg, #0f0f13);
+  flex: 0 0 auto;
+}
+
+.btn-stop:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn-stop:focus-visible {
+  opacity: 0.85;
+}
+
+.btn-kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  background: transparent;
+}
+
+/* ---------- icon buttons ---------- */
+
+.icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.icon-btn:focus-visible {
+  color: var(--text);
+}
+
+.icon-btn.is-on {
+  color: var(--claude);
+  background: var(--claude-faint);
+}
+
+.copy-btn.is-copied {
+  color: var(--success);
+}
+
+.copy-btn.is-failed {
+  color: var(--danger);
+}
+
+/* Opens DOWNWARD: every ancestor a copy button lives in (code block, tool
+   card) clips overflow, and a toast above the button paints outside them. */
+.copy-toast {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lifted);
+  font-size: 10.5px;
+  color: var(--text-soft);
+  white-space: nowrap;
+  z-index: 5;
+}
+
+/* ---------- spinner / working dots ---------- */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-.permission-card {
-  border-color: color-mix(in srgb, var(--warning) 42%, transparent);
+.spinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--claude-strong);
+  animation: spin 800ms linear infinite;
 }
 
-.plan-card {
-  border-color: color-mix(in srgb, var(--violet) 42%, transparent);
+@keyframes dot-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+  36% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
+.working-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.working-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--claude-strong);
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+
+.working-dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.working-dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+/* ---------- shared decision-card shell ---------- */
+
+.permission-card,
+.plan-card,
 .question-card {
-  border-color: var(--claude-border);
+  margin: 14px 0 6px;
+  border-radius: var(--r-xl);
+  background: var(--panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-panel);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
 }
 
 .permission-head,
@@ -34,19 +329,17 @@
 .question-head {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  padding: 11px 12px 9px;
-  border-bottom: 1px solid var(--border-faint);
+  gap: 10px;
 }
 
 .permission-icon,
 .plan-icon,
 .question-icon {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--r-sm);
   flex: 0 0 auto;
 }
@@ -69,11 +362,20 @@
 .permission-title,
 .plan-title,
 .question-title {
-  flex: 1 1 auto;
+  flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+}
+
+.permission-badge,
+.plan-badge,
+.question-badge {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 1px;
 }
 
 .permission-title h3,
@@ -82,59 +384,27 @@
   margin: 0;
   font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text);
-}
-
-.permission-badge,
-.plan-badge,
-.question-badge {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.permission-badge {
-  color: var(--warning);
-}
-
-.plan-badge {
-  color: var(--violet);
-}
-
-.question-badge {
-  color: var(--claude);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .permission-reason {
-  margin: 2px 0 0;
-  font-size: 11.5px;
+  margin: 3px 0 0;
+  font-size: 12px;
   color: var(--text-muted);
-  line-height: 1.45;
 }
 
-.permission-queue,
-.question-progress {
+.permission-queue {
+  font-size: 11px;
+  color: var(--text-faint);
   flex: 0 0 auto;
-  padding: 2px 7px;
-  border-radius: var(--r-pill);
-  background: var(--surface-sunken);
-  font-size: 10.5px;
-  color: var(--text-muted);
 }
 
 .permission-preview {
-  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-}
-
-.permission-desc {
-  margin: 0;
-  font-size: 11.5px;
-  color: var(--text-muted);
+  gap: 6px;
+  min-width: 0;
 }
 
 .permission-file {
@@ -142,182 +412,172 @@
   color: var(--text-muted);
 }
 
-.permission-path {
-  display: flex;
-  gap: 7px;
-  padding: 0 12px 9px;
-  font-size: 11px;
+.permission-desc {
+  margin: 0;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
+.permission-path {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
 .permission-path-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--text-faint);
-  font-family: inherit;
+  flex: 0 0 auto;
 }
 
 .permission-actions,
 .plan-actions,
-.question-actions,
-.permission-deny-row {
+.question-actions {
   display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 12px;
-  border-top: 1px solid var(--border-faint);
-  background: var(--surface);
+  align-items: stretch;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .permission-spacer {
-  flex: 1 1 auto;
+  flex: 1;
+}
+
+.permission-deny-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .permission-reason-input {
-  flex: 1 1 200px;
-  min-width: 160px;
-  padding: 6px 9px;
-  border-radius: var(--r-sm);
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
   border: 1px solid var(--border);
+  border-radius: var(--r-md);
   background: var(--input-bg);
-  font-size: 12px;
+  font-size: 12.5px;
+  color: var(--text);
 }
 
-.permission-reason-input:focus {
-  border-color: var(--danger-border);
+.permission-reason-input::placeholder {
+  color: var(--text-faint);
 }
 
-/* The clip reveals rather than snaps. Unlike the mounted/unmounted disclosures
-   the plan body is always rendered, so its own max-height carries the motion;
-   200vh is a ceiling no plan reaches, which keeps the easing honest. */
+/* ---------- plan card ---------- */
+
 .plan-body {
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  max-height: 200vh;
+  max-height: 1200px;
   overflow: hidden;
   transition: max-height 200ms var(--ease);
+  font-size: 13px;
 }
 
 .plan-body.is-clipped {
-  max-height: 380px;
-  mask-image: linear-gradient(to bottom, #000 74%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 74%, transparent 100%);
+  max-height: 300px;
+  -webkit-mask-image: linear-gradient(to bottom, black 78%, transparent 98%);
+  mask-image: linear-gradient(to bottom, black 78%, transparent 98%);
 }
 
 .plan-expand {
-  display: block;
-  width: 100%;
-  padding: 5px;
-  text-align: center;
+  align-self: flex-start;
 }
 
-/* ---------- questions ---------- */
+/* ---------- question card ---------- */
+
+.question-progress {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
 
 .question-list {
   display: flex;
   flex-direction: column;
+  gap: 4px;
 }
 
 .question-item {
-  border-bottom: 1px solid var(--border-faint);
+  border-radius: var(--r-lg);
+  border: 1px solid transparent;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-.question-item:last-child {
-  border-bottom: none;
+.question-item.is-active {
+  border-color: var(--border);
+  background: var(--surface);
 }
 
 .question-prompt {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: 1px;
   width: 100%;
-  padding: 9px 12px;
   text-align: left;
-  transition: background var(--dur) var(--ease);
+  padding: 8px 11px;
+  border-radius: var(--r-lg);
 }
 
-.question-prompt:hover,
+.question-prompt:hover {
+  background: var(--surface-hover);
+}
+
 .question-prompt:focus-visible {
   background: var(--surface-hover);
 }
 
-/* Full-bleed rows in a clipping card: the ring goes inside their own box (see
-   the same treatment on .tool-head), and the background change carries the rest
-   of the state. */
-.question-prompt:focus-visible,
-.plan-expand:focus-visible {
-  outline-offset: -2px;
-  box-shadow: none;
-}
-
 .question-header {
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--claude);
 }
 
 .question-text {
-  font-size: 12.5px;
-  color: var(--text);
-  line-height: 1.45;
-}
-
-.question-hint {
-  font-size: 10.5px;
-  color: var(--claude);
-}
-
-.question-answer {
-  padding: 0 12px 9px;
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-/* An answered question reads as a decision; an unanswered one must not look
-   like the same kind of thing. */
-.answer-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 9px 2px 7px;
-  border-radius: var(--r-pill);
-  background: var(--claude-faint);
-  border: 1px solid var(--claude-border);
-  color: var(--claude);
+  font-size: 13px;
   font-weight: 500;
 }
 
-.question-answer.is-unanswered {
+.question-hint {
+  font-size: 11px;
   color: var(--text-faint);
-  font-style: italic;
 }
 
 .question-options {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 12px 11px;
+  padding: 2px 11px 11px;
 }
 
 .option {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 9px;
-  padding: 8px 10px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
   border-radius: var(--r-md);
   border: 1px solid var(--border);
-  background: var(--surface);
-  text-align: left;
+  font-size: 12.5px;
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-.option:hover,
-.option:focus-visible {
-  border-color: var(--border-strong);
+.option:hover {
   background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.option:focus-visible {
+  border-color: var(--claude-border);
 }
 
 .option.is-on {
@@ -325,558 +585,85 @@
   background: var(--claude-faint);
 }
 
-/* Users are told to press these numbers, so they must be legible, not a faint
-   ornament. */
 .option-key {
-  display: flex;
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: var(--r-xs);
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
   font-size: 10px;
-  flex: 0 0 auto;
-  margin-top: 1px;
+  color: var(--text-muted);
 }
 
 .option.is-on .option-key {
-  background: var(--claude-btn);
-  color: var(--on-claude);
+  border-color: var(--claude-border);
+  color: var(--claude);
 }
 
 .option-text {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1 1 auto;
+  gap: 1px;
 }
 
 .option-label {
-  font-size: 12.5px;
-  font-weight: 500;
   color: var(--text);
 }
 
 .option-desc {
   font-size: 11.5px;
   color: var(--text-muted);
-  line-height: 1.45;
 }
 
 .option-check {
-  color: var(--claude);
   flex: 0 0 auto;
-  margin-top: 2px;
+  color: var(--claude);
 }
 
 .question-other {
+  margin-top: 2px;
   padding: 7px 10px;
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
-  border: 1px dashed var(--border-strong);
-  background: transparent;
-  font-size: 12px;
+  background: var(--input-bg);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.question-other::placeholder {
+  color: var(--text-faint);
 }
 
 .question-merged {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  padding: 1px 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.question-other:focus {
-  border-style: solid;
-  border-color: var(--claude-border);
-  background: var(--input-bg);
-}
-
-/* ---------- buttons ---------- */
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: var(--r-sm);
-  border: 1px solid transparent;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease), transform 90ms var(--ease);
-}
-
-.btn:active:not(:disabled) {
-  transform: translateY(0.5px);
-}
-
-.btn:disabled {
-  opacity: 0.42;
-}
-
-/* --claude-strong is an accent tuned for borders and carets; it does not carry
-   white label text at AA in light mode, so buttons use the darker --claude-btn
-   with a theme-appropriate foreground. */
-.btn-primary {
-  background: var(--claude-btn);
-  color: var(--on-claude);
-}
-
-.btn-primary:hover:not(:disabled),
-.btn-primary:focus-visible:not(:disabled) {
-  background: var(--claude-btn-hover);
-}
-
-.btn-secondary {
-  background: var(--surface-raised);
-  border-color: var(--border-strong);
-  color: var(--text-soft);
-}
-
-.btn-secondary:hover:not(:disabled),
-.btn-secondary:focus-visible:not(:disabled) {
-  border-color: var(--claude-border);
-  color: var(--text);
-}
-
-.btn-ghost {
-  color: var(--text-muted);
-}
-
-.btn-ghost:hover:not(:disabled),
-.btn-ghost:focus-visible:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-/* The dark-theme --danger is a light salmon; white text on it reads at 2.2:1,
-   so the label follows the surface the way btn-primary does. */
-.btn-danger {
-  background: var(--danger);
-  color: var(--on-danger);
-}
-
-.btn-danger:hover:not(:disabled),
-.btn-danger:focus-visible:not(:disabled) {
-  background: var(--danger-hover);
-}
-
-.btn-tiny {
-  height: 22px;
-  padding: 0 9px;
-  font-size: 11px;
-  background: var(--surface-raised);
-  border-color: var(--border-strong);
-  color: var(--text-soft);
-}
-
-.btn-tiny:hover,
-.btn-tiny:focus-visible {
-  border-color: var(--claude-border);
-  color: var(--text);
-}
-
-.btn-icon-only {
-  width: 28px;
-  padding: 0;
-  flex: 0 0 auto;
-}
-
-.btn-stacked {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0;
-  height: auto;
-  padding: 4px 11px 5px;
-}
-
-.btn-line {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-/* The exact rule being added to settings — safety-critical detail, not a hint. */
-/* The always-allow sublabel prints the exact rule a click grants for good. A
-   single ellipsised line cut it mid-glob — `Edit(/Users/dev/projects/supermux/…`
-   — hiding precisely the part that decides one directory versus the whole tree.
-   It wraps and breaks inside the path instead, so the rule is readable BEFORE
-   the button is pressed. The clamp is a backstop for a pathological path, not
-   the normal case; `title` still carries the full string either way. */
-.btn-sub {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  font-weight: 400;
-  max-width: min(62ch, 100%);
-  text-align: left;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-
-/* The stacked button sizes to its own label rather than being frozen at the
-   width of the action row's other buttons, so a long rule uses the card's
-   width instead of wrapping inside a 225px column. */
-.btn-stacked {
-  max-width: 100%;
-}
-
-/* The most-clicked control in the pane, so it answers the pointer like every
-   other button: same token, same easing as .btn-primary. */
-.btn-send {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: var(--r-md);
-  background: var(--claude-btn);
-  color: var(--on-claude);
-}
-
-.btn-send:hover:not(:disabled),
-.btn-send:focus-visible:not(:disabled) {
-  background: var(--claude-btn-hover);
-}
-
-.btn-send:disabled {
-  background: var(--surface-active);
-  color: var(--text-faint);
-  opacity: 1;
-}
-
-.btn-plan-action {
-  padding: 0 13px;
-}
-
-.btn-stop {
-  height: 28px;
-  padding: 0 11px;
-  border-radius: var(--r-md);
-  background: var(--danger-soft);
-  border-color: var(--danger-border);
-  color: var(--danger);
-}
-
-.btn-stop:hover,
-.btn-stop:focus-visible {
-  background: color-mix(in srgb, var(--danger) 22%, transparent);
-}
-
-/* A kbd chip names the key a user must press — it is instruction, not
-   decoration, so it clears AA against whatever it sits on. */
-kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  border-radius: var(--r-xs);
-  background: var(--on-claude-chip);
-  color: inherit;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.btn-secondary kbd,
-.btn-ghost kbd {
-  background: var(--surface-sunken);
-  color: var(--text-soft);
-}
-
-.btn-danger kbd {
-  background: var(--on-danger-chip);
-  color: inherit;
-}
-
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 21px;
-  height: 21px;
-  border-radius: var(--r-xs);
-  color: var(--text-faint);
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
-  position: relative;
-}
-
-.icon-btn:hover,
-.icon-btn:focus-visible {
-  background: var(--surface-hover);
-  color: var(--text-soft);
-}
-
-.icon-btn.is-on {
-  color: var(--claude);
-  background: var(--claude-faint);
-}
-
-.copy-btn.is-copied {
-  color: var(--success);
-}
-
-.copy-btn.is-failed {
-  color: var(--danger);
-}
-
-/* Opens DOWNWARD, into the card body. Every context that hosts a copy button
-   clips upward: a code block's `overflow: hidden` (needed for its rounded
-   corners) starts immediately below the header bar, and the tool card clips
-   again outside that — so a toast at `bottom: 100%` was painted nowhere at all
-   in the commonest case, and sliced in half on the plan card header. */
-.copy-toast {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 3;
-  padding: 2px 6px;
-  border-radius: var(--r-xs);
-  background: var(--popover-bg);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-lifted);
-  font-size: 10px;
-  color: var(--success);
-  white-space: nowrap;
-  pointer-events: none;
-  animation: pop-in 120ms var(--ease);
-}
-
-.copy-btn.is-failed .copy-toast {
-  color: var(--danger);
-}
-
-/* ---------- empty states ---------- */
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 28px 12px 30px;
-  gap: 0;
-  flex: 1 1 auto;
-}
-
-/* The fresh-pane state reads as bottom-anchored when it flows from the top of a
-   tall pane, so it centers in whatever height the scroller gives it. */
-.transcript-inner:has(> .empty) {
-  min-height: 100%;
-  justify-content: center;
-}
-
-.claude-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 52px;
-  border-radius: var(--r-lg);
-  background: var(--claude-faint);
-  border: 1px solid var(--claude-border);
-  margin-bottom: 16px;
-}
-
-.empty-icon-warn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: var(--r-lg);
-  background: var(--danger-soft);
-  border: 1px solid var(--danger-border);
-  color: var(--danger);
-  margin-bottom: 15px;
-}
-
-.empty-headline {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--text);
-}
-
-.empty-sub {
-  margin: 5px 0 0;
-  font-size: 12.5px;
-  color: var(--text-muted);
-  max-width: 400px;
-}
-
-.empty-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 13px;
-}
-
-.empty-model {
   font-size: 11px;
   color: var(--text-muted);
-  padding: 2px 8px;
-  border-radius: var(--r-pill);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-faint);
 }
 
-.empty-model.is-pending {
-  color: var(--text-faint);
-  font-style: italic;
+.question-answer {
+  padding: 0 11px 9px;
 }
 
-.empty-suggestions,
-.empty-sessions {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  width: 100%;
-  max-width: 460px;
-  margin-top: 26px;
-}
-
-.empty-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: 3px;
-  padding-left: 2px;
-}
-
-.suggestion {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 12px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border-faint);
-  background: var(--surface);
-  color: var(--text-soft);
-  font-size: 12.5px;
-  text-align: left;
-  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-.suggestion:hover,
-.suggestion:focus-visible {
-  border-color: var(--claude-border);
-  background: var(--claude-faint);
-  color: var(--text);
-}
-
-.suggestion span:first-child {
-  flex: 1 1 auto;
-}
-
-.suggestion-arrow {
-  color: var(--text-faint);
-  opacity: 0;
-  transition: opacity var(--dur) var(--ease);
-  flex: 0 0 auto;
-}
-
-.suggestion:hover .suggestion-arrow,
-.suggestion:focus-visible .suggestion-arrow {
-  opacity: 1;
-  color: var(--claude);
-}
-
-.recent-session {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  padding: 7px 12px;
-  border-radius: var(--r-md);
-  text-align: left;
-  transition: background var(--dur) var(--ease);
-}
-
-.recent-session:hover,
-.recent-session:focus-visible {
-  background: var(--surface-hover);
-}
-
-.recent-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 12.5px;
-  color: var(--text-soft);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.recent-meta {
-  flex: 0 0 auto;
-  font-size: 10.5px;
-  color: var(--text-faint);
-}
-
-.install-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 15px 0 0;
-  padding: 3px 4px 3px 0;
-  max-width: 100%;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--code-bg);
-}
-
-.install-cmd {
-  margin: 0;
-  padding: 6px 6px 6px 14px;
-  min-width: 0;
-  overflow-x: auto;
+.question-answer.is-unanswered {
   font-size: 11.5px;
-  color: var(--text-soft);
-  user-select: all;
-}
-
-.install-copy {
-  flex: 0 0 auto;
-}
-
-.empty-error {
-  margin: 12px 0 0;
-  font-size: 11px;
-  color: var(--danger);
-  max-width: 440px;
-  word-break: break-word;
-}
-
-.empty-note {
-  margin: 9px 0 0;
-  font-size: 11px;
   color: var(--text-faint);
 }
 
-.empty-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 18px;
+.answer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: 11.5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -149,7 +149,9 @@ describe("the agents dock cannot displace the composer", () => {
     // screen.
     const sheet = await css("agents.css");
     const rule = ruleFor(sheet, ".agents-dock-list");
-    expect(rule).toMatch(/max-height:\s*\d+px/);
+    // Viewport-relative like the todo strip: a fixed cap is a third of a short
+    // cmux split.
+    expect(rule).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
     expect(rule).toMatch(/overflow-y:\s*auto/);
   });
 
@@ -269,7 +271,7 @@ describe("dock shares one text origin", () => {
     const sheet = await css("dock.css");
     expect(ruleFor(sheet, ".composer-hint")).toMatch(/white-space:\s*nowrap/);
     expect(sheet).toMatch(/@media \(max-width: 700px\)[\s\S]*?is-hint-mode/);
-    expect(sheet).toMatch(/@media \(max-width: 560px\)[\s\S]*?is-hint-newline/);
+    expect(sheet).toMatch(/@media \(max-width: 560px\)[\s\S]*?is-hint-relay/);
     // Each hint owns its separator, so hiding one can never orphan a dot.
     expect(sheet).toContain(".composer-hint:not(:first-child)::before");
   });

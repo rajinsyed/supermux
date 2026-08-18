@@ -1,286 +1,78 @@
-/* Round 3: subagent drill-ins and background tasks; round 4 moved the docked
-   task surface to the agents dock (dock.css) and the strip-only rules went
-   with it. Everything here is built from the same tokens as tools.css — the
-   violet family for agent work, the claude accent for live state, the surface
-   ladder for nesting — so a drill-in reads as the same object family as a tool
-   card rather than a panel bolted on beside one. */
+/* ---------------------------------------------------------------------------
+   Task surfaces: the background-Bash strip inside a tool card, the quoted
+   output tail, drill-in transcripts, the shell view, and the shared
+   model chip.
+--------------------------------------------------------------------------- */
 
-/* ---------- shared quiet action button ---------- */
+/* ---------- shared model chip ---------- */
 
-/* The action verb on a card row: smaller than .btn-tiny, no resting border, and
-   it only paints a surface when the pointer or the keyboard is on it. Card rows
-   carry two or three of these and a bordered button on each turns a 20px row
-   into a toolbar. */
-.btn-quiet {
-  height: 21px;
-  padding: 0 7px;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  border-radius: var(--r-xs);
-}
-
-.btn-quiet:hover:not(:disabled),
-.btn-quiet:focus-visible:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.btn-quiet.is-danger:hover:not(:disabled),
-.btn-quiet.is-danger:focus-visible:not(:disabled) {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-/* The keycap the CLI binds the same action to. Muted enough to read as a hint
-   rather than a second label, and it drops out when there is no room for it. */
-.btn-kbd {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  padding: 0 3px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
-  color: var(--text-faint);
-  line-height: 13px;
-}
-
-@media (max-width: 620px) {
-  .btn-kbd {
-    display: none;
-  }
-}
-
-/* ---------- subagent extras ---------- */
-
-/* Which model actually ran the agent — a chip rather than another grey metric,
-   because on a workflow row it is the difference between an opus agent and a
-   haiku one and it is the field a reader scans the column for. */
 .subagent-model {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 0 5px;
-  border-radius: var(--r-xs);
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-  font-size: 10px;
-  max-width: 18ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  min-width: 0;
 }
 
-/* Under flex pressure the TEXT ellipses; the glyph is never the give. Without
-   this the inline SVG is what gets squashed — to a 1px sliver on a 420px pane —
-   so two identical chips on one card render with and without their icon. */
 .subagent-model svg {
   flex-shrink: 0;
 }
 
-/* The model name is its own flex item so IT is what shrinks and ellipses; a
-   bare text node has `min-width: auto` and refuses to give, which is what put
-   the squash onto the glyph in the first place. */
 .subagent-model-name {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* The agent's own transcript, read off disk. Visually inside the view that
-   hosts it but distinctly a different SOURCE from the live frames around it,
-   so it gets its own inset bed. */
-.subagent-drill {
-  margin: 6px 0 0 21px;
-  padding: 7px 9px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-faint);
-  background: var(--surface-sunken);
-}
-
-.drill-transcript {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: min(420px, 48vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.drill-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  font-size: 11.5px;
-  color: var(--text-faint);
-}
-
-.drill-status.is-error {
-  color: var(--danger);
-}
-
-.drill-note {
-  font-size: 10.5px;
-  color: var(--text-faint);
-}
-
-/* The drill-in renders with the same block renderers as the card's inline
-   children and sits inside the same card, so it needs a header to say it is a
-   different SOURCE — the agent's file on disk, not the frames this session
-   streamed. */
-.drill-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding-bottom: 5px;
-  margin-bottom: 5px;
-  border-bottom: 1px solid var(--border-faint);
-}
-
-.drill-source {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--violet);
-}
-
-/* The chain descended through to reach this transcript. Only shown past depth
-   one — a single-level drill-in's identity is the card it sits inside. */
-.drill-trail {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 10px;
-  color: var(--text-faint);
-}
-
-.drill-trail-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   max-width: 16ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.drill-trail-step:last-child {
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.drill-agent-type {
-  padding: 0 5px;
-  border-radius: var(--r-xs);
-  background: var(--violet-soft);
-  color: var(--violet);
-  font-size: 10px;
-  font-weight: 600;
-}
-
-/* ---------- background bash ---------- */
+/* ---------- background bash strip ---------- */
 
 .bash-bg-strip {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 6px 10px 8px;
+  gap: 6px;
+  padding: 0 10px 10px;
 }
 
 .bash-bg-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .bash-bg-error {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--danger);
 }
 
 .bash-bg-summary {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-/* ---------- task output tail ---------- */
+/* ---------- quoted output tail ----------
+
+   Terminal output inside light chrome (the dock, a card strip). Its bed
+   follows the page rather than the dark terminal, and its ANSI palette is
+   re-pointed in content.css. */
 
 .task-output {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-/* The tail is a QUOTED terminal, not a terminal: peripheral content inside a
-   pale task row must not be the highest-contrast object on the screen. Framed,
-   inset, and height-capped so it reads as an excerpt rather than a hole punched
-   through the pane. Shared by the strip row and the Bash card's "Show output",
-   so the two can never differ.
-
-   In LIGHT it is a light excerpt. The full-strength --terminal-bg is a near-
-   black slab (rgba(24,22,20,0.94)) and, dropped into the pale dock, it was the
-   heaviest object on the screen for what is by construction peripheral output —
-   inside a light task row, under a light strip, beneath a light composer. The
-   ink and the ANSI palette still have to be legible on whatever bed replaces it,
-   and the ANSI palette is a single set tuned for a DARK bed and audited by
-   contrast.test.ts, so the bed stays dark-family — but at a fraction of the
-   weight, which reads as an inset quote rather than a punched hole. The audit
-   composites this exact reduced bed (`--terminal-quiet-bg`), so the palette is
-   verified where it actually lands, not only where it used to. */
-.task-output .terminal {
-  margin: 1px 0 2px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border);
-  background: var(--terminal-quiet-bg);
-}
-
-.task-output .terminal-body {
-  max-height: 180px;
-  font-size: 11px;
-  padding: 6px 9px;
-  color: var(--terminal-quiet-fg);
-}
-
-.task-output .terminal.is-error .terminal-body {
-  color: var(--terminal-quiet-error);
-}
-
-/* Every piece of the tail's chrome follows its bed, or a light excerpt keeps a
-   dark terminal's copy button and "show more" bar bolted to it. */
-.task-output .terminal-more {
-  color: var(--terminal-quiet-muted);
-  background: var(--terminal-quiet-chrome);
-  border-top-color: var(--border-faint);
-}
-
-.task-output .terminal-more:hover,
-.task-output .terminal-more:focus-visible {
-  color: var(--terminal-quiet-fg);
-  background: var(--terminal-quiet-chrome-hover);
-}
-
-.task-output .terminal .copy-btn {
-  color: var(--terminal-quiet-muted);
-}
-
-.task-output .terminal .copy-btn:hover,
-.task-output .terminal .copy-btn:focus-visible {
-  color: var(--terminal-quiet-fg);
+  gap: 5px;
+  min-width: 0;
 }
 
 .task-output-head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 10px;
+  gap: 8px;
+}
+
+.task-output-title {
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -290,12 +82,155 @@
 .task-output-live {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  font-size: 10.5px;
   color: var(--claude);
 }
 
 .task-output-note {
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.task-output .terminal {
+  background: var(--terminal-quiet-bg);
+  border-color: var(--border-faint);
+}
+
+.task-output .terminal-body {
+  color: var(--terminal-quiet-fg);
+}
+
+.task-output .terminal.is-error .terminal-body {
+  color: var(--terminal-quiet-error);
+}
+
+.task-output .terminal-more {
+  color: var(--terminal-quiet-muted);
+  border-top-color: var(--border-faint);
+}
+
+.task-output .terminal-more:hover {
+  color: var(--terminal-quiet-fg);
+  background: var(--terminal-quiet-chrome-hover);
+}
+
+.task-output .terminal-more:focus-visible {
+  color: var(--terminal-quiet-fg);
+}
+
+.task-output .terminal .copy-btn {
+  color: var(--terminal-quiet-muted);
+  background: var(--terminal-quiet-chrome);
+}
+
+.task-output .terminal .copy-btn:hover {
+  color: var(--terminal-quiet-fg);
+  background: var(--terminal-quiet-chrome-hover);
+}
+
+/* ---------- drill-in transcripts ---------- */
+
+.subagent-drill {
+  min-width: 0;
+}
+
+.drill-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.drill-source {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.drill-trail {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.drill-trail-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 18ch;
+}
+
+.drill-agent-type {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-active);
+}
+
+.drill-note {
+  font-size: 10.5px;
+}
+
+.drill-transcript {
+  max-height: min(420px, 52vh);
+  overflow-y: auto;
+  border: 1px solid var(--border-faint);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+/* ---------- shell view (framed) ---------- */
+
+.shell-view-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 0 14px;
+  border-bottom: 1px solid var(--border-faint);
+  margin-bottom: 14px;
+}
+
+.shell-view-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-md);
+  background: var(--surface-active);
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.shell-view-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-view-elapsed {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+/* The shell view's tail may be the whole pane: let it breathe. */
+.shell-view .task-output .terminal-body {
+  max-height: none;
 }

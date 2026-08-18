@@ -267727,40 +267727,6 @@
         }
       }
     },
-    "supermux.harness.dock.count" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} agents"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} エージェント"
-          }
-        }
-      }
-    },
-    "supermux.harness.dock.countOne" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} agent"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} エージェント"
-          }
-        }
-      }
-    },
     "supermux.harness.dock.expand" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -267774,23 +267740,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "エージェントを表示"
-          }
-        }
-      }
-    },
-    "supermux.harness.dock.keyHint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "↑↓ select · ⏎ open · esc back"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "↑↓ 選択 · ⏎ 開く · esc 戻る"
           }
         }
       }
@@ -267897,6 +267846,23 @@
         }
       }
     },
+    "supermux.harness.dock.stopAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop all"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて停止"
+          }
+        }
+      }
+    },
     "supermux.harness.dock.stopFailed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -267995,6 +267961,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ワークフロー"
+          }
+        }
+      }
+    },
+    "supermux.harness.dock.working" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} working"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count}件実行中"
           }
         }
       }
@@ -272521,23 +272504,6 @@
         }
       }
     },
-    "supermux.harness.composer.approxTokens" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "~{count} tokens"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "約 {count} トークン"
-          }
-        }
-      }
-    },
     "supermux.harness.composer.attach" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -272636,40 +272602,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Shift+Tab で権限モードを切り替え"
-          }
-        }
-      }
-    },
-    "supermux.harness.composer.hintNewline" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shift+Enter for a new line"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shift+Enter で改行"
-          }
-        }
-      }
-    },
-    "supermux.harness.composer.hintSend" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter to send"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter で送信"
           }
         }
       }
@@ -275564,6 +275496,23 @@
         }
       }
     },
+    "supermux.harness.dock.workingOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} working"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count}件実行中"
+          }
+        }
+      }
+    },
     "supermux.harness.empty.detectingModel" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -277468,23 +277417,6 @@
         }
       }
     },
-    "supermux.harness.view.back" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "戻る"
-          }
-        }
-      }
-    },
     "supermux.harness.view.backTo" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -277498,6 +277430,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "{label} に戻る"
+          }
+        }
+      }
+    },
+    "supermux.harness.view.close" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
           }
         }
       }

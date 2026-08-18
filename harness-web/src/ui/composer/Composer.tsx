@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { ImageAttachment, QueuedMessage } from "../../model/types";
 import type { PermissionMode, SlashCommandDescriptor } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
-import { ArrowUp, Close, Paperclip, Stop } from "../Icons";
-import { approximateTokens, basename } from "../format";
+import { ArrowUp, Close, Plus, Stop } from "../Icons";
+import { basename } from "../format";
 import { useComposerPopover } from "./usePopover";
 
 export interface ComposerProps {
@@ -257,48 +257,9 @@ export function Composer(props: ComposerProps) {
               : copy("supermux.harness.composer.placeholder");
 
   const canSend = props.draft.trim().length > 0 || images.length > 0;
-  const tokens = approximateTokens(props.draft);
 
   return (
     <div className={`composer${props.awaitingPermission ? " is-waiting" : ""}`}>
-      {props.queued.length > 0 ? (
-        <div className="queue-strip">
-          {props.queued.map((message) => (
-            <span key={message.uuid} className="queue-chip">
-              <span className="queue-chip-label">{copy("supermux.harness.composer.queued")}</span>
-              <span className="queue-chip-text">{message.text}</span>
-              <button
-                type="button"
-                className="queue-chip-x"
-                onClick={() => props.onCancelQueued(message.uuid)}
-                aria-label={copy("supermux.harness.composer.cancelQueued")}
-              >
-                <Close size={10} />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      {images.length > 0 ? (
-        <div className="attach-strip">
-          {images.map((image, i) => (
-            <span key={i} className="attach-chip">
-              <img src={`data:${image.mediaType};base64,${image.dataBase64}`} alt="" />
-              <span className="attach-name">{image.name ? basename(image.name) : "image"}</span>
-              <button
-                type="button"
-                className="queue-chip-x"
-                onClick={() => setImages((prev) => prev.filter((_, index) => index !== i))}
-                aria-label={copy("supermux.harness.composer.removeAttachment")}
-              >
-                <Close size={10} />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
-
       {popover.kind ? (
         <div className="popover" role="listbox">
           <div className="popover-title">
@@ -336,6 +297,55 @@ export function Composer(props: ComposerProps) {
       ) : null}
 
       <div className="composer-shell" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+        {props.queued.length > 0 ? (
+          <div className="queue-strip">
+            {props.queued.map((message) => (
+              <span key={message.uuid} className="queue-chip">
+                <span className="queue-chip-label">{copy("supermux.harness.composer.queued")}</span>
+                <span className="queue-chip-text">{message.text}</span>
+                <button
+                  type="button"
+                  className="queue-chip-x"
+                  onClick={() => props.onCancelQueued(message.uuid)}
+                  aria-label={copy("supermux.harness.composer.cancelQueued")}
+                >
+                  <Close size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {images.length > 0 ? (
+          <div className="attach-strip">
+            {images.map((image, i) => (
+              <span key={i} className="attach-chip">
+                <img src={`data:${image.mediaType};base64,${image.dataBase64}`} alt="" />
+                <span className="attach-name">{image.name ? basename(image.name) : "image"}</span>
+                <button
+                  type="button"
+                  className="queue-chip-x"
+                  onClick={() => setImages((prev) => prev.filter((_, index) => index !== i))}
+                  aria-label={copy("supermux.harness.composer.removeAttachment")}
+                >
+                  <Close size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className="composer-attach"
+          onClick={() => {
+            props.onPickFiles().then((picked) => setImages((prev) => prev.concat(picked)));
+          }}
+          title={copy("supermux.harness.composer.attach")}
+          aria-label={copy("supermux.harness.composer.attach")}
+        >
+          <Plus size={14} />
+        </button>
         <textarea
           ref={textarea}
           className="composer-input"
@@ -354,17 +364,6 @@ export function Composer(props: ComposerProps) {
           onPaste={onPaste}
         />
         <div className="composer-actions">
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => {
-              props.onPickFiles().then((picked) => setImages((prev) => prev.concat(picked)));
-            }}
-            title={copy("supermux.harness.composer.attach")}
-            aria-label={copy("supermux.harness.composer.attach")}
-          >
-            <Paperclip size={13} />
-          </button>
           {props.planPending ? (
             // Under a pending plan the primary next action is the plan
             // decision, not a generic send: approving it is one click, and the
@@ -388,9 +387,9 @@ export function Composer(props: ComposerProps) {
               className="btn btn-stop"
               onClick={() => props.onInterrupt(true)}
               title={copy("supermux.harness.composer.stop")}
+              aria-label={copy("supermux.harness.composer.stop")}
             >
               <Stop size={11} />
-              {copy("supermux.harness.composer.stop")}
             </button>
           ) : (
             <button
@@ -406,11 +405,10 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
 
+      {/* One quiet hint line: only the bindings that are not universal chat
+          grammar. Enter-to-send needs no caption; the mode cycle and the
+          relay caveat do. */}
       <div className="composer-hints">
-        <span className="composer-hint">{copy("supermux.harness.composer.hintSend")}</span>
-        <span className="composer-hint is-hint-newline">
-          {copy("supermux.harness.composer.hintNewline")}
-        </span>
         <span className="composer-hint is-hint-mode">
           {copy("supermux.harness.composer.hintMode")}
         </span>
@@ -430,9 +428,6 @@ export function Composer(props: ComposerProps) {
           </span>
         ) : null}
         <span className="composer-hints-spacer" />
-        {tokens > 24 ? (
-          <span className="tnum">{copy("supermux.harness.composer.approxTokens", { count: tokens })}</span>
-        ) : null}
       </div>
     </div>
   );

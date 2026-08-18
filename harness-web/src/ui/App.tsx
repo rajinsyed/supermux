@@ -336,53 +336,24 @@ function AppBody({
   const agentReachable =
     inAgentView && thread!.status !== "completed" && thread!.status !== "failed";
 
-  return (
-    <OpenViewContext.Provider value={router.open}>
-    <div className="app">
-      <Header
-        degraded={cliUnavailable}
-        session={model.session}
-        usage={model.usage}
-        contextUsage={model.contextUsage}
-        workingDirectory={context?.workingDirectory ?? model.session.cwd}
-        sessions={harness.sessions}
-        cachedModels={model.cachedModels}
-        onRename={(title) => {
-          store.dispatch({ kind: "setTitle", title });
-          harness.bridge.renameSession({ title }).catch(() => undefined);
-        }}
-        onSetModel={harness.setModel}
-        onSetPermissionMode={harness.setPermissionMode}
-        onResumeSession={(sessionId, fork) => harness.restart(sessionId, fork)}
-        onOpenSessionInNewPane={harness.openSessionInNewPane}
-        onLoadSessions={harness.refreshSessions}
-        onCompact={() => harness.send("/compact", [])}
-        onClear={() => {
-          store.dispatch({ kind: "reset" });
-          harness.send("/clear", []);
-        }}
-        onExport={() => {
-          const markdown = exportTranscript(model, copy);
-          harness.bridge.copyText({ text: markdown }).catch(() => undefined);
-        }}
-        onOpenTerminal={() => {
-          const dir = context?.workingDirectory ?? model.session.cwd;
-          if (dir) harness.bridge.openFile({ path: dir }).catch(() => undefined);
-        }}
-        onNewSession={harness.newSession}
-        onOpenBinarySettings={() => setBinaryOpen(true)}
-      />
-
-      {/* Where you are, and one press back. Only ever present when the stack
-          has depth — the main chat has nowhere to return to, and a breadcrumb
-          reading just "Claude" would be a row of chrome that says nothing. */}
+  /* Sub-views render inside a rounded FRAME inset from the pane edges — the
+     way Cursor frames a subagent's conversation — with the breadcrumb trail as
+     the frame's own header. The main chat stays full-bleed. */
+  const frame = (content: React.ReactNode) => (
+    <div className="view-frame">
       <ViewBreadcrumb
         stack={router.stack}
         labelFor={router.labelFor}
         onBack={router.back}
         onOpen={router.open}
       />
+      {content}
+    </div>
+  );
 
+  return (
+    <OpenViewContext.Provider value={router.open}>
+    <div className="app">
       {cliUnavailable ? (
         <div className="harness-scroll transcript">
           <div className="transcript-inner">
@@ -394,28 +365,28 @@ function AppBody({
           </div>
         </div>
       ) : view.kind === "agent" ? (
-        <AgentChatView
-          thread={thread}
-          threads={model.agentThreads}
-          relays={viewRelays}
-          scrollRef={scrollRef}
-          contentRef={contentRef}
-          showPill={showPill}
-          onJump={() => scrollToBottom(true)}
-          onHydrate={hydrateThread}
-        />
+        frame(
+          <AgentChatView
+            thread={thread}
+            threads={model.agentThreads}
+            relays={viewRelays}
+            scrollRef={scrollRef}
+            contentRef={contentRef}
+            showPill={showPill}
+            onJump={() => scrollToBottom(true)}
+            onHydrate={hydrateThread}
+          />
+        )
       ) : view.kind === "workflow" ? (
-        <div className="harness-scroll transcript" ref={scrollRef}>
-          <div className="transcript-inner" ref={contentRef}>
-            <WorkflowView model={model} taskId={view.taskId} onBack={router.back} />
-          </div>
-        </div>
+        frame(<WorkflowView model={model} taskId={view.taskId} onBack={router.back} />)
       ) : view.kind === "shell" ? (
-        <ShellView
-          record={model.tasksById[view.taskId]}
-          scrollRef={scrollRef}
-          contentRef={contentRef}
-        />
+        frame(
+          <ShellView
+            record={model.tasksById[view.taskId]}
+            scrollRef={scrollRef}
+            contentRef={contentRef}
+          />
+        )
       ) : (
         <TranscriptList
           turns={model.turns}
@@ -472,10 +443,9 @@ function AppBody({
           banners={model.banners}
           onDismiss={(id) => store.dispatch({ kind: "dismissBanner", id })}
         />
-        {/* The CLI's agents dock, above the composer. It replaces the round-3
-            tasks strip entirely: same information, plus every agent and its
-            tree, and rows that persist for the session instead of vanishing
-            when the CLI's background set empties. */}
+        {/* The working panel, floating above the composer: Cursor's
+            "3 Working · Stop All" island, one row per running agent, workflow,
+            or shell, with the subagent tree drawn as indentation. */}
         <AgentsDock rows={rows} activeView={view} onOpen={router.open} />
         <TodoStrip todos={model.todos} />
         {rewindNote ? (
@@ -550,6 +520,42 @@ function AppBody({
           onCyclePermissionMode={harness.cyclePermissionMode}
           fetchFileSuggestions={fetchFileSuggestions}
           onPickFiles={pickFiles}
+        />
+        {/* The bottom bar, UNDER the composer — Cursor's grammar: session
+            identity on the left, model/permissions/context/sessions/overflow
+            pills on the right. Its menus open upward. */}
+        <Header
+          degraded={cliUnavailable}
+          session={model.session}
+          usage={model.usage}
+          contextUsage={model.contextUsage}
+          workingDirectory={context?.workingDirectory ?? model.session.cwd}
+          sessions={harness.sessions}
+          cachedModels={model.cachedModels}
+          onRename={(title) => {
+            store.dispatch({ kind: "setTitle", title });
+            harness.bridge.renameSession({ title }).catch(() => undefined);
+          }}
+          onSetModel={harness.setModel}
+          onSetPermissionMode={harness.setPermissionMode}
+          onResumeSession={(sessionId, fork) => harness.restart(sessionId, fork)}
+          onOpenSessionInNewPane={harness.openSessionInNewPane}
+          onLoadSessions={harness.refreshSessions}
+          onCompact={() => harness.send("/compact", [])}
+          onClear={() => {
+            store.dispatch({ kind: "reset" });
+            harness.send("/clear", []);
+          }}
+          onExport={() => {
+            const markdown = exportTranscript(model, copy);
+            harness.bridge.copyText({ text: markdown }).catch(() => undefined);
+          }}
+          onOpenTerminal={() => {
+            const dir = context?.workingDirectory ?? model.session.cwd;
+            if (dir) harness.bridge.openFile({ path: dir }).catch(() => undefined);
+          }}
+          onNewSession={harness.newSession}
+          onOpenBinarySettings={() => setBinaryOpen(true)}
         />
       </div>
 

@@ -1,26 +1,33 @@
 import type { HarnessTheme } from "../protocol/types";
 
+/**
+ * The glass design system's fallback themes, used until the native side pushes
+ * the real `AgentSessionWebTheme`. The page is near-black (not pure black) in
+ * dark and warm paper in light; every surface above it is a translucent veil so
+ * the floating chrome — composer, working panel, framed views — reads as glass
+ * over the scrolling transcript rather than as opaque slabs.
+ */
 export const defaultDarkTheme: HarnessTheme = {
   isDark: true,
-  pageBackground: "#16161a",
-  surfaceBackground: "rgba(255, 255, 255, 0.035)",
-  surfaceElevatedBackground: "rgba(255, 255, 255, 0.062)",
+  pageBackground: "#0f0f13",
+  surfaceBackground: "rgba(255, 255, 255, 0.04)",
+  surfaceElevatedBackground: "rgba(255, 255, 255, 0.07)",
   inputBackground: "rgba(255, 255, 255, 0.05)",
-  border: "rgba(255, 255, 255, 0.085)",
+  border: "rgba(255, 255, 255, 0.08)",
   borderStrong: "rgba(255, 255, 255, 0.16)",
-  text: "#eceaf0",
-  mutedText: "rgba(236, 234, 240, 0.56)",
-  softText: "rgba(236, 234, 240, 0.78)",
+  text: "#ededf2",
+  mutedText: "rgba(237, 237, 242, 0.56)",
+  softText: "rgba(237, 237, 242, 0.78)",
   accent: "#7aa2f7",
   accentSoft: "rgba(122, 162, 247, 0.20)",
   danger: "#ff8d7e",
-  shadow: "rgba(0, 0, 0, 0.36)"
+  shadow: "rgba(0, 0, 0, 0.42)"
 };
 
 export const defaultLightTheme: HarnessTheme = {
   isDark: false,
   pageBackground: "#fbfaf9",
-  surfaceBackground: "rgba(20, 18, 16, 0.028)",
+  surfaceBackground: "rgba(20, 18, 16, 0.03)",
   surfaceElevatedBackground: "rgba(255, 255, 255, 0.92)",
   inputBackground: "#ffffff",
   border: "rgba(20, 18, 16, 0.10)",
@@ -67,28 +74,45 @@ function parseRgb(color: string): [number, number, number] | undefined {
 }
 
 /**
- * Popovers must be fully opaque: they float over transcript content, and a
- * translucent surface makes text underneath bleed through. The native theme
- * only ships alpha-blended surfaces, so derive an opaque tone from the page
- * background (falling back to a neutral when it is "transparent").
- */
-/**
- * The native theme ships `mutedText` at 0.58 alpha and `softText` at 0.78,
- * tuned for the markdown panels. In this pane those tokens carry 10.5–12.5px
- * body text over sunken surfaces, where 0.58 lands at 3.8:1 — under the 4.5:1
- * AA floor for small text. Re-derive the secondary tiers from the theme's own
- * ink at alphas that clear AA on the darkest surface the pane paints.
+ * Secondary ink tiers, re-derived from the theme's own text color at alphas
+ * that clear WCAG AA (4.5:1) for the 11–12.5px body text this pane sets on its
+ * sunken surfaces. The native `mutedText` ships at 0.56–0.58, which lands under
+ * the AA floor; these values are audited in tests/contrast.test.ts.
  */
 function inkAlpha(theme: HarnessTheme, alpha: number): string {
-  const ink = parseRgb(theme.text) ?? (theme.isDark ? [236, 234, 240] : [28, 26, 24]);
+  const ink = parseRgb(theme.text) ?? (theme.isDark ? [237, 237, 242] : [28, 26, 24]);
   return `rgba(${ink[0]}, ${ink[1]}, ${ink[2]}, ${alpha})`;
 }
 
+function pageRgb(theme: HarnessTheme): [number, number, number] {
+  return parseRgb(theme.pageBackground) ?? (theme.isDark ? [15, 15, 19] : [247, 246, 244]);
+}
+
+/**
+ * Popovers and menus float over transcript content and must be fully opaque —
+ * a translucent surface lets the text underneath bleed through. Derived from
+ * the page background (with a neutral fallback when it is "transparent").
+ */
 function popoverBackground(theme: HarnessTheme): string {
-  const base = parseRgb(theme.pageBackground) ?? (theme.isDark ? [22, 22, 26] : [251, 250, 249]);
-  const lift = theme.isDark ? 12 : -6;
+  const base = pageRgb(theme);
+  const lift = theme.isDark ? 14 : -6;
   const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value + lift)));
   return `rgb(${clamp(base[0])}, ${clamp(base[1])}, ${clamp(base[2])})`;
+}
+
+/**
+ * The floating glass panels (composer pill, working panel, framed views) keep a
+ * page-derived tint at high-but-not-full alpha, so the backdrop blur shows the
+ * transcript scrolling underneath while the panel's own text still sits on a
+ * predictable bed. When the page is literally "transparent" (Ghostty
+ * transparency) the tint falls back to the neutral, since there is nothing to
+ * derive from and nothing behind the WKWebView to blur.
+ */
+function glassPanel(theme: HarnessTheme, alpha: number): string {
+  const base = pageRgb(theme);
+  const lift = theme.isDark ? 10 : 4;
+  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value + lift)));
+  return `rgba(${clamp(base[0])}, ${clamp(base[1])}, ${clamp(base[2])}, ${alpha})`;
 }
 
 export function themeVariables(theme: HarnessTheme): Record<string, string> {
@@ -96,35 +120,42 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
   const page = theme.pageBackground === "transparent" ? "transparent" : theme.pageBackground;
   return {
     "--page-bg": page,
+
+    /* Surfaces. `--surface` is the in-flow veil (user bubble, open tool body);
+       `--panel` is the floating glass the dock chrome and framed views wear. */
     "--surface": theme.surfaceBackground,
     "--surface-raised": theme.surfaceElevatedBackground,
-    "--popover-bg": popoverBackground(theme),
-    "--surface-hover": overlay(dark, dark ? 0.045 : 0.032),
-    "--surface-active": overlay(dark, dark ? 0.075 : 0.055),
+    "--surface-hover": overlay(dark, dark ? 0.05 : 0.035),
+    "--surface-active": overlay(dark, dark ? 0.08 : 0.06),
     "--surface-sunken": overlay(dark, dark ? 0.13 : 0.035),
+    "--panel": glassPanel(theme, dark ? 0.78 : 0.8),
+    "--panel-solid": popoverBackground(theme),
+    "--popover-bg": popoverBackground(theme),
+    "--glass-blur": "blur(18px) saturate(1.5)",
     "--input-bg": theme.inputBackground,
+
+    /* Hairlines. Glass panels wear the faint line; strong marks interaction. */
+    "--border": theme.border,
+    "--border-strong": theme.borderStrong,
+    "--border-faint": overlay(dark, dark ? 0.05 : 0.05),
+
+    /* Ink tiers, audited against the darkest bed each lands on. */
+    "--text": theme.text,
+    "--text-soft": inkAlpha(theme, dark ? 0.84 : 0.82),
+    "--text-muted": inkAlpha(theme, dark ? 0.72 : 0.7),
+    "--text-faint": inkAlpha(theme, dark ? 0.62 : 0.64),
+
+    /* Code and terminal beds. The transcript terminal stays dark in both
+       themes; the QUIET terminal (background-task tails in light chrome)
+       follows the page instead. */
     "--code-bg": dark ? "rgba(0, 0, 0, 0.30)" : "rgba(20, 18, 16, 0.045)",
     "--code-header-bg": dark ? "rgba(0, 0, 0, 0.20)" : "rgba(20, 18, 16, 0.028)",
-    // The terminal is a dark surface in BOTH themes, so everything drawn on it
-    // derives from the terminal palette rather than the page palette.
     "--terminal-bg": dark ? "rgba(0, 0, 0, 0.38)" : "rgba(24, 22, 20, 0.94)",
     "--terminal-fg": "rgba(248, 246, 244, 0.94)",
     "--terminal-muted": "rgba(248, 246, 244, 0.68)",
     "--terminal-error": "#ffa79a",
     "--terminal-chrome": "rgba(255, 255, 255, 0.06)",
     "--terminal-border": "rgba(255, 255, 255, 0.10)",
-    /**
-     * The QUOTED terminal: a background task's output tail, which lives inside a
-     * task row inside the DOCK — under a light strip, beside light rows, above a
-     * light composer — rather than inside a Bash card in the transcript.
-     *
-     * In dark it is the terminal, unchanged. In light it is a light surface: the
-     * dark slab was the single heaviest object on the pane, for what is by
-     * construction peripheral output, and it read as a hole punched through the
-     * dock. Every ink token flips with it, including the ANSI palette
-     * (`--ansi-*` are re-pointed at a light-tuned set in content.css, and both
-     * sets are audited against their own beds in contrast.test.ts).
-     */
     "--terminal-quiet-bg": dark ? "rgba(0, 0, 0, 0.30)" : "rgba(20, 18, 16, 0.06)",
     "--terminal-quiet-fg": dark ? "rgba(248, 246, 244, 0.94)" : "#1c1a18",
     "--terminal-quiet-muted": dark ? "rgba(248, 246, 244, 0.68)" : "#3b3936",
@@ -133,35 +164,23 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--terminal-quiet-chrome-hover": dark
       ? "rgba(255, 255, 255, 0.09)"
       : "rgba(20, 18, 16, 0.08)",
-    "--border": theme.border,
-    "--border-strong": theme.borderStrong,
-    "--border-faint": overlay(dark, dark ? 0.05 : 0.05),
-    "--text": theme.text,
-    "--text-soft": inkAlpha(theme, dark ? 0.84 : 0.82),
-    "--text-muted": inkAlpha(theme, dark ? 0.72 : 0.7),
-    // Content, not decoration: every consumer renders 10–12px text that must
-    // clear WCAG AA against the surface behind it.
-    "--text-faint": inkAlpha(theme, dark ? 0.62 : 0.64),
+
+    /* Claude terracotta: the single brand accent, split into a text tone that
+       clears AA and chrome tones that stay vivid. */
     "--accent": theme.accent,
     "--accent-soft": theme.accentSoft,
-    // Accents split into a TEXT tone and a chrome tone. The chrome tones stay
-    // vivid for borders, carets, dots, and fills; the text tones are darkened
-    // (light) / lightened (dark) until they clear AA on the sunken and soft-tint
-    // surfaces they actually land on, since each is used for real label text.
     "--claude": dark ? "#eb9d83" : "#ad4a27",
     "--claude-strong": dark ? "#f0a184" : "#d97757",
     "--claude-btn": dark ? "#f0a184" : "#b0502c",
     "--claude-btn-hover": dark ? "#f6b39a" : "#994026",
     "--on-claude": dark ? "#231a16" : "#ffffff",
     "--on-claude-chip": dark ? "rgba(255, 255, 255, 0.34)" : "rgba(0, 0, 0, 0.22)",
-    // Keyboard focus is where the user IS, so it must read at least as strongly
-    // as hover, which supplies a full surface + border + colour change. The ring
-    // is drawn as a box-shadow halo so it survives on tinted and dark surfaces
-    // alike, paired with the outline in base.css.
-    "--focus-ring": claude(dark ? 0.55 : 0.45),
     "--claude-soft": claude(dark ? 0.18 : 0.13),
     "--claude-faint": claude(dark ? 0.09 : 0.07),
     "--claude-border": claude(dark ? 0.34 : 0.3),
+    "--focus-ring": claude(dark ? 0.55 : 0.45),
+
+    /* Status families, each with a text tone, a dot tone, and a soft tint. */
     "--danger": dark ? "#ff9d8e" : "#a3221b",
     "--danger-dot": theme.danger,
     "--danger-hover": dark ? "#ffb0a3" : "#8a1c16",
@@ -178,30 +197,30 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--violet": dark ? "#c0abee" : "#5b3fa3",
     "--violet-dot": dark ? "#b39ce8" : "#6d4fb8",
     "--violet-soft": dark ? "rgba(179, 156, 232, 0.15)" : "rgba(109, 79, 184, 0.10)",
+
+    /* Elevation. The floating chrome carries a soft, wide shadow so it reads
+       as a layer above the transcript rather than as a border in the flow. */
     "--shadow": theme.shadow,
     "--shadow-lifted": dark ? "0 8px 26px rgba(0, 0, 0, 0.42)" : "0 8px 26px rgba(20, 18, 16, 0.10)",
-    // A modal scrim cannot be derived from the page background: the pane
-    // supports a TRANSPARENT page (it sits over the workspace), where any
-    // page-derived tint is nothing at all and the transcript shows straight
-    // through the dialog. Ink in both themes, heavier in light because the
-    // content it must suppress is itself light.
-    "--scrim": dark ? "rgba(0, 0, 0, 0.58)" : "rgba(20, 18, 16, 0.34)",
+    "--shadow-panel": dark
+      ? "0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3)"
+      : "0 12px 40px rgba(20, 18, 16, 0.12), 0 2px 8px rgba(20, 18, 16, 0.06)",
     "--shadow-modal": dark
       ? "0 18px 48px rgba(0, 0, 0, 0.58)"
       : "0 18px 48px rgba(20, 18, 16, 0.22)",
+    "--scrim": dark ? "rgba(0, 0, 0, 0.58)" : "rgba(20, 18, 16, 0.34)",
+
+    /* Diff and syntax, audited against the tinted diff beds in
+       tests/contrast.test.ts — the flat code surface is not the worst case. */
     "--diff-add-bg": dark ? "rgba(126, 201, 154, 0.13)" : "rgba(46, 125, 79, 0.10)",
     "--diff-add-fg": dark ? "#9ad9b2" : "#1e683d",
     "--diff-del-bg": dark ? "rgba(255, 141, 126, 0.13)" : "rgba(179, 38, 30, 0.09)",
     "--diff-del-fg": dark ? "#ffa79a" : "#a1231c",
-    "--diff-gutter": dark ? "rgba(236, 234, 240, 0.60)" : "rgba(28, 26, 24, 0.68)",
-    // Syntax tokens land on THREE surfaces, not one: the flat code background
-    // and the two diff tints, which are the darker worst case in light mode.
-    // Each light value is derived to clear AA against all three (see
-    // tests/contrast.test.ts) — the flat surface alone is not the bar.
+    "--diff-gutter": dark ? "rgba(237, 237, 242, 0.60)" : "rgba(28, 26, 24, 0.68)",
     "--hl-keyword": dark ? "#c89ae0" : "#7246a1",
     "--hl-string": dark ? "#9ad9b2" : "#1e683d",
     "--hl-number": dark ? "#e8bd6d" : "#79540c",
-    "--hl-comment": dark ? "rgba(236, 234, 240, 0.62)" : "rgba(28, 26, 24, 0.72)",
+    "--hl-comment": dark ? "rgba(237, 237, 242, 0.62)" : "rgba(28, 26, 24, 0.72)",
     "--hl-function": dark ? "#7aa2f7" : "#2b5c9a",
     "--hl-type": dark ? "#e2896c" : "#924425",
     "--hl-attr": dark ? "#8fd3d0" : "#0e6663"

@@ -1,25 +1,31 @@
+/* ---------------------------------------------------------------------------
+   Tool cards.
+
+   Beautiful-UI "tool chips": at rest a tool call is one quiet line — glyph,
+   name, target, outcome — indistinguishable in weight from prose. Opening it
+   reveals the body inside a hairline container. No filled card at rest; the
+   border appears WITH the body, so a settled transcript reads as a list of
+   lines, not a wall of boxes.
+--------------------------------------------------------------------------- */
+
 .tool-card {
   border-radius: var(--r-md);
-  border: 1px solid var(--border-faint);
-  background: var(--surface);
+  border: 1px solid transparent;
   overflow: hidden;
-  transition: border-color var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.tool-card.is-open {
+  border-color: var(--border);
+  background: var(--surface);
 }
 
 .tool-card.is-error {
   border-color: var(--danger-border);
+}
+
+.tool-card.is-error.is-open {
   background: var(--danger-soft);
-}
-
-.tool-card.is-aborted,
-.tool-card.is-denied {
-  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
-  background: var(--warning-soft);
-}
-
-.tool-card.is-running,
-.tool-card.is-pending {
-  border-color: var(--claude-border);
 }
 
 .tool-head {
@@ -27,46 +33,50 @@
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 6px 9px 6px 5px;
-  text-align: left;
-  transition: background var(--dur) var(--ease);
   min-width: 0;
+  text-align: left;
+  padding: 4px 8px 4px 4px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--text-muted);
 }
 
-.tool-head:hover,
-.tool-head:focus-visible {
+.tool-card.is-open .tool-head {
+  border-radius: 0;
+  padding: 6px 10px 6px 6px;
+}
+
+.tool-head:hover {
   background: var(--surface-hover);
+  color: var(--text-soft);
 }
 
-/* A full-bleed row inside an `overflow: hidden` card has no room outside itself
-   for a ring, so the outline is drawn INSIDE its own box. The shared halo is
-   dropped here: it would be clipped to a hairline on three sides. The paired
-   background change carries the state instead. */
-.tool-head:focus-visible,
-.code-block-head .icon-btn:focus-visible,
-.terminal-copy .icon-btn:focus-visible {
-  outline-offset: -2px;
-  box-shadow: none;
+.tool-head:focus-visible {
+  color: var(--text-soft);
 }
 
 .tool-caret {
+  display: inline-flex;
   color: var(--text-faint);
-  display: flex;
   flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.tool-card.is-open .tool-caret,
+.tool-head:hover .tool-caret,
+.tool-head:focus-visible .tool-caret {
+  opacity: 1;
 }
 
 .tool-icon {
-  display: flex;
+  display: inline-flex;
   flex: 0 0 auto;
-  color: var(--text-muted);
+  color: var(--text-faint);
 }
 
 .tool-card.is-error .tool-icon {
   color: var(--danger);
-}
-
-.tool-card.is-running .tool-icon {
-  color: var(--claude);
 }
 
 .tool-title {
@@ -74,81 +84,65 @@
   align-items: baseline;
   gap: 8px;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1;
 }
 
-/* The filename is what an engineer scans for, so it truncates last — but the
-   subtitle says what the command DOES and must never reach 0px, where it
-   renders as literally nothing (no ellipsis, no hover target). Both keep a
-   floor; past that the row drops the subtitle to its own line rather than
-   squeezing either to invisibility. */
 .tool-headline {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--text);
+  font-weight: 500;
+  color: var(--text-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1 1 auto;
   min-width: 8ch;
-}
-
-.tool-card[data-family="read"] .tool-headline,
-.tool-card[data-family="edit"] .tool-headline,
-.tool-card[data-family="write"] .tool-headline {
-  font-weight: 500;
+  flex: 0 1 auto;
 }
 
 .tool-subtitle {
-  font-size: 11px;
+  font-family: var(--mono);
+  font-size: 11.5px;
   color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 0 1 auto;
-  min-width: 10ch;
+  min-width: 6ch;
+  flex: 0 4 auto;
 }
 
-/* Below this the two labels stop competing for one line: the headline keeps the
-   full row and the subtitle sits under it, still readable, still ellipsised. */
 @media (max-width: 900px) {
   .tool-title {
     flex-direction: column;
-    align-items: stretch;
-    gap: 1px;
-  }
-
-  .tool-headline,
-  .tool-subtitle {
-    flex: 0 0 auto;
-    min-width: 0;
+    align-items: flex-start;
+    gap: 0;
   }
 }
 
 .tool-badges {
   display: flex;
+  align-items: center;
   gap: 4px;
   flex: 0 0 auto;
 }
 
 .tool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 1px 6px;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-pill);
   font-size: 10.5px;
-  font-weight: 600;
-  background: var(--surface-sunken);
+  background: var(--surface-active);
   color: var(--text-muted);
   white-space: nowrap;
 }
 
 .tool-badge.is-add {
-  background: var(--diff-add-bg);
-  color: var(--diff-add-fg);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .tool-badge.is-del {
-  background: var(--diff-del-bg);
-  color: var(--diff-del-fg);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .tool-badge.is-error {
@@ -156,150 +150,117 @@
   color: var(--danger);
 }
 
+.tool-badge.is-warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.tool-badge.is-live {
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
 .tool-badge.is-quiet {
   background: transparent;
   color: var(--text-faint);
-  font-weight: 400;
-  padding: 1px 2px;
+  padding: 1px 3px;
 }
 
 .tool-elapsed {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-faint);
   flex: 0 0 auto;
 }
 
 .tool-status {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   flex: 0 0 auto;
-  width: 15px;
-  justify-content: center;
 }
 
 .mark-ok {
-  color: var(--success);
+  color: var(--success-dot);
 }
 
 .mark-error {
-  color: var(--danger);
+  color: var(--danger-dot);
 }
 
 .mark-warn {
-  color: var(--warning);
+  color: var(--warning-dot);
 }
 
+/* ---------- bodies ---------- */
+
 .tool-body {
-  padding: 0 9px 9px 26px;
+  padding: 4px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
 }
 
 .tool-waiting {
-  font-size: 11px;
   color: var(--text-faint);
-}
-
-/* A footer action, not a header: the diff or the file body is what the reader
-   came for, so it stays at the top of the card. */
-.tool-file-row {
-  display: flex;
-  justify-content: flex-end;
-  margin: -2px -4px 0 0;
+  font-size: 11.5px;
+  padding: 2px 0;
 }
 
 .tool-section-label {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
 
-.result-list,
-.web-list {
+.tool-file-row {
+  display: flex;
+}
+
+.result-list {
   list-style: none;
   margin: 0;
-  padding: 7px 9px;
-  border-radius: var(--r-sm);
-  background: var(--code-bg);
-  border: 1px solid var(--border-faint);
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 260px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  max-height: 300px;
   overflow-y: auto;
 }
 
-.result-list li {
-  font-size: 11.5px;
-  color: var(--text-soft);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The settled record of an answered AskUserQuestion: what was asked, and which
-   option was picked. Both halves wrap — a question is a sentence, and the whole
-   point of keeping the card is that it stays readable weeks later. */
-.qa-list {
+.web-list {
+  list-style: none;
   margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 7px;
 }
 
-.qa-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.qa-question {
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-.qa-answer {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text);
-  font-weight: 500;
-}
-
-.qa-answer.is-unanswered {
-  color: var(--text-faint);
-  font-weight: 400;
-}
-
-.web-list li {
-  display: flex;
-  flex-direction: column;
-  padding: 3px 0;
-}
-
 .web-title {
-  font-size: 12px;
-  color: var(--text);
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-soft);
 }
 
 .web-url {
-  font-size: 10.5px;
-  color: var(--claude);
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .mcp-server {
-  font-size: 10.5px;
-  color: var(--violet);
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
-/* ---------- todos ---------- */
+/* ---------- todo list ---------- */
 
 .todo-list {
   list-style: none;
@@ -312,53 +273,72 @@
 
 .todo-item {
   display: flex;
+  align-items: baseline;
   gap: 8px;
   font-size: 12.5px;
   color: var(--text-soft);
-  align-items: baseline;
 }
 
-.todo-mark {
-  flex: 0 0 auto;
-  width: 12px;
+.todo-item.is-completed {
   color: var(--text-faint);
-  font-size: 11px;
-}
-
-.todo-item.is-completed .todo-mark {
-  color: var(--success);
 }
 
 .todo-item.is-completed .todo-text {
-  color: var(--text-faint);
   text-decoration: line-through;
   text-decoration-color: var(--border-strong);
 }
 
-.todo-item.is-in_progress .todo-mark {
-  color: var(--claude);
-}
-
-.todo-item.is-in_progress .todo-text {
+.todo-item.is-in_progress {
   color: var(--text);
-  font-weight: 500;
 }
 
-/* ---------- subagents ---------- */
-
-/* Round 4: the inline SubagentCard went with the agents dock — an agent in the
-   transcript is one compact AgentRow (agents.css), and its full conversation
-   lives in the agent chat view. Only the type chip survives here; the agent
-   view's header wears it. */
-.subagent-type {
-  padding: 0 5px;
-  border-radius: var(--r-xs);
-  background: var(--violet-soft);
-  color: var(--violet);
-  font-weight: 600;
+.todo-mark {
+  flex: 0 0 auto;
+  font-size: 11px;
+  width: 12px;
+  text-align: center;
+  color: var(--text-faint);
 }
 
-/* ---------- code blocks ---------- */
+.todo-item.is-completed .todo-mark {
+  color: var(--success-dot);
+}
+
+.todo-item.is-in_progress .todo-mark {
+  color: var(--claude-strong);
+}
+
+/* ---------- question/answer record ---------- */
+
+.qa-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qa-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qa-question {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.qa-answer {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.qa-answer.is-unanswered {
+  color: var(--text-faint);
+}
+
+/* ---------- code block ---------- */
 
 .code-block {
   border-radius: var(--r-md);
@@ -372,81 +352,57 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 25px;
-  padding: 0 5px 0 9px;
+  padding: 4px 6px 4px 10px;
   background: var(--code-header-bg);
   border-bottom: 1px solid var(--border-faint);
 }
 
 .code-chip {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--text-faint);
-  text-transform: lowercase;
-  letter-spacing: 0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .code-block-spacer {
-  flex: 1 1 auto;
+  flex: 1;
 }
 
 .code-block-body {
   margin: 0;
-  padding: 8px 10px;
+  padding: 9px 12px;
   overflow-x: auto;
   font-family: var(--mono);
   font-size: 11.5px;
   line-height: 1.55;
-  max-height: 460px;
-  overflow-y: auto;
 }
 
 .code-block-body.is-wrapped {
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .code-block.is-dense .code-block-body {
-  padding: 6px 10px;
+  padding: 7px 10px;
 }
 
-.code-block-more,
-.diff-more,
-.terminal-more {
+.code-block-more {
   display: block;
   width: 100%;
-  padding: 5px;
+  text-align: left;
+  padding: 5px 12px;
   font-size: 11px;
-  color: var(--text-muted);
-  background: var(--code-header-bg);
-  border-top: 1px solid var(--border-faint);
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-
-.code-block-more:hover,
-.diff-more:hover,
-.terminal-more:hover,
-.code-block-more:focus-visible,
-.diff-more:focus-visible,
-.terminal-more:focus-visible {
   color: var(--claude);
-  background: var(--claude-faint);
+  border-top: 1px solid var(--border-faint);
 }
 
-/* The terminal is dark in both themes, so its own chrome cannot inherit the
-   page palette or the affordance disappears against the black body. */
-.terminal-more {
-  color: var(--terminal-muted);
-  background: var(--terminal-chrome);
-  border-top-color: var(--terminal-border);
+.code-block-more:hover {
+  background: var(--surface-hover);
 }
 
-.terminal-more:hover,
-.terminal-more:focus-visible {
-  color: var(--terminal-fg);
-  background: rgba(255, 255, 255, 0.11);
+.code-block-more:focus-visible {
+  background: var(--surface-hover);
 }
 
 /* ---------- terminal ---------- */
@@ -454,30 +410,27 @@
 .terminal {
   position: relative;
   border-radius: var(--r-md);
-  border: 1px solid var(--border-faint);
   background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
   overflow: hidden;
   min-width: 0;
 }
 
-.terminal.is-error {
-  border-color: var(--danger-border);
-}
-
 .terminal.is-empty {
-  padding: 7px 10px;
-  font-size: 11px;
+  padding: 8px 12px;
   color: var(--text-faint);
+  font-size: 11.5px;
   background: var(--code-bg);
+  border-color: var(--border-faint);
 }
 
 .terminal-copy {
   position: absolute;
   top: 4px;
   right: 4px;
-  z-index: 2;
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
+  z-index: 2;
 }
 
 .terminal:hover .terminal-copy,
@@ -485,52 +438,64 @@
   opacity: 1;
 }
 
-.terminal-body {
-  margin: 0;
-  padding: 8px 10px;
-  overflow-x: auto;
-  max-height: 420px;
-  overflow-y: auto;
-  font-size: 11.5px;
-  line-height: 1.5;
+.terminal .copy-btn {
+  color: var(--terminal-muted);
+  background: var(--terminal-chrome);
+}
+
+.terminal .copy-btn:hover {
   color: var(--terminal-fg);
 }
 
-.terminal-line {
-  white-space: pre;
-  min-height: 1.5em;
+.terminal-body {
+  margin: 0;
+  padding: 9px 12px;
+  overflow-x: auto;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--terminal-fg);
 }
 
-/* A line wider than the box is scrollable, but with no scrollbar at rest it
-   reads as truncated-and-lost — the one path in the tool_result simply ends
-   mid-token at the card edge. The fade over the clip edge says the text
-   continues; AnsiOutput lifts the class once the reader reaches the end so the
-   final characters are never dimmed. A mask, not an overlay: the terminal bed
-   under the fade is the terminal's own background. */
+.terminal-body.is-wrapped {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .terminal-body.is-clipped-end {
-  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
   -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
 }
 
-/* Prose output wraps rather than hiding its tail behind a scrollbar; the path in
-   an ENOENT is the whole reason the card is open. */
+.terminal-line {
+  min-height: 1.55em;
+  white-space: pre;
+}
+
 .terminal-body.is-wrapped .terminal-line {
   white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .terminal.is-error .terminal-body {
   color: var(--terminal-error);
 }
 
-.terminal .copy-btn {
+.terminal-more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  font-size: 11px;
   color: var(--terminal-muted);
+  border-top: 1px solid var(--terminal-border);
 }
 
-.terminal .copy-btn:hover,
-.terminal .copy-btn:focus-visible {
+.terminal-more:hover {
   color: var(--terminal-fg);
-  background: rgba(255, 255, 255, 0.11);
+  background: var(--terminal-chrome);
+}
+
+.terminal-more:focus-visible {
+  color: var(--terminal-fg);
 }
 
 /* ---------- diff ---------- */
@@ -545,69 +510,77 @@
 
 .diff-body {
   overflow-x: auto;
-  max-height: 460px;
-  overflow-y: auto;
   font-family: var(--mono);
   font-size: 11.5px;
-  line-height: 1.55;
-  padding: 4px 0;
+  line-height: 1.5;
+  padding: 6px 0;
 }
 
 .diff-row {
   display: flex;
   align-items: baseline;
-  white-space: pre;
   min-width: max-content;
-  padding-right: 10px;
+  padding: 0 10px 0 0;
 }
 
 .diff-row.is-add {
   background: var(--diff-add-bg);
 }
 
+.diff-row.is-add .diff-text,
+.diff-row.is-add .diff-mark {
+  color: var(--diff-add-fg);
+}
+
 .diff-row.is-del {
   background: var(--diff-del-bg);
 }
 
+.diff-row.is-del .diff-text,
+.diff-row.is-del .diff-mark {
+  color: var(--diff-del-fg);
+}
+
 .diff-no {
-  flex: 0 0 auto;
-  width: 34px;
-  padding-right: 7px;
+  flex: 0 0 34px;
   text-align: right;
+  padding-right: 8px;
   color: var(--diff-gutter);
   font-size: 10.5px;
   user-select: none;
 }
 
 .diff-mark {
-  flex: 0 0 auto;
-  width: 14px;
+  flex: 0 0 14px;
   text-align: center;
-  color: var(--diff-gutter);
   user-select: none;
-}
-
-.diff-row.is-add .diff-mark {
-  color: var(--diff-add-fg);
-}
-
-.diff-row.is-del .diff-mark {
-  color: var(--diff-del-fg);
+  color: var(--text-faint);
 }
 
 .diff-text {
-  flex: 1 1 auto;
-  min-width: 0;
+  white-space: pre;
 }
 
 .diff-gap {
   height: 8px;
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 4px,
-    var(--border-faint) 4px,
-    var(--border-faint) 5px
-  );
-  margin: 3px 0;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 8px;
+}
+
+.diff-more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--claude);
+  border-top: 1px solid var(--border-faint);
+}
+
+.diff-more:hover {
+  background: var(--surface-hover);
+}
+
+.diff-more:focus-visible {
+  background: var(--surface-hover);
 }

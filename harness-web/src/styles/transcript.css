@@ -1,383 +1,314 @@
+/* ---------------------------------------------------------------------------
+   Transcript.
+
+   Full-bleed scroll under the floating dock. One centered column; the user's
+   message is a soft rounded veil (the way Cursor echoes the prompt), the
+   assistant's answer is bare ink on the page, and the work between them hangs
+   on a hairline rail. Generous vertical rhythm — the space between turns is
+   what separates them, not boxes.
+--------------------------------------------------------------------------- */
+
 .transcript-wrap {
-  position: relative;
-  flex: 1 1 auto;
+  flex: 1;
   min-height: 0;
+  position: relative;
   display: flex;
+  flex-direction: column;
 }
 
-/* The pill lands outside the scroller, so the wrap must not clip it. */
 .transcript-wrap.has-pill {
   padding-bottom: 33px;
 }
 
 .transcript {
-  flex: 1 1 auto;
+  flex: 1;
   min-height: 0;
-  position: relative;
 }
 
 .transcript-inner {
   max-width: var(--content-max);
   margin: 0 auto;
-  padding: 20px var(--gutter) 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 18px var(--gutter) 8px;
 }
 
-/* Breathing room under the last card so a growing permission/question footer is
-   never flush against the dock's top edge. */
 .transcript-pad {
-  height: 22px;
-  flex: 0 0 auto;
+  height: 24px;
 }
 
 .transcript-earlier {
   display: flex;
   justify-content: center;
-  padding: 6px 0 12px;
+  padding: 6px 0 14px;
 }
 
 .link-btn {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  padding: 3px 8px;
-  border-radius: var(--r-pill);
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+  color: var(--claude);
+  font-size: 12px;
+  border-radius: var(--r-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.link-btn:hover,
+.link-btn:hover {
+  text-decoration: underline;
+}
+
 .link-btn:focus-visible {
-  color: var(--claude);
-  background: var(--claude-faint);
+  text-decoration: underline;
 }
 
 /* ---------- turns ---------- */
 
 .turn {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 0 18px;
-  border-top: 1px solid var(--border-faint);
-  scroll-margin-top: 16px;
+  margin-bottom: 30px;
 }
 
-.turn:first-child {
-  border-top: none;
-  padding-top: 4px;
-}
-
-/* Assistant content keeps ONE text origin for the whole turn. The work group's
-   rail used to add 14px of padding, so a paragraph slid sideways the moment a
-   later block reclassified it from tail to work — text must never reflow under
-   a reader. The indent lives here permanently and the rail is drawn into it. */
-.turn-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  padding-left: var(--rail-indent);
-}
-
-.turn-body:empty {
-  display: none;
-}
-
-.turn:has(.turn-body:empty) {
-  padding-bottom: 8px;
-}
-
-.turn-work {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* A settled fold HIDES the work tree rather than unmounting it: the reader's
-   expanded disclosures, drill-in transcripts, and scroll positions inside the
-   cards survive the fold and are exactly there when it reopens. */
-.turn-work.is-folded {
-  display: none;
-}
-
-/* Every work row rides in its own Disclosure wrapper, so a block moving out of
-   the streaming overflow — or the whole tree easing open at settle — animates
-   without the blocks ever remounting. The wrappers inherit the column's rhythm
-   from the parent's gap; the hidden variant is the same box, closed. */
-.turn-work-item,
-.turn-work-hidden {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.turn-work::before {
-  content: "";
-  position: absolute;
-  left: calc(var(--rail-indent) * -1 + 2px);
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--border);
-}
-
-/* ---------- running work overflow ---------- */
-
-.work-overflow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 3px 9px 3px 5px;
-  border-radius: var(--r-pill);
-  color: var(--text-muted);
-  font-size: 11.5px;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
-}
-
-.work-overflow:hover,
-.work-overflow:focus-visible {
-  background: var(--surface-hover);
-  color: var(--text-soft);
+.turn:last-child {
+  margin-bottom: 8px;
 }
 
 /* ---------- user message ---------- */
 
 .user-msg {
   position: relative;
-  align-self: flex-end;
-  max-width: 88%;
-  padding: 9px 13px;
-  border-radius: var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);
-  background: var(--claude-faint);
-  border: 1px solid var(--claude-border);
-  color: var(--text);
+  margin: 0 0 16px;
+  padding: 11px 15px;
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-faint);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .user-msg-body {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 13px;
-  line-height: 1.56;
+  min-height: 1.2em;
 }
 
-/* The hover tools are pinned over the bubble's top-right corner, and bubbles
-   size to their content — so a line that reaches the right edge runs under the
-   glyphs. A float reserves their footprint on the first line only: the text
-   flows around it at rest, and nothing reflows when they fade in on hover
-   (a hover-time padding change would shift the words under the pointer). The
-   width tracks the two-button row — rewind plus copy — not one button. */
+/* Reserve the hover tools' footprint on the first line at rest, so the text
+   never runs under them and hover never reflows the words. */
 .user-msg-body::before {
   content: "";
   float: right;
-  width: 42px;
-  height: 20px;
+  width: 48px;
+  height: 1px;
 }
 
 .user-msg-body.is-clipped {
-  max-height: 9.6em;
+  max-height: 12.4em;
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 72%, transparent 98%);
+  mask-image: linear-gradient(to bottom, black 72%, transparent 98%);
 }
 
 .user-msg-images {
   display: flex;
-  gap: 6px;
-  margin-top: 7px;
   flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .user-msg-images img {
-  max-height: 96px;
+  max-height: 120px;
+  max-width: 180px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
 }
 
-/* The expander gets its own row. At `height: 0` it was painted over the last,
-   half-faded line of the clipped body — text sitting on text, with the mask
-   gradient resolving into an ambiguous smudge rather than into an affordance.
-   The row only exists on a message long enough to clip, so it costs nothing on
-   an ordinary bubble. */
 .user-msg-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
-/* Pulls the pill's padding back so its label starts on the message's own text
-   origin instead of 8px inside it. */
-.user-msg-actions .link-btn {
-  margin-left: -8px;
-}
-
-/* `.icon-btn` sets `position: relative` and cards.css is imported after this
-   sheet, so at equal specificity the buttons win and this affordance falls back
-   into the flow — adding ~26px of dead height to every user bubble. The row is
-   what gets pinned, so adding rewind beside copy cannot reintroduce that.
-   Scoping the override to `.user-msg` outranks cards.css. */
 .user-msg .user-msg-tools {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: 7px;
+  right: 8px;
   display: flex;
   gap: 2px;
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
 }
 
-.user-msg .user-msg-tools .icon-btn {
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-}
-
-/* Focus-within, not only hover: tabbing to rewind must reveal the control the
-   focus ring is being drawn around, or the ring floats over nothing. */
 .user-msg:hover .user-msg-tools,
 .user-msg:focus-within .user-msg-tools {
   opacity: 1;
 }
 
-/* ---------- fold ---------- */
+/* ---------- assistant column ---------- */
 
-.fold-head {
-  display: flex;
+.turn-body {
+  padding-left: var(--rail-indent);
+  position: relative;
+}
+
+.assistant-text {
+  font-size: 13.5px;
+  line-height: 1.65;
+  margin: 10px 0;
+}
+
+.assistant-text:first-child {
+  margin-top: 0;
+}
+
+@keyframes stream-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.assistant-text.is-streaming {
+  animation: stream-in 220ms var(--ease-out);
+}
+
+.block-image {
+  max-width: 100%;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  margin: 8px 0;
+}
+
+/* ---------- work rail ----------
+
+   Tool calls, thinking, and agent rows hang together as one group with a
+   hairline rail drawn INSIDE the body indent — the visual that says "this is
+   the work, the answer follows". No padding-left of its own: the indent is the
+   turn body's, so a paragraph reclassified between work and tail never moves. */
+
+.turn-work {
+  position: relative;
+  margin: 6px 0;
+}
+
+.turn-work::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--rail-indent) + 3px);
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border);
+}
+
+.turn-work.is-folded {
+  display: none;
+}
+
+.turn-work-item {
+  margin: 2px 0;
+}
+
+/* ---------- fold header / streaming overflow ---------- */
+
+.fold-head,
+.work-overflow {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  align-self: flex-start;
-  padding: 3px 9px 3px 5px;
-  border-radius: var(--r-pill);
+  padding: 3px 8px 3px 2px;
+  margin: 2px 0;
+  border-radius: var(--r-sm);
+  font-size: 12px;
   color: var(--text-muted);
-  font-size: 11.5px;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
 .fold-head:hover,
-.fold-head:focus-visible {
+.work-overflow:hover {
+  color: var(--text);
   background: var(--surface-hover);
-  color: var(--text-soft);
+}
+
+.fold-head:focus-visible,
+.work-overflow:focus-visible {
+  color: var(--text);
+}
+
+.fold-label {
+  font-weight: 500;
 }
 
 .fold-count {
   color: var(--text-faint);
-  font-size: 11px;
-}
-
-.turn-live {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-  color: var(--text-muted);
   font-size: 11.5px;
 }
 
-.turn-interrupted {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  align-self: flex-start;
-  padding: 3px 9px;
-  border-radius: var(--r-pill);
-  background: var(--warning-soft);
-  color: var(--warning);
-  font-size: 11px;
-  font-weight: 500;
-}
+/* ---------- thinking ----------
 
-.turn-footer {
-  font-size: 10.5px;
-  color: var(--text-faint);
-  padding-top: 2px;
-}
-
-/* ---------- assistant text ---------- */
-
-.assistant-text {
-  font-size: 13.5px;
-  line-height: 1.62;
-  color: var(--text);
-  min-width: 0;
-}
-
-.assistant-text.is-streaming > .md > *:last-child::after {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 0.95em;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  background: var(--claude-strong);
-  border-radius: 1px;
-  animation: blink 1.1s steps(2, start) infinite;
-}
-
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-/* ---------- thinking ---------- */
+   Cursor's "Thought for 1s": a quiet prose header, expandable into the trace.
+   No icon chrome — the label alone. */
 
 .thinking {
-  align-self: flex-start;
-  max-width: 100%;
-  border-radius: var(--r-md);
-  border: 1px solid transparent;
-  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-
-/* Open, the block is a content card like the tool cards around it — hugging the
-   label leaves a box that stops mid-sentence relative to its neighbours. */
-.thinking.is-open {
-  align-self: stretch;
-  width: 100%;
-  border-color: var(--border-faint);
-  background: var(--surface-sunken);
+  margin: 8px 0;
 }
 
 .thinking-head {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px 3px 4px;
-  border-radius: var(--r-md);
+  gap: 6px;
+  padding: 2px 6px 2px 0;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
   color: var(--text-muted);
-  font-size: 11.5px;
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-/* Neutral hover like every other row; only the icon stays violet. */
-.thinking-head:hover,
+.thinking-head:hover {
+  color: var(--text-soft);
+}
+
 .thinking-head:focus-visible {
   color: var(--text-soft);
-  background: var(--surface-hover);
 }
 
-.thinking.is-open .thinking-head {
-  width: 100%;
+.thinking-caret {
+  display: inline-flex;
+  color: var(--text-faint);
 }
 
 .thinking-icon {
-  color: var(--violet);
-  opacity: 0.8;
+  display: none;
 }
 
-.thinking-head:hover .thinking-icon,
-.thinking-head:focus-visible .thinking-icon {
-  opacity: 1;
+.thinking-label {
+  font-weight: 500;
+}
+
+@keyframes shimmer-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.thinking-label.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--text-muted) 30%,
+    var(--text) 50%,
+    var(--text-muted) 70%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-sweep 2.2s linear infinite;
 }
 
 .thinking-body {
-  padding: 2px 12px 10px 26px;
-  font-size: 12.5px;
-  font-style: italic;
-  line-height: 1.6;
+  margin: 4px 0 4px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--border);
   color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+  max-height: min(340px, 44vh);
+  overflow-y: auto;
 }
 
 .thinking-body p {
@@ -389,75 +320,55 @@
 }
 
 .thinking-redacted {
-  font-style: normal;
+  font-style: italic;
   color: var(--text-faint);
 }
 
-.shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--text-muted) 0%,
-    var(--violet) 40%,
-    var(--text-muted) 80%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 2.2s linear infinite;
-}
+/* ---------- live indicator ---------- */
 
-@keyframes shimmer {
-  to {
-    background-position: -200% 0;
-  }
-}
-
-/* ---------- divider / notice ---------- */
-
-.divider {
+.turn-live {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
+  gap: 8px;
+  margin: 12px 0 2px;
+  min-height: 18px;
 }
 
-.divider-line {
-  flex: 1 1 auto;
-  height: 1px;
-  background: var(--border);
+.turn-live-label {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
-.divider-label {
+.turn-interrupted {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
+  margin: 10px 0 2px;
+  font-size: 12px;
+  color: var(--warning);
 }
 
-/* The token count is the only real number on the divider — how much context the
-   compaction reclaimed — so it is content, not decoration. `--text-faint` clears
-   AA on its own (5.12:1 light / 6.42:1 dark); multiplying it by a further 0.72
-   composited to 2.95:1 / 3.93:1 at 11px. The secondary tier is expressed by the
-   token alone, never by a second attenuation stacked on top of it. */
-.divider-sub {
+.turn-footer {
+  margin-top: 8px;
+  font-size: 11px;
   color: var(--text-faint);
 }
 
+/* ---------- notices ---------- */
+
 .notice {
   display: flex;
-  gap: 8px;
-  padding: 8px 11px;
+  gap: 9px;
+  margin: 10px 0;
+  padding: 10px 12px;
   border-radius: var(--r-md);
-  border: 1px solid var(--border-faint);
-  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  background: var(--surface);
   font-size: 12.5px;
 }
 
 .notice.is-warning {
-  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  border-color: var(--warning-dot);
   background: var(--warning-soft);
 }
 
@@ -468,7 +379,7 @@
 
 .notice-icon {
   flex: 0 0 auto;
-  margin-top: 2px;
+  margin-top: 1px;
   color: var(--text-muted);
 }
 
@@ -482,7 +393,7 @@
 
 .notice-body {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1;
 }
 
 .notice-title {
@@ -490,17 +401,138 @@
   margin-bottom: 2px;
 }
 
-.block-image {
-  max-width: 100%;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
+/* ---------- dividers ---------- */
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
 }
 
-/* ---------- jump pill + timeline ---------- */
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
 
-/* The pill sits in reserved space BELOW the scroller (see .transcript-wrap
-   .has-pill), never over it, so it can not cover the last line of the
-   transcript — a reader must not lose content to an affordance about content. */
+.divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.divider-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ---------- relay chips (message sent to an agent, in the main chat) ---------- */
+
+.relay-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  padding: 7px 11px;
+  border-radius: var(--r-lg);
+  border: 1px dashed var(--border-strong);
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.relay-chip-arrow {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.relay-chip-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--claude);
+  font-size: 12px;
+  font-weight: 500;
+  flex: 0 0 auto;
+  border-radius: var(--r-xs);
+}
+
+.relay-chip-target:hover {
+  text-decoration: underline;
+}
+
+.relay-chip-target:focus-visible {
+  text-decoration: underline;
+}
+
+.relay-chip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.relay-chip-state {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.relay-ack {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin: 2px 0;
+}
+
+/* ---------- agent-thread user messages (prompt + relayed) ---------- */
+
+.thread-user {
+  margin: 0 0 14px;
+  padding: 11px 15px;
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-faint);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.thread-user.is-prompt {
+  background: var(--surface);
+}
+
+.thread-user.is-pending {
+  opacity: 0.75;
+}
+
+.thread-user-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 5px;
+}
+
+.thread-user-pending {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ---------- jump pill ---------- */
+
 .jump-pill {
   position: absolute;
   bottom: 3px;
@@ -509,117 +541,115 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 27px;
-  padding: 0 12px;
+  padding: 4px 12px;
   border-radius: var(--r-pill);
-  border: 1px solid var(--border-strong);
   background: var(--popover-bg);
-  backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--border);
   box-shadow: var(--shadow-lifted);
-  color: var(--text-soft);
   font-size: 11.5px;
-  z-index: 30;
-  animation: pop-in 150ms var(--ease);
+  color: var(--text-soft);
+  z-index: 15;
+  white-space: nowrap;
 }
 
-.jump-pill:hover,
-.jump-pill:focus-visible {
-  color: var(--claude);
-  border-color: var(--claude-border);
+.jump-pill:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
 }
+
+.jump-pill:focus-visible {
+  color: var(--text);
+}
+
+/* ---------- timeline rail ---------- */
 
 .timeline {
   position: absolute;
-  left: 4px;
   top: 12px;
+  right: 4px;
   bottom: 12px;
-  width: 16px;
-  display: flex;
+  width: 14px;
+  display: none;
   flex-direction: column;
-  gap: 3px;
   justify-content: flex-start;
-  padding-top: 8px;
-  z-index: 15;
-  opacity: 0;
-  transition: opacity 200ms var(--ease);
+  gap: 4px;
+  z-index: 10;
 }
 
-/* Anything revealed only on :hover is invisible to keyboard users, so a focus
-   anywhere in the transcript reveals the rail too. */
-.transcript-wrap:hover .timeline,
-.transcript-wrap:focus-within .timeline {
-  opacity: 1;
+@media (pointer: fine) {
+  .timeline {
+    display: flex;
+  }
 }
 
 .timeline-tick {
-  width: 5px;
-  height: 3px;
-  margin-left: 4px;
+  width: 8px;
+  height: 2px;
+  margin-left: 3px;
   border-radius: var(--r-pill);
   background: var(--border-strong);
-  transition: width var(--dur) var(--ease), background var(--dur) var(--ease),
-    margin-left var(--dur) var(--ease);
-  flex: 0 0 auto;
-}
-
-.timeline-tick[data-active="true"] {
-  background: var(--claude);
-  width: 9px;
-  margin-left: 2px;
+  opacity: 0.45;
+  transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
 .timeline-tick:hover {
-  width: 12px;
-  margin-left: 0;
+  opacity: 1;
   background: var(--claude-strong);
 }
 
-.timeline-tick.is-aborted {
-  background: var(--warning-dot, var(--warning));
+/* The on-screen window brightens in the page's own ink — the accent is saved
+   for the pointer, or the rail reads as a glowing menu glyph in the corner. */
+.timeline-tick[data-active="true"] {
+  opacity: 0.9;
+  background: var(--text-faint);
 }
 
 .timeline-tick.is-error {
-  background: var(--danger-dot, var(--danger));
+  background: var(--danger-dot);
 }
 
 .timeline-preview {
   position: absolute;
-  left: 20px;
-  width: 268px;
-  padding: 9px 11px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border-strong);
+  right: 18px;
+  width: 240px;
   background: var(--popover-bg);
-  backdrop-filter: blur(24px) saturate(150%);
-  box-shadow: var(--shadow-lifted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-panel);
+  padding: 9px 11px;
+  font-size: 11.5px;
   pointer-events: none;
-  animation: pop-in 120ms var(--ease);
+  z-index: 30;
 }
 
 .timeline-preview-user {
-  font-size: 12px;
   font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   margin-bottom: 3px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .timeline-preview-body {
-  font-size: 11.5px;
   color: var(--text-muted);
-  line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-/* Pointer-only affordance: hidden outright where there is no fine pointer, and
-   never in the tab order (see the tabIndex={-1} on each tick). */
-@media not (pointer: fine) {
-  .timeline {
-    display: none;
-  }
+/* ---------- misc statuses ---------- */
+
+.drill-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.drill-status.is-error {
+  color: var(--danger);
 }

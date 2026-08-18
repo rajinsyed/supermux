@@ -1,215 +1,216 @@
-/* Round 4: the workflow browser.
+/* ---------------------------------------------------------------------------
+   Workflows.
 
-   The CLI's information design — header, phases column, phase agent list, agent
-   detail, a hint bar along the bottom — rendered in the pane's own tokens. It is
-   a native multi-pane browser, not a terminal drawn in a browser: no box-drawing
-   characters, no monospace chrome, no ANSI palette. The one thing borrowed
-   verbatim is the LAYOUT, because that layout is what makes a 30-agent run
-   readable.
+   The transcript keeps ONE quiet row per run; the run itself is browsed in a
+   framed multi-pane view — phases column, agent list, agent detail — with the
+   same fixed-geometry contracts the terminal version keeps (state chips sized
+   once, dots one shape, live text clipped not wrapped).
+--------------------------------------------------------------------------- */
 
-   The transcript's own record of a workflow is a single `.wf-row`. */
-
-/* ---------- the inline row ---------- */
+/* ---------- transcript row ---------- */
 
 .wf-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
+  min-width: 0;
   min-height: 30px;
-  padding: 5px 9px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--surface-raised);
   text-align: left;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  padding: 4px 8px 4px 4px;
+  border-radius: var(--r-md);
+  font-size: 12.5px;
+  color: var(--text-muted);
 }
 
-.wf-row:hover,
+.wf-row:hover {
+  background: var(--surface-hover);
+}
+
 .wf-row:focus-visible {
   background: var(--surface-hover);
-  border-color: var(--border-strong);
-}
-
-.wf-row.is-running {
-  border-color: var(--claude-border);
-  background: var(--claude-faint);
-}
-
-.wf-row.is-error {
-  border-color: var(--danger-border);
-  background: var(--danger-soft);
 }
 
 .wf-row-icon {
-  display: flex;
+  display: inline-flex;
+  color: var(--text-faint);
   flex: 0 0 auto;
-  color: var(--claude);
+}
+
+.wf-row.is-error .wf-row-icon {
+  color: var(--danger);
 }
 
 .wf-row-name {
-  flex: 0 1 auto;
-  min-width: 6ch;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 6ch;
+  flex: 0 1 auto;
 }
 
 .wf-row-desc {
-  flex: 1 1 auto;
-  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 4ch;
+  flex: 0 4 auto;
+}
+
+/* Aggregates tick every couple of seconds while a run advances; a fixed box
+   keeps the row from reflowing the transcript under the reader. */
+.wf-row-summary {
+  height: 16px;
+  line-height: 16px;
   font-size: 11px;
   color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
-/* The counts change every couple of seconds while a run advances; a fixed box
-   keeps the row from reflowing the transcript under the reader on each of them. */
-.wf-row-summary,
 .wf-row-elapsed {
-  flex: 0 0 auto;
-  height: 16px;
-  line-height: 16px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-faint);
+  flex: 0 0 auto;
 }
 
 .wf-row-open {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  font-size: 11px;
+  color: var(--claude);
   flex: 0 0 auto;
-  font-size: 10.5px;
-  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
 }
 
 .wf-row:hover .wf-row-open,
 .wf-row:focus-visible .wf-row-open {
+  opacity: 1;
+}
+
+.wf-stopped-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10.5px;
+  flex: 0 0 auto;
+}
+
+.wf-error {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* ---------- state chips ----------
+
+   Sized ONCE at the widest state (RUNNING + spinner), coloured per state, so
+   a row advancing queued → running → done never changes width. */
+
+.wf-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 76px;
+  height: 16px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+
+.wfb-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 80px;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+
+.wf-state.is-queued,
+.wfb-state.is-queued {
+  background: var(--surface-active);
+  color: var(--text-muted);
+}
+
+.wf-state.is-running,
+.wfb-state.is-running {
+  background: var(--claude-soft);
   color: var(--claude);
 }
 
-@media (max-width: 640px) {
-  .wf-row-desc {
-    display: none;
-  }
+.wf-state.is-done,
+.wfb-state.is-done {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.wf-state.is-error,
+.wfb-state.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.wf-state.is-blocked,
+.wfb-state.is-blocked {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.wf-state.is-cached,
+.wfb-state.is-cached {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+.wf-state.is-stopped,
+.wfb-state.is-stopped {
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 /* ---------- the browser ---------- */
 
-/* No view router mounted: the browser takes the pane from the row that opened
-   it. Ink rather than a tint of --page-bg, because the pane supports a
-   transparent page and a tint of nothing suppresses nothing. */
-.wfb-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 190;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  padding: 18px;
-  background: var(--scrim);
-  backdrop-filter: blur(3px);
-}
-
 .wf-browser {
-  display: flex;
-  flex-direction: column;
+  flex: 1;
   min-height: 0;
-  width: min(920px, 100%);
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border-strong);
-  background: var(--popover-bg);
-  box-shadow: var(--shadow-modal);
-  overflow: hidden;
-}
-
-/* Inside a router-owned view the browser IS the pane body, not a panel floating
-   over one: no shadow, no scrim behind it, and it gives up the width cap.
-
-   It sits inside the pane's own transcript scroller, so it must NOT try to fill
-   a height it has no claim on — two nested scrollers would leave the reader
-   unable to reach the hint bar. It sizes to its content instead, and its two
-   columns keep their own viewport-relative caps (below), which is what stops a
-   thirty-agent phase from running off the pane. */
-.view-body {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-}
-
-.view-body > .wf-browser {
-  width: 100%;
-  border-radius: var(--r-md);
-  background: transparent;
-  box-shadow: none;
-}
-
-/* The browser takes focus on open so its ↑↓ / x / esc bindings work without a
-   click first. That focus is programmatic and the panel is not a control, so
-   the shared focus ring — a halo round a 600px box — would announce the whole
-   view as "the thing you are on" every time it opened. The bindings are named
-   in the hint bar and the SELECTED row carries its own treatment; that is where
-   the reader's eye belongs. Keyboard focus on the rows and buttons inside is
-   untouched. */
-.wf-browser:focus,
-.wf-browser:focus-visible {
   outline: none;
-  box-shadow: none;
-}
-
-/* The pane's transcript scroller is bottom-anchored: it follows new content
-   down. So a browser that grows taller than the viewport does not merely
-   overflow — it pushes its own HEADER off the top, and the reader loses the
-   run's name, its counts, and the back affordance the moment they select an
-   agent. The two columns therefore share a budget that leaves the header and
-   the hint bar on screen whatever the selection does. */
-/* The browser is capped to its SCROLLER, not to the viewport.
- *
- * The pane's transcript scroller is bottom-anchored: it follows new content
- * down. So a browser taller than it does not merely overflow — the scroller
- * pins the browser's bottom and pushes its HEADER off the top, taking the run's
- * name, its counts and the back affordance with it. That is what selecting an
- * agent did.
- *
- * A `vh` cap cannot fix it, because the scroller is not the viewport: the dock
- * grows with every agent row and every queued chip, and on a real pane it took
- * more than half the height. So the height chain is resolved instead — the
- * scroller already has a definite height as a flex child — and the browser
- * claims exactly that. Nothing is left for the ancestor to scroll, the header
- * and the hint bar (which carries the only Stop control) sit at the two ends,
- * and the columns scroll between them. */
-.harness-scroll:has(> .transcript-inner > .view-body) > .transcript-inner {
-  height: 100%;
-  min-height: 0;
-}
-
-.view-body {
-  max-height: 100%;
-  min-height: 0;
-}
-
-.view-body > .wf-browser {
-  max-height: 100%;
-  min-height: 0;
-}
-
-.view-body > .wf-browser .wfb-panes {
-  min-height: 0;
 }
 
 .wfb-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  min-height: 40px;
-  padding: 8px 12px;
+  gap: 9px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border-faint);
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .wfb-back {
@@ -217,156 +218,170 @@
 }
 
 .wfb-icon {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--violet-soft);
+  color: var(--violet);
   flex: 0 0 auto;
-  color: var(--claude);
 }
 
 .wfb-identity {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex: 1 1 auto;
+  flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
-/* The run's NAME is the one thing the header must always say in full: it is how
-   the reader knows which of three running workflows they are looking at. It
-   only gives way once it has run out of its own generous floor, and the
-   description — which the row above already showed — is the give before that. */
 .wfb-name {
-  flex: 0 1 auto;
-  min-width: 12ch;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: var(--claude);
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .wfb-desc {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wfb-summary,
-.wfb-elapsed {
+.wfb-summary {
+  font-size: 11.5px;
+  color: var(--text-faint);
   flex: 0 0 auto;
-  height: 16px;
-  line-height: 16px;
-  font-size: 10.5px;
-  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-/* ---------- the two panes ---------- */
+.wfb-elapsed {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+/* ---------- panes ---------- */
 
 .wfb-panes {
-  display: grid;
-  grid-template-columns: minmax(160px, 240px) 1fr;
-  flex: 1 1 auto;
+  flex: 1;
   min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
 }
 
-/* A narrow split has no room for two columns side by side; the phases become a
-   band above the detail rather than a 90px sliver of clipped titles. */
 @media (max-width: 620px) {
   .wfb-panes {
     grid-template-columns: 1fr;
-  }
-
-  .wfb-phases {
-    border-right: none;
-    border-bottom: 1px solid var(--border-faint);
-    max-height: 34vh;
+    grid-template-rows: auto 1fr;
   }
 }
 
 .wfb-phases {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 0;
-  padding: 10px 8px;
-  border-right: 1px solid var(--border-faint);
-  background: var(--surface);
   overflow-y: auto;
+  border-right: 1px solid var(--border-faint);
+  padding: 10px 8px;
+  min-width: 0;
+}
+
+@media (max-width: 620px) {
+  .wfb-phases {
+    border-right: none;
+    border-bottom: 1px solid var(--border-faint);
+    max-height: 30vh;
+  }
+}
+
+.wfb-right {
+  overflow-y: auto;
+  padding: 10px 14px;
+  min-width: 0;
 }
 
 .wfb-col-title {
+  margin: 0 0 8px;
+  padding: 0 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin: 0 0 2px 6px;
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-faint);
 }
 
-/* The count beside the column's name. Its own element rather than more of the
-   heading string: the heading is a PHASE TITLE, uppercase and tracked out, and
-   "GATHER2 AGENTS" is what running the two together produced. */
 .wfb-col-count {
-  font-weight: 500;
-  letter-spacing: 0;
+  font-weight: 400;
   text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
 }
 
-.wfb-phase-list,
-.wfb-agent-list {
+.wfb-empty {
+  margin: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------- phases column ---------- */
+
+.wfb-phase-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .wfb-phase-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
-  min-height: 26px;
-  padding: 3px 8px;
-  border-radius: var(--r-sm);
+  min-width: 0;
   text-align: left;
-  color: var(--text-muted);
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+  font-size: 12.5px;
+  color: var(--text-soft);
 }
 
-.wfb-phase-row:hover,
+.wfb-phase-row:hover {
+  background: var(--surface-hover);
+}
+
 .wfb-phase-row:focus-visible {
   background: var(--surface-hover);
-  color: var(--text);
 }
 
-/* The selected phase, not merely a hovered one: it is what the right pane is
-   showing, so it keeps its treatment when the pointer leaves. */
 .wfb-phase-row.is-active {
   background: var(--claude-soft);
   color: var(--text);
 }
 
+.wfb-phase-row.is-running .wfb-phase-count {
+  color: var(--claude);
+}
+
 .wfb-phase-index {
+  width: 16px;
   flex: 0 0 auto;
-  width: 14px;
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--text-faint);
+  text-align: center;
 }
 
 .wfb-phase-title {
-  flex: 1 1 auto;
+  flex: 1;
   min-width: 0;
-  font-size: 12px;
-  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -374,61 +389,60 @@
 
 .wfb-phase-count {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--text-faint);
+  white-space: nowrap;
 }
 
-.wfb-phase-row.is-running .wfb-phase-count {
-  color: var(--claude);
-}
+/* ---------- agent list ---------- */
 
-.wfb-right {
+.wfb-agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  padding: 10px 12px;
-  overflow-y: auto;
+  gap: 1px;
 }
-
-.wfb-empty {
-  margin: 0;
-  font-size: 11.5px;
-  color: var(--text-faint);
-}
-
-/* ---------- the phase's agent list ---------- */
 
 .wfb-agent-row {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   width: 100%;
-  min-height: 26px;
-  padding: 3px 8px;
-  border-radius: var(--r-sm);
+  min-width: 0;
   text-align: left;
-  transition: background var(--dur) var(--ease);
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+  font-size: 12.5px;
+  color: var(--text-soft);
 }
 
-.wfb-agent-row:hover,
+.wfb-agent-row:hover {
+  background: var(--surface-hover);
+}
+
 .wfb-agent-row:focus-visible {
   background: var(--surface-hover);
 }
 
-/* The state dot. Six states, one 7px circle: the shape never changes, so a list
-   of thirty agents reads as one column of colour rather than thirty pills of
-   different widths. */
+/* One shape for every state: a column of thirty agents reads as a column of
+   colour only if the mark never changes size. */
 .wfb-dot {
-  flex: 0 0 auto;
   width: 7px;
   height: 7px;
   border-radius: var(--r-pill);
+  flex: 0 0 auto;
+  background: var(--text-faint);
+}
+
+.wfb-dot.is-queued {
   background: var(--text-faint);
 }
 
 .wfb-dot.is-running {
   background: var(--claude-strong);
-  box-shadow: 0 0 0 3px var(--claude-faint);
+  animation: dock-pulse 1.6s ease-in-out infinite;
 }
 
 .wfb-dot.is-done {
@@ -439,8 +453,7 @@
   background: var(--danger-dot);
 }
 
-.wfb-dot.is-blocked,
-.wfb-dot.is-stopped {
+.wfb-dot.is-blocked {
   background: var(--warning-dot);
 }
 
@@ -448,40 +461,40 @@
   background: var(--violet-dot);
 }
 
+.wfb-dot.is-stopped {
+  background: var(--warning-dot);
+}
+
 .wfb-agent-label {
-  flex: 1 1 auto;
-  min-width: 6ch;
-  font-size: 12px;
-  color: var(--text);
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Fixed columns on the right, so tokens and elapsed line up down the list even
-   as each agent's numbers change. */
 .wfb-agent-tokens {
   flex: 0 0 auto;
-  width: 6ch;
+  min-width: 5ch;
   text-align: right;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-faint);
 }
 
 .wfb-agent-elapsed {
   flex: 0 0 auto;
-  width: 6ch;
+  min-width: 5ch;
   text-align: right;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-faint);
 }
 
-/* ---------- the agent detail ---------- */
+/* ---------- agent detail ---------- */
 
 .wfb-detail {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -489,89 +502,35 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 20px;
-}
-
-.wfb-state {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  min-width: 88px;
-  padding: 0 8px;
-  height: 18px;
-  border-radius: var(--r-pill);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  background: var(--surface-sunken);
-  color: var(--text-faint);
-}
-
-.wfb-state.is-running {
-  background: var(--claude-soft);
-  color: var(--claude);
-}
-
-.wfb-state.is-done {
-  background: var(--success-soft);
-  color: var(--success);
-}
-
-.wfb-state.is-error {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.wfb-state.is-blocked,
-.wfb-state.is-stopped {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.wfb-state.is-cached {
-  background: var(--violet-soft);
-  color: var(--violet);
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .wfb-detail-name {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .wfb-detail-elapsed {
-  margin-left: auto;
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: 11.5px;
+  color: var(--text-faint);
 }
 
 .wfb-detail-metrics {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-faint);
 }
 
 .wfb-section {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 8px 10px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-faint);
-  background: var(--surface);
-}
-
-.wfb-section.is-error {
-  border-color: var(--danger-border);
-  background: var(--danger-soft);
+  gap: 4px;
+  min-width: 0;
 }
 
 .wfb-section-head {
@@ -582,53 +541,50 @@
 
 .wfb-section-title {
   margin: 0;
-  flex: 1 1 auto;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-faint);
+}
+
+.wfb-section.is-error .wfb-section-title {
+  color: var(--danger);
 }
 
 .wfb-expand {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: var(--r-xs);
-  font-size: 10.5px;
-  color: var(--text-faint);
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-
-.wfb-expand:hover,
-.wfb-expand:focus-visible {
+  font-size: 11px;
   color: var(--claude);
-  background: var(--claude-faint);
+  border-radius: var(--r-xs);
 }
 
-/* A prompt or an outcome is text the reader may want to copy verbatim, so it
-   wraps and selects rather than ellipsizing — and caps its own height rather
-   than pushing the sections below it off the pane. */
+.wfb-expand:hover {
+  text-decoration: underline;
+}
+
+.wfb-expand:focus-visible {
+  text-decoration: underline;
+}
+
 .wfb-section-body {
   margin: 0;
-  font-size: 11.5px;
-  line-height: 1.55;
+  font-size: 12.5px;
+  line-height: 1.6;
   color: var(--text-soft);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: min(280px, 40vh);
+  max-height: min(300px, 40vh);
   overflow-y: auto;
-  user-select: text;
 }
 
 .wfb-section.is-error .wfb-section-body {
   color: var(--danger);
 }
 
-/* The live line: one clipped line, so a tool summary arriving every second
-   cannot change the detail pane's height under the reader. */
+/* Live tool summaries arrive every second; clip, never wrap. */
 .wfb-section-body.is-activity {
   white-space: nowrap;
   overflow: hidden;
@@ -640,7 +596,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-faint);
 }
 
@@ -650,237 +606,97 @@
 
 .wfb-detail-actions {
   display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
-/* A real control, not a caption. `.btn-quiet` paints no resting border — right
-   for the third verb on a dense card row, wrong for the only action in a pane,
-   where it read as a line of body text that happened to be clickable. */
-.wfb-open-chat {
-  flex: 0 0 auto;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-
-.wfb-open-chat:hover,
-.wfb-open-chat:focus-visible {
-  border-color: var(--claude-border);
-  background: var(--claude-faint);
-  color: var(--claude);
-}
+/* ---------- logs ---------- */
 
 .wfb-logs-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   flex: 0 0 auto;
-  padding: 6px 12px;
   border-top: 1px solid var(--border-faint);
-}
-
-.wfb-logs-block .wf-logs-toggle,
-.wfb-logs-block .wf-logs {
-  margin-left: 0;
-}
-
-/* ---------- the hint bar ---------- */
-
-/* The CLI's footer, and every hint on it is a REAL binding on the browser:
-   ↑↓ moves the selection, x stops the run, esc steps back out. The two that act
-   are buttons, so the pointer reaches them too. */
-.wfb-hints {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 0 0 auto;
-  min-height: 28px;
-  padding: 4px 12px;
-  border-top: 1px solid var(--border-faint);
-  background: var(--surface);
-}
-
-.wfb-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 6px;
-  border-radius: var(--r-xs);
-  font-size: 10.5px;
-  color: var(--text-faint);
-  white-space: nowrap;
-}
-
-.wfb-hint.is-action:hover:not(:disabled),
-.wfb-hint.is-action:focus-visible:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-/* ---------- shared agent-state vocabulary ---------- */
-
-/* Kept from the workflow card the browser replaces: the tasks strip's agent
-   picker still draws state chips, and the two must never disagree about what a
-   `blocked` agent looks like. */
-.wf-state {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  min-width: 74px;
-  padding: 0 6px;
-  height: 16px;
-  border-radius: var(--r-pill);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  background: var(--surface-sunken);
-  color: var(--text-faint);
-}
-
-.wf-state.is-running {
-  background: var(--claude-soft);
-  color: var(--claude);
-}
-
-.wf-state.is-done {
-  background: var(--success-soft);
-  color: var(--success);
-}
-
-.wf-state.is-error {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.wf-state.is-blocked {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.wf-state.is-cached {
-  background: var(--violet-soft);
-  color: var(--violet);
-}
-
-/* Stopped is the one state the USER caused, so it earns a real tint: rendered
-   as the queued grey, "I killed this at 3s" was indistinguishable from "this
-   was never dispatched". */
-.wf-state.is-stopped {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.wf-state.is-stopped svg {
-  flex-shrink: 0;
-}
-
-.wf-stopped-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  padding: 0 7px;
-  height: 17px;
-  border-radius: var(--r-pill);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.wf-error {
-  font-size: 11px;
-  padding: 4px 12px;
-  color: var(--danger);
-}
-
-.wf-agent-label {
-  font-size: 12px;
-  color: var(--text);
-  font-weight: 500;
-  min-width: 6ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 0 1 auto;
-}
-
-.wf-agent-toggle {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 4px;
-  padding: 1px 5px;
-  border-radius: var(--r-xs);
-  font-size: 10.5px;
-  color: var(--text-faint);
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-
-.wf-agent-toggle:hover,
-.wf-agent-toggle:focus-visible {
-  color: var(--claude);
-  background: var(--claude-faint);
-}
-
-.tool-badge.is-warn {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.tool-badge.is-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--claude-soft);
-  color: var(--claude);
+  padding: 4px 14px;
 }
 
 .wf-logs-toggle {
   display: inline-flex;
   align-items: center;
-  align-self: flex-start;
   gap: 5px;
-  padding: 2px 7px;
-  border-radius: var(--r-pill);
-  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
   color: var(--text-muted);
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-.wf-logs-toggle:hover,
+.wf-logs-toggle:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
 .wf-logs-toggle:focus-visible {
-  color: var(--claude);
-  background: var(--claude-faint);
+  color: var(--text);
 }
 
 .wf-logs {
-  list-style: none;
-  margin: 0;
-  padding: 6px 8px;
-  border-radius: var(--r-sm);
+  margin: 4px 0 8px;
+  padding: 8px 12px 8px 30px;
+  border-radius: var(--r-md);
   background: var(--code-bg);
   border: 1px solid var(--border-faint);
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--text-muted);
-  max-height: min(180px, 26vh);
+  max-height: min(200px, 30vh);
   overflow-y: auto;
-  user-select: text;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .wf-row,
-  .wfb-phase-row,
-  .wfb-agent-row,
-  .wfb-expand,
-  .wf-agent-toggle,
-  .wf-logs-toggle {
-    transition: none;
-  }
+/* ---------- hint bar ---------- */
+
+.wfb-hints {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-faint);
+}
+
+.wfb-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.wfb-hint.is-action {
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  padding: 2px 4px;
+}
+
+.wfb-hint.is-action:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.wfb-hint.is-action:focus-visible {
+  color: var(--text);
+}
+
+/* ---------- fallback overlay (row outside the router) ---------- */
+
+.wfb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  display: flex;
+  padding: 24px;
+}
+
+.wfb-overlay .wf-browser {
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-modal);
+  width: 100%;
 }

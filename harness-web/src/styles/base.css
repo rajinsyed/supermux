@@ -1,3 +1,13 @@
+/* ---------------------------------------------------------------------------
+   Foundation for the glass design system.
+
+   The pane is one deep page: the transcript scrolls edge-to-edge underneath,
+   and every piece of chrome — composer, working panel, framed views, menus —
+   floats above it as translucent glass. Nothing in the flow wears a heavy
+   card; containment is expressed with veils of the page's own ink and wide,
+   soft shadows rather than borders and boxes.
+--------------------------------------------------------------------------- */
+
 *,
 *::before,
 *::after {
@@ -13,12 +23,11 @@ body,
 }
 
 body {
-  background: var(--page-bg, #16161a);
+  background: var(--page-bg, #0f0f13);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui,
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow: hidden;
@@ -27,25 +36,27 @@ body {
 
 :root {
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", "Cascadia Mono", monospace;
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --r-xl: 16px;
+  --r-xs: 5px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-composer: 22px;
   --r-pill: 999px;
-  --content-max: 760px;
-  --gutter: 22px;
-  /* One text origin for the whole dock: the status label, the textarea's own
-     text, and the hint row all start exactly this far in from the gutter, with
-     the status indicator centred in the reserved space to their left. It is 24
-     rather than 18 because the widest indicator — the three working dots — is
-     18px, and 18px of space left its last dot touching the status text. */
+  --content-max: 720px;
+  --gutter: 20px;
+  /* One text origin for the floating dock: the status label, the composer's
+     own text, and the hint row all start exactly this far in from the gutter,
+     with the status indicator centred in the reserved space to their left.
+     24 rather than 18 because the widest indicator — the three working dots —
+     is 18px wide, and 18px of space left its last dot touching the text. */
   --dock-indent: 24px;
-  /* Assistant content sits in a single column whose left edge never moves; the
-     work rail is drawn inside this indent rather than adding to it. */
+  /* Assistant content sits in a single column whose left edge never moves;
+     the work rail is drawn inside this indent rather than adding to it. */
   --rail-indent: 13px;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --dur: 150ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur: 160ms;
 }
 
 button,
@@ -82,11 +93,10 @@ a:hover {
   outline: none;
 }
 
-/* Keyboard focus must never be the weaker of the two affordances: a bare UA
-   outline over an unchanged surface reads as a rendering artifact on rows this
-   dense, while hover changes background, border AND colour. Every control that
-   has a :hover rule pairs it with :focus-visible (see tests/styles.test.ts), and
-   this shared ring sits under all of them. */
+/* Keyboard focus must never be the weaker of the two affordances: hover
+   changes surface, border AND colour, so focus gets a visible halo. Every
+   control with a :hover rule pairs it with :focus-visible (audited in
+   tests/styles.test.ts); this shared ring sits under all of them. */
 :focus-visible {
   outline: 2px solid var(--claude-strong);
   outline-offset: 1px;
@@ -146,6 +156,17 @@ a:hover {
 .harness-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
   background-clip: content-box;
+}
+
+/* The floating chrome's shared material: page-tinted glass, blurred backdrop,
+   a hairline, and a wide soft shadow. Composer, working panel, framed views,
+   and the pending-decision cards all wear this. */
+.glass {
+  background: var(--panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel);
 }
 
 @media (prefers-reduced-motion: reduce) {
