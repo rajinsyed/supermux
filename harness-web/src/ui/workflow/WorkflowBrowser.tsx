@@ -102,13 +102,15 @@ export function WorkflowBrowser({
       if (event.key === "Escape" || event.key === "ArrowLeft") {
         event.preventDefault();
         event.stopPropagation();
-        setSelection((value) => {
-          const normalized = normalizeSelection(groups, value);
-          const next = ascend(normalized);
-          // Nothing left to step out of: Escape leaves the browser entirely.
-          if (next === undefined) onClose();
-          return next;
-        });
+        // Derived OUTSIDE the state updater: onClose() mutates the parent's
+        // view stack, and calling it from inside setSelection's updater runs it
+        // mid-render whenever React replays the updater during another
+        // component's render — the "cannot update AppBody while rendering
+        // WorkflowBrowser" error.
+        const next = ascend(current);
+        // Nothing left to step out of: Escape leaves the browser entirely.
+        if (next === undefined) onClose();
+        else setSelection(next);
         return;
       }
       if ((event.key === "x" || event.key === "X") && running && subject.taskId) {
@@ -116,7 +118,7 @@ export function WorkflowBrowser({
         stop();
       }
     },
-    [groups, onClose, running, stop, subject.taskId]
+    [current, groups, onClose, running, stop, subject.taskId]
   );
 
   // The keys only work where focus is, so the browser takes it on open — the
