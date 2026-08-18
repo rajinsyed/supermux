@@ -48,6 +48,32 @@ export function useScrollFollow(deps: unknown[]) {
   const pin = useCallback(() => {
     const target = ref.current;
     if (!target) return;
+    // A gesture can land BETWEEN the last pin and this one: scroll events are
+    // delivered asynchronously, so during fast streaming the rAF/ResizeObserver
+    // pin often runs before `onScroll` ever reads the gesture's position — and
+    // overwrites it, which is the swallowed-scroll bug. Read the position here,
+    // before touching it: scrollTop below where the last pin left it, while the
+    // content did not shrink, is the reader. Growth alone never moves scrollTop.
+    const top = target.scrollTop;
+    const height = target.scrollHeight;
+    // Same clamp guard as `onScroll`: a layout change that grows the viewport
+    // clamps `scrollTop` onto the exact bottom, which is not a reader's escape.
+    const clamped = height - top - target.clientHeight <= DIRECTION_EPSILON;
+    if (top < lastTop.current - DIRECTION_EPSILON && height >= lastHeight.current && !clamped) {
+      lastTop.current = top;
+      lastHeight.current = height;
+      if (following.current) {
+        following.current = false;
+        setShowPill(true);
+      }
+      return;
+    }
+    // Checked at FIRE time, not only where the pin was scheduled: the deps
+    // effect reads `following` when it queues its rAF, and a gesture can break
+    // follow in the gap before that rAF runs. By then `onScroll` has already
+    // recorded the gesture's position, so the direction check above sees
+    // nothing — this guard is what stops the queued pin from undoing the break.
+    if (!following.current) return;
     target.scrollTop = target.scrollHeight;
     lastTop.current = target.scrollTop;
     lastHeight.current = target.scrollHeight;
@@ -97,24 +123,41 @@ export function useScrollFollow(deps: unknown[]) {
       const top = node.scrollTop;
       const height = node.scrollHeight;
       const movedUp = top < lastTop.current - DIRECTION_EPSILON;
+      const movedDown = top > lastTop.current + DIRECTION_EPSILON;
       // Content that SHRANK (a card folding, a window that lost some) can drag
       // scrollTop down on its own; that is the layout moving, not the reader.
       const lastHeightBefore = lastHeight.current;
       const kept = height >= lastHeightBefore;
       lastTop.current = top;
       lastHeight.current = height;
-      if (movedUp && kept) {
+      const distFromBottom = height - top - node.clientHeight;
+      if (movedUp && kept && distFromBottom > DIRECTION_EPSILON) {
         // The pane is a WKWebView whose wheel gestures arrive as an injected
         // `scrollBy()` rather than as real wheel events, so direction read off
         // the scroll position is the ONLY intent signal that exists there. It
         // is deliberately not gated on the 44px threshold: a reader who nudges
         // upward while a turn streams has already said what they want.
+        //
+        // The distance guard is not decoration. Clearing the pill grows the
+        // scroller's `clientHeight`, the browser clamps `scrollTop` down to
+        // the new maximum, and that clamp reads as "moved up with content
+        // kept" — which re-broke follow the instant the reader returned to
+        // the bottom, re-mounted the pill, and left it stuck. A clamp lands
+        // EXACTLY on the bottom; a reader escaping upward never does.
         breakFollow();
         return;
       }
       if (atBottom()) {
-        following.current = true;
-        setShowPill(false);
+        // Landing at the bottom re-arms follow only when the READER travelled
+        // there. A turn completing collapses its cards, the content shrinks
+        // below where the reader had parked, and the browser clamps scrollTop
+        // to the new maximum — which reads as "at the bottom" without anybody
+        // having scrolled down. Re-arming on that clamp is how a reader who
+        // had taken the scroller got yanked back into follow every turn.
+        if (following.current || movedDown) {
+          following.current = true;
+          setShowPill(false);
+        }
         return;
       }
       // Not at the bottom, but the reader did not move UP to get here: the

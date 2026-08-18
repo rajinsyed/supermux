@@ -267659,6 +267659,23 @@
         }
       }
     },
+    "supermux.harness.agentView.working" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Working…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作業中…"
+          }
+        }
+      }
+    },
     "supermux.harness.composer.placeholderPlan" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -267829,40 +267846,6 @@
         }
       }
     },
-    "supermux.harness.dock.statusDone" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完了"
-          }
-        }
-      }
-    },
-    "supermux.harness.dock.statusFailed" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Failed"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失敗"
-          }
-        }
-      }
-    },
     "supermux.harness.dock.statusIdle" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -267893,23 +267876,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "実行中"
-          }
-        }
-      }
-    },
-    "supermux.harness.dock.statusStopped" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stopped"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止済み"
           }
         }
       }
@@ -276567,23 +276533,6 @@
         }
       }
     },
-    "supermux.harness.rewind.done" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rewound to before this message."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このメッセージの直前まで巻き戻しました。"
-          }
-        }
-      }
-    },
     "supermux.harness.rewind.doneFilesFailed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -277022,57 +276971,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このセッションの以前のメッセージは表示されていません"
-          }
-        }
-      }
-    },
-    "supermux.harness.notice.taskFailed" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Background task failed — {subject}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "バックグラウンドタスクが失敗しました — {subject}"
-          }
-        }
-      }
-    },
-    "supermux.harness.notice.taskFinished" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Background task finished — {subject}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "バックグラウンドタスクが完了しました — {subject}"
-          }
-        }
-      }
-    },
-    "supermux.harness.notice.taskStopped" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Background task stopped — {subject}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "バックグラウンドタスクを停止しました — {subject}"
           }
         }
       }
@@ -278484,57 +278382,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止済み"
-          }
-        }
-      }
-    },
-    "supermux.harness.notice.workflowFailed" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Workflow failed — {subject}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークフローが失敗しました — {subject}"
-          }
-        }
-      }
-    },
-    "supermux.harness.notice.workflowFinished" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Workflow finished — {subject}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークフローが完了しました — {subject}"
-          }
-        }
-      }
-    },
-    "supermux.harness.notice.workflowStopped" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Workflow stopped — {subject}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークフローを停止しました — {subject}"
           }
         }
       }
