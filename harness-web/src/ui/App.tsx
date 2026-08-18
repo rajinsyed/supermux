@@ -398,6 +398,7 @@ function AppBody({
       ) : view.kind === "agent" ? (
         <AgentChatView
           thread={thread}
+          threads={model.agentThreads}
           relays={viewRelays}
           scrollRef={scrollRef}
           contentRef={contentRef}

@@ -39,6 +39,7 @@ function View({ model, toolUseId }: { model: TranscriptModel; toolUseId: string 
   return (
     <AgentChatView
       thread={model.agentThreads[toolUseId]}
+      threads={model.agentThreads}
       relays={[]}
       scrollRef={scrollRef}
       onHydrate={() => undefined}
@@ -89,6 +90,9 @@ describe("the agent chat view", () => {
     );
     const child = container.querySelector(".agent-view-child")!;
     expect(child).not.toBeNull();
+    // The row wears the child's NAME; its wire id is routing data, not copy.
+    expect(child.textContent).toContain("Inner counter");
+    expect(child.textContent).not.toContain(FWD_INNER_TOOL_USE_ID);
     fireEvent.click(child);
     expect(opened).toEqual([{ kind: "agent", toolUseId: FWD_INNER_TOOL_USE_ID }]);
   });

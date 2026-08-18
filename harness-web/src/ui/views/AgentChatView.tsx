@@ -125,12 +125,15 @@ function RelayStatus({ relays }: { relays: RelayRecord[] }) {
 
 export function AgentChatView({
   thread,
+  threads,
   relays,
   scrollRef,
   contentRef,
   onHydrate
 }: {
   thread: AgentThread | undefined;
+  /** Every thread, so a child row can wear the child's NAME, not its wire id. */
+  threads?: Record<string, AgentThread>;
   /** Relays addressed to THIS agent, oldest first. */
   relays: RelayRecord[];
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -257,7 +260,11 @@ export function AgentChatView({
               {copy("supermux.harness.agentView.childAgents")}
             </div>
             {thread.childIds.map((id) => (
-              <ChildRow key={id} toolUseId={id} onOpen={() => openView({ kind: "agent", toolUseId: id })} />
+              <ChildRow
+                key={id}
+                label={threads?.[id]?.description}
+                onOpen={() => openView({ kind: "agent", toolUseId: id })}
+              />
             ))}
           </div>
         ) : null}
@@ -274,12 +281,14 @@ export function AgentChatView({
  * inline: descending is a navigation, so the view stack records it and Escape
  * comes back here rather than to the main chat.
  */
-function ChildRow({ toolUseId, onOpen }: { toolUseId: string; onOpen(): void }) {
+function ChildRow({ label, onOpen }: { label: string | undefined; onOpen(): void }) {
   const copy = useCopy();
   return (
     <button type="button" className="agent-view-child" onClick={onOpen}>
       <Layers size={11} />
-      <span className="agent-view-child-id">{toolUseId}</span>
+      <span className="agent-view-child-id">
+        {label ?? copy("supermux.harness.dock.untitledAgent")}
+      </span>
       <span className="agent-view-child-open">{copy("supermux.harness.agentView.openChild")}</span>
     </button>
   );
