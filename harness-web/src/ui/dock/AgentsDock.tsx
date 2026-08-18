@@ -86,10 +86,12 @@ const DockRowView = memo(function DockRowView({
   }
   // A settled row's elapsed is FROZEN at what the work took. A live `Elapsed`
   // left on a finished agent keeps counting, which is the dock claiming the
-  // work is still going — the one thing a persisted row must never imply.
+  // work is still going — the one thing a persisted row must never imply. The
+  // duration is computed in the model, where the two-clocks problem is
+  // documented; the row only formats it.
   const settledFor =
-    !row.running && row.startedAtMs !== undefined && row.endedAtMs !== undefined
-      ? formatCompactDuration(row.endedAtMs - row.startedAtMs, copy)
+    !row.running && row.durationMs !== undefined
+      ? formatCompactDuration(row.durationMs, copy)
       : undefined;
 
   const stop = () => {

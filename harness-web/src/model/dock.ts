@@ -33,6 +33,18 @@ export interface DockRow {
   /** completed | failed | killed | stopped | running | undefined. */
   status?: string;
   startedAtMs?: number;
+  /**
+   * How long the work took, once it is over.
+   *
+   * NOT `endedAtMs - startedAtMs`. Those are two different clocks: the start is
+   * the local instant the pane first heard of the task, while `end_time` on the
+   * `task_updated` patch is the CLI's own epoch. Subtracting one from the other
+   * produced "1ms" for a shell that had been running for sixteen seconds — and
+   * would produce a wilder number on a resumed session, where the two clocks
+   * are days apart. The wire's own `usage.duration_ms` is the authority; the
+   * local difference is the fallback for a task that never reported one.
+   */
+  durationMs?: number;
   endedAtMs?: number;
   totalTokens?: number;
   /** `3/5` for workflows; undefined elsewhere. */
@@ -42,6 +54,24 @@ export interface DockRow {
   view: HarnessView;
   /** The task to stop, when the row owns one that is still running. */
   stopTaskId?: string;
+}
+
+/**
+ * The wire's own duration, or the local elapsed when it never sent one.
+ *
+ * The local difference is only meaningful when BOTH ends came from this
+ * process's clock, and `end_time` never does — so it is used only as the
+ * fallback, and only when it is positive.
+ */
+function settledDuration(
+  reported: number | undefined,
+  startedAtMs: number | undefined,
+  endedAtMs: number | undefined
+): number | undefined {
+  if (reported !== undefined && reported > 0) return reported;
+  if (startedAtMs === undefined || endedAtMs === undefined) return undefined;
+  const local = endedAtMs - startedAtMs;
+  return local > 0 ? local : undefined;
 }
 
 export function dockRows(model: TranscriptModel): DockRow[] {
@@ -72,6 +102,7 @@ export function dockRows(model: TranscriptModel): DockRow[] {
       running,
       status: thread.status,
       startedAtMs: thread.startedAtMs,
+      durationMs: settledDuration(thread.durationMs, thread.startedAtMs, thread.endedAtMs),
       endedAtMs: thread.endedAtMs,
       totalTokens: thread.totalTokens,
       view: { kind: "agent", toolUseId: thread.toolUseId },
@@ -93,6 +124,7 @@ export function dockRows(model: TranscriptModel): DockRow[] {
         running,
         status: record.status,
         startedAtMs: record.startedAtMs,
+        durationMs: settledDuration(record.durationMs, record.startedAtMs, record.endedAtMs),
         endedAtMs: record.endedAtMs,
         totalTokens: record.totalTokens,
         agentsDone: agents.filter((agent) => agent.state === "done" || agent.state === "cached")
@@ -109,15 +141,22 @@ export function dockRows(model: TranscriptModel): DockRow[] {
     if (record.taskType === "local_agent") continue;
     if (!record.isBackgrounded) continue;
     const running = !isTaskSettled(record.status);
+    const label = record.description ?? "";
+    // The CLI writes the task's own description into `summary` on the stop
+    // notification, so a settled shell had the same sentence twice on one row.
+    // The detail field only earns its place when it says something the label
+    // does not.
+    const detail = running ? record.activity ?? record.lastToolName : record.summary;
     rows.push({
       id: `shell:${record.taskId}`,
       kind: "shell",
       depth: 1,
-      label: record.description ?? "",
-      detail: running ? record.activity ?? record.lastToolName : record.summary,
+      label,
+      detail: detail === label ? undefined : detail,
       running,
       status: record.status,
       startedAtMs: record.startedAtMs,
+      durationMs: settledDuration(record.durationMs, record.startedAtMs, record.endedAtMs),
       endedAtMs: record.endedAtMs,
       view: { kind: "shell", taskId: record.taskId },
       stopTaskId: running ? record.taskId : undefined

@@ -12,6 +12,7 @@ import { applyLocalAction, createIndex, replayLines } from "../src/model/transcr
 import type { TranscriptModel } from "../src/model/types";
 import type { ProtocolLine } from "../src/protocol/types";
 import { CopyProvider, useCopy } from "../src/ui/CopyContext";
+import { Composer } from "../src/ui/composer/Composer";
 import { AgentChatView } from "../src/ui/views/AgentChatView";
 import { OpenViewContext } from "../src/ui/views/OpenViewContext";
 import { useViewRouter } from "../src/ui/views/useViewRouter";
@@ -310,6 +311,83 @@ describe("escape navigation", () => {
     const model = replayLines(fwdNestedFixture);
     const { container } = mount(<Router model={model} />);
     expect(container.querySelector(".view-crumbs")).toBeNull();
+  });
+
+  test("the composer does not swallow escape in an agent view", () => {
+    // Found in the browser, not by a unit test: the composer claimed Escape
+    // unconditionally, which was invisible while the composer was the only
+    // thing Escape meant. With a view stack it meant the reader could not
+    // leave an agent view by keyboard at all — the caret is in the composer,
+    // which is where typing puts it.
+    const { container } = render(
+      <CopyProvider dict={undefined}>
+        <Composer
+          disabled={false}
+          running
+          agentName="Slow summarizer"
+          awaitingPermission={false}
+          planPending={false}
+          onPlanImplement={() => undefined}
+          onPlanRefine={() => undefined}
+          onPlanKeepPlanning={() => undefined}
+          queued={[]}
+          commands={[]}
+          permissionMode="default"
+          draft=""
+          onDraftChange={() => undefined}
+          onSend={() => undefined}
+          onInterrupt={() => undefined}
+          onCancelQueued={() => undefined}
+          onCyclePermissionMode={() => undefined}
+          fetchFileSuggestions={async () => []}
+          onPickFiles={async () => []}
+        />
+      </CopyProvider>
+    );
+    const input = container.querySelector(".composer-input")!;
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    act(() => {
+      input.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(false);
+    // And no Stop button, because interrupting MAIN is not what a reader
+    // inside an agent's conversation is asking for.
+    expect(container.querySelector(".btn-stop")).toBeNull();
+  });
+
+  test("on MAIN the composer still owns escape while a turn runs", () => {
+    const interrupts: boolean[] = [];
+    const { container } = render(
+      <CopyProvider dict={undefined}>
+        <Composer
+          disabled={false}
+          running
+          awaitingPermission={false}
+          planPending={false}
+          onPlanImplement={() => undefined}
+          onPlanRefine={() => undefined}
+          onPlanKeepPlanning={() => undefined}
+          queued={[]}
+          commands={[]}
+          permissionMode="default"
+          draft=""
+          onDraftChange={() => undefined}
+          onSend={() => undefined}
+          onInterrupt={(cancel) => interrupts.push(cancel)}
+          onCancelQueued={() => undefined}
+          onCyclePermissionMode={() => undefined}
+          fetchFileSuggestions={async () => []}
+          onPickFiles={async () => []}
+        />
+      </CopyProvider>
+    );
+    const input = container.querySelector(".composer-input")!;
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    act(() => {
+      input.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(true);
+    expect(interrupts.length).toBe(1);
   });
 
   test("a view whose subject disappears is pruned off the stack", () => {

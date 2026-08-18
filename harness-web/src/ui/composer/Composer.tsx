@@ -184,10 +184,22 @@ export function Composer(props: ComposerProps) {
         return;
       }
       if (event.key === "Escape") {
-        event.preventDefault();
+        // Claimed ONLY when it actually does something here.
+        //
+        // It used to `preventDefault` unconditionally, which was invisible
+        // while the composer was the only thing Escape meant — and became a
+        // bug the moment there was a view stack to pop: with the caret in the
+        // composer of an agent view, Escape was swallowed and the reader could
+        // not leave the view by keyboard at all.
+        //
+        // An agent view never claims it: the interrupt would stop MAIN, which
+        // is not what the reader is looking at, and back is what Escape means
+        // everywhere else in the pane.
         if (props.planPending) {
+          event.preventDefault();
           props.onPlanKeepPlanning();
-        } else if (props.running) {
+        } else if (props.running && props.agentName === undefined) {
+          event.preventDefault();
           props.onInterrupt(escArmed);
           setEscArmed(true);
           window.setTimeout(() => setEscArmed(false), 1600);
@@ -366,7 +378,11 @@ export function Composer(props: ComposerProps) {
                 ? copy("supermux.harness.plan.refine")
                 : copy("supermux.harness.plan.implement")}
             </button>
-          ) : props.running ? (
+          ) : /* Same reason the Escape hint goes: in an agent view the primary
+                action is SENDING to that agent, and a Stop button there would
+                interrupt main — the conversation the reader has navigated away
+                from. Main's own Stop is one Escape away, on its own screen. */
+          props.running && props.agentName === undefined ? (
             <button
               type="button"
               className="btn btn-stop"
@@ -406,7 +422,9 @@ export function Composer(props: ComposerProps) {
             {copy("supermux.harness.agentView.relayHint")}
           </span>
         ) : null}
-        {props.running ? (
+        {/* In an agent view Escape means BACK, not interrupt — the interrupt
+            would stop main, which is not what the reader is looking at. */}
+        {props.running && props.agentName === undefined ? (
           <span className="composer-hint is-hint-interrupt">
             {copy("supermux.harness.composer.hintInterrupt")}
           </span>

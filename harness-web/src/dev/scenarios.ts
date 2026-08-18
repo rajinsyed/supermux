@@ -11,7 +11,6 @@ import {
   ROUND3_CUTS,
   shellsOpening,
   shellsStopResponse,
-  shellsTail,
   withNestedToolStats,
   withWorkflowLogs,
   withWorkflowActivity,
@@ -323,23 +322,20 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
       // it, which is the only state where Move-to-background and Ctrl+B exist.
       // Stop on the dock row replays the CLI's real kill sequence.
       //
-      // Round 4 adds the SECOND shell back on a timer. One row is not a dock:
-      // the tree indent, the internal scroll past four rows, ↑↓ between rows,
-      // and a row that persists DIMMED after its shell is stopped all need a
-      // list, and the round-3 slice showed exactly one.
-      const shells = rebaseRound3(shellsOpening, epochBaseOf(shellsOpening));
+      // Round 4 checks the DOCK against this scenario rather than changing it.
+      // A second row is one click away and always was: Move to background (or
+      // Ctrl+B) on the foreground Bash makes the CLI answer with a second
+      // `background_tasks_changed`, and the dock then holds two shells — one
+      // running, and, after Stop, one persisting dimmed. Replaying the probe's
+      // own tail here instead would settle main and REMOVE the foreground Bash
+      // the scenario exists to demonstrate that button on.
       return {
         name: key,
-        lines: shells,
+        lines: rebaseRound3(shellsOpening, epochBaseOf(shellsOpening)),
         cliAvailable: true,
         hasSessions: true,
         cachedModels: true,
         processRunning: true,
-        liveTail: {
-          lines: rebaseRound3(shellsTail, epochBaseOf(shellsOpening)),
-          startAfterMs: 3200,
-          stepMs: 800
-        },
         foreground: {
           lines: foregroundBashLaunch,
           toolUseId: FOREGROUND_BASH_TOOL_USE_ID,

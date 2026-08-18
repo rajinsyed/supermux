@@ -162,9 +162,44 @@
   box-shadow: none;
 }
 
-.view-body > .wf-browser .wfb-phases,
-.view-body > .wf-browser .wfb-right {
-  max-height: min(460px, 58vh);
+/* The pane's transcript scroller is bottom-anchored: it follows new content
+   down. So a browser that grows taller than the viewport does not merely
+   overflow — it pushes its own HEADER off the top, and the reader loses the
+   run's name, its counts, and the back affordance the moment they select an
+   agent. The two columns therefore share a budget that leaves the header and
+   the hint bar on screen whatever the selection does. */
+/* The browser is capped to its SCROLLER, not to the viewport.
+ *
+ * The pane's transcript scroller is bottom-anchored: it follows new content
+ * down. So a browser taller than it does not merely overflow — the scroller
+ * pins the browser's bottom and pushes its HEADER off the top, taking the run's
+ * name, its counts and the back affordance with it. That is what selecting an
+ * agent did.
+ *
+ * A `vh` cap cannot fix it, because the scroller is not the viewport: the dock
+ * grows with every agent row and every queued chip, and on a real pane it took
+ * more than half the height. So the height chain is resolved instead — the
+ * scroller already has a definite height as a flex child — and the browser
+ * claims exactly that. Nothing is left for the ancestor to scroll, the header
+ * and the hint bar (which carries the only Stop control) sit at the two ends,
+ * and the columns scroll between them. */
+.harness-scroll:has(> .transcript-inner > .view-body) > .transcript-inner {
+  height: 100%;
+  min-height: 0;
+}
+
+.view-body {
+  max-height: 100%;
+  min-height: 0;
+}
+
+.view-body > .wf-browser {
+  max-height: 100%;
+  min-height: 0;
+}
+
+.view-body > .wf-browser .wfb-panes {
+  min-height: 0;
 }
 
 .wfb-head {
@@ -619,8 +654,20 @@
   gap: 8px;
 }
 
+/* A real control, not a caption. `.btn-quiet` paints no resting border — right
+   for the third verb on a dense card row, wrong for the only action in a pane,
+   where it read as a line of body text that happened to be clickable. */
 .wfb-open-chat {
   flex: 0 0 auto;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.wfb-open-chat:hover,
+.wfb-open-chat:focus-visible {
+  border-color: var(--claude-border);
+  background: var(--claude-faint);
+  color: var(--claude);
 }
 
 .wfb-logs-block {

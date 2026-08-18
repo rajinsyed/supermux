@@ -142,6 +142,32 @@ describe("the dock's rows", () => {
     expect(outer.stopTaskId).toBeUndefined();
   });
 
+  test("a settled duration comes off the WIRE, not from two different clocks", () => {
+    // `startedAtMs` is the local instant the pane first heard of the task;
+    // `end_time` on the task patch is the CLI's own epoch. Subtracting one from
+    // the other reported "1ms" for a shell that had been running for sixteen
+    // seconds, and would be days out on a resumed session.
+    const model = replayLines(relayFixture);
+    const rows = dockRows(model).filter((row) => !row.running && row.kind !== "main");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      if (row.durationMs === undefined) continue;
+      expect(row.durationMs).toBeGreaterThan(0);
+      // Nothing that ran for seconds may report a sub-100ms duration.
+      expect(row.durationMs).toBeGreaterThan(100);
+    }
+  });
+
+  test("a settled shell does not print its own description twice", () => {
+    // The CLI writes the task's description into `summary` on the stop
+    // notification, so label and detail were the same sentence on one row.
+    const model = replayLines(relayFixture);
+    for (const row of dockRows(model)) {
+      if (row.detail === undefined) continue;
+      expect(row.detail).not.toBe(row.label);
+    }
+  });
+
   test("a running agent's row offers the task to stop", () => {
     const live = replayThrough(fwdNestedFixture, 40);
     const outer = dockRows(live).find((row) => row.label === "Outer relay")!;
