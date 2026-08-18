@@ -75,6 +75,7 @@ import Testing
         )
         #expect(request.string(forKey: "subtype") == "initialize")
         #expect(request.object(forKey: "capabilities")?.bool(forKey: "canUseTool") == true)
+        #expect(request.bool(forKey: "forwardSubagentText") == true)
     }
 
     @Test func interruptControlRequestOmitsOrEncodesCancelQueued() throws {

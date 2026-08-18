@@ -255,6 +255,10 @@ public struct SupermuxHarnessProtocolEncoder: Sendable {
         switch command {
         case .initialize:
             request["capabilities"] = ["canUseTool": true]
+            // Without this the CLI forwards only tool_use/tool_result frames for
+            // subagents; with it the full conversation (text + thinking) arrives
+            // with parent_tool_use_id set, which the agent chat views render.
+            request["forwardSubagentText"] = true
         case .interrupt(let cancelQueued):
             if let cancelQueued {
                 request["cancel_queued"] = cancelQueued
