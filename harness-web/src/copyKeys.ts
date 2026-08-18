@@ -274,6 +274,7 @@ export const copyDefaults = {
   "supermux.harness.view.rootCrumb": "Claude",
   "supermux.harness.agentView.prompt": "Prompt",
   "supermux.harness.agentView.empty": "This agent has not said anything yet.",
+  "supermux.harness.agentView.working": "Working…",
   "supermux.harness.agentView.loading": "Loading this agent's conversation…",
   "supermux.harness.agentView.unavailable":
     "No transcript for this agent yet — it appears once the agent writes its first message.",

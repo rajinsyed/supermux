@@ -354,6 +354,8 @@ function mergeTaskRecord(
     activity: subtype === "task_progress" ? asString(raw.description) : previous?.activity,
     lastToolName: asString(raw.last_tool_name) ?? previous?.lastToolName,
     summary: asString(raw.summary) ?? previous?.summary,
+    // Only `task_started` carries it, and it never changes afterwards.
+    prompt: previous?.prompt ?? asString(raw.prompt),
     error: asString(raw.error) ?? asString(patch?.error) ?? previous?.error,
     outputFile: asString(raw.output_file) ?? previous?.outputFile,
     totalTokens: usageOf(asNumber(usage?.total_tokens), previous?.totalTokens),

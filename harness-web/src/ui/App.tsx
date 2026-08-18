@@ -402,16 +402,22 @@ function AppBody({
           relays={viewRelays}
           scrollRef={scrollRef}
           contentRef={contentRef}
+          showPill={showPill}
+          onJump={() => scrollToBottom(true)}
           onHydrate={hydrateThread}
         />
       ) : view.kind === "workflow" ? (
         <div className="harness-scroll transcript" ref={scrollRef}>
-          <div className="transcript-inner">
+          <div className="transcript-inner" ref={contentRef}>
             <WorkflowView model={model} taskId={view.taskId} onBack={router.back} />
           </div>
         </div>
       ) : view.kind === "shell" ? (
-        <ShellView record={model.tasksById[view.taskId]} scrollRef={scrollRef} />
+        <ShellView
+          record={model.tasksById[view.taskId]}
+          scrollRef={scrollRef}
+          contentRef={contentRef}
+        />
       ) : (
         <TranscriptList
           turns={model.turns}

@@ -17,17 +17,26 @@ import { TaskOutputView } from "../tools/TaskOutput";
  */
 export function ShellView({
   record,
-  scrollRef
+  scrollRef,
+  contentRef
 }: {
   record: TaskRecord | undefined;
   scrollRef: RefObject<HTMLDivElement | null>;
+  /**
+   * A shell's output tail is the one view that grows without ANY frame arriving
+   * — the native side polls a file and the text simply gets longer. Without the
+   * content ref the scroll hook has nothing to observe here, so a tail that
+   * outgrew the pane stopped following and, once the reader had scrolled, gave
+   * them no way to tell they were no longer at the end.
+   */
+  contentRef?: RefObject<HTMLDivElement | null>;
 }) {
   const copy = useCopy();
 
   if (!record) {
     return (
       <div className="harness-scroll transcript" ref={scrollRef}>
-        <div className="transcript-inner">
+        <div className="transcript-inner" ref={contentRef}>
           <div className="drill-status">{copy("supermux.harness.agentView.unavailable")}</div>
         </div>
       </div>
@@ -38,7 +47,7 @@ export function ShellView({
 
   return (
     <div className="harness-scroll transcript shell-view" ref={scrollRef}>
-      <div className="transcript-inner">
+      <div className="transcript-inner" ref={contentRef}>
         <div className="shell-view-head">
           <span className="shell-view-icon">
             <Terminal size={13} />

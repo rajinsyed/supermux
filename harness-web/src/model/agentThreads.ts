@@ -107,6 +107,27 @@ function linkChild(model: TranscriptModel, parentId: string, childId: string): T
 }
 
 /**
+ * The first live frame for a thread that was filled from disk.
+ *
+ * Both sources describe the SAME conversation, so keeping both draws it twice —
+ * and the disk copy is the stale half: it is a snapshot of a file that was
+ * still being written, while the live frames are the agent talking now. So the
+ * first live frame clears the replay and the thread rebuilds from the wire.
+ *
+ * This is the other half of the reducer's existing "live frames always win"
+ * rule. That rule only refused a hydration ONTO live blocks; a hydration that
+ * got there FIRST — which is the normal race for an agent view opened the
+ * instant its dock row appears — was never undone, and the thread then grew a
+ * duplicate copy of everything the file already had.
+ */
+function takeLiveOver(thread: AgentThread): AgentThread {
+  if (!thread.hydratedFromDisk) {
+    return thread.hasLiveFrames ? thread : { ...thread, hasLiveFrames: true };
+  }
+  return { ...thread, blocks: [], hydratedFromDisk: undefined, hasLiveFrames: true };
+}
+
+/**
  * Find a block in a thread by key. Threads are FLAT — the tree lives in
  * `childIds`, not in nested `children` — so one linear scan is the whole lookup,
  * and a repeat frame for a block already present updates in place.
@@ -158,7 +179,7 @@ export function applyAssistantToThread(
       description: thread.description ?? description
     };
   }
-  thread = { ...thread, hasLiveFrames: true };
+  thread = takeLiveOver(thread);
 
   for (const content of line.message.content ?? []) {
     thread = mergeContentIntoThread(thread, content, messageId, line.uuid, nowMs);
@@ -238,7 +259,7 @@ export function applyUserToThread(
 ): TranscriptModel {
   const ensured = ensureThread(model, parentToolUseId, nowMs);
   let next = ensured.model;
-  let thread: AgentThread = { ...ensured.thread, hasLiveFrames: true };
+  let thread: AgentThread = takeLiveOver(ensured.thread);
   const content = line.message.content;
   const subagentType = asString((line as unknown as JsonObject).subagent_type);
   const description = asString((line as unknown as JsonObject).task_description);
@@ -433,9 +454,21 @@ function stringifyResult(content: unknown): string {
 
 /**
  * Task frames enrich thread META by tool_use_id: status, live activity, the
- * usage tallies the dock's right column shows. They never create a thread on
- * their own — `task_started` fires for foreground Bash too, and a dock listing
- * every shell as an agent would be the tasks-strip bug in a new place.
+ * usage tallies the dock's right column shows.
+ *
+ * A `local_agent` task MAY open its thread; nothing else may. That distinction
+ * is the whole rule — `task_started` fires for foreground Bash too, and a dock
+ * listing every shell as an agent would be the tasks-strip bug in a new place —
+ * and `task_type` says which is which on the frame itself (`local_bash` for
+ * every shell, including the ones a subagent owns).
+ *
+ * Opening it here matters because the two announcements race. A NESTED agent's
+ * `task_started` arrives BEFORE the `assistant` frame carrying its Agent
+ * tool_use (probed in fwd2.jsonl: task_started at line 37, the tool_use at 38),
+ * so a rule that only ever enriched an existing thread dropped that frame — and
+ * with it the only copy of the agent's prompt that is always on the wire. The
+ * parent link is left for the tool_use frame to supply, which `ensureThread`
+ * already handles by adopting a thread that was created without one.
  */
 export function applyTaskToThread(
   model: TranscriptModel,
@@ -445,8 +478,15 @@ export function applyTaskToThread(
 ): TranscriptModel {
   if (!toolUseId || !record) return model;
   if (record.taskType !== undefined && record.taskType !== "local_agent") return model;
-  const existing = model.agentThreads[toolUseId];
-  if (!existing) return model;
+  let existing = model.agentThreads[toolUseId];
+  let next = model;
+  if (!existing) {
+    if (record.taskType !== "local_agent") return model;
+    const ensured = ensureThread(model, toolUseId, record.startedAtMs ?? nowMs);
+    next = ensured.model;
+    existing = ensured.thread;
+  }
+  model = next;
   const settled =
     record.status === "completed" ||
     record.status === "failed" ||
@@ -457,6 +497,12 @@ export function applyTaskToThread(
     taskId: record.taskId ?? existing.taskId,
     description: existing.description ?? record.description,
     subagentType: existing.subagentType ?? record.subagentType,
+    // The one prompt source that is ALWAYS there. The forwarded first user
+    // frame carries it too, but only while forwarding is on and only for an
+    // agent whose thread started in this pane — which is why an agent opened
+    // from a background launch, or any agent in the relay probe, had a view
+    // with no brief at the top while its sibling had one.
+    prompt: existing.prompt ?? record.prompt,
     status: record.status ?? existing.status,
     activity: record.activity ?? existing.activity,
     lastToolName: record.lastToolName ?? existing.lastToolName,
@@ -570,6 +616,43 @@ export function isThreadRunning(thread: AgentThread): boolean {
     thread.status !== "killed" &&
     thread.status !== "stopped"
   );
+}
+
+/**
+ * The blocks an agent view renders: the thread's own, with its brief guaranteed
+ * to be the first of them.
+ *
+ * The prompt reaches the pane by three routes and no single one covers every
+ * agent. `task_started.prompt` is present for every `local_agent` but for no
+ * workflow agent; the first forwarded `user` frame is present only while
+ * `forwardSubagentText` is on and the agent is live; a disk replay has it only
+ * once the file exists. Reading one route was why the prompt showed on some
+ * subagents and not others.
+ *
+ * So the fallbacks are resolved in ONE place rather than in each view: whatever
+ * the thread already opens with wins (that is the real frame, with its uuid and
+ * its exact text), and `task_started.prompt` fills the gap when it does not.
+ * The synthesized block is deliberately keyed off the thread id so it is stable
+ * across re-renders and cannot collide with a real frame's key.
+ */
+export function threadBlocks(thread: AgentThread): Block[] {
+  const first = thread.blocks[0];
+  if (first?.kind === "userText" && first.prompt) return thread.blocks;
+  const prompt = thread.prompt?.trim();
+  if (!prompt) return thread.blocks;
+  // A live prompt frame may still be somewhere in the thread even when it is
+  // not first (a tool_result can land ahead of it on a resumed thread); showing
+  // the brief twice is worse than showing it once in the wrong place.
+  if (thread.blocks.some((block) => block.kind === "userText" && block.text.trim() === prompt)) {
+    return thread.blocks;
+  }
+  const block: Block = {
+    kind: "userText",
+    key: `${thread.toolUseId}|prompt`,
+    text: prompt,
+    prompt: true
+  };
+  return [block, ...thread.blocks];
 }
 
 export { MAIN as MAIN_THREAD_ID };

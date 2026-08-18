@@ -101,9 +101,27 @@ final class SupermuxHarnessWebHostView: NSView {
         isScrollJavaScriptInFlight = true
         let generation = scrollGeneration
 
+        // The pane can hold more than one `.harness-scroll` at a time: the view
+        // router swaps the transcript area between the main chat, an agent
+        // chat, a shell tail and the workflow browser, and a branch that is
+        // mounted but not displayed still answers `querySelector`. Taking the
+        // FIRST match scrolled a hidden node and the visible one never moved —
+        // the "cant scroll the agents view" report. `offsetParent` is null for
+        // anything with no box (display:none, or a detached subtree), so the
+        // first match that has one is the scroller actually on screen. The
+        // unconditional fallback keeps a `position: fixed` scroller — for which
+        // `offsetParent` is also null — working rather than silently inert.
         let script = """
         (() => {
-          const thread = document.querySelector('.harness-scroll');
+          const all = document.querySelectorAll('.harness-scroll');
+          let thread = null;
+          for (const node of all) {
+            if (node instanceof HTMLElement && node.offsetParent !== null) {
+              thread = node;
+              break;
+            }
+          }
+          if (thread === null) thread = all[0];
           if (!(thread instanceof HTMLElement)) return false;
           thread.scrollBy(\(-Double(delta.x)), \(-Double(delta.y)));
           return true;

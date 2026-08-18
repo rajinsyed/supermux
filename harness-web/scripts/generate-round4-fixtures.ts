@@ -1,8 +1,10 @@
 /**
  * Turn the round-4 live probes into fixture modules.
  *
- * These two are the round that `forwardSubagentText` opened up: `fwd2` is a
- * nested agent tree whose FULL conversations are on the wire (text and thinking
+ * These are the round that `forwardSubagentText` opened up: `fwd` is ONE agent
+ * whose whole conversation is forwarded while it runs — the probe that proves
+ * an agent view can be live rather than only complete — `fwd2` is a nested
+ * agent tree whose FULL conversations are on the wire (text and thinking
  * forwarded with `parent_tool_use_id`), and `relay` is a message reaching a
  * running background agent through main's SendMessage.
  *
@@ -18,7 +20,7 @@ import { resolve } from "node:path";
 const sourceDir = process.argv[2] ?? "/tmp/harness-build/round3";
 const outDir = resolve(import.meta.dir, "../src/dev/fixtures");
 
-const NAMES = ["fwd2", "relay"] as const;
+const NAMES = ["fwd", "fwd2", "relay"] as const;
 
 for (const name of NAMES) {
   const raw = readFileSync(resolve(sourceDir, `${name}.jsonl`), "utf8");

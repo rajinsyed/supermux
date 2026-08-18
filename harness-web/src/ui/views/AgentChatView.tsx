@@ -8,11 +8,11 @@ import {
   type RefObject
 } from "react";
 import { getBridge } from "../../bridge";
-import { isThreadRunning } from "../../model/agentThreads";
+import { isThreadRunning, threadBlocks } from "../../model/agentThreads";
 import type { AgentThread, Block, RelayRecord } from "../../model/types";
 import type { ProtocolLine } from "../../protocol/types";
 import { plural, useCopy } from "../CopyContext";
-import { Cpu, Layers } from "../Icons";
+import { ArrowDown, Cpu, Layers } from "../Icons";
 import { formatCompactDuration, formatTokens } from "../format";
 import { Elapsed } from "../primitives/Elapsed";
 import { Spinner } from "../primitives/Spinner";
@@ -55,9 +55,18 @@ function useDiskFallback(
   const toolUseId = thread?.toolUseId;
   const empty = thread !== undefined && thread.blocks.length === 0 && !thread.hasLiveFrames;
   const target = thread?.taskId ?? thread?.agentId;
+  /**
+   * A RUNNING agent whose frames are being forwarded needs no disk read at all:
+   * its file is mid-write, the reply is a stale prefix of what the wire is
+   * already delivering, and hydrating it makes the thread grow twice. The
+   * fallback exists for the thread that will never receive live frames — a
+   * resumed session, a forwarding gap — which is what a settled thread with
+   * nothing in it is.
+   */
+  const live = thread !== undefined && isThreadRunning(thread) && thread.hasLiveFrames === true;
 
   useEffect(() => {
-    if (!toolUseId || !empty) return;
+    if (!toolUseId || !empty || live) return;
     if (!target) {
       // Nothing to address the file by yet: the agent was announced but its
       // task frames have not landed. Not a failure — it resolves on its own.
@@ -85,7 +94,7 @@ function useDiskFallback(
     return () => {
       cancelled = true;
     };
-  }, [attempt, empty, onHydrate, target, toolUseId]);
+  }, [attempt, empty, live, onHydrate, target, toolUseId]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   return { phase, retry };
@@ -129,6 +138,8 @@ export function AgentChatView({
   relays,
   scrollRef,
   contentRef,
+  showPill = false,
+  onJump,
   onHydrate
 }: {
   thread: AgentThread | undefined;
@@ -138,6 +149,14 @@ export function AgentChatView({
   relays: RelayRecord[];
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * The reader has scrolled away from the bottom of a thread that is still
+   * growing. The main chat has always had this; an agent view is exactly as
+   * live and needs the same way back, or scrolling up during a run is a
+   * one-way trip.
+   */
+  showPill?: boolean;
+  onJump?(): void;
   onHydrate(toolUseId: string, events: ProtocolLine[]): void;
 }) {
   const copy = useCopy();
@@ -175,10 +194,14 @@ export function AgentChatView({
     );
   }
 
-  const blocks: Block[] = thread.blocks;
+  // Through the shared resolver, so the brief at the top of an agent's chat
+  // comes from the same three-source rule everywhere and is not present for
+  // some agents and absent for others.
+  const blocks: Block[] = threadBlocks(thread);
   const stats = !running && thread.toolStats ? toolStatsSummary(thread.toolStats, copy) : [];
 
   return (
+    <div className={`transcript-wrap${showPill ? " has-pill" : ""}`}>
     <div className="harness-scroll transcript agent-view" ref={scrollRef} tabIndex={-1} role="log">
       <div className="transcript-inner" ref={contentRef}>
         <div className="agent-view-head">
@@ -232,7 +255,16 @@ export function AgentChatView({
           <div className="agent-view-source">{copy("supermux.harness.agentView.fromDisk")}</div>
         ) : null}
 
-        {blocks.length === 0 ? (
+        {/* The brief renders even when the agent has not answered yet — it is
+            the one thing that is knowable the instant the agent is spawned, and
+            an agent view that opens blank while its prompt sits in the model is
+            the report this round is fixing. The status line below is about the
+            agent's OUTPUT, so it is keyed on there being none. */}
+        {blocks.map((block) => (
+          <BlockView key={block.key} block={block} />
+        ))}
+
+        {thread.blocks.length === 0 ? (
           phase === "loading" ? (
             <div className="drill-status">
               <Spinner size={12} />
@@ -247,12 +279,18 @@ export function AgentChatView({
             </div>
           ) : phase === "missing" ? (
             <div className="drill-status">{copy("supermux.harness.agentView.unavailable")}</div>
+          ) : running ? (
+            // A live agent that has not spoken yet is WORKING, not empty. The
+            // empty copy reads as "there is nothing here", which is wrong for a
+            // thread whose first block is seconds away.
+            <div className="drill-status">
+              <Spinner size={12} />
+              {copy("supermux.harness.agentView.working")}
+            </div>
           ) : (
             <div className="drill-status">{copy("supermux.harness.agentView.empty")}</div>
           )
-        ) : (
-          blocks.map((block) => <BlockView key={block.key} block={block} />)
-        )}
+        ) : null}
 
         {thread.childIds.length > 0 ? (
           <div className="agent-view-children">
@@ -272,6 +310,13 @@ export function AgentChatView({
         <RelayStatus relays={relays} />
         <div className="transcript-pad" />
       </div>
+    </div>
+    {showPill && onJump ? (
+      <button type="button" className="jump-pill" onClick={onJump}>
+        <ArrowDown size={12} />
+        {copy("supermux.harness.status.jumpToLatest")}
+      </button>
+    ) : null}
     </div>
   );
 }

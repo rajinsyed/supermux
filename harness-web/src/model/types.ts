@@ -459,6 +459,12 @@ export interface TaskRecord {
   activity?: string;
   lastToolName?: string;
   summary?: string;
+  /**
+   * The brief the task was launched with (`task_started.prompt`). Present for
+   * every `local_agent`, and for a workflow it is the workflow SOURCE rather
+   * than an agent's prompt — which is why only the agent threads read it.
+   */
+  prompt?: string;
   error?: string;
   outputFile?: string;
   totalTokens?: number;
@@ -499,6 +505,18 @@ export interface AgentThread {
   description?: string;
   subagentType?: string;
   taskId?: string;
+  /**
+   * The brief this agent was given, from `task_started.prompt`.
+   *
+   * The prompt reaches the pane by up to three routes and only ONE of them is
+   * always present. `task_started` carries it in full for every `local_agent`
+   * (probed in fwd/fwd2/nested/relay), the first forwarded `user` frame carries
+   * it only while `forwardSubagentText` is on and the agent is live, and the
+   * disk transcript carries it only once the file exists. A view that read just
+   * one of them showed the prompt for some agents and not others — the round-4
+   * report. Recorded here so every surface reads the same field.
+   */
+  prompt?: string;
   /** The wire's task status, or `running` before any task frame lands. */
   status?: string;
   /** Live activity while it runs, from `task_progress`. */

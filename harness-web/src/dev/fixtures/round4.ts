@@ -2,6 +2,7 @@ import type { ProtocolLine } from "../../protocol/types";
 import { initializeResponse } from "./build";
 import { parseJsonl } from "./parse";
 import { fwd2Round4Raw } from "./round4Fwd2Raw";
+import { fwdRound4Raw } from "./round4FwdRaw";
 import { relayRound4Raw } from "./round4RelayRaw";
 
 /**
@@ -17,6 +18,21 @@ import { relayRound4Raw } from "./round4RelayRaw";
 function probe(raw: string): ProtocolLine[] {
   return [initializeResponse(), ...parseJsonl(raw)];
 }
+
+/**
+ * ONE agent, forwarded live — the probe that settles whether an agent view can
+ * update while the agent works.
+ *
+ * The timings are the point. Its `task_started` lands at t+5.2s, its prompt
+ * frame at t+5.2s, its thinking at t+7.3s, its text at t+8.9s, its Bash at
+ * t+9.7s and its result at t+10.9s. Every one of those is a separate frame
+ * arriving seconds apart, so a view that only fills in at completion is a
+ * defect in the pane and not a limit of the wire.
+ */
+export const fwdLiveFixture: ProtocolLine[] = probe(fwdRound4Raw);
+
+/** The single agent of `fwdLiveFixture`, by tool_use id. */
+export const FWD_LIVE_TOOL_USE_ID = "toolu_016piAfR5jGriLQqxjMXJAKc";
 
 /**
  * Nested agents with their conversations forwarded.
