@@ -295,7 +295,6 @@ export function Header(props: HeaderProps) {
           label={copy("supermux.harness.header.model")}
           trigger={() => (
             <span className="model-pill">
-              <Bolt size={11} />
               <span className="pill-label">{modelName}</span>
               {effort ? <span className="effort-tag">{effortLabel(effort, copy)}</span> : null}
               <ChevronDown size={10} />

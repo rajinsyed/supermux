@@ -202,9 +202,12 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
        as a layer above the transcript rather than as a border in the flow. */
     "--shadow": theme.shadow,
     "--shadow-lifted": dark ? "0 8px 26px rgba(0, 0, 0, 0.42)" : "0 8px 26px rgba(20, 18, 16, 0.10)",
+    /* The inset top line is the glass edge-light — the one-pixel highlight
+       where the panel catches the light. It is what separates "translucent
+       rectangle" from "pane of glass". */
     "--shadow-panel": dark
-      ? "0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3)"
-      : "0 12px 40px rgba(20, 18, 16, 0.12), 0 2px 8px rgba(20, 18, 16, 0.06)",
+      ? "inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3)"
+      : "inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 12px 40px rgba(20, 18, 16, 0.12), 0 2px 8px rgba(20, 18, 16, 0.06)",
     "--shadow-modal": dark
       ? "0 18px 48px rgba(0, 0, 0, 0.58)"
       : "0 18px 48px rgba(20, 18, 16, 0.22)",

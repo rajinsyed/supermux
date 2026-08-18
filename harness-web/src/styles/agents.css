@@ -11,7 +11,13 @@
       renders in.
 --------------------------------------------------------------------------- */
 
-/* ---------- the working panel ---------- */
+/* ---------- the working panel ----------
+
+   Cursor's island, verbatim: "2 Working …………… Stop All ✕" over a short list
+   of quiet rows. A row is an animated glyph, a name in plain ink, ONE dim
+   phrase of activity, and a right-aligned timer. No icons, no status words,
+   no metric chips — the state is the glyph, and the numbers live in the
+   drill-in. */
 
 .agents-dock {
   border-radius: var(--r-xl);
@@ -26,89 +32,116 @@
 .agents-dock-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  text-align: left;
-  padding: 9px 12px 7px;
-  font-size: 12.5px;
+  padding: 6px 8px 2px 12px;
+}
+
+.agents-dock-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 6px 2px 0;
+  margin-left: -4px;
+  border-radius: var(--r-sm);
   color: var(--text-soft);
 }
 
-.agents-dock-head:hover {
+.agents-dock-fold:hover {
   color: var(--text);
 }
 
-.agents-dock-head:focus-visible {
+.agents-dock-fold:focus-visible {
   color: var(--text);
+}
+
+.agents-dock-fold svg {
+  color: var(--text-faint);
 }
 
 .agents-dock-title {
-  font-weight: 600;
-}
-
-.agents-dock-count {
-  color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: 13px;
+  font-weight: 590;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .agents-dock-spacer {
   flex: 1;
 }
 
-/* "Stop All" — a span styled as text inside the header button; the real
-   handler stops propagation so it never toggles the fold. */
 .agents-dock-stopall {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: var(--r-sm);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-.agents-dock-stopall:hover {
-  background: var(--surface-hover);
+.agents-dock-stopall:hover:not(:disabled) {
   color: var(--text);
+  background: var(--surface-hover);
 }
 
 .agents-dock-stopall:focus-visible {
   color: var(--text);
 }
 
+.agents-dock-stopall:disabled {
+  opacity: 0.55;
+}
+
+.agents-dock-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  color: var(--text-faint);
+}
+
+.agents-dock-close:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.agents-dock-close:focus-visible {
+  color: var(--text);
+}
+
 .agents-dock-list {
   list-style: none;
   margin: 0;
-  padding: 0 6px 7px;
+  padding: 1px 6px 7px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  max-height: min(168px, 26vh);
+  max-height: min(190px, 28vh);
   overflow-y: auto;
 }
 
 .dock-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
   border-radius: var(--r-md);
 }
 
-.dock-row.is-active {
-  background: var(--claude-faint);
+.dock-row.is-active .dock-row-open {
+  background: var(--surface-hover);
 }
 
 .dock-row-open {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   flex: 1;
   min-width: 0;
   text-align: left;
   padding: 5px 8px;
   border-radius: var(--r-md);
-  font-size: 12.5px;
+  font-size: 13px;
+  transition: background var(--dur) var(--ease);
 }
 
 .dock-row-open:hover {
@@ -119,91 +152,76 @@
   background: var(--surface-hover);
 }
 
-/* The tree: one indent step per visible ancestor. */
+/* The tree: nested agents step in under their parent. The indent alone
+   carries the hierarchy — guides would be one more line of chrome. */
 .dock-row[data-depth="2"] .dock-row-open {
-  padding-left: 26px;
+  padding-left: 28px;
 }
 
 .dock-row[data-depth="3"] .dock-row-open {
-  padding-left: 44px;
+  padding-left: 48px;
 }
 
 .dock-row[data-depth="4"] .dock-row-open {
-  padding-left: 62px;
+  padding-left: 68px;
 }
 
-.dock-guide {
+/* Cursor's working glyph: a 2×2 constellation of dots drifting through a
+   staggered pulse. State lives here and nowhere else on the row. */
+.dock-glyph {
   position: relative;
-  width: 10px;
-  height: 14px;
+  width: 11px;
+  height: 11px;
   flex: 0 0 auto;
-  margin-left: -14px;
 }
 
-.dock-guide::before {
-  content: "";
+.dock-glyph i {
   position: absolute;
-  left: 4px;
-  top: -4px;
-  bottom: 6px;
-  width: 1px;
-  background: var(--border-strong);
+  width: 3px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--text-muted);
+  animation: glyph-drift 1.8s ease-in-out infinite;
 }
 
-.dock-guide::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  bottom: 6px;
-  width: 6px;
-  height: 1px;
-  background: var(--border-strong);
+.dock-glyph i:nth-child(1) {
+  top: 0;
+  left: 0;
 }
 
-/* Status dot: pulsing while running. */
-@keyframes dock-pulse {
+.dock-glyph i:nth-child(2) {
+  top: 0;
+  right: 0;
+  animation-delay: 0.45s;
+}
+
+.dock-glyph i:nth-child(3) {
+  bottom: 0;
+  right: 0;
+  animation-delay: 0.9s;
+}
+
+.dock-glyph i:nth-child(4) {
+  bottom: 0;
+  left: 0;
+  animation-delay: 1.35s;
+}
+
+@keyframes glyph-drift {
   0%,
   100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  40% {
     opacity: 1;
+    transform: scale(1);
   }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.dock-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--r-pill);
-  flex: 0 0 auto;
-  background: var(--text-faint);
-}
-
-.dock-dot.is-running {
-  background: var(--claude-strong);
-  animation: dock-pulse 1.6s ease-in-out infinite;
-}
-
-.dock-dot.is-done {
-  background: var(--success-dot);
-}
-
-.dock-dot.is-error {
-  background: var(--danger-dot);
-}
-
-.dock-dot.is-stopped {
-  background: var(--warning-dot);
-}
-
-.dock-icon {
-  display: inline-flex;
-  color: var(--text-faint);
-  flex: 0 0 auto;
 }
 
 .dock-label {
-  font-weight: 500;
+  font-weight: 590;
+  letter-spacing: -0.005em;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -214,7 +232,7 @@
 
 .dock-detail {
   color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: 12.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -226,32 +244,40 @@
   flex: 1;
 }
 
-.dock-metrics {
-  font-size: 11px;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 .dock-elapsed {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-faint);
   flex: 0 0 auto;
 }
 
-.dock-state {
-  font-size: 10.5px;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
-
-.dock-row.is-running .dock-state {
-  color: var(--claude);
-}
-
+/* Stop is a hover-reveal glyph, not a labelled red button on every line. */
 .dock-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  border-radius: var(--r-sm);
+  color: var(--text-faint);
   flex: 0 0 auto;
-  margin-right: 4px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.dock-row:hover .dock-stop,
+.dock-row:focus-within .dock-stop {
+  opacity: 1;
+}
+
+.dock-stop:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--surface-hover);
+}
+
+.dock-stop:focus-visible {
+  color: var(--danger);
+  opacity: 1;
 }
 
 .dock-error {
@@ -293,7 +319,14 @@
   background: var(--danger-soft);
 }
 
-/* ---------- inline agent rows (transcript) ---------- */
+/* ---------- inline agent rows (transcript) ----------
+
+   The reference's two-line grammar:
+
+     ● Logic test agent   general-purpose            2s ›
+       Completed
+
+   A dot carries the state; everything else is ink at two tiers. */
 
 .agent-row-wrap {
   min-width: 0;
@@ -305,15 +338,17 @@
 
 .agent-row {
   display: flex;
-  align-items: center;
-  gap: 7px;
+  align-items: flex-start;
+  gap: 10px;
   width: 100%;
   min-width: 0;
   text-align: left;
-  padding: 5px 8px 5px 4px;
+  padding: 4px 8px 4px 4px;
   border-radius: var(--r-md);
-  font-size: 12.5px;
-  color: var(--text-muted);
+}
+
+.agent-row-glyph {
+  margin-top: 5px;
 }
 
 .agent-row:hover {
@@ -324,88 +359,69 @@
   background: var(--surface-hover);
 }
 
-.agent-row-guide {
-  position: relative;
-  width: 10px;
-  height: 14px;
+.agent-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: var(--r-pill);
   flex: 0 0 auto;
+  background: var(--text-faint);
 }
 
-.agent-row-guide::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: -6px;
-  bottom: 6px;
-  width: 1px;
-  background: var(--border-strong);
+.agent-dot.is-running {
+  background: var(--claude-strong);
+  animation: glyph-drift 1.8s ease-in-out infinite;
 }
 
-.agent-row-guide::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  bottom: 6px;
-  width: 6px;
-  height: 1px;
-  background: var(--border-strong);
+.agent-dot.is-done {
+  background: var(--success-dot);
 }
 
-.agent-row-icon {
-  display: inline-flex;
-  color: var(--text-faint);
-  flex: 0 0 auto;
+.agent-dot.is-error {
+  background: var(--danger-dot);
+}
+
+.agent-dot.is-stopped {
+  background: var(--warning-dot);
+}
+
+.agent-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 
 .agent-row-name {
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 590;
+  letter-spacing: -0.005em;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 12ch;
+  min-width: 8ch;
   flex: 0 1 auto;
 }
 
+/* The type reads as dim text after the name — never a chip; a filled tag on
+   every row of a tree is a column of noise. */
 .agent-row-type {
-  font-size: 10.5px;
-  color: var(--text-faint);
-  padding: 1px 6px;
-  border-radius: var(--r-pill);
-  background: var(--surface-active);
-  flex: 0 0 auto;
-}
-
-/* Live activity changes every second; a fixed box means the row never
-   resizes under the reader. */
-.agent-row-activity {
-  height: 15px;
-  line-height: 15px;
   font-size: 11.5px;
   color: var(--text-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 4ch;
-  flex: 0 4 auto;
+  flex: 0 0 auto;
 }
 
 .agent-row-spacer {
   flex: 1;
-}
-
-.agent-row-nested {
-  font-size: 11px;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-.agent-row-metrics {
-  font-size: 11px;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-  white-space: nowrap;
 }
 
 .agent-row-elapsed {
@@ -414,26 +430,29 @@
   flex: 0 0 auto;
 }
 
-.agent-row-open {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 11px;
-  color: var(--claude);
+.agent-row-chev {
+  color: var(--text-faint);
   flex: 0 0 auto;
+  align-self: center;
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
 }
 
-.agent-row:hover .agent-row-open,
-.agent-row:focus-visible .agent-row-open {
+.agent-row:hover .agent-row-chev,
+.agent-row:focus-visible .agent-row-chev {
   opacity: 1;
 }
 
-.agent-row-stats {
-  padding: 0 8px 4px 25px;
-  font-size: 11px;
-  color: var(--text-faint);
+/* The second line: live activity or the settled outcome. A fixed box, so a
+   phrase arriving every second never resizes the row under the reader. */
+.agent-row-activity {
+  height: 16px;
+  line-height: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- agent chat view (framed) ---------- */
@@ -442,21 +461,9 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 4px 0 14px;
+  padding: 2px 0 10px;
   border-bottom: 1px solid var(--border-faint);
-  margin-bottom: 16px;
-}
-
-.agent-view-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-md);
-  background: var(--claude-faint);
-  color: var(--claude);
-  flex: 0 0 auto;
+  margin-bottom: 12px;
 }
 
 .agent-view-identity {
@@ -485,12 +492,10 @@
   color: var(--text-faint);
 }
 
+/* Dim text, not a chip — the same grammar the rows use. */
 .subagent-type {
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-faint);
-  padding: 1px 6px;
-  border-radius: var(--r-pill);
-  background: var(--surface-active);
 }
 
 .agent-view-stats {

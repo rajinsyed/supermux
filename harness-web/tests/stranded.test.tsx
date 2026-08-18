@@ -173,7 +173,9 @@ describe("the status strip counts messages that are waiting on the next run", ()
       </CopyProvider>
     );
     const text = container.textContent ?? "";
-    expect(text).not.toContain(copyDefaults["supermux.harness.status.idle"]);
+    // "Ready" is retired outright — an idle strip renders nothing — so the
+    // stranded message's count is the only thing that may print here.
+    expect(text).not.toContain("Ready");
     expect(text).toContain("1");
   });
 });

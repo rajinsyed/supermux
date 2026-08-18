@@ -204,10 +204,10 @@ export function AgentChatView({
     <div className={`transcript-wrap${showPill ? " has-pill" : ""}`}>
     <div className="harness-scroll transcript agent-view" ref={scrollRef} tabIndex={-1} role="log">
       <div className="transcript-inner" ref={contentRef}>
+        {/* One quiet header row: the frame's breadcrumb already names the
+            agent, so this line carries only the facts — type, model, tallies —
+            with no icon chrome. */}
         <div className="agent-view-head">
-          <span className="agent-view-icon">
-            <Layers size={14} />
-          </span>
           <span className="agent-view-identity">
             <span className="agent-view-name">
               {thread.description ?? copy("supermux.harness.dock.untitledAgent")}

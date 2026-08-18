@@ -1,26 +1,22 @@
 import { memo, useContext } from "react";
-import { workStartedAtMs } from "../../model/tasks";
 import type { Block, ToolBlock } from "../../model/types";
-import { plural, useCopy } from "../CopyContext";
-import { ChevronRight, Layers } from "../Icons";
-import { formatCompactDuration, formatTokens } from "../format";
-import { Elapsed } from "../primitives/Elapsed";
+import { useCopy } from "../CopyContext";
+import { ChevronRight } from "../Icons";
+import { WorkingGlyph } from "../primitives/Spinner";
 import { toolStatsSummary } from "./toolStats";
 import { OpenViewContext } from "../views/OpenViewContext";
 
 /**
- * The inline surface for an agent, in one line.
+ * The inline surface for an agent: the reference's quiet two-line row.
  *
- * Round 3 drew a full expandable card here — a nested tree of the agent's whole
- * conversation, inline, inside the turn that spawned it. The user's verdict was
- * that this is not how the CLI reads: the transcript should say THAT an agent
- * ran and how it went, and the conversation itself belongs in the agent's own
- * view, reachable in one click. So this row carries exactly what a reader
- * scanning the transcript needs — is it running, what was it for, what did it
- * cost — and opens the full chat.
+ *   ● Logic test agent   general-purpose
+ *     Completed
  *
- * Children nest one level with a `└` guide, matching the dock's tree, so the
- * shape of a nested spawn is visible without descending into it.
+ * A dot carries the state, the name is plain ink, the type is dim text beside
+ * it, and the second line is one phrase — the live activity while it runs, the
+ * outcome word or summary once it is done. No icons, no metric chips: the
+ * numbers live in the agent's own view, one click away. Children nest with an
+ * indent, matching the working panel's tree.
  */
 function childAgents(block: ToolBlock): ToolBlock[] {
   const out: ToolBlock[] = [];
@@ -51,7 +47,7 @@ export const AgentRow = memo(function AgentRow({
   nested = false
 }: {
   block: ToolBlock;
-  /** Rendered under its parent agent's row, with the tree guide. */
+  /** Rendered under its parent agent's row, indented one step. */
   nested?: boolean;
 }) {
   const copy = useCopy();
@@ -62,24 +58,23 @@ export const AgentRow = memo(function AgentRow({
     info.description ?? (block.input.description as string | undefined) ?? block.name;
   const type = info.subagentType ?? (block.input.subagent_type as string | undefined);
 
-  const metrics: string[] = [];
-  if (info.totalTokens) {
-    metrics.push(copy("supermux.harness.subagent.tokens", { tokens: formatTokens(info.totalTokens) }));
-  }
-  if (info.toolUses) {
-    metrics.push(
-      plural(
-        copy,
-        info.toolUses,
-        "supermux.harness.subagent.toolUsesOne",
-        "supermux.harness.subagent.toolUses"
-      )
-    );
-  }
-  if (!running && info.durationMs) metrics.push(formatCompactDuration(info.durationMs, copy));
+  /**
+   * The second line, as ONE phrase. While it runs: what it is doing right now.
+   * Settled: its summary when one arrived, else the plain outcome word — and
+   * "what it changed" appended when the stats carry real news.
+   */
+  const statusWord =
+    info.status === "failed" || block.status === "error"
+      ? copy("supermux.harness.tool.failed")
+      : info.status === "killed" || info.status === "stopped"
+        ? copy("supermux.harness.bash.statusKilled")
+        : copy("supermux.harness.tool.succeeded");
+  const stats = !running && info.toolStats ? toolStatsSummary(info.toolStats, copy) : [];
+  const line = running
+    ? info.activity ?? info.lastToolName ?? copy("supermux.harness.subagent.waiting")
+    : info.summary ?? (stats.length > 0 ? `${statusWord} · ${stats.join(" · ")}` : statusWord);
 
   const children = childAgents(block);
-  const stats = !running && info.toolStats ? toolStatsSummary(info.toolStats, copy) : [];
 
   return (
     <div className={`agent-row-wrap${nested ? " is-nested" : ""}`}>
@@ -88,52 +83,27 @@ export const AgentRow = memo(function AgentRow({
         className={`agent-row is-${block.status}`}
         onClick={() => openView({ kind: "agent", toolUseId: block.toolUseId })}
       >
-        {nested ? <span className="agent-row-guide" aria-hidden="true" /> : null}
-        <span className={`dock-dot ${dotClass(block)}`} aria-hidden="true" />
-        <span className="agent-row-icon" aria-hidden="true">
-          <Layers size={12} />
-        </span>
-        <span className="agent-row-name" title={description}>
-          {description}
-        </span>
-        {type ? <span className="agent-row-type">{type}</span> : null}
-        {/* While it runs, WHAT it is doing is the useful field; once it is done,
-            what it concluded is. Same slot, because they are the same question
-            asked at two moments. */}
-        <span className="agent-row-activity">
-          {running
-            ? info.activity ??
-              info.lastToolName ??
-              copy("supermux.harness.subagent.waiting")
-            : info.summary ?? ""}
-        </span>
-        <span className="agent-row-spacer" />
-        {/* How many agents this one started, so the tree's SHAPE is legible
-            from the row even before the nested rows below it are scanned. */}
-        {children.length > 0 ? (
-          <span className="agent-row-nested">
-            {plural(
-              copy,
-              children.length,
-              "supermux.harness.subagent.nestedOne",
-              "supermux.harness.subagent.nested"
-            )}
-          </span>
-        ) : null}
-        {metrics.length > 0 ? <span className="agent-row-metrics tnum">{metrics.join(" · ")}</span> : null}
+        {/* The reference's marks: the drifting constellation while it runs, a
+            settled dot once it is done. */}
         {running ? (
-          <Elapsed className="agent-row-elapsed tnum" startedAtMs={workStartedAtMs(block)} />
-        ) : null}
-        <span className="agent-row-open">
-          {copy("supermux.harness.dock.open")}
-          <ChevronRight size={10} />
+          <WorkingGlyph className="agent-row-glyph" />
+        ) : (
+          <span className={`agent-dot ${dotClass(block)}`} aria-hidden="true" />
+        )}
+        <span className="agent-row-main">
+          <span className="agent-row-head">
+            <span className="agent-row-name" title={description}>
+              {description}
+            </span>
+            {type ? <span className="agent-row-type">{type}</span> : null}
+            <span className="agent-row-spacer" />
+            <ChevronRight size={11} className="agent-row-chev" aria-hidden="true" />
+          </span>
+          <span className="agent-row-activity" title={line}>
+            {line}
+          </span>
         </span>
       </button>
-      {/* What it changed, on the line under the row: a summary in the metrics
-          slot would push the elapsed and the Open affordance off a narrow
-          pane, and "edited 3 files · +40 −7" is the kind of thing a reader
-          scans for on its own line anyway. */}
-      {stats.length > 0 ? <div className="agent-row-stats tnum">{stats.join(" · ")}</div> : null}
       {children.map((child) => (
         <AgentRow key={child.key} block={child} nested />
       ))}

@@ -54,7 +54,7 @@ export function StatusStrip({
   const queued = model.queued.length + model.stranded.length;
 
   let tone = "idle";
-  let content: React.ReactNode = copy("supermux.harness.status.idle");
+  let content: React.ReactNode = null;
   let live = false;
 
   if (cliUnavailable) {
@@ -116,6 +116,11 @@ export function StatusStrip({
       "supermux.harness.status.queued"
     );
   }
+
+  // An idle pane says NOTHING: a permanent "Ready" line above the composer is
+  // chrome that restates the absence of news. The strip exists only while
+  // something is happening or wrong.
+  if (content === null) return null;
 
   return (
     <div className={`status-strip is-${tone}`} role="status" aria-live="polite">

@@ -28,7 +28,7 @@
 .transcript-inner {
   max-width: var(--content-max);
   margin: 0 auto;
-  padding: 18px var(--gutter) 8px;
+  padding: 14px var(--gutter) 6px;
 }
 
 .transcript-pad {
@@ -61,7 +61,7 @@
 /* ---------- turns ---------- */
 
 .turn {
-  margin-bottom: 30px;
+  margin-bottom: 24px;
 }
 
 .turn:last-child {
@@ -72,8 +72,8 @@
 
 .user-msg {
   position: relative;
-  margin: 0 0 16px;
-  padding: 11px 15px;
+  margin: 0 0 14px;
+  padding: 9px 13px;
   border-radius: var(--r-lg);
   background: var(--surface-raised);
   border: 1px solid var(--border-faint);

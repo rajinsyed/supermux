@@ -64,7 +64,6 @@ export const copyDefaults = {
   "supermux.harness.composer.send": "Send",
   "supermux.harness.composer.stop": "Stop",
   "supermux.harness.composer.hintInterrupt": "Esc to interrupt",
-  "supermux.harness.composer.hintMode": "Shift+Tab cycles permission mode",
   "supermux.harness.composer.attach": "Attach files",
   "supermux.harness.composer.removeAttachment": "Remove attachment",
   "supermux.harness.composer.queued": "Queued",
@@ -74,7 +73,6 @@ export const copyDefaults = {
   "supermux.harness.composer.commandTitle": "Commands",
   "supermux.harness.composer.commandEmpty": "No matching commands",
 
-  "supermux.harness.status.idle": "Ready",
   "supermux.harness.status.thinking": "Claude is thinking…",
   "supermux.harness.status.thinkingTokens": "Thinking · {tokens} tokens",
   "supermux.harness.status.running": "Running {tool}",
@@ -175,8 +173,6 @@ export const copyDefaults = {
   "supermux.harness.subagent.spawnDepth": "Depth {depth}",
   "supermux.harness.subagent.fromDisk": "Agent transcript",
   "supermux.harness.subagent.waiting": "Waiting to start…",
-  "supermux.harness.subagent.nestedOne": "{count} nested agent",
-  "supermux.harness.subagent.nested": "{count} nested agents",
 
   "supermux.harness.workflow.badge": "Workflow",
   "supermux.harness.workflow.untitled": "Workflow",
@@ -213,7 +209,6 @@ export const copyDefaults = {
   // The transcript keeps a one-line row; the run itself is browsed in a full
   // view with a phases column, a phase agent list, and an agent detail pane.
   "supermux.harness.workflow.browser.title": "Workflow",
-  "supermux.harness.workflow.browser.open": "Open",
   "supermux.harness.workflow.browser.back": "Back",
   "supermux.harness.workflow.browser.phases": "Phases",
   "supermux.harness.workflow.browser.agentCount": "{done}/{total} agents",
@@ -242,30 +237,24 @@ export const copyDefaults = {
   "supermux.harness.workflow.browser.gone": "This workflow is no longer available.",
 
   // --- The working panel (agents dock), floating above the composer ---
-  // Cursor-style header: "3 working · Stop all". `title` survives as the
-  // region's accessible name and the collapsed chip's label.
+  // Cursor's header grammar verbatim: "2 Working — Stop All — ✕". The panel
+  // lists ONLY working subagents; main is not a row (the way back to the main
+  // chat is the framed view's own close).
   "supermux.harness.dock.title": "Agents",
-  "supermux.harness.dock.workingOne": "{count} working",
-  "supermux.harness.dock.working": "{count} working",
-  "supermux.harness.dock.stopAll": "Stop all",
-  "supermux.harness.dock.main": "Claude",
-  "supermux.harness.dock.mainHint": "Main conversation",
+  "supermux.harness.dock.workingOne": "{count} Working",
+  "supermux.harness.dock.working": "{count} Working",
+  "supermux.harness.dock.stopAll": "Stop All",
   "supermux.harness.dock.collapse": "Hide agents",
   "supermux.harness.dock.expand": "Show agents",
-  "supermux.harness.dock.open": "Open",
   "supermux.harness.dock.stop": "Stop",
   "supermux.harness.dock.stopping": "Stopping…",
   "supermux.harness.dock.stopFailed": "Could not stop this task.",
   "supermux.harness.dock.untitledAgent": "Agent",
   "supermux.harness.dock.untitledShell": "Shell",
   "supermux.harness.dock.untitledWorkflow": "Workflow",
-  // `statusDone` / `statusFailed` / `statusStopped` stood here. A row with an
-  // outcome is no longer ON the dock — it is removed the moment its work is
-  // terminal — so there is nowhere left for an outcome word to render. The two
-  // that survive are the only two states a docked row can be in: work that is
-  // running, and `main` between turns.
-  "supermux.harness.dock.statusRunning": "Running",
-  "supermux.harness.dock.statusIdle": "Idle",
+  // The status vocabulary is gone entirely: every row on the panel is running
+  // by construction, and saying so in orange on every line was noise. State is
+  // carried by the animated glyph alone.
   "supermux.harness.dock.workflowAgents": "{done}/{total} agents",
   "supermux.harness.dock.a11y": "Agents and background tasks",
 

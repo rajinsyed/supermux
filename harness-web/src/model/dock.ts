@@ -92,7 +92,9 @@ export function dockRows(model: TranscriptModel): DockRow[] {
       kind: "agent",
       depth: ancestors + 1,
       label: thread.description ?? "",
-      detail: thread.subagentType,
+      // Live activity, the way Cursor's panel reads ("Planning next moves"),
+      // falling back to the static type only before the first progress frame.
+      detail: thread.activity ?? thread.lastToolName ?? thread.subagentType,
       running: true,
       status: thread.status,
       startedAtMs: thread.startedAtMs,

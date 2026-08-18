@@ -105,27 +105,37 @@ describe("the agents dock", () => {
   const model = replayLines(fwdNestedFixture.slice(0, 40));
   const rows = dockRows(model);
 
-  test("every row is a button that opens its own view", () => {
+  // The Cursor panel lists ONLY working subagents — main is not a row (the
+  // way back to the main chat is the framed view's own close), so every count
+  // below is over the non-main rows.
+  const work = rows.filter((row) => row.kind !== "main");
+
+  test("every working row is a button that opens its own view", () => {
     const opened: string[] = [];
     const { container } = mount(
       <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={(view) => opened.push(viewKey(view))} />
     );
     const buttons = Array.from(container.querySelectorAll(".dock-row-open"));
-    expect(buttons.length).toBe(rows.length);
-    fireEvent.click(buttons[1]!);
+    expect(buttons.length).toBe(work.length);
+    fireEvent.click(buttons[0]!);
     expect(opened).toEqual([`agent:${FWD_OUTER_TOOL_USE_ID}`]);
   });
 
-  test("a nested agent is indented under its parent and draws the tree guide", () => {
+  test("main has no row — the panel is subagents only", () => {
+    const { container } = mount(
+      <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
+    );
+    expect(container.querySelector('[data-row-id="main"]')).toBeNull();
+  });
+
+  test("a nested agent is indented under its parent", () => {
     const { container } = mount(
       <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
     );
     const inner = container.querySelector(`[data-row-id="agent:${FWD_INNER_TOOL_USE_ID}"]`)!;
     expect(inner.getAttribute("data-depth")).toBe("2");
-    expect(inner.querySelector(".dock-guide")).not.toBeNull();
-    // A top-level agent has no parent to hang from, so it draws no guide.
     const outer = container.querySelector(`[data-row-id="agent:${FWD_OUTER_TOOL_USE_ID}"]`)!;
-    expect(outer.querySelector(".dock-guide")).toBeNull();
+    expect(outer.getAttribute("data-depth")).toBe("1");
   });
 
   test("a finished agent's row is GONE, not dimmed", () => {
@@ -141,15 +151,16 @@ describe("the agents dock", () => {
     expect(container.querySelector(".agents-dock")).toBeNull();
   });
 
-  test("a live row counts up and says it is running", () => {
+  test("a live row is name + activity, with the glyph as its only state mark", () => {
     const { container } = mount(
       <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
     );
     const outer = container.querySelector(`[data-row-id="agent:${FWD_OUTER_TOOL_USE_ID}"]`)!;
-    expect(outer.className).toContain("is-running");
-    expect(outer.querySelector(".dock-elapsed")).not.toBeNull();
-    expect(outer.querySelector(".dock-state")!.textContent).toBe("Running");
-    expect(outer.querySelector(".dock-dot")!.className).toContain("is-running");
+    expect(outer.querySelector(".dock-glyph")).not.toBeNull();
+    // No status vocabulary, no timers, no counters on the row: everything
+    // docked is running by construction, and the drill-in has the numbers.
+    expect(outer.textContent).not.toContain("Running");
+    expect(outer.querySelector(".dock-elapsed")).toBeNull();
   });
 
   test("the open view's row is marked current", () => {
@@ -188,7 +199,7 @@ describe("the agents dock", () => {
     const list = container.querySelector(".agents-dock-list")!;
     fireEvent.keyDown(list, { key: "ArrowDown" });
     fireEvent.keyDown(list, { key: "Enter" });
-    expect(opened).toEqual([`agent:${FWD_OUTER_TOOL_USE_ID}`]);
+    expect(opened).toEqual([`agent:${FWD_INNER_TOOL_USE_ID}`]);
   });
 
   test("Escape is NOT swallowed by the dock", () => {
@@ -225,15 +236,16 @@ describe("the agents dock", () => {
         <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
       );
       const list = container.querySelector(".agents-dock-list")!;
-      // Walk to the deepest row — the inner agent, index 2 of 3.
+      // Walk to the deepest row — the inner agent, index 1 of 2 (main is not
+      // a row on the Cursor panel).
       fireEvent.keyDown(list, { key: "End" });
       const buttons = () =>
         Array.from(container.querySelectorAll(".dock-row-open")) as HTMLButtonElement[];
-      expect(buttons().length).toBe(3);
-      expect(buttons()[2].tabIndex).toBe(0);
-      expect(document.activeElement).toBe(buttons()[2]);
+      expect(buttons().length).toBe(2);
+      expect(buttons()[1].tabIndex).toBe(0);
+      expect(document.activeElement).toBe(buttons()[1]);
 
-      // Both agents finish; the dock is main-only, so it unmounts entirely.
+      // Both agents finish; nothing is working, so the panel unmounts entirely.
       const finished = dockRows(replayLines(fwdNestedFixture));
       rerender(
         <CopyProvider dict={undefined}>
@@ -251,9 +263,9 @@ describe("the agents dock", () => {
       fireEvent.keyDown(list, { key: "End" });
       const buttons = () =>
         Array.from(container.querySelectorAll(".dock-row-open")) as HTMLButtonElement[];
-      expect(buttons()[2].tabIndex).toBe(0);
+      expect(buttons()[1].tabIndex).toBe(0);
 
-      // Only the inner agent finishes: two rows left, and the walker's index 2
+      // Only the inner agent finishes: one row left, and the walker's index 1
       // no longer exists.
       const trimmed = rows.filter((row) => row.id !== `agent:${FWD_INNER_TOOL_USE_ID}`);
       act(() => {
@@ -263,12 +275,12 @@ describe("the agents dock", () => {
           </CopyProvider>
         );
       });
-      expect(buttons().length).toBe(2);
+      expect(buttons().length).toBe(1);
       // Clamped to the new last row, and DOM focus followed it — the reader was
       // in the dock, so leaving focus on a detached node would strand the
       // keyboard entirely.
-      expect(buttons()[1].tabIndex).toBe(0);
-      expect(document.activeElement).toBe(buttons()[1]);
+      expect(buttons()[0].tabIndex).toBe(0);
+      expect(document.activeElement).toBe(buttons()[0]);
       // And it still opens the right thing: no stale index pointing at a row
       // that has moved.
       const opened: string[] = [];

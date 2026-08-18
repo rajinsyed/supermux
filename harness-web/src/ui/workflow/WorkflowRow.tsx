@@ -1,10 +1,10 @@
 import { memo, useContext, useState } from "react";
 import type { ToolBlock } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
-import { AlertTriangle, CheckCircle, ChevronRight, Map as MapIcon, Stop } from "../Icons";
-import { formatCompactDuration, formatTokens } from "../format";
+import { ChevronRight } from "../Icons";
+import { formatCompactDuration } from "../format";
 import { Elapsed } from "../primitives/Elapsed";
-import { Spinner } from "../primitives/Spinner";
+import { WorkingGlyph } from "../primitives/Spinner";
 import { useFoldHold } from "../transcript/foldGuard";
 import { OpenViewContext } from "../views/OpenViewContext";
 import { WorkflowBrowser } from "./WorkflowBrowser";
@@ -12,13 +12,15 @@ import { workflowInterrupted, workflowStopped } from "./browserModel";
 import { subjectFromBlock, type WorkflowSubject } from "./subject";
 
 /**
- * The transcript's whole record of a workflow: ONE row.
+ * The transcript's whole record of a workflow: the same quiet two-line row an
+ * agent gets, with the run browsed in a full view.
  *
- * The inline card this replaces rendered the entire run in place — phases,
- * every agent, per-agent result disclosures, a log strip — which is 600px of
- * nested detail wedged into a conversation. The CLI does not do that either: it
- * keeps a line in the transcript and puts the run in a browser. Everything that
- * card drew now lives in `WorkflowBrowser`, and this row is what opens it.
+ *   ● alpha-beta-demo   workflow                     2s ›
+ *     1/2 agents · 2 phases
+ *
+ * A dot carries the state; the second line is the run's progress while it
+ * runs and its outcome once it ends. Everything the old inline card drew
+ * lives in `WorkflowBrowser`, and this row is what opens it.
  */
 export const WorkflowRow = memo(function WorkflowRow({ block }: { block: ToolBlock }) {
   const copy = useCopy();
@@ -41,9 +43,10 @@ export const WorkflowRow = memo(function WorkflowRow({ block }: { block: ToolBlo
   const failed = subject.status === "failed" || (totals?.failed ?? 0) > 0;
   const running = !interrupted;
 
-  const summary: string[] = [];
+  /** The second line, one phrase: progress while live, the outcome after. */
+  const parts: string[] = [];
   if (totals && totals.agents > 0) {
-    summary.push(
+    parts.push(
       copy("supermux.harness.workflow.browser.agentCount", {
         done: totals.done,
         total: totals.agents
@@ -51,7 +54,7 @@ export const WorkflowRow = memo(function WorkflowRow({ block }: { block: ToolBlo
     );
   }
   if (subject.workflow && subject.workflow.phases.length > 0) {
-    summary.push(
+    parts.push(
       plural(
         copy,
         subject.workflow.phases.length,
@@ -60,10 +63,24 @@ export const WorkflowRow = memo(function WorkflowRow({ block }: { block: ToolBlo
       )
     );
   }
-  if (totals?.tokens) {
-    summary.push(copy("supermux.harness.subagent.tokens", { tokens: formatTokens(totals.tokens) }));
-  }
-  if (!running && subject.durationMs) summary.push(formatCompactDuration(subject.durationMs, copy));
+  const outcome = failed
+    ? copy("supermux.harness.workflow.state.error")
+    : stopped
+      ? subject.durationMs
+        ? copy("supermux.harness.workflow.stoppedAfter", {
+            duration: formatCompactDuration(subject.durationMs, copy)
+          })
+        : copy("supermux.harness.workflow.stopped")
+      : copy("supermux.harness.workflow.state.done");
+  const line = running
+    ? parts.length > 0
+      ? parts.join(" · ")
+      : copy("supermux.harness.workflow.starting")
+    : parts.length > 0
+      ? `${outcome} · ${parts.join(" · ")}`
+      : outcome;
+
+  const dot = failed ? "is-error" : stopped ? "is-stopped" : "is-done";
 
   const open = () => {
     // The router addresses a workflow by its task id — the same id the dock row
@@ -85,39 +102,26 @@ export const WorkflowRow = memo(function WorkflowRow({ block }: { block: ToolBlo
         }`}
         onClick={open}
       >
-        <span className="wf-row-icon">
-          <MapIcon size={13} />
-        </span>
-        <span className="wf-row-name">
-          {subject.name ?? copy("supermux.harness.workflow.untitled")}
-        </span>
-        <span className="tool-badge is-quiet">{copy("supermux.harness.workflow.badge")}</span>
-        {subject.description && subject.description !== subject.name ? (
-          <span className="wf-row-desc" title={subject.description}>
-            {subject.description}
-          </span>
-        ) : null}
-        {summary.length > 0 ? <span className="wf-row-summary tnum">{summary.join(" · ")}</span> : null}
         {running ? (
-          <>
-            {subject.startedAtMs ? (
+          <WorkingGlyph className="agent-row-glyph" />
+        ) : (
+          <span className={`agent-dot ${dot}`} aria-hidden="true" />
+        )}
+        <span className="wf-row-main">
+          <span className="wf-row-head">
+            <span className="wf-row-name">
+              {subject.name ?? copy("supermux.harness.workflow.untitled")}
+            </span>
+            <span className="wf-row-badge">{copy("supermux.harness.workflow.badge")}</span>
+            <span className="wf-row-spacer" />
+            {running && subject.startedAtMs ? (
               <Elapsed className="wf-row-elapsed tnum" startedAtMs={subject.startedAtMs} />
             ) : null}
-            <Spinner size={11} />
-          </>
-        ) : failed ? (
-          <AlertTriangle size={12} className="mark-warn" />
-        ) : stopped ? (
-          <span className="wf-stopped-chip">
-            <Stop size={9} />
-            {copy("supermux.harness.workflow.stopped")}
+            <ChevronRight size={11} className="wf-row-chev" aria-hidden="true" />
           </span>
-        ) : (
-          <CheckCircle size={12} className="mark-ok" />
-        )}
-        <span className="wf-row-open">
-          {copy("supermux.harness.workflow.browser.open")}
-          <ChevronRight size={11} />
+          <span className="wf-row-summary tnum" title={subject.description}>
+            {line}
+          </span>
         </span>
       </button>
       {openLocal ? (

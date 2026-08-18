@@ -22,7 +22,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin: 10px var(--gutter) 2px;
+  margin: 8px 14px 2px;
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
   background: var(--surface);
@@ -46,8 +46,8 @@
 .view-crumbs {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
+  gap: 7px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--border-faint);
   flex: 0 0 auto;
   min-width: 0;
@@ -226,6 +226,9 @@
   border-radius: var(--r-pill);
 }
 
+/* Text-first controls — Cursor's grammar. At rest a pill is quiet ink with
+   no bed; the bed appears only under the pointer. Semantic modes tint their
+   TEXT, never a filled chip, so the bar stays one calm line. */
 .mode-pill,
 .model-pill,
 .icon-pill {
@@ -233,9 +236,9 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
-  padding: 3px 8px;
-  border-radius: var(--r-pill);
-  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
   color: var(--text-muted);
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
@@ -251,6 +254,12 @@
   min-width: 0;
 }
 
+.mode-pill svg,
+.model-pill svg,
+.icon-pill svg {
+  color: var(--text-faint);
+}
+
 .menu-trigger:hover .model-pill,
 .menu-trigger:hover .icon-pill,
 .menu-trigger:hover .mode-pill.is-default,
@@ -261,40 +270,49 @@
   color: var(--text);
 }
 
+/* A toned pill gets the same hover BED but keeps its own hue: the label
+   colour is what names the mode, and it never moves under the pointer. */
+.menu-trigger:hover .mode-pill:not(.is-default),
+.menu-trigger.is-open .mode-pill:not(.is-default) {
+  background: var(--surface-hover);
+}
+
 .menu-trigger:focus-visible .model-pill,
 .menu-trigger:focus-visible .icon-pill,
 .menu-trigger:focus-visible .mode-pill {
-  color: var(--text);
+  background: var(--surface-hover);
 }
 
-/* Semantic mode tints. Default is neutral; the other modes carry their own
-   hue, and hover deepens THAT hue rather than repainting to the neutral grey —
-   the label colour, which names the mode, never moves under the pointer. */
+/* Semantic tints on the text alone; hover deepens the surface, not the hue,
+   so the label colour — which names the mode — never moves. */
 .mode-pill.is-acceptEdits {
-  background: var(--success-soft);
   color: var(--success);
 }
 
+.mode-pill.is-acceptEdits svg {
+  color: var(--success-dot);
+}
+
 .mode-pill.is-plan {
-  background: var(--violet-soft);
   color: var(--violet);
 }
 
+.mode-pill.is-plan svg {
+  color: var(--violet-dot);
+}
+
 .mode-pill.is-bypassPermissions {
-  background: var(--danger-soft);
   color: var(--danger);
 }
 
-.menu-trigger:hover .mode-pill:not(.is-default) {
-  filter: brightness(1.08);
+.mode-pill.is-bypassPermissions svg {
+  color: var(--danger-dot);
 }
 
+/* Effort folds into the model label as dim text, not a chip. */
 .effort-tag {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: var(--r-pill);
-  background: var(--surface-active);
-  color: var(--text-muted);
+  font-size: 12px;
+  color: var(--text-faint);
   flex: 0 0 auto;
 }
 

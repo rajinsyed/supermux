@@ -148,8 +148,8 @@
 /* The composer's round send control — Cursor's grammar: a filled circle at the
    trailing edge of the input pill. */
 .btn-send {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   justify-content: center;
   border-radius: var(--r-pill);
@@ -172,8 +172,8 @@
 }
 
 .btn-stop {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   justify-content: center;
   border-radius: var(--r-pill);
@@ -311,17 +311,17 @@
 .permission-card,
 .plan-card,
 .question-card {
-  margin: 14px 0 6px;
+  margin: 12px 0 4px;
   border-radius: var(--r-xl);
   background: var(--panel);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-panel);
-  padding: 14px 16px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 10px;
 }
 
 .permission-head,

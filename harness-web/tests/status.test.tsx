@@ -52,9 +52,12 @@ describe("the status strip never contradicts the queue strip", () => {
     expect(container.querySelector(".status-text")!.textContent).toBe("1 message queued");
   });
 
-  test("an empty queue on an idle pane still reads Ready", () => {
+  test("an idle pane with nothing to say renders no strip at all", () => {
+    // "Ready" is retired: a permanent status line restating the absence of
+    // news was chrome. The strip exists only while something is happening or
+    // wrong.
     const { container } = mount(createModel());
-    expect(container.querySelector(".status-text")!.textContent).toBe("Ready");
+    expect(container.querySelector(".status-strip")).toBeNull();
   });
 
   test("a live turn outranks the queue count", () => {

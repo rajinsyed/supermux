@@ -49,12 +49,12 @@ describe("tool row never collapses either label to zero", () => {
 
 describe("subagent rows are fixed-height", () => {
   test("the inline agent row's activity line owns a fixed box", async () => {
-    // The round-3 SubagentCard's fixed-geometry contract, carried by its
-    // round-4 successor: the compact AgentRow's live activity changes every
-    // second and must not resize the row under the reader.
+    // The round-3 SubagentCard's fixed-geometry contract, carried through
+    // every successor: the row's live activity changes every second and must
+    // not resize the row under the reader.
     const sheet = await css("agents.css");
     const activity = ruleFor(sheet, ".agent-row-activity");
-    expect(activity).toMatch(/height:\s*15px/);
+    expect(activity).toMatch(/height:\s*16px/);
     expect(activity).not.toMatch(/min-height/);
     expect(activity).toMatch(/white-space:\s*nowrap/);
     expect(activity).toMatch(/text-overflow:\s*ellipsis/);
@@ -234,12 +234,11 @@ describe("the quoted output tail is not a dark slab in a light dock", () => {
 
 describe("subagent nesting stops indenting before it runs out of pane", () => {
   test("a nested agent row indents once, not per level", async () => {
-    // Nesting is unbounded on the wire; the round-4 tree renders each child
-    // as one guided row (the `└` prefix carries the hierarchy) rather than the
-    // old card-in-card indentation that walked content off a split pane.
+    // Nesting is unbounded on the wire; each child indents ONE fixed step
+    // under its wrap rather than the old card-in-card indentation that walked
+    // content off a split pane. The indent alone carries the hierarchy.
     const sheet = await css("agents.css");
     expect(ruleFor(sheet, ".agent-row-wrap.is-nested")).toMatch(/padding-left:\s*\d+px/);
-    expect(sheet).toContain(".agent-row-guide");
   });
 });
 

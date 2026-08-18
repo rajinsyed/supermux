@@ -12,8 +12,8 @@
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 8px var(--gutter) 8px;
+  gap: 6px;
+  padding: 6px var(--gutter) 6px;
   max-width: calc(var(--content-max) + 2 * var(--gutter));
   width: 100%;
   margin: 0 auto;
@@ -388,8 +388,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 6px;
-  padding: 7px 8px 7px 8px;
+  gap: 8px;
+  padding: 7px 8px;
   border-radius: var(--r-composer);
   background: var(--panel);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -419,8 +419,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   border-radius: var(--r-pill);
   background: var(--surface-active);
@@ -443,8 +443,8 @@
   resize: none;
   border: none;
   background: transparent;
-  padding: 5px 4px;
-  font-size: 13px;
+  padding: 6px 4px;
+  font-size: 13.5px;
   line-height: 1.5;
   color: var(--text);
   max-height: 260px;

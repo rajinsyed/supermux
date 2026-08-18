@@ -405,30 +405,18 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
 
-      {/* One quiet hint line: only the bindings that are not universal chat
-          grammar. Enter-to-send needs no caption; the mode cycle and the
-          relay caveat do. */}
-      <div className="composer-hints">
-        <span className="composer-hint is-hint-mode">
-          {copy("supermux.harness.composer.hintMode")}
-        </span>
-        {/* The one thing a user needs to know before pressing Enter here: this
-            does not reach the agent instantly. It goes through Claude and is
-            picked up at the agent's next tool call. */}
-        {props.agentName ? (
+      {/* One situational caveat only — the relay's delivery semantics, which a
+          user cannot infer. Everything else (Enter to send, Esc while running
+          — the status strip already says that one) earns no permanent caption
+          under the composer. */}
+      {props.agentName ? (
+        <div className="composer-hints">
           <span className="composer-hint is-hint-relay">
             {copy("supermux.harness.agentView.relayHint")}
           </span>
-        ) : null}
-        {/* In an agent view Escape means BACK, not interrupt — the interrupt
-            would stop main, which is not what the reader is looking at. */}
-        {props.running && props.agentName === undefined ? (
-          <span className="composer-hint is-hint-interrupt">
-            {copy("supermux.harness.composer.hintInterrupt")}
-          </span>
-        ) : null}
-        <span className="composer-hints-spacer" />
-      </div>
+          <span className="composer-hints-spacer" />
+        </div>
+      ) : null}
     </div>
   );
 }
