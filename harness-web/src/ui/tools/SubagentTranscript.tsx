@@ -131,7 +131,11 @@ function blocksOf(model: TranscriptModel): Block[] {
         text: turn.userText
       });
     }
-    for (const block of turn.blocks) out.push(block);
+    for (const block of turn.blocks) {
+      // A failed attempt a later retry superseded is that retry's history.
+      if (block.kind === "tool" && block.supersededByToolUseId !== undefined) continue;
+      out.push(block);
+    }
   }
   return out;
 }

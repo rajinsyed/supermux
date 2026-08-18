@@ -1,5 +1,5 @@
 import type { SystemLine } from "../protocol/types";
-import { applyTaskToThread } from "./agentThreads";
+import { applyTaskToThread, reconcileSupersededAgentAttempts } from "./agentThreads";
 import { evictUuids, readTool, writeBlock } from "./blocks";
 import {
   activeTurnIndex,
@@ -8,6 +8,7 @@ import {
   blockAtPath,
   isPlainObject,
   permissionModeOf,
+  resolveModel,
   withTurn,
   type TranscriptIndex
 } from "./helpers";
@@ -102,7 +103,18 @@ function applyInit(model: TranscriptModel, raw: Record<string, unknown>): Transc
   const session = { ...model.session };
   session.sessionId = asString(raw.session_id) ?? session.sessionId;
   session.cwd = asString(raw.cwd) ?? session.cwd;
-  session.model = asString(raw.model) ?? session.model;
+  const initializedModel = asString(raw.model);
+  if (initializedModel) {
+    // A carried effort belongs to the model it was selected for. The picker uses
+    // a selector ("sonnet") while init reports its resolved id
+    // ("claude-sonnet-5"), so compare through the catalog before deciding that
+    // a resumed session actually changed models.
+    const selected = resolveModel(session, model.cachedModels);
+    const sameResolvedModel =
+      selected?.value === initializedModel || selected?.resolvedModel === initializedModel;
+    if (initializedModel !== session.model && !sameResolvedModel) session.effort = undefined;
+    session.model = initializedModel;
+  }
   session.permissionMode = permissionModeOf(raw.permissionMode) ?? session.permissionMode;
   session.tools = (raw.tools as string[]) ?? session.tools;
   session.slashCommands = (raw.slash_commands as string[]) ?? session.slashCommands;
@@ -479,6 +491,7 @@ function applyTaskLine(
   next = applyTaskToThread(next, toolUseId, record, nowMs);
   next = applyTaskToBlock(next, index, toolUseId, raw, subtype, record, nowMs);
   if (isTaskSettled(record.status)) next = applyDeferredFolds(next);
+  next = reconcileSupersededAgentAttempts(next);
   /**
    * A `task_notification` raises NOTHING on its own.
    *

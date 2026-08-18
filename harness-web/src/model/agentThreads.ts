@@ -9,6 +9,7 @@ import type {
   TextBlock,
   ThinkingBlock,
   ToolBlock,
+  ToolStatus,
   TranscriptModel,
   UserTextBlock
 } from "./types";
@@ -527,13 +528,32 @@ export function applyAgentOutputToThread(
   model: TranscriptModel,
   toolUseId: string,
   structured: JsonObject | undefined,
+  toolStatus: ToolStatus,
   nowMs: number
 ): TranscriptModel {
   const existing = model.agentThreads[toolUseId];
-  if (!existing || !structured) return model;
-  const status = asString(structured.status);
-  const done = status === "completed" || status === "failed";
-  const raw = isPlainObject(structured.toolStats) ? structured.toolStats : undefined;
+  if (!existing) return model;
+  const structuredStatus = asString(structured?.status);
+  const status =
+    structuredStatus === "completed" || structuredStatus === "success"
+      ? "completed"
+      : structuredStatus === "failed" || structuredStatus === "error"
+        ? "failed"
+        : structuredStatus === "killed"
+          ? "killed"
+          : structuredStatus === "stopped" || structuredStatus === "aborted"
+            ? "stopped"
+            : toolStatus === "error"
+              ? "failed"
+              : toolStatus === "aborted"
+                ? "stopped"
+                : existing.status;
+  const done =
+    status === "completed" ||
+    status === "failed" ||
+    status === "killed" ||
+    status === "stopped";
+  const raw = isPlainObject(structured?.toolStats) ? structured.toolStats : undefined;
   return writeThread(model, {
     ...existing,
     toolStats: raw
@@ -547,17 +567,153 @@ export function applyAgentOutputToThread(
           otherToolCount: asNumber(raw.otherToolCount)
         }
       : existing.toolStats,
-    agentId: asString(structured.agentId) ?? existing.agentId,
-    taskId: existing.taskId ?? asString(structured.agentId),
-    subagentType: existing.subagentType ?? asString(structured.agentType),
-    model: asString(structured.resolvedModel) ?? existing.model,
-    totalTokens: asNumber(structured.totalTokens) ?? existing.totalTokens,
-    toolUses: asNumber(structured.totalToolUseCount) ?? existing.toolUses,
-    durationMs: asNumber(structured.totalDurationMs) ?? existing.durationMs,
-    background: status === "async_launched" ? true : existing.background,
+    agentId: asString(structured?.agentId) ?? existing.agentId,
+    taskId: existing.taskId ?? asString(structured?.agentId),
+    subagentType: existing.subagentType ?? asString(structured?.agentType),
+    model: asString(structured?.resolvedModel) ?? existing.model,
+    totalTokens: asNumber(structured?.totalTokens) ?? existing.totalTokens,
+    toolUses: asNumber(structured?.totalToolUseCount) ?? existing.toolUses,
+    durationMs: asNumber(structured?.totalDurationMs) ?? existing.durationMs,
+    background: structuredStatus === "async_launched" ? true : existing.background,
     status: done ? status : existing.status,
     endedAtMs: done ? existing.endedAtMs ?? nowMs : existing.endedAtMs
   });
+}
+
+/** The stable user-facing identity used to associate separate retry calls. */
+function retryDescription(block: ToolBlock): string | undefined {
+  if (!isTaskTool(block.name)) return undefined;
+  const description =
+    block.subagent?.description ??
+    (typeof block.input.description === "string" ? block.input.description : undefined);
+  const trimmed = description?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function agentAttemptOutcome(
+  model: Pick<TranscriptModel, "agentThreads">,
+  block: ToolBlock
+): "failed" | "completed" | undefined {
+  const threadStatus = model.agentThreads[block.toolUseId]?.status;
+  const taskStatus = block.subagent?.status;
+  const structuredStatus = asString(block.structured?.status);
+  if (
+    block.status === "error" ||
+    threadStatus === "failed" ||
+    taskStatus === "failed" ||
+    structuredStatus === "failed" ||
+    structuredStatus === "error"
+  ) {
+    return "failed";
+  }
+  if (
+    threadStatus === "completed" ||
+    taskStatus === "completed" ||
+    structuredStatus === "completed"
+  ) {
+    return "completed";
+  }
+  return undefined;
+}
+
+/**
+ * Mark failed Agent/Task siblings that a later successful retry replaced.
+ *
+ * Retries are separate tool_use ids, so without this relation the transcript
+ * presents one logical job as two peer agents: "Failed" and then "Done". The
+ * failed attempt is retained in the reducer for auditability and is marked only
+ * after a later sibling with the same non-empty description actually completes.
+ * Killed/stopped attempts are not failures and are never folded by this rule.
+ */
+export function reconcileSupersededAgentAttempts(model: TranscriptModel): TranscriptModel {
+  let threads = model.agentThreads;
+  let threadsChanged = false;
+
+  const markThread = (failedToolUseId: string, retryToolUseId: string) => {
+    const thread = threads[failedToolUseId];
+    if (!thread || thread.supersededByToolUseId === retryToolUseId) return;
+    if (!threadsChanged) threads = { ...threads };
+    threads[failedToolUseId] = {
+      ...thread,
+      supersededByToolUseId: retryToolUseId,
+      revision: thread.revision + 1
+    };
+    threadsChanged = true;
+  };
+
+  const reconcileBlocks = (blocks: Block[]): Block[] => {
+    let next = blocks;
+    let changed = false;
+    const write = (index: number, block: Block) => {
+      if (!changed) next = blocks.slice();
+      next[index] = block;
+      changed = true;
+    };
+
+    // Retry attempts can be nested under another agent. Reconcile each sibling
+    // list independently so two unrelated parents that chose the same generic
+    // description never hide one another's work.
+    for (let index = 0; index < blocks.length; index += 1) {
+      const block = next[index];
+      if (block.kind !== "tool" || block.children.length === 0) continue;
+      const children = reconcileBlocks(block.children);
+      if (children !== block.children) write(index, { ...block, children });
+    }
+
+    const nearestLaterSuccess = new Map<string, string>();
+    for (let index = next.length - 1; index >= 0; index -= 1) {
+      const block = next[index];
+      if (block.kind !== "tool") continue;
+      const description = retryDescription(block);
+      if (!description) continue;
+      const outcome = agentAttemptOutcome(model, block);
+      if (outcome === "completed") {
+        nearestLaterSuccess.set(description, block.toolUseId);
+        continue;
+      }
+      if (outcome !== "failed") continue;
+      const retryToolUseId = nearestLaterSuccess.get(description);
+      if (!retryToolUseId) continue;
+      if (block.supersededByToolUseId !== retryToolUseId) {
+        write(index, { ...block, supersededByToolUseId: retryToolUseId });
+      }
+      markThread(block.toolUseId, retryToolUseId);
+    }
+    return changed ? next : blocks;
+  };
+
+  let turnsChanged = false;
+  const turns = model.turns.map((turn) => {
+    const blocks = reconcileBlocks(turn.blocks);
+    if (blocks === turn.blocks) return turn;
+    turnsChanged = true;
+    return { ...turn, blocks, revision: turn.revision + 1 };
+  });
+
+  // Forwarded frames also live in their parent's drill-in thread. Keep that
+  // second projection coherent with the inline tree so a nested retry can be
+  // collapsed in both places from the same field.
+  for (const toolUseId of Object.keys(threads)) {
+    const before = threads[toolUseId];
+    const blocks = reconcileBlocks(before.blocks);
+    if (blocks === before.blocks) continue;
+    if (!threadsChanged) threads = { ...threads };
+    const current = threads[toolUseId];
+    threads[toolUseId] = {
+      ...current,
+      blocks,
+      revision: current.revision + 1
+    };
+    threadsChanged = true;
+  }
+
+  if (!turnsChanged && !threadsChanged) return model;
+  return {
+    ...model,
+    turns: turnsChanged ? turns : model.turns,
+    agentThreads: threadsChanged ? threads : model.agentThreads,
+    revision: model.revision + 1
+  };
 }
 
 /**

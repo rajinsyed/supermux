@@ -283,30 +283,43 @@ describe("the model trigger sits in the pill and names the live model", () => {
   });
 });
 
-describe("the picker's popover is Cursor's: search, rows, a checkmark", () => {
-  test("it opens with a search field focused, ready to filter", () => {
-    mountPicker(realSession());
-    openPicker();
-    const search = screen.getByLabelText("Search models");
-    expect(search).toBeDefined();
-    expect(document.activeElement).toBe(search);
-  });
-
-  test("typing filters the rows down to what matches", () => {
+/**
+ * The panel is ONE surface: rows, and nothing else.
+ *
+ * It used to open with a search field over a scrolling list, plus a floating
+ * side flyout hinged on whichever row the pointer was over — measured per row,
+ * flipped when the popover was against the pane edge, lifted when its foot ran
+ * off the bottom. Three positioned layers to change one enum, over a list of
+ * four models that fits on screen. The filter is gone and reasoning is an
+ * inline strip under its own row.
+ */
+describe("the picker's panel is a list, not a search UI", () => {
+  test("no search field, so the first keystroke is not ambiguous", () => {
     const { container } = mountPicker(realSession());
     openPicker();
-    const before = container.querySelectorAll('[role="menuitemradio"]').length;
-    fireEvent.change(screen.getByLabelText("Search models"), { target: { value: "haiku" } });
-    const after = Array.from(container.querySelectorAll('[role="menuitemradio"]'));
-    expect(after.length).toBeLessThan(before);
-    for (const row of after) expect(row.textContent!.toLowerCase()).toContain("haiku");
+    expect(screen.queryByLabelText("Search models")).toBeNull();
+    expect(container.querySelector(".model-search")).toBeNull();
   });
 
-  test("a search that matches nothing says so instead of showing a void", () => {
-    mountPicker(realSession());
+  test("the CHECKED row takes focus, so ↑↓ start from the live model", () => {
+    // Without a focused row the keystroke falls through to the composer behind
+    // the panel; focusing the FIRST row instead would ring a model the user is
+    // not on.
+    const { container } = mountPicker(realSession());
     openPicker();
-    fireEvent.change(screen.getByLabelText("Search models"), { target: { value: "zzzz" } });
-    expect(screen.getByText("No matching models")).toBeDefined();
+    expect(document.activeElement).toBe(
+      container.querySelector('[role="menuitemradio"][aria-checked="true"]')
+    );
+    expect(document.activeElement!.textContent).toContain("Sonnet");
+  });
+
+  test("every catalog row is rendered — there is nothing to filter down to", () => {
+    const session = realSession();
+    const { container } = mountPicker(session);
+    openPicker();
+    expect(container.querySelectorAll('[role="menuitemradio"]').length).toBe(
+      session.models.length
+    );
   });
 
   test("exactly one row is checked", () => {
@@ -334,35 +347,41 @@ describe("the picker's popover is Cursor's: search, rows, a checkmark", () => {
   });
 });
 
-describe("the reasoning flyout hangs off the row it describes", () => {
-  test("hovering a row that supports effort opens it", () => {
+/** The row's effort strip: inline, in the same panel, under the row it belongs to. */
+function tuneRow(container: HTMLElement, name: RegExp): HTMLElement {
+  const row = screen.getByRole("menuitemradio", { name });
+  const tune = row.parentElement!.querySelector<HTMLElement>(".model-tune");
+  if (!tune) throw new Error("row has no reasoning control");
+  return tune;
+}
+
+describe("reasoning opens inline, under the row it belongs to", () => {
+  test("the active model's own strip is already open when the panel appears", () => {
+    // The setting the trigger is advertising is the one thing on screen first;
+    // reaching it used to take a hover onto a floating side panel.
     const { container } = mountPicker(realSession());
     openPicker();
-    const row = screen.getByRole("menuitemradio", { name: /Sonnet/ });
-    fireEvent.mouseEnter(row.parentElement!);
-    const flyout = container.querySelector(".model-flyout")!;
-    expect(flyout).not.toBeNull();
-    expect(flyout.querySelector(".model-flyout-title")!.textContent).toBe("Sonnet");
-    expect(flyout.textContent).toContain("Reasoning");
-    expect(flyout.textContent).toContain("Restore defaults");
+    const open = container.querySelectorAll(".model-efforts");
+    expect(open.length).toBe(1);
+    expect(open[0].closest(".model-row-wrap")!.textContent).toContain("Sonnet");
   });
 
-  test("a model with no effort levels grows no flyout", () => {
-    // haiku advertises none; a Reasoning row there promises a setting the CLI
-    // rejects.
+  test("a model with no effort levels grows no control at all", () => {
+    // haiku advertises none; a Reasoning affordance there promises a setting
+    // the CLI rejects.
     const { container } = mountPicker(realSession());
     openPicker();
-    const row = screen.getByRole("menuitemradio", { name: /^Haiku/ });
-    fireEvent.mouseEnter(row.parentElement!);
-    expect(container.querySelector(".model-flyout")).toBeNull();
+    const haiku = screen.getByRole("menuitemradio", { name: /^Haiku/ });
+    expect(haiku.parentElement!.querySelector(".model-tune")).toBeNull();
   });
 
-  test("the Reasoning row opens the levels, and a level reads as a label", () => {
+  test("the strip lists every level the model supports, as labels", () => {
     const { container } = mountPicker(realSession());
     openPicker();
-    fireEvent.mouseEnter(screen.getByRole("menuitemradio", { name: /Sonnet/ }).parentElement!);
-    fireEvent.click(screen.getByText("Reasoning"));
-    const levels = Array.from(container.querySelectorAll(".model-flyout-level")).map(
+    const wrap = screen
+      .getByRole("menuitemradio", { name: /Sonnet/ })
+      .closest(".model-row-wrap")!;
+    const levels = Array.from(wrap.querySelectorAll(".model-effort")).map(
       (node) => node.textContent ?? ""
     );
     // sonnet advertises all five levels in the live initialize response.
@@ -373,12 +392,21 @@ describe("the reasoning flyout hangs off the row it describes", () => {
     for (const level of levels) expect(level).toMatch(/^[A-Z]/);
   });
 
+  test("the control toggles its own row's strip and no other", () => {
+    const { container } = mountPicker(realSession());
+    openPicker();
+    // Opus's strip is closed on open (Sonnet is the live model); opening it
+    // closes Sonnet's, so the panel never carries two.
+    fireEvent.click(tuneRow(container, /Opus \(1M context\)/));
+    const open = container.querySelectorAll(".model-efforts");
+    expect(open.length).toBe(1);
+    expect(open[0].closest(".model-row-wrap")!.textContent).toContain("Opus (1M context)");
+  });
+
   test("an effort pick sends the catalog selector with the level", () => {
     const sent: Array<[string, string | undefined]> = [];
     mountPicker(realSession(), { onSetModel: (model, effort) => sent.push([model, effort]) });
     openPicker();
-    fireEvent.mouseEnter(screen.getByRole("menuitemradio", { name: /Sonnet/ }).parentElement!);
-    fireEvent.click(screen.getByText("Reasoning"));
     fireEvent.click(screen.getByText("High"));
     expect(sent).toEqual([["sonnet", "high"]]);
   });
@@ -389,9 +417,17 @@ describe("the reasoning flyout hangs off the row it describes", () => {
     const sonnet = session.models.find((m) => m.value === "sonnet")!;
     mountPicker(session, { onSetModel: (model, effort) => sent.push([model, effort]) });
     openPicker();
-    fireEvent.mouseEnter(screen.getByRole("menuitemradio", { name: /Sonnet/ }).parentElement!);
     fireEvent.click(screen.getByText("Restore defaults"));
     expect(sent).toEqual([["sonnet", sonnet.defaultEffortLevel]]);
+  });
+
+  test("a tunable row states its live level on the row itself", () => {
+    // The old flyout hid it, so the list could not answer "what reasoning is
+    // this model on" without hovering each row in turn.
+    const { container } = mountPicker({ ...realSession(), effort: "xhigh" });
+    openPicker();
+    const row = screen.getByRole("menuitemradio", { name: /Sonnet/ });
+    expect(row.querySelector(".model-row-effort")!.textContent).toBe("Extra high");
   });
 });
 
@@ -511,13 +547,14 @@ describe("a pre-start selection reads as a name, not a wire token", () => {
     expect(checked[0].textContent).toContain(triggerLabel(container));
   });
 
-  test("the reasoning flyout is reachable on a pre-start selection", () => {
+  test("the reasoning strip is reachable on a pre-start selection", () => {
+    // It is gated on the RESOLVED row, so a trigger that failed to resolve
+    // against the cached catalog left the setting unreachable entirely.
     const { container } = mountPicker(cold(), { cachedModels: cached });
     openPicker();
-    fireEvent.mouseEnter(
-      screen.getByRole("menuitemradio", { name: /Opus \(1M context\)/ }).parentElement!
-    );
-    expect(container.querySelector(".model-flyout")).not.toBeNull();
+    const open = container.querySelector(".model-efforts");
+    expect(open).not.toBeNull();
+    expect(open!.closest(".model-row-wrap")!.textContent).toContain("Opus (1M context)");
   });
 
   test("with no catalog at all the selector is still shown rather than nothing", () => {

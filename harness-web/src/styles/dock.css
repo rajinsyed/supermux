@@ -23,78 +23,89 @@
 
 /* ---------- status strip ----------
 
-   One quiet line above the composer. The indicator (dot or working dots) is
-   absolutely positioned so the text always starts at --dock-indent, whichever
-   indicator is showing. */
+   The EXCEPTION line. It renders only when the pane cannot run (no CLI), when
+   its process died, or while it restarts — three states with no other surface.
+   The busy narration it used to carry ("Claude is thinking…", "Running Bash",
+   "2 messages queued") is gone: the composer's Stop button, the permission
+   card, and the queue chips each already said it, and a row that appears and
+   vanishes under the composer moved the whole dock every time a turn advanced.
+
+   Because it is rare, it is allowed to look like something: a tinted pill
+   rather than a bare line of grey text. It starts on the composer's own left
+   edge, and its 12px glyph is centred on the dock's one text origin — the same
+   x the composer's + control sits on — so the pill hangs under the input rather
+   than floating beside it. */
 
 .status-strip {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 17px;
-  padding-left: var(--dock-indent);
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  /* 12px + half a 12px glyph = the 18px centreline the + control keeps. */
+  padding: 5px 12px 5px calc(var(--dock-indent) - 12px);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
   font-size: 11.5px;
   color: var(--text-muted);
 }
 
-.status-strip > .status-dot {
-  position: absolute;
-  left: calc(var(--dock-indent) - 12px);
-  top: 50%;
-  transform: translateY(-50%);
-  width: 6px;
-  height: 6px;
-  border-radius: var(--r-pill);
-  background: var(--text-faint);
+.status-glyph {
+  flex: 0 0 auto;
 }
 
-.status-strip > .working-dots {
-  position: absolute;
-  left: calc(var(--dock-indent) - 24px);
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.status-dot.is-idle {
-  background: var(--success-dot);
-}
-
-.status-dot.is-error {
-  background: var(--danger-dot);
-}
-
-.status-dot.is-attention {
-  background: var(--warning-dot);
+.status-glyph.is-spinning {
+  animation: spin 900ms linear infinite;
 }
 
 .status-strip.is-error {
   color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
 }
 
-.status-strip.is-attention {
-  color: var(--warning);
+.status-strip.is-busy {
+  color: var(--claude);
+  background: var(--claude-faint);
+  border-color: var(--claude-border);
 }
 
 .status-text {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.status-elapsed {
-  color: var(--text-faint);
+/* The one control that lives on the strip: Restart, after an exit. It wears
+   the strip's own hue rather than the generic tiny-button grey, so the row
+   reads as one object with an action instead of a message plus a widget. */
+.status-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  margin: -3px -5px -3px 2px;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: inherit;
+  background: var(--surface-hover);
+  transition: background var(--dur) var(--ease);
 }
 
-.status-hint {
-  margin-left: auto;
-  font-size: 10.5px;
+.status-action:hover {
+  background: var(--surface-active);
+}
+
+.status-action:focus-visible {
+  background: var(--surface-active);
+}
+
+.status-elapsed {
   color: var(--text-faint);
-  white-space: nowrap;
 }
 
 /* ---------- banners ---------- */
@@ -391,6 +402,14 @@
    textarea box was bottom-aligned against 30px circles. Alignment stays
    `flex-end` rather than `center` so a GROWN textarea keeps the controls on the
    last line, where Cursor puts them, instead of floating them to its middle. */
+/* NO `--shadow-panel` here, deliberately.
+   That token is `inset 0 1px 0 rgba(255,255,255,.06)` — a one-pixel highlight
+   along the top edge. On a flat panel it reads as glass catching the light; on
+   THIS panel it lands directly inside the 1px border and composites with it,
+   so the top stroke rendered visibly heavier and brighter than the other three
+   and the pill looked lit from above rather than outlined. The composer is the
+   one shape in the pane whose whole silhouette is a stroke, so it takes the
+   stroke alone: one hairline, even the whole way round. */
 .composer-shell {
   display: flex;
   flex-wrap: wrap;
@@ -402,7 +421,6 @@
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-panel);
   transition: border-color var(--dur) var(--ease);
 }
 
@@ -557,78 +575,72 @@
   color: inherit;
 }
 
-/* The pill sits at the bottom of the pane, so this opens upward. Opaque: it
-   floats over transcript content. */
+/* ---------- the model panel ----------
+
+   ONE surface. The pill sits at the bottom of the pane so it opens upward, and
+   it is opaque because it floats over transcript content.
+
+   The build before this had three positioned layers to change one enum: a
+   search field over a scrolling row list, plus a floating side flyout hinged on
+   whichever row the pointer was over — measured per row, flipped when the
+   popover was against the pane edge, and lifted when its foot ran off the
+   bottom. Reasoning is an INLINE strip now: it opens under its own row, inside
+   the same panel, so there is no second surface, no second z-index, and no
+   geometry left to get wrong. */
+
 .model-pop {
   position: absolute;
   bottom: calc(100% + 8px);
   right: 0;
   z-index: 45;
-  width: 248px;
-  display: flex;
-  flex-direction: column;
+  width: 262px;
+  max-height: min(360px, 56vh);
+  overflow-y: auto;
   background: var(--popover-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 5px;
-}
-
-.model-search {
-  margin: 1px 1px 4px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--input-bg);
-  font-size: 12px;
-  color: var(--text);
-}
-
-.model-search::placeholder {
-  color: var(--text-faint);
-}
-
-/* The popover puts the caret here on open, so the focus ring is announcing
-   something the user did not do — and a full accent halo on the first thing you
-   see reads as an error state. The border alone is enough: it is the only
-   focusable field in the panel. */
-.model-search:focus-visible {
-  outline: none;
-  box-shadow: none;
-  border-color: var(--border-strong);
+  padding: 4px;
 }
 
 .model-rows {
   display: flex;
   flex-direction: column;
-  max-height: min(320px, 48vh);
-  overflow-y: auto;
+  gap: 1px;
 }
 
-.model-row-wrap {
+/* The row and its tune button share one bed, so hovering either lights the
+   whole line — they are one row with two targets, not two controls. */
+.model-row-line {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--r-sm);
+}
+
+.model-row-line:hover,
+.model-row-line:focus-within {
+  background: var(--surface-hover);
+}
+
+.model-row-wrap.is-open .model-row-line {
+  background: var(--surface-hover);
 }
 
 .model-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
   text-align: left;
-  padding: 5px 8px;
+  padding: 6px 4px 6px 7px;
   border-radius: var(--r-sm);
   font-size: 12.5px;
   color: var(--text-soft);
-  min-width: 0;
 }
 
-.model-row:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
+.model-row:hover,
 .model-row:focus-visible {
-  background: var(--surface-hover);
   color: var(--text);
 }
 
@@ -636,19 +648,15 @@
   color: var(--text);
 }
 
-/* The row whose flyout is open keeps the hover bed even while the pointer has
-   moved off it onto the flyout — otherwise the panel appears to belong to
-   nothing. */
-.model-row.is-peeked {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-/* The affordance that says a row HAS a flyout, in the same faint ink as the
-   chevron on the trigger. */
-.model-row-more {
+/* The check reserves its slot on every row, so switching models does not slide
+   four names sideways under the pointer. */
+.model-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
   flex: 0 0 auto;
-  color: var(--text-faint);
+  color: var(--claude);
 }
 
 .model-row-name {
@@ -659,166 +667,131 @@
   white-space: nowrap;
 }
 
-/* A separate small glass panel hinged on the row's right edge — Cursor's
-   reasoning flyout. It is a child of the POPOVER, not of the row, because the
-   row list scrolls and an absolutely positioned panel inside a scroller is
-   clipped by it; `top` comes from the row's measured offset instead. It flips
-   to the left when the popover is already against the pane's trailing edge,
-   which — the composer being full-width — it always is. */
-.model-flyout {
-  position: absolute;
-  left: calc(100% + 6px);
-  z-index: 46;
-  width: 194px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 5px;
-  background: var(--popover-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-}
-
-.model-flyout.is-flipped {
-  left: auto;
-  right: calc(100% + 6px);
-}
-
-.model-flyout-title {
+/* The reasoning level the row would apply, on the row itself. The old build
+   hid it inside a hover flyout, so the list could not answer "what effort is
+   Sonnet on" at all. */
+.model-row-effort {
+  flex: 0 0 auto;
   font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 4px 7px 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.model-flyout-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-  padding: 5px 7px;
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
-  color: var(--text-soft);
-  min-width: 0;
-}
-
-.model-flyout-row > span:first-child {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.model-flyout-row:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.model-flyout-row:focus-visible {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.model-flyout-value {
-  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-active);
   color: var(--text-faint);
 }
 
-.model-flyout-row svg {
-  flex: 0 0 auto;
-  color: var(--text-faint);
+.model-row.is-active .model-row-effort {
+  color: var(--claude);
+  background: var(--claude-faint);
 }
 
-.model-flyout-levels {
-  display: flex;
-  flex-direction: column;
-  margin: 1px 0 2px;
-  padding-left: 7px;
-}
-
-.model-flyout-level {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-  padding: 4px 7px;
-  border-radius: var(--r-sm);
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.model-flyout-level:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.model-flyout-level:focus-visible {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.model-flyout-level.is-active {
-  color: var(--text);
-}
-
-.model-flyout-default {
-  margin-left: auto;
-  font-size: 10px;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
-
-/* ---------- composer hints ---------- */
-
-.composer-hints {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px var(--dock-indent) 0;
-  min-height: 16px;
-}
-
-.composer-hint {
-  font-size: 10.5px;
-  color: var(--text-faint);
-  white-space: nowrap;
+.model-tune {
   display: inline-flex;
   align-items: center;
-}
-
-.composer-hint:not(:first-child)::before {
-  content: "·";
-  margin-right: 10px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  margin-right: 3px;
+  border-radius: var(--r-xs);
   color: var(--text-faint);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
-.composer-hints-spacer {
-  flex: 1;
+.model-tune:hover {
+  background: var(--surface-active);
+  color: var(--text);
 }
 
-@media (max-width: 700px) {
-  .composer-hint.is-hint-mode {
-    display: none;
-  }
+.model-tune:focus-visible {
+  color: var(--text);
 }
 
-@media (max-width: 560px) {
-  .composer-hint.is-hint-relay {
-    display: none;
-  }
+.model-tune.is-open {
+  color: var(--claude);
 }
 
-/* ---------- autocomplete popover ---------- */
+/* The inline effort strip. Segmented rather than a stack of rows: the levels
+   are an ORDERED scale, and five 12px rows under a model name made the panel
+   read as a nested menu of unrelated options. */
+.model-efforts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  /* Indented to the model NAME's own left edge (7px row padding + 13px check
+     slot + 7px gap), so the strip visibly hangs off the row above it rather
+     than starting a new column. */
+  padding: 4px 8px 7px 27px;
+}
+
+.model-effort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-faint);
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.model-effort:hover {
+  background: var(--surface-active);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.model-effort:focus-visible {
+  color: var(--text);
+}
+
+.model-effort.is-active {
+  background: var(--claude-soft);
+  border-color: var(--claude-border);
+  color: var(--claude);
+}
+
+/* Marks the model's OWN default — a fact about the option, not its state, so
+   it is a dot rather than a word competing with the level's name. */
+.model-effort-default {
+  opacity: 0.7;
+}
+
+/* Trails the levels on the same wrapped line rather than owning a row of its
+   own: it is an escape hatch on the scale, not a sixth level. */
+.model-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  color: var(--text-faint);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.model-restore:hover {
+  background: var(--surface-active);
+}
+
+.model-restore:hover {
+  color: var(--text);
+}
+
+.model-restore:focus-visible {
+  color: var(--text);
+}
+
+/* ---------- slash-command / @-mention popover ----------
+
+   One compact panel above the pill, edge to edge with it. The list runs to the
+   panel's own top edge — the uppercase "COMMANDS" heading that used to sit
+   above it named something the sigil the user had just typed already said, and
+   pushed the first row (the one ⏎ accepts) two lines down. The kind is stated
+   once in a quiet footer instead, beside the keys that drive the list. */
 
 .popover {
   position: absolute;
@@ -826,43 +799,45 @@
   left: 0;
   right: 0;
   z-index: 40;
+  display: flex;
+  flex-direction: column;
   background: var(--popover-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-panel);
-  padding: 5px;
-  max-height: 280px;
+  overflow: hidden;
+}
+
+.popover-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  max-height: min(268px, 44vh);
   overflow-y: auto;
 }
 
-.popover-title {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 5px 9px 3px;
-}
-
 .popover-empty {
-  padding: 8px 9px;
+  padding: 11px 12px;
   font-size: 12px;
   color: var(--text-muted);
 }
 
+/* The active row keeps a LEADING accent bar rather than only a grey bed: with
+   a keyboard-driven list the selection has to survive the pointer sitting
+   somewhere else, and two identical grey beds cannot say which one ⏎ takes. */
 .popover-item {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 5px 9px;
+  padding: 6px 10px 6px 12px;
   border-radius: var(--r-sm);
   min-width: 0;
 }
 
-.popover-item:hover,
-.popover-item.is-active {
+.popover-item:hover {
   background: var(--surface-hover);
 }
 
@@ -870,10 +845,31 @@
   background: var(--surface-hover);
 }
 
+.popover-item.is-active {
+  background: var(--claude-faint);
+}
+
+.popover-item.is-active::before {
+  content: "";
+  position: absolute;
+  /* Inside the row's own radius, not on the panel's border: at `left: 0` the
+     bar butted straight into the panel edge and read as a torn hairline. */
+  left: 3px;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: var(--r-pill);
+  background: var(--claude);
+}
+
 .popover-label {
   color: var(--text);
   font-size: 12px;
   flex: 0 0 auto;
+}
+
+.popover-item.is-active .popover-label {
+  color: var(--claude);
 }
 
 .popover-hint {
@@ -889,4 +885,44 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+/* The footer is the panel's only chrome: what this list IS, and the two keys
+   that operate it. Sunken rather than bordered, so it reads as the base of the
+   panel and not as a row you could click. */
+.popover-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border-faint);
+  background: var(--surface-sunken);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.popover-kind {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.popover-keys {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.popover-keys kbd {
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 14px;
+  min-width: 18px;
+  padding: 0 4px;
+  text-align: center;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
 }

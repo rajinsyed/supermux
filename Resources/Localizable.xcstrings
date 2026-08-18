@@ -267914,6 +267914,91 @@
         }
       }
     },
+    "supermux.harness.header.sessionMessages" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} msgs"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} 件"
+          }
+        }
+      }
+    },
+    "supermux.harness.mode.acceptEditsDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edits apply on their own; commands still ask"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編集は自動で適用、コマンドは確認あり"
+          }
+        }
+      }
+    },
+    "supermux.harness.mode.bypassPermissionsDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No prompts at all — use with care"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認なし — 注意して使用"
+          }
+        }
+      }
+    },
+    "supermux.harness.mode.defaultDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve every file edit and command"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべての編集とコマンドを承認"
+          }
+        }
+      }
+    },
+    "supermux.harness.mode.planDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Research and propose, change nothing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "調査と提案のみ、変更しない"
+          }
+        }
+      }
+    },
     "supermux.harness.plan.download" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -272487,23 +272572,6 @@
         }
       }
     },
-    "supermux.harness.composer.hintInterrupt" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esc to interrupt"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esc で中断"
-          }
-        }
-      }
-    },
     "supermux.harness.composer.mentionEmpty" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -273235,57 +273303,6 @@
         }
       }
     },
-    "supermux.harness.header.rename" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rename session"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "セッション名を変更"
-          }
-        }
-      }
-    },
-    "supermux.harness.header.renameCancel" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "キャンセル"
-          }
-        }
-      }
-    },
-    "supermux.harness.header.renameSave" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存"
-          }
-        }
-      }
-    },
     "supermux.harness.header.resume" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -273490,23 +273507,6 @@
         }
       }
     },
-    "supermux.harness.model.noMatches" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No matching models"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一致するモデルがありません"
-          }
-        }
-      }
-    },
     "supermux.harness.model.reasoning" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -273537,23 +273537,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "デフォルトに戻す"
-          }
-        }
-      }
-    },
-    "supermux.harness.model.search" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search models"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "モデルを検索"
           }
         }
       }
@@ -274289,23 +274272,6 @@
         }
       }
     },
-    "supermux.harness.status.compacting" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compacting conversation…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "会話を圧縮中…"
-          }
-        }
-      }
-    },
     "supermux.harness.status.exited" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -274370,91 +274336,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "{seconds} 秒後に再試行 · {attempt}/{max} 回目"
-          }
-        }
-      }
-    },
-    "supermux.harness.status.running" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Running {tool}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{tool} を実行中"
-          }
-        }
-      }
-    },
-    "supermux.harness.status.starting" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starting Claude…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude を起動中…"
-          }
-        }
-      }
-    },
-    "supermux.harness.status.thinking" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude is thinking…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude が思考中…"
-          }
-        }
-      }
-    },
-    "supermux.harness.status.thinkingTokens" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Thinking · {tokens} tokens"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "思考中 · {tokens} トークン"
-          }
-        }
-      }
-    },
-    "supermux.harness.status.waitingApproval" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Waiting for your approval"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "承認待ち"
           }
         }
       }
@@ -276529,40 +276410,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このセッションにはファイルのチェックポイントがないため、会話のみ巻き戻せます。"
-          }
-        }
-      }
-    },
-    "supermux.harness.status.queued" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} messages queued"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} 件のメッセージがキューにあります"
-          }
-        }
-      }
-    },
-    "supermux.harness.status.queuedOne" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} message queued"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "{count} 件のメッセージがキューにあります"
           }
         }
       }

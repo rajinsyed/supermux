@@ -41,7 +41,18 @@ export const defaultLightTheme: HarnessTheme = {
   shadow: "rgba(20, 18, 16, 0.10)"
 };
 
-const CLAUDE = { r: 217, g: 119, b: 87 };
+/**
+ * The brand accent, vermilion rather than terracotta.
+ *
+ * The pane shipped with Claude's own soft orange (#d97757), which on a near-black
+ * page read as a washed peach — the accent that should be the single loudest
+ * mark in the interface was the quietest thing on the bottom bar. This is the
+ * same hue family pushed toward RED (tomato/vermilion): it holds its identity at
+ * 9% alpha behind a tint AND at full strength on a send button, which the old
+ * value did not. Every ink tone derived from it is audited in
+ * tests/contrast.test.ts.
+ */
+const CLAUDE = { r: 229, g: 72, b: 43 };
 
 function overlay(isDark: boolean, alpha: number): string {
   return isDark ? `rgba(255, 255, 255, ${alpha})` : `rgba(0, 0, 0, ${alpha})`;
@@ -165,20 +176,22 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
       ? "rgba(255, 255, 255, 0.09)"
       : "rgba(20, 18, 16, 0.08)",
 
-    /* Claude terracotta: the single brand accent, split into a text tone that
-       clears AA and chrome tones that stay vivid. */
+    /* Vermilion: the single brand accent, split into a text tone that clears AA
+       and chrome tones that stay vivid. Dark gets a lighter salmon-red so it
+       clears AA on near-black; light gets a deep brick so it clears AA on paper
+       AND stays legible on its own 13% tint. */
     "--accent": theme.accent,
     "--accent-soft": theme.accentSoft,
-    "--claude": dark ? "#eb9d83" : "#ad4a27",
-    "--claude-strong": dark ? "#f0a184" : "#d97757",
-    "--claude-btn": dark ? "#f0a184" : "#b0502c",
-    "--claude-btn-hover": dark ? "#f6b39a" : "#994026",
-    "--on-claude": dark ? "#231a16" : "#ffffff",
-    "--on-claude-chip": dark ? "rgba(255, 255, 255, 0.34)" : "rgba(0, 0, 0, 0.22)",
+    "--claude": dark ? "#ff8f75" : "#b8391b",
+    "--claude-strong": dark ? "#ff7a5c" : "#d1401f",
+    "--claude-btn": dark ? "#ffa693" : "#a63317",
+    "--claude-btn-hover": dark ? "#ffbfb0" : "#8c2a12",
+    "--on-claude": dark ? "#26100b" : "#ffffff",
+    "--on-claude-chip": dark ? "rgba(0, 0, 0, 0.20)" : "rgba(0, 0, 0, 0.22)",
     "--claude-soft": claude(dark ? 0.18 : 0.13),
     "--claude-faint": claude(dark ? 0.09 : 0.07),
-    "--claude-border": claude(dark ? 0.34 : 0.3),
-    "--focus-ring": claude(dark ? 0.55 : 0.45),
+    "--claude-border": claude(dark ? 0.4 : 0.34),
+    "--focus-ring": claude(dark ? 0.5 : 0.4),
 
     /* Status families, each with a text tone, a dot tone, and a soft tint. */
     "--danger": dark ? "#ff9d8e" : "#a3221b",

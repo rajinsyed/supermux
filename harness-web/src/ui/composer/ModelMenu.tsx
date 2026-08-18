@@ -1,21 +1,27 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CopyKey } from "../../copyKeys";
 import { resolveModel } from "../../model/helpers";
 import type { SessionMeta } from "../../model/types";
 import type { EffortLevel, ModelDescriptor } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
-import { Check, ChevronDown, ChevronRight } from "../Icons";
+import { Check, ChevronDown, Sliders, Undo } from "../Icons";
 import { Spinner } from "../primitives/Spinner";
 
 /**
  * The model picker, inside the composer pill.
  *
- * Cursor's grammar, deliberately: a quiet text trigger at the trailing edge of
- * the input — no bed, no icon, just the model's name with its effort folded
- * into the label — opening a popover UPWARD with a search field, one row per
- * model, and a side flyout for the per-model reasoning setting. It lives here
- * rather than in the bottom bar because the model is a property of the message
- * you are about to send, not of the session's chrome.
+ * A quiet text trigger at the trailing edge of the input — no bed, no icon, just
+ * the model's name with its effort folded into the label — opening ONE compact
+ * panel upward. It lives here rather than in the bottom bar because the model is
+ * a property of the message you are about to send, not of the session's chrome.
+ *
+ * The panel is deliberately flat: rows, and nothing else. The previous build put
+ * a search field above a list of four models (a filter for a list that fits on
+ * screen) and hung a floating side flyout off whichever row the pointer happened
+ * to be over, measured and lifted per row so it would not fall off the pane —
+ * three positioned layers to change one enum. Reasoning is now an INLINE strip
+ * that opens under the row it belongs to, so the panel has exactly one surface,
+ * one z-index, and no geometry to get wrong.
  */
 
 /**
@@ -65,9 +71,6 @@ export function modelMenuSource(
 
 const CATALOG_TIMEOUT_MS = 8000;
 
-/** Room the flyout needs on the row's right before it has to open on the left. */
-const FLYOUT_WIDTH = 200;
-
 function supportsEffort(model: ModelDescriptor): boolean {
   return model.supportsEffort === true && (model.supportedEffortLevels?.length ?? 0) > 0;
 }
@@ -83,31 +86,18 @@ export function ModelMenu(props: ModelMenuProps) {
   const copy = useCopy();
   const { session } = props;
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
   /**
-   * The row whose flyout is showing, WITH the offset it was measured at.
-   *
-   * The flyout is rendered as a sibling of the popover rather than inside the
-   * row, because the row list scrolls: a panel absolutely positioned inside a
-   * scroller is clipped by it, and the first version of this lost everything
-   * past the list's right edge. Anchoring by measured offset keeps it hinged on
-   * the row while living outside anything that clips.
+   * The one row whose reasoning strip is expanded, by catalog `value`. Inline
+   * and single-open: two strips down at once would make the panel taller than
+   * the list it is a detail of.
    */
-  const [flyoutFor, setFlyoutFor] = useState<{ value: string; top: number } | undefined>(
-    undefined
-  );
-  const [levelsOpen, setLevelsOpen] = useState(false);
-  const [flipFlyout, setFlipFlyout] = useState(false);
-  /** Pixels the flyout is pulled UP by so its foot clears the viewport. */
-  const [lift, setLift] = useState(0);
+  const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const root = useRef<HTMLDivElement>(null);
   const pop = useRef<HTMLDivElement>(null);
-  const flyout = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const search = useRef<HTMLInputElement>(null);
 
   const source = modelMenuSource(session, props.cachedModels);
-  // ONE resolution for the trigger, the checked row, and the reasoning flyout.
+  // ONE resolution for the trigger, the checked row, and the reasoning strip.
   // The live catalog is authoritative when a process is up; before the first
   // start `session.models` is empty and only the cached catalog can resolve
   // anything, so a trigger reading `activeModelFor(session)` alone printed the
@@ -121,11 +111,16 @@ export function ModelMenu(props: ModelMenuProps) {
 
   const close = useCallback((restoreFocus = false) => {
     setOpen(false);
-    setQuery("");
-    setFlyoutFor(undefined);
-    setLevelsOpen(false);
+    setExpanded(undefined);
     if (restoreFocus) trigger.current?.focus();
   }, []);
+
+  // The active row's own strip starts open, so the setting the trigger is
+  // advertising is the one thing already on screen when the panel appears.
+  const openPanel = useCallback(() => {
+    setOpen(true);
+    setExpanded(activeRow && supportsEffort(activeRow) ? activeRow.value : undefined);
+  }, [activeRow]);
 
   useEffect(() => {
     if (!open) return;
@@ -145,49 +140,19 @@ export function ModelMenu(props: ModelMenuProps) {
     };
   }, [close, open]);
 
-  // The search field is the point of the popover: it opens with the caret in it
-  // so the first keystroke filters rather than falling through to the composer.
-  useEffect(() => {
-    if (open) search.current?.focus();
-  }, [open]);
-
-  // A right-aligned popover sits against the pane's trailing edge, where a
-  // right-hand flyout would open off-screen. Measured once per opening rather
-  // than guessed from a breakpoint.
+  // The CHECKED row takes focus on open, so ↑↓ walk the list immediately without
+  // the keystroke falling through to the composer behind the panel — and the
+  // focus ring lands on the model you are already using rather than announcing
+  // whichever row the catalog happens to list first.
   useEffect(() => {
     if (!open) return;
-    const rect = pop.current?.getBoundingClientRect();
-    if (!rect) return;
-    setFlipFlyout(rect.right + FLYOUT_WIDTH > window.innerWidth);
+    const node = pop.current;
+    if (!node) return;
+    const target =
+      node.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') ??
+      node.querySelector<HTMLElement>('[role="menuitemradio"]');
+    target?.focus();
   }, [open]);
-
-  /**
-   * The flyout hangs from the row, so a row near the bottom of a long list —
-   * and especially one whose levels are open — runs its foot off the bottom of
-   * the pane. Opening the levels grows it AFTER it is positioned, so the lift
-   * is remeasured whenever either changes, and it only ever pulls up: a flyout
-   * that fits is left exactly on its row.
-   */
-  useLayoutEffect(() => {
-    const node = flyout.current;
-    if (!node) {
-      setLift(0);
-      return;
-    }
-    // The measured rect ALREADY has the current lift applied, so the correction
-    // is relative to it — adding `lift` again would compound every pass.
-    const overflow = node.getBoundingClientRect().bottom - (window.innerHeight - 8);
-    const next = Math.max(0, Math.round(lift + overflow));
-    if (next !== lift) setLift(next);
-  }, [flyoutFor, levelsOpen, lift]);
-
-  const models = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return source.models;
-    return source.models.filter((model) =>
-      `${model.displayName} ${model.description ?? ""}`.toLowerCase().includes(needle)
-    );
-  }, [query, source.models]);
 
   const pick = useCallback(
     (model: ModelDescriptor, level?: EffortLevel) => {
@@ -199,16 +164,6 @@ export function ModelMenu(props: ModelMenuProps) {
     [close, props, session.effort]
   );
 
-  /** The row the flyout describes, and the effort level THAT model is at. */
-  const flyoutRow = models.find(
-    (model) => model.value === flyoutFor?.value && supportsEffort(model)
-  );
-  // Exactly what `pick(model)` would send for this row — the session's level if
-  // the row supports it, nothing if it does not. Showing the row's own DEFAULT
-  // here instead would have the flyout advertise one level while clicking the
-  // row applied another.
-  const flyoutEffort = clampEffort(flyoutRow, session.effort);
-
   // Arrow keys walk the rows and Tab cycles inside the popup: leaving Tab to the
   // browser walks into the send button while the popup stays mounted, which is
   // how a keyboard user ends up operating the composer from a menu row.
@@ -217,7 +172,7 @@ export function ModelMenu(props: ModelMenuProps) {
     const stops = Array.from(
       pop.current?.querySelectorAll<HTMLElement>(
         event.key === "Tab"
-          ? '[role="menuitemradio"], button:not([disabled]), input:not([disabled])'
+          ? '[role="menuitemradio"], button:not([disabled])'
           : '[role="menuitemradio"]'
       ) ?? []
     );
@@ -239,7 +194,7 @@ export function ModelMenu(props: ModelMenuProps) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={copy("supermux.harness.header.model")}
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => (open ? close() : openPanel())}
       >
         <span className="composer-model-label">{modelName}</span>
         {effort ? (
@@ -256,84 +211,16 @@ export function ModelMenu(props: ModelMenuProps) {
           ref={pop}
           onKeyDown={onPopKeyDown}
         >
-          <input
-            ref={search}
-            className="model-search"
-            placeholder={copy("supermux.harness.model.search")}
-            value={query}
-            aria-label={copy("supermux.harness.model.search")}
-            onChange={(event) => setQuery(event.target.value)}
+          <ModelRows
+            models={source.models}
+            loading={source.loading}
+            fallbackName={session.model}
+            activeRow={activeRow}
+            sessionEffort={session.effort}
+            expanded={expanded}
+            onToggle={(value) => setExpanded((prev) => (prev === value ? undefined : value))}
+            onPick={pick}
           />
-          <div className="model-rows">
-            <ModelRows
-              models={models}
-              loading={source.loading}
-              filtered={query.trim().length > 0}
-              fallbackName={session.model}
-              activeRow={activeRow}
-              flyoutFor={flyoutFor?.value}
-              onHover={(value, top) => {
-                setFlyoutFor(value === undefined ? undefined : { value, top: top ?? 0 });
-                setLevelsOpen(false);
-              }}
-              onPick={pick}
-            />
-          </div>
-
-          {/* Outside the scroller, hinged on the measured row. Kept mounted
-              while the pointer is over IT as well as over the row, or crossing
-              the gap between the two would close it mid-reach. */}
-          {flyoutRow ? (
-            <div
-              ref={flyout}
-              className={`model-flyout${flipFlyout ? " is-flipped" : ""}`}
-              style={{ top: flyoutFor!.top - lift }}
-              onMouseEnter={() => setFlyoutFor(flyoutFor)}
-            >
-              <div className="model-flyout-title">{flyoutRow.displayName}</div>
-              <button
-                type="button"
-                className="model-flyout-row"
-                aria-expanded={levelsOpen}
-                onClick={() => setLevelsOpen((v) => !v)}
-              >
-                <span>{copy("supermux.harness.model.reasoning")}</span>
-                <span className="model-flyout-value">
-                  {flyoutEffort ? effortLabel(flyoutEffort, copy) : "—"}
-                </span>
-                <ChevronRight size={10} />
-              </button>
-              {levelsOpen ? (
-                <div className="model-flyout-levels">
-                  {(flyoutRow.supportedEffortLevels ?? []).map((level) => (
-                    <button
-                      key={level}
-                      type="button"
-                      className={`model-flyout-level${level === flyoutEffort ? " is-active" : ""}`}
-                      onClick={() => pick(flyoutRow, level)}
-                    >
-                      <span>{effortLabel(level, copy)}</span>
-                      {/* States a fact about the row, not its state — it is what
-                          "Restore defaults" below restores to. */}
-                      {level === flyoutRow.defaultEffortLevel ? (
-                        <span className="model-flyout-default">
-                          {copy("supermux.harness.header.effortDefault")}
-                        </span>
-                      ) : null}
-                      {level === flyoutEffort ? <Check size={11} /> : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <button
-                type="button"
-                className="model-flyout-row"
-                onClick={() => pick(flyoutRow, flyoutRow.defaultEffortLevel)}
-              >
-                <span>{copy("supermux.harness.model.restoreDefaults")}</span>
-              </button>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>
@@ -348,23 +235,21 @@ export function ModelMenu(props: ModelMenuProps) {
 function ModelRows({
   models,
   loading,
-  filtered,
   fallbackName,
   activeRow,
-  flyoutFor,
-  onHover,
+  sessionEffort,
+  expanded,
+  onToggle,
   onPick
 }: {
   models: ModelDescriptor[];
   loading: boolean;
-  /** A search that matched nothing is a different state from no catalog at all. */
-  filtered: boolean;
   fallbackName?: string;
   activeRow?: ModelDescriptor;
-  flyoutFor?: string;
-  /** `top` is the row's offset inside the popover — the flyout's hinge. */
-  onHover(value: string | undefined, top?: number): void;
-  onPick(model: ModelDescriptor): void;
+  sessionEffort?: EffortLevel;
+  expanded?: string;
+  onToggle(value: string): void;
+  onPick(model: ModelDescriptor, level?: EffortLevel): void;
 }) {
   const copy = useCopy();
   const [timedOut, setTimedOut] = useState(false);
@@ -387,48 +272,86 @@ function ModelRows({
     return <div className="menu-empty">{fallbackName ?? "—"}</div>;
   }
 
-  if (models.length === 0) {
-    return (
-      <div className="menu-empty">
-        {filtered ? copy("supermux.harness.model.noMatches") : (fallbackName ?? "—")}
-      </div>
-    );
-  }
-
-  /** Offset of the row inside the popover, which is the flyout's offset parent. */
-  const anchor = (node: HTMLElement | null): number => {
-    const pop = node?.closest(".model-pop");
-    if (!node || !pop) return 0;
-    return node.getBoundingClientRect().top - pop.getBoundingClientRect().top;
-  };
+  if (models.length === 0) return <div className="menu-empty">{fallbackName ?? "—"}</div>;
 
   return (
-    <>
-      {models.map((model) => (
-        <div
-          key={model.value}
-          className="model-row-wrap"
-          onMouseEnter={(event) =>
-            onHover(model.value, anchor(event.currentTarget))
-          }
-          onMouseLeave={() => onHover(undefined)}
-        >
-          <button
-            type="button"
-            className={`model-row${model === activeRow ? " is-active" : ""}${
-              flyoutFor === model.value ? " is-peeked" : ""
-            }`}
-            role="menuitemradio"
-            aria-checked={model === activeRow}
-            onFocus={(event) => onHover(model.value, anchor(event.currentTarget.parentElement))}
-            onClick={() => onPick(model)}
-          >
-            <span className="model-row-name">{model.displayName}</span>
-            {supportsEffort(model) ? <ChevronRight size={10} className="model-row-more" /> : null}
-            {model === activeRow ? <Check size={12} /> : null}
-          </button>
-        </div>
-      ))}
-    </>
+    <div className="model-rows">
+      {models.map((model) => {
+        const tunable = supportsEffort(model);
+        // Exactly what `onPick(model)` would send for this row — the session's
+        // level if the row supports it, nothing if it does not. Showing the
+        // row's own DEFAULT here instead would have the strip advertise one
+        // level while clicking the row applied another.
+        const level = clampEffort(model, sessionEffort);
+        const isOpen = tunable && expanded === model.value;
+        return (
+          <div key={model.value} className={`model-row-wrap${isOpen ? " is-open" : ""}`}>
+            <div className="model-row-line">
+              <button
+                type="button"
+                className={`model-row${model === activeRow ? " is-active" : ""}`}
+                role="menuitemradio"
+                aria-checked={model === activeRow}
+                onClick={() => onPick(model)}
+              >
+                <span className="model-check" aria-hidden="true">
+                  {model === activeRow ? <Check size={12} /> : null}
+                </span>
+                <span className="model-row-name">{model.displayName}</span>
+                {/* The level the row would apply, stated on the row itself —
+                    the old build hid it behind a hover flyout, so the list gave
+                    no answer at all to "what reasoning is Sonnet on". */}
+                {tunable && level ? (
+                  <span className="model-row-effort">{effortLabel(level, copy)}</span>
+                ) : null}
+              </button>
+              {tunable ? (
+                <button
+                  type="button"
+                  className={`model-tune${isOpen ? " is-open" : ""}`}
+                  aria-expanded={isOpen}
+                  aria-label={copy("supermux.harness.model.reasoning")}
+                  title={copy("supermux.harness.model.reasoning")}
+                  onClick={() => onToggle(model.value)}
+                >
+                  <Sliders size={12} />
+                </button>
+              ) : null}
+            </div>
+
+            {isOpen ? (
+              <div className="model-efforts">
+                {(model.supportedEffortLevels ?? []).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`model-effort${option === level ? " is-active" : ""}`}
+                    onClick={() => onPick(model, option)}
+                  >
+                    {effortLabel(option, copy)}
+                    {/* States a fact about the option, not its state — it is
+                        what "Restore defaults" restores to. */}
+                    {option === model.defaultEffortLevel ? (
+                      <span className="model-effort-default" aria-hidden="true">
+                        ·
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="model-restore"
+                  title={copy("supermux.harness.header.effortDefault")}
+                  onClick={() => onPick(model, model.defaultEffortLevel)}
+                >
+                  <Undo size={11} />
+                  {copy("supermux.harness.model.restoreDefaults")}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }

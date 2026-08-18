@@ -64,15 +64,23 @@
   margin-bottom: 8px;
 }
 
-/* ---------- user message ---------- */
+/* ---------- user message ----------
+
+   Chat-bubble grammar (Cursor/iMessage): the user's words sit in a bubble
+   pushed to the RIGHT edge of the content column, sized to its content with a
+   sane cap, while the assistant's answer stays bare ink across the full
+   column. The asymmetry is what lets the eye find the turns. */
 
 .user-msg {
   position: relative;
-  margin: 0 0 10px;
-  padding: 9px 13px;
+  margin: 0 0 10px auto;
+  width: fit-content;
+  max-width: 85%;
+  padding: 8px 13px;
   border-radius: var(--r-lg);
+  border-bottom-right-radius: var(--r-xs);
   background: var(--surface-raised);
-  border: 1px solid var(--border-faint);
+  border: 1px solid var(--border);
   font-size: 13px;
   line-height: 1.55;
   white-space: pre-wrap;

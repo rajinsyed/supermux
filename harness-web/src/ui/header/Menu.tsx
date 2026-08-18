@@ -115,6 +115,7 @@ export function MenuItem({
   danger,
   detail,
   badge,
+  className,
   role = "menuitem"
 }: {
   children: ReactNode;
@@ -126,6 +127,8 @@ export function MenuItem({
   detail?: string;
   /** Trailing tag such as "Default" — states a fact about the row, not its state. */
   badge?: string;
+  /** Row-specific modifier, e.g. the permission mode a row selects. */
+  className?: string;
   /**
    * Single-select groups (model, effort, permission mode) are `menuitemradio` so
    * the live choice is announced, not only drawn as a check glyph. Action-only
@@ -136,18 +139,27 @@ export function MenuItem({
   return (
     <button
       type="button"
-      className={`menu-item${active ? " is-active" : ""}${danger ? " is-danger" : ""}`}
+      className={`menu-item${active ? " is-active" : ""}${danger ? " is-danger" : ""}${
+        className ? ` ${className}` : ""
+      }`}
       role={role}
       aria-checked={role === "menuitemradio" ? !!active : undefined}
       onClick={onClick}
     >
       <span className="menu-item-main">
-        <span className="menu-item-icon" aria-hidden="true">
-          {icon}
-        </span>
+        {/* The icon slot only exists for rows that HAVE one. Reserving it
+            unconditionally indented every label in the mode menu — a menu with
+            no icons at all — by 22px of nothing. */}
+        {icon ? (
+          <span className="menu-item-icon" aria-hidden="true">
+            {icon}
+          </span>
+        ) : null}
         <span className="menu-item-label">{children}</span>
         {badge ? <span className="menu-item-badge">{badge}</span> : null}
-        {active ? <Check size={12} /> : null}
+        <span className="menu-item-check" aria-hidden="true">
+          {active ? <Check size={12} /> : null}
+        </span>
       </span>
       {detail ? <span className="menu-item-detail">{detail}</span> : null}
     </button>

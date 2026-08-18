@@ -279,6 +279,65 @@ export const Trash = (p: IconProps) =>
 
 export const ArrowLeft = (p: IconProps) => svg(<path d="M12.75 8H3.5M7.25 12 3.25 8l4-4" />, p);
 
+/** Two sliders: the reasoning-effort affordance on a model row. A dial outline
+    was tried first and read as a stray arc at 12px; the knob-on-a-track shape
+    is legible at that size and is the universal "tune this" glyph. */
+export const Sliders = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M2.5 5.25h3.25M8.75 5.25h4.75" />
+      <path d="M2.5 10.75h4.75M10.25 10.75h3.25" />
+      <circle cx="7.25" cy="5.25" r="1.6" />
+      <circle cx="8.75" cy="10.75" r="1.6" />
+    </>,
+    p
+  );
+
+/** Counter-clockwise arrow into a bar: restore a setting to its default. */
+export const Undo = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M2.75 5.25h6.5a3.5 3.5 0 0 1 0 7H6" />
+      <path d="M5.25 2.75 2.5 5.25l2.75 2.5" />
+    </>,
+    p
+  );
+
+/** A square with a rounded corner: "open this somewhere else". */
+export const ExternalLink = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M9.5 2.75h3.75V6.5" />
+      <path d="m13.25 2.75-5 5" />
+      <path d="M11.25 9.5v2.75a1.5 1.5 0 0 1-1.5 1.5h-6a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5H6.5" />
+    </>,
+    p
+  );
+
+/** Two diverging paths from one point: fork this session into a copy. */
+export const Fork = (p: IconProps) =>
+  svg(
+    <>
+      <circle cx="4.5" cy="3.5" r="1.75" />
+      <circle cx="11.5" cy="3.5" r="1.75" />
+      <circle cx="4.5" cy="12.5" r="1.75" />
+      <path d="M4.5 5.25v5.5" />
+      <path d="M11.5 5.25v1.5a2.5 2.5 0 0 1-2.5 2.5H4.5" />
+    </>,
+    p
+  );
+
+/** An arrow re-entering a box: resume this session in place. */
+export const Resume = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M6.5 2.75h5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-5" />
+      <path d="M9 8H2.75" />
+      <path d="M5.25 5.5 2.75 8l2.5 2.5" />
+    </>,
+    p
+  );
+
 /** Counter-clockwise arrow: the direction of travel is the whole meaning here. */
 export const Rewind = (p: IconProps) =>
   svg(

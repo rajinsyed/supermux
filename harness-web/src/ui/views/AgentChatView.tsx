@@ -197,7 +197,10 @@ export function AgentChatView({
   // Through the shared resolver, so the brief at the top of an agent's chat
   // comes from the same three-source rule everywhere and is not present for
   // some agents and absent for others.
-  const blocks: Block[] = threadBlocks(thread);
+  const blocks: Block[] = threadBlocks(thread).filter(
+    // A failed sub-attempt that a later retry replaced is the retry's history.
+    (block) => block.kind !== "tool" || block.supersededByToolUseId === undefined
+  );
   const stats = !running && thread.toolStats ? toolStatsSummary(thread.toolStats, copy) : [];
 
   return (

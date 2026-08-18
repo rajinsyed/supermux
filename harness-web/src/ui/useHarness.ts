@@ -197,13 +197,6 @@ export function useHarness(store: HarnessStore): HarnessController {
   );
 
   /**
-   * A model picked before any process exists cannot be pushed with `set_model`
-   * — there is nothing to push it to — so it is held here and passed as the
-   * `model` parameter of the first start.
-   */
-  const pendingModel = useRef<{ model: string; effort?: EffortLevel } | undefined>(undefined);
-
-  /**
    * Which session this pane is actually on. Tracked from the live init frame,
    * with the restore snapshot only as the pre-first-start fallback: resuming
    * `context.restore.sessionId` after the pane has moved on reopens whatever
@@ -220,16 +213,23 @@ export function useHarness(store: HarnessStore): HarnessController {
   );
 
   const startOptions = useCallback(
-    (params: StartParams): StartParams => ({
-      ...params,
-      model: params.model ?? pendingModel.current?.model ?? context?.restore?.model,
-      effort: params.effort ?? pendingModel.current?.effort,
-      permissionMode:
-        params.permissionMode ??
-        store.getSnapshot().session.permissionMode ??
-        context?.restore?.permissionMode ??
-        "bypassPermissions"
-    }),
+    (params: StartParams): StartParams => {
+      const session = store.getSnapshot().session;
+      return {
+        ...params,
+        // The store is the authoritative selection whether it came from an init
+        // frame or the model picker. Keeping a second pending-only copy dropped
+        // the CLI-selected model on New Session and let an old explicit choice
+        // override the init frame replayed for a resumed session.
+        model: params.model ?? session.model ?? context?.restore?.model,
+        effort: params.effort ?? session.effort,
+        permissionMode:
+          params.permissionMode ??
+          session.permissionMode ??
+          context?.restore?.permissionMode ??
+          "bypassPermissions"
+      };
+    },
     [context, store]
   );
 
@@ -456,6 +456,10 @@ export function useHarness(store: HarnessStore): HarnessController {
               store.dispatch({ kind: "reset" });
               if (result.truncated) store.dispatch({ kind: "historyTruncated" });
               store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
+              // The target session's init frame is its model authority. Drain the
+              // replay before building restart params so a selection from the old
+              // session cannot be sent back over the session being resumed.
+              store.flushNow();
             })
             .catch(() => undefined)
         : Promise.resolve();
@@ -468,6 +472,14 @@ export function useHarness(store: HarnessStore): HarnessController {
 
   /** Explicitly NOT a resume: no session id goes down, and the pane is cleared. */
   const newSession = useCallback(() => {
+    // Capture before reset. This is the selection actually in effect, whether it
+    // came from the model picker or from the CLI's init frame.
+    const current = store.getSnapshot().session;
+    const carried = current.model
+      ? { model: current.model, effort: current.effort }
+      : {};
+    // resetConversation preserves session preferences, so this synchronous
+    // dispatch clears the transcript without ever exposing an empty model pill.
     store.dispatch({ kind: "reset" });
     // A reset KEEPS unanswered messages, because a Restart after a crash must
     // not eat what the user typed. "New session" is the opposite intent — an
@@ -479,7 +491,7 @@ export function useHarness(store: HarnessStore): HarnessController {
     // dialog closing is one — replays that conversation back into the pane the
     // user just cleared.
     snapshotRetired.current = true;
-    void runRestart({}).catch(() => undefined);
+    void runRestart(carried).catch(() => undefined);
   }, [runRestart, store]);
 
   const openSessionInNewPane = useCallback(
@@ -526,9 +538,9 @@ export function useHarness(store: HarnessStore): HarnessController {
 
   const setModel = useCallback(
     (next: string, effort?: EffortLevel) => {
+      // One authoritative copy. startOptions reads this same session state when a
+      // process does not exist yet or a later restart needs to resend the choice.
       store.dispatch({ kind: "setModel", model: next, effort });
-      // Held either way, because it is also what a later restart re-sends.
-      pendingModel.current = { model: next, effort };
       // `set_model` needs a live process to receive it. Pushing it at a pane
       // that has none is not merely useless — the rejection surfaces as a
       // failure for a choice the menu already shows as taken.

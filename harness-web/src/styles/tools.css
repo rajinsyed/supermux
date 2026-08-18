@@ -20,12 +20,12 @@
   background: var(--surface);
 }
 
-.tool-card.is-error {
-  border-color: var(--danger-border);
-}
-
+/* Failure is a status ACCENT, not a frame: the folded row says it with the
+   red mark and icon; the open card adds a 2px ink of danger along its left
+   edge. The old treatment — a full red border plus a red-tinted body wash —
+   painted the whole card as an alarm for what is usually one line of stderr. */
 .tool-card.is-error.is-open {
-  background: var(--danger-soft);
+  box-shadow: inset 2px 0 0 var(--danger-dot);
 }
 
 .tool-head {
@@ -41,9 +41,12 @@
   color: var(--text-muted);
 }
 
+/* A hairline under the head is what separates it from the body — quieter
+   than the old tinted band, and gone the moment the card folds. */
 .tool-card.is-open .tool-head {
   border-radius: 0;
-  padding: 5px 9px 5px 5px;
+  padding: 4px 9px 4px 5px;
+  border-bottom: 1px solid var(--border-faint);
 }
 
 .tool-head:hover {
@@ -187,11 +190,35 @@
 /* ---------- bodies ---------- */
 
 .tool-body {
-  padding: 3px 9px 9px;
+  padding: 8px 9px 9px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
+}
+
+/* ---------- bash: one bed, not boxes-in-a-box ----------
+
+   An open Bash card used to stack three framed rectangles: the card, the
+   command's code block, and the output terminal. Inside the card the command
+   sheds its frame entirely — a bare mono line on the card's own surface, the
+   way a shell prompt echoes — and only the output keeps a (hairline) bed. */
+
+.tool-card[data-family="bash"] .tool-body > .code-block {
+  border: none;
+  background: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.tool-card[data-family="bash"] .tool-body > .code-block .code-block-body {
+  padding: 0 1px 2px;
+  color: var(--text-soft);
+}
+
+.tool-card[data-family="bash"] .tool-body > .code-block .code-block-more {
+  border-top: none;
+  padding-left: 1px;
 }
 
 .tool-waiting {
@@ -332,10 +359,17 @@
   color: var(--text-faint);
 }
 
-/* ---------- code block ---------- */
+/* ---------- code block ----------
+
+   One quiet bed. The old block stacked a filled header band ("bash" + two
+   buttons) over the code, so an expanded Bash card read as three boxes deep.
+   The chip row keeps a hairline only, and a DENSE block (a command inside a
+   card whose head already names the tool) drops the row entirely — its wrap
+   and copy controls float over the corner, revealed on hover, the same
+   grammar the terminal's copy button already uses. */
 
 .code-block {
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   border: 1px solid var(--border-faint);
   background: var(--code-bg);
   overflow: hidden;
@@ -346,8 +380,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 6px 4px 10px;
-  background: var(--code-header-bg);
+  padding: 3px 5px 3px 10px;
   border-bottom: 1px solid var(--border-faint);
 }
 
@@ -365,7 +398,7 @@
 
 .code-block-body {
   margin: 0;
-  padding: 9px 12px;
+  padding: 8px 11px;
   overflow-x: auto;
   font-family: var(--mono);
   font-size: 11.5px;
@@ -377,25 +410,60 @@
   overflow-wrap: anywhere;
 }
 
+.code-block.is-dense {
+  position: relative;
+}
+
+.code-block.is-dense .code-block-head {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 0;
+  border-bottom: none;
+  background: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+  z-index: 2;
+}
+
+.code-block.is-dense:hover .code-block-head,
+.code-block.is-dense:focus-within .code-block-head {
+  opacity: 1;
+}
+
+.code-block.is-dense .code-chip {
+  display: none;
+}
+
+.code-block.is-dense .code-block-head .icon-btn {
+  background: var(--code-bg);
+}
+
+.code-block.is-dense .code-block-head .icon-btn:hover {
+  background: var(--surface-active);
+}
+
 .code-block.is-dense .code-block-body {
-  padding: 7px 10px;
+  padding: 6px 10px;
 }
 
 .code-block-more {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 5px 12px;
-  font-size: 11px;
-  color: var(--claude);
+  padding: 3px 11px 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
   border-top: 1px solid var(--border-faint);
 }
 
 .code-block-more:hover {
+  color: var(--text-soft);
   background: var(--surface-hover);
 }
 
 .code-block-more:focus-visible {
+  color: var(--text-soft);
   background: var(--surface-hover);
 }
 
@@ -403,7 +471,7 @@
 
 .terminal {
   position: relative;
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: var(--terminal-bg);
   border: 1px solid var(--terminal-border);
   overflow: hidden;
@@ -411,7 +479,7 @@
 }
 
 .terminal.is-empty {
-  padding: 8px 12px;
+  padding: 6px 11px;
   color: var(--text-faint);
   font-size: 11.5px;
   background: var(--code-bg);
@@ -443,7 +511,7 @@
 
 .terminal-body {
   margin: 0;
-  padding: 9px 12px;
+  padding: 8px 11px;
   overflow-x: auto;
   font-size: 11.5px;
   line-height: 1.55;
@@ -477,8 +545,8 @@
   display: block;
   width: 100%;
   text-align: left;
-  padding: 5px 12px;
-  font-size: 11px;
+  padding: 3px 11px 4px;
+  font-size: 10.5px;
   color: var(--terminal-muted);
   border-top: 1px solid var(--terminal-border);
 }
@@ -495,7 +563,7 @@
 /* ---------- diff ---------- */
 
 .diff {
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   border: 1px solid var(--border-faint);
   background: var(--code-bg);
   overflow: hidden;
@@ -565,16 +633,18 @@
   display: block;
   width: 100%;
   text-align: left;
-  padding: 5px 12px;
-  font-size: 11px;
-  color: var(--claude);
+  padding: 3px 11px 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
   border-top: 1px solid var(--border-faint);
 }
 
 .diff-more:hover {
+  color: var(--text-soft);
   background: var(--surface-hover);
 }
 
 .diff-more:focus-visible {
+  color: var(--text-soft);
   background: var(--surface-hover);
 }

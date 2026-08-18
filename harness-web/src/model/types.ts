@@ -198,6 +198,12 @@ export interface ToolBlock {
   subagent?: SubagentInfo;
   /** Present only on a Workflow tool block that has reported progress. */
   workflow?: WorkflowProgress;
+  /**
+   * A later sibling Agent/Task with the same description completed successfully.
+   * The failed attempt remains in the model for honesty/auditability, while the
+   * transcript may collapse it instead of presenting a retry as distinct work.
+   */
+  supersededByToolUseId?: string;
   aborted?: boolean;
 }
 
@@ -547,6 +553,8 @@ export interface AgentThread {
   hydratedFromDisk?: boolean;
   /** Live frames have been seen, so a disk replay would be a duplicate. */
   hasLiveFrames?: boolean;
+  /** The successful retry that replaced this failed launch, if there is one. */
+  supersededByToolUseId?: string;
   revision: number;
 }
 

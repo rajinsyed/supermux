@@ -258,23 +258,45 @@ describe("assistant text keeps one origin", () => {
 });
 
 describe("dock shares one text origin", () => {
-  test("status, composer, and hints all resolve from --dock-indent", async () => {
+  test("the exception strip still resolves from --dock-indent", async () => {
     const sheet = await css("dock.css");
     expect(ruleFor(sheet, ".status-strip")).toContain("var(--dock-indent)");
-    expect(ruleFor(sheet, ".composer-hints")).toContain("var(--dock-indent)");
-    // The indicator is absolutely positioned so a 6px dot and 18px working dots
-    // leave the label on the same x.
-    expect(sheet).toContain(".status-strip > .status-dot");
-    expect(sheet).toContain(".status-strip > .working-dots");
   });
 
-  test("hints never wrap and drop out progressively instead", async () => {
+  test("nothing is captioned UNDER the composer any more", async () => {
+    // The hint row ("Delivered through Claude at the agent's next tool call.")
+    // mounted and unmounted with the agent view, moving the bottom bar under it
+    // every time. Reintroducing a caption row below the pill brings the layout
+    // shift back with it.
     const sheet = await css("dock.css");
-    expect(ruleFor(sheet, ".composer-hint")).toMatch(/white-space:\s*nowrap/);
-    expect(sheet).toMatch(/@media \(max-width: 700px\)[\s\S]*?is-hint-mode/);
-    expect(sheet).toMatch(/@media \(max-width: 560px\)[\s\S]*?is-hint-relay/);
-    // Each hint owns its separator, so hiding one can never orphan a dot.
-    expect(sheet).toContain(".composer-hint:not(:first-child)::before");
+    for (const dead of [".composer-hints", ".composer-hint", ".composer-hints-spacer"]) {
+      expect(() => ruleFor(sheet, dead)).toThrow();
+    }
+    const composer = await Bun.file(
+      new URL("../src/ui/composer/Composer.tsx", import.meta.url).pathname
+    ).text();
+    expect(composer).not.toContain("composer-hints");
+  });
+});
+
+describe("the exception strip is the only thing above the composer", () => {
+  test("it draws no ambient indicator — it is not a status line", async () => {
+    // The dot and the working dots existed to narrate ordinary activity; the
+    // strip no longer has an ordinary state to narrate.
+    const sheet = await css("dock.css");
+    expect(sheet).not.toContain(".status-strip > .status-dot");
+    expect(sheet).not.toContain(".status-strip > .working-dots");
+  });
+
+  test("both tones it can wear paint a bed, not just tinted text", async () => {
+    // It appears a handful of times in a session, so it is allowed to look like
+    // something; a bare grey line at 11.5px was indistinguishable from the
+    // transcript scrolling behind it.
+    const sheet = await css("dock.css");
+    for (const selector of [".status-strip.is-error", ".status-strip.is-busy"]) {
+      expect(ruleFor(sheet, selector)).toMatch(/background:/);
+      expect(ruleFor(sheet, selector)).toMatch(/border-color:/);
+    }
   });
 });
 
@@ -449,20 +471,55 @@ describe("the user hover tools pin to their bubble", () => {
   });
 });
 
-describe("the status indicator never touches the status text", () => {
-  test("both indicator variants end the same distance before the text origin", async () => {
+describe("the composer pill's stroke is even the whole way round", () => {
+  test("no inset highlight stacks on the shell's own border", async () => {
+    // `--shadow-panel` is `inset 0 1px 0 rgba(255,255,255,.06)`. On a flat panel
+    // that reads as glass catching the light; drawn INSIDE the pill's 1px
+    // border it composites with it, and the top stroke rendered visibly heavier
+    // than the other three (user report: "top border looks thicker").
     const sheet = await css("dock.css");
-    const base = await css("base.css");
-    const indent = Number(/--dock-indent:\s*(\d+)px/.exec(base)![1]);
-    // Working dots are 3 × 4px + 2 × 3px gaps = 18px; the idle dot is 6px.
-    const dotsLeft = Number(
-      /\.status-strip > \.working-dots\s*\{[^}]*var\(--dock-indent\) - (\d+)px/.exec(sheet)![1]
-    );
-    const dotLeft = Number(
-      /\.status-strip > \.status-dot\s*\{[^}]*var\(--dock-indent\) - (\d+)px/.exec(sheet)![1]
-    );
-    expect(indent - dotsLeft + 18).toBe(indent - 6);
-    expect(indent - dotLeft + 6).toBe(indent - 6);
+    const shell = ruleFor(sheet, ".composer-shell");
+    expect(shell).toMatch(/border:\s*1px solid var\(--border\)/);
+    expect(shell).not.toContain("--shadow-panel");
+    expect(shell).not.toMatch(/box-shadow/);
+  });
+});
+
+describe("the stop control is visibly a stop control", () => {
+  test("it never paints its glyph in the page colour", async () => {
+    // It shipped as an empty white circle: `color: var(--page-bg)` on a
+    // `background: var(--text)` bed, which renders NOTHING at all when the page
+    // is transparent (Ghostty transparency) and is barely there in light.
+    const sheet = await css("cards.css");
+    const stop = ruleFor(sheet, ".btn-stop");
+    expect(stop).not.toContain("--page-bg");
+    expect(stop).toContain("var(--claude-btn)");
+    expect(stop).toContain("var(--on-claude)");
+    // Its hover is a real colour change, like every other filled control.
+    expect(ruleFor(sheet, ".btn-stop:hover:not(:disabled)")).toContain("--claude-btn-hover");
+  });
+});
+
+describe("the framed sub-view is as wide as the text inside it", () => {
+  test("the frame caps at the content column rather than the pane", async () => {
+    // It was `margin: 16px 18px` — 18px from each PANE edge, whatever the pane's
+    // width. On a wide window that made a 1400px card around a 760px column, so
+    // the frame's border sat hundreds of pixels from anything it contained and
+    // the card read as dead space with a hairline round it.
+    const sheet = await css("layout.css");
+    const frame = ruleFor(sheet, ".view-frame");
+    expect(frame).toMatch(/width:\s*min\(/);
+    expect(frame).toContain("var(--content-max)");
+    // Centred, and never edge-to-edge: `margin: … 18px` in the shorthand is
+    // what the fix replaces, so a horizontal `auto` is the assertion.
+    expect(frame).toMatch(/margin:\s*\d+px auto/);
+  });
+
+  test("it still keeps an inset on a pane too narrow for the cap", async () => {
+    const sheet = await css("layout.css");
+    // The `100% - Npx` arm of the min() is what leaves the page showing at the
+    // sides of a 600px split, where the content cap is not the binding one.
+    expect(ruleFor(sheet, ".view-frame")).toMatch(/min\(100% - \d+px/);
   });
 });
 
@@ -481,7 +538,15 @@ describe("the header survives a thin split pane", () => {
 
   test("the elastic content ellipsizes rather than overflowing", async () => {
     const sheet = await css("layout.css");
-    expect(ruleFor(sheet, ".title-btn")).toMatch(/overflow:\s*hidden/);
+    // The session title is gone from the bar; the path chip is what gives way
+    // first now, and it clips rather than pushing the controls off the strip.
+    // Asserted as RULES rather than as raw text, so the retirement note that
+    // names the three dead classes can stay in the sheet.
+    for (const dead of [".title-btn", ".title-text", ".title-input"]) {
+      expect(() => ruleFor(sheet, dead)).toThrow();
+    }
+    expect(ruleFor(sheet, ".header-left")).toMatch(/overflow:\s*hidden/);
+    expect(ruleFor(sheet, ".dir-chip-text")).toMatch(/text-overflow:\s*ellipsis/);
     expect(ruleFor(sheet, ".pill-label")).toMatch(/text-overflow:\s*ellipsis/);
     expect(ruleFor(sheet, ".pill-label")).toMatch(/min-width:\s*0/);
     expect(ruleFor(sheet, ".mode-pill,\n.model-pill,\n.icon-pill")).toMatch(/min-width:\s*0/);

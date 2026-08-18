@@ -29,12 +29,17 @@
   overflow: hidden;
 }
 
+/* Symmetric vertical padding: the head is the WHOLE pill when the dock is
+   collapsed, and the old 6px-top / 2px-bottom split (which leaned on the
+   expanded list to balance it) sat the chevron, label, and actions 2px low
+   in the closed pill. Every child centers on the same optical line now, in
+   both states. */
 .agents-dock-head {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 6px 8px 2px 12px;
+  padding: 5px 8px 5px 12px;
 }
 
 .agents-dock-fold {
@@ -45,6 +50,13 @@
   margin-left: -4px;
   border-radius: var(--r-sm);
   color: var(--text-soft);
+}
+
+/* The chevron is a baseline-less glyph; flexbox centres its box, but the
+   drawn stroke sits 0.5px high in the 11px viewBox next to 13px text. A
+   nudge puts the stroke on the label's optical centerline. */
+.agents-dock-fold svg {
+  transform: translateY(0.5px);
 }
 
 .agents-dock-fold:hover {
@@ -112,7 +124,7 @@
 .agents-dock-list {
   list-style: none;
   margin: 0;
-  padding: 1px 6px 7px;
+  padding: 0 6px 7px;
   display: flex;
   flex-direction: column;
   max-height: min(190px, 28vh);

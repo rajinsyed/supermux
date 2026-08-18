@@ -171,23 +171,44 @@
   color: var(--text-faint);
 }
 
+/* Stop.
+ *
+ * It shipped as an empty white circle. The glyph was painted in
+ * `var(--page-bg)` against a `var(--text)` bed — which is a legible pairing in
+ * dark, and invisible the moment the page is TRANSPARENT (Ghostty
+ * transparency sets `--page-bg: transparent`, so the square rendered with no
+ * colour at all) and near-invisible in light, where near-white ink on the
+ * light theme's near-black `--text` was the only thing holding it up.
+ *
+ * It is the brand mark instead, which is both unambiguous and the same object
+ * as the send button it replaces: same circle, same size, same accent — the
+ * ONE control at the trailing edge of the pill, in whichever state the turn is
+ * in. `--on-claude` is audited against `--claude-btn` in both themes, and
+ * neither depends on the page being opaque. */
 .btn-stop {
   width: 30px;
   height: 30px;
   padding: 0;
   justify-content: center;
   border-radius: var(--r-pill);
-  background: var(--text);
-  color: var(--page-bg, #0f0f13);
+  background: var(--claude-btn);
+  color: var(--on-claude);
   flex: 0 0 auto;
 }
 
 .btn-stop:hover:not(:disabled) {
-  opacity: 0.85;
+  background: var(--claude-btn-hover);
 }
 
 .btn-stop:focus-visible {
-  opacity: 0.85;
+  background: var(--claude-btn-hover);
+}
+
+/* The square is the whole glyph, so it is drawn at a size that reads as one:
+   an 11px rect inside a 26px circle was a speck. */
+.btn-stop svg {
+  width: 12px;
+  height: 12px;
 }
 
 .btn-kbd {

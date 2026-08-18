@@ -151,15 +151,27 @@ describe("a new run never inherits the previous one's open turn", () => {
   });
 });
 
-describe("the status strip counts messages that are waiting on the next run", () => {
-  test("stranded messages are never reported as Ready", () => {
+describe("stranded messages survive the run that was carrying them", () => {
+  test("they are held as pending work, not dropped with the process", () => {
     const index = ix();
     let model = createModel();
     model = send(model, index, "u1", "first", 1000);
     model = send(model, index, "u2", "second", 2000);
     model = applyEvent(model, index, { kind: "runExited", runId: "r1", status: 0 }, 3000);
-    // Exited outranks the queue in the strip, so read the count directly: what
-    // must never happen is an idle pane printing Ready over waiting chips.
+    // The MODEL is the contract; where it is drawn is the composer's queue
+    // chips, which is why the status strip below no longer counts them at all.
+    expect(model.stranded.length + model.queued.length).toBeGreaterThan(0);
+  });
+
+  test("the strip does not narrate them — the chips in the composer do", () => {
+    // It used to print "1 message queued" here, above a composer already
+    // showing that message as a chip. The strip is the exception line now: an
+    // idle pane with waiting work renders nothing, and the work is visible
+    // where it can be cancelled.
+    const index = ix();
+    let model = createModel();
+    model = send(model, index, "u1", "first", 1000);
+    model = applyEvent(model, index, { kind: "runExited", runId: "r1", status: 0 }, 3000);
     const idle = { ...model, runPhase: "idle" as const };
     const { container } = render(
       <CopyProvider dict={undefined}>
@@ -172,11 +184,8 @@ describe("the status strip counts messages that are waiting on the next run", ()
         />
       </CopyProvider>
     );
-    const text = container.textContent ?? "";
-    // "Ready" is retired outright — an idle strip renders nothing — so the
-    // stranded message's count is the only thing that may print here.
-    expect(text).not.toContain("Ready");
-    expect(text).toContain("1");
+    expect(container.textContent ?? "").not.toContain("Ready");
+    expect(container.querySelector(".status-strip")).toBeNull();
   });
 });
 

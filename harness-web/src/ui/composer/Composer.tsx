@@ -277,39 +277,50 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div className={`composer${props.awaitingPermission ? " is-waiting" : ""}`}>
+      {/* Completion popover — one compact panel, no chrome above the rows.
+          The kind is named once in the footer rather than in a heading, so the
+          first row sits at the top edge where the eye and the arrow keys both
+          start, and a two-item list is two items tall instead of four. */}
       {popover.kind ? (
-        <div className="popover" role="listbox">
-          <div className="popover-title">
-            {popover.kind === "command"
-              ? copy("supermux.harness.composer.commandTitle")
-              : copy("supermux.harness.composer.mentionTitle")}
-          </div>
-          {/* A trigger that silently shows nothing reads as a broken popover.
-              Saying so costs one row and answers the question the user has. */}
+        <div className={`popover is-${popover.kind}`} role="listbox">
           {popover.items.length === 0 ? (
             <div className="popover-empty">
               {popover.kind === "command"
                 ? copy("supermux.harness.composer.commandEmpty")
                 : copy("supermux.harness.composer.mentionEmpty")}
             </div>
-          ) : null}
-          {popover.items.map((item, index) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`popover-item${index === popover.index ? " is-active" : ""}`}
-              role="option"
-              aria-selected={index === popover.index}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                applyCompletion(item.id);
-              }}
-            >
-              <span className="popover-label mono">{item.label}</span>
-              {item.hint ? <span className="popover-hint mono">{item.hint}</span> : null}
-              {item.detail ? <span className="popover-detail">{item.detail}</span> : null}
-            </button>
-          ))}
+          ) : (
+            <div className="popover-rows">
+              {popover.items.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`popover-item${index === popover.index ? " is-active" : ""}`}
+                  role="option"
+                  aria-selected={index === popover.index}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    applyCompletion(item.id);
+                  }}
+                >
+                  <span className="popover-label mono">{item.label}</span>
+                  {item.hint ? <span className="popover-hint mono">{item.hint}</span> : null}
+                  {item.detail ? <span className="popover-detail">{item.detail}</span> : null}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="popover-foot">
+            <span className="popover-kind">
+              {popover.kind === "command"
+                ? copy("supermux.harness.composer.commandTitle")
+                : copy("supermux.harness.composer.mentionTitle")}
+            </span>
+            <span className="popover-keys">
+              <kbd>↑↓</kbd>
+              <kbd>⏎</kbd>
+            </span>
+          </div>
         </div>
       ) : null}
 
@@ -428,19 +439,12 @@ export function Composer(props: ComposerProps) {
           )}
         </div>
       </div>
-
-      {/* One situational caveat only — the relay's delivery semantics, which a
-          user cannot infer. Everything else (Enter to send, Esc while running
-          — the status strip already says that one) earns no permanent caption
-          under the composer. */}
-      {props.agentName ? (
-        <div className="composer-hints">
-          <span className="composer-hint is-hint-relay">
-            {copy("supermux.harness.agentView.relayHint")}
-          </span>
-          <span className="composer-hints-spacer" />
-        </div>
-      ) : null}
+      {/* Nothing under the pill. The relay caveat that used to live here
+          ("Delivered through Claude at the agent's next tool call.") appeared
+          and disappeared with the agent view and shifted the whole dock as it
+          did; the same sentence is still said where it is actually needed — on
+          the relay's own status row in AgentChatView, at the moment a message
+          is in flight. */}
     </div>
   );
 }

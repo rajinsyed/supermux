@@ -1,43 +1,35 @@
 import type { ActivityState, RunPhase, TranscriptModel } from "../../model/types";
-import { plural, useCopy } from "../CopyContext";
-import { Refresh } from "../Icons";
-import { formatTokens } from "../format";
-import { Elapsed } from "../primitives/Elapsed";
-import { WorkingDots } from "../primitives/Spinner";
+import { useCopy } from "../CopyContext";
+import { AlertTriangle, Refresh } from "../Icons";
 
-function liveTool(model: TranscriptModel): { name: string; startedAtMs: number } | undefined {
-  for (let i = model.turns.length - 1; i >= 0; i -= 1) {
-    const turn = model.turns[i];
-    if (turn.state !== "streaming") continue;
-    const walk = (blocks: typeof turn.blocks): { name: string; startedAtMs: number } | undefined => {
-      for (let j = blocks.length - 1; j >= 0; j -= 1) {
-        const block = blocks[j];
-        if (block.kind !== "tool") continue;
-        const nested = walk(block.children);
-        if (nested) return nested;
-        if (block.status === "running" || block.status === "pending") {
-          return { name: block.name, startedAtMs: block.startedAtMs };
-        }
-      }
-      return undefined;
-    };
-    const found = walk(turn.blocks);
-    if (found) return found;
-  }
-  return undefined;
-}
-
+/**
+ * The exception line, above the composer.
+ *
+ * It used to narrate the ordinary: "Claude is thinking…", "Running Bash",
+ * "Starting Claude…", "2 messages queued", "Waiting for your approval". Every
+ * one of those was already on screen — the composer's Stop button IS the
+ * running state, the queue chips ARE the queue, the permission card IS the
+ * approval request — so the strip was a second, slower copy of the pane's own
+ * news, and it appeared and disappeared under the composer as a turn advanced,
+ * shifting the whole dock by 17px each way.
+ *
+ * What survives is the half that has no other surface: the pane cannot run at
+ * all (no CLI on disk), or its process died and the only way back is a button
+ * that lives here. A restart is the same family — the composer is disabled and
+ * nothing else says why — and it is the one transient state kept, because it
+ * ends by itself in a second or two.
+ */
 export function StatusStrip({
-  model,
   runPhase,
-  activity,
+  model,
   cliUnavailable,
   restarting,
   onRestart
 }: {
   model: TranscriptModel;
   runPhase: RunPhase;
-  activity: ActivityState;
+  /** Retained for the caller's shape; no ordinary activity is narrated here. */
+  activity?: ActivityState;
   /** No CLI on disk: the pane cannot start, so the strip must not read "Ready". */
   cliUnavailable: boolean;
   /** The old process is down and the new one is not up yet. */
@@ -45,90 +37,47 @@ export function StatusStrip({
   onRestart: () => void;
 }) {
   const copy = useCopy();
-  const pending = model.pending.length > 0;
-  const tool = liveTool(model);
-  const running = activity.sessionState === "running" || activity.status === "requesting";
-  // Stranded messages are queued work too — they are waiting on the next run.
-  // Counting only `queued` would print "Ready" over a strip full of chips, which
-  // is the contradiction this strip exists to avoid.
-  const queued = model.queued.length + model.stranded.length;
-
-  let tone = "idle";
-  let content: React.ReactNode = null;
-  let live = false;
 
   if (cliUnavailable) {
-    tone = "error";
-    content = copy("supermux.harness.status.noCli");
-  } else if (restarting) {
-    tone = "busy";
-    live = true;
-    content = copy("supermux.harness.status.restarting");
-  } else if (runPhase === "exited") {
-    tone = "error";
-    content = (
-      <>
-        <span>{model.exitError ?? copy("supermux.harness.status.exited")}</span>
-        <button type="button" className="btn btn-tiny" onClick={onRestart}>
-          <Refresh size={11} />
-          {copy("supermux.harness.status.restart")}
-        </button>
-      </>
-    );
-  } else if (pending) {
-    tone = "attention";
-    content = copy("supermux.harness.status.waitingApproval");
-  } else if (activity.status === "compacting") {
-    tone = "busy";
-    live = true;
-    content = copy("supermux.harness.status.compacting");
-  } else if (tool) {
-    tone = "busy";
-    live = true;
-    content = (
-      <>
-        <span>{copy("supermux.harness.status.running", { tool: tool.name })}</span>
-        <Elapsed className="tnum status-elapsed" startedAtMs={tool.startedAtMs} prefix=" · " />
-      </>
-    );
-  } else if (running) {
-    tone = "busy";
-    live = true;
-    content = activity.thinkingTokens
-      ? copy("supermux.harness.status.thinkingTokens", {
-          tokens: formatTokens(activity.thinkingTokens)
-        })
-      : copy("supermux.harness.status.thinking");
-  } else if (runPhase === "starting") {
-    tone = "busy";
-    live = true;
-    content = copy("supermux.harness.status.starting");
-  } else if (queued > 0) {
-    // Messages are waiting to be sent, so the pane is NOT ready — it had been
-    // printing "Ready" over a full queue strip, which is where the impression
-    // that a later message had jumped the line came from.
-    tone = "busy";
-    live = true;
-    content = plural(
-      copy,
-      queued,
-      "supermux.harness.status.queuedOne",
-      "supermux.harness.status.queued"
+    return (
+      <Strip tone="error">
+        <AlertTriangle size={12} className="status-glyph" />
+        <span className="status-text">{copy("supermux.harness.status.noCli")}</span>
+      </Strip>
     );
   }
 
-  // An idle pane says NOTHING: a permanent "Ready" line above the composer is
-  // chrome that restates the absence of news. The strip exists only while
-  // something is happening or wrong.
-  if (content === null) return null;
+  if (restarting) {
+    return (
+      <Strip tone="busy">
+        <Refresh size={12} className="status-glyph is-spinning" />
+        <span className="status-text">{copy("supermux.harness.status.restarting")}</span>
+      </Strip>
+    );
+  }
 
+  if (runPhase === "exited") {
+    return (
+      <Strip tone="error">
+        <AlertTriangle size={12} className="status-glyph" />
+        <span className="status-text">
+          {model.exitError ?? copy("supermux.harness.status.exited")}
+        </span>
+        <button type="button" className="status-action" onClick={onRestart}>
+          <Refresh size={11} />
+          {copy("supermux.harness.status.restart")}
+        </button>
+      </Strip>
+    );
+  }
+
+  return null;
+}
+
+function Strip({ tone, children }: { tone: string; children: React.ReactNode }) {
   return (
     <div className={`status-strip is-${tone}`} role="status" aria-live="polite">
-      {live ? <WorkingDots /> : <span className={`status-dot is-${tone}`} />}
-      <span className="status-text">{content}</span>
-      {live ? (
-        <span className="status-hint">{copy("supermux.harness.composer.hintInterrupt")}</span>
-      ) : null}
+      {children}
     </div>
   );
 }

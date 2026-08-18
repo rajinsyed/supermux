@@ -63,7 +63,10 @@ export const copyDefaults = {
   "supermux.harness.composer.placeholderRestarting": "Restarting Claude…",
   "supermux.harness.composer.send": "Send",
   "supermux.harness.composer.stop": "Stop",
-  "supermux.harness.composer.hintInterrupt": "Esc to interrupt",
+  // `composer.hintInterrupt` ("Esc to interrupt") retired with the busy status
+  // strip that was its only render site: the strip no longer narrates a running
+  // turn at all, because the composer's Stop button IS that state. Its Swift and
+  // xcstrings rows should go with it.
   "supermux.harness.composer.attach": "Attach files",
   "supermux.harness.composer.removeAttachment": "Remove attachment",
   "supermux.harness.composer.queued": "Queued",
@@ -73,16 +76,16 @@ export const copyDefaults = {
   "supermux.harness.composer.commandTitle": "Commands",
   "supermux.harness.composer.commandEmpty": "No matching commands",
 
-  "supermux.harness.status.thinking": "Claude is thinking…",
-  "supermux.harness.status.thinkingTokens": "Thinking · {tokens} tokens",
-  "supermux.harness.status.running": "Running {tool}",
-  "supermux.harness.status.waitingApproval": "Waiting for your approval",
-  "supermux.harness.status.compacting": "Compacting conversation…",
+  // The strip above the composer narrates EXCEPTIONS only. Eight keys retired
+  // with the busy states it used to print — `status.thinking`,
+  // `status.thinkingTokens`, `status.running`, `status.waitingApproval`,
+  // `status.compacting`, `status.starting`, `status.queuedOne`,
+  // `status.queued` — because every one of them restated something already on
+  // screen (the composer's Stop button, the permission card, the queue chips),
+  // and the row appearing and vanishing under the composer moved the whole dock
+  // as a turn advanced. Their Swift and xcstrings rows should go with them.
   "supermux.harness.status.retrying": "Retrying in {seconds}s · attempt {attempt} of {max}",
-  "supermux.harness.status.starting": "Starting Claude…",
   "supermux.harness.status.restarting": "Restarting Claude…",
-  "supermux.harness.status.queuedOne": "{count} message queued",
-  "supermux.harness.status.queued": "{count} messages queued",
   "supermux.harness.status.exited": "Process exited",
   "supermux.harness.status.noCli": "Claude Code CLI not found",
   "supermux.harness.status.restart": "Restart",
@@ -366,9 +369,13 @@ export const copyDefaults = {
   "supermux.harness.question.unanswered": "Not answered yet",
   "supermux.harness.question.willSend": "Will send: {answer}",
 
-  "supermux.harness.header.rename": "Rename session",
-  "supermux.harness.header.renameSave": "Save",
-  "supermux.harness.header.renameCancel": "Cancel",
+  // `header.rename` / `header.renameSave` / `header.renameCancel` retired with
+  // the bottom bar's session title. The strip carries the pane's ADDRESS (the
+  // folder) and its CONTROLS; the title named something the user never chose
+  // (the CLI's own auto-title), was the widest thing on the line, and opened an
+  // inline text field in a bar whose every other control opens a menu. The
+  // `onRename` prop survives on HeaderProps for a future surface that suits it.
+  // Their Swift and xcstrings rows should go with them.
   "supermux.harness.header.model": "Model",
   // `header.effort` ("Effort") retired with the bottom bar's model pill: the
   // picker moved into the composer, where the setting is a "Reasoning" row in
@@ -391,6 +398,9 @@ export const copyDefaults = {
   "supermux.harness.header.sessions": "Sessions",
   "supermux.harness.header.sessionsSearch": "Search sessions",
   "supermux.harness.header.sessionsEmpty": "No sessions yet for this folder",
+  // Abbreviated because it shares a 11px meta line with a relative time and a
+  // branch name; the full word would push the branch out of every row.
+  "supermux.harness.header.sessionMessages": "{count} msgs",
   "supermux.harness.header.resume": "Resume",
   "supermux.harness.header.resumeHint": "Replaces this pane's session",
   "supermux.harness.header.fork": "Fork",
@@ -405,8 +415,10 @@ export const copyDefaults = {
   "supermux.harness.header.newSession": "New session",
   "supermux.harness.header.binary": "Claude binary…",
   "supermux.harness.header.modelsLoading": "Loading models…",
-  "supermux.harness.model.search": "Search models",
-  "supermux.harness.model.noMatches": "No matching models",
+  // `model.search` / `model.noMatches` retired with the picker's search field.
+  // A filter over four rows that all fit on screen cost a row of chrome, stole
+  // the caret on open, and made the first keystroke ambiguous; the panel is a
+  // list now. Their Swift and xcstrings rows should go with them.
   "supermux.harness.model.reasoning": "Reasoning",
   "supermux.harness.model.restoreDefaults": "Restore defaults",
 
@@ -453,6 +465,13 @@ export const copyDefaults = {
   "supermux.harness.mode.planShort": "Plan",
   "supermux.harness.mode.bypassPermissions": "Bypass all prompts",
   "supermux.harness.mode.bypassPermissionsShort": "Bypass",
+  // One line of CONSEQUENCE per mode. The four names alone ("Ask each time",
+  // "Plan only") name a policy without saying what it lets through, which is
+  // the only thing the choice is about.
+  "supermux.harness.mode.defaultDetail": "Approve every file edit and command",
+  "supermux.harness.mode.acceptEditsDetail": "Edits apply on their own; commands still ask",
+  "supermux.harness.mode.planDetail": "Research and propose, change nothing",
+  "supermux.harness.mode.bypassPermissionsDetail": "No prompts at all — use with care",
 
   "supermux.harness.divider.compact": "Conversation compacted",
   "supermux.harness.divider.compactTokens": "{tokens} tokens summarized",

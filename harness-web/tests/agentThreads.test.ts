@@ -20,6 +20,10 @@ function replayThrough(lines: ProtocolLine[], count: number): TranscriptModel {
   return model;
 }
 
+function turnTools(model: TranscriptModel) {
+  return model.turns.flatMap((turn) => turn.blocks).filter((block) => block.kind === "tool");
+}
+
 /**
  * The round-4 attribution rule, against the frames that established it.
  *
@@ -120,6 +124,259 @@ describe("agent threads build from the forwarded frames", () => {
  * exactly "is this still running", and these assert the rows appear and then
  * GO — for agents, workflows and shells alike.
  */
+describe("failed agent attempts and retries", () => {
+  const description = "Map backend integrations";
+  const failedToolUseId = "call_backend_invalid_model";
+  const retryToolUseId = "call_backend_retry";
+  const failedLaunch: ProtocolLine[] = [
+    {
+      type: "assistant",
+      message: {
+        id: "msg_backend_failed",
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: failedToolUseId,
+            name: "Agent",
+            input: {
+              description,
+              prompt: "Map the backend",
+              subagent_type: "Explore",
+              model: "sol",
+              run_in_background: true
+            }
+          }
+        ]
+      },
+      uuid: "assistant-backend-failed"
+    } as ProtocolLine,
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: failedToolUseId,
+            is_error: true,
+            content:
+              '<tool_use_error>InputValidationError: Invalid option: expected one of "sonnet"|"opus"|"haiku"|"fable"</tool_use_error>'
+          }
+        ]
+      },
+      uuid: "result-backend-failed"
+    } as ProtocolLine
+  ];
+  const successfulRetry: ProtocolLine[] = [
+    {
+      type: "assistant",
+      message: {
+        id: "msg_backend_retry",
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: retryToolUseId,
+            name: "Agent",
+            input: {
+              description,
+              prompt: "Map the backend",
+              subagent_type: "Explore",
+              run_in_background: true
+            }
+          }
+        ]
+      },
+      uuid: "assistant-backend-retry"
+    } as ProtocolLine,
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: retryToolUseId,
+            content: "Async agent launched successfully."
+          }
+        ]
+      },
+      tool_use_result: {
+        status: "async_launched",
+        agentId: "agent_backend_retry",
+        resolvedModel: "claude-opus-5"
+      },
+      uuid: "result-backend-retry"
+    } as ProtocolLine,
+    {
+      type: "system",
+      subtype: "task_started",
+      task_id: "agent_backend_retry",
+      tool_use_id: retryToolUseId,
+      task_type: "local_agent",
+      description,
+      prompt: "Map the backend",
+      status: "running",
+      uuid: "task-backend-started"
+    } as ProtocolLine,
+    {
+      type: "system",
+      subtype: "task_notification",
+      task_id: "agent_backend_retry",
+      status: "completed",
+      summary: `Agent "${description}" finished`,
+      uuid: "task-backend-completed"
+    } as ProtocolLine
+  ];
+
+  test("an is_error tool result genuinely fails both the inline attempt and its thread", () => {
+    const model = replayLines(failedLaunch);
+    const block = turnTools(model)[0];
+    expect(block.status).toBe("error");
+    expect(block.subagent?.status).toBe("failed");
+    expect(model.agentThreads[failedToolUseId].status).toBe("failed");
+    expect(block.supersededByToolUseId).toBeUndefined();
+    expect(model.agentThreads[failedToolUseId].supersededByToolUseId).toBeUndefined();
+  });
+
+  test("a later successful retry with the same description supersedes the failed sibling", () => {
+    const model = replayLines([...failedLaunch, ...successfulRetry]);
+    const [failed, retry] = turnTools(model);
+    expect(retry.subagent?.status).toBe("completed");
+    expect(failed.supersededByToolUseId).toBe(retryToolUseId);
+    expect(model.agentThreads[failedToolUseId].supersededByToolUseId).toBe(retryToolUseId);
+  });
+
+  test("a nested retry is superseded in both the inline tree and parent drill-in", () => {
+    const parentToolUseId = "call_parent_agent";
+    const parentLaunch = {
+      type: "assistant",
+      message: {
+        id: "msg_parent_agent",
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: parentToolUseId,
+            name: "Agent",
+            input: { description: "Coordinate audit", prompt: "Delegate the backend map" }
+          }
+        ]
+      },
+      uuid: "assistant-parent-agent"
+    } as ProtocolLine;
+    const nestedAttempts = [...failedLaunch, ...successfulRetry].map((line) =>
+      line.type === "assistant" || line.type === "user"
+        ? ({ ...line, parent_tool_use_id: parentToolUseId } as ProtocolLine)
+        : line
+    );
+    const model = replayLines([parentLaunch, ...nestedAttempts]);
+    const parentBlock = turnTools(model)[0];
+    const inlineFailed = parentBlock.children.find(
+      (block) => block.kind === "tool" && block.toolUseId === failedToolUseId
+    );
+    const drillInFailed = model.agentThreads[parentToolUseId].blocks.find(
+      (block) => block.kind === "tool" && block.toolUseId === failedToolUseId
+    );
+
+    expect(inlineFailed?.kind).toBe("tool");
+    expect(inlineFailed?.kind === "tool" && inlineFailed.supersededByToolUseId).toBe(retryToolUseId);
+    expect(drillInFailed?.kind).toBe("tool");
+    expect(drillInFailed?.kind === "tool" && drillInFailed.supersededByToolUseId).toBe(
+      retryToolUseId
+    );
+  });
+
+  test("an interrupted tool result is stopped, not failed, even when the wire sets is_error", () => {
+    const toolUseId = "call_interrupted_agent";
+    const model = replayLines([
+      {
+        type: "assistant",
+        message: {
+          id: "msg_interrupted_agent",
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: toolUseId,
+              name: "Agent",
+              input: { description: "Long audit", prompt: "Audit until interrupted" }
+            }
+          ]
+        },
+        uuid: "assistant-interrupted-agent"
+      } as ProtocolLine,
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: toolUseId,
+              is_error: true,
+              content: "Interrupted by user"
+            }
+          ]
+        },
+        tool_use_result: { interrupted: true },
+        uuid: "result-interrupted-agent"
+      } as ProtocolLine
+    ]);
+    const block = turnTools(model)[0];
+    expect(block.status).toBe("aborted");
+    expect(block.subagent?.status).toBe("stopped");
+    expect(model.agentThreads[toolUseId].status).toBe("stopped");
+  });
+
+  test("a completed agent report may discuss an error without becoming a failed attempt", () => {
+    const toolUseId = "call_successful_error_audit";
+    const model = replayLines([
+      {
+        type: "assistant",
+        message: {
+          id: "msg_successful_error_audit",
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: toolUseId,
+              name: "Agent",
+              input: { description: "Audit release logs", prompt: "Inspect the logs" }
+            }
+          ]
+        },
+        uuid: "assistant-successful-error-audit"
+      } as ProtocolLine,
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: toolUseId,
+              content:
+                "There is no local Release compile or link error: the build was interrupted before one was produced."
+            }
+          ]
+        },
+        tool_use_result: {
+          status: "completed",
+          agentId: "agent_successful_error_audit",
+          resolvedModel: "claude-opus-5"
+        },
+        uuid: "result-successful-error-audit"
+      } as ProtocolLine
+    ]);
+    const block = turnTools(model)[0];
+    expect(block.status).toBe("success");
+    expect(block.subagent?.status).toBe("completed");
+    expect(model.agentThreads[toolUseId].status).toBe("completed");
+  });
+});
+
 describe("the dock's rows", () => {
   test("main is first, then RUNNING agents in tree order with an indent per level", () => {
     const live = replayThrough(fwdNestedFixture, 40);

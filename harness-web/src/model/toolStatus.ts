@@ -26,16 +26,24 @@ export function classifyToolStatus(
   resultText: string | undefined,
   structured: JsonObject | undefined
 ): ToolStatus {
+  if (structured?.interrupted === true) return "aborted";
   if (isError) return "error";
   if (structured) {
-    if (structured.interrupted === true) return "aborted";
     const status = asString(structured.status);
     if (status === "failed" || status === "error") return "error";
+    if (status === "killed" || status === "stopped" || status === "aborted") return "aborted";
     if (toolName === "Bash") {
       const stderr = asString(structured.stderr) ?? "";
       const code = asNumber(structured.exitCode ?? structured.exit_code);
       if (code !== undefined && code !== 0) return "error";
       if (stderr.length > 0 && sniffFailure(stderr)) return "error";
+      return "success";
+    }
+    // Agent reports are natural-language audits and often contain literals such
+    // as "error:" or "fatal:" while the AgentOutput status says the work
+    // completed. A structured terminal/launch verdict is stronger than text
+    // sniffing; otherwise a successful error investigation paints a red row.
+    if (status === "completed" || status === "success" || status === "async_launched") {
       return "success";
     }
   }

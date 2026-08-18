@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isThreadRunning } from "../model/agentThreads";
 import { dockRows } from "../model/dock";
 import { resolveModel } from "../model/helpers";
 import { runningForegroundBash } from "../model/tasks";
@@ -213,7 +214,7 @@ function AppBody({
       const description = thread.description ?? thread.subagentType ?? thread.toolUseId;
       const target: RelayTarget = { toolUseId: thread.toolUseId, description: thread.description };
       const instruction = relayInstruction(description, text);
-      const running = thread.status !== "completed" && thread.status !== "failed";
+      const running = isThreadRunning(thread);
       const needsBackgrounding = running && thread.background !== true;
       const send = (backgrounded: boolean | undefined) =>
         harness.sendRelay(instruction, text, target, backgrounded);
@@ -330,11 +331,11 @@ function AppBody({
   }, [decide, model.pending.length, pending]);
 
   const inAgentView = view.kind === "agent" && thread !== undefined;
-  // An agent that has finished cannot be messaged: there is no mailbox left to
-  // drop into, and a relay would just be an instruction main answers itself.
-  // The composer stays, addressed to Claude, and says so.
-  const agentReachable =
-    inAgentView && thread!.status !== "completed" && thread!.status !== "failed";
+  // An agent that has finished — or was killed or stopped — cannot be messaged:
+  // there is no mailbox left to drop into, and a relay would just be an
+  // instruction main answers itself. The composer stays, addressed to Claude,
+  // and says so.
+  const agentReachable = inAgentView && isThreadRunning(thread!);
 
   /* Sub-views render inside a rounded FRAME inset from the pane edges — the
      way Cursor frames a subagent's conversation — with the breadcrumb trail as

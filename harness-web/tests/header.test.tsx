@@ -69,19 +69,50 @@ describe("the bottom strip no longer carries the model", () => {
   });
 });
 
-describe("the session browser exposes both ways to open a session", () => {
+/**
+ * The bottom bar carries the pane's ADDRESS and its CONTROLS. The session title
+ * used to sit on the left as an editable button; it named something the CLI
+ * invented rather than something the user chose, it was the widest thing on the
+ * strip, and clicking it opened an inline text field in a bar whose every other
+ * control opens a menu.
+ */
+describe("the bottom bar carries no session title", () => {
+  test("neither the title button nor its rename field is rendered", () => {
+    const { container } = mount(realSession());
+    expect(container.querySelector(".title-btn")).toBeNull();
+    expect(container.querySelector(".title-input")).toBeNull();
+  });
+
+  test("the path chip is what identifies the pane", () => {
+    const { container } = mount(realSession(), { workingDirectory: "/Users/dev/projects/app" });
+    expect(container.querySelector(".dir-chip-text")).not.toBeNull();
+  });
+
+  test("onRename stays on the contract, so App.tsx needs no change to bring it back", () => {
+    // Deliberately unused rather than removed: a rename belongs on a surface
+    // that suits it (the sessions panel, a context menu), and dropping the prop
+    // would mean a second round through a file this component does not own.
+    let renamed = 0;
+    mount(realSession(), { onRename: () => (renamed += 1) });
+    expect(renamed).toBe(0);
+  });
+});
+
+describe("the session browser exposes every way to open a session", () => {
   const sessions = [
     { sessionId: "s-1", title: "Fix sidebar scroll", updatedAtMs: Date.now() - 60000 }
   ];
 
-  test("resume replaces this pane's session", () => {
+  test("the ROW itself resumes — the primary action is not one of three buttons", () => {
+    // Twenty sessions used to be sixty 11px buttons, with the titles they
+    // belonged to the smallest thing in the panel.
     const calls: Array<[string, boolean]> = [];
-    mount(realSession(), {
+    const { container } = mount(realSession(), {
       sessions,
       onResumeSession: (id, fork) => calls.push([id, fork])
     });
     fireEvent.click(screen.getByLabelText("Sessions"));
-    fireEvent.click(screen.getByText("Resume"));
+    fireEvent.click(container.querySelector(".session-open")!);
     expect(calls).toEqual([["s-1", false]]);
   });
 
@@ -92,7 +123,7 @@ describe("the session browser exposes both ways to open a session", () => {
       onResumeSession: (id, fork) => calls.push([id, fork])
     });
     fireEvent.click(screen.getByLabelText("Sessions"));
-    fireEvent.click(screen.getByText("Fork"));
+    fireEvent.click(screen.getByLabelText("Fork"));
     expect(calls).toEqual([["s-1", true]]);
   });
 
@@ -105,21 +136,42 @@ describe("the session browser exposes both ways to open a session", () => {
       onOpenSessionInNewPane: (id) => opened.push(id)
     });
     fireEvent.click(screen.getByLabelText("Sessions"));
-    fireEvent.click(screen.getByText("New pane"));
+    fireEvent.click(screen.getByLabelText("New pane"));
     expect(opened).toEqual(["s-1"]);
   });
 
-  test("each row action says what it does to the current pane", () => {
+  test("each affordance still says what it does to the current pane", () => {
     const { container } = mount(realSession(), { sessions });
     fireEvent.click(screen.getByLabelText("Sessions"));
+    expect(container.querySelector(".session-open")!.getAttribute("title")).toBe(
+      "Replaces this pane's session"
+    );
     const titles = Array.from(
       container.querySelectorAll(".session-actions button")
     ).map((node) => node.getAttribute("title"));
     expect(titles).toEqual([
-      "Replaces this pane's session",
       "Branch into a copy, leaving this one untouched",
       "Open beside this one, both live at once"
     ]);
+  });
+
+  test("starting a new session is reachable from the session list itself", () => {
+    // The one place a user goes to think about which session to be in must be
+    // able to answer "none of these" without a second trip to the ••• menu.
+    let started = 0;
+    mount(realSession(), { sessions, onNewSession: () => (started += 1) });
+    fireEvent.click(screen.getByLabelText("Sessions"));
+    fireEvent.click(screen.getByText("New session"));
+    expect(started).toBe(1);
+  });
+
+  test("the New session button is pinned outside the scrolling list", () => {
+    // Twenty-four rows would otherwise scroll it out of reach.
+    const { container } = mount(realSession(), { sessions });
+    fireEvent.click(screen.getByLabelText("Sessions"));
+    const button = container.querySelector(".sessions-new")!;
+    expect(button.closest(".sessions-foot")).not.toBeNull();
+    expect(button.closest(".sessions-list")).toBeNull();
   });
 });
 
@@ -146,6 +198,30 @@ describe("single-select menus announce which row is live", () => {
     expect(
       Array.from(rows).filter((row) => row.getAttribute("aria-checked") === "true").length
     ).toBe(1);
+  });
+
+  test("each mode says what it lets through, not only what it is called", () => {
+    // "Ask each time" / "Plan only" name a policy without stating its
+    // consequence, which is the only thing the choice is actually about.
+    const { container } = mount(realSession());
+    fireEvent.click(screen.getByLabelText("Permissions"));
+    const details = Array.from(container.querySelectorAll(".mode-item .menu-item-detail")).map(
+      (node) => node.textContent
+    );
+    expect(details.length).toBe(4);
+    expect(details).toContain("No prompts at all — use with care");
+    expect(details).toContain("Research and propose, change nothing");
+  });
+
+  test("every mode row carries its own hue, so the four are not one grey list", () => {
+    const { container } = mount(realSession());
+    fireEvent.click(screen.getByLabelText("Permissions"));
+    const classes = Array.from(container.querySelectorAll(".mode-item")).map(
+      (node) => node.className
+    );
+    for (const mode of ["default", "acceptEdits", "plan", "bypassPermissions"]) {
+      expect(classes.some((name) => name.includes(`is-${mode}`))).toBe(true);
+    }
   });
 
   test("action-only rows stay plain menu items with no checked state", () => {

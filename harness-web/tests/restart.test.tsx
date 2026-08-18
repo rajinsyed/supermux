@@ -3,6 +3,7 @@ import { taskBridgeStub } from "./bridgeStub";
 import { act, cleanup, render } from "@testing-library/react";
 import type { HarnessBridge, StartParams } from "../src/bridge";
 import { HarnessBridgeError } from "../src/bridge";
+import type { ProtocolLine } from "../src/protocol/types";
 import { copyDefaults } from "../src/copyKeys";
 import { rewindHistory, REWIND_UUIDS } from "../src/dev/fixtures/rewind";
 import { HarnessStore } from "../src/model/store";
@@ -24,6 +25,7 @@ interface Script {
   /** `rewind_files` refuses while the conversation rewind still succeeds. */
   restoreFails?: boolean;
   restoreSessionId?: string;
+  historyEvents?: ProtocolLine[];
   cachedModels?: boolean;
 }
 
@@ -51,7 +53,7 @@ function makeBridge(script: Script): HarnessBridge {
     },
     async loadSessionHistory({ sessionId }) {
       note(`loadSessionHistory:${sessionId}`);
-      return { events: rewindHistory, truncated: false };
+      return { events: script.historyEvents ?? rewindHistory, truncated: false };
     },
     async start(params = {}) {
       note("start");
@@ -225,15 +227,115 @@ describe("swapping sessions never goes through start()", () => {
 
     // The pane's CURRENT mode travels with every start now — a New Session must
     // keep the mode the user is in rather than silently dropping to a default.
-    expect(s.restartParams).toEqual([
-      {
-        resumeSessionId: undefined,
-        model: "sonnet",
-        effort: undefined,
-        permissionMode: store.getSnapshot().session.permissionMode
-      }
-    ]);
+    expect(s.restartParams).toHaveLength(1);
+    expect(s.restartParams[0].resumeSessionId).toBeUndefined();
+    expect(s.restartParams[0].model).toBe(store.getSnapshot().session.model);
+    expect(s.restartParams[0].effort).toBe(store.getSnapshot().session.effort);
+    expect(s.restartParams[0].permissionMode).toBe(store.getSnapshot().session.permissionMode);
     expect(store.getSnapshot().turns).toEqual([]);
+  });
+
+  test("New Session carries the live session model and effort, and seeds them before restart resolves", async () => {
+    const s = script({ running: true });
+    const { store, out } = await mount(s);
+
+    // The model came from the CLI init frame, not from the user's model picker.
+    act(() => {
+      store.receive([
+        {
+          kind: "protocol",
+          line: {
+            type: "system",
+            subtype: "init",
+            session_id: "live-session",
+            model: "claude-opus-5"
+          } as ProtocolLine
+        }
+      ]);
+      store.flushNow();
+      // Effort is session state too. Dispatching it directly deliberately bypasses
+      // useHarness's old pendingModel ref, proving restart reads the authoritative
+      // store rather than only choices made through this hook instance.
+      store.dispatch({ kind: "setModel", model: "claude-opus-5", effort: "xhigh" });
+    });
+
+    act(() => {
+      out.current!.newSession();
+    });
+
+    // Reset is synchronous: the empty composer must never render an unnamed
+    // model while the native restart is still tearing the old process down.
+    expect(store.getSnapshot().session.model).toBe("claude-opus-5");
+    expect(store.getSnapshot().session.effort).toBe("xhigh");
+
+    await flush();
+    expect(s.restartParams[0].model).toBe("claude-opus-5");
+    expect(s.restartParams[0].effort).toBe("xhigh");
+  });
+
+  test("a later init frame is authoritative over the model carried into New Session", async () => {
+    const s = script({ running: true });
+    const { store, out } = await mount(s);
+    act(() => {
+      store.receive([
+        {
+          kind: "protocol",
+          line: {
+            type: "system",
+            subtype: "init",
+            session_id: "old-session",
+            model: "claude-opus-5"
+          } as ProtocolLine
+        }
+      ]);
+      store.flushNow();
+    });
+
+    act(() => {
+      out.current!.newSession();
+    });
+    expect(store.getSnapshot().session.model).toBe("claude-opus-5");
+    await flush();
+
+    act(() => {
+      store.receive([
+        {
+          kind: "protocol",
+          line: {
+            type: "system",
+            subtype: "init",
+            session_id: "new-session",
+            model: "claude-sonnet-5"
+          } as ProtocolLine
+        }
+      ]);
+      store.flushNow();
+    });
+
+    expect(store.getSnapshot().session.model).toBe("claude-sonnet-5");
+  });
+
+  test("an init resolved id preserves effort selected for the same catalog model", async () => {
+    const s = script({ cachedModels: true });
+    const { store } = await mount(s);
+    act(() => {
+      store.dispatch({ kind: "setModel", model: "sonnet", effort: "xhigh" });
+      store.receive([
+        {
+          kind: "protocol",
+          line: {
+            type: "system",
+            subtype: "init",
+            session_id: "new-session",
+            model: "claude-sonnet-5"
+          } as ProtocolLine
+        }
+      ]);
+      store.flushNow();
+    });
+
+    expect(store.getSnapshot().session.model).toBe("claude-sonnet-5");
+    expect(store.getSnapshot().session.effort).toBe("xhigh");
   });
 
   test("a successful restart clears a startFailed left by the previous attempt", async () => {
@@ -309,13 +411,15 @@ describe("continuity follows the pane's own session, not the snapshot", () => {
     // silently reopens an older conversation.
     const s = script({ restoreSessionId: "snapshot-session" });
     const { store, out } = await mount(s);
-    store.receive([
-      {
-        kind: "protocol",
-        line: { type: "system", subtype: "init", session_id: "live-session" } as never
-      }
-    ]);
-    store.flushNow();
+    act(() => {
+      store.receive([
+        {
+          kind: "protocol",
+          line: { type: "system", subtype: "init", session_id: "live-session" } as never
+        }
+      ]);
+      store.flushNow();
+    });
 
     await act(async () => {
       out.current!.send("hello", []);
@@ -323,6 +427,34 @@ describe("continuity follows the pane's own session, not the snapshot", () => {
     await flush();
 
     expect(s.startParams[0].resumeSessionId).toBe("live-session");
+  });
+
+  test("a resumed session's init model wins over the previous session's explicit selection", async () => {
+    const s = script({
+      running: true,
+      historyEvents: [
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "target-session",
+          model: "claude-sonnet-5"
+        } as ProtocolLine
+      ]
+    });
+    const { store, out } = await mount(s);
+    await act(async () => {
+      out.current!.setModel("claude-opus-5", "max");
+    });
+
+    await act(async () => {
+      out.current!.restart("target-session", false);
+    });
+    await flush();
+
+    expect(store.getSnapshot().session.model).toBe("claude-sonnet-5");
+    expect(store.getSnapshot().session.effort).toBeUndefined();
+    expect(s.restartParams[0].model).toBe("claude-sonnet-5");
+    expect(s.restartParams[0].effort).toBeUndefined();
   });
 
   test("before any init frame it falls back to the restore snapshot", async () => {
@@ -392,10 +524,12 @@ describe("a cached catalog reaches the model menu without a running process", ()
   test("a pushed modelCatalog event lands too", async () => {
     const s = script();
     const { store } = await mount(s);
-    store.receive([
-      { kind: "modelCatalog", models: [{ value: "opus", displayName: "Opus 5" }] }
-    ]);
-    store.flushNow();
+    act(() => {
+      store.receive([
+        { kind: "modelCatalog", models: [{ value: "opus", displayName: "Opus 5" }] }
+      ]);
+      store.flushNow();
+    });
     expect(store.getSnapshot().cachedModels?.[0].displayName).toBe("Opus 5");
   });
 

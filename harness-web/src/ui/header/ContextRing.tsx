@@ -11,6 +11,17 @@ const STROKE = 2;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
+/**
+ * The context breakdown.
+ *
+ * The panel is one figure — how much of the window is gone — and then the
+ * accounting behind it. The headline is the PERCENTAGE at display size with the
+ * token count under it, because "83%" is the thing a reader is deciding on and
+ * "142.1k of 200k" is the evidence; the previous build put both on one 12px row
+ * where neither was the answer. Every category gets its own share bar so the
+ * one line that is actually eating the window is visible without reading five
+ * numbers and comparing them.
+ */
 export function ContextRing({ usage }: { usage?: ContextUsage }) {
   const copy = useCopy();
   // Hover alone made this a button that did nothing for keyboard and touch, so
@@ -42,6 +53,10 @@ export function ContextRing({ usage }: { usage?: ContextUsage }) {
   const tone = percentage >= 90 ? "danger" : percentage >= 70 ? "warn" : "ok";
   const offset = CIRCUMFERENCE * (1 - percentage / 100);
   const categories = (usage.categories ?? []).filter((c) => c.tokens > 0);
+  // Shares are of the WINDOW, not of the accounted total: a bar that fills the
+  // row because it is the largest of three small categories would overstate a
+  // 4k system prompt in a 200k window.
+  const largest = categories.reduce((max, c) => Math.max(max, c.tokens), 0);
   const summary = copy("supermux.harness.header.contextUsed", {
     used: formatTokens(usage.totalTokens),
     total: formatTokens(usage.maxTokens)
@@ -95,24 +110,36 @@ export function ContextRing({ usage }: { usage?: ContextUsage }) {
         <span className="ctx-value tnum">{percentage}%</span>
       </button>
       {open ? (
-        <div className="ctx-pop" role="tooltip">
+        <div className={`ctx-pop is-${tone}`} role="tooltip">
           <div className="ctx-pop-head">
-            <span>{copy("supermux.harness.header.context")}</span>
-            <span className="tnum">{summary}</span>
+            <span className="ctx-pop-label">{copy("supermux.harness.header.context")}</span>
+            <span className="ctx-pop-figure tnum">{percentage}%</span>
+            <span className="ctx-pop-sub tnum">{summary}</span>
           </div>
+
           <div className="ctx-bar">
             <span className={`ctx-bar-fill is-${tone}`} style={{ width: `${percentage}%` }} />
           </div>
+
           {categories.length > 0 ? (
             <ul className="ctx-cats">
               {categories.map((category) => (
-                <li key={category.name}>
-                  <span>{category.name}</span>
-                  <span className="tnum">{formatTokens(category.tokens)}</span>
+                <li key={category.name} className="ctx-cat">
+                  <span className="ctx-cat-name">{category.name}</span>
+                  <span className="ctx-cat-track" aria-hidden="true">
+                    <span
+                      className="ctx-cat-fill"
+                      style={{
+                        width: `${largest > 0 ? Math.max(3, (category.tokens / largest) * 100) : 0}%`
+                      }}
+                    />
+                  </span>
+                  <span className="ctx-cat-value tnum">{formatTokens(category.tokens)}</span>
                 </li>
               ))}
             </ul>
           ) : null}
+
           {usage.isAutoCompactEnabled && usage.autoCompactThreshold ? (
             <div className="ctx-note tnum">
               {copy("supermux.harness.header.contextAutoCompact", {

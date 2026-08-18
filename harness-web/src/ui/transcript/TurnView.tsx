@@ -17,7 +17,12 @@ import { UserMessage } from "./UserMessage";
 const LIVE_TAIL = 1;
 
 function splitBlocks(turn: Turn): { work: Block[]; tail: Block[] } {
-  const blocks = turn.blocks;
+  // A failed agent attempt that a later retry replaced is the retry's history,
+  // not sibling work: filtered before counts and folds, or "Failed" rows and
+  // "N earlier tool calls" both report attempts the turn itself recovered from.
+  const blocks = turn.blocks.filter(
+    (block) => block.kind !== "tool" || block.supersededByToolUseId === undefined
+  );
   let cut = blocks.length;
   for (let i = blocks.length - 1; i >= 0; i -= 1) {
     const block = blocks[i];

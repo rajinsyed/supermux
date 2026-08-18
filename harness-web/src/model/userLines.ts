@@ -1,5 +1,9 @@
 import type { JsonObject, UserLine } from "../protocol/types";
-import { applyAgentOutputToThread, applyUserToThread } from "./agentThreads";
+import {
+  applyAgentOutputToThread,
+  applyUserToThread,
+  reconcileSupersededAgentAttempts
+} from "./agentThreads";
 import { readTool, writeBlock } from "./blocks";
 import { asNumber, asString, isPlainObject, type TranscriptIndex } from "./helpers";
 import { classifyToolStatus, extractTodos } from "./toolStatus";
@@ -65,16 +69,32 @@ export function applyUser(
  */
 function subagentFromResult(
   previous: SubagentInfo | undefined,
-  structured: JsonObject | undefined
+  structured: JsonObject | undefined,
+  toolStatus: ToolBlock["status"]
 ): SubagentInfo | undefined {
-  if (!structured) return previous;
-  const status = asString(structured.status);
-  const taskId = asString(structured.taskId) ?? asString(structured.backgroundTaskId);
-  const runId = asString(structured.runId);
-  const agentId = asString(structured.agentId);
-  const workflowName = asString(structured.workflowName);
-  const model = asString(structured.resolvedModel);
-  const raw = isPlainObject(structured.toolStats) ? structured.toolStats : undefined;
+  if (!structured && !previous) return undefined;
+  const output = structured ?? {};
+  const structuredStatus = asString(output.status);
+  const status =
+    structuredStatus === "completed" || structuredStatus === "success"
+      ? "completed"
+      : structuredStatus === "failed" || structuredStatus === "error"
+        ? "failed"
+        : structuredStatus === "killed"
+          ? "killed"
+          : structuredStatus === "stopped" || structuredStatus === "aborted"
+            ? "stopped"
+            : toolStatus === "error"
+              ? "failed"
+              : toolStatus === "aborted"
+                ? "stopped"
+                : previous?.status;
+  const taskId = asString(output.taskId) ?? asString(output.backgroundTaskId);
+  const runId = asString(output.runId);
+  const agentId = asString(output.agentId);
+  const workflowName = asString(output.workflowName);
+  const model = asString(output.resolvedModel);
+  const raw = isPlainObject(output.toolStats) ? output.toolStats : undefined;
   const stats = raw
     ? ({
         readCount: asNumber(raw.readCount),
@@ -86,9 +106,9 @@ function subagentFromResult(
         otherToolCount: asNumber(raw.otherToolCount)
       } satisfies SubagentToolStats)
     : undefined;
-  const backgroundedByUser = structured.backgroundedByUser === true;
-  const timedOutAfterMs = asNumber(structured.timedOutAfterMs);
-  const asyncLaunched = status === "async_launched";
+  const backgroundedByUser = output.backgroundedByUser === true;
+  const timedOutAfterMs = asNumber(output.timedOutAfterMs);
+  const asyncLaunched = structuredStatus === "async_launched";
   if (
     !taskId &&
     !runId &&
@@ -97,24 +117,26 @@ function subagentFromResult(
     !model &&
     !stats &&
     !backgroundedByUser &&
-    timedOutAfterMs === undefined
+    timedOutAfterMs === undefined &&
+    status === previous?.status
   ) {
     return previous;
   }
   return {
     ...previous,
     taskId: taskId ?? previous?.taskId,
-    taskType: asString(structured.taskType) ?? previous?.taskType,
+    taskType: asString(output.taskType) ?? previous?.taskType,
     agentId: agentId ?? previous?.agentId,
-    subagentType: asString(structured.agentType) ?? previous?.subagentType,
+    subagentType: asString(output.agentType) ?? previous?.subagentType,
     workflowName: workflowName ?? previous?.workflowName,
     workflowRunId: runId ?? previous?.workflowRunId,
     model: model ?? previous?.model,
-    summary: asString(structured.summary) ?? previous?.summary,
-    outputFile: asString(structured.outputFile) ?? previous?.outputFile,
-    totalTokens: asNumber(structured.totalTokens) ?? previous?.totalTokens,
-    toolUses: asNumber(structured.totalToolUseCount) ?? previous?.toolUses,
-    durationMs: asNumber(structured.totalDurationMs) ?? previous?.durationMs,
+    status,
+    summary: asString(output.summary) ?? previous?.summary,
+    outputFile: asString(output.outputFile) ?? previous?.outputFile,
+    totalTokens: asNumber(output.totalTokens) ?? previous?.totalTokens,
+    toolUses: asNumber(output.totalToolUseCount) ?? previous?.toolUses,
+    durationMs: asNumber(output.totalDurationMs) ?? previous?.durationMs,
     toolStats: stats ?? previous?.toolStats,
     backgroundedByUser: backgroundedByUser || previous?.backgroundedByUser,
     timedOutAfterMs: timedOutAfterMs ?? previous?.timedOutAfterMs,
@@ -126,7 +148,7 @@ function subagentFromResult(
       previous?.background ||
       backgroundedByUser ||
       asyncLaunched ||
-      asString(structured.backgroundTaskId) !== undefined ||
+      asString(output.backgroundTaskId) !== undefined ||
       undefined
   };
 }
@@ -179,7 +201,7 @@ function applyToolResult(
   if (!found) return resolved;
   const text = stringifyToolResultContent(result.content);
   const status = classifyToolStatus(found.block.name, result.is_error === true, text, structured);
-  const subagent = subagentFromResult(found.block.subagent, structured);
+  const subagent = subagentFromResult(found.block.subagent, structured, status);
   const nextBlock: ToolBlock = {
     ...found.block,
     status,
@@ -195,7 +217,7 @@ function applyToolResult(
   // The Agent tool_result lands on the MAIN turn (parent null), so this is
   // where a thread learns its model, agentId and final tallies when no task
   // frame carried them.
-  next = applyAgentOutputToThread(next, toolUseId, structured, nowMs);
+  next = applyAgentOutputToThread(next, toolUseId, structured, status, nowMs);
   if (subagent?.taskId) {
     const record = recordFromResult(next.tasksById[subagent.taskId], subagent, nowMs);
     if (record) {
@@ -208,7 +230,7 @@ function applyToolResult(
   }
   const todos = extractTodos(found.block.name, found.block.input, structured);
   if (todos) next = { ...next, todos, revision: next.revision + 1 };
-  return next;
+  return reconcileSupersededAgentAttempts(next);
 }
 
 function clearPendingForTool(model: TranscriptModel, toolUseId: string): TranscriptModel {

@@ -1,4 +1,5 @@
 import { memo, useContext } from "react";
+import { isTaskSettled } from "../../model/tasks";
 import type { Block, ToolBlock } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { ChevronRight } from "../Icons";
@@ -24,7 +25,9 @@ function childAgents(block: ToolBlock): ToolBlock[] {
     for (const child of blocks) {
       if (child.kind !== "tool") continue;
       if (child.name === "Task" || child.name === "Agent") {
-        out.push(child);
+        // A failed attempt a later retry superseded is that retry's history,
+        // not a sibling agent.
+        if (child.supersededByToolUseId === undefined) out.push(child);
         continue;
       }
       walk(child.children);
@@ -53,7 +56,13 @@ export const AgentRow = memo(function AgentRow({
   const copy = useCopy();
   const openView = useContext(OpenViewContext);
   const info = block.subagent ?? {};
-  const running = block.status === "running" || block.status === "pending";
+  // An async agent's launch call settles with "async_launched" while the agent
+  // itself keeps running — the tool status alone would show a done dot on live
+  // work. The subagent's own task status is authoritative once present.
+  const running =
+    block.status === "running" ||
+    block.status === "pending" ||
+    (info.status !== undefined && !isTaskSettled(info.status));
   const description =
     info.description ?? (block.input.description as string | undefined) ?? block.name;
   const type = info.subagentType ?? (block.input.subagent_type as string | undefined);
@@ -80,7 +89,7 @@ export const AgentRow = memo(function AgentRow({
     <div className={`agent-row-wrap${nested ? " is-nested" : ""}`}>
       <button
         type="button"
-        className={`agent-row is-${block.status}`}
+        className={`agent-row is-${running ? "running" : block.status}`}
         onClick={() => openView({ kind: "agent", toolUseId: block.toolUseId })}
       >
         {/* The reference's marks: the drifting constellation while it runs, a
