@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TranscriptModel } from "../../model/types";
 import type { CopyFn } from "../CopyContext";
 import { activeView, createStack, popView, pushView, type HarnessView } from "./viewStack";
@@ -58,20 +58,29 @@ export function useViewRouter(model: TranscriptModel, copy: CopyFn): ViewRouter 
     });
   }, [model.agentThreads, model.tasksById]);
 
+  /**
+   * The current depth, readable SYNCHRONOUSLY from the Escape handler.
+   *
+   * Whether to call `preventDefault` has to be decided in the handler itself —
+   * the browser has already moved on by the time a state updater runs — so the
+   * decision cannot be made inside `setStack`. React does not promise the
+   * updater runs before the listener returns, and when it did not, Escape on an
+   * agent view fell through to the composer's interrupt as well as navigating.
+   */
+  const depth = useRef(stack.length);
+  depth.current = stack.length;
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      let popped = false;
-      setStack((current) => {
-        if (current.length <= 1) return current;
-        popped = true;
-        return popView(current);
-      });
-      // Only when it actually navigated: on the main view Escape still belongs
-      // to the composer's interrupt, and swallowing it here would make Stop
-      // stop working the moment the router mounted.
-      if (popped) event.preventDefault();
+      // On the main view Escape still belongs to the composer's interrupt;
+      // claiming it here would make Stop stop working the moment the router
+      // mounted.
+      if (depth.current <= 1) return;
+      event.preventDefault();
+      depth.current -= 1;
+      setStack(popView);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

@@ -11,12 +11,20 @@ import {
   ROUND3_CUTS,
   shellsOpening,
   shellsStopResponse,
+  shellsTail,
   withNestedToolStats,
   withWorkflowLogs,
+  withWorkflowActivity,
   workflowFixture,
   workflowTail,
   type BackgroundTaskSummary
 } from "./fixtures/round3";
+import {
+  fwdNestedFixture,
+  relayFixture,
+  RELAY_AGENT_TOOL_USE_ID,
+  ROUND4_CUTS
+} from "./fixtures/round4";
 import { round3SubagentTranscripts } from "./fixtures/subagentTranscripts";
 import { permissionCompletion, permissionResolution } from "./fixtures/permission";
 import { questionResolution } from "./fixtures/question";
@@ -49,6 +57,7 @@ export type ScenarioName =
   | "crash"
   | "shells"
   | "nested"
+  | "relay"
   | "workflow";
 
 export const SCENARIO_NAMES: ScenarioName[] = [
@@ -75,6 +84,7 @@ export const SCENARIO_NAMES: ScenarioName[] = [
   "crash",
   "shells",
   "nested",
+  "relay",
   "workflow"
 ];
 
@@ -143,6 +153,14 @@ export interface Scenario {
   };
   /** What the CLI answers when a task in this scenario is stopped. */
   stopResponse?: ProtocolLine[];
+  /**
+   * The agent the composer relays to in this scenario, and how the mock plays
+   * the relay back: main answers RELAYED, and the guidance is delivered into
+   * the agent's forwarded thread after a delay — which is the probe's own
+   * timing, since an agent reads its mailbox at its next tool round rather than
+   * on receipt.
+   */
+  relay?: { toolUseId: string; description: string };
   /** Canned `readTaskOutput` tails, keyed by task id, appended to as it "runs". */
   taskOutput?: Record<string, string[]>;
   /** Canned `loadSubagentTranscript` replies, keyed by taskId or runId/agentId. */
@@ -178,6 +196,21 @@ export interface ScenarioOptions {
    * then fails — which is the only way to reach the degraded note.
    */
   restoreFails?: boolean;
+}
+
+/**
+ * A frame that belongs to the AGENT rather than to main's relay turn.
+ *
+ * The relay probe's tail interleaves two stories: the agent's four sleeps, and
+ * main taking a turn to run ListAgents/SendMessage. The dev scenario plays the
+ * agent's half on a timer so its view is live, and leaves main's half to the
+ * MOCK — which synthesizes it in response to a real send, so the scenario
+ * demonstrates the relay rather than replaying a recording of one.
+ */
+function isAgentSideFrame(line: ProtocolLine): boolean {
+  const frame = line as { type?: string; parent_tool_use_id?: string | null; subtype?: string };
+  if (frame.type === "system") return true;
+  return frame.parent_tool_use_id === RELAY_AGENT_TOOL_USE_ID;
 }
 
 export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenario {
@@ -284,18 +317,29 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
         queuedDrafts,
         killAfterMs: 1600
       };
-    case "shells":
+    case "shells": {
       // Feature 3, end to end. The opening slice launches a background shell —
-      // strip appears — and then leaves a FOREGROUND Bash in flight beside it,
-      // which is the only state where Move-to-background and Ctrl+B exist.
-      // Stop on the strip row replays the CLI's real kill sequence.
+      // dock row appears — and then leaves a FOREGROUND Bash in flight beside
+      // it, which is the only state where Move-to-background and Ctrl+B exist.
+      // Stop on the dock row replays the CLI's real kill sequence.
+      //
+      // Round 4 adds the SECOND shell back on a timer. One row is not a dock:
+      // the tree indent, the internal scroll past four rows, ↑↓ between rows,
+      // and a row that persists DIMMED after its shell is stopped all need a
+      // list, and the round-3 slice showed exactly one.
+      const shells = rebaseRound3(shellsOpening, epochBaseOf(shellsOpening));
       return {
         name: key,
-        lines: rebaseRound3(shellsOpening, epochBaseOf(shellsOpening)),
+        lines: shells,
         cliAvailable: true,
         hasSessions: true,
         cachedModels: true,
         processRunning: true,
+        liveTail: {
+          lines: rebaseRound3(shellsTail, epochBaseOf(shellsOpening)),
+          startAfterMs: 3200,
+          stepMs: 800
+        },
         foreground: {
           lines: foregroundBashLaunch,
           toolUseId: FOREGROUND_BASH_TOOL_USE_ID,
@@ -321,39 +365,88 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
           ]
         }
       };
+    }
     case "nested": {
-      // Feature 1: outer agent spawns an inner one. The slice stops with BOTH
-      // running, so the tree is live; the tail completes them inside-out, which
-      // is where toolStats and the AgentOutput metrics land. The toolStats
-      // themselves are hand-added (the probe's agents did pure arithmetic and
-      // reported none), so the completion summary is actually reachable here.
-      const nested = withNestedToolStats(nestedFixture);
+      // Rebuilt in round 4 on the fwd2 probe, which is the SAME nested-agent
+      // story recorded with `forwardSubagentText` — so both agents' whole
+      // conversations are on the wire and their views have something to show.
+      // The round-3 recording had only tool frames, which is exactly why its
+      // agent views would have been empty.
+      //
+      // The slice stops with BOTH agents live: the outer has spoken and spawned
+      // the inner, the inner has its prompt. The tail completes them
+      // inside-out, which is where the AgentOutput metrics and toolStats land.
+      const nested = withNestedToolStats(fwdNestedFixture);
       const base = epochBaseOf(nested);
       const now = Date.now();
       return {
         name: key,
-        lines: rebaseRound3(nested.slice(0, ROUND3_CUTS.nested), base, now),
+        lines: rebaseRound3(nested.slice(0, ROUND4_CUTS.nested), base, now),
         cliAvailable: true,
         hasSessions: true,
         cachedModels: true,
         processRunning: true,
         liveTail: {
-          lines: rebaseRound3(nested.slice(ROUND3_CUTS.nested), base, now),
+          lines: rebaseRound3(nested.slice(ROUND4_CUTS.nested), base, now),
           startAfterMs: 2600,
           stepMs: 900
         },
         subagentTranscripts: round3SubagentTranscripts
       };
     }
+    case "relay": {
+      // Round 4's composer-to-agent path, end to end.
+      //
+      // The slice stops at the launching turn's `result`: a backgrounded 'Slow
+      // summarizer' is running, its dock row is up, and its agent view has a
+      // composer pointed at it. Sending there runs the real relay — background
+      // the Task, ask main to pass it on — and the mock answers RELAYED and
+      // then delivers the guidance into the agent's forwarded thread a few
+      // seconds later, which is the timing the probe actually observed (the
+      // agent reads its mailbox at its NEXT tool round, not on receipt).
+      const base = epochBaseOf(relayFixture);
+      const now = Date.now();
+      return {
+        name: key,
+        lines: rebaseRound3(relayFixture.slice(0, ROUND4_CUTS.relay), base, now),
+        cliAvailable: true,
+        hasSessions: true,
+        cachedModels: true,
+        processRunning: true,
+        // The agent's own work carries on under the reader, so the view it is
+        // read in is genuinely live rather than a finished transcript.
+        liveTail: {
+          lines: rebaseRound3(
+            relayFixture.slice(ROUND4_CUTS.relay).filter(isAgentSideFrame),
+            base,
+            now
+          ),
+          startAfterMs: 2000,
+          stepMs: 1400
+        },
+        relay: { toolUseId: RELAY_AGENT_TOOL_USE_ID, description: "Slow summarizer" },
+        stopResponse: shellsStopResponse
+      };
+    }
     case "workflow": {
-      // Feature 2: phases Gather/Merge with three agents. The slice stops at the
-      // first progress frame — both Gather agents queued — and the tail advances
-      // them live, lands the launching turn's `result` MID-WORKFLOW (the turn
-      // must not reopen when progress keeps arriving after it), settles the
-      // workflow in the background, and opens the CLI's own summary turn.
-      // Logs are hand-added: the probe's workflow never called log(), which left
-      // the card's log strip unreachable in the one scenario pinned to show it.
-      const flow = withWorkflowLogs(workflowFixture);
+      // Round 4: the compact inline row and the multi-pane BROWSER it opens.
+      //
+      // Phases Gather/Merge with three agents. The slice stops at the first
+      // progress frame — both Gather agents queued — and the tail advances them
+      // live, so the browser can be opened MID-RUN: the phases column's done
+      // counts climb under the reader, the selected agent's detail swaps from a
+      // live Activity line to an Outcome, and ↑↓ / x / esc all act on a moving
+      // target. The launching turn's `result` lands mid-workflow (the turn must
+      // not reopen when progress keeps arriving after it), the workflow settles
+      // in the background, and the CLI's own summary turn opens.
+      //
+      // Logs and per-agent activity are hand-added: the probe's workflow never
+      // called log() and its agents used no tools, which left the log strip and
+      // the browser's Activity section unreachable in the one scenario pinned
+      // to show them. `subagentTranscripts` supplies prompts and outcomes that
+      // are LONGER than their previews, so expand-from-disk visibly does
+      // something.
+      const flow = withWorkflowActivity(withWorkflowLogs(workflowFixture));
       // Rebased on the fixture's FIRST epoch (agent-alpha's queuedAt), shared by
       // both slices: anchoring on the probe's session init put every startedAt
       // ~7.5s in the future and the live elapsed read a clamped 0s for an

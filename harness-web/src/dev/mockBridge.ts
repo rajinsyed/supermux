@@ -110,6 +110,74 @@ function replyLines(store: HarnessStore, text: string): void {
   ]);
 }
 
+/**
+ * The user's own text back out of a relay instruction.
+ *
+ * The composer sends the probed wrapper — "Relay this message verbatim to the
+ * running 'X' subagent … : '<text>'. Do not act on it yourself" — and what the
+ * agent eventually receives is the quoted part. Undefined when the message is
+ * not a relay at all, which is how the mock tells an ordinary send apart.
+ */
+function relayMessage(text: string): string | undefined {
+  const match = /Relay this message verbatim to the running '.*?' subagent[^:]*: '([\s\S]*)'\. Do not act/.exec(
+    text
+  );
+  return match?.[1];
+}
+
+/** Main's whole answer to a relay: one word, and the turn ends. */
+function replyRelayed(store: HarnessStore): void {
+  replySeq += 1;
+  const seq = replySeq;
+  const messageId = `msg_relay_${seq}`;
+  store.receive([
+    {
+      kind: "protocol",
+      line: {
+        type: "assistant",
+        message: { id: messageId, role: "assistant", content: [{ type: "text", text: "RELAYED" }] },
+        uuid: `dev-relay-a-${seq}`
+      } as ProtocolLine
+    },
+    {
+      kind: "protocol",
+      line: {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "RELAYED",
+        duration_ms: 2400,
+        num_turns: 1,
+        usage: { input_tokens: 9, output_tokens: 3 },
+        uuid: `dev-relay-r-${seq}`
+      } as ProtocolLine
+    }
+  ]);
+}
+
+/**
+ * The mailbox drop landing in the agent's own thread.
+ *
+ * A forwarded `user` frame with `parent_tool_use_id` set — exactly the shape the
+ * probe recorded — so it goes through the SAME reducer path a real delivery
+ * does, confirming the pending message rather than being special-cased.
+ */
+function deliverToAgent(store: HarnessStore, toolUseId: string, text: string): void {
+  replySeq += 1;
+  store.receive([
+    {
+      kind: "protocol",
+      line: {
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text }] },
+        parent_tool_use_id: toolUseId,
+        subagent_type: "general-purpose",
+        uuid: `dev-relay-deliver-${replySeq}`
+      } as ProtocolLine
+    }
+  ]);
+}
+
 function bridgeError(code: string, userMessage: string): HarnessBridgeError {
   return new HarnessBridgeError({ code, userMessage });
 }
@@ -275,6 +343,22 @@ export function installMockBridge(store: HarnessStore): Scenario {
       );
     },
     async send({ text }) {
+      // The relay, played the way the probe actually went.
+      //
+      // Main answers RELAYED almost at once — it only has to run ListAgents and
+      // SendMessage — and the agent does NOT see the message then: it reads its
+      // mailbox at its next tool round, seconds later. A mock that delivered on
+      // send would hide the entire reason the agent view says "delivered
+      // through Claude at the agent's next tool call", and would make the
+      // pending→confirmed transition untestable in the one scenario pinned to
+      // show it.
+      const relayTarget = scenario.relay;
+      const relayed = relayTarget ? relayMessage(text) : undefined;
+      if (relayTarget && relayed !== undefined) {
+        window.setTimeout(() => replyRelayed(store), 420);
+        window.setTimeout(() => deliverToAgent(store, relayTarget.toolUseId, relayed), 2600);
+        return { sent: true };
+      }
       window.setTimeout(() => replyTo(text), 320);
       // The native side reads the CLI's topic title off disk after each turn;
       // here the first send stands in for it so the header retitle is visible.
@@ -419,6 +503,13 @@ export function installMockBridge(store: HarnessStore): Scenario {
     },
     async backgroundTask({ toolUseId }) {
       await new Promise((resolve) => window.setTimeout(resolve, 160));
+      // The relay's first step. The scenario's agent was launched with
+      // `run_in_background: true`, so it is ALREADY backgrounded — the CLI
+      // answers true and sends no frames, which is the common case and the one
+      // the composer must not treat as a failure.
+      if (scenario.relay && toolUseId === scenario.relay.toolUseId) {
+        return { backgrounded: true };
+      }
       const foreground = scenario.foreground;
       if (!foreground || (toolUseId && toolUseId !== foreground.toolUseId)) {
         return { backgrounded: false };
