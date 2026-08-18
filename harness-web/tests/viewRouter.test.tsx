@@ -99,7 +99,10 @@ describe("the view stack", () => {
 });
 
 describe("the agents dock", () => {
-  const model = replayLines(fwdNestedFixture);
+  // Cut mid-flight: the dock only ever holds RUNNING work now, so a finished
+  // replay would render an empty dock and every row assertion below would be
+  // vacuously true.
+  const model = replayLines(fwdNestedFixture.slice(0, 40));
   const rows = dockRows(model);
 
   test("every row is a button that opens its own view", () => {
@@ -125,16 +128,28 @@ describe("the agents dock", () => {
     expect(outer.querySelector(".dock-guide")).toBeNull();
   });
 
-  test("a settled row persists, dimmed, with a frozen duration", () => {
+  test("a finished agent's row is GONE, not dimmed", () => {
+    // Round 4 kept it, dimmed and frozen. Dogfood: "done or stopped agents
+    // shouldnt show anymore and should be cleared."
+    const finished = replayLines(fwdNestedFixture);
+    const { container } = mount(
+      <AgentsDock rows={dockRows(finished)} activeView={MAIN_VIEW} onOpen={() => undefined} />
+    );
+    expect(container.querySelector(`[data-row-id="agent:${FWD_OUTER_TOOL_USE_ID}"]`)).toBeNull();
+    // Only main is left, so the whole dock is absent — no empty shell with a
+    // header reading "0 agents".
+    expect(container.querySelector(".agents-dock")).toBeNull();
+  });
+
+  test("a live row counts up and says it is running", () => {
     const { container } = mount(
       <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
     );
     const outer = container.querySelector(`[data-row-id="agent:${FWD_OUTER_TOOL_USE_ID}"]`)!;
-    expect(outer.className).toContain("is-settled");
-    // A live `Elapsed` on a finished agent would keep counting, which is the
-    // dock claiming the work is still going.
-    expect(outer.querySelector(".dock-elapsed")!.textContent).not.toBe("");
-    expect(outer.querySelector(".dock-state")!.textContent).toBe("Done");
+    expect(outer.className).toContain("is-running");
+    expect(outer.querySelector(".dock-elapsed")).not.toBeNull();
+    expect(outer.querySelector(".dock-state")!.textContent).toBe("Running");
+    expect(outer.querySelector(".dock-dot")!.className).toContain("is-running");
   });
 
   test("the open view's row is marked current", () => {
@@ -198,6 +213,102 @@ describe("the agents dock", () => {
     expect(container.querySelector(".agents-dock")).toBeNull();
   });
 
+  /**
+   * Rows now VANISH under the reader, which the persisted dock never had to
+   * survive: an agent finishing removes the row the keyboard walker was sitting
+   * on. The roving tabstop has to land somewhere sane rather than pointing past
+   * the end of a shorter list.
+   */
+  describe("when the focused row disappears", () => {
+    test("focus falls back to the last row instead of off the end", () => {
+      const { container, rerender } = mount(
+        <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
+      );
+      const list = container.querySelector(".agents-dock-list")!;
+      // Walk to the deepest row — the inner agent, index 2 of 3.
+      fireEvent.keyDown(list, { key: "End" });
+      const buttons = () =>
+        Array.from(container.querySelectorAll(".dock-row-open")) as HTMLButtonElement[];
+      expect(buttons().length).toBe(3);
+      expect(buttons()[2].tabIndex).toBe(0);
+      expect(document.activeElement).toBe(buttons()[2]);
+
+      // Both agents finish; the dock is main-only, so it unmounts entirely.
+      const finished = dockRows(replayLines(fwdNestedFixture));
+      rerender(
+        <CopyProvider dict={undefined}>
+          <AgentsDock rows={finished} activeView={MAIN_VIEW} onOpen={() => undefined} />
+        </CopyProvider>
+      );
+      expect(container.querySelector(".agents-dock")).toBeNull();
+    });
+
+    test("the walker re-homes onto the row that took its place", () => {
+      const { container, rerender } = mount(
+        <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
+      );
+      const list = container.querySelector(".agents-dock-list")!;
+      fireEvent.keyDown(list, { key: "End" });
+      const buttons = () =>
+        Array.from(container.querySelectorAll(".dock-row-open")) as HTMLButtonElement[];
+      expect(buttons()[2].tabIndex).toBe(0);
+
+      // Only the inner agent finishes: two rows left, and the walker's index 2
+      // no longer exists.
+      const trimmed = rows.filter((row) => row.id !== `agent:${FWD_INNER_TOOL_USE_ID}`);
+      act(() => {
+        rerender(
+          <CopyProvider dict={undefined}>
+            <AgentsDock rows={trimmed} activeView={MAIN_VIEW} onOpen={() => undefined} />
+          </CopyProvider>
+        );
+      });
+      expect(buttons().length).toBe(2);
+      // Clamped to the new last row, and DOM focus followed it — the reader was
+      // in the dock, so leaving focus on a detached node would strand the
+      // keyboard entirely.
+      expect(buttons()[1].tabIndex).toBe(0);
+      expect(document.activeElement).toBe(buttons()[1]);
+      // And it still opens the right thing: no stale index pointing at a row
+      // that has moved.
+      const opened: string[] = [];
+      const { container: fresh } = mount(
+        <AgentsDock
+          rows={trimmed}
+          activeView={MAIN_VIEW}
+          onOpen={(view) => opened.push(viewKey(view))}
+        />
+      );
+      const freshList = fresh.querySelector(".agents-dock-list")!;
+      fireEvent.keyDown(freshList, { key: "End" });
+      fireEvent.keyDown(freshList, { key: "Enter" });
+      expect(opened).toEqual([`agent:${FWD_OUTER_TOOL_USE_ID}`]);
+    });
+
+    test("a row vanishing does NOT steal focus from outside the dock", () => {
+      // A background shell finishing must not pull the caret out of the
+      // composer and eat the next character the user types.
+      const { container, rerender } = mount(
+        <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
+      );
+      const outside = document.createElement("textarea");
+      document.body.appendChild(outside);
+      outside.focus();
+      expect(document.activeElement).toBe(outside);
+
+      const trimmed = rows.filter((row) => row.id !== `agent:${FWD_INNER_TOOL_USE_ID}`);
+      act(() => {
+        rerender(
+          <CopyProvider dict={undefined}>
+            <AgentsDock rows={trimmed} activeView={MAIN_VIEW} onOpen={() => undefined} />
+          </CopyProvider>
+        );
+      });
+      expect(document.activeElement).toBe(outside);
+      outside.remove();
+    });
+  });
+
   test("Stop on a running row sends that row's own task id", async () => {
     const calls: string[] = [];
     window.supermuxHarnessMock = {
@@ -214,8 +325,8 @@ describe("the agents dock", () => {
     const { container } = mount(
       <AgentsDock rows={liveRows} activeView={MAIN_VIEW} onOpen={() => undefined} />
     );
-    // Exactly one Stop on screen: main has nothing to stop, and a settled row
-    // must not offer to kill work that already ended.
+    // Exactly one Stop on screen: main has nothing to stop, and finished work
+    // is not on the dock at all any more.
     const buttons = container.querySelectorAll(".dock-stop");
     expect(buttons.length).toBe(1);
     fireEvent.click(buttons[0]!);

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getBridge } from "../../bridge";
 import type { CopyKey } from "../../copyKeys";
 import type { DockRow } from "../../model/dock";
@@ -7,7 +7,6 @@ import { ChevronDown, ChevronRight, Layers, Map as MapIcon, Sparkle, Stop, Termi
 import { formatTokens } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
-import { formatCompactDuration } from "../format";
 import type { HarnessView } from "../views/viewStack";
 import { viewKey } from "../views/viewStack";
 
@@ -26,31 +25,16 @@ function RowIcon({ kind }: { kind: DockRow["kind"] }) {
 }
 
 /**
- * The row's outcome as one word, from the catalog.
+ * The row's state as one word.
  *
- * The wire's status tokens are lowercase protocol vocabulary and an
- * unrecognised one (a future `paused`) must degrade rather than leak: a dimmed
- * row that says "Done" when the CLI said something else is worse than one that
- * says nothing.
+ * Every non-main row in the dock is RUNNING by construction — the model drops a
+ * row the moment its work is terminal — so there is no settled vocabulary here
+ * any more. Main is the exception: it stays whether or not a turn is in flight,
+ * and Idle is what it says when nothing is.
  */
 function statusKey(row: DockRow): CopyKey | undefined {
-  if (row.running) {
-    return row.kind === "main"
-      ? "supermux.harness.dock.statusRunning"
-      : "supermux.harness.dock.statusRunning";
-  }
-  if (row.status === "failed") return "supermux.harness.dock.statusFailed";
-  if (row.status === "killed" || row.status === "stopped") return "supermux.harness.dock.statusStopped";
-  if (row.status === "completed") return "supermux.harness.dock.statusDone";
-  if (row.kind === "main") return "supermux.harness.dock.statusIdle";
-  return undefined;
-}
-
-function dotClass(row: DockRow): string {
-  if (row.running) return "is-running";
-  if (row.status === "failed") return "is-error";
-  if (row.status === "killed" || row.status === "stopped") return "is-stopped";
-  return "is-done";
+  if (row.running) return "supermux.harness.dock.statusRunning";
+  return row.kind === "main" ? "supermux.harness.dock.statusIdle" : undefined;
 }
 
 const DockRowView = memo(function DockRowView({
@@ -84,15 +68,6 @@ const DockRowView = memo(function DockRowView({
   if (row.totalTokens) {
     metrics.push(copy("supermux.harness.subagent.tokens", { tokens: formatTokens(row.totalTokens) }));
   }
-  // A settled row's elapsed is FROZEN at what the work took. A live `Elapsed`
-  // left on a finished agent keeps counting, which is the dock claiming the
-  // work is still going — the one thing a persisted row must never imply. The
-  // duration is computed in the model, where the two-clocks problem is
-  // documented; the row only formats it.
-  const settledFor =
-    !row.running && row.durationMs !== undefined
-      ? formatCompactDuration(row.durationMs, copy)
-      : undefined;
 
   const stop = () => {
     if (!row.stopTaskId) return;
@@ -123,9 +98,11 @@ const DockRowView = memo(function DockRowView({
         onClick={() => onOpen(row.view)}
       >
         {/* The tree guide, drawn only for a nested agent. A `└` on a top-level
-            row would claim a parent it does not have. */}
+            row would claim a parent it does not have — and depth is counted
+            over VISIBLE ancestors, so a child whose parent finished is promoted
+            rather than left hanging off a row that is gone. */}
         {row.depth > 1 ? <span className="dock-guide" aria-hidden="true" /> : null}
-        <span className={`dock-dot ${dotClass(row)}`} aria-hidden="true" />
+        <span className={`dock-dot ${row.running ? "is-running" : "is-done"}`} aria-hidden="true" />
         <span className="dock-icon" aria-hidden="true">
           <RowIcon kind={row.kind} />
         </span>
@@ -143,8 +120,6 @@ const DockRowView = memo(function DockRowView({
         {metrics.length > 0 ? <span className="dock-metrics tnum">{metrics.join(" · ")}</span> : null}
         {row.running && row.startedAtMs !== undefined ? (
           <Elapsed className="dock-elapsed tnum" startedAtMs={row.startedAtMs} />
-        ) : settledFor ? (
-          <span className="dock-elapsed tnum">{settledFor}</span>
         ) : null}
         {state ? <span className="dock-state">{copy(state)}</span> : null}
       </button>
@@ -168,11 +143,11 @@ const DockRowView = memo(function DockRowView({
 /**
  * The CLI's agents dock, above the composer.
  *
- * Rows are `main` first, then agents in tree order (nested ones indented under
- * their parent), then workflows and shells. Every row PERSISTS for the session
- * once it has appeared — the CLI's own behaviour, and the reason the round-3
- * strip was wrong: an agent that finished thirty seconds ago is precisely what
- * a user goes looking for.
+ * Rows are `main` first, then running agents in tree order (nested ones
+ * indented under their parent), then running workflows and shells. A row is
+ * REMOVED the instant its work is terminal: the dock says what is happening
+ * now, and the transcript's own compact agent/workflow rows are where finished
+ * work is read.
  */
 export const AgentsDock = memo(function AgentsDock({
   rows,
@@ -232,9 +207,33 @@ export const AgentsDock = memo(function AgentsDock({
     [clamped, focusRow, onOpen, rows]
   );
 
-  useEffect(() => {
+  /**
+   * Was the reader's focus IN the dock, recorded as it happens.
+   *
+   * It cannot be read back after the fact: removing the focused element resets
+   * `document.activeElement` to the body, so by the time the effect below runs,
+   * the one row that could prove the reader was in the dock is exactly the row
+   * that is gone. Answering "is focus in the dock" from the body would decline
+   * to restore in precisely the case restoration exists for.
+   */
+  const hadFocus = useRef(false);
+
+  /**
+   * Rows now VANISH under the reader — an agent finishing removes its row — so
+   * the roving tabstop has to survive its own row disappearing.
+   *
+   * Two halves. The index is clamped back into range (above) so the walker
+   * never points past the end, and DOM focus is moved to the row that took its
+   * place — but only when the focus WAS in the dock. Stealing focus from the
+   * composer because a background shell happened to finish would eat the next
+   * character the user typed, which is the far worse failure.
+   */
+  useLayoutEffect(() => {
     refs.current.length = rows.length;
-  }, [rows.length]);
+    if (focusIndex === clamped) return;
+    setFocusIndex(clamped);
+    if (hadFocus.current) refs.current[clamped]?.focus();
+  }, [clamped, focusIndex, rows.length]);
 
   // A row the reader has just opened is scrolled into the dock's own viewport:
   // the list is height-capped past ~4 rows, and an agent selected from the chat
@@ -249,6 +248,9 @@ export const AgentsDock = memo(function AgentsDock({
     node?.scrollIntoView({ block: "nearest" });
   }, [activeKey, open, rows]);
 
+  // Nothing but main is running, so there is nothing to dock. The empty shell
+  // — a header reading "0 agents" over an empty list — is chrome that says
+  // less than its own absence.
   if (rows.length <= 1) return null;
 
   return (
@@ -277,6 +279,20 @@ export const AgentsDock = memo(function AgentsDock({
           tabIndex={-1}
           aria-label={copy("supermux.harness.dock.a11y")}
           onKeyDown={onKeyDown}
+          // Bubbling focus events, so this is one listener for every row rather
+          // than a handler per button — and it stays correct as rows come and go.
+          onFocus={() => {
+            hadFocus.current = true;
+          }}
+          onBlur={(event) => {
+            // A blur INSIDE the list (row to row) is not leaving the dock, and
+            // a blur caused by the focused row being removed reports no
+            // relatedTarget at all — which is the case that must keep the flag.
+            const next = event.relatedTarget;
+            if (next instanceof HTMLElement) {
+              hadFocus.current = event.currentTarget.contains(next);
+            }
+          }}
         >
           {rows.map((row, index) => (
             <DockRowView

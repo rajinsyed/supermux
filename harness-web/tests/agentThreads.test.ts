@@ -6,6 +6,7 @@ import {
   RELAY_AGENT_TOOL_USE_ID,
   relayFixture
 } from "../src/dev/fixtures/round4";
+import { shellsFixture, workflowFixture } from "../src/dev/fixtures/round3";
 import { flattenThreads, isThreadRunning } from "../src/model/agentThreads";
 import { dockRows } from "../src/model/dock";
 import { applyEvent, applyLine, createIndex, createModel, replayLines } from "../src/model/transcript";
@@ -110,59 +111,73 @@ describe("agent threads build from the forwarded frames", () => {
   });
 });
 
+/**
+ * The dock is a LIVE SET.
+ *
+ * Round 4 kept a settled row on the dock, dimmed, for the session. Dogfood
+ * verdict: "done or stopped agents shouldnt show anymore and should be cleared.
+ * only working agents should show. same for workflows." So membership is now
+ * exactly "is this still running", and these assert the rows appear and then
+ * GO — for agents, workflows and shells alike.
+ */
 describe("the dock's rows", () => {
-  test("main is first, then agents in tree order with an indent per level", () => {
-    const model = replayLines(fwdNestedFixture);
-    const rows = dockRows(model);
-    expect(rows.map((row) => [row.kind, row.depth, row.label])).toEqual([
+  test("main is first, then RUNNING agents in tree order with an indent per level", () => {
+    const live = replayThrough(fwdNestedFixture, 40);
+    expect(dockRows(live).map((row) => [row.kind, row.depth, row.label])).toEqual([
       ["main", 0, ""],
       ["agent", 1, "Outer relay"],
       ["agent", 2, "Inner counter"]
     ]);
   });
 
-  test("a finished agent KEEPS its row, marked settled", () => {
-    // The whole difference from the round-3 tasks strip, whose membership came
-    // from `background_tasks_changed` and emptied the moment the CLI said
-    // nothing was backgrounded — which is exactly when a user goes looking for
-    // what an agent just did.
+  test("a finished agent LOSES its row", () => {
+    // The round-4 behaviour, inverted. A dock full of rows for work that ended
+    // is a list the user has to read past to find the one thing still going,
+    // and nothing ever cleared it.
     const model = replayLines(fwdNestedFixture);
-    const rows = dockRows(model).filter((row) => row.kind === "agent");
-    expect(rows.length).toBe(2);
-    expect(rows.every((row) => !row.running)).toBe(true);
-    expect(rows.every((row) => row.status === "completed")).toBe(true);
-    expect(model.backgroundTasks.length).toBe(0);
+    expect(model.agentThreads[FWD_OUTER_TOOL_USE_ID].status).toBe("completed");
+    expect(dockRows(model).filter((row) => row.kind === "agent")).toEqual([]);
   });
 
-  test("a settled row carries the tallies its work cost", () => {
+  test("when everything has finished, only main is left — so the dock hides", () => {
+    // `rows.length <= 1` is what AgentsDock renders nothing on, so an empty
+    // dock is proven here rather than only in the DOM test.
     const model = replayLines(fwdNestedFixture);
-    const outer = dockRows(model).find((row) => row.label === "Outer relay")!;
-    expect(outer.totalTokens).toBeGreaterThan(0);
-    expect(outer.endedAtMs).toBeDefined();
-    expect(outer.stopTaskId).toBeUndefined();
+    expect(dockRows(model).map((row) => row.kind)).toEqual(["main"]);
   });
 
-  test("a settled duration comes off the WIRE, not from two different clocks", () => {
-    // `startedAtMs` is the local instant the pane first heard of the task;
-    // `end_time` on the task patch is the CLI's own epoch. Subtracting one from
-    // the other reported "1ms" for a shell that had been running for sixteen
-    // seconds, and would be days out on a resumed session.
-    const model = replayLines(relayFixture);
-    const rows = dockRows(model).filter((row) => !row.running && row.kind !== "main");
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      if (row.durationMs === undefined) continue;
-      expect(row.durationMs).toBeGreaterThan(0);
-      // Nothing that ran for seconds may report a sub-100ms duration.
-      expect(row.durationMs).toBeGreaterThan(100);
+  test("main STAYS when it goes idle — it is a place, not a task", () => {
+    const model = replayLines(fwdNestedFixture);
+    const main = dockRows(model)[0];
+    expect(main.kind).toBe("main");
+    expect(main.running).toBe(false);
+    // And it never offers a Stop: there is no task behind it.
+    expect(main.stopTaskId).toBeUndefined();
+  });
+
+  test("a live row carries the tallies its work has cost so far", () => {
+    const live = replayThrough(fwdNestedFixture, 40);
+    const outer = dockRows(live).find((row) => row.label === "Outer relay")!;
+    expect(outer.running).toBe(true);
+    expect(outer.startedAtMs).toBeDefined();
+  });
+
+  test("every non-main row on the dock is running, in every fixture", () => {
+    // The invariant the whole item rests on: nothing terminal is ever docked.
+    for (const fixture of [fwdNestedFixture, relayFixture]) {
+      for (const cut of [20, 34, 40, fixture.length]) {
+        for (const row of dockRows(replayThrough(fixture, cut))) {
+          if (row.kind === "main") continue;
+          expect(row.running).toBe(true);
+          expect(["completed", "failed", "killed", "stopped"]).not.toContain(row.status ?? "");
+        }
+      }
     }
   });
 
-  test("a settled shell does not print its own description twice", () => {
-    // The CLI writes the task's description into `summary` on the stop
-    // notification, so label and detail were the same sentence on one row.
-    const model = replayLines(relayFixture);
-    for (const row of dockRows(model)) {
+  test("a live shell does not print its own description twice", () => {
+    const live = replayThrough(relayFixture, 34);
+    for (const row of dockRows(live)) {
       if (row.detail === undefined) continue;
       expect(row.detail).not.toBe(row.label);
     }
@@ -178,24 +193,70 @@ describe("the dock's rows", () => {
   test("a backgrounded shell earns a row; a foreground one does not", () => {
     // `task_started` fires for foreground Bash too, which is why the round-3
     // strip took membership from `background_tasks_changed` alone. The dock
-    // keeps that rule for shells and only relaxes PERSISTENCE.
-    const model = replayLines(relayFixture);
-    const shells = dockRows(model).filter((row) => row.kind === "shell");
+    // keeps that rule for shells on TOP of the running rule.
+    const live = replayThrough(relayFixture, 34);
+    const shells = dockRows(live).filter((row) => row.kind === "shell");
     for (const row of shells) {
-      expect(model.tasksById[row.view.kind === "shell" ? row.view.taskId : ""].isBackgrounded).toBe(
+      expect(live.tasksById[row.view.kind === "shell" ? row.view.taskId : ""].isBackgrounded).toBe(
         true
       );
     }
   });
 
   test("an agent never appears twice — once as a thread and once as a task row", () => {
-    const model = replayLines(relayFixture);
-    const rows = dockRows(model);
+    const live = replayThrough(relayFixture, 34);
+    const rows = dockRows(live);
     const agentIds = rows.filter((row) => row.kind === "agent").map((row) => row.label);
     expect(new Set(agentIds).size).toBe(agentIds.length);
     // The relay probe's agent is a `local_agent` task AND a thread; only the
     // thread may draw it, or the dock lists one agent as two things.
     expect(rows.filter((row) => row.label === "Slow summarizer").length).toBe(1);
+  });
+
+  test("a child whose parent finished is PROMOTED, not left hanging on a guide", () => {
+    // Depth is counted over VISIBLE ancestors. Without that the inner agent
+    // would keep depth 2 and draw a `└` under a row that is no longer on the
+    // dock — an indent pointing at nothing.
+    let live = replayThrough(fwdNestedFixture, 40);
+    expect(dockRows(live).map((row) => row.depth)).toEqual([0, 1, 2]);
+    live = {
+      ...live,
+      agentThreads: {
+        ...live.agentThreads,
+        [FWD_OUTER_TOOL_USE_ID]: {
+          ...live.agentThreads[FWD_OUTER_TOOL_USE_ID],
+          status: "completed"
+        }
+      }
+    };
+    const rows = dockRows(live);
+    expect(rows.map((row) => [row.kind, row.depth, row.label])).toEqual([
+      ["main", 0, ""],
+      ["agent", 1, "Inner counter"]
+    ]);
+  });
+
+  test("a workflow row goes the moment the run is terminal", () => {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of workflowFixture) model = applyLine(model, index, line, Date.now());
+    expect(model.tasksById.wxajrgc4u.status).toBe("completed");
+    expect(dockRows(model).filter((row) => row.kind === "workflow")).toEqual([]);
+    // And it WAS there while it ran.
+    const mid = replayThrough(workflowFixture, 30);
+    expect(dockRows(mid).filter((row) => row.kind === "workflow").length).toBe(1);
+  });
+
+  test("a stopped shell row goes too, not just a completed one", () => {
+    const mid = replayThrough(shellsFixture, 30);
+    const running = dockRows(mid).filter((row) => row.kind === "shell");
+    expect(running.length).toBeGreaterThan(0);
+    const model = replayLines(shellsFixture);
+    for (const row of dockRows(model)) {
+      if (row.kind !== "shell") continue;
+      const record = model.tasksById[row.view.kind === "shell" ? row.view.taskId : ""];
+      expect(["completed", "failed", "killed", "stopped"]).not.toContain(record.status ?? "");
+    }
   });
 });
 

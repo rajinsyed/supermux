@@ -7,45 +7,45 @@ import type { TranscriptModel } from "./types";
  * The dock's rows, derived once so the list, the keyboard walker, and the tests
  * cannot disagree about what is in it or in what order.
  *
- * The CLI's dock is a HISTORY, not a live set: a row appears when its work
- * starts and stays for the session, dimmed, once it finishes. That is the whole
- * difference from the round-3 tasks strip, whose membership came from
- * `background_tasks_changed` and emptied the moment the CLI said nothing was
- * backgrounded — which is exactly when a user goes looking for what an agent
- * just did.
+ * The dock is a LIVE SET, not a history: a row appears while its work is
+ * running and is REMOVED the moment the work is terminal (completed, failed,
+ * killed, stopped). Round 4 persisted settled rows, dimmed, on the theory that
+ * a just-finished agent is what a user goes looking for. Dogfood said the
+ * opposite — the dock filled with dead rows the user had to read past to find
+ * the one thing still working, and nothing cleared them.
  *
- * Shells keep the strip's rule, though, and for the same reason it existed:
- * `task_started` fires for FOREGROUND Bash too, so a dock fed by task frames
- * alone would list every command the session ever ran. A shell earns its row by
- * having been in the background set, and keeps it afterwards.
+ * Finished work stays REACHABLE without being docked: the compact agent and
+ * workflow rows in the transcript sit where the work was launched and open the
+ * same views. The dock answers "what is running right now"; the transcript
+ * answers "what happened".
+ *
+ * Shells keep the extra rule they always had: `task_started` fires for
+ * FOREGROUND Bash too, so a dock fed by task frames alone would list every
+ * command the session ever ran. A shell earns its row by being in the
+ * background set AND still running.
  */
 export type DockRowKind = "main" | "agent" | "workflow" | "shell";
 
 export interface DockRow {
   id: string;
   kind: DockRowKind;
-  /** Tree depth; agents nest one level per ancestor, everything else is 0. */
+  /**
+   * Tree depth; agents nest one level per VISIBLE ancestor, everything else
+   * is 1 (main is 0).
+   *
+   * Counted over visible ancestors rather than real ones because a parent can
+   * finish while its child is still running. The child stays — it is live work
+   * — and it is promoted to the level its vanished parent occupied, instead of
+   * hanging an indent and a `└` guide off a row that is no longer there.
+   */
   depth: number;
   label: string;
   /** The agent type, workflow name, or command — the row's second field. */
   detail?: string;
   running: boolean;
-  /** completed | failed | killed | stopped | running | undefined. */
+  /** The wire's status token, for the dot's tint while the row is live. */
   status?: string;
   startedAtMs?: number;
-  /**
-   * How long the work took, once it is over.
-   *
-   * NOT `endedAtMs - startedAtMs`. Those are two different clocks: the start is
-   * the local instant the pane first heard of the task, while `end_time` on the
-   * `task_updated` patch is the CLI's own epoch. Subtracting one from the other
-   * produced "1ms" for a shell that had been running for sixteen seconds — and
-   * would produce a wilder number on a resumed session, where the two clocks
-   * are days apart. The wire's own `usage.duration_ms` is the authority; the
-   * local difference is the fallback for a task that never reported one.
-   */
-  durationMs?: number;
-  endedAtMs?: number;
   totalTokens?: number;
   /** `3/5` for workflows; undefined elsewhere. */
   agentsDone?: number;
@@ -56,28 +56,13 @@ export interface DockRow {
   stopTaskId?: string;
 }
 
-/**
- * The wire's own duration, or the local elapsed when it never sent one.
- *
- * The local difference is only meaningful when BOTH ends came from this
- * process's clock, and `end_time` never does — so it is used only as the
- * fallback, and only when it is positive.
- */
-function settledDuration(
-  reported: number | undefined,
-  startedAtMs: number | undefined,
-  endedAtMs: number | undefined
-): number | undefined {
-  if (reported !== undefined && reported > 0) return reported;
-  if (startedAtMs === undefined || endedAtMs === undefined) return undefined;
-  const local = endedAtMs - startedAtMs;
-  return local > 0 ? local : undefined;
-}
-
 export function dockRows(model: TranscriptModel): DockRow[] {
   const rows: DockRow[] = [];
   const mainRunning =
     model.activity.sessionState === "running" ||
+    // A session waiting on a permission prompt is not idle: it is the user's
+    // move, and the row that says so must not read as finished.
+    model.activity.sessionState === "requires_action" ||
     model.activity.status === "requesting" ||
     model.turns.some((turn) => turn.state === "streaming");
   const lastTurn = model.turns[model.turns.length - 1];
@@ -91,47 +76,52 @@ export function dockRows(model: TranscriptModel): DockRow[] {
     view: { kind: "main" }
   });
 
+  /**
+   * `base[d]` is how many VISIBLE ancestors a thread at real depth `d` has.
+   * `flattenThreads` is depth-first with the parent before its children, so a
+   * node's base is always written before it is read.
+   */
+  const base: number[] = [0];
   for (const { thread, depth } of flattenThreads(model)) {
     const running = isThreadRunning(thread);
+    const ancestors = base[depth] ?? 0;
+    base[depth + 1] = ancestors + (running ? 1 : 0);
+    if (!running) continue;
     rows.push({
       id: `agent:${thread.toolUseId}`,
       kind: "agent",
-      depth: depth + 1,
+      depth: ancestors + 1,
       label: thread.description ?? "",
       detail: thread.subagentType,
-      running,
+      running: true,
       status: thread.status,
       startedAtMs: thread.startedAtMs,
-      durationMs: settledDuration(thread.durationMs, thread.startedAtMs, thread.endedAtMs),
-      endedAtMs: thread.endedAtMs,
       totalTokens: thread.totalTokens,
       view: { kind: "agent", toolUseId: thread.toolUseId },
-      stopTaskId: running ? thread.taskId : undefined
+      stopTaskId: thread.taskId
     });
   }
 
   for (const record of Object.values(model.tasksById)) {
+    if (isTaskSettled(record.status)) continue;
     if (record.taskType === "local_workflow") {
       const workflow = record.workflow;
       const agents = workflow?.agents ?? [];
-      const running = !isTaskSettled(record.status);
       rows.push({
         id: `workflow:${record.taskId}`,
         kind: "workflow",
         depth: 1,
         label: record.workflowName ?? workflow?.name ?? "",
         detail: record.description,
-        running,
+        running: true,
         status: record.status,
         startedAtMs: record.startedAtMs,
-        durationMs: settledDuration(record.durationMs, record.startedAtMs, record.endedAtMs),
-        endedAtMs: record.endedAtMs,
         totalTokens: record.totalTokens,
         agentsDone: agents.filter((agent) => agent.state === "done" || agent.state === "cached")
           .length,
         agentsTotal: agents.length,
         view: { kind: "workflow", taskId: record.taskId },
-        stopTaskId: running ? record.taskId : undefined
+        stopTaskId: record.taskId
       });
       continue;
     }
@@ -140,26 +130,19 @@ export function dockRows(model: TranscriptModel): DockRow[] {
     // rather than dropped — it still has an output file and a Stop.
     if (record.taskType === "local_agent") continue;
     if (!record.isBackgrounded) continue;
-    const running = !isTaskSettled(record.status);
     const label = record.description ?? "";
-    // The CLI writes the task's own description into `summary` on the stop
-    // notification, so a settled shell had the same sentence twice on one row.
-    // The detail field only earns its place when it says something the label
-    // does not.
-    const detail = running ? record.activity ?? record.lastToolName : record.summary;
+    const detail = record.activity ?? record.lastToolName;
     rows.push({
       id: `shell:${record.taskId}`,
       kind: "shell",
       depth: 1,
       label,
       detail: detail === label ? undefined : detail,
-      running,
+      running: true,
       status: record.status,
       startedAtMs: record.startedAtMs,
-      durationMs: settledDuration(record.durationMs, record.startedAtMs, record.endedAtMs),
-      endedAtMs: record.endedAtMs,
       view: { kind: "shell", taskId: record.taskId },
-      stopTaskId: running ? record.taskId : undefined
+      stopTaskId: record.taskId
     });
   }
 

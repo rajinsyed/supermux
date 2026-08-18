@@ -325,10 +325,12 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
       // Round 4 checks the DOCK against this scenario rather than changing it.
       // A second row is one click away and always was: Move to background (or
       // Ctrl+B) on the foreground Bash makes the CLI answer with a second
-      // `background_tasks_changed`, and the dock then holds two shells — one
-      // running, and, after Stop, one persisting dimmed. Replaying the probe's
-      // own tail here instead would settle main and REMOVE the foreground Bash
-      // the scenario exists to demonstrate that button on.
+      // `background_tasks_changed`, and the dock then holds two shells. Stop on
+      // either one now REMOVES its row rather than dimming it — the dock lists
+      // what is running, and the killed shell's own card carries the verdict.
+      // Replaying the probe's own tail here instead would settle main and
+      // REMOVE the foreground Bash the scenario exists to demonstrate that
+      // button on.
       return {
         name: key,
         lines: rebaseRound3(shellsOpening, epochBaseOf(shellsOpening)),

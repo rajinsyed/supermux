@@ -81,8 +81,9 @@
   color: var(--text);
 }
 
-/* A finished row STAYS — that is the whole difference from the round-3 strip —
-   but it must not compete with what is running now. */
+/* The only settled row the dock can show is `main` between turns: every other
+   row is dropped the moment its work is terminal. Idle main is still a place
+   you can go, so it stays — quieter than the work that is running. */
 .dock-row.is-settled .dock-row-open {
   color: var(--text-muted);
 }
@@ -152,17 +153,11 @@
   animation: dock-pulse 1.8s var(--ease) infinite;
 }
 
+/* Only idle `main` ever wears this: an outcome tint (error / stopped) has
+   nowhere left to appear, because a row with an outcome is no longer docked. */
 .dock-dot.is-done {
   background: var(--success);
   opacity: 0.55;
-}
-
-.dock-dot.is-error {
-  background: var(--danger);
-}
-
-.dock-dot.is-stopped {
-  background: var(--text-faint);
 }
 
 @keyframes dock-pulse {
