@@ -281,15 +281,37 @@ describe("Escape closes every inline drill-in, and only when focus is in one", (
   });
 });
 
-describe("the finished-task banner", () => {
-  test("renders the outcome, with the task's name as its subject", () => {
+describe("the banner stack, now that only failures reach it", () => {
+  test("a session whose background work all finished has an EMPTY stack", () => {
+    // The finished-task banner is gone: every terminal task used to add one,
+    // and the user had to close each by hand. An empty stack renders nothing
+    // at all, not an empty container.
     const model = replayLines(shellsFixture);
     const { container } = mount(
       <BannerStack banners={model.banners} onDismiss={() => {}} />
     );
-    expect(container.querySelector(".banner-title")!.textContent).toBe(
-      "Background task stopped — Print six ticks with 4-second sleeps between each"
+    expect(model.banners).toEqual([]);
+    expect(container.querySelector(".banner-stack")).toBeNull();
+  });
+
+  test("a hard failure still renders — that is what the stack is FOR", () => {
+    const { container } = mount(
+      <BannerStack
+        banners={[
+          {
+            id: "b0",
+            severity: "error",
+            title: "Authentication failed — check your API key",
+            createdAtMs: 0
+          }
+        ]}
+        onDismiss={() => {}}
+      />
     );
+    expect(container.querySelector(".banner-title")!.textContent).toContain(
+      "Authentication failed"
+    );
+    expect(container.querySelector(".banner")!.className).toContain("is-error");
   });
 
   test("a banner with no key still renders its own text verbatim", () => {

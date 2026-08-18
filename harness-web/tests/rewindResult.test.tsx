@@ -120,7 +120,7 @@ async function rewindThirdMessage(restoreFiles: boolean) {
  * the stderr line explaining why was collected into a field nothing rendered.
  * The reply now reports the halves separately, and the note follows it.
  */
-describe("the rewind note reports which half of the rewind happened", () => {
+describe("the rewind note reports the half that leaves no trace", () => {
   test("a restore that failed is not reported as a plain success", async () => {
     window.supermuxHarnessMock = makeBridge({
       runId: "run-3",
@@ -131,7 +131,6 @@ describe("the rewind note reports which half of the rewind happened", () => {
 
     const note = document.querySelector(".rewind-note")!;
     expect(note.textContent).toContain("Conversation rewound; files could not be restored.");
-    expect(note.textContent).not.toBe(copyDefaults["supermux.harness.rewind.done"]);
     // And it LOOKS like the warning it is: the same accent as a plain success
     // understates the one fact the user has to act on.
     expect(note.className).toContain("is-degraded");
@@ -150,23 +149,26 @@ describe("the rewind note reports which half of the rewind happened", () => {
     );
   });
 
-  test("a restore that succeeded still reads as done", async () => {
+  test("a rewind that fully SUCCEEDED says nothing at all", async () => {
+    // The success note went with the completion chips. It restated something
+    // the user had just watched happen — the transcript truncated and their
+    // message went back in the composer — and then had to be closed by hand.
     window.supermuxHarnessMock = makeBridge({ runId: "run-3", filesRestored: true });
-    await rewindThirdMessage(true);
-    const note = document.querySelector(".rewind-note")!;
-    expect(note.textContent).toContain(copyDefaults["supermux.harness.rewind.done"]);
-    expect(note.className).not.toContain("is-degraded");
+    const store = await rewindThirdMessage(true);
+    expect(document.querySelector(".rewind-note")).toBeNull();
+    // The rewind itself plainly happened; only the chip is gone.
+    expect(store.getSnapshot().turns.map((turn) => turn.userUuid)).toEqual([
+      REWIND_UUIDS.first,
+      REWIND_UUIDS.second
+    ]);
   });
 
-  test("a conversation-only rewind is a success, not a failed restore", async () => {
+  test("a conversation-only rewind is a success, so it says nothing either", async () => {
     // filesRestored is false here too — nothing was ASKED for. Reading that as a
     // failure would put a warning on every deliberate conversation-only rewind.
     window.supermuxHarnessMock = makeBridge({ runId: "run-3", filesRestored: false });
     await rewindThirdMessage(false);
-    const note = document.querySelector(".rewind-note")!;
-    expect(note.textContent).toContain(copyDefaults["supermux.harness.rewind.done"]);
-    expect(note.textContent).not.toContain("files could not be restored");
-    expect(note.className).not.toContain("is-degraded");
+    expect(document.querySelector(".rewind-note")).toBeNull();
   });
 
   test("the degraded half does not undo the conversation half", async () => {

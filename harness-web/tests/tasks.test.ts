@@ -499,14 +499,17 @@ describe("a terminal status is a latch", () => {
     expect(block.workflow?.totals.done).toBe(before.totals.done);
   });
 
-  test("a late completed notification is not re-announced", () => {
+  test("a late completed notification announces nothing — there is nothing to announce", () => {
+    // This used to guard against DOUBLE-announcing a stopped workflow the CLI
+    // replays a `completed` notification for. With the completion banner gone
+    // the guard is stronger and simpler: neither frame raises anything, so the
+    // replay cannot say the run the user killed succeeded.
     let { model, index } = stoppedWorkflow();
-    const banners = model.banners.length;
-    expect(model.banners[banners - 1].titleKey).toBe("supermux.harness.notice.workflowStopped");
+    expect(model.banners).toEqual([]);
     for (const line of workflowFixture.slice(37)) model = applyLine(model, index, line, Date.now());
-    // One task, one announcement: the replayed `completed` notification for the
-    // stopped workflow raises nothing new.
-    expect(model.banners.length).toBe(banners);
+    expect(model.banners).toEqual([]);
+    // And the verdict the user caused is still the one on the record.
+    expect(model.tasksById.wxajrgc4u.status).toBe("stopped");
   });
 
   test("killed → stopped still moves — two frames of one interruption", () => {
@@ -604,32 +607,55 @@ describe("one clock for one piece of work", () => {
   });
 });
 
-describe("a finished background task raises an inline notice", () => {
-  test("the stopped shell's notification says it was STOPPED, not just its name", () => {
-    // The task's own description ("Print six ticks…") is which task; the outcome
-    // is the news, and a banner carrying only the description explains nothing
-    // about why it appeared.
+/**
+ * A finished task raises NOTHING that floats.
+ *
+ * Round 3 turned every `task_notification` into the CLI's "background task
+ * finished" toast — a dismissable banner over the composer per shell, per
+ * agent, per workflow. Dogfood verdict: "no need to show chips or toasts
+ * notifications when a subagent is finished with its output. not only subagent
+ * but for anything. its very annoying to close them everytime … remove it
+ * entirely."
+ *
+ * The outcome is not lost. It settles on the launching card, where the work
+ * was started, and the dock row disappears — both surfaces the user is already
+ * looking at. These assert the banner is gone from every terminal path, and
+ * that the outcome still lands where it should.
+ */
+describe("a finished background task raises no floating chip", () => {
+  test("a stopped shell announces nothing", () => {
     const model = replayLines(shellsFixture);
-    expect(model.banners.length).toBe(1);
-    expect(model.banners[0].titleKey).toBe("supermux.harness.notice.taskStopped");
-    expect(model.banners[0].title).toBe("Print six ticks with 4-second sleeps between each");
-    expect(model.banners[0].severity).toBe("info");
+    expect(model.banners).toEqual([]);
   });
 
-  test("the workflow's completion banner says WORKFLOW and names it", () => {
-    // "Workflow finished — alpha-beta-demo": a workflow is announced as what it
-    // is, by its name, not as a generic background task carrying its summary.
+  test("a completed workflow announces nothing either", () => {
     const model = replayLines(workflowFixture);
-    expect(model.banners.length).toBe(1);
-    expect(model.banners[0].titleKey).toBe("supermux.harness.notice.workflowFinished");
-    expect(model.banners[0].title).toBe("alpha-beta-demo");
+    expect(model.banners).toEqual([]);
   });
 
-  test("a FOREGROUND task's notification raises nothing", () => {
-    // The nested probe's two agents both send task_notification and neither is
-    // backgrounded; their results are already on the cards the user is reading.
+  test("a FOREGROUND task's notification raises nothing — as it never did", () => {
     const model = replayLines(nestedFixture);
     expect(model.banners).toEqual([]);
+  });
+
+  test("the outcome still settles ON THE CARD, which is why the toast is redundant", () => {
+    // Dropping the banner would be a real loss if the card did not carry the
+    // verdict. It does: the stopped shell's own card says stopped, with its
+    // final tallies.
+    const model = replayLines(shellsFixture);
+    const record = Object.values(model.tasksById).find((task) => task.isBackgrounded)!;
+    expect(["completed", "failed", "killed", "stopped"]).toContain(record.status ?? "");
+    const block = tools(model).find((tool) => tool.subagent?.taskId === record.taskId);
+    expect(block?.subagent?.status).toBe(record.status);
+  });
+
+  test("no path through a whole session leaves a banner behind", () => {
+    // The blunt sweep: replay every task-bearing probe end to end and assert
+    // the stack is empty. A completion chip reintroduced anywhere — a new task
+    // type, a new notification subtype — fails here.
+    for (const fixture of [shellsFixture, workflowFixture, nestedFixture, bgFixture]) {
+      expect(replayLines(fixture).banners).toEqual([]);
+    }
   });
 });
 

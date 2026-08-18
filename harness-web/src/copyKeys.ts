@@ -259,10 +259,12 @@ export const copyDefaults = {
   "supermux.harness.dock.untitledAgent": "Agent",
   "supermux.harness.dock.untitledShell": "Shell",
   "supermux.harness.dock.untitledWorkflow": "Workflow",
+  // `statusDone` / `statusFailed` / `statusStopped` stood here. A row with an
+  // outcome is no longer ON the dock — it is removed the moment its work is
+  // terminal — so there is nowhere left for an outcome word to render. The two
+  // that survive are the only two states a docked row can be in: work that is
+  // running, and `main` between turns.
   "supermux.harness.dock.statusRunning": "Running",
-  "supermux.harness.dock.statusDone": "Done",
-  "supermux.harness.dock.statusFailed": "Failed",
-  "supermux.harness.dock.statusStopped": "Stopped",
   "supermux.harness.dock.statusIdle": "Idle",
   "supermux.harness.dock.workflowAgents": "{done}/{total} agents",
   "supermux.harness.dock.a11y": "Agents and background tasks",
@@ -439,10 +441,10 @@ export const copyDefaults = {
     "This session has no file checkpoints, so only the conversation can be rewound.",
   "supermux.harness.rewind.confirm": "Rewind & edit",
   "supermux.harness.rewind.cancel": "Cancel",
-  "supermux.harness.rewind.done": "Rewound to before this message.",
-  // The conversation half succeeded and the file half did not. Saying only
-  // "Rewound" here is the lie: the working tree still holds the changes the
-  // user asked to undo.
+  // A successful rewind says so by ITSELF — the transcript truncates and the
+  // message is back in the composer — so `rewind.done` was retired with the
+  // rest of the success chips. Only the half that leaves no trace on screen
+  // still speaks: the conversation rewound and the working tree did not.
   "supermux.harness.rewind.doneFilesFailed":
     "Conversation rewound; files could not be restored.",
   "supermux.harness.rewind.failed": "Rewind failed",
@@ -461,15 +463,10 @@ export const copyDefaults = {
   "supermux.harness.divider.reset": "Conversation cleared",
   "supermux.harness.history.truncated": "Earlier messages in this session are not shown",
 
-  // The reducer knows the outcome; `{subject}` is the task's own description.
-  "supermux.harness.notice.taskFinished": "Background task finished — {subject}",
-  "supermux.harness.notice.taskStopped": "Background task stopped — {subject}",
-  "supermux.harness.notice.taskFailed": "Background task failed — {subject}",
-  // A workflow is announced as what it is, by its name — "Workflow stopped —
-  // alpha-beta-demo" — not as a generic background task.
-  "supermux.harness.notice.workflowFinished": "Workflow finished — {subject}",
-  "supermux.harness.notice.workflowStopped": "Workflow stopped — {subject}",
-  "supermux.harness.notice.workflowFailed": "Workflow failed — {subject}",
+  // The six `notice.task*`/`notice.workflow*` outcome keys stood here. They
+  // phrased the finished-background-task banner, which is gone: a completion
+  // never raises a floating chip any more. The outcome is read on the launching
+  // card and in the dock row's disappearance.
 
   "supermux.harness.banner.dismiss": "Dismiss",
   "supermux.harness.banner.retryAttempt": "Attempt {attempt} of {max}",

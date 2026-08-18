@@ -61,14 +61,17 @@ function AppBody({
   const [binaryOpen, setBinaryOpen] = useState(false);
   const [rewindTarget, setRewindTarget] = useState<RewindTarget | undefined>(undefined);
   /**
-   * The rewind receipt. `degraded` is carried alongside the text rather than
-   * sniffed back out of it: the strip has to LOOK like a warning when the file
-   * half failed, and a note that reads "could not be restored" in the same
-   * accent as a plain success is the same understatement in a different place.
+   * The rewind receipt — FAILURES ONLY.
+   *
+   * A successful rewind announces itself: the transcript truncates under the
+   * reader's eyes and their message is back in the composer with the caret in
+   * it. A chip on top of that was a dismissable restatement of something the
+   * user just watched happen, and it is gone with the rest of the completion
+   * toasts. What survives is the half that is INVISIBLE — `rewind_files`
+   * refusing while the conversation rewound anyway. Nothing else on screen says
+   * the working tree still holds the changes the user asked to undo.
    */
-  const [rewindNote, setRewindNote] = useState<
-    { text: string; degraded?: boolean } | undefined
-  >(undefined);
+  const [rewindNote, setRewindNote] = useState<string | undefined>(undefined);
   const composerFocus = useRef<(() => void) | undefined>(undefined);
 
   const router = useViewRouter(model, copy);
@@ -292,28 +295,23 @@ function AppBody({
         .then((result) => {
           // A rewind has two halves that fail independently. The conversation
           // half succeeded — the promise resolved — but `rewind_files` can still
-          // have refused, and reporting the flat success string there tells the
-          // user their working tree was restored when it was not. The note only
-          // changes when a restore was actually ASKED for: a conversation-only
-          // rewind reports success, because that is all it promised.
+          // have refused, and NOTHING on screen would say so: the transcript
+          // truncates either way. Only that failure earns a note; the success
+          // the user is already watching does not.
           const failed = restoreFiles && !result.filesRestored;
-          const base = failed
-            ? copy("supermux.harness.rewind.doneFilesFailed")
-            : copy("supermux.harness.rewind.done");
-          setRewindNote({
-            text: failed && result.reason ? `${base} ${result.reason}` : base,
-            degraded: failed
-          });
+          const base = copy("supermux.harness.rewind.doneFilesFailed");
+          setRewindNote(
+            failed ? (result.reason ? `${base} ${result.reason}` : base) : undefined
+          );
           // The composer is prefilled with the original text; putting the caret
           // in it is the difference between "here is your message back" and
           // "find the box and click it yourself".
           composerFocus.current?.();
         })
         .catch((error: unknown) => {
-          setRewindNote({
-            text: error instanceof Error ? error.message : copy("supermux.harness.rewind.failed"),
-            degraded: true
-          });
+          setRewindNote(
+            error instanceof Error ? error.message : copy("supermux.harness.rewind.failed")
+          );
         });
     },
     [copy, harness, rewindTarget]
@@ -482,14 +480,14 @@ function AppBody({
         <TodoStrip todos={model.todos} />
         {rewindNote ? (
           <div
-            className={`rewind-note${rewindNote.degraded ? " is-degraded" : ""}`}
-            // A degraded note reports a failure, and `status` is announced only
-            // when the screen reader gets round to it; `alert` interrupts, which
-            // is right for "the files on disk are not what you just asked for".
-            role={rewindNote.degraded ? "alert" : "status"}
+            className="rewind-note is-degraded"
+            // Always a failure now, so always an interrupt: `status` is
+            // announced whenever the screen reader gets round to it, and "the
+            // files on disk are not what you just asked for" cannot wait.
+            role="alert"
           >
-            {rewindNote.degraded ? <AlertTriangle size={12} /> : null}
-            {rewindNote.text}
+            <AlertTriangle size={12} />
+            {rewindNote}
             <button
               type="button"
               className="rewind-note-x"

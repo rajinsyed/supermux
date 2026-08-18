@@ -476,13 +476,6 @@ export interface TaskRecord {
   /** Incremented on every frame for this task; a drill-in re-fetches on it. */
   progressTick: number;
   workflow?: WorkflowProgress;
-  /**
-   * A finished-task banner has been raised for this task. One task gets ONE
-   * announcement: the CLI can replay a late `completed` notification for work
-   * the user already stopped, and re-announcing the same task — under either
-   * verdict — is noise about news the user has already had.
-   */
-  notified?: boolean;
 }
 
 /**

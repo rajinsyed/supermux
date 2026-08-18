@@ -257,10 +257,28 @@ describe("errors fixture", () => {
     expect(read?.status).toBe("error");
   });
 
-  test("raises an api_retry banner", () => {
-    const retry = model.banners.find((b) => b.retry !== undefined);
+  test("raises an api_retry banner WHILE the request is in trouble", () => {
+    // Cut just after the retry frame and before the turn's `result`: the retry
+    // is live, and a banner reporting a request that is currently failing is
+    // exactly the kind that stays. Found by subtype rather than by a hardcoded
+    // index — `streamToolUse` spreads into several lines, so counting entries
+    // in the fixture source is off by however many that is.
+    const at = fixtures.errors.findIndex(
+      (line) => (line as { subtype?: string }).subtype === "api_retry"
+    );
+    expect(at).toBeGreaterThan(0);
+    const midFlight = replayLines(fixtures.errors.slice(0, at + 1));
+    const retry = midFlight.banners.find((b) => b.retry !== undefined);
     expect(retry?.retry?.attempt).toBe(1);
     expect(retry?.retry?.maxRetries).toBe(3);
+  });
+
+  test("and RETIRES it when the turn ends, rather than waiting to be closed", () => {
+    // A "retrying attempt 1 of 3" chip left over a finished turn is a stale
+    // notification the user has to dismiss by hand — the class of thing that
+    // was removed wholesale. The turn's own error is still on the turn.
+    expect(model.banners.filter((b) => b.retry !== undefined)).toEqual([]);
+    expect(model.turns[0].state).toBe("error");
   });
 
   test("renders a rate-limit assistant error as a failed turn", () => {

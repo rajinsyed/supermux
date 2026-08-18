@@ -216,6 +216,25 @@ export function pushBanner(
   return { ...model, banners: model.banners.concat(banner).slice(-5), revision: model.revision + 1 };
 }
 
+/**
+ * Retire the "retrying…" banners once the turn they were about has ended.
+ *
+ * An `api_retry` banner is a live report of a request in trouble, and it earns
+ * its place while that is true. Once the turn resolves — the retry worked, or
+ * it failed and the turn carries the error itself — the banner is a stale chip
+ * the user has to close by hand, which is exactly the class of thing being
+ * removed. Only the retry banners go: a hard failure raised beside them is not
+ * made untrue by the next turn ending.
+ */
+export function clearRetryBanners(model: TranscriptModel): TranscriptModel {
+  if (!model.banners.some((banner) => banner.retry !== undefined)) return model;
+  return {
+    ...model,
+    banners: model.banners.filter((banner) => banner.retry === undefined),
+    revision: model.revision + 1
+  };
+}
+
 export function appendNotice(
   model: TranscriptModel,
   level: "info" | "warning" | "error",

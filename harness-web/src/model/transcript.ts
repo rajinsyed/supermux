@@ -29,6 +29,7 @@ import { applyUser } from "./userLines";
 import { applySystem } from "./systemLines";
 import { hasLiveBackgroundWork } from "./tasks";
 import {
+  clearRetryBanners,
   closeOpenTurns,
   createModel,
   resetConversation,
@@ -276,8 +277,10 @@ function applyResult(
   // in which case the turn genuinely waits on the user. A CLI that does emit
   // `session_state_changed` still overrides this (systemLines.ts).
   const sessionState = model.pending.length === 0 ? "idle" : model.activity.sessionState;
+  // The turn is over, so any "retrying attempt 1 of 3" banner it raised has
+  // stopped being news. It clears itself rather than waiting to be closed.
   let next: TranscriptModel = {
-    ...model,
+    ...clearRetryBanners(model),
     usage,
     activity: { ...model.activity, sessionState, status: null, thinkingTokens: 0 },
     revision: model.revision + 1

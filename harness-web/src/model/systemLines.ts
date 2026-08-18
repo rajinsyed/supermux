@@ -50,12 +50,27 @@ export function applySystem(
       return applyThinkingTokens(model, raw);
     case "api_retry":
       return applyApiRetry(model, raw, nowMs);
+    /**
+     * Informational frames are TRANSCRIPT content, not floating chips.
+     *
+     * These used to open a dismissable banner over the composer for anything
+     * the CLI felt like saying — "Interrupted by user", a hook's note, a
+     * background task's news — and the user had to close each one by hand. The
+     * content still matters; where it belongs is inline, in the turn it
+     * describes, alongside the permission-denied and local-command notices that
+     * already land there.
+     *
+     * A level-`error` frame is the exception, and the only one: a hard failure
+     * the user has to know about survives as a banner because the transcript
+     * may be scrolled far away from where it landed.
+     */
     case "informational":
     case "notification": {
       const content = asString(raw.content) ?? asString(raw.message);
       if (!content) return model;
-      const level = raw.level === "error" ? "error" : raw.level === "warning" ? "warning" : "info";
-      return pushBanner(model, level, content, undefined, nowMs);
+      const key = `info:${asString(raw.uuid) ?? model.revision}`;
+      if (raw.level === "error") return pushBanner(model, "error", content, undefined, nowMs);
+      return appendNotice(model, raw.level === "warning" ? "warning" : "info", content, key);
     }
     case "permission_denied":
       return appendNotice(
@@ -366,8 +381,7 @@ function mergeTaskRecord(
     startedAtMs: previous?.startedAtMs ?? nowMs,
     endedAtMs: ended,
     progressTick: (previous?.progressTick ?? 0) + 1,
-    workflow,
-    notified: previous?.notified
+    workflow
   };
 }
 
@@ -465,20 +479,17 @@ function applyTaskLine(
   next = applyTaskToThread(next, toolUseId, record, nowMs);
   next = applyTaskToBlock(next, index, toolUseId, raw, subtype, record, nowMs);
   if (isTaskSettled(record.status)) next = applyDeferredFolds(next);
-  // One announcement per task. The status is latched, so a replayed `completed`
-  // notification for a stopped task would otherwise raise a SECOND banner —
-  // correctly worded, but news the user already had.
-  if (subtype === "task_notification" && record.notified !== true) {
-    const announced = announceTaskFinished(next, record, nowMs);
-    if (announced !== next) {
-      next = {
-        ...announced,
-        tasksById: { ...announced.tasksById, [taskId]: { ...record, notified: true } }
-      };
-    } else {
-      next = announced;
-    }
-  }
+  /**
+   * A `task_notification` raises NOTHING on its own.
+   *
+   * Round 3 turned each one into the CLI's "background task finished" toast: a
+   * dismissable banner over the composer per shell, per agent, per workflow.
+   * Dogfood verdict — "its very annoying to close them everytime … remove it
+   * entirely". The outcome is not lost by dropping the toast: the launching
+   * card settles with its status and result right where the work was started,
+   * and the dock row disappears, which is the same news told by the surfaces
+   * the user is already looking at.
+   */
   return next;
 }
 
@@ -542,43 +553,6 @@ function applyTaskToBlock(
     endedAtMs: finished && running ? found.block.endedAtMs ?? nowMs : found.block.endedAtMs
   };
   return writeBlock(model, found.location, nextBlock);
-}
-
-/**
- * The CLI's "background task finished" toast. Only for tasks that were actually
- * IN the background set: a foreground Bash gets a task_notification too, and its
- * result is already rendered on the card the user is looking at.
- */
-function announceTaskFinished(
-  model: TranscriptModel,
-  record: TaskRecord,
-  nowMs: number
-): TranscriptModel {
-  if (!record.isBackgrounded) return model;
-  // A workflow's news is best carried by its name — "Workflow stopped —
-  // alpha-beta-demo" — and its notice says WHAT it is, not "background task".
-  const isWorkflow = record.taskType === "local_workflow";
-  const subject = isWorkflow
-    ? record.workflowName ?? record.workflow?.name ?? record.summary ?? record.description
-    : record.summary ?? record.description;
-  if (!subject) return model;
-  // The subject alone is the task's own description — "Print six ticks with
-  // 4-second sleeps" — which says nothing about WHY it is being announced. The
-  // outcome is the news; the description is which task it happened to.
-  const outcome =
-    record.status === "failed"
-      ? isWorkflow
-        ? "supermux.harness.notice.workflowFailed"
-        : "supermux.harness.notice.taskFailed"
-      : record.status === "killed" || record.status === "stopped"
-        ? isWorkflow
-          ? "supermux.harness.notice.workflowStopped"
-          : "supermux.harness.notice.taskStopped"
-        : isWorkflow
-          ? "supermux.harness.notice.workflowFinished"
-          : "supermux.harness.notice.taskFinished";
-  const severity = record.status === "failed" ? "warning" : "info";
-  return pushBanner(model, severity, subject, undefined, nowMs, outcome);
 }
 
 function findStreamingThinking(turn: Turn): number[] | undefined {
