@@ -17,6 +17,14 @@
  * an inline drill-in), and `workflow.collapse` / `workflow.expand` (the card's
  * head fold; a full view has a back affordance instead). Same removal applies
  * to their Swift and xcstrings rows.
+ *
+ * The agents dock then retired the round-3 TasksStrip itself, and with it the
+ * strip-only `tasks.*` rows (title, counts, collapse, expand, the type and
+ * status families, moreBelow, untitled, stop, view, hide) plus
+ * `workflow.viewAgents` (the strip's
+ * agent picker — the browser's phase list is that affordance now). The
+ * `tasks.*` keys that survive are the ones the Bash card's background strip and
+ * the task-output tail still render.
  */
 export const copyDefaults = {
   "supermux.harness.app.untitledSession": "New session",
@@ -203,7 +211,6 @@ export const copyDefaults = {
   "supermux.harness.workflow.hideLogs": "Hide log",
   "supermux.harness.workflow.noAgents": "No agents have been scheduled yet.",
   "supermux.harness.workflow.unphased": "Unphased",
-  "supermux.harness.workflow.viewAgents": "Pick an agent to open its transcript:",
 
   // --- Round 4: the multi-pane workflow browser ---
   // The transcript keeps a one-line row; the run itself is browsed in a full
@@ -294,28 +301,11 @@ export const copyDefaults = {
   "supermux.harness.relay.chipUnknown": "Sent to an agent",
   "supermux.harness.relay.ack": "Relayed",
 
-  "supermux.harness.tasks.title": "Background tasks",
-  "supermux.harness.tasks.countOne": "{count} task",
-  "supermux.harness.tasks.count": "{count} tasks",
-  "supermux.harness.tasks.collapse": "Hide background tasks",
-  "supermux.harness.tasks.expand": "Show background tasks",
-  "supermux.harness.tasks.typeShell": "Shell",
-  "supermux.harness.tasks.typeAgent": "Agent",
-  "supermux.harness.tasks.typeWorkflow": "Workflow",
-  // The SDK's task_type set is extensible; an unrecognised value gets a neutral
-  // label rather than being asserted to be a shell.
-  "supermux.harness.tasks.typeTask": "Task",
-  "supermux.harness.tasks.statusDone": "Done",
-  "supermux.harness.tasks.statusFailed": "Failed",
-  "supermux.harness.tasks.statusStopped": "Stopped",
-  "supermux.harness.tasks.statusSettled": "Settled",
-  "supermux.harness.tasks.moreBelow": "{count} more below",
-  "supermux.harness.tasks.untitled": "Background task",
-  "supermux.harness.tasks.stop": "Stop",
+  // The rest of the round-3 `tasks.*` family went with the TasksStrip the dock
+  // replaced (see the retirement note above); these survivors render in the
+  // Bash card's background strip and the task-output tail.
   "supermux.harness.tasks.stopping": "Stopping…",
   "supermux.harness.tasks.stopFailed": "Could not stop this task.",
-  "supermux.harness.tasks.view": "View",
-  "supermux.harness.tasks.hide": "Hide",
   "supermux.harness.tasks.outputTitle": "Output",
   "supermux.harness.tasks.outputLoading": "Reading output…",
   "supermux.harness.tasks.outputEmpty": "No output yet.",

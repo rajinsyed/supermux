@@ -346,131 +346,16 @@
 
 /* ---------- subagents ---------- */
 
-.subagent-card {
-  border-radius: var(--r-md);
-  border: 1px solid var(--violet-soft);
-  background: color-mix(in srgb, var(--violet) 5%, transparent);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.subagent-card.is-error {
-  border-color: var(--danger-border);
-  background: var(--danger-soft);
-}
-
-/* Fixed three-line geometry: identity / activity / metrics. A live run adds and
-   drops metadata chips constantly, and every one of those changes would
-   otherwise reflow the card and everything below it, which is exactly what the
-   pattern exists to prevent. Each line owns a fixed box; chip presence is free. */
-.subagent-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 34px;
-}
-
-.subagent-icon {
-  display: flex;
-  color: var(--violet);
-  flex: 0 0 auto;
-}
-
-.subagent-identity {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1 1 auto;
-  gap: 1px;
-}
-
-.subagent-name {
-  font-size: 12.5px;
-  font-weight: 500;
-  line-height: 16px;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.subagent-meta {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  height: 16px;
-  font-size: 10.5px;
-  color: var(--text-faint);
-  overflow: hidden;
-}
-
-/* Every chip on the meta line renders into the same 16px box, so appearing or
-   disappearing mid-run costs 0px of layout. */
-.subagent-meta > * {
-  line-height: 16px;
-  flex: 0 0 auto;
-}
-
-.subagent-meta .tool-badge {
-  padding-block: 0;
-  line-height: 16px;
-}
-
+/* Round 4: the inline SubagentCard went with the agents dock — an agent in the
+   transcript is one compact AgentRow (agents.css), and its full conversation
+   lives in the agent chat view. Only the type chip survives here; the agent
+   view's header wears it. */
 .subagent-type {
   padding: 0 5px;
   border-radius: var(--r-xs);
   background: var(--violet-soft);
   color: var(--violet);
   font-weight: 600;
-}
-
-.subagent-activity {
-  height: 17px;
-  line-height: 17px;
-  padding-left: 21px;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.subagent-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  align-self: flex-start;
-  margin-left: 19px;
-  padding: 2px 7px;
-  border-radius: var(--r-pill);
-  font-size: 11px;
-  color: var(--text-muted);
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-
-.subagent-toggle:hover,
-.subagent-toggle:focus-visible {
-  color: var(--violet);
-  background: var(--violet-soft);
-}
-
-.subagent-children {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin: 4px 0 0 21px;
-  padding-left: 10px;
-  border-left: 1px solid var(--violet-soft);
-}
-
-.subagent-note {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  padding: 4px 0;
 }
 
 /* ---------- code blocks ---------- */

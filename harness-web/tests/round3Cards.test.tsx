@@ -2,18 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type { HarnessBridge } from "../src/bridge";
 import { taskBridgeStub } from "./bridgeStub";
-import {
-  nestedFixture,
-  shellsFixture,
-  withWorkflowLogs,
-  workflowFixture
-} from "../src/dev/fixtures/round3";
+import { nestedFixture, shellsFixture, withWorkflowLogs } from "../src/dev/fixtures/round3";
 import { applyLine, createIndex, createModel, replayLines } from "../src/model/transcript";
 import type { Block, ToolBlock, TranscriptModel } from "../src/model/types";
 import type { ProtocolLine } from "../src/protocol/types";
 import { CopyProvider } from "../src/ui/CopyContext";
 import { BannerStack } from "../src/ui/status/BannerStack";
-import { TasksStrip } from "../src/ui/status/TasksStrip";
 import { ToolCard } from "../src/ui/tools/ToolCard";
 
 afterEach(() => {
@@ -251,33 +245,8 @@ describe("Escape closes every inline drill-in, and only when focus is in one", (
   });
 
 
-  test("the tasks strip's per-agent drill-in, and then the row detail itself", async () => {
-    // Two nested disclosures, so Escape steps out ONE level at a time rather
-    // than collapsing everything the reader opened at once.
-    installBridge({});
-    const live = replayThrough(workflowFixture, 35);
-    const { container, getByText } = mount(
-      <TasksStrip tasks={live.backgroundTasks} tasksById={live.tasksById} />
-    );
-    fireEvent.click(getByText("View"));
-    await flush(60);
-    const agent = () => container.querySelector(".task-wf-agent .wf-agent-toggle");
-    const row = () => container.querySelector(".task-action[aria-expanded]");
-    fireEvent.click(agent() as HTMLElement);
-    await flush(60);
-    expect(expanded(agent())).toBe("true");
-    expect(expanded(row())).toBe("true");
-
-    expect(escapeFrom(agent() as HTMLElement).defaultPrevented).toBe(true);
-    await flush(60);
-    expect(expanded(agent())).toBe("false");
-    // The row detail is still open — one level, one Escape.
-    expect(expanded(row())).toBe("true");
-
-    expect(escapeFrom(row() as HTMLElement).defaultPrevented).toBe(true);
-    await flush(60);
-    expect(expanded(row())).toBe("false");
-  });
+  // The strip's two-level Escape walk went with the TasksStrip; the equivalent
+  // multi-level walk is now the view stack's, covered in dockAndViews.test.tsx.
 
   test("Escape with nothing open is left alone, so the composer still interrupts", async () => {
     // The whole point of scoping to focus: a global handler would swallow
@@ -337,133 +306,11 @@ describe("the finished-task banner", () => {
   });
 });
 
-describe("TasksStrip", () => {
-  test("an empty background set renders nothing at all", () => {
-    const { container } = mount(<TasksStrip tasks={[]} tasksById={{}} />);
-    expect(container.querySelector(".tasks-strip")).toBeNull();
-  });
-
-  test("a row names the task and reports its live activity", () => {
-    const live = replayThrough(workflowFixture, 35);
-    const { container } = mount(
-      <TasksStrip tasks={live.backgroundTasks} tasksById={live.tasksById} />
-    );
-    expect(container.querySelector(".task-name")!.textContent).toBe(
-      "Two agents return alpha and beta, merged into one result"
-    );
-    expect(container.querySelector(".task-activity")!.textContent).toContain("Gather");
-    expect(container.querySelector(".task-type.is-local_workflow")).not.toBeNull();
-  });
-
-  test("Stop sends the row's own task id", async () => {
-    const bridge = installBridge({});
-    const live = replayThrough(shellsFixture, 26);
-    const { getByText } = mount(
-      <TasksStrip tasks={live.backgroundTasks} tasksById={live.tasksById} />
-    );
-    fireEvent.click(getByText("Stop"));
-    await flush();
-    expect(bridge.calls).toEqual(["stopTask:bnopezzr7"]);
-  });
-
-  test("View on a shell opens the output tail", async () => {
-    const bridge = installBridge({});
-    const live = replayThrough(shellsFixture, 26);
-    const { getByText } = mount(
-      <TasksStrip tasks={live.backgroundTasks} tasksById={live.tasksById} />
-    );
-    fireEvent.click(getByText("View"));
-    await flush(60);
-    expect(bridge.calls).toContain("readTaskOutput");
-  });
-
-  test("View on a workflow offers its agents; picking one drills by runId+agentId", async () => {
-    // A workflow ROOT has no transcript file — only its agents do — so the row
-    // must never fire `loadSubagentTranscript` for the run itself. The bridge
-    // contract rejects `{taskId, workflowRunId}` outright: taskId alone or
-    // workflowRunId+agentId are the only legal shapes.
-    const bridge = installBridge({
-      loadSubagentTranscript: (params) => {
-        const isLocal =
-          params.taskId !== undefined &&
-          params.workflowRunId === undefined &&
-          params.agentId === undefined;
-        const isWorkflow =
-          params.taskId === undefined &&
-          params.workflowRunId !== undefined &&
-          params.agentId !== undefined;
-        if (!isLocal && !isWorkflow) {
-          return Promise.reject(new Error("invalid loadSubagentTranscript payload"));
-        }
-        bridge.calls.push(
-          `loadSubagentTranscript:${params.workflowRunId ?? params.taskId}/${params.agentId ?? ""}`
-        );
-        return Promise.resolve({ events: [], truncated: false, missing: true });
-      }
-    });
-    const live = replayThrough(workflowFixture, 35);
-    const { container, getByText } = mount(
-      <TasksStrip tasks={live.backgroundTasks} tasksById={live.tasksById} />
-    );
-    fireEvent.click(getByText("View"));
-    await flush(60);
-    // No transcript request yet — the detail is an agent picker.
-    expect(bridge.calls).toEqual([]);
-    const agents = container.querySelectorAll(".task-wf-agent .wf-agent-toggle");
-    expect(agents.length).toBeGreaterThan(0);
-    fireEvent.click(agents[0]!);
-    await flush(60);
-    expect(bridge.calls).toEqual([
-      "loadSubagentTranscript:wf_c0f60243-4f1/aec2c2f1b40b1481e"
-    ]);
-    expect(bridge.calls).not.toContain("readTaskOutput");
-  });
-
-  test("a settled row shows catalog copy and a glyph, never the raw wire token", () => {
-    const settled = replayThrough(shellsFixture, shellsFixture.length);
-    // Keep the strip populated: re-add the (now stopped) shell as membership.
-    const { container } = mount(
-      <TasksStrip
-        tasks={[{ taskId: "bnopezzr7", taskType: "local_bash" }]}
-        tasksById={settled.tasksById}
-      />
-    );
-    const status = container.querySelector(".task-status")!;
-    expect(status.classList.contains("is-stopped")).toBe(true);
-    expect(status.textContent).toBe("Stopped");
-    expect(status.querySelector("svg")).not.toBeNull();
-  });
-
-  test("an unknown task type is admitted as a generic Task, not asserted a shell", () => {
-    const { container } = mount(
-      <TasksStrip
-        tasks={[{ taskId: "t-x", taskType: "local_mcp", description: "Future thing" }]}
-        tasksById={{}}
-      />
-    );
-    const type = container.querySelector(".task-type")!;
-    expect(type.classList.contains("is-unknown")).toBe(true);
-    expect(type.getAttribute("title")).toBe("Task");
-  });
-
-  test("only one detail stays open at a time", async () => {
-    installBridge({});
-    const { container, getAllByText } = mount(
-      <TasksStrip
-        tasks={[
-          { taskId: "s1", taskType: "local_bash", description: "one" },
-          { taskId: "s2", taskType: "local_bash", description: "two" }
-        ]}
-        tasksById={{}}
-      />
-    );
-    const views = getAllByText("View");
-    fireEvent.click(views[0]!);
-    await flush(40);
-    fireEvent.click(views[1]!);
-    // The closing Disclosure keeps its content mounted for the collapse
-    // animation (~450ms worst case) before unmounting.
-    await flush(600);
-    expect(container.querySelectorAll(".task-output").length).toBe(1);
-  });
-});
+/*
+ * The TasksStrip suite that stood here went with the strip itself: the round-4
+ * agents dock (dockAndViews.test.tsx) replaced the strip as the docked task
+ * surface, and its concerns are re-asserted there — membership and persistence
+ * by dockRows, Stop by task id on the dock row, opening a shell's output tail
+ * as the ShellView, and a workflow's agents through the workflow browser
+ * (workflowBrowser.test.tsx), which also owns the runId+agentId drill contract.
+ */

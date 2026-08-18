@@ -48,26 +48,27 @@ describe("tool row never collapses either label to zero", () => {
 });
 
 describe("subagent rows are fixed-height", () => {
-  test("the meta line and its chips share one 16px box", async () => {
-    const sheet = await css("tools.css");
-    expect(ruleFor(sheet, ".subagent-meta")).toMatch(/height:\s*16px/);
-    expect(ruleFor(sheet, ".subagent-meta .tool-badge")).toMatch(/padding-block:\s*0/);
-    expect(ruleFor(sheet, ".subagent-meta .tool-badge")).toMatch(/line-height:\s*16px/);
-    // The activity line was min-height, which grows; a fixed box cannot.
-    expect(ruleFor(sheet, ".subagent-activity")).toMatch(/height:\s*17px/);
-    expect(ruleFor(sheet, ".subagent-activity")).not.toMatch(/min-height/);
+  test("the inline agent row's activity line owns a fixed box", async () => {
+    // The round-3 SubagentCard's fixed-geometry contract, carried by its
+    // round-4 successor: the compact AgentRow's live activity changes every
+    // second and must not resize the row under the reader.
+    const sheet = await css("agents.css");
+    const activity = ruleFor(sheet, ".agent-row-activity");
+    expect(activity).toMatch(/height:\s*15px/);
+    expect(activity).not.toMatch(/min-height/);
+    expect(activity).toMatch(/white-space:\s*nowrap/);
+    expect(activity).toMatch(/text-overflow:\s*ellipsis/);
   });
 });
 
 describe("live workflow and task rows are fixed-height", () => {
-  test("the workflow row's counts share the subagent card's 16px box", async () => {
+  test("the workflow row's counts own a fixed 16px box", async () => {
     // Aggregates change every couple of seconds while a workflow runs, and a
     // summary line that grows on each of them reflows the whole transcript
     // below the row.
     const rows = await css("workflow.css");
     expect(ruleFor(rows, ".wf-row-summary")).toMatch(/height:\s*16px/);
     expect(ruleFor(rows, ".wf-row-summary")).not.toMatch(/min-height/);
-    expect(ruleFor(await css("tasks.css"), ".subagent-stats")).toMatch(/height:\s*16px/);
   });
 
   test("the state chip is sized once and coloured per state", async () => {
@@ -125,10 +126,12 @@ describe("live workflow and task rows are fixed-height", () => {
   });
 
   test("the live activity line clips instead of wrapping", async () => {
-    const tasks = await css("tasks.css");
-    for (const selector of [".task-activity", ".task-name"]) {
-      expect(ruleFor(tasks, selector)).toMatch(/white-space:\s*nowrap/);
-      expect(ruleFor(tasks, selector)).toMatch(/text-overflow:\s*ellipsis/);
+    // The dock row's label and detail carry live text; a wrap would grow the
+    // row and bounce the composer below the dock.
+    const agents = await css("agents.css");
+    for (const selector of [".dock-label", ".dock-detail"]) {
+      expect(ruleFor(agents, selector)).toMatch(/white-space:\s*nowrap/);
+      expect(ruleFor(agents, selector)).toMatch(/text-overflow:\s*ellipsis/);
     }
     // The browser's Activity section is the same promise: a tool summary
     // arriving every second must not change the detail pane's height.
@@ -139,42 +142,15 @@ describe("live workflow and task rows are fixed-height", () => {
   });
 });
 
-describe("the tasks strip cannot displace the composer", () => {
+describe("the agents dock cannot displace the composer", () => {
   test("the list caps its height and scrolls, like the todo strip", async () => {
-    const sheet = await css("tasks.css");
-    const rule = ruleFor(sheet, ".tasks-list");
-    expect(rule).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
+    // The round-3 TasksStrip's contract, inherited by the dock that replaced
+    // it: a workflow that spawned nine agents must not push the input off
+    // screen.
+    const sheet = await css("agents.css");
+    const rule = ruleFor(sheet, ".agents-dock-list");
+    expect(rule).toMatch(/max-height:\s*\d+px/);
     expect(rule).toMatch(/overflow-y:\s*auto/);
-    expect(sheet).toMatch(/@media \(max-height: 560px\)[\s\S]*?\.tasks-list/);
-  });
-
-  test("an open detail raises the cap instead of half-clipping its own row", async () => {
-    // Round-3 finding 9: at the resting 220px an output tail or agent picker
-    // fills the whole box, so the row that OWNS the detail was cut in half and
-    // the floating "n more below" pill sat over the remains of it.
-    const sheet = await css("tasks.css");
-    const resting = Number(/max-height:\s*min\((\d+)px/.exec(ruleFor(sheet, ".tasks-list"))![1]);
-    const open = ruleFor(sheet, ".tasks-list-frame.has-detail .tasks-list");
-    const raised = Number(/max-height:\s*min\((\d+)px/.exec(open)![1]);
-    expect(raised).toBeGreaterThan(resting);
-    // Still viewport-relative, so a short pane is not overrun.
-    expect(open).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
-    expect(sheet).toMatch(/@media \(max-height: 560px\)[\s\S]*?\.tasks-list-frame\.has-detail/);
-  });
-
-  test("the pill gets its own gutter rather than floating over a row", async () => {
-    // The pill is absolutely positioned at the bottom of the frame; without
-    // reserved space beneath the last row it lands ON that row's content.
-    const sheet = await css("tasks.css");
-    const clipped = ruleFor(sheet, ".tasks-list-frame.is-clipped .tasks-list");
-    const reserve = Number(/padding-bottom:\s*(\d+)px/.exec(clipped)![1]);
-    const pill = ruleFor(sheet, ".tasks-more");
-    const bottom = Number(/bottom:\s*(\d+)px/.exec(pill)![1]);
-    // The pill's own box (~16px) plus its offset has to fit in the gutter.
-    expect(reserve).toBeGreaterThanOrEqual(bottom + 16);
-    // And the fade covers at least the gutter, so the clip edge is never sharp.
-    const fade = Number(/calc\(100% - (\d+)px\)/.exec(clipped)![1]);
-    expect(fade).toBeGreaterThanOrEqual(reserve);
   });
 
   test("a drill-in transcript scrolls inside the card rather than growing it", async () => {
@@ -255,12 +231,13 @@ describe("the quoted output tail is not a dark slab in a light dock", () => {
 });
 
 describe("subagent nesting stops indenting before it runs out of pane", () => {
-  test("the deepest level flattens its indent", async () => {
-    // Nesting is unbounded on the wire (MAX_INDENT_DEPTH in SubagentCard.tsx);
-    // at 21px a step a depth-6 chain walks its content off a split pane.
-    const sheet = await css("tasks.css");
-    expect(sheet).toContain('.subagent-card[data-depth="3"] .subagent-children');
-    expect(sheet).toContain('.subagent-card[data-depth="3"] .subagent-drill');
+  test("a nested agent row indents once, not per level", async () => {
+    // Nesting is unbounded on the wire; the round-4 tree renders each child
+    // as one guided row (the `└` prefix carries the hierarchy) rather than the
+    // old card-in-card indentation that walked content off a split pane.
+    const sheet = await css("agents.css");
+    expect(ruleFor(sheet, ".agent-row-wrap.is-nested")).toMatch(/padding-left:\s*\d+px/);
+    expect(sheet).toContain(".agent-row-guide");
   });
 });
 
