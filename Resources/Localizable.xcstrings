@@ -276567,6 +276567,23 @@
         }
       }
     },
+    "supermux.harness.subagent.shownAbove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "shown above"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上に表示済み"
+          }
+        }
+      }
+    },
     "supermux.harness.subagent.nestedOne" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -277770,6 +277787,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "トランスクリプトを開くエージェントを選択:"
+          }
+        }
+      }
+    },
+    "supermux.harness.workflow.collapse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse workflow"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークフローを折りたたむ"
+          }
+        }
+      }
+    },
+    "supermux.harness.workflow.expand" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand workflow"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークフローを展開"
           }
         }
       }

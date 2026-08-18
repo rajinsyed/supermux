@@ -218,6 +218,40 @@
   font-weight: 600;
 }
 
+/* One agent, one card. A drill-in replays the agent's own file, which contains
+   the nested tool_use blocks the inline children already drew, so the second
+   copy is collapsed to a marker that says where the real card is. Deliberately
+   NOT card-shaped: it must read as a cross-reference, not as a third agent. */
+.subagent-dup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--border);
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.subagent-dup svg {
+  flex-shrink: 0;
+}
+
+.subagent-dup-name {
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-dup-note {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+}
+
 /* ---------- workflow card ---------- */
 
 .workflow-card {
@@ -275,10 +309,61 @@
   min-height: 34px;
 }
 
+/* The fold affordance, in the slot the map glyph used to decorate. Same caret +
+   icon pairing the tool card head uses, so a workflow reads as the same kind of
+   foldable object rather than the one card in the pane that cannot be put away.
+   The caret only appears on hover/focus at rest, keeping the resting head as
+   quiet as it was. */
+.wf-fold {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 2px 2px;
+  border-radius: var(--r-xs);
+  color: var(--text-faint);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.wf-fold:hover,
+.wf-fold:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+
+/* Reserved, never conditional: a caret that appears on hover would shift the
+   name 12px sideways under the pointer. */
+.wf-caret {
+  display: flex;
+  width: 12px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+/* Keyboard parity with the pointer, the same way `.terminal-copy` earns it: a
+   user tabbing through the card must see the fold affordance the pointer gets,
+   not discover it by pressing Enter on an invisible control. A COLLAPSED card
+   always shows it — that caret is the only thing saying the phases still exist. */
+.workflow-card:hover .wf-caret,
+.workflow-card:focus-within .wf-caret,
+.workflow-card:not(.is-open) .wf-caret {
+  opacity: 1;
+}
+
 .wf-icon {
   display: flex;
   color: var(--claude);
   flex: 0 0 auto;
+}
+
+/* Collapsed, the head IS the summary — it already carries the name, the badge,
+   the description, the phase and agent counts, the duration, the token total and
+   the outcome chip. So a collapsed card is simply the head, and the vertical gap
+   the (now empty) body would still contribute is removed with it. */
+.workflow-card:not(.is-open) {
+  gap: 0;
 }
 
 .wf-identity {
@@ -338,6 +423,14 @@
   font-size: 11.5px;
   color: var(--text-faint);
   padding: 2px 0 2px 21px;
+}
+
+/* The foldable body. The card's own `gap` cannot reach inside a Disclosure, so
+   the body supplies its own stack — and it collapses to nothing when closed. */
+.wf-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .wf-phases {
@@ -628,22 +721,60 @@
 }
 
 /* The tail is a QUOTED terminal, not a terminal: peripheral content inside a
-   pale task row must not be the highest-contrast object on the screen. The
-   terminal ink stays (ANSI colors are tuned against that bed and audited by
-   contrast.test.ts — a theme-light bed would silently flunk half the palette),
-   but the block is framed, inset, and height-capped so it reads as an excerpt
-   rather than a hole punched through a light pane. Shared by the strip row and
-   the Bash card's "Show output", so the two can never differ. */
+   pale task row must not be the highest-contrast object on the screen. Framed,
+   inset, and height-capped so it reads as an excerpt rather than a hole punched
+   through the pane. Shared by the strip row and the Bash card's "Show output",
+   so the two can never differ.
+
+   In LIGHT it is a light excerpt. The full-strength --terminal-bg is a near-
+   black slab (rgba(24,22,20,0.94)) and, dropped into the pale dock, it was the
+   heaviest object on the screen for what is by construction peripheral output —
+   inside a light task row, under a light strip, beneath a light composer. The
+   ink and the ANSI palette still have to be legible on whatever bed replaces it,
+   and the ANSI palette is a single set tuned for a DARK bed and audited by
+   contrast.test.ts, so the bed stays dark-family — but at a fraction of the
+   weight, which reads as an inset quote rather than a punched hole. The audit
+   composites this exact reduced bed (`--terminal-quiet-bg`), so the palette is
+   verified where it actually lands, not only where it used to. */
 .task-output .terminal {
   margin: 1px 0 2px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
+  background: var(--terminal-quiet-bg);
 }
 
 .task-output .terminal-body {
   max-height: 180px;
   font-size: 11px;
   padding: 6px 9px;
+  color: var(--terminal-quiet-fg);
+}
+
+.task-output .terminal.is-error .terminal-body {
+  color: var(--terminal-quiet-error);
+}
+
+/* Every piece of the tail's chrome follows its bed, or a light excerpt keeps a
+   dark terminal's copy button and "show more" bar bolted to it. */
+.task-output .terminal-more {
+  color: var(--terminal-quiet-muted);
+  background: var(--terminal-quiet-chrome);
+  border-top-color: var(--border-faint);
+}
+
+.task-output .terminal-more:hover,
+.task-output .terminal-more:focus-visible {
+  color: var(--terminal-quiet-fg);
+  background: var(--terminal-quiet-chrome-hover);
+}
+
+.task-output .terminal .copy-btn {
+  color: var(--terminal-quiet-muted);
+}
+
+.task-output .terminal .copy-btn:hover,
+.task-output .terminal .copy-btn:focus-visible {
+  color: var(--terminal-quiet-fg);
 }
 
 .task-output-head {
@@ -730,8 +861,23 @@
   scrollbar-color: var(--border-strong) transparent;
 }
 
+/* A detail is open, so the list earns room to actually show it. At the resting
+   220px an output tail or an agent picker fills the entire box, which cut the
+   row that OWNS the detail in half and left the "n more below" pill floating
+   over the remains of it — a half-row under a pill is the one state a capped
+   list must never reach. Viewport-relative so a tall pane gives more and a
+   500px cmux split gives what it can; the composer below is unaffected either
+   way, because the dock is laid out from the bottom. */
+.tasks-list-frame.has-detail .tasks-list {
+  max-height: min(460px, 52vh);
+}
+
+/* The fade is the "there is more" signal, and it must not dim the pill's own
+   row. Reserved below it rather than over it: the pill now sits in a gutter the
+   list scrolls behind, not on top of a sliced row. */
 .tasks-list-frame.is-clipped .tasks-list {
-  mask-image: linear-gradient(to bottom, black calc(100% - 26px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 30px), transparent);
+  padding-bottom: 24px;
 }
 
 .tasks-more {
@@ -760,6 +906,13 @@
 @media (max-height: 560px) {
   .tasks-list {
     max-height: min(132px, 24vh);
+  }
+
+  /* Even a short pane gives the open detail more than the resting cap: the
+     alternative is a detail nobody can read, which is worse than a strip that
+     briefly owns more of a small pane. */
+  .tasks-list-frame.has-detail .tasks-list {
+    max-height: min(300px, 46vh);
   }
 }
 

@@ -119,6 +119,35 @@ describe("the tasks strip cannot displace the composer", () => {
     expect(sheet).toMatch(/@media \(max-height: 560px\)[\s\S]*?\.tasks-list/);
   });
 
+  test("an open detail raises the cap instead of half-clipping its own row", async () => {
+    // Round-3 finding 9: at the resting 220px an output tail or agent picker
+    // fills the whole box, so the row that OWNS the detail was cut in half and
+    // the floating "n more below" pill sat over the remains of it.
+    const sheet = await css("tasks.css");
+    const resting = Number(/max-height:\s*min\((\d+)px/.exec(ruleFor(sheet, ".tasks-list"))![1]);
+    const open = ruleFor(sheet, ".tasks-list-frame.has-detail .tasks-list");
+    const raised = Number(/max-height:\s*min\((\d+)px/.exec(open)![1]);
+    expect(raised).toBeGreaterThan(resting);
+    // Still viewport-relative, so a short pane is not overrun.
+    expect(open).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
+    expect(sheet).toMatch(/@media \(max-height: 560px\)[\s\S]*?\.tasks-list-frame\.has-detail/);
+  });
+
+  test("the pill gets its own gutter rather than floating over a row", async () => {
+    // The pill is absolutely positioned at the bottom of the frame; without
+    // reserved space beneath the last row it lands ON that row's content.
+    const sheet = await css("tasks.css");
+    const clipped = ruleFor(sheet, ".tasks-list-frame.is-clipped .tasks-list");
+    const reserve = Number(/padding-bottom:\s*(\d+)px/.exec(clipped)![1]);
+    const pill = ruleFor(sheet, ".tasks-more");
+    const bottom = Number(/bottom:\s*(\d+)px/.exec(pill)![1]);
+    // The pill's own box (~16px) plus its offset has to fit in the gutter.
+    expect(reserve).toBeGreaterThanOrEqual(bottom + 16);
+    // And the fade covers at least the gutter, so the clip edge is never sharp.
+    const fade = Number(/calc\(100% - (\d+)px\)/.exec(clipped)![1]);
+    expect(fade).toBeGreaterThanOrEqual(reserve);
+  });
+
   test("a drill-in transcript scrolls inside the card rather than growing it", async () => {
     // An agent transcript is unbounded; without a cap one drill-in can be longer
     // than the pane and push everything after it off screen.
@@ -126,6 +155,60 @@ describe("the tasks strip cannot displace the composer", () => {
     const rule = ruleFor(sheet, ".drill-transcript");
     expect(rule).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
     expect(rule).toMatch(/overflow-y:\s*auto/);
+  });
+});
+
+describe("the workflow card folds like every other card", () => {
+  test("the head carries a caret, and a collapsed card always shows it", async () => {
+    // Round-3 finding 6: 643px of phases with no affordance to put them away,
+    // in a pane where every other card head folds.
+    const sheet = await css("tasks.css");
+    expect(ruleFor(sheet, ".wf-caret")).toMatch(/opacity:\s*0/);
+    // Reserved width at rest, so revealing the caret never shifts the name.
+    expect(ruleFor(sheet, ".wf-caret")).toMatch(/width:\s*\d+px/);
+    // A collapsed card shows it unconditionally: that caret is the only thing
+    // saying the phases still exist.
+    expect(sheet).toContain('.workflow-card:not(.is-open) .wf-caret');
+    expect(sheet).toContain(".workflow-card:focus-within .wf-caret");
+  });
+
+  test("a collapsed card is its head, with no leftover body gap", async () => {
+    // The head already carries name, badge, counts, duration, tokens and the
+    // outcome chip, so it IS the one-line summary — but the card's own flex gap
+    // would still reserve space for the emptied body under it.
+    const sheet = await css("tasks.css");
+    expect(ruleFor(sheet, ".workflow-card:not(.is-open)")).toMatch(/gap:\s*0/);
+  });
+});
+
+describe("the quoted output tail is not a dark slab in a light dock", () => {
+  test("it paints its own themed bed, never the raw terminal token", async () => {
+    // Round-3 finding 8: `--terminal-bg` is dark ink in BOTH themes, so the
+    // tail punched a near-black hole through the light dock for what is by
+    // construction peripheral output.
+    const sheet = await css("tasks.css");
+    const tail = ruleFor(sheet, ".task-output .terminal");
+    expect(tail).toContain("var(--terminal-quiet-bg)");
+    expect(tail).not.toContain("var(--terminal-bg)");
+    // Its ink follows the bed, or a light excerpt keeps dark-terminal text.
+    expect(ruleFor(sheet, ".task-output .terminal-body")).toContain("var(--terminal-quiet-fg)");
+  });
+
+  test("the transcript's own Bash terminal is untouched", async () => {
+    // The dark terminal in a Bash card is deliberate and stays: this fix is
+    // scoped to the tail that lives in the dock.
+    const sheet = await css("tools.css");
+    expect(ruleFor(sheet, ".terminal")).toContain("var(--terminal-bg)");
+  });
+
+  test("every piece of its chrome follows the bed too", async () => {
+    const sheet = await css("tasks.css");
+    for (const selector of [
+      ".task-output .terminal-more",
+      ".task-output .terminal .copy-btn"
+    ]) {
+      expect(ruleFor(sheet, selector)).toMatch(/var\(--terminal-quiet-/);
+    }
   });
 });
 

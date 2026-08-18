@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type { HarnessBridge } from "../src/bridge";
 import { taskBridgeStub } from "./bridgeStub";
-import { nestedFixture, shellsFixture, workflowFixture } from "../src/dev/fixtures/round3";
+import {
+  nestedFixture,
+  shellsFixture,
+  withWorkflowLogs,
+  workflowFixture
+} from "../src/dev/fixtures/round3";
 import { applyLine, createIndex, createModel, replayLines } from "../src/model/transcript";
 import type { Block, ToolBlock, TranscriptModel } from "../src/model/types";
 import type { ProtocolLine } from "../src/protocol/types";
@@ -151,6 +156,63 @@ describe("WorkflowCard", () => {
     expect(card.querySelector(".wf-head .spinner")).toBeNull();
   });
 
+  /**
+   * Round-3 critic finding 6: the workflow card was 643px tall expanded with no
+   * way to put it away, in a pane where every other card folds from its head.
+   */
+  describe("the card folds from its head, like every other card", () => {
+    test("it opens expanded and the head offers a collapse", () => {
+      const { container } = mount(<ToolCard block={block} />);
+      const fold = container.querySelector<HTMLElement>(".wf-fold")!;
+      expect(fold).not.toBeNull();
+      expect(fold.getAttribute("aria-expanded")).toBe("true");
+      expect(container.querySelector(".wf-phases")).not.toBeNull();
+    });
+
+    test("collapsed, the phases go away and the head is the summary", () => {
+      const { container } = mount(<ToolCard block={block} />);
+      fireEvent.click(container.querySelector<HTMLElement>(".wf-fold")!);
+
+      const card = container.querySelector(".workflow-card")!;
+      expect(card.classList.contains("is-open")).toBe(false);
+      expect(container.querySelector<HTMLElement>(".wf-fold")!.getAttribute("aria-expanded")).toBe(
+        "false"
+      );
+      // The head already carries everything a one-line summary would: the name,
+      // the badge, the counts, the duration, the tokens, and the outcome mark.
+      // Adding a SECOND line repeating them is the duplication finding 7 is
+      // about, in a new place.
+      expect(container.querySelector(".wf-name")!.textContent).toBe("alpha-beta-demo");
+      const meta = container.querySelector(".wf-meta")!.textContent!;
+      expect(meta).toContain("Workflow");
+      expect(meta).toContain("2 phases");
+      expect(meta).toContain("3 of 3 done");
+      expect(meta).toContain("tokens");
+      expect(card.querySelector(".mark-ok")).not.toBeNull();
+      // ...and nothing repeats it.
+      expect(container.querySelector(".wf-collapsed")).toBeNull();
+    });
+
+    test("reopening finds an expanded log strip exactly where it was", () => {
+      // Folding must never be destructive: the body stays mounted, so a reader
+      // who collapsed a card to scroll past it gets their state back.
+      const withLogs = replayLines(withWorkflowLogs(workflowFixture));
+      const logged = tools(withLogs).find((tool) => tool.name === "Workflow")!;
+      const { container } = mount(<ToolCard block={logged} />);
+      fireEvent.click(container.querySelector<HTMLElement>(".wf-logs-toggle")!);
+      const logs = container.querySelector(".wf-logs");
+      expect(logs).not.toBeNull();
+
+      fireEvent.click(container.querySelector<HTMLElement>(".wf-fold")!);
+      fireEvent.click(container.querySelector<HTMLElement>(".wf-fold")!);
+      // The same NODE, which is what carries the scroll position.
+      expect(container.contains(logs)).toBe(true);
+      expect(container.querySelector<HTMLElement>(".wf-logs-toggle")!.getAttribute("aria-expanded")).toBe(
+        "true"
+      );
+    });
+  });
+
   test("a mid-flight workflow distinguishes queued from running", () => {
     // The wire says `start` for BOTH of these; only the presence of `startedAt`
     // separates an agent the scheduler has accepted from one that has actually
@@ -239,48 +301,57 @@ describe("SubagentCard", () => {
     expect(drill.textContent).toContain("echo drilled");
   });
 
+  /**
+   * A drill-in transcript containing one nested Agent card, whose identity is
+   * whatever `agentId` the caller names. A transcript replayed off disk has no
+   * system/task_started frames, so that field is the ONLY id the inner card
+   * gets — which is what the agentId fallback in SubagentCard exists for.
+   */
+  function drillWithNestedAgent(agentId: string, description = "Compute 17*3") {
+    return [
+      {
+        type: "assistant",
+        message: {
+          id: "m_outer",
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: `toolu_drill_${agentId}`,
+              name: "Agent",
+              input: { description, prompt: "17*3" }
+            }
+          ]
+        },
+        uuid: "outer-drill-1"
+      } as ProtocolLine,
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: `toolu_drill_${agentId}`, content: "51" }
+          ]
+        },
+        tool_use_result: {
+          status: "completed",
+          agentId,
+          content: [{ type: "text", text: "51" }]
+        },
+        uuid: "outer-drill-2"
+      } as ProtocolLine
+    ];
+  }
+
   test("drilling RECURSES: an agent card inside a loaded transcript can open its own", async () => {
-    // A transcript replayed off disk has no system/task_started frames, so the
-    // inner card's identity arrives only as tool_use_result.agentId. Without
-    // the agentId fallback the tree dead-ends at depth 1.
+    // The agent in the transcript is NOT one the card renders inline, so it is
+    // a genuinely new card and must be fully drawn and itself drillable.
     const bridge = installBridge({
       loadSubagentTranscript: (params) => {
         bridge.calls.push(`loadSubagentTranscript:${params.taskId ?? ""}`);
         if (params.taskId === outer.subagent!.taskId) {
           return Promise.resolve({
-            events: [
-              {
-                type: "assistant",
-                message: {
-                  id: "m_outer",
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "tool_use",
-                      id: "toolu_inner_drill",
-                      name: "Agent",
-                      input: { description: "Compute 17*3", prompt: "17*3" }
-                    }
-                  ]
-                },
-                uuid: "outer-drill-1"
-              } as ProtocolLine,
-              {
-                type: "user",
-                message: {
-                  role: "user",
-                  content: [
-                    { type: "tool_result", tool_use_id: "toolu_inner_drill", content: "51" }
-                  ]
-                },
-                tool_use_result: {
-                  status: "completed",
-                  agentId: "a9728442495aacb2c",
-                  content: [{ type: "text", text: "51" }]
-                },
-                uuid: "outer-drill-2"
-              } as ProtocolLine
-            ],
+            events: drillWithNestedAgent("a_disk_only_agent", "Audit the tests"),
             truncated: false
           });
         }
@@ -313,11 +384,42 @@ describe("SubagentCard", () => {
     fireEvent.click(innerOpen[0]!);
     await flush(60);
     // ...and drill by the inner agent's own id.
-    expect(bridge.calls).toContain("loadSubagentTranscript:a9728442495aacb2c");
+    expect(bridge.calls).toContain("loadSubagentTranscript:a_disk_only_agent");
     // The nested drill-in header carries the breadcrumb of the descent.
     const trail = container.querySelector(".drill-trail");
     expect(trail).not.toBeNull();
-    expect(trail!.textContent).toContain("Compute 17*3");
+    expect(trail!.textContent).toContain("Audit the tests");
+  });
+
+  test("a drill-in does NOT redraw an agent the card already shows inline", async () => {
+    // The card's inline children are the frames this session streamed; the
+    // drill-in is the same agent's file on disk, and that file contains the very
+    // same nested tool_use. Rendering both drew ONE agent as TWO full cards
+    // inside one card, wearing different chips — the disk copy has an agentId
+    // but no task frames, so no live metrics — which reads as two agents that
+    // did identical work.
+    installBridge({
+      loadSubagentTranscript: () =>
+        // a9728442495aacb2c is the inner agent the fixture already nests inline.
+        Promise.resolve({ events: drillWithNestedAgent("a9728442495aacb2c"), truncated: false })
+    });
+    const { container, getByText, getAllByText } = mount(<ToolCard block={outer} />);
+    fireEvent.click(getByText("Show subagent work"));
+    // The revealed inner card offers its own "Open transcript"; the outer card's
+    // is the first in document order.
+    fireEvent.click(getAllByText("Open transcript")[0]!);
+    await flush(60);
+
+    // The inline child keeps its full card...
+    expect(container.querySelector(".subagent-children .subagent-card")).not.toBeNull();
+    // ...and the drill-in's copy is a marker pointing at it, not a second card.
+    expect(container.querySelector(".drill-transcript .subagent-card")).toBeNull();
+    const marker = container.querySelector(".drill-transcript .subagent-dup")!;
+    expect(marker).not.toBeNull();
+    expect(marker.textContent).toContain("Compute 17*3");
+    expect(marker.textContent).toContain("shown above");
+    // Exactly one card for the inner agent anywhere in the tree.
+    expect(container.querySelectorAll(".subagent-card").length).toBe(2);
   });
 
   test("completed toolStats render as a files/lines summary", () => {
@@ -412,12 +514,204 @@ describe("background Bash card", () => {
     expect(bridge.calls).toEqual([`backgroundTask:${block.toolUseId}`]);
   });
 
+  /**
+   * Round-3 critic finding 7: a settled background-Bash card printed its own
+   * description twice — once as the head's subtitle, once as bare grey prose
+   * below — because `task_notification.summary` for a shell is very often the
+   * command's `description` verbatim.
+   */
+  describe("a settled card does not repeat what its head already says", () => {
+    test("a summary equal to the description is suppressed", () => {
+      const settled = replayThrough(shellsFixture, shellsFixture.length);
+      const bash = tools(settled).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+      // The probe really does send them identical — that is the finding.
+      const summary = bash.subagent!.summary!;
+      expect(summary).toBe(String(bash.input.description));
+      const { container } = mount(<ToolCard block={bash} />);
+      expect(container.querySelector(".bash-bg-summary")).toBeNull();
+      // Said exactly once, by the head.
+      expect(container.textContent!.split(summary).length - 1).toBe(1);
+    });
+
+    test("a summary that carries real news still gets its row", () => {
+      // Suppression is scoped to repeats: an outcome the head cannot show is
+      // exactly what this row is for.
+      const settled = replayThrough(shellsFixture, shellsFixture.length);
+      const bash = tools(settled).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+      const informative: ToolBlock = {
+        ...bash,
+        subagent: { ...bash.subagent, summary: "exit 1: no such file or directory" }
+      };
+      const { container } = mount(<ToolCard block={informative} />);
+      expect(container.querySelector(".bash-bg-summary")!.textContent).toBe(
+        "exit 1: no such file or directory"
+      );
+    });
+
+    test("a summary equal to the COMMAND is suppressed too", () => {
+      // The head's headline is the command's first line, so that is a repeat as
+      // much as the description is.
+      const settled = replayThrough(shellsFixture, shellsFixture.length);
+      const bash = tools(settled).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+      const echoed: ToolBlock = {
+        ...bash,
+        subagent: { ...bash.subagent, summary: String(bash.input.command).split("\n")[0] }
+      };
+      const { container } = mount(<ToolCard block={echoed} />);
+      expect(container.querySelector(".bash-bg-summary")).toBeNull();
+    });
+  });
+
   test("a backgrounded command offers Stop, not Move to background", () => {
     const live = replayThrough(shellsFixture, 26);
     const bash = tools(live).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
     const { queryByText, getByText } = mount(<ToolCard block={bash} />);
     expect(queryByText("Move to background")).toBeNull();
     expect(getByText("Stop")).toBeDefined();
+  });
+});
+
+/**
+ * Round-3 critic finding 10: Escape closed the Bash card's output tail and
+ * neither of the two agent drill-ins, so on those it fell through to the
+ * composer and interrupted the turn the reader was inspecting.
+ */
+describe("Escape closes every inline drill-in, and only when focus is in one", () => {
+  /**
+   * Escape from a real focused element, as the browser delivers it — a window
+   * capture listener is what the shared contract installs, so a synthetic
+   * fireEvent on the React tree would not exercise it.
+   */
+  function escapeFrom(node: HTMLElement): KeyboardEvent {
+    node.focus();
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true
+    });
+    act(() => {
+      node.dispatchEvent(event);
+    });
+    return event;
+  }
+
+  /** `aria-expanded` on the toggle, which is the state the disclosure reflects. */
+  function expanded(node: Element | null): string | null {
+    return node?.getAttribute("aria-expanded") ?? null;
+  }
+
+  test("the Bash card's output tail", async () => {
+    installBridge({});
+    const live = replayThrough(shellsFixture, 26);
+    const bash = tools(live).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+    const { container, getByText } = mount(<ToolCard block={bash} />);
+    fireEvent.click(getByText("Show output"));
+    await flush(60);
+    const toggle = () => container.querySelector('.bash-bg-actions button[aria-expanded]');
+    expect(expanded(toggle())).toBe("true");
+
+    const event = escapeFrom(toggle() as HTMLElement);
+    // Consumed here rather than reaching the composer, whose Escape interrupts.
+    expect(event.defaultPrevented).toBe(true);
+    await flush(60);
+    expect(expanded(toggle())).toBe("false");
+  });
+
+  test("a subagent card's drill-in transcript", async () => {
+    installBridge({});
+    const model = replayLines(nestedFixture);
+    const outer = model.turns
+      .flatMap((turn) => turn.blocks)
+      .find((b): b is ToolBlock => b.kind === "tool" && b.name === "Agent")!;
+    const { container, getByText } = mount(<ToolCard block={outer} />);
+    fireEvent.click(getByText("Open transcript"));
+    await flush(60);
+    const toggle = () => container.querySelector(".subagent-toggle.is-drill");
+    expect(expanded(toggle())).toBe("true");
+
+    const event = escapeFrom(toggle() as HTMLElement);
+    expect(event.defaultPrevented).toBe(true);
+    await flush(60);
+    expect(expanded(toggle())).toBe("false");
+  });
+
+  test("a workflow card's per-agent drill-in", async () => {
+    installBridge({});
+    const model = replayLines(workflowFixture);
+    const wf = tools(model).find((tool) => tool.name === "Workflow")!;
+    const { container, getAllByText } = mount(<ToolCard block={wf} />);
+    const drillToggle = () =>
+      Array.from(container.querySelectorAll(".wf-agent .wf-agent-toggle")).find((node) =>
+        /transcript/i.test(node.textContent ?? "")
+      );
+    fireEvent.click(getAllByText("Open agent transcript")[0]!);
+    await flush(60);
+    expect(expanded(drillToggle() ?? null)).toBe("true");
+
+    const event = escapeFrom(drillToggle() as HTMLElement);
+    expect(event.defaultPrevented).toBe(true);
+    await flush(60);
+    expect(expanded(drillToggle() ?? null)).toBe("false");
+  });
+
+  test("the tasks strip's per-agent drill-in, and then the row detail itself", async () => {
+    // Two nested disclosures, so Escape steps out ONE level at a time rather
+    // than collapsing everything the reader opened at once.
+    installBridge({});
+    const live = replayThrough(workflowFixture, 35);
+    const { container, getByText } = mount(
+      <TasksStrip tasks={live.backgroundTasks} tasksById={live.tasksById} />
+    );
+    fireEvent.click(getByText("View"));
+    await flush(60);
+    const agent = () => container.querySelector(".task-wf-agent .wf-agent-toggle");
+    const row = () => container.querySelector(".task-action[aria-expanded]");
+    fireEvent.click(agent() as HTMLElement);
+    await flush(60);
+    expect(expanded(agent())).toBe("true");
+    expect(expanded(row())).toBe("true");
+
+    expect(escapeFrom(agent() as HTMLElement).defaultPrevented).toBe(true);
+    await flush(60);
+    expect(expanded(agent())).toBe("false");
+    // The row detail is still open — one level, one Escape.
+    expect(expanded(row())).toBe("true");
+
+    expect(escapeFrom(row() as HTMLElement).defaultPrevented).toBe(true);
+    await flush(60);
+    expect(expanded(row())).toBe("false");
+  });
+
+  test("Escape with nothing open is left alone, so the composer still interrupts", async () => {
+    // The whole point of scoping to focus: a global handler would swallow
+    // Escape-to-interrupt for as long as any drill-in was open anywhere.
+    installBridge({});
+    const live = replayThrough(shellsFixture, 26);
+    const bash = tools(live).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+    const { container } = mount(<ToolCard block={bash} />);
+    const event = escapeFrom(
+      container.querySelector<HTMLElement>(".bash-bg-actions button[aria-expanded]")!
+    );
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  test("Escape from OUTSIDE an open drill-in is left alone too", async () => {
+    installBridge({});
+    const live = replayThrough(shellsFixture, 26);
+    const bash = tools(live).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+    const { container, getByText } = mount(<ToolCard block={bash} />);
+    fireEvent.click(getByText("Show output"));
+    await flush(60);
+
+    // A composer-shaped element outside the card: its Escape is the interrupt.
+    const outside = document.createElement("textarea");
+    document.body.appendChild(outside);
+    const event = escapeFrom(outside);
+    expect(event.defaultPrevented).toBe(false);
+    expect(expanded(container.querySelector(".bash-bg-actions button[aria-expanded]"))).toBe(
+      "true"
+    );
+    outside.remove();
   });
 });
 

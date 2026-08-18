@@ -113,6 +113,26 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--terminal-error": "#ffa79a",
     "--terminal-chrome": "rgba(255, 255, 255, 0.06)",
     "--terminal-border": "rgba(255, 255, 255, 0.10)",
+    /**
+     * The QUOTED terminal: a background task's output tail, which lives inside a
+     * task row inside the DOCK — under a light strip, beside light rows, above a
+     * light composer — rather than inside a Bash card in the transcript.
+     *
+     * In dark it is the terminal, unchanged. In light it is a light surface: the
+     * dark slab was the single heaviest object on the pane, for what is by
+     * construction peripheral output, and it read as a hole punched through the
+     * dock. Every ink token flips with it, including the ANSI palette
+     * (`--ansi-*` are re-pointed at a light-tuned set in content.css, and both
+     * sets are audited against their own beds in contrast.test.ts).
+     */
+    "--terminal-quiet-bg": dark ? "rgba(0, 0, 0, 0.30)" : "rgba(20, 18, 16, 0.06)",
+    "--terminal-quiet-fg": dark ? "rgba(248, 246, 244, 0.94)" : "#1c1a18",
+    "--terminal-quiet-muted": dark ? "rgba(248, 246, 244, 0.68)" : "#3b3936",
+    "--terminal-quiet-error": dark ? "#ffa79a" : "#a3221b",
+    "--terminal-quiet-chrome": dark ? "rgba(255, 255, 255, 0.05)" : "rgba(20, 18, 16, 0.04)",
+    "--terminal-quiet-chrome-hover": dark
+      ? "rgba(255, 255, 255, 0.09)"
+      : "rgba(20, 18, 16, 0.08)",
     "--border": theme.border,
     "--border-strong": theme.borderStrong,
     "--border-faint": overlay(dark, dark ? 0.05 : 0.05),

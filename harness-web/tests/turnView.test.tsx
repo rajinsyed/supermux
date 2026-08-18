@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { fixtures } from "../src/dev/fixtures";
+import { shellsFixture, withWorkflowLogs, workflowFixture } from "../src/dev/fixtures/round3";
 import { replayLines } from "../src/model/transcript";
 import type { Turn } from "../src/model/types";
 import { CopyProvider } from "../src/ui/CopyContext";
@@ -245,6 +246,135 @@ describe("the live work row does not auto-size while a turn streams", () => {
     expect(cards.length).toBeGreaterThan(3);
     const opened = Array.from(cards).filter((c) => c.classList.contains("is-open"));
     expect(opened.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Round-3 critic finding 1 (blocker-grade) and 4. A finished workflow's card
+ * auto-folded ~6s after completion, sweeping the reader's open log strip and
+ * open drill-in behind "6 earlier tool calls"; and stopping a background shell
+ * folded its card away in the same frame, so the row the user had just acted on
+ * vanished as the acknowledgement of the act.
+ */
+describe("an automatic fold never sweeps away what the reader opened", () => {
+  // `withWorkflowLogs` is what the pinned dev scenario feeds the card; the raw
+  // probe's workflow never called `log()`, so the strip the critic had open is
+  // only reachable with it.
+  const withLogs = withWorkflowLogs(workflowFixture);
+
+  function workflowTurn(count: number): Turn {
+    const model = replayLines(withLogs.slice(0, count));
+    return model.turns[0];
+  }
+
+  test("a settled turn with no open disclosure still folds, as before", () => {
+    // The exemption must be narrow: the transcript has to keep collapsing.
+    const turn = { ...workflowTurn(47), state: "complete" as const, folded: true };
+    const { container } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={turn} isLast={false} />
+      </CopyProvider>
+    );
+    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(true);
+  });
+
+  test("an open workflow log strip holds the fold off", () => {
+    const turn = { ...workflowTurn(47), state: "complete" as const, folded: false };
+    const { container, rerender } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={turn} isLast={false} />
+      </CopyProvider>
+    );
+    // Open the log strip the way a reader would.
+    const logs = container.querySelector<HTMLElement>(".wf-logs-toggle");
+    expect(logs).not.toBeNull();
+    fireEvent.click(logs!);
+
+    // Now the model folds the turn — the deferred fold landing when the
+    // workflow settles, which is the exact frame the critic caught.
+    rerender(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={{ ...turn, folded: true }} isLast={false} />
+      </CopyProvider>
+    );
+    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(false);
+  });
+
+  test("closing it again lets the turn fold", () => {
+    // The hold is a live fact, not a permanent veto: once the reader closes what
+    // they opened, the transcript is free to tidy itself up.
+    const turn = { ...workflowTurn(47), state: "complete" as const, folded: false };
+    const { container, rerender } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={turn} isLast={false} />
+      </CopyProvider>
+    );
+    const logs = container.querySelector<HTMLElement>(".wf-logs-toggle")!;
+    fireEvent.click(logs);
+    rerender(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={{ ...turn, folded: true }} isLast={false} />
+      </CopyProvider>
+    );
+    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(false);
+    fireEvent.click(container.querySelector<HTMLElement>(".wf-logs-toggle")!);
+    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(true);
+  });
+
+  test("the reader's own fold click still wins over the hold", () => {
+    // The affordance must never stop working: only the AUTOMATIC sweep defers.
+    const turn = { ...workflowTurn(47), state: "complete" as const, folded: false };
+    const { container } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={turn} isLast={false} />
+      </CopyProvider>
+    );
+    fireEvent.click(container.querySelector<HTMLElement>(".wf-logs-toggle")!);
+    fireEvent.click(container.querySelector<HTMLElement>(".fold-head")!);
+    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(true);
+  });
+
+  test("stopping a background shell does not fold its card out of the run", () => {
+    // Finding 4: the same sweep, one frame wide. A backgrounded shell is `live`
+    // only while its task runs, so the moment Stop settles the task the card
+    // stopped being live and dropped behind "N earlier tool calls" — instantly,
+    // in the frame that answered the click.
+    const running = replayLines(shellsFixture.slice(0, 27));
+    const streaming: Turn = {
+      ...running.turns[0],
+      state: "streaming",
+      endedAtMs: undefined,
+      result: undefined
+    };
+    const { container, rerender } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={streaming} isLast />
+      </CopyProvider>
+    );
+    const shell = () =>
+      Array.from(container.querySelectorAll<HTMLElement>(".turn-work > *")).find((node) =>
+        node.textContent?.includes("tick")
+      );
+    const before = shell();
+    expect(before).toBeDefined();
+    expect(before!.style.display).not.toBe("none");
+
+    // Replay the CLI's real kill sequence onto the same turn.
+    const stopped = replayLines(shellsFixture);
+    rerender(
+      <CopyProvider dict={undefined}>
+        <TurnView
+          turn={{
+            ...streaming,
+            blocks: stopped.turns[0].blocks.slice(0, streaming.blocks.length)
+          }}
+          isLast
+        />
+      </CopyProvider>
+    );
+    const after = shell();
+    expect(after).toBeDefined();
+    expect(after!.style.display).not.toBe("none");
   });
 });
 

@@ -92,6 +92,14 @@ export interface SubagentInfo {
    * agent still runs has something to re-fetch on.
    */
   progressTick?: number;
+  /**
+   * The TASK's start, copied off its record. The card and the strip row describe
+   * the same running command, so they must count from the same instant: the
+   * block's own `startedAtMs` is when the tool_use block was built, which drifts
+   * from the record's by however long the CLI took to announce the task, and the
+   * two clocks then disagree by a second or two forever.
+   */
+  startedAtMs?: number;
 }
 
 export type WorkflowAgentState =

@@ -8,6 +8,7 @@ import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 import { WorkingDots } from "../primitives/Spinner";
 import { BlockView } from "./BlockView";
+import { useFoldGuardHost } from "./foldGuard";
 import { UserMessage } from "./UserMessage";
 
 /** Trailing work rows kept visible while a turn is still running. */
@@ -51,13 +52,24 @@ function isLive(block: Block): boolean {
 /**
  * Which work rows are folded away while the turn streams. Empty once the turn
  * settles: a settled turn shows everything (behind the fold header).
+ *
+ * `wasLive` is the set of blocks that have been live at any point in this turn,
+ * and membership is permanent. Liveness alone is not enough: pressing Stop on a
+ * background shell settles its task, which un-lives the card, which drops it
+ * behind "3 earlier tool calls" IN THE SAME FRAME — the row the user just acted
+ * on disappearing as the acknowledgement of the act. A card that earned a place
+ * on screen by running keeps it until the turn settles and the whole tree opens.
  */
-function hiddenWhileStreaming(work: Block[], settled: boolean): boolean[] {
+function hiddenWhileStreaming(
+  work: Block[],
+  settled: boolean,
+  wasLive: Set<string>
+): boolean[] {
   if (settled || work.length <= LIVE_TAIL) return work.map(() => false);
   const keepFrom = work.length - LIVE_TAIL;
   // Anything still running stays on screen wherever it sits: a subagent that
   // spawned ten tools ago is the row a user most wants to watch.
-  return work.map((block, index) => index < keepFrom && !isLive(block));
+  return work.map((block, index) => index < keepFrom && !wasLive.has(block.key));
 }
 
 export const TurnView = memo(function TurnView({
@@ -77,7 +89,19 @@ export const TurnView = memo(function TurnView({
 
   const settled = turn.state !== "streaming";
   const toolCount = useMemo(() => work.filter((b) => b.kind === "tool").length, [work]);
-  const folded = override ?? (settled && turn.folded && !isLast && work.length > 0);
+  /**
+   * Something inside this turn is open because the reader opened it — a workflow
+   * card, a subagent drill-in, a log strip, an output tail. The automatic fold
+   * (the `result`, or a background task settling minutes later) is a
+   * housekeeping convenience and loses to that: a turn that sweeps the reader's
+   * open disclosures behind "6 earlier tool calls" while they are reading them
+   * is the worst thing this pane can do with a scroll position.
+   *
+   * Their OWN click on the fold header still wins — `override` is checked first
+   * — so the affordance never stops working; only the automatic sweep defers.
+   */
+  const { held, Provider: FoldGuardProvider } = useFoldGuardHost();
+  const folded = override ?? (settled && turn.folded && !isLast && work.length > 0 && !held);
   /**
    * A turn that has been ON SCREEN unfolded keeps its work tree mounted through
    * a later fold (hidden by class), so the reader's expanded disclosures and
@@ -89,7 +113,20 @@ export const TurnView = memo(function TurnView({
   const everOpen = useRef(!folded);
   if (!folded) everOpen.current = true;
   const renderWork = everOpen.current;
-  const hidden = useMemo(() => hiddenWhileStreaming(work, settled), [work, settled]);
+  /**
+   * Every block that has run at some point in this turn. Written during render
+   * on purpose — it is derived from the blocks being rendered right now, and an
+   * effect would run a frame LATE, which is exactly the frame in which a stopped
+   * card would vanish.
+   */
+  const wasLive = useRef<Set<string>>(new Set());
+  for (const block of work) {
+    if (isLive(block)) wasLive.current.add(block.key);
+  }
+  const hidden = useMemo(
+    () => hiddenWhileStreaming(work, settled, wasLive.current),
+    [work, settled]
+  );
   const earlierCount = useMemo(() => {
     const earlier = work.filter((_, i) => hidden[i]);
     const tools = earlier.filter((b) => b.kind === "tool").length;
@@ -172,26 +209,28 @@ export const TurnView = memo(function TurnView({
                 and folding hides via a class rather than unmounting so a reader
                 who walks away finds everything exactly where they left it. */}
             <div className={`turn-work${folded ? " is-folded" : ""}`}>
-              {renderWork &&
-                work.map((block, i) => (
-                  <Disclosure
-                    key={block.key}
-                    // Streaming overflow hides a block until "N earlier tool
-                    // calls" reveals it; at settle every block eases open.
-                    open={!hidden[i] || showEarlier}
-                    // `keepMounted` is what makes the whole tree stable: a card
-                    // sliding into the overflow, or easing open at settle, is
-                    // the SAME mounted subtree changing visibility — its open
-                    // drill-ins and scroll positions ride along.
-                    keepMounted
-                    className={hidden[i] ? "turn-work-hidden" : "turn-work-item"}
-                  >
-                    {/* Marked live while it is the visible tail of a streaming
-                        turn: that row must not auto-size and drag the settled
-                        transcript above it. */}
-                    <BlockView block={block} live={!settled && !hidden[i]} />
-                  </Disclosure>
-                ))}
+              <FoldGuardProvider>
+                {renderWork &&
+                  work.map((block, i) => (
+                    <Disclosure
+                      key={block.key}
+                      // Streaming overflow hides a block until "N earlier tool
+                      // calls" reveals it; at settle every block eases open.
+                      open={!hidden[i] || showEarlier}
+                      // `keepMounted` is what makes the whole tree stable: a card
+                      // sliding into the overflow, or easing open at settle, is
+                      // the SAME mounted subtree changing visibility — its open
+                      // drill-ins and scroll positions ride along.
+                      keepMounted
+                      className={hidden[i] ? "turn-work-hidden" : "turn-work-item"}
+                    >
+                      {/* Marked live while it is the visible tail of a streaming
+                          turn: that row must not auto-size and drag the settled
+                          transcript above it. */}
+                      <BlockView block={block} live={!settled && !hidden[i]} />
+                    </Disclosure>
+                  ))}
+              </FoldGuardProvider>
             </div>
           </>
         ) : null}

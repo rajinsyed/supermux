@@ -7,6 +7,8 @@ import { ChevronDown, ChevronRight, Stop } from "../Icons";
 import { formatCompactDuration } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Spinner } from "../primitives/Spinner";
+import { useDismissible } from "../primitives/useDismissible";
+import { useFoldHold } from "../transcript/foldGuard";
 import { TaskOutputView } from "./TaskOutput";
 
 const STATUS_LABELS: Record<string, CopyKey> = {
@@ -97,6 +99,12 @@ export function BackgroundBashStrip({ block }: { block: ToolBlock }) {
   const [openOutput, setOpenOutput] = useState(false);
   const [busy, setBusy] = useState<"move" | "stop" | undefined>(undefined);
   const [error, setError] = useState<CopyKey | undefined>(undefined);
+  // Escape closes the tail, through the one contract all three inline drill-ins
+  // now share, rather than each card re-implementing it on its own container.
+  const scope = useDismissible(openOutput, () => setOpenOutput(false));
+  // An open tail is the reader's place in this turn; the turn must not fold
+  // itself away around it when the shell settles.
+  useFoldHold(openOutput);
 
   const info = block.subagent;
   const background = info?.background === true;
@@ -124,23 +132,38 @@ export function BackgroundBashStrip({ block }: { block: ToolBlock }) {
       .finally(() => setBusy(undefined));
   };
 
+  /**
+   * The task's closing word, when it is actually a word the card does not
+   * already carry.
+   *
+   * The CLI's `task_notification.summary` for a shell is very often just the
+   * command's own `description` verbatim — the same string already printed as
+   * the card's subtitle two rows up — so a settled card read its description
+   * twice, once styled as a subtitle and once as bare grey prose. Suppressed
+   * when it matches anything the head already says; a summary that carries real
+   * news ("exit 1: no such file") still gets its row.
+   */
+  const said = new Set(
+    [
+      info?.description,
+      block.input.description,
+      block.input.command,
+      // The head's headline is the command's first LINE, so a summary equal to
+      // that is a repeat too.
+      typeof block.input.command === "string" ? block.input.command.split("\n")[0] : undefined
+    ]
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+  );
+  const summary =
+    info?.summary && !taskRunning && !said.has(info.summary.trim()) ? info.summary : undefined;
+
   // A foreground command that has already returned has nothing to move and
   // nothing to tail; the card is complete as it stands.
   if (!background && !toolRunning) return null;
 
   return (
-    <div
-      className="bash-bg-strip"
-      // Escape closes the open output tail before it can fall through to the
-      // composer's interrupt — the same close-the-topmost-thing contract the
-      // Modal and PermissionCard already keep.
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || !openOutput) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setOpenOutput(false);
-      }}
-    >
+    <div className="bash-bg-strip" ref={scope as React.RefObject<HTMLDivElement>}>
       <div className="bash-bg-actions">
         {!background && toolRunning ? (
           <button
@@ -194,9 +217,7 @@ export function BackgroundBashStrip({ block }: { block: ToolBlock }) {
           <TaskOutputView taskId={taskId} running={taskRunning} />
         </Disclosure>
       ) : null}
-      {info?.summary && !taskRunning ? (
-        <div className="bash-bg-summary">{info.summary}</div>
-      ) : null}
+      {summary ? <div className="bash-bg-summary">{summary}</div> : null}
     </div>
   );
 }

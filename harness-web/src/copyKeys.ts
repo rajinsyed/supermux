@@ -161,6 +161,10 @@ export const copyDefaults = {
   "supermux.harness.subagent.waiting": "Waiting to start…",
   "supermux.harness.subagent.nestedOne": "{count} nested agent",
   "supermux.harness.subagent.nested": "{count} nested agents",
+  // A drill-in replays the agent's own file, which contains the nested agents
+  // the card already draws inline. The second copy is a cross-reference, not a
+  // second agent.
+  "supermux.harness.subagent.shownAbove": "shown above",
 
   "supermux.harness.workflow.badge": "Workflow",
   "supermux.harness.workflow.untitled": "Workflow",
@@ -196,6 +200,9 @@ export const copyDefaults = {
   "supermux.harness.workflow.unphased": "Unphased",
   "supermux.harness.workflow.openAgent": "Open agent transcript",
   "supermux.harness.workflow.viewAgents": "Pick an agent to open its transcript:",
+  // The head fold, matching every other card in the pane.
+  "supermux.harness.workflow.collapse": "Collapse workflow",
+  "supermux.harness.workflow.expand": "Expand workflow",
 
   "supermux.harness.tasks.title": "Background tasks",
   "supermux.harness.tasks.countOne": "{count} task",

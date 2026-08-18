@@ -82,6 +82,32 @@ function surfaces(isDark: boolean) {
   return { vars, beds };
 }
 
+/**
+ * The QUOTED terminal's beds — a background task's output tail, which is the one
+ * place terminal output is painted inside the DOCK rather than inside a Bash
+ * card. In light it is a light surface (the dark slab was the heaviest object on
+ * a pale pane, for content that is by construction peripheral), so it takes a
+ * light-tuned ANSI palette, and both palettes have to be audited against the
+ * beds they actually land on.
+ *
+ * Two beds because the tail appears in two places: a strip row (raised, or the
+ * claude tint while the task runs) and inside a Bash card's disclosure.
+ */
+function quietTerminalBeds(isDark: boolean): { vars: Record<string, string>; beds: Record<string, RGB> } {
+  const { vars } = surfaces(isDark);
+  const page = parse(vars["--page-bg"]);
+  const raised = composite(vars["--surface-raised"], page);
+  const running = composite(vars["--claude-faint"], page);
+  return {
+    vars,
+    beds: {
+      "row:quiet": composite(vars["--terminal-quiet-bg"], raised),
+      "running-row:quiet": composite(vars["--terminal-quiet-bg"], running),
+      "card:quiet": composite(vars["--terminal-quiet-bg"], composite(vars["--surface"], page))
+    }
+  };
+}
+
 const HLJS_TOKENS = [
   "--hl-keyword",
   "--hl-string",
@@ -178,6 +204,96 @@ describe("ANSI terminal palette contrast", () => {
     ).text();
     for (const [token, color] of Object.entries(ANSI)) {
       expect(css).toContain(`${token}: ${color};`);
+    }
+  });
+});
+
+/**
+ * The light-theme ANSI set, for the quoted output tail alone.
+ *
+ * The tail used to paint the full-strength dark terminal inside the light dock
+ * — the heaviest object on the pane, for peripheral output, under a light strip
+ * and above a light composer. Making its bed light is only half the fix: the
+ * palette above is derived for a DARK bed and every one of its hues fails on a
+ * pale one, so the tail re-points `--ansi-*` at this set. Audited here exactly
+ * as the dark set is audited on its own beds, or the fix trades a heavy slab for
+ * unreadable output.
+ */
+const ANSI_LIGHT = {
+  "--ansi-black": "#5c5c63",
+  "--ansi-red": "#a3231c",
+  "--ansi-green": "#1e683d",
+  "--ansi-yellow": "#79540c",
+  "--ansi-blue": "#2b5c9a",
+  "--ansi-magenta": "#7246a1",
+  "--ansi-cyan": "#0e6663",
+  "--ansi-white": "#4a4a50",
+  "--ansi-bright-black": "#595960",
+  "--ansi-bright-red": "#8f1c16",
+  "--ansi-bright-green": "#175733",
+  "--ansi-bright-yellow": "#6a4a0a",
+  "--ansi-bright-blue": "#24508a",
+  "--ansi-bright-magenta": "#623a8c",
+  "--ansi-bright-cyan": "#0b5654",
+  "--ansi-bright-white": "#2a2a2f"
+} as const;
+
+describe("the quoted output tail is readable on its own bed", () => {
+  test("the light tail is a LIGHT surface, not a dark slab in a light dock", () => {
+    const light = quietTerminalBeds(false);
+    const page = parse(light.vars["--page-bg"]);
+    for (const [name, bed] of Object.entries(light.beds)) {
+      // Within striking distance of the page it sits on, rather than the near
+      // black (luminance ~0.011) the dark slab painted there.
+      expect(luminance(bed)).toBeGreaterThan(luminance(page) * 0.7);
+    }
+  });
+
+  test("the dark tail is still the terminal", () => {
+    const dark = quietTerminalBeds(true);
+    for (const bed of Object.values(dark.beds)) expect(luminance(bed)).toBeLessThan(0.06);
+  });
+
+  for (const isDark of [true, false]) {
+    const label = isDark ? "dark" : "light";
+    const { vars, beds } = quietTerminalBeds(isDark);
+    const palette = isDark ? ANSI : ANSI_LIGHT;
+
+    test(`every ANSI colour clears AA on every quoted-tail bed (${label})`, () => {
+      const failures: string[] = [];
+      for (const [token, color] of Object.entries(palette)) {
+        for (const [name, bed] of Object.entries(beds)) {
+          const value = ratio(parse(color), bed);
+          if (value < AA_SMALL) failures.push(`${token} on ${name}=${value.toFixed(2)}`);
+        }
+      }
+      expect(failures).toEqual([]);
+    });
+
+    test(`the tail's own ink and chrome clear AA (${label})`, () => {
+      const failures: string[] = [];
+      for (const token of [
+        "--terminal-quiet-fg",
+        "--terminal-quiet-muted",
+        "--terminal-quiet-error"
+      ]) {
+        for (const [name, bed] of Object.entries(beds)) {
+          const value = ratio(composite(vars[token], bed), bed);
+          if (value < AA_SMALL) failures.push(`${token} on ${name}=${value.toFixed(2)}`);
+        }
+      }
+      expect(failures).toEqual([]);
+    });
+  }
+
+  test("the light palette in the sheet is the one audited here", async () => {
+    const css = await Bun.file(
+      new URL("../src/styles/content.css", import.meta.url).pathname
+    ).text();
+    const scoped = /:root\[data-theme="light"\] \.task-output \{([^}]*)\}/.exec(css);
+    expect(scoped).not.toBeNull();
+    for (const [token, color] of Object.entries(ANSI_LIGHT)) {
+      expect(scoped![1]).toContain(`${token}: ${color};`);
     }
   });
 });

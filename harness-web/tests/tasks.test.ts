@@ -13,7 +13,7 @@ import {
   createModel,
   replayLines
 } from "../src/model/transcript";
-import { runningForegroundBash } from "../src/model/tasks";
+import { runningForegroundBash, workStartedAtMs } from "../src/model/tasks";
 import { mergeWorkflowProgress, groupByPhase } from "../src/model/workflow";
 import type { Block, ToolBlock, TranscriptModel } from "../src/model/types";
 import type { ProtocolLine } from "../src/protocol/types";
@@ -513,6 +513,94 @@ describe("a terminal status is a latch", () => {
     const { model } = stoppedWorkflow();
     // The kill patch says `killed`; the notification refines it to `stopped`.
     expect(model.tasksById.wxajrgc4u.status).toBe("stopped");
+  });
+});
+
+describe("a stopped task's duration is latched with its status", () => {
+  /** The workflow killed mid-flight, exactly as `stop_task` answers. */
+  function killed() {
+    const index = createIndex();
+    let model = createModel();
+    for (const line of workflowFixture.slice(0, 37)) model = applyLine(model, index, line, Date.now());
+    const kill: ProtocolLine[] = [
+      {
+        type: "system",
+        subtype: "task_updated",
+        task_id: "wxajrgc4u",
+        patch: { status: "killed", end_time: 1786991423000 },
+        uuid: "dur-k1"
+      } as ProtocolLine,
+      {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "wxajrgc4u",
+        status: "stopped",
+        summary: "stopped by user",
+        usage: { total_tokens: 16572, tool_uses: 0, duration_ms: 2100 },
+        uuid: "dur-n1"
+      } as ProtocolLine
+    ];
+    for (const line of kill) model = applyLine(model, index, line, Date.now());
+    return { model, index };
+  }
+
+  test('"Stopped after 2s" is not rewritten by late progress frames', () => {
+    // The CLI keeps sending task_progress for a few seconds after a kill — its
+    // own in-flight frames plus any it replays — and each carries a LARGER
+    // usage.duration_ms. Read straight through, the card's header silently
+    // walked from "Stopped after 2s" to 3s to 5s while the user watched. How
+    // long the work ran is settled by the moment it stopped.
+    let { model, index } = killed();
+    const at = model.tasksById.wxajrgc4u;
+    expect(at.status).toBe("stopped");
+    expect(at.durationMs).toBe(2100);
+    for (const line of workflowFixture.slice(37)) model = applyLine(model, index, line, Date.now());
+    expect(model.tasksById.wxajrgc4u.durationMs).toBe(2100);
+  });
+
+  test("the token and tool tallies latch too, and so does the end time", () => {
+    // Same frames, same reason: a stopped run must not keep accumulating the
+    // numbers of work it was stopped before doing.
+    let { model, index } = killed();
+    const at = model.tasksById.wxajrgc4u;
+    expect(at.totalTokens).toBe(16572);
+    expect(at.endedAtMs).toBe(1786991423000);
+    for (const line of workflowFixture.slice(37)) model = applyLine(model, index, line, Date.now());
+    const after = model.tasksById.wxajrgc4u;
+    expect(after.totalTokens).toBe(16572);
+    expect(after.endedAtMs).toBe(1786991423000);
+    // The launching card reads the same latched figures.
+    const block = tools(model).find((tool) => tool.name === "Workflow")!;
+    expect(block.subagent?.durationMs).toBe(2100);
+  });
+
+  test("a task that is still RUNNING keeps updating, as it must", () => {
+    // The latch is scoped to a terminal status; a live task's numbers are still
+    // news, and freezing those would break the live card entirely.
+    const staged = replayThrough(workflowFixture, 35);
+    const before = staged.current.tasksById.wxajrgc4u.durationMs;
+    staged.push(35, 50);
+    expect(staged.current.tasksById.wxajrgc4u.durationMs).toBeGreaterThan(before ?? 0);
+  });
+});
+
+describe("one clock for one piece of work", () => {
+  test("the card reads the TASK's start, which is what the strip reads", () => {
+    // The card counted from `block.startedAtMs` (when the tool_use block was
+    // built) and the strip row from the record's, so the same shell reported two
+    // different elapsed figures a second or two apart, forever.
+    const model = replayLines(shellsFixture);
+    const bash = tools(model).find((tool) => tool.subagent?.taskId === "bnopezzr7")!;
+    const record = model.tasksById.bnopezzr7;
+    expect(bash.subagent?.startedAtMs).toBe(record.startedAtMs);
+  });
+
+  test("a block with no task at all still has its own clock to fall back on", () => {
+    const model = replayLines(shellsFixture);
+    const foreground = tools(model).find(
+      (tool) => tool.name === "Bash" && tool.subagent?.taskId === undefined
+    )!;
+    expect(workStartedAtMs(foreground)).toBe(foreground.startedAtMs);
   });
 });
 

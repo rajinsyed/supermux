@@ -1,5 +1,6 @@
-import { memo, useState } from "react";
+import { createContext, memo, useContext, useMemo, useState } from "react";
 import type { CopyFn } from "../CopyContext";
+import { workStartedAtMs } from "../../model/tasks";
 import type { Block, SubagentToolStats, ToolBlock } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
 import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Cpu, Layers } from "../Icons";
@@ -7,8 +8,45 @@ import { formatCompactDuration, formatTokens } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 import { Spinner } from "../primitives/Spinner";
+import { useDismissible } from "../primitives/useDismissible";
+import { useFoldHold } from "../transcript/foldGuard";
 import { SubagentTranscriptView } from "./SubagentTranscript";
 import { ToolCard } from "./ToolCard";
+
+/**
+ * The agents this card is ALREADY showing inline, so its own drill-in does not
+ * render them a second time.
+ *
+ * A card's inline children are the frames this session streamed; its drill-in is
+ * the same agent's file on disk — and that file contains the very same nested
+ * `tool_use` blocks. So opening a drill-in on an agent that spawned another drew
+ * the child agent twice inside one card, the two copies wearing slightly
+ * different chips (the disk copy has an `agentId` but no task frames, so no live
+ * metrics), which reads as two agents that did the same work rather than one
+ * seen from two places.
+ */
+const InlineAgents = createContext<ReadonlySet<string>>(new Set());
+
+/**
+ * Every id one agent card answers to. `toolUseId` is what the wire nests by,
+ * `taskId` is what the task frames carry, and `agentId` is what an off-disk
+ * transcript has instead — the same agent arrives under different ones
+ * depending on which source rendered it.
+ */
+function identitiesOf(block: ToolBlock): string[] {
+  const out = [block.toolUseId, block.subagent?.taskId, block.subagent?.agentId];
+  return out.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+function collectAgents(blocks: Block[], into: Set<string>): void {
+  for (const block of blocks) {
+    if (block.kind !== "tool") continue;
+    if (block.name === "Task" || block.name === "Agent") {
+      for (const id of identitiesOf(block)) into.add(id);
+    }
+    collectAgents(block.children, into);
+  }
+}
 
 /**
  * How deep the tree still indents. Nesting is unbounded — an agent may spawn an
@@ -22,6 +60,33 @@ function ChildBlock({ block, depth }: { block: Block; depth: number }) {
   if (block.kind === "tool") return <ToolCard block={block} depth={depth} />;
   if (block.kind === "notice") return <div className="subagent-note">{block.text}</div>;
   return null;
+}
+
+/** True when this agent card is already rendered elsewhere in the same card. */
+export function useAlreadyRendered(block: ToolBlock): boolean {
+  const rendered = useContext(InlineAgents);
+  return identitiesOf(block).some((id) => rendered.has(id));
+}
+
+/**
+ * The stand-in for an agent whose full card is already on screen: it says the
+ * work happened and where its detail is, without redrawing the card. One agent,
+ * one card — the drill-in is a different SOURCE for the same events, not more
+ * events.
+ */
+export function DuplicateAgentRow({ block }: { block: ToolBlock }) {
+  const copy = useCopy();
+  const info = block.subagent ?? {};
+  const description = info.description ?? (block.input.description as string) ?? block.name;
+  return (
+    <div className="subagent-dup" title={description}>
+      <Layers size={11} />
+      <span className="subagent-dup-name">{description}</span>
+      <span className="subagent-dup-note">
+        {copy("supermux.harness.subagent.shownAbove")}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -104,6 +169,38 @@ export const SubagentCard = memo(function SubagentCard({
   const running = block.status === "running" || block.status === "pending";
   const [openChildren, setOpenChildren] = useState(false);
   const [openDrill, setOpenDrill] = useState(false);
+  // Escape closes this drill-in, through the one contract every inline
+  // disclosure in the pane now shares.
+  const scope = useDismissible(openDrill, () => setOpenDrill(false));
+  // Either disclosure is the reader's place in this turn, so the turn must not
+  // fold itself away around it when the agent finishes.
+  useFoldHold(openDrill || openChildren);
+
+  const inherited = useContext(InlineAgents);
+  /**
+   * What the INLINE children may not redraw: whatever an ancestor already shows,
+   * plus this card itself. The children are the frames this session streamed —
+   * they are the canonical copy of the nested agents, so they must never be the
+   * side that gets collapsed to a marker.
+   */
+  const forChildren = useMemo(() => {
+    const set = new Set(inherited);
+    // An agent's own transcript opens with its own prompt, so the recursion must
+    // not offer to draw the card it is already inside.
+    for (const id of identitiesOf(block)) set.add(id);
+    return set;
+  }, [block, inherited]);
+  /**
+   * What the DRILL-IN may not redraw: all of the above plus the inline children,
+   * which is the whole point — the agent's file on disk contains the same nested
+   * `tool_use` blocks the children already rendered, and drawing both put two
+   * full cards for one agent inside one card, wearing different chips.
+   */
+  const forDrill = useMemo(() => {
+    const set = new Set(forChildren);
+    collectAgents(block.children, set);
+    return set;
+  }, [block.children, forChildren]);
 
   const description = info.description ?? (block.input.description as string) ?? block.name;
   const type = info.subagentType ?? (block.input.subagent_type as string);
@@ -139,7 +236,11 @@ export const SubagentCard = memo(function SubagentCard({
   const indent = Math.min(depth, MAX_INDENT_DEPTH);
 
   return (
-    <div className={`subagent-card is-${block.status}`} data-depth={indent}>
+    <div
+      className={`subagent-card is-${block.status}`}
+      data-depth={indent}
+      ref={scope as React.RefObject<HTMLDivElement>}
+    >
       <div className="subagent-head">
         <span className="subagent-icon">
           <Layers size={13} />
@@ -168,7 +269,9 @@ export const SubagentCard = memo(function SubagentCard({
         </span>
         {running ? (
           <>
-            <Elapsed className="tool-elapsed tnum" startedAtMs={block.startedAtMs} />
+            {/* One clock: the task record's start, so this card and the agent's
+                row in the tasks strip never report different elapsed. */}
+            <Elapsed className="tool-elapsed tnum" startedAtMs={workStartedAtMs(block)} />
             <Spinner size={12} />
           </>
         ) : block.status === "error" ? (
@@ -207,24 +310,33 @@ export const SubagentCard = memo(function SubagentCard({
           </button>
         ) : null}
       </div>
+      {/* Two scopes, because the two disclosures are not symmetric: the inline
+          children are the canonical rendering of the nested agents, and the
+          drill-in is the same events read back off disk. So the children only
+          avoid what an ANCESTOR already draws, while the drill-in additionally
+          avoids the children. */}
       {block.children.length > 0 ? (
-        <Disclosure open={openChildren} className="subagent-children">
-          {block.children.map((child) => (
-            <ChildBlock key={child.key} block={child} depth={depth + 1} />
-          ))}
-        </Disclosure>
+        <InlineAgents.Provider value={forChildren}>
+          <Disclosure open={openChildren} className="subagent-children">
+            {block.children.map((child) => (
+              <ChildBlock key={child.key} block={child} depth={depth + 1} />
+            ))}
+          </Disclosure>
+        </InlineAgents.Provider>
       ) : null}
       {canDrill ? (
-        <Disclosure open={openDrill} className="subagent-drill">
-          <SubagentTranscriptView
-            target={drillTarget}
-            label={description}
-            open={openDrill}
-            // Only while it still runs: a settled agent's file never changes
-            // again, and re-fetching it on every later frame is pure churn.
-            tick={running ? info.progressTick : undefined}
-          />
-        </Disclosure>
+        <InlineAgents.Provider value={forDrill}>
+          <Disclosure open={openDrill} className="subagent-drill">
+            <SubagentTranscriptView
+              target={drillTarget}
+              label={description}
+              open={openDrill}
+              // Only while it still runs: a settled agent's file never changes
+              // again, and re-fetching it on every later frame is pure churn.
+              tick={running ? info.progressTick : undefined}
+            />
+          </Disclosure>
+        </InlineAgents.Provider>
       ) : null}
     </div>
   );

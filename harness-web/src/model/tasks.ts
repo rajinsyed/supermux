@@ -1,4 +1,4 @@
-import type { Block, TranscriptModel, Turn } from "./types";
+import type { Block, ToolBlock, TranscriptModel, Turn } from "./types";
 
 /** Task statuses that mean the CLI is finished with it, one way or another. */
 export const SETTLED_TASK_STATUSES = new Set(["completed", "failed", "killed", "stopped"]);
@@ -26,6 +26,18 @@ export function hasLiveBackgroundWork(turn: Turn): boolean {
     return false;
   };
   return scan(turn.blocks);
+}
+
+/**
+ * When the work a card describes actually started.
+ *
+ * A tool card and its strip row are two views of ONE running command, so they
+ * must count from one instant. The TASK record's start is the authority — it is
+ * what the strip reads — and the block's own `startedAtMs` is the fallback for a
+ * card whose task the CLI has not announced yet (or that never had one).
+ */
+export function workStartedAtMs(block: ToolBlock): number {
+  return block.subagent?.startedAtMs ?? block.startedAtMs;
 }
 
 /**

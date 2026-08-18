@@ -312,11 +312,35 @@ function mergeTaskRecord(
         runId: previous?.workflowRunId,
         status
       });
-  const ended =
-    asNumber(patch?.end_time) ??
-    (status !== undefined && TERMINAL_STATUSES.has(status)
-      ? previous?.endedAtMs ?? nowMs
-      : previous?.endedAtMs);
+  /**
+   * This frame is a LATE ECHO: the record was already terminal and this frame is
+   * not moving it anywhere new.
+   *
+   * `usage.duration_ms` keeps climbing on `task_progress` frames the CLI had
+   * already dispatched when the kill landed — and on any it replays afterwards —
+   * so a header reading "Stopped after 2s" silently rewrote itself to 3s, then
+   * 5s, seconds after the user pressed Stop. How long the work ran is settled by
+   * the moment it stopped, so the tallies latch alongside the status.
+   *
+   * Keyed on the status STAYING put rather than merely being terminal, because
+   * the CLI's kill sequence is two frames: a `killed` patch and then the
+   * `stopped` notification that carries the run's final usage. That second frame
+   * is the authority on what the run cost, not an echo of it — and the status
+   * latch already refuses every transition except that one, so reusing its
+   * verdict here needs no second policy.
+   */
+  const settled =
+    previous?.status !== undefined &&
+    TERMINAL_STATUSES.has(previous.status) &&
+    status === previous.status;
+  const usageOf = (incoming: number | undefined, before: number | undefined) =>
+    settled ? before ?? incoming : incoming ?? before;
+  const ended = settled
+    ? previous?.endedAtMs
+    : asNumber(patch?.end_time) ??
+      (status !== undefined && TERMINAL_STATUSES.has(status)
+        ? previous?.endedAtMs ?? nowMs
+        : previous?.endedAtMs);
   return {
     taskId,
     taskType: asString(raw.task_type) ?? previous?.taskType,
@@ -331,9 +355,9 @@ function mergeTaskRecord(
     summary: asString(raw.summary) ?? previous?.summary,
     error: asString(raw.error) ?? asString(patch?.error) ?? previous?.error,
     outputFile: asString(raw.output_file) ?? previous?.outputFile,
-    totalTokens: asNumber(usage?.total_tokens) ?? previous?.totalTokens,
-    toolUses: asNumber(usage?.tool_uses) ?? previous?.toolUses,
-    durationMs: asNumber(usage?.duration_ms) ?? previous?.durationMs,
+    totalTokens: usageOf(asNumber(usage?.total_tokens), previous?.totalTokens),
+    toolUses: usageOf(asNumber(usage?.tool_uses), previous?.toolUses),
+    durationMs: usageOf(asNumber(usage?.duration_ms), previous?.durationMs),
     isBackgrounded:
       patch?.is_backgrounded === true ? true : patch?.is_backgrounded === false ? false : previous?.isBackgrounded,
     startedAtMs: previous?.startedAtMs ?? nowMs,
@@ -362,7 +386,12 @@ function subagentFrom(previous: SubagentInfo | undefined, record: TaskRecord): S
     workflowName: record.workflowName ?? previous?.workflowName,
     workflowRunId: record.workflowRunId ?? previous?.workflowRunId,
     background: record.isBackgrounded ?? previous?.background,
-    progressTick: record.progressTick
+    progressTick: record.progressTick,
+    // ONE clock for one command. The card used to count from `block.startedAtMs`
+    // — when the tool_use block was built — while the strip row counted from the
+    // record's, and the two elapsed labels for the same shell disagreed by
+    // however long the CLI took to announce the task.
+    startedAtMs: record.startedAtMs ?? previous?.startedAtMs
   };
 }
 

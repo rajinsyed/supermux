@@ -1,6 +1,7 @@
 import { memo, useState, type ReactNode } from "react";
 import type { CopyKey } from "../../copyKeys";
 import type { ToolBlock, ToolStatus } from "../../model/types";
+import { workStartedAtMs } from "../../model/tasks";
 import { bashExitCode } from "../../model/toolStatus";
 import { useCopy } from "../CopyContext";
 import {
@@ -39,9 +40,25 @@ import {
 } from "./ToolBodies";
 import { diffStats } from "../primitives/DiffView";
 import { BackgroundBashStrip, backgroundBashBadges, backgroundBashStatus } from "./BackgroundBash";
-import { SubagentCard } from "./SubagentCard";
+import { DuplicateAgentRow, SubagentCard, useAlreadyRendered } from "./SubagentCard";
 import { WorkflowCard } from "./WorkflowCard";
 import { toolFamily, toolHeadline, toolSubtitle, toolSubtitleFull, type ToolFamily } from "./toolMeta";
+
+/**
+ * An agent card, unless the very same agent is already drawn on this card — a
+ * drill-in transcript replays the agent's own file, which contains the nested
+ * `tool_use` blocks the inline children already rendered. Two full cards for one
+ * agent, wearing different chips because only one of them has task frames, reads
+ * as two agents that did identical work.
+ *
+ * Split out as its own component because the check is a hook, and `ToolCard`
+ * dispatches on family after other hooks have run.
+ */
+function TaskCard({ block, depth }: { block: ToolBlock; depth: number }) {
+  const duplicate = useAlreadyRendered(block);
+  if (duplicate) return <DuplicateAgentRow block={block} />;
+  return <SubagentCard block={block} depth={depth} />;
+}
 
 const ICONS: Record<ToolFamily, (props: { size?: number }) => ReactNode> = {
   interactive: Sparkle,
@@ -216,7 +233,7 @@ export const ToolCard = memo(function ToolCard({
   const [override, setOverride] = useState<boolean | undefined>(undefined);
   const open = override ?? (status === "error" || defaultOpen(block, family, live));
 
-  if (family === "task") return <SubagentCard block={block} depth={depth} />;
+  if (family === "task") return <TaskCard block={block} depth={depth} />;
   if (family === "workflow") return <WorkflowCard block={block} />;
 
   const Icon = ICONS[family];
@@ -253,7 +270,10 @@ export const ToolCard = memo(function ToolCard({
         </span>
         <span className="tool-badges">{badges}</span>
         {running ? (
-          <Elapsed className="tool-elapsed tnum" startedAtMs={block.startedAtMs} />
+          /* The task's clock when there is one: this card and its row in the
+             tasks strip describe the SAME background command, and they used to
+             count from two different instants. */
+          <Elapsed className="tool-elapsed tnum" startedAtMs={workStartedAtMs(block)} />
         ) : duration ? (
           <span className="tool-elapsed tnum">{duration}</span>
         ) : null}

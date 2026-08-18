@@ -18,6 +18,7 @@ import { formatTokens } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 import { Spinner } from "../primitives/Spinner";
+import { useDismissible } from "../primitives/useDismissible";
 import { SubagentTranscriptView } from "../tools/SubagentTranscript";
 import { TaskOutputView } from "../tools/TaskOutput";
 import { STATE_LABELS } from "../tools/WorkflowCard";
@@ -96,6 +97,9 @@ function WorkflowTaskDetail({
 }) {
   const copy = useCopy();
   const [openAgent, setOpenAgent] = useState<number | undefined>(undefined);
+  // The third of the three drill-ins the critic found: Escape closed the Bash
+  // output tail and neither of the agent ones. All three now share one contract.
+  const scope = useDismissible(openAgent !== undefined, () => setOpenAgent(undefined));
   const workflow = record?.workflow;
   const runId = record?.workflowRunId ?? workflow?.runId;
   const agents: WorkflowAgent[] = workflow?.agents ?? [];
@@ -112,7 +116,7 @@ function WorkflowTaskDetail({
   }
 
   return (
-    <div className="task-wf-agents">
+    <div className="task-wf-agents" ref={scope as React.RefObject<HTMLDivElement>}>
       <div className="task-wf-hint">{copy("supermux.harness.workflow.viewAgents")}</div>
       <ul className="task-wf-list">
         {drillable.map((agent) => {
@@ -195,7 +199,7 @@ function TaskRow({
   };
 
   return (
-    <li className={`task-row${running ? " is-running" : ""}`}>
+    <li className={`task-row${running ? " is-running" : ""}`} data-task-id={task.taskId}>
       <div className="task-row-head">
         <span
           className={`task-type ${typeClass(type)}`}
@@ -283,6 +287,7 @@ export const TasksStrip = memo(function TasksStrip({
   const [openTaskId, setOpenTaskId] = useState<string | undefined>(undefined);
   const listRef = useRef<HTMLUListElement>(null);
   const [hiddenBelow, setHiddenBelow] = useState(0);
+  const scope = useDismissible(openTaskId !== undefined, () => setOpenTaskId(undefined));
 
   /**
    * The list is height-capped (the composer must survive eight shells), and a
@@ -312,6 +317,17 @@ export const TasksStrip = memo(function TasksStrip({
       setHiddenBelow(below);
     };
     measure();
+    /**
+     * The opened row is what the user just asked to see, so it is brought to the
+     * top of the list rather than left wherever it happened to sit. Without this
+     * a detail opened on the LAST row expands entirely below the fold: the click
+     * appears to do nothing, and the only evidence is the "n more below" count
+     * ticking up.
+     */
+    if (openTaskId !== undefined) {
+      const row = list.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(openTaskId)}"]`);
+      if (row) list.scrollTo({ top: row.offsetTop - list.offsetTop, behavior: "smooth" });
+    }
     list.addEventListener("scroll", measure, { passive: true });
     // The list's own height is CAPPED, so growth happens inside it (a row's
     // detail expanding) without ever resizing the list — observe the rows too,
@@ -331,16 +347,12 @@ export const TasksStrip = memo(function TasksStrip({
   return (
     <div
       className="tasks-strip"
-      // Escape closes the focused detail popover FIRST — matching Modal and
-      // PermissionCard — instead of being swallowed while focus sits on a row
-      // button. Handled here (where focus actually is) and stopped, so it never
-      // falls through to the composer's interrupt while a popover is open.
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || openTaskId === undefined) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setOpenTaskId(undefined);
-      }}
+      // Escape closes the focused detail FIRST — matching Modal, PermissionCard
+      // and now every inline drill-in — instead of being swallowed while focus
+      // sits on a row button, or falling through to the composer's interrupt.
+      // A per-agent drill-in INSIDE this detail closes first (it registers a
+      // deeper scope), so Escape steps out one level at a time.
+      ref={scope as React.RefObject<HTMLDivElement>}
     >
       <button
         type="button"
@@ -358,7 +370,17 @@ export const TasksStrip = memo(function TasksStrip({
         </span>
       </button>
       <Disclosure open={open}>
-        <div className={`tasks-list-frame${hiddenBelow > 0 ? " is-clipped" : ""}`}>
+        {/* An open detail earns the list more room. At the resting 220px cap an
+            output tail or an agent picker fills the whole box, so the row that
+            OWNS the detail is itself cut in half and the "1 more below" pill
+            floats over the remains of it. Detail open, the cap rises to a
+            viewport-relative height that fits a row and its detail; nothing
+            below it moves, because the composer is measured from the bottom. */}
+        <div
+          className={`tasks-list-frame${hiddenBelow > 0 ? " is-clipped" : ""}${
+            openTaskId !== undefined ? " has-detail" : ""
+          }`}
+        >
           <ul className="tasks-list" ref={listRef}>
             {tasks.map((task) => (
               <TaskRow

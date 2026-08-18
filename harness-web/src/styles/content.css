@@ -277,6 +277,32 @@
   --ansi-bright-white: #f2f0f5;
 }
 
+/* The LIGHT-bed set, for the one place terminal output is painted on a light
+   surface: a background task's output tail in the dock (`.task-output`, see
+   tasks.css). The palette above is tuned for a dark bed and is unreadable on a
+   pale one — every hue is re-derived here against the quoted tail's own light
+   surface, and audited there by tests/contrast.test.ts exactly as the dark set
+   is audited on its beds. Scoped to the tail, so the transcript's Bash cards —
+   which keep their dark terminal in both themes — are untouched. */
+:root[data-theme="light"] .task-output {
+  --ansi-black: #5c5c63;
+  --ansi-red: #a3231c;
+  --ansi-green: #1e683d;
+  --ansi-yellow: #79540c;
+  --ansi-blue: #2b5c9a;
+  --ansi-magenta: #7246a1;
+  --ansi-cyan: #0e6663;
+  --ansi-white: #4a4a50;
+  --ansi-bright-black: #595960;
+  --ansi-bright-red: #8f1c16;
+  --ansi-bright-green: #175733;
+  --ansi-bright-yellow: #6a4a0a;
+  --ansi-bright-blue: #24508a;
+  --ansi-bright-magenta: #623a8c;
+  --ansi-bright-cyan: #0b5654;
+  --ansi-bright-white: #2a2a2f;
+}
+
 .ansi-black {
   color: var(--ansi-black);
 }
