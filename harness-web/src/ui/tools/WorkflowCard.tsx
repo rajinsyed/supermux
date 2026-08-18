@@ -21,7 +21,8 @@ import { Elapsed } from "../primitives/Elapsed";
 import { Spinner } from "../primitives/Spinner";
 import { SubagentTranscriptView } from "./SubagentTranscript";
 
-const STATE_LABELS: Record<WorkflowAgentState, CopyKey> = {
+/** One vocabulary for an agent's state, wherever the agent is rendered. */
+export const STATE_LABELS: Record<WorkflowAgentState, CopyKey> = {
   queued: "supermux.harness.workflow.state.queued",
   running: "supermux.harness.workflow.state.running",
   done: "supermux.harness.workflow.state.done",
@@ -83,6 +84,10 @@ function AgentRow({
       <div className="wf-agent-head">
         <span className={`wf-state is-${stoppedMidRun ? "stopped" : agent.state}`}>
           {running ? <Spinner size={9} /> : null}
+          {/* The same stop glyph the card header wears: "I killed this at 3s"
+              and "this was never dispatched" must be one glance apart, not one
+              alpha value apart. */}
+          {stoppedMidRun ? <Stop size={8} /> : null}
           {stoppedMidRun
             ? copy("supermux.harness.workflow.stopped")
             : copy(STATE_LABELS[agent.state])}
@@ -112,7 +117,7 @@ function AgentRow({
           {agent.model ? (
             <span className="subagent-model" title={agent.fallbackModel ?? agent.model}>
               <Cpu size={9} />
-              {agent.model}
+              <span className="subagent-model-name">{agent.model}</span>
             </span>
           ) : null}
         </span>
@@ -205,23 +210,46 @@ export const WorkflowCard = memo(function WorkflowCard({ block }: { block: ToolB
   };
 
   const summary: string[] = [];
-  if (workflow && workflow.phases.length > 0) {
+  if (stopped) {
+    // An interruption reads as the deliberate act it was: when it happened,
+    // then how much of the run it caught — more useful than either pretending
+    // the run finished or pretending it never ran.
     summary.push(
-      plural(
-        copy,
-        workflow.phases.length,
-        "supermux.harness.workflow.phasesOne",
-        "supermux.harness.workflow.phases"
-      )
+      info.durationMs
+        ? copy("supermux.harness.workflow.stoppedAfter", {
+            duration: formatCompactDuration(info.durationMs, copy)
+          })
+        : copy("supermux.harness.workflow.stopped")
     );
-  }
-  if (totals && totals.agents > 0) {
-    summary.push(copy("supermux.harness.workflow.progress", { done: totals.done, total: totals.agents }));
+    if (totals && totals.agents > 0) {
+      summary.push(
+        copy(
+          totals.agents === 1
+            ? "supermux.harness.workflow.agentsFinishedOne"
+            : "supermux.harness.workflow.agentsFinished",
+          { done: totals.done, total: totals.agents }
+        )
+      );
+    }
+  } else {
+    if (workflow && workflow.phases.length > 0) {
+      summary.push(
+        plural(
+          copy,
+          workflow.phases.length,
+          "supermux.harness.workflow.phasesOne",
+          "supermux.harness.workflow.phases"
+        )
+      );
+    }
+    if (totals && totals.agents > 0) {
+      summary.push(copy("supermux.harness.workflow.progress", { done: totals.done, total: totals.agents }));
+    }
+    if (info.durationMs && finished) summary.push(formatCompactDuration(info.durationMs, copy));
   }
   if (totals?.tokens) {
     summary.push(copy("supermux.harness.subagent.tokens", { tokens: formatTokens(totals.tokens) }));
   }
-  if (info.durationMs && finished) summary.push(formatCompactDuration(info.durationMs, copy));
 
   return (
     <div

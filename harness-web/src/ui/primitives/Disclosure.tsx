@@ -16,16 +16,22 @@ const FALLBACK_MS = 250;
  * `transitionend` finishes the animation; a timeout covers the case where the
  * two heights are equal and no transition ever fires.
  *
- * The content stays mounted for the duration of the closing animation, then
- * unmounts — collapsed bodies cost nothing at rest.
+ * By default the content stays mounted for the duration of the closing
+ * animation, then unmounts — collapsed bodies cost nothing at rest.
+ * `keepMounted` hides the closed body with `display: none` instead: the React
+ * subtree survives, so a drill-in transcript, an expanded log strip, or a
+ * scrolled position inside the body is exactly where the reader left it when
+ * the disclosure reopens. Use it wherever the body holds state worth keeping.
  */
 export function Disclosure({
   open,
   className,
+  keepMounted = false,
   children
 }: {
   open: boolean;
   className?: string;
+  keepMounted?: boolean;
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(open);
@@ -40,10 +46,13 @@ export function Disclosure({
     const element = node.current;
     const was = previous.current;
     if (was === open) return;
-    // Opening mounts the content in this same commit, so the very first pass has
-    // no node yet. Leaving `previous` alone lets the next pass — which does have
-    // one — run the animation, instead of silently skipping the open direction.
+    // Opening mounts (or un-hides) the content in this same commit, so the very
+    // first pass may see no node yet — or, with `keepMounted`, a node that is
+    // still `display: none` and measures 0. Leaving `previous` alone lets the
+    // next pass — which has a laid-out node — run the animation, instead of
+    // silently skipping the open direction.
     if (!element && open) return;
+    if (keepMounted && open && !mounted) return;
     previous.current = open;
     if (!element || prefersReducedMotion()) {
       if (!open) setMounted(false);
@@ -82,11 +91,15 @@ export function Disclosure({
     };
     // `mounted` is a dependency because opening mounts the content one commit
     // later than the prop change; without it the open direction never animates.
-  }, [open, mounted]);
+  }, [open, mounted, keepMounted]);
 
-  if (!mounted) return null;
+  if (!mounted && !keepMounted) return null;
   return (
-    <div className={className} ref={node}>
+    <div
+      className={className}
+      ref={node}
+      style={!mounted && keepMounted ? { display: "none" } : undefined}
+    >
       {children}
     </div>
   );

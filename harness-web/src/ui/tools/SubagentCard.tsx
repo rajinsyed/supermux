@@ -152,7 +152,7 @@ export const SubagentCard = memo(function SubagentCard({
             {info.model ? (
               <span className="subagent-model" title={info.model}>
                 <Cpu size={9} />
-                {info.model}
+                <span className="subagent-model-name">{info.model}</span>
               </span>
             ) : null}
             {info.background ? (

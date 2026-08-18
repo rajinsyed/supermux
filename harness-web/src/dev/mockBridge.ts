@@ -121,12 +121,16 @@ interface StripTask {
 }
 
 /**
- * Rewrite a canned task-lifecycle sequence onto another task id.
+ * Rewrite a canned task-lifecycle sequence onto another task.
  *
- * Two things have to be retargeted, not one:
+ * Three things have to be retargeted, not one:
  *  - the `task_id` on every system frame, because the fixture's sequence belongs
  *    to the shells probe's shell and replaying it verbatim would report THAT as
- *    killed while the task the user actually stopped kept running; and
+ *    killed while the task the user actually stopped kept running;
+ *  - the human-readable `summary`/`description` those frames carry — the real
+ *    CLI writes the STOPPED task's own description there, and leaving the shell
+ *    probe's copy in place made stopping a workflow announce "Background task
+ *    stopped — Print six ticks with 4-second sleeps between each"; and
  *  - the `background_tasks_changed` payload, which is a REPLACE. The probe's
  *    copy says `tasks: []` because that shell was the only one running. Fired
  *    while other tasks are live it silently empties the strip — the real CLI
@@ -136,17 +140,29 @@ interface StripTask {
 function retargetTask(
   lines: ProtocolLine[],
   taskId: string,
-  keep: StripTask[]
+  keep: StripTask[],
+  description?: string
 ): ProtocolLine[] {
   const remaining = keep.filter((task) => task.task_id !== taskId);
   return lines.map((line) => {
-    const frame = line as { type?: string; subtype?: string; task_id?: string };
+    const frame = line as {
+      type?: string;
+      subtype?: string;
+      task_id?: string;
+      summary?: string;
+      description?: string;
+    };
     if (frame.type !== "system") return line;
     if (frame.subtype === "background_tasks_changed") {
       return { ...frame, tasks: remaining } as ProtocolLine;
     }
     if (frame.task_id === undefined) return line;
-    return { ...frame, task_id: taskId } as ProtocolLine;
+    const next = { ...frame, task_id: taskId };
+    if (description !== undefined) {
+      if (next.summary !== undefined) next.summary = description;
+      if (next.description !== undefined) next.description = description;
+    }
+    return next as ProtocolLine;
   });
 }
 
@@ -389,13 +405,17 @@ export function installMockBridge(store: HarnessStore): Scenario {
       }
       // Retargeted at whatever was actually asked for: the canned frames are the
       // shells probe's, so replaying them verbatim would kill a workflow by
-      // sending the shell's id and leave the real row spinning.
-      const strip = store.getSnapshot().backgroundTasks.map((task) => ({
+      // sending the shell's id — and announce the kill with the shell's copy.
+      const snapshot = store.getSnapshot();
+      const strip = snapshot.backgroundTasks.map((task) => ({
         task_id: task.taskId,
         task_type: task.taskType,
         description: task.description
       }));
-      player.play(retargetTask(canned, taskId, strip));
+      const description =
+        snapshot.tasksById[taskId]?.description ??
+        strip.find((task) => task.task_id === taskId)?.description;
+      player.play(retargetTask(canned, taskId, strip, description));
     },
     async backgroundTask({ toolUseId }) {
       await new Promise((resolve) => window.setTimeout(resolve, 160));

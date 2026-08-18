@@ -174,6 +174,9 @@ export const copyDefaults = {
   "supermux.harness.workflow.stop": "Stop workflow",
   "supermux.harness.workflow.stopping": "Stopping…",
   "supermux.harness.workflow.stopped": "Stopped",
+  "supermux.harness.workflow.stoppedAfter": "Stopped after {duration}",
+  "supermux.harness.workflow.agentsFinishedOne": "{done} of {total} agent finished",
+  "supermux.harness.workflow.agentsFinished": "{done} of {total} agents finished",
   "supermux.harness.workflow.stopFailed": "Could not stop the workflow.",
   "supermux.harness.workflow.state.queued": "Queued",
   "supermux.harness.workflow.state.running": "Running",
@@ -374,6 +377,11 @@ export const copyDefaults = {
   "supermux.harness.notice.taskFinished": "Background task finished — {subject}",
   "supermux.harness.notice.taskStopped": "Background task stopped — {subject}",
   "supermux.harness.notice.taskFailed": "Background task failed — {subject}",
+  // A workflow is announced as what it is, by its name — "Workflow stopped —
+  // alpha-beta-demo" — not as a generic background task.
+  "supermux.harness.notice.workflowFinished": "Workflow finished — {subject}",
+  "supermux.harness.notice.workflowStopped": "Workflow stopped — {subject}",
+  "supermux.harness.notice.workflowFailed": "Workflow failed — {subject}",
 
   "supermux.harness.banner.dismiss": "Dismiss",
   "supermux.harness.banner.retryAttempt": "Attempt {attempt} of {max}",

@@ -71,14 +71,34 @@ describe("live workflow and task rows are fixed-height", () => {
 
   test("the state chip is sized once and coloured per state", async () => {
     // A row that changes queued → running → done must not change WIDTH doing it,
-    // or the whole agent list shuffles sideways as the workflow advances.
+    // or the whole agent list shuffles sideways as the workflow advances. The
+    // floor is the WIDEST state's full box — RUNNING plus its 9px spinner and
+    // 4px gap measured at 73px — because a 7ch floor let RUNNING outgrow it and
+    // slide every label 18px right and 29px back over an agent's lifecycle.
     const sheet = await css("tasks.css");
     const chip = ruleFor(sheet, ".wf-state");
-    expect(chip).toMatch(/min-width:\s*\d+ch/);
+    const floor = Number(/min-width:\s*(\d+)px/.exec(chip)?.[1]);
+    expect(floor).toBeGreaterThanOrEqual(74);
     expect(chip).toMatch(/height:\s*16px/);
-    for (const state of ["is-running", "is-done", "is-error", "is-blocked", "is-cached"]) {
+    for (const state of ["is-running", "is-done", "is-error", "is-blocked", "is-cached", "is-stopped"]) {
       expect(sheet).toContain(`.wf-state.${state}`);
     }
+  });
+
+  test("STOPPED is a real tint, one glance apart from QUEUED", async () => {
+    // Stopped is the one state the USER caused; rendered as the queued grey it
+    // read as the absence of a state.
+    const sheet = await css("tasks.css");
+    const stopped = ruleFor(sheet, ".wf-state.is-stopped");
+    expect(stopped).toContain("var(--warning-soft)");
+    expect(stopped).toContain("var(--warning)");
+    expect(ruleFor(sheet, ".wf-stopped-chip")).toContain("var(--warning-soft)");
+  });
+
+  test("the model chip's glyph never squashes; the text is the give", async () => {
+    const sheet = await css("tasks.css");
+    expect(ruleFor(sheet, ".subagent-model svg")).toMatch(/flex-shrink:\s*0/);
+    expect(ruleFor(sheet, ".subagent-model-name")).toMatch(/text-overflow:\s*ellipsis/);
   });
 
   test("the live activity line clips instead of wrapping", async () => {

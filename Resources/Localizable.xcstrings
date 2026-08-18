@@ -277773,6 +277773,108 @@
           }
         }
       }
+    },
+    "supermux.harness.notice.workflowFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workflow failed — {subject}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークフローが失敗しました — {subject}"
+          }
+        }
+      }
+    },
+    "supermux.harness.notice.workflowFinished" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workflow finished — {subject}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークフローが完了しました — {subject}"
+          }
+        }
+      }
+    },
+    "supermux.harness.notice.workflowStopped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workflow stopped — {subject}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークフローを停止しました — {subject}"
+          }
+        }
+      }
+    },
+    "supermux.harness.workflow.agentsFinished" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{done} of {total} agents finished"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{total} 件中 {done} 件のエージェントが完了"
+          }
+        }
+      }
+    },
+    "supermux.harness.workflow.agentsFinishedOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{done} of {total} agent finished"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{total} 件中 {done} 件のエージェントが完了"
+          }
+        }
+      }
+    },
+    "supermux.harness.workflow.stoppedAfter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped after {duration}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{duration} 後に停止しました"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

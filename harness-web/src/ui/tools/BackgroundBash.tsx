@@ -129,7 +129,18 @@ export function BackgroundBashStrip({ block }: { block: ToolBlock }) {
   if (!background && !toolRunning) return null;
 
   return (
-    <div className="bash-bg-strip">
+    <div
+      className="bash-bg-strip"
+      // Escape closes the open output tail before it can fall through to the
+      // composer's interrupt — the same close-the-topmost-thing contract the
+      // Modal and PermissionCard already keep.
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !openOutput) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpenOutput(false);
+      }}
+    >
       <div className="bash-bg-actions">
         {!background && toolRunning ? (
           <button

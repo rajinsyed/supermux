@@ -447,6 +447,75 @@ describe("killed and stopped settle the launching block", () => {
   });
 });
 
+describe("a terminal status is a latch", () => {
+  /** The workflow mid-flight, then killed by the user at frame 37. */
+  function stoppedWorkflow() {
+    const kill: ProtocolLine[] = [
+      {
+        type: "system",
+        subtype: "task_updated",
+        task_id: "wxajrgc4u",
+        patch: { status: "killed", end_time: Date.now() },
+        uuid: "latch-k1"
+      } as ProtocolLine,
+      {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "wxajrgc4u",
+        status: "stopped",
+        summary: "stopped by user",
+        uuid: "latch-n1"
+      } as ProtocolLine
+    ];
+    const index = createIndex();
+    let model = createModel();
+    for (const line of workflowFixture.slice(0, 37)) model = applyLine(model, index, line, Date.now());
+    for (const line of kill) model = applyLine(model, index, line, Date.now());
+    return { model, index };
+  }
+
+  test("progress arriving after the kill cannot walk the status back to running", () => {
+    // stop_task answers `killed` while task_progress frames are already in
+    // flight; without the latch they resurrect the record and the stopped
+    // workflow then finishes and announces itself as a success.
+    let { model, index } = stoppedWorkflow();
+    expect(model.tasksById.wxajrgc4u.status).toBe("stopped");
+    // Replay the rest of the probe's tail — progress, DONE states, completed
+    // notification — exactly what the CLI replays after a kill lands.
+    for (const line of workflowFixture.slice(37)) model = applyLine(model, index, line, Date.now());
+    expect(model.tasksById.wxajrgc4u.status).toBe("stopped");
+  });
+
+  test("the frozen workflow snapshot keeps its partial totals", () => {
+    let { model, index } = stoppedWorkflow();
+    const before = model.tasksById.wxajrgc4u.workflow!;
+    for (const line of workflowFixture.slice(37)) model = applyLine(model, index, line, Date.now());
+    const after = model.tasksById.wxajrgc4u.workflow!;
+    // The run the user killed at "1 of 3" must not quietly finish on screen.
+    expect(after.totals.done).toBe(before.totals.done);
+    expect(after.totals.done).toBeLessThan(after.totals.agents);
+    const block = tools(model).find((tool) => tool.name === "Workflow")!;
+    expect(block.subagent?.status).toBe("stopped");
+    expect(block.workflow?.totals.done).toBe(before.totals.done);
+  });
+
+  test("a late completed notification is not re-announced", () => {
+    let { model, index } = stoppedWorkflow();
+    const banners = model.banners.length;
+    expect(model.banners[banners - 1].titleKey).toBe("supermux.harness.notice.workflowStopped");
+    for (const line of workflowFixture.slice(37)) model = applyLine(model, index, line, Date.now());
+    // One task, one announcement: the replayed `completed` notification for the
+    // stopped workflow raises nothing new.
+    expect(model.banners.length).toBe(banners);
+  });
+
+  test("killed → stopped still moves — two frames of one interruption", () => {
+    const { model } = stoppedWorkflow();
+    // The kill patch says `killed`; the notification refines it to `stopped`.
+    expect(model.tasksById.wxajrgc4u.status).toBe("stopped");
+  });
+});
+
 describe("a finished background task raises an inline notice", () => {
   test("the stopped shell's notification says it was STOPPED, not just its name", () => {
     // The task's own description ("Print six ticks…") is which task; the outcome
@@ -459,11 +528,13 @@ describe("a finished background task raises an inline notice", () => {
     expect(model.banners[0].severity).toBe("info");
   });
 
-  test("the workflow's completion banner names the workflow", () => {
+  test("the workflow's completion banner says WORKFLOW and names it", () => {
+    // "Workflow finished — alpha-beta-demo": a workflow is announced as what it
+    // is, by its name, not as a generic background task carrying its summary.
     const model = replayLines(workflowFixture);
     expect(model.banners.length).toBe(1);
-    expect(model.banners[0].titleKey).toBe("supermux.harness.notice.taskFinished");
-    expect(model.banners[0].title).toContain("completed");
+    expect(model.banners[0].titleKey).toBe("supermux.harness.notice.workflowFinished");
+    expect(model.banners[0].title).toBe("alpha-beta-demo");
   });
 
   test("a FOREGROUND task's notification raises nothing", () => {

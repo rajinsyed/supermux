@@ -616,6 +616,17 @@
   min-height: 1.5em;
 }
 
+/* A line wider than the box is scrollable, but with no scrollbar at rest it
+   reads as truncated-and-lost — the one path in the tool_result simply ends
+   mid-token at the card edge. The fade over the clip edge says the text
+   continues; AnsiOutput lifts the class once the reader reaches the end so the
+   final characters are never dimmed. A mask, not an overlay: the terminal bed
+   under the fade is the terminal's own background. */
+.terminal-body.is-clipped-end {
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+
 /* Prose output wraps rather than hiding its tail behind a scrollbar; the path in
    an ENOENT is the whole reason the card is open. */
 .terminal-body.is-wrapped .terminal-line {

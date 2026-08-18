@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCopy } from "../CopyContext";
 import { parseAnsi, stripAnsi } from "../ansi";
 import { CopyButton } from "./CopyButton";
@@ -28,6 +28,36 @@ export function AnsiOutput({
   const shown = clipped ? lines.slice(0, maxLines) : lines;
   const plain = useMemo(() => stripAnsi(text), [text]);
 
+  const body = useRef<HTMLPreElement>(null);
+  const [clippedEnd, setClippedEnd] = useState(false);
+
+  /**
+   * A `pre` line wider than the box is technically scrollable, but with no
+   * scrollbar at rest it reads as truncated-and-lost — the output-file path
+   * simply ends mid-token at the card edge. A soft fade over the clip edge is
+   * the signal that the text continues; it lifts once the reader has scrolled
+   * to the end, so the final characters are never dimmed.
+   */
+  useEffect(() => {
+    const node = body.current;
+    if (!node || wrap) {
+      setClippedEnd(false);
+      return;
+    }
+    const measure = () => {
+      setClippedEnd(node.scrollLeft + node.clientWidth < node.scrollWidth - 2);
+    };
+    measure();
+    node.addEventListener("scroll", measure, { passive: true });
+    const observer =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : undefined;
+    observer?.observe(node);
+    return () => {
+      node.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, [text, wrap, expanded]);
+
   if (text.trim().length === 0) {
     return <div className="terminal is-empty mono">{copy("supermux.harness.tool.noOutput")}</div>;
   }
@@ -37,7 +67,10 @@ export function AnsiOutput({
       <div className="terminal-copy">
         <CopyButton text={plain} />
       </div>
-      <pre className={`terminal-body mono${wrap ? " is-wrapped" : ""}`}>
+      <pre
+        className={`terminal-body mono${wrap ? " is-wrapped" : ""}${clippedEnd ? " is-clipped-end" : ""}`}
+        ref={body}
+      >
         {shown.map((line, i) => (
           <div key={i} className="terminal-line">
             {line.spans.length === 0 ? (

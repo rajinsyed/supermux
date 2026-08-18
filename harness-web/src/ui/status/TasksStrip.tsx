@@ -20,6 +20,7 @@ import { Elapsed } from "../primitives/Elapsed";
 import { Spinner } from "../primitives/Spinner";
 import { SubagentTranscriptView } from "../tools/SubagentTranscript";
 import { TaskOutputView } from "../tools/TaskOutput";
+import { STATE_LABELS } from "../tools/WorkflowCard";
 
 const TYPE_LABELS: Record<string, CopyKey> = {
   local_bash: "supermux.harness.tasks.typeShell",
@@ -118,6 +119,11 @@ function WorkflowTaskDetail({
           const open = openAgent === agent.index;
           return (
             <li key={agent.index} className="task-wf-agent">
+              {/* The card's row grammar minus the metrics: the state chip says
+                  the state, the label says the name in the pane's name voice.
+                  The picker is the same object seen from a different place, so
+                  a name swallowed into an uppercase status pill — coloured by
+                  state — would read as three tags, not three things to open. */}
               <button
                 type="button"
                 className="wf-agent-toggle"
@@ -127,8 +133,9 @@ function WorkflowTaskDetail({
                 {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                 <span className={`wf-state is-${agent.state}`}>
                   {agent.state === "running" ? <Spinner size={9} /> : null}
-                  {agent.label}
+                  {copy(STATE_LABELS[agent.state])}
                 </span>
+                <span className="wf-agent-label">{agent.label}</span>
               </button>
               <Disclosure open={open} className="subagent-drill">
                 <SubagentTranscriptView
@@ -322,7 +329,19 @@ export const TasksStrip = memo(function TasksStrip({
   if (tasks.length === 0) return null;
 
   return (
-    <div className="tasks-strip">
+    <div
+      className="tasks-strip"
+      // Escape closes the focused detail popover FIRST — matching Modal and
+      // PermissionCard — instead of being swallowed while focus sits on a row
+      // button. Handled here (where focus actually is) and stopped, so it never
+      // falls through to the composer's interrupt while a popover is open.
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || openTaskId === undefined) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpenTaskId(undefined);
+      }}
+    >
       <button
         type="button"
         className="tasks-strip-head"

@@ -95,16 +95,22 @@
   gap: 6px;
 }
 
-/* The revealed run of earlier work is its own animated box, so it inherits the
-   parent column's rhythm rather than collapsing into one undivided slab. */
+/* A settled fold HIDES the work tree rather than unmounting it: the reader's
+   expanded disclosures, drill-in transcripts, and scroll positions inside the
+   cards survive the fold and are exactly there when it reopens. */
+.turn-work.is-folded {
+  display: none;
+}
+
+/* Every work row rides in its own Disclosure wrapper, so a block moving out of
+   the streaming overflow — or the whole tree easing open at settle — animates
+   without the blocks ever remounting. The wrappers inherit the column's rhythm
+   from the parent's gap; the hidden variant is the same box, closed. */
+.turn-work-item,
 .turn-work-hidden {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.turn-work-hidden:not(:last-child) {
-  margin-bottom: 6px;
 }
 
 .turn-work::before {

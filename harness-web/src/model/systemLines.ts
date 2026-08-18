@@ -236,20 +236,45 @@ function applyBackgroundTasks(
   return { ...model, backgroundTasks: rows, tasksById, revision: model.revision + 1 };
 }
 
+const TERMINAL_STATUSES = new Set(["completed", "failed", "killed", "stopped"]);
+
+/** The two faces of one user act: the kill patch and its stop notification. */
+const INTERRUPTED_STATUSES = new Set(["killed", "stopped"]);
+
+/**
+ * A terminal status is a LATCH. `stop_task` answers with `killed` while
+ * `task_progress` frames for the same task are already in flight, so progress
+ * arriving after the kill would otherwise walk the record back to `running` —
+ * and a late `completed` notification would then announce the workflow the user
+ * just stopped as a success. Later frames may still enrich metrics; they may
+ * never reopen the status or overwrite the terminal verdict the user caused.
+ *
+ * The one sanctioned terminal→terminal move is killed→stopped (and back): the
+ * CLI's own kill sequence is a `killed` patch followed by a `stopped`
+ * notification, two frames describing the same interruption.
+ */
 function taskStatusFrom(
   subtype: string | undefined,
   raw: Record<string, unknown>,
   patch: Record<string, unknown> | undefined,
   previous: string | undefined
 ): string | undefined {
-  return (
+  const incoming =
     asString(raw.status) ??
     asString(patch?.status) ??
-    (subtype === "task_started" ? "running" : previous)
-  );
+    (subtype === "task_started" ? "running" : previous);
+  if (previous !== undefined && TERMINAL_STATUSES.has(previous)) {
+    if (
+      incoming !== undefined &&
+      INTERRUPTED_STATUSES.has(previous) &&
+      INTERRUPTED_STATUSES.has(incoming)
+    ) {
+      return incoming;
+    }
+    return previous;
+  }
+  return incoming;
 }
-
-const TERMINAL_STATUSES = new Set(["completed", "failed", "killed", "stopped"]);
 
 /**
  * `task_updated` sends a MERGE patch: only the keys that changed. Every absent
@@ -273,11 +298,20 @@ function mergeTaskRecord(
     subtype === "task_progress"
       ? previous?.description ?? asString(raw.summary)
       : asString(raw.description) ?? asString(patch?.description) ?? previous?.description;
-  const workflow = mergeWorkflowProgress(previous?.workflow, raw.workflow_progress, {
-    name: asString(raw.workflow_name) ?? previous?.workflowName,
-    runId: previous?.workflowRunId,
-    status
-  });
+  // A workflow the user STOPPED keeps the snapshot it had when the kill landed.
+  // Progress frames already in flight (and any the CLI replays after) would
+  // otherwise walk its agents on to DONE, so a run the user killed at "1 of 3"
+  // quietly finishes itself on screen. The frozen partial totals are the honest
+  // record of an interrupted run.
+  const interrupted =
+    previous?.status !== undefined && INTERRUPTED_STATUSES.has(previous.status);
+  const workflow = interrupted
+    ? previous?.workflow
+    : mergeWorkflowProgress(previous?.workflow, raw.workflow_progress, {
+        name: asString(raw.workflow_name) ?? previous?.workflowName,
+        runId: previous?.workflowRunId,
+        status
+      });
   const ended =
     asNumber(patch?.end_time) ??
     (status !== undefined && TERMINAL_STATUSES.has(status)
@@ -305,7 +339,8 @@ function mergeTaskRecord(
     startedAtMs: previous?.startedAtMs ?? nowMs,
     endedAtMs: ended,
     progressTick: (previous?.progressTick ?? 0) + 1,
-    workflow
+    workflow,
+    notified: previous?.notified
   };
 }
 
@@ -393,7 +428,20 @@ function applyTaskLine(
   }
   next = applyTaskToBlock(next, index, toolUseId, raw, subtype, record, nowMs);
   if (isTaskSettled(record.status)) next = applyDeferredFolds(next);
-  if (subtype === "task_notification") next = announceTaskFinished(next, record, nowMs);
+  // One announcement per task. The status is latched, so a replayed `completed`
+  // notification for a stopped task would otherwise raise a SECOND banner —
+  // correctly worded, but news the user already had.
+  if (subtype === "task_notification" && record.notified !== true) {
+    const announced = announceTaskFinished(next, record, nowMs);
+    if (announced !== next) {
+      next = {
+        ...announced,
+        tasksById: { ...announced.tasksById, [taskId]: { ...record, notified: true } }
+      };
+    } else {
+      next = announced;
+    }
+  }
   return next;
 }
 
@@ -470,17 +518,28 @@ function announceTaskFinished(
   nowMs: number
 ): TranscriptModel {
   if (!record.isBackgrounded) return model;
-  const subject = record.summary ?? record.description;
+  // A workflow's news is best carried by its name — "Workflow stopped —
+  // alpha-beta-demo" — and its notice says WHAT it is, not "background task".
+  const isWorkflow = record.taskType === "local_workflow";
+  const subject = isWorkflow
+    ? record.workflowName ?? record.workflow?.name ?? record.summary ?? record.description
+    : record.summary ?? record.description;
   if (!subject) return model;
   // The subject alone is the task's own description — "Print six ticks with
   // 4-second sleeps" — which says nothing about WHY it is being announced. The
   // outcome is the news; the description is which task it happened to.
   const outcome =
     record.status === "failed"
-      ? "supermux.harness.notice.taskFailed"
+      ? isWorkflow
+        ? "supermux.harness.notice.workflowFailed"
+        : "supermux.harness.notice.taskFailed"
       : record.status === "killed" || record.status === "stopped"
-        ? "supermux.harness.notice.taskStopped"
-        : "supermux.harness.notice.taskFinished";
+        ? isWorkflow
+          ? "supermux.harness.notice.workflowStopped"
+          : "supermux.harness.notice.taskStopped"
+        : isWorkflow
+          ? "supermux.harness.notice.workflowFinished"
+          : "supermux.harness.notice.taskFinished";
   const severity = record.status === "failed" ? "warning" : "info";
   return pushBanner(model, severity, subject, undefined, nowMs, outcome);
 }

@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { hasLiveBackgroundWork } from "../../model/tasks";
 import type { Block, Turn } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
@@ -48,32 +48,16 @@ function isLive(block: Block): boolean {
   return hasLiveBackgroundWork({ blocks: [block] } as Turn);
 }
 
-interface WorkSegment {
-  hidden: boolean;
-  blocks: Block[];
-}
-
-interface RunningWork {
-  earlier: Block[];
-  /** Runs of consecutive blocks, so revealing the hidden ones keeps work order. */
-  segments: WorkSegment[];
-}
-
-function splitRunningWork(work: Block[]): RunningWork {
-  if (work.length <= LIVE_TAIL) return { earlier: [], segments: [{ hidden: false, blocks: work }] };
+/**
+ * Which work rows are folded away while the turn streams. Empty once the turn
+ * settles: a settled turn shows everything (behind the fold header).
+ */
+function hiddenWhileStreaming(work: Block[], settled: boolean): boolean[] {
+  if (settled || work.length <= LIVE_TAIL) return work.map(() => false);
   const keepFrom = work.length - LIVE_TAIL;
-  const earlier: Block[] = [];
-  const segments: WorkSegment[] = [];
-  work.forEach((block, index) => {
-    // Anything still running stays on screen wherever it sits: a subagent that
-    // spawned ten tools ago is the row a user most wants to watch.
-    const hidden = index < keepFrom && !isLive(block);
-    if (hidden) earlier.push(block);
-    const tail = segments[segments.length - 1];
-    if (tail && tail.hidden === hidden) tail.blocks.push(block);
-    else segments.push({ hidden, blocks: [block] });
-  });
-  return { earlier, segments };
+  // Anything still running stays on screen wherever it sits: a subagent that
+  // spawned ten tools ago is the row a user most wants to watch.
+  return work.map((block, index) => index < keepFrom && !isLive(block));
 }
 
 export const TurnView = memo(function TurnView({
@@ -94,11 +78,23 @@ export const TurnView = memo(function TurnView({
   const settled = turn.state !== "streaming";
   const toolCount = useMemo(() => work.filter((b) => b.kind === "tool").length, [work]);
   const folded = override ?? (settled && turn.folded && !isLast && work.length > 0);
-  const running = useMemo(() => splitRunningWork(work), [work]);
+  /**
+   * A turn that has been ON SCREEN unfolded keeps its work tree mounted through
+   * a later fold (hidden by class), so the reader's expanded disclosures and
+   * scroll positions inside it survive. A turn that mounts already-folded —
+   * history replay, the virtualized scrollback window — skips the render
+   * entirely until first opened: a 200-turn session must not mount every card
+   * it will never show.
+   */
+  const everOpen = useRef(!folded);
+  if (!folded) everOpen.current = true;
+  const renderWork = everOpen.current;
+  const hidden = useMemo(() => hiddenWhileStreaming(work, settled), [work, settled]);
   const earlierCount = useMemo(() => {
-    const tools = running.earlier.filter((b) => b.kind === "tool").length;
-    return tools > 0 ? tools : running.earlier.length;
-  }, [running.earlier]);
+    const earlier = work.filter((_, i) => hidden[i]);
+    const tools = earlier.filter((b) => b.kind === "tool").length;
+    return tools > 0 ? tools : earlier.length;
+  }, [work, hidden]);
   const duration =
     turn.result?.durationMs ??
     (turn.endedAtMs !== undefined ? turn.endedAtMs - turn.startedAtMs : undefined);
@@ -125,8 +121,11 @@ export const TurnView = memo(function TurnView({
 
       <div className="turn-body">
         {work.length > 0 ? (
-          settled ? (
-            <>
+          <>
+            {/* One button slot for both states: the settled fold header and the
+                streaming overflow expander swap PROPS on the same element, so
+                settling never rebuilds the sibling work tree below. */}
+            {settled ? (
               <button
                 type="button"
                 className="fold-head"
@@ -146,65 +145,55 @@ export const TurnView = memo(function TurnView({
                   </span>
                 ) : null}
               </button>
-              {/* The settled fold stays an unwrapped swap: `.turn-work` owns the
-                  work rail as a pseudo-element at a negative offset, and the
-                  Disclosure's `overflow: hidden` would clip that rail away for
-                  the whole animation. */}
-              {!folded ? (
-                <div className="turn-work">
-                  {work.map((block) => (
-                    <BlockView key={block.key} block={block} />
-                  ))}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <div className="turn-work">
-              {running.earlier.length > 0 ? (
-                <button
-                  type="button"
-                  className="work-overflow"
-                  onClick={() => setShowEarlier((v) => !v)}
-                  aria-expanded={showEarlier}
-                >
-                  {showEarlier ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  <span className="tnum">
-                    {plural(
-                      copy,
-                      earlierCount,
-                      "supermux.harness.turn.previousToolCallsOne",
-                      "supermux.harness.turn.previousToolCalls"
-                    )}
-                  </span>
-                </button>
-              ) : null}
-              {/* Hidden runs get the shared Disclosure so revealing them eases
-                  open like every other collapse, instead of jumping the
-                  reading position by hundreds of pixels in one frame. */}
-              {running.segments.map((segment) =>
-                segment.hidden ? (
+            ) : earlierCount > 0 ? (
+              <button
+                type="button"
+                className="work-overflow"
+                onClick={() => setShowEarlier((v) => !v)}
+                aria-expanded={showEarlier}
+              >
+                {showEarlier ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                <span className="tnum">
+                  {plural(
+                    copy,
+                    earlierCount,
+                    "supermux.harness.turn.previousToolCallsOne",
+                    "supermux.harness.turn.previousToolCalls"
+                  )}
+                </span>
+              </button>
+            ) : null}
+            {/* ONE work tree for the turn's whole life. Every block keeps the
+                same parent and key from its first frame to the fold, so a turn
+                settling — or a block moving out of the streaming overflow — is a
+                prop change and a Disclosure animation, never a remount. An
+                expanded subagent drill-in, workflow log strip, or scrolled
+                transcript therefore survives the streaming→complete edge intact,
+                and folding hides via a class rather than unmounting so a reader
+                who walks away finds everything exactly where they left it. */}
+            <div className={`turn-work${folded ? " is-folded" : ""}`}>
+              {renderWork &&
+                work.map((block, i) => (
                   <Disclosure
-                    key={`hidden:${segment.blocks[0].key}`}
-                    open={showEarlier}
-                    className="turn-work-hidden"
+                    key={block.key}
+                    // Streaming overflow hides a block until "N earlier tool
+                    // calls" reveals it; at settle every block eases open.
+                    open={!hidden[i] || showEarlier}
+                    // `keepMounted` is what makes the whole tree stable: a card
+                    // sliding into the overflow, or easing open at settle, is
+                    // the SAME mounted subtree changing visibility — its open
+                    // drill-ins and scroll positions ride along.
+                    keepMounted
+                    className={hidden[i] ? "turn-work-hidden" : "turn-work-item"}
                   >
-                    {segment.blocks.map((block) => (
-                      <BlockView key={block.key} block={block} />
-                    ))}
+                    {/* Marked live while it is the visible tail of a streaming
+                        turn: that row must not auto-size and drag the settled
+                        transcript above it. */}
+                    <BlockView block={block} live={!settled && !hidden[i]} />
                   </Disclosure>
-                ) : (
-                  <Fragment key={`shown:${segment.blocks[0].key}`}>
-                    {segment.blocks.map((block) => (
-                      // Marked live: this is the one row the tail keeps on
-                      // screen, so nothing about it may auto-size and drag the
-                      // settled transcript above it up and down.
-                      <BlockView key={block.key} block={block} live />
-                    ))}
-                  </Fragment>
-                )
-              )}
+                ))}
             </div>
-          )
+          </>
         ) : null}
 
         {tail.map((block) => (

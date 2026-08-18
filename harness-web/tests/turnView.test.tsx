@@ -24,6 +24,18 @@ function streamingTurn(): Turn {
   return { ...turn, state: "streaming", endedAtMs: undefined, result: undefined };
 }
 
+/** Work rows hidden by the streaming overflow are mounted but display: none. */
+function visibleCards(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(".turn-work .tool-card, .turn-work .subagent-card")
+  ).filter((card) => {
+    for (let node: HTMLElement | null = card; node; node = node.parentElement) {
+      if (node.style.display === "none") return false;
+    }
+    return true;
+  });
+}
+
 describe("work-group overflow while a turn runs", () => {
   test("collapses earlier work behind an expander instead of stacking every card", () => {
     const turn = streamingTurn();
@@ -34,18 +46,17 @@ describe("work-group overflow while a turn runs", () => {
     const overflow = container.querySelector(".work-overflow");
     expect(overflow).not.toBeNull();
 
-    const rendered = container.querySelectorAll(".turn-work > .tool-card, .turn-work > .subagent-card");
-    expect(rendered.length).toBeLessThan(workBlocks);
+    expect(visibleCards(container).length).toBeLessThan(workBlocks);
   });
 
   test("the expander reveals every block it hid", () => {
     const turn = streamingTurn();
     const { container } = mount(turn);
-    const before = container.querySelectorAll(".turn-work > *").length;
+    const before = visibleCards(container).length;
 
     fireEvent.click(container.querySelector(".work-overflow")!);
 
-    const after = container.querySelectorAll(".turn-work > *").length;
+    const after = visibleCards(container).length;
     expect(after).toBeGreaterThan(before);
     expect(container.querySelector(".work-overflow")).not.toBeNull();
   });
@@ -61,7 +72,10 @@ describe("work-group overflow while a turn runs", () => {
     expect(marked).not.toBe("");
 
     const { container } = mount({ ...turn, blocks });
-    expect(container.querySelectorAll(".turn-work .tool-card.is-running").length).toBe(1);
+    const running = visibleCards(container).filter((card) =>
+      card.classList.contains("is-running")
+    );
+    expect(running.length).toBe(1);
   });
 
   test("the hidden work is wrapped in the shared animated disclosure", () => {
@@ -69,13 +83,17 @@ describe("work-group overflow while a turn runs", () => {
     const { container } = mount(turn);
 
     // Round 2's Disclosure primitive drives every other collapse in the pane.
-    // A bare conditional swap here took the todos turn from 346px to 1072px in
-    // one frame, directly under the reading position.
-    expect(container.querySelector(".turn-work-hidden")).toBeNull();
+    // The hidden run stays MOUNTED (display: none) so revealing it — or the
+    // turn settling — is a visibility change, never a remount.
+    const hiddenBefore = container.querySelectorAll<HTMLElement>(".turn-work > .turn-work-hidden");
+    expect(hiddenBefore.length).toBeGreaterThan(0);
+    expect(Array.from(hiddenBefore).every((node) => node.style.display === "none")).toBe(true);
 
     fireEvent.click(container.querySelector(".work-overflow")!);
 
-    const revealed = container.querySelectorAll(".turn-work > .turn-work-hidden");
+    const revealed = Array.from(
+      container.querySelectorAll<HTMLElement>(".turn-work > .turn-work-hidden")
+    ).filter((node) => node.style.display !== "none");
     expect(revealed.length).toBeGreaterThan(0);
     expect(revealed[0].children.length).toBeGreaterThan(0);
   });
@@ -85,11 +103,8 @@ describe("work-group overflow while a turn runs", () => {
     const { container } = mount(turn);
     fireEvent.click(container.querySelector(".work-overflow")!);
 
-    const rendered = Array.from(
-      container.querySelectorAll<HTMLElement>(".turn-work .tool-card, .turn-work .subagent-card")
-    );
     const expected = turn.blocks.filter((b) => b.kind === "tool");
-    expect(rendered.length).toBe(expected.length);
+    expect(visibleCards(container).length).toBe(expected.length);
   });
 
   test("a settled turn still shows all of its work behind the fold header", () => {
@@ -97,8 +112,57 @@ describe("work-group overflow while a turn runs", () => {
     const { container } = mount({ ...turn, state: "complete", endedAtMs: turn.startedAtMs + 4000 });
     expect(container.querySelector(".work-overflow") === null).toBe(true);
     expect(container.querySelector(".fold-head") === null).toBe(false);
-    const cards = container.querySelectorAll(".turn-work > .tool-card");
-    expect(cards.length).toBe(turn.blocks.filter((b) => b.kind === "tool").length);
+    expect(visibleCards(container).length).toBe(
+      turn.blocks.filter((b) => b.kind === "tool").length
+    );
+  });
+
+  test("settling the turn keeps every work-row DOM node — no remount", () => {
+    // The flagship round-3 defect: the settled and streaming branches rendered
+    // DIFFERENT element trees at the same JSX slot, so the instant a turn
+    // settled React unmounted the whole work subtree — snapping shut every
+    // expanded subagent drill-in and workflow log strip and destroying the
+    // reader's position. The work tree must be ONE stable tree across both
+    // states: settling is a prop change, never a remount.
+    const turn = streamingTurn();
+    const { container, rerender } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={turn} isLast />
+      </CopyProvider>
+    );
+    const savedCards = Array.from(
+      container.querySelectorAll(".turn-work .tool-card, .turn-work .subagent-card")
+    );
+    expect(savedCards.length).toBeGreaterThan(0);
+
+    rerender(
+      <CopyProvider dict={undefined}>
+        <TurnView
+          turn={{ ...turn, state: "complete", folded: false, endedAtMs: turn.startedAtMs + 4000 }}
+          isLast
+        />
+      </CopyProvider>
+    );
+    const after = Array.from(
+      container.querySelectorAll(".turn-work .tool-card, .turn-work .subagent-card")
+    );
+    // Same NODES, not merely the same count: identity is what carries useState.
+    for (const node of savedCards) expect(after.includes(node)).toBe(true);
+    expect(container.querySelector(".fold-head")).not.toBeNull();
+  });
+
+  test("folding a settled turn hides the work tree without unmounting it", () => {
+    const turn = streamingTurn();
+    const settled = { ...turn, state: "complete" as const, folded: false, endedAtMs: turn.startedAtMs + 4000 };
+    const { container } = mount(settled);
+    const saved = container.querySelector(".turn-work .tool-card, .turn-work .subagent-card");
+    expect(saved).not.toBeNull();
+
+    fireEvent.click(container.querySelector(".fold-head")!);
+    const work = container.querySelector<HTMLElement>(".turn-work")!;
+    expect(work.classList.contains("is-folded")).toBe(true);
+    // Still the same node — reopening finds everything where the reader left it.
+    expect(container.contains(saved)).toBe(true);
   });
 });
 
@@ -177,7 +241,7 @@ describe("the live work row does not auto-size while a turn streams", () => {
         <TurnView turn={{ ...model.turns[0], folded: false }} isLast={false} />
       </CopyProvider>
     );
-    const cards = container.querySelectorAll(".turn-work > .tool-card");
+    const cards = container.querySelectorAll(".turn-work .tool-card");
     expect(cards.length).toBeGreaterThan(3);
     const opened = Array.from(cards).filter((c) => c.classList.contains("is-open"));
     expect(opened.length).toBeGreaterThan(0);
