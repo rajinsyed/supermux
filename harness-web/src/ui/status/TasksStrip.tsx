@@ -21,7 +21,7 @@ import { Spinner } from "../primitives/Spinner";
 import { useDismissible } from "../primitives/useDismissible";
 import { SubagentTranscriptView } from "../tools/SubagentTranscript";
 import { TaskOutputView } from "../tools/TaskOutput";
-import { STATE_LABELS } from "../tools/WorkflowCard";
+import { STATE_LABELS } from "../workflow/state";
 
 const TYPE_LABELS: Record<string, CopyKey> = {
   local_bash: "supermux.harness.tasks.typeShell",

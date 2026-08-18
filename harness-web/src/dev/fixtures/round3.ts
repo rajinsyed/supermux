@@ -258,6 +258,47 @@ export function withWorkflowLogs(
 }
 
 /**
+ * What each agent is DOING while it runs, keyed by the agent's label.
+ *
+ * The probe's agents each answered in one shot with no tools, so every
+ * `workflow_agent` item it sent carries neither `lastToolName` nor
+ * `lastToolSummary` — which leaves the browser's Activity section reading "No
+ * tool activity reported" for the entire pinned scenario, i.e. the one section
+ * whose whole job is to be live could never be seen alive. ROUND3.md §B.5
+ * documents both fields; they are hand-added here on RUNNING agents only, the
+ * way the CLI sends them, and cleared the moment an agent finishes (the wire
+ * replaces the item wholesale on each frame).
+ *
+ * The byte-exact fixture is untouched, so the model tests keep asserting
+ * against what the CLI actually sent.
+ */
+const WORKFLOW_ACTIVITY: Record<string, { tool: string; summary: string }> = {
+  "agent-alpha": { tool: "Bash", summary: "echo alpha | tr -d '\\n'" },
+  "agent-beta": { tool: "Read", summary: "Reading gather-notes.md" },
+  merger: { tool: "Bash", summary: "echo alphabeta" }
+};
+
+export function withWorkflowActivity(lines: ProtocolLine[]): ProtocolLine[] {
+  return lines.map((line) => {
+    const frame = line as { subtype?: string; workflow_progress?: unknown[] };
+    if (frame.subtype !== "task_progress" || !Array.isArray(frame.workflow_progress)) return line;
+    return {
+      ...frame,
+      workflow_progress: frame.workflow_progress.map((item) => {
+        const raw = item as Record<string, unknown>;
+        if (raw.type !== "workflow_agent") return item;
+        // Running means `state: "start"` WITH a startedAt: a queued agent has
+        // not touched a tool, and a done one has stopped.
+        const running = raw.state === "start" && typeof raw.startedAt === "number";
+        const activity = WORKFLOW_ACTIVITY[String(raw.label)];
+        if (!running || !activity) return item;
+        return { ...raw, lastToolName: activity.tool, lastToolSummary: activity.summary };
+      })
+    } as ProtocolLine;
+  });
+}
+
+/**
  * The nested probe's agents did pure arithmetic, so their AgentOutputs carry no
  * `toolStats` and the completion summary ("read N files, +X −Y") — promised by
  * ROUND3.md §1 and pinned to this scenario — was undemonstrable. Hand-extended

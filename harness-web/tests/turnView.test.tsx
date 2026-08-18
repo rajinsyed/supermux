@@ -278,61 +278,15 @@ describe("an automatic fold never sweeps away what the reader opened", () => {
     expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(true);
   });
 
-  test("an open workflow log strip holds the fold off", () => {
-    const turn = { ...workflowTurn(47), state: "complete" as const, folded: false };
-    const { container, rerender } = render(
-      <CopyProvider dict={undefined}>
-        <TurnView turn={turn} isLast={false} />
-      </CopyProvider>
-    );
-    // Open the log strip the way a reader would.
-    const logs = container.querySelector<HTMLElement>(".wf-logs-toggle");
-    expect(logs).not.toBeNull();
-    fireEvent.click(logs!);
-
-    // Now the model folds the turn — the deferred fold landing when the
-    // workflow settles, which is the exact frame the critic caught.
-    rerender(
-      <CopyProvider dict={undefined}>
-        <TurnView turn={{ ...turn, folded: true }} isLast={false} />
-      </CopyProvider>
-    );
-    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(false);
-  });
-
-  test("closing it again lets the turn fold", () => {
-    // The hold is a live fact, not a permanent veto: once the reader closes what
-    // they opened, the transcript is free to tidy itself up.
-    const turn = { ...workflowTurn(47), state: "complete" as const, folded: false };
-    const { container, rerender } = render(
-      <CopyProvider dict={undefined}>
-        <TurnView turn={turn} isLast={false} />
-      </CopyProvider>
-    );
-    const logs = container.querySelector<HTMLElement>(".wf-logs-toggle")!;
-    fireEvent.click(logs);
-    rerender(
-      <CopyProvider dict={undefined}>
-        <TurnView turn={{ ...turn, folded: true }} isLast={false} />
-      </CopyProvider>
-    );
-    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(false);
-    fireEvent.click(container.querySelector<HTMLElement>(".wf-logs-toggle")!);
-    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(true);
-  });
-
-  test("the reader's own fold click still wins over the hold", () => {
-    // The affordance must never stop working: only the AUTOMATIC sweep defers.
-    const turn = { ...workflowTurn(47), state: "complete" as const, folded: false };
-    const { container } = render(
-      <CopyProvider dict={undefined}>
-        <TurnView turn={turn} isLast={false} />
-      </CopyProvider>
-    );
-    fireEvent.click(container.querySelector<HTMLElement>(".wf-logs-toggle")!);
-    fireEvent.click(container.querySelector<HTMLElement>(".fold-head")!);
-    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(true);
-  });
+  /**
+   * Round 4 moved the workflow's own disclosures out of the transcript: a run is
+   * browsed in a full view now, and the transcript keeps a one-line row that
+   * navigates to it. So the log strip this suite used to open is no longer in
+   * the turn at all, and the fold can no longer sweep it away. The contract
+   * itself is unchanged and still enforced — by the shell case below, and by the
+   * browser's own local-overlay fallback in workflowBrowser.test.tsx, which is
+   * the one workflow surface that still lives inside a turn.
+   */
 
   test("stopping a background shell does not fold its card out of the run", () => {
     // Finding 4: the same sweep, one frame wide. A backgrounded shell is `live`

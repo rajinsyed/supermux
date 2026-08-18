@@ -60,13 +60,14 @@ describe("subagent rows are fixed-height", () => {
 });
 
 describe("live workflow and task rows are fixed-height", () => {
-  test("the workflow meta line shares the subagent card's 16px box", async () => {
+  test("the workflow row's counts share the subagent card's 16px box", async () => {
     // Aggregates change every couple of seconds while a workflow runs, and a
-    // meta line that grows on each of them reflows the whole transcript below.
-    const sheet = await css("tasks.css");
-    expect(ruleFor(sheet, ".wf-meta")).toMatch(/height:\s*16px/);
-    expect(ruleFor(sheet, ".wf-meta")).not.toMatch(/min-height/);
-    expect(ruleFor(sheet, ".subagent-stats")).toMatch(/height:\s*16px/);
+    // summary line that grows on each of them reflows the whole transcript
+    // below the row.
+    const rows = await css("workflow.css");
+    expect(ruleFor(rows, ".wf-row-summary")).toMatch(/height:\s*16px/);
+    expect(ruleFor(rows, ".wf-row-summary")).not.toMatch(/min-height/);
+    expect(ruleFor(await css("tasks.css"), ".subagent-stats")).toMatch(/height:\s*16px/);
   });
 
   test("the state chip is sized once and coloured per state", async () => {
@@ -75,7 +76,7 @@ describe("live workflow and task rows are fixed-height", () => {
     // floor is the WIDEST state's full box — RUNNING plus its 9px spinner and
     // 4px gap measured at 73px — because a 7ch floor let RUNNING outgrow it and
     // slide every label 18px right and 29px back over an agent's lifecycle.
-    const sheet = await css("tasks.css");
+    const sheet = await css("workflow.css");
     const chip = ruleFor(sheet, ".wf-state");
     const floor = Number(/min-width:\s*(\d+)px/.exec(chip)?.[1]);
     expect(floor).toBeGreaterThanOrEqual(74);
@@ -85,10 +86,32 @@ describe("live workflow and task rows are fixed-height", () => {
     }
   });
 
+  test("the browser's own state chip is sized once too", async () => {
+    // Same contract one level up: the detail pane's chip is the widest thing on
+    // its head row, and a chip that resized as the agent advanced would slide
+    // the agent's NAME sideways under the reader.
+    const sheet = await css("workflow.css");
+    const chip = ruleFor(sheet, ".wfb-state");
+    expect(chip).toMatch(/min-width:\s*\d+px/);
+    expect(chip).toMatch(/height:\s*18px/);
+  });
+
+  test("the agent-row dot is one shape for every state", async () => {
+    // Thirty agents in a phase read as one column of colour only if the mark
+    // never changes size; a pill per state would be thirty different widths.
+    const sheet = await css("workflow.css");
+    const dot = ruleFor(sheet, ".wfb-dot");
+    expect(dot).toMatch(/width:\s*7px/);
+    expect(dot).toMatch(/height:\s*7px/);
+    for (const state of ["is-running", "is-done", "is-error", "is-cached"]) {
+      expect(sheet).toContain(`.wfb-dot.${state}`);
+    }
+  });
+
   test("STOPPED is a real tint, one glance apart from QUEUED", async () => {
     // Stopped is the one state the USER caused; rendered as the queued grey it
     // read as the absence of a state.
-    const sheet = await css("tasks.css");
+    const sheet = await css("workflow.css");
     const stopped = ruleFor(sheet, ".wf-state.is-stopped");
     expect(stopped).toContain("var(--warning-soft)");
     expect(stopped).toContain("var(--warning)");
@@ -102,11 +125,17 @@ describe("live workflow and task rows are fixed-height", () => {
   });
 
   test("the live activity line clips instead of wrapping", async () => {
-    const sheet = await css("tasks.css");
-    for (const selector of [".wf-agent-live", ".task-activity", ".task-name"]) {
-      expect(ruleFor(sheet, selector)).toMatch(/white-space:\s*nowrap/);
-      expect(ruleFor(sheet, selector)).toMatch(/text-overflow:\s*ellipsis/);
+    const tasks = await css("tasks.css");
+    for (const selector of [".task-activity", ".task-name"]) {
+      expect(ruleFor(tasks, selector)).toMatch(/white-space:\s*nowrap/);
+      expect(ruleFor(tasks, selector)).toMatch(/text-overflow:\s*ellipsis/);
     }
+    // The browser's Activity section is the same promise: a tool summary
+    // arriving every second must not change the detail pane's height.
+    const flow = await css("workflow.css");
+    const activity = ruleFor(flow, ".wfb-section-body.is-activity");
+    expect(activity).toMatch(/white-space:\s*nowrap/);
+    expect(activity).toMatch(/text-overflow:\s*ellipsis/);
   });
 });
 
@@ -158,26 +187,39 @@ describe("the tasks strip cannot displace the composer", () => {
   });
 });
 
-describe("the workflow card folds like every other card", () => {
-  test("the head carries a caret, and a collapsed card always shows it", async () => {
-    // Round-3 finding 6: 643px of phases with no affordance to put them away,
-    // in a pane where every other card head folds.
-    const sheet = await css("tasks.css");
-    expect(ruleFor(sheet, ".wf-caret")).toMatch(/opacity:\s*0/);
-    // Reserved width at rest, so revealing the caret never shifts the name.
-    expect(ruleFor(sheet, ".wf-caret")).toMatch(/width:\s*\d+px/);
-    // A collapsed card shows it unconditionally: that caret is the only thing
-    // saying the phases still exist.
-    expect(sheet).toContain('.workflow-card:not(.is-open) .wf-caret');
-    expect(sheet).toContain(".workflow-card:focus-within .wf-caret");
+describe("the workflow browser is a view, not a card wedged into the transcript", () => {
+  test("the transcript keeps a single row, and the run is browsed elsewhere", async () => {
+    // Round-3 finding 6 was 643px of phases inline with no way to put them
+    // away. Round 4 answers it by not putting them inline at all: the row is
+    // one line high and the phases live in a full view.
+    const sheet = await css("workflow.css");
+    expect(ruleFor(sheet, ".wf-row")).toMatch(/min-height:\s*\d\dpx/);
+    expect(sheet).not.toContain(".workflow-card");
   });
 
-  test("a collapsed card is its head, with no leftover body gap", async () => {
-    // The head already carries name, badge, counts, duration, tokens and the
-    // outcome chip, so it IS the one-line summary — but the card's own flex gap
-    // would still reserve space for the emptied body under it.
-    const sheet = await css("tasks.css");
-    expect(ruleFor(sheet, ".workflow-card:not(.is-open)")).toMatch(/gap:\s*0/);
+  test("the browser's own panes scroll inside it rather than growing the pane", async () => {
+    // A thirty-agent run is unbounded in both columns; without caps one of them
+    // pushes the hint bar — which carries the only Stop control — off screen.
+    const sheet = await css("workflow.css");
+    expect(ruleFor(sheet, ".wfb-phases")).toMatch(/overflow-y:\s*auto/);
+    expect(ruleFor(sheet, ".wfb-right")).toMatch(/overflow-y:\s*auto/);
+    expect(ruleFor(sheet, ".wf-browser")).toMatch(/min-height:\s*0/);
+    // A prompt or an outcome is unbounded too, and caps viewport-relative so a
+    // short split is not overrun.
+    expect(ruleFor(sheet, ".wfb-section-body")).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
+  });
+
+  test("a narrow split stacks the two columns instead of clipping one", async () => {
+    const sheet = await css("workflow.css");
+    expect(sheet).toMatch(/@media \(max-width: 620px\)[\s\S]*?\.wfb-panes\s*\{[\s\S]*?grid-template-columns: 1fr/);
+  });
+
+  test("the selected phase keeps its treatment when the pointer leaves", async () => {
+    // It is what the right pane is SHOWING; a selection that only existed under
+    // the cursor would leave the two panes with nothing tying them together.
+    const sheet = await css("workflow.css");
+    expect(sheet).toContain(".wfb-phase-row.is-active");
+    expect(ruleFor(sheet, ".wfb-phase-row.is-active")).toContain("var(--claude-soft)");
   });
 });
 

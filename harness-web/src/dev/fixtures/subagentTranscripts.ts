@@ -57,19 +57,38 @@ export const nestedInnerTranscript: ProtocolLine[] = agentTranscript(
   "51"
 );
 
+/**
+ * The FULL prompt and the FULL outcome, both longer than the previews the wire
+ * sends.
+ *
+ * `promptPreview` and `resultPreview` on a `workflow_agent` item are
+ * truncations, and the browser's Prompt/Outcome sections expand them by reading
+ * the agent's own file. A fixture whose disk text equals its preview makes that
+ * expansion invisible — the section swaps one string for the identical string —
+ * so the one affordance the scenario exists to demonstrate could not be seen to
+ * work. The first line of each still MATCHES the preview, because that is what
+ * a truncation looks like.
+ */
 function workflowAgentTranscript(word: string, id: string): ProtocolLine[] {
   return agentTranscript(
     `msg_wf_${id}`,
-    `Return exactly the word '${word}' and nothing else.`,
+    `Return exactly the word '${word}' and nothing else.\n\n` +
+      "Do not explain, do not add punctuation, and do not wrap it in quotes. " +
+      "The orchestrating workflow concatenates your answer with the other " +
+      "gather agent's, so anything beyond the bare word ends up in the merged " +
+      "result verbatim.",
     [],
-    word
+    `${word}\n\n(Returned the bare word as instructed — no tools were needed for this step.)`
   );
 }
 
 /** The merger did read both inputs, so its transcript has a tool call in it. */
 export const workflowMergerTranscript: ProtocolLine[] = agentTranscript(
   "msg_wf_merger",
-  'Combine these two words into a short result, return both: "alpha" and "beta"',
+  'Combine these two words into a short result, return both: "alpha" and "beta"\n\n' +
+    "Return the forward concatenation first and the reverse second, separated " +
+    "by a comma and a space. Neither gather agent knows about the other, so you " +
+    "are the only step that sees both halves.",
   [
     assistantToolUse("msg_wf_merger", "toolu_wf_merger_bash", "Bash", {
       command: "echo alphabeta",
@@ -81,7 +100,9 @@ export const workflowMergerTranscript: ProtocolLine[] = agentTranscript(
       interrupted: false
     })
   ],
-  "alphabeta, betaalpha"
+  "alphabeta, betaalpha\n\n" +
+    "Both orderings verified against the shell: the forward concatenation is " +
+    "alphabeta and the reverse is betaalpha."
 );
 
 /**

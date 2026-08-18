@@ -1,0 +1,794 @@
+/* Round 4: the workflow browser.
+
+   The CLI's information design — header, phases column, phase agent list, agent
+   detail, a hint bar along the bottom — rendered in the pane's own tokens. It is
+   a native multi-pane browser, not a terminal drawn in a browser: no box-drawing
+   characters, no monospace chrome, no ANSI palette. The one thing borrowed
+   verbatim is the LAYOUT, because that layout is what makes a 30-agent run
+   readable.
+
+   The transcript's own record of a workflow is a single `.wf-row`. */
+
+/* ---------- the inline row ---------- */
+
+.wf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 9px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  text-align: left;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.wf-row:hover,
+.wf-row:focus-visible {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.wf-row.is-running {
+  border-color: var(--claude-border);
+  background: var(--claude-faint);
+}
+
+.wf-row.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.wf-row-icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--claude);
+}
+
+.wf-row-name {
+  flex: 0 1 auto;
+  min-width: 6ch;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-row-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The counts change every couple of seconds while a run advances; a fixed box
+   keeps the row from reflowing the transcript under the reader on each of them. */
+.wf-row-summary,
+.wf-row-elapsed {
+  flex: 0 0 auto;
+  height: 16px;
+  line-height: 16px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.wf-row-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.wf-row:hover .wf-row-open,
+.wf-row:focus-visible .wf-row-open {
+  color: var(--claude);
+}
+
+@media (max-width: 640px) {
+  .wf-row-desc {
+    display: none;
+  }
+}
+
+/* ---------- the browser ---------- */
+
+/* No view router mounted: the browser takes the pane from the row that opened
+   it. Ink rather than a tint of --page-bg, because the pane supports a
+   transparent page and a tint of nothing suppresses nothing. */
+.wfb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 18px;
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
+}
+
+.wf-browser {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: min(920px, 100%);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-strong);
+  background: var(--popover-bg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+/* Inside a router-owned view the browser IS the pane body: no floating panel,
+   no shadow, no rounded corners cutting into the pane's own edges. */
+.view-body > .wf-browser {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  flex: 1 1 auto;
+}
+
+.wfb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.wfb-back {
+  flex: 0 0 auto;
+}
+
+.wfb-icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--claude);
+}
+
+.wfb-identity {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wfb-name {
+  flex: 0 1 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--claude);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wfb-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wfb-summary,
+.wfb-elapsed {
+  flex: 0 0 auto;
+  height: 16px;
+  line-height: 16px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- the two panes ---------- */
+
+.wfb-panes {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) 1fr;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* A narrow split has no room for two columns side by side; the phases become a
+   band above the detail rather than a 90px sliver of clipped titles. */
+@media (max-width: 620px) {
+  .wfb-panes {
+    grid-template-columns: 1fr;
+  }
+
+  .wfb-phases {
+    border-right: none;
+    border-bottom: 1px solid var(--border-faint);
+    max-height: 34vh;
+  }
+}
+
+.wfb-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  padding: 10px 8px;
+  border-right: 1px solid var(--border-faint);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.wfb-col-title {
+  margin: 0 0 2px 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.wfb-phase-list,
+.wfb-agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wfb-phase-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  color: var(--text-muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.wfb-phase-row:hover,
+.wfb-phase-row:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* The selected phase, not merely a hovered one: it is what the right pane is
+   showing, so it keeps its treatment when the pointer leaves. */
+.wfb-phase-row.is-active {
+  background: var(--claude-soft);
+  color: var(--text);
+}
+
+.wfb-phase-index {
+  flex: 0 0 auto;
+  width: 14px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.wfb-phase-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wfb-phase-count {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.wfb-phase-row.is-running .wfb-phase-count {
+  color: var(--claude);
+}
+
+.wfb-right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+
+.wfb-empty {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* ---------- the phase's agent list ---------- */
+
+.wfb-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: background var(--dur) var(--ease);
+}
+
+.wfb-agent-row:hover,
+.wfb-agent-row:focus-visible {
+  background: var(--surface-hover);
+}
+
+/* The state dot. Six states, one 7px circle: the shape never changes, so a list
+   of thirty agents reads as one column of colour rather than thirty pills of
+   different widths. */
+.wfb-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--text-faint);
+}
+
+.wfb-dot.is-running {
+  background: var(--claude-strong);
+  box-shadow: 0 0 0 3px var(--claude-faint);
+}
+
+.wfb-dot.is-done {
+  background: var(--success-dot);
+}
+
+.wfb-dot.is-error {
+  background: var(--danger-dot);
+}
+
+.wfb-dot.is-blocked,
+.wfb-dot.is-stopped {
+  background: var(--warning-dot);
+}
+
+.wfb-dot.is-cached {
+  background: var(--violet-dot);
+}
+
+.wfb-agent-label {
+  flex: 1 1 auto;
+  min-width: 6ch;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fixed columns on the right, so tokens and elapsed line up down the list even
+   as each agent's numbers change. */
+.wfb-agent-tokens {
+  flex: 0 0 auto;
+  width: 6ch;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.wfb-agent-elapsed {
+  flex: 0 0 auto;
+  width: 6ch;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* ---------- the agent detail ---------- */
+
+.wfb-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.wfb-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.wfb-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  min-width: 88px;
+  padding: 0 8px;
+  height: 18px;
+  border-radius: var(--r-pill);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+}
+
+.wfb-state.is-running {
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
+.wfb-state.is-done {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.wfb-state.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.wfb-state.is-blocked,
+.wfb-state.is-stopped {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.wfb-state.is-cached {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+.wfb-detail-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wfb-detail-elapsed {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.wfb-detail-metrics {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.wfb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-faint);
+  background: var(--surface);
+}
+
+.wfb-section.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.wfb-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wfb-section-title {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.wfb-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.wfb-expand:hover,
+.wfb-expand:focus-visible {
+  color: var(--claude);
+  background: var(--claude-faint);
+}
+
+/* A prompt or an outcome is text the reader may want to copy verbatim, so it
+   wraps and selects rather than ellipsizing — and caps its own height rather
+   than pushing the sections below it off the pane. */
+.wfb-section-body {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: min(280px, 40vh);
+  overflow-y: auto;
+  user-select: text;
+}
+
+.wfb-section.is-error .wfb-section-body {
+  color: var(--danger);
+}
+
+/* The live line: one clipped line, so a tool summary arriving every second
+   cannot change the detail pane's height under the reader. */
+.wfb-section-body.is-activity {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: none;
+}
+
+.wfb-section-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.wfb-section-note.is-error {
+  color: var(--danger);
+}
+
+.wfb-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wfb-open-chat {
+  flex: 0 0 auto;
+}
+
+.wfb-logs-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-faint);
+}
+
+.wfb-logs-block .wf-logs-toggle,
+.wfb-logs-block .wf-logs {
+  margin-left: 0;
+}
+
+/* ---------- the hint bar ---------- */
+
+/* The CLI's footer, and every hint on it is a REAL binding on the browser:
+   ↑↓ moves the selection, x stops the run, esc steps back out. The two that act
+   are buttons, so the pointer reaches them too. */
+.wfb-hints {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border-faint);
+  background: var(--surface);
+}
+
+.wfb-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.wfb-hint.is-action:hover:not(:disabled),
+.wfb-hint.is-action:focus-visible:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* ---------- shared agent-state vocabulary ---------- */
+
+/* Kept from the workflow card the browser replaces: the tasks strip's agent
+   picker still draws state chips, and the two must never disagree about what a
+   `blocked` agent looks like. */
+.wf-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 74px;
+  padding: 0 6px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+}
+
+.wf-state.is-running {
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
+.wf-state.is-done {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.wf-state.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.wf-state.is-blocked {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.wf-state.is-cached {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+/* Stopped is the one state the USER caused, so it earns a real tint: rendered
+   as the queued grey, "I killed this at 3s" was indistinguishable from "this
+   was never dispatched". */
+.wf-state.is-stopped {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.wf-state.is-stopped svg {
+  flex-shrink: 0;
+}
+
+.wf-stopped-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 0 7px;
+  height: 17px;
+  border-radius: var(--r-pill);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.wf-error {
+  font-size: 11px;
+  padding: 4px 12px;
+  color: var(--danger);
+}
+
+.wf-agent-label {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+  min-width: 6ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
+
+.wf-agent-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.wf-agent-toggle:hover,
+.wf-agent-toggle:focus-visible {
+  color: var(--claude);
+  background: var(--claude-faint);
+}
+
+.tool-badge.is-warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.tool-badge.is-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
+.wf-logs-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.wf-logs-toggle:hover,
+.wf-logs-toggle:focus-visible {
+  color: var(--claude);
+  background: var(--claude-faint);
+}
+
+.wf-logs {
+  list-style: none;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  border: 1px solid var(--border-faint);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-height: min(180px, 26vh);
+  overflow-y: auto;
+  user-select: text;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-row,
+  .wfb-phase-row,
+  .wfb-agent-row,
+  .wfb-expand,
+  .wf-agent-toggle,
+  .wf-logs-toggle {
+    transition: none;
+  }
+}
