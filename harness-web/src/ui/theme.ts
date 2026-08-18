@@ -198,19 +198,32 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--violet-dot": dark ? "#b39ce8" : "#6d4fb8",
     "--violet-soft": dark ? "rgba(179, 156, 232, 0.15)" : "rgba(109, 79, 184, 0.10)",
 
-    /* Elevation. The floating chrome carries a soft, wide shadow so it reads
-       as a layer above the transcript rather than as a border in the flow. */
+    /* Elevation, by EDGE rather than by shadow.
+     *
+     * The floating chrome used to carry a wide dark drop shadow (0 12px 40px)
+     * under every panel, card, popover, and framed view. Stacked — the dock is
+     * five islands deep and a tool card sits inside a turn inside a transcript
+     * — those pooled into grey haloes behind most of the pane, which is what
+     * "weird back shadows on them" names. Separation here comes from the
+     * hairline border plus the backdrop blur; the glass already sits visibly
+     * off the page without being lit from above.
+     *
+     * What survives is the inset top line: the one-pixel highlight where a
+     * panel catches the light, and the thing that separates "translucent
+     * rectangle" from "pane of glass". It costs nothing behind the element.
+     */
     "--shadow": theme.shadow,
-    "--shadow-lifted": dark ? "0 8px 26px rgba(0, 0, 0, 0.42)" : "0 8px 26px rgba(20, 18, 16, 0.10)",
-    /* The inset top line is the glass edge-light — the one-pixel highlight
-       where the panel catches the light. It is what separates "translucent
-       rectangle" from "pane of glass". */
+    "--shadow-lifted": "none",
     "--shadow-panel": dark
-      ? "inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3)"
-      : "inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 12px 40px rgba(20, 18, 16, 0.12), 0 2px 8px rgba(20, 18, 16, 0.06)",
+      ? "inset 0 1px 0 rgba(255, 255, 255, 0.06)"
+      : "inset 0 1px 0 rgba(255, 255, 255, 0.65)",
+    /* Modals are the one exception, and only just: a dialog floats over a
+       dimming scrim rather than over readable content, so it needs no lift to
+       be legible — but the scrim's own edge is soft, and a very faint contact
+       shadow is what keeps the panel from looking pasted onto it. */
     "--shadow-modal": dark
-      ? "0 18px 48px rgba(0, 0, 0, 0.58)"
-      : "0 18px 48px rgba(20, 18, 16, 0.22)",
+      ? "0 4px 14px rgba(0, 0, 0, 0.22)"
+      : "0 4px 14px rgba(20, 18, 16, 0.10)",
     "--scrim": dark ? "rgba(0, 0, 0, 0.58)" : "rgba(20, 18, 16, 0.34)",
 
     /* Diff and syntax, audited against the tinted diff beds in

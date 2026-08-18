@@ -16,10 +16,6 @@
   flex-direction: column;
 }
 
-.transcript-wrap.has-pill {
-  padding-bottom: 33px;
-}
-
 .transcript {
   flex: 1;
   min-height: 0;
@@ -61,7 +57,7 @@
 /* ---------- turns ---------- */
 
 .turn {
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 
 .turn:last-child {
@@ -72,7 +68,7 @@
 
 .user-msg {
   position: relative;
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   padding: 9px 13px;
   border-radius: var(--r-lg);
   background: var(--surface-raised);
@@ -145,12 +141,16 @@
 
 .assistant-text {
   font-size: 13.5px;
-  line-height: 1.65;
-  margin: 10px 0;
+  line-height: 1.6;
+  margin: 6px 0;
 }
 
 .assistant-text:first-child {
   margin-top: 0;
+}
+
+.assistant-text:last-child {
+  margin-bottom: 0;
 }
 
 @keyframes stream-in {
@@ -173,26 +173,17 @@
   margin: 8px 0;
 }
 
-/* ---------- work rail ----------
+/* ---------- work group ----------
 
-   Tool calls, thinking, and agent rows hang together as one group with a
-   hairline rail drawn INSIDE the body indent — the visual that says "this is
-   the work, the answer follows". No padding-left of its own: the indent is the
-   turn body's, so a paragraph reclassified between work and tail never moves. */
+   Tool calls, thinking, and agent rows hang together as one quiet group —
+   Cursor's output draws no rail, so the indent alone (the turn body's) is what
+   separates the work from the answer. No padding-left of its own: the indent
+   is the turn body's, so a paragraph reclassified between work and tail never
+   moves. */
 
 .turn-work {
   position: relative;
-  margin: 6px 0;
-}
-
-.turn-work::before {
-  content: "";
-  position: absolute;
-  left: calc(-1 * var(--rail-indent) + 3px);
-  top: 6px;
-  bottom: 6px;
-  width: 1px;
-  background: var(--border);
+  margin: 4px 0;
 }
 
 .turn-work.is-folded {
@@ -200,7 +191,7 @@
 }
 
 .turn-work-item {
-  margin: 2px 0;
+  margin: 1px 0;
 }
 
 /* ---------- fold header / streaming overflow ---------- */
@@ -243,7 +234,7 @@
    No icon chrome — the label alone. */
 
 .thinking {
-  margin: 8px 0;
+  margin: 4px 0;
 }
 
 .thinking-head {
@@ -301,18 +292,18 @@
 }
 
 .thinking-body {
-  margin: 4px 0 4px 0;
-  padding: 2px 0 2px 12px;
+  margin: 3px 0;
+  padding: 1px 0 1px 12px;
   border-left: 2px solid var(--border);
   color: var(--text-muted);
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: 1.55;
   max-height: min(340px, 44vh);
   overflow-y: auto;
 }
 
 .thinking-body p {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
 
 .thinking-body p:last-child {
@@ -330,7 +321,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 12px 0 2px;
+  margin: 8px 0 2px;
   min-height: 18px;
 }
 
@@ -346,12 +337,6 @@
   margin: 10px 0 2px;
   font-size: 12px;
   color: var(--warning);
-}
-
-.turn-footer {
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--text-faint);
 }
 
 /* ---------- notices ---------- */
@@ -531,11 +516,14 @@
   color: var(--text-faint);
 }
 
-/* ---------- jump pill ---------- */
+/* ---------- jump pill ----------
+
+   Floats OVER the transcript's last lines rather than reserving a blank band
+   under them; the drop shadow is what separates it from the content below. */
 
 .jump-pill {
   position: absolute;
-  bottom: 3px;
+  bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;

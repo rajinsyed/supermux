@@ -3,7 +3,6 @@ import type { ToolBlock } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
 import { ChevronRight } from "../Icons";
 import { formatCompactDuration } from "../format";
-import { Elapsed } from "../primitives/Elapsed";
 import { WorkingGlyph } from "../primitives/Spinner";
 import { useFoldHold } from "../transcript/foldGuard";
 import { OpenViewContext } from "../views/OpenViewContext";
@@ -114,9 +113,6 @@ export const WorkflowRow = memo(function WorkflowRow({ block }: { block: ToolBlo
             </span>
             <span className="wf-row-badge">{copy("supermux.harness.workflow.badge")}</span>
             <span className="wf-row-spacer" />
-            {running && subject.startedAtMs ? (
-              <Elapsed className="wf-row-elapsed tnum" startedAtMs={subject.startedAtMs} />
-            ) : null}
             <ChevronRight size={11} className="wf-row-chev" aria-hidden="true" />
           </span>
           <span className="wf-row-summary tnum" title={subject.description}>

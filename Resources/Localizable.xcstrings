@@ -273099,23 +273099,6 @@
         }
       }
     },
-    "supermux.harness.header.effort" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effort"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推論の強さ"
-          }
-        }
-      }
-    },
     "supermux.harness.header.effortDefault" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -273503,6 +273486,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "プラン"
+          }
+        }
+      }
+    },
+    "supermux.harness.model.noMatches" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matching models"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一致するモデルがありません"
+          }
+        }
+      }
+    },
+    "supermux.harness.model.reasoning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reasoning"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推論"
+          }
+        }
+      }
+    },
+    "supermux.harness.model.restoreDefaults" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore defaults"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトに戻す"
+          }
+        }
+      }
+    },
+    "supermux.harness.model.search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search models"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルを検索"
           }
         }
       }
@@ -274523,23 +274574,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このアカウントでは思考内容は表示されません。"
-          }
-        }
-      }
-    },
-    "supermux.harness.thinking.summary" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Thinking · {tokens} tokens · {duration}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "思考 · {tokens} トークン · {duration}"
           }
         }
       }

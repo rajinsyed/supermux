@@ -499,6 +499,11 @@ function AppBody({
           queued={model.stranded.length > 0 ? model.stranded.concat(model.queued) : model.queued}
           commands={model.session.commands}
           permissionMode={model.session.permissionMode}
+          // Same three props the bottom bar used to take for its model pill:
+          // one catalog, one resolution, one place to change the model.
+          session={model.session}
+          cachedModels={model.cachedModels}
+          onSetModel={harness.setModel}
           draft={harness.draft}
           onDraftChange={harness.setDraft}
           // In an agent view the composer addresses THAT agent, through the

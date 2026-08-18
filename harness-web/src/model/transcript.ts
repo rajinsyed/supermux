@@ -333,8 +333,13 @@ function applyResult(
     // pane claiming the turn was over while three agents were still going. The
     // fold is deferred, not cancelled: systemLines applies it when the task
     // reaches its terminal edge.
-    folded: state === "complete" && !live,
-    foldWhenTasksSettle: state === "complete" && live ? true : undefined
+    // The user's own fold choice outranks the automatic one in both directions.
+    folded:
+      settled.foldOverride !== undefined
+        ? settled.foldOverride
+        : state === "complete" && !live,
+    foldWhenTasksSettle:
+      settled.foldOverride === undefined && state === "complete" && live ? true : undefined
   });
 }
 
@@ -540,8 +545,11 @@ export function applyLocalAction(
         folded: action.folded,
         // A deliberate open or close retires the pending auto-fold: a turn the
         // user has just opened must not collapse under them the moment its
-        // background work happens to finish.
-        foldWhenTasksSettle: undefined
+        // background work happens to finish. The override is remembered so a
+        // reopen (the CLI's summary leg merging back into this turn) and the
+        // merged turn's own later result defer to it too.
+        foldWhenTasksSettle: undefined,
+        foldOverride: action.folded
       });
     }
     case "truncateBeforeUserMessage":

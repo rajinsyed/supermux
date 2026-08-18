@@ -3,8 +3,11 @@ import type { ContextUsage } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
 import { formatTokens } from "../format";
 
-const SIZE = 22;
-const STROKE = 2.6;
+/* Sized to the strip's one icon scale (12px glyphs), not to itself: at 22px
+   with a 2.6 stroke the ring was the heaviest mark on a line of quiet text and
+   read as a status badge rather than as one more control. */
+const SIZE = 14;
+const STROKE = 2;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 

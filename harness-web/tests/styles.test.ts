@@ -251,7 +251,9 @@ describe("assistant text keeps one origin", () => {
     expect(work).not.toMatch(/padding-left/);
     expect(work).not.toMatch(/border-left/);
     expect(ruleFor(sheet, ".turn-body")).toMatch(/padding-left:\s*var\(--rail-indent\)/);
-    expect(sheet).toContain(".turn-work::before");
+    // The rail itself is gone — Cursor's output has no vertical line — and it
+    // must stay gone: reintroducing ::before puts a hairline beside every turn.
+    expect(sheet).not.toContain(".turn-work::before");
   });
 });
 
@@ -399,13 +401,16 @@ describe("the user copy button never lands on the message text", () => {
   });
 });
 
-describe("the jump pill never covers transcript content", () => {
-  test("the wrap reserves room for it instead of letting it overlay text", async () => {
+describe("the jump pill floats over the transcript", () => {
+  test("no reserved band under the scroller; the pill overlays content", async () => {
     const sheet = await css("transcript.css");
-    // Reserved space below the scroller is what makes overlap impossible; a pill
-    // positioned inside the scroller always covers the last ~27px of content.
-    expect(ruleFor(sheet, ".transcript-wrap.has-pill")).toMatch(/padding-bottom:\s*33px/);
-    expect(ruleFor(sheet, ".jump-pill")).toMatch(/bottom:\s*3px/);
+    // The pill is a floating overlay — reserving a blank band above the
+    // composer reads as dead space (user report). The pill's own bed keeps the
+    // text under it legible.
+    expect(sheet).not.toContain(".transcript-wrap.has-pill");
+    const pill = ruleFor(sheet, ".jump-pill");
+    expect(pill).toMatch(/position:\s*absolute/);
+    expect(pill).toMatch(/bottom:\s*\d+px/);
   });
 });
 

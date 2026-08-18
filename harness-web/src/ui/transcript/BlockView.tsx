@@ -95,6 +95,10 @@ export const BlockView = memo(function BlockView({
 }) {
   switch (block.kind) {
     case "text":
+      // An empty text block — a message that opened with a tool call, or a
+      // stream segment that never received a delta — must not paint. Its
+      // wrapper's margins alone read as a stray blank line between rows.
+      if (block.text.trim().length === 0) return null;
       return (
         <div className={`assistant-text${block.streaming ? " is-streaming" : ""}`}>
           <Markdown text={block.text} streaming={block.streaming} />

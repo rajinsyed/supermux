@@ -223,8 +223,15 @@ describe("swapping sessions never goes through start()", () => {
     });
     await flush();
 
+    // The pane's CURRENT mode travels with every start now — a New Session must
+    // keep the mode the user is in rather than silently dropping to a default.
     expect(s.restartParams).toEqual([
-      { resumeSessionId: undefined, model: "sonnet", effort: undefined, permissionMode: undefined }
+      {
+        resumeSessionId: undefined,
+        model: "sonnet",
+        effort: undefined,
+        permissionMode: store.getSnapshot().session.permissionMode
+      }
     ]);
     expect(store.getSnapshot().turns).toEqual([]);
   });

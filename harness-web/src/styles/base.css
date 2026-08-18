@@ -43,7 +43,7 @@ body {
   --r-xl: 18px;
   --r-composer: 22px;
   --r-pill: 999px;
-  --content-max: 720px;
+  --content-max: 760px;
   --gutter: 20px;
   /* One text origin for the floating dock: the status label, the composer's
      own text, and the hint row all start exactly this far in from the gutter,

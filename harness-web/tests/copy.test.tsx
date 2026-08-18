@@ -67,14 +67,17 @@ describe("ToolSearch metrics name what they count", () => {
 
 describe("counted strings inflect at one", () => {
   test("a single earlier tool call is singular", () => {
+    // The CLI's summary legs now merge back into the turn they follow, so the
+    // replayed fixture has no naturally one-tool turn left; trim a real one
+    // down to a single tool block instead.
     const model = replayLines(richSession);
-    const turn = model.turns.find(
-      (candidate) => candidate.blocks.filter((b) => b.kind === "tool").length === 1
+    const source = model.turns.find(
+      (candidate) => candidate.blocks.some((b) => b.kind === "tool")
     );
-    expect(turn).toBeDefined();
-    const { container } = mount(
-      <TurnView turn={{ ...(turn as Turn), folded: true } as Turn} isLast={false} />
-    );
+    expect(source).toBeDefined();
+    const firstTool = source!.blocks.find((b) => b.kind === "tool")!;
+    const turn = { ...(source as Turn), blocks: [firstTool], folded: true } as Turn;
+    const { container } = mount(<TurnView turn={turn} isLast={false} />);
     const fold = container.querySelector(".fold-count")!.textContent;
     expect(fold).toBe("1 earlier tool call");
     expect(fold).not.toBe("1 earlier tool calls");

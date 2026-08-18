@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { CopyKey } from "../../copyKeys";
-import { resolveModel } from "../../model/helpers";
 import type { SessionMeta, UsageTotals } from "../../model/types";
 import type {
   ContextUsage,
@@ -10,53 +8,22 @@ import type {
   SessionSummary
 } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
-import {
-  Bolt,
-  ChevronDown,
-  Folder,
-  History,
-  More,
-  Plus,
-  Scissors,
-  Shield,
-  Terminal,
-  Trash
-} from "../Icons";
+import { Bolt, ChevronDown, Folder, History, More, Plus, Scissors, Terminal, Trash } from "../Icons";
 import { displayDirectory, formatCost, formatRelativeTime } from "../format";
-import { Spinner } from "../primitives/Spinner";
 import { ContextRing } from "./ContextRing";
 import { Menu, MenuItem, MenuSection } from "./Menu";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
 /**
- * Effort is a per-model capability, so it cannot travel across a model switch
- * unchanged: sending `max` to a model that tops out at `high` makes the CLI
- * reject it while the pill keeps advertising a setting that does not exist.
+ * The model picker moved INTO the composer pill (Cursor's grammar: the model is
+ * a property of the message you are about to send, not of the session chrome),
+ * and its data plumbing moved with it. These two are still re-exported here
+ * because they are the header's own vocabulary as much as the picker's — the
+ * effort a turn ran at is printed in turn footers, and the menu source is the
+ * pane's answer to "what models does this binary have".
  */
-export function clampEffort(
-  model: ModelDescriptor | undefined,
-  effort: EffortLevel | undefined
-): EffortLevel | undefined {
-  if (!effort || !model?.supportsEffort) return undefined;
-  const levels = model.supportedEffortLevels;
-  if (!levels || levels.length === 0) return undefined;
-  return levels.includes(effort) ? effort : undefined;
-}
-
-const EFFORT_LABELS: Record<string, CopyKey> = {
-  low: "supermux.harness.effort.low",
-  medium: "supermux.harness.effort.medium",
-  high: "supermux.harness.effort.high",
-  xhigh: "supermux.harness.effort.xhigh",
-  max: "supermux.harness.effort.max"
-};
-
-/** `xhigh` is a wire token, not a label; every neighbouring row is prose. */
-export function effortLabel(level: string, copy: ReturnType<typeof useCopy>): string {
-  const key = EFFORT_LABELS[level];
-  return key ? copy(key) : level;
-}
+export { clampEffort, effortLabel, modelMenuSource } from "../composer/ModelMenu";
 
 export function modeLabel(mode: PermissionMode, copy: ReturnType<typeof useCopy>, short = false): string {
   switch (mode) {
@@ -71,80 +38,6 @@ export function modeLabel(mode: PermissionMode, copy: ReturnType<typeof useCopy>
     default:
       return copy(short ? "supermux.harness.mode.defaultShort" : "supermux.harness.mode.default");
   }
-}
-
-/**
- * The catalog only reaches a pane through the `initialize` handshake of a RUNNING
- * process, so a pane on first open has `session.models = []` and the model menu
- * used to be blank — no rows, no current model, nothing to pick. Three sources
- * in falling order of authority, and a spinner rather than an empty popup when
- * none of them has answered yet.
- */
-export function modelMenuSource(
-  session: Pick<SessionMeta, "models">,
-  cachedModels: ModelDescriptor[] | undefined
-): { models: ModelDescriptor[]; loading: boolean } {
-  if (session.models.length > 0) return { models: session.models, loading: false };
-  if (cachedModels && cachedModels.length > 0) return { models: cachedModels, loading: false };
-  return { models: [], loading: true };
-}
-
-const CATALOG_TIMEOUT_MS = 8000;
-
-/**
- * "Loading…" that never resolves is the same lie an empty menu tells, just
- * slower. If no catalog has arrived by the time a probe would plainly have
- * failed, name the model the session reports and stop claiming work.
- */
-function ModelRows({
-  models,
-  loading,
-  fallbackName,
-  activeRow,
-  onPick
-}: {
-  models: ModelDescriptor[];
-  loading: boolean;
-  fallbackName?: string;
-  activeRow?: ModelDescriptor;
-  onPick(model: ModelDescriptor): void;
-}) {
-  const copy = useCopy();
-  const [timedOut, setTimedOut] = useState(false);
-
-  useEffect(() => {
-    if (!loading) return;
-    const timer = window.setTimeout(() => setTimedOut(true), CATALOG_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, [loading]);
-
-  if (loading) {
-    if (!timedOut) {
-      return (
-        <div className="menu-loading">
-          <Spinner size={11} />
-          <span>{copy("supermux.harness.header.modelsLoading")}</span>
-        </div>
-      );
-    }
-    return <div className="menu-empty">{fallbackName ?? "—"}</div>;
-  }
-
-  return (
-    <>
-      {models.map((model) => (
-        <MenuItem
-          key={model.value}
-          role="menuitemradio"
-          active={model === activeRow}
-          detail={model.description}
-          onClick={() => onPick(model)}
-        >
-          {model.displayName}
-        </MenuItem>
-      ))}
-    </>
-  );
 }
 
 export interface HeaderProps {
@@ -183,19 +76,6 @@ export function Header(props: HeaderProps) {
   }, [editing]);
 
   const title = session.title ?? copy("supermux.harness.app.untitledSession");
-  const menuModels = modelMenuSource(session, props.cachedModels);
-  // ONE resolution for the pill, the checked row, and the effort submenu. The
-  // live catalog is authoritative when a process is up; before the first start
-  // `session.models` is empty and only the cached catalog can resolve anything,
-  // so a pill reading `activeModelFor(session)` alone printed the raw selector
-  // the user had just picked ("opus") beside a menu that had a "Opus 5" row
-  // checked. Same catalog, same binary — it resolves the pre-start selection
-  // exactly as well as the live one.
-  const activeRow = resolveModel(session, menuModels.models);
-  const modelName = activeRow?.displayName ?? session.model ?? copy("supermux.harness.header.model");
-  // The chip must never outlive the capability it describes: a model that has no
-  // effort levels shows no effort tag, whatever the session last carried.
-  const effort = clampEffort(activeRow, session.effort);
 
   const filtered = props.sessions.filter((item) =>
     sessionQuery.trim().length === 0
@@ -244,7 +124,7 @@ export function Header(props: HeaderProps) {
         )}
         {props.workingDirectory ? (
           <span className="dir-chip mono" title={props.workingDirectory}>
-            <Folder size={11} />
+            <Folder size={12} />
             <span className="dir-chip-text">{displayDirectory(props.workingDirectory)}</span>
           </span>
         ) : null}
@@ -264,10 +144,12 @@ export function Header(props: HeaderProps) {
         <Menu
           label={copy("supermux.harness.header.permissionMode")}
           trigger={() => (
+            /* Text-only, like Cursor's "Auto-edit ⌄": the mode's own hue names
+               it, and a shield glyph beside a folder glyph beside a ring beside
+               a history glyph was four different icon weights on one 30px line. */
             <span className={`mode-pill is-${session.permissionMode}`}>
-              <Shield size={11} />
               <span className="pill-label">{modeLabel(session.permissionMode, copy, true)}</span>
-              <ChevronDown size={10} />
+              <ChevronDown size={9} />
             </span>
           )}
         >
@@ -291,60 +173,6 @@ export function Header(props: HeaderProps) {
           )}
         </Menu>
 
-        <Menu
-          label={copy("supermux.harness.header.model")}
-          trigger={() => (
-            <span className="model-pill">
-              <span className="pill-label">{modelName}</span>
-              {effort ? <span className="effort-tag">{effortLabel(effort, copy)}</span> : null}
-              <ChevronDown size={10} />
-            </span>
-          )}
-        >
-          {(close) => (
-            <>
-              <MenuSection title={copy("supermux.harness.header.model")}>
-                {/* A menu that opens on nothing reads as broken; before the
-                    first start the catalog is genuinely still on its way. */}
-                <ModelRows
-                  models={menuModels.models}
-                  loading={menuModels.loading}
-                  fallbackName={session.model}
-                  activeRow={activeRow}
-                  onPick={(model) => {
-                    props.onSetModel(model.value, clampEffort(model, session.effort));
-                    close();
-                  }}
-                />
-              </MenuSection>
-              {activeRow?.supportsEffort && activeRow.supportedEffortLevels?.length ? (
-                <MenuSection title={copy("supermux.harness.header.effort")}>
-                  {activeRow.supportedEffortLevels.map((level) => (
-                    <MenuItem
-                      key={level}
-                      role="menuitemradio"
-                      active={level === effort}
-                      badge={
-                        level === activeRow.defaultEffortLevel
-                          ? copy("supermux.harness.header.effortDefault")
-                          : undefined
-                      }
-                      onClick={() => {
-                        // The catalog's `value` is the selector set_model takes;
-                        // session.model may hold the resolved id, which it rejects.
-                        props.onSetModel(activeRow.value, level);
-                        close();
-                      }}
-                    >
-                      {effortLabel(level, copy)}
-                    </MenuItem>
-                  ))}
-                </MenuSection>
-              ) : null}
-            </>
-          )}
-        </Menu>
-
           </>
         )}
 
@@ -353,7 +181,7 @@ export function Header(props: HeaderProps) {
           className="menu-sessions"
           trigger={() => (
             <span className="icon-pill">
-              <History size={13} />
+              <History size={12} />
             </span>
           )}
         >
@@ -429,7 +257,7 @@ export function Header(props: HeaderProps) {
           label={copy("supermux.harness.header.more")}
           trigger={() => (
             <span className="icon-pill">
-              <More size={13} />
+              <More size={12} />
             </span>
           )}
         >

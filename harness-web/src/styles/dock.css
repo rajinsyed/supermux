@@ -384,12 +384,19 @@
   flex-direction: column;
 }
 
+/* One optical centreline through the pill. Every child of the row — the +
+   control, the single-line textarea, the model trigger, the send button — is
+   exactly 26px tall, so bottom-aligning them IS centring them, and the text no
+   longer sits high of the two round buttons the way it did when a 6px/1.5
+   textarea box was bottom-aligned against 30px circles. Alignment stays
+   `flex-end` rather than `center` so a GROWN textarea keeps the controls on the
+   last line, where Cursor puts them, instead of floating them to its middle. */
 .composer-shell {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px;
-  padding: 7px 8px;
+  gap: 6px;
+  padding: 5px 6px 5px 5px;
   border-radius: var(--r-composer);
   background: var(--panel);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -419,8 +426,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   flex: 0 0 auto;
   border-radius: var(--r-pill);
   background: var(--surface-active);
@@ -437,15 +444,20 @@
   color: var(--text);
 }
 
+/* 26px = 4 + 18 + 4, matching the two round controls exactly, so one line of
+   text is centred against them with no optical drift. Padding is symmetric on
+   purpose: the old 6px/6px against a 1.5 line-height rounded the text box up an
+   odd pixel and hung it high. */
 .composer-input {
   flex: 1;
   min-width: 0;
   resize: none;
   border: none;
   background: transparent;
-  padding: 6px 4px;
+  padding: 4px 4px;
+  min-height: 26px;
   font-size: 13.5px;
-  line-height: 1.5;
+  line-height: 18px;
   color: var(--text);
   max-height: 260px;
   overflow-y: auto;
@@ -469,13 +481,301 @@
 .composer-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex: 0 0 auto;
 }
 
+/* The round controls share the input's 26px line box. The shared `.btn-send`
+   and `.btn-stop` are 30px because the cards use them at that size; inside the
+   pill they come down to the composer's own scale so the pill can lose the
+   vertical padding without the buttons setting its floor. */
+.composer-actions .btn-send,
+.composer-actions .btn-stop {
+  width: 26px;
+  height: 26px;
+}
+
 .btn-plan-action {
-  height: 28px;
+  height: 26px;
   border-radius: var(--r-pill);
+}
+
+/* ---------- model picker, inside the pill ----------
+
+   Cursor's quiet trigger: dim text, no bed at rest, no icon but the small
+   chevron, sitting on the input's centreline just left of send. The effort
+   level is part of the LABEL ("Claude Opus 5 Extra High"), not a chip — it is
+   one setting with one name, and a second bed beside the model name was the
+   thing that made the old bottom-bar pill read as two controls. */
+
+.composer-model {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.composer-model-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  max-width: 26ch;
+  min-width: 0;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-faint);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.composer-model-trigger:hover,
+.composer-model-trigger.is-open {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.composer-model-trigger:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.composer-model-trigger svg {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.composer-model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Same ink as the name it continues: one label, not a tag on a label. */
+.composer-model-effort {
+  flex: 0 0 auto;
+  color: inherit;
+}
+
+/* The pill sits at the bottom of the pane, so this opens upward. Opaque: it
+   floats over transcript content. */
+.model-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 45;
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 5px;
+}
+
+.model-search {
+  margin: 1px 1px 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--input-bg);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.model-search::placeholder {
+  color: var(--text-faint);
+}
+
+/* The popover puts the caret here on open, so the focus ring is announcing
+   something the user did not do — and a full accent halo on the first thing you
+   see reads as an error state. The border alone is enough: it is the only
+   focusable field in the panel. */
+.model-search:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-color: var(--border-strong);
+}
+
+.model-rows {
+  display: flex;
+  flex-direction: column;
+  max-height: min(320px, 48vh);
+  overflow-y: auto;
+}
+
+.model-row-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--text-soft);
+  min-width: 0;
+}
+
+.model-row:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.model-row:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.model-row.is-active {
+  color: var(--text);
+}
+
+/* The row whose flyout is open keeps the hover bed even while the pointer has
+   moved off it onto the flyout — otherwise the panel appears to belong to
+   nothing. */
+.model-row.is-peeked {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* The affordance that says a row HAS a flyout, in the same faint ink as the
+   chevron on the trigger. */
+.model-row-more {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.model-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A separate small glass panel hinged on the row's right edge — Cursor's
+   reasoning flyout. It is a child of the POPOVER, not of the row, because the
+   row list scrolls and an absolutely positioned panel inside a scroller is
+   clipped by it; `top` comes from the row's measured offset instead. It flips
+   to the left when the popover is already against the pane's trailing edge,
+   which — the composer being full-width — it always is. */
+.model-flyout {
+  position: absolute;
+  left: calc(100% + 6px);
+  z-index: 46;
+  width: 194px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px;
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+
+.model-flyout.is-flipped {
+  left: auto;
+  right: calc(100% + 6px);
+}
+
+.model-flyout-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 4px 7px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-flyout-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 7px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--text-soft);
+  min-width: 0;
+}
+
+.model-flyout-row > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-flyout-row:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.model-flyout-row:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.model-flyout-value {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.model-flyout-row svg {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.model-flyout-levels {
+  display: flex;
+  flex-direction: column;
+  margin: 1px 0 2px;
+  padding-left: 7px;
+}
+
+.model-flyout-level {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.model-flyout-level:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.model-flyout-level:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.model-flyout-level.is-active {
+  color: var(--text);
+}
+
+.model-flyout-default {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
 }
 
 /* ---------- composer hints ---------- */

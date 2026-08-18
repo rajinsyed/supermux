@@ -2,9 +2,8 @@ import { memo, useState } from "react";
 import type { ThinkingBlock } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { Brain, ChevronDown, ChevronRight } from "../Icons";
-import { formatDuration, formatTokens } from "../format";
+import { formatDuration } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
-import { Elapsed } from "../primitives/Elapsed";
 
 export const ThinkingBlockView = memo(function ThinkingBlockView({
   block
@@ -16,17 +15,12 @@ export const ThinkingBlockView = memo(function ThinkingBlockView({
   const rawDuration = block.endedAtMs !== undefined ? block.endedAtMs - block.startedAtMs : 0;
   const duration = rawDuration >= 1000 ? formatDuration(rawDuration, copy) : undefined;
 
-  const summary =
-    block.tokens && duration
-      ? copy("supermux.harness.thinking.summary", {
-          tokens: formatTokens(block.tokens),
-          duration
-        })
-      : block.tokens
-        ? `${copy("supermux.harness.thinking.label")} · ${formatTokens(block.tokens)} tokens`
-        : duration
-          ? copy("supermux.harness.thinking.summaryNoTokens", { duration })
-          : copy("supermux.harness.thinking.label");
+  // Cursor's grammar: a live shimmer with no counters, then "Thinking · 4s".
+  // Token tallies and a ticking clock are metric chrome the transcript no
+  // longer carries; the numbers live in the header and the export.
+  const summary = duration
+    ? copy("supermux.harness.thinking.summaryNoTokens", { duration })
+    : copy("supermux.harness.thinking.label");
 
   return (
     <div className={`thinking${block.streaming ? " is-streaming" : ""}${open ? " is-open" : ""}`}>
@@ -36,13 +30,7 @@ export const ThinkingBlockView = memo(function ThinkingBlockView({
         </span>
         <Brain size={12} className="thinking-icon" />
         {block.streaming ? (
-          <span className="thinking-label shimmer">
-            {copy("supermux.harness.thinking.label")}
-            {block.tokens ? (
-              <span className="tnum"> · {formatTokens(block.tokens)} tokens</span>
-            ) : null}
-            <Elapsed className="tnum" startedAtMs={block.startedAtMs} prefix=" · " />
-          </span>
+          <span className="thinking-label shimmer">{copy("supermux.harness.thinking.label")}</span>
         ) : (
           <span className="thinking-label">{summary}</span>
         )}

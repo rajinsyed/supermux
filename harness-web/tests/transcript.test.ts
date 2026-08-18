@@ -48,8 +48,11 @@ describe("rich-session.jsonl replay", () => {
     expect(model.session.capabilities).toContain("interrupt_receipt_v1");
   });
 
-  test("produces one turn per result", () => {
-    expect(model.turns.length).toBe(3);
+  test("merges result-separated legs with no user message into one turn", () => {
+    // The recording carries no user frames, so its three `result`-separated
+    // legs are ONE stretch of work as far as the reader is concerned — one
+    // "Worked for" fold, not three. The CLI's own turn counter still sees 3.
+    expect(model.turns.length).toBe(1);
     expect(model.turns.every((t) => t.state === "complete")).toBe(true);
     expect(model.usage.turns).toBe(3);
   });
@@ -92,21 +95,17 @@ describe("rich-session.jsonl replay", () => {
     expect(model.usage.thinkingTokens).toBeGreaterThan(0);
   });
 
-  test("header cost is the session total and each turn footer is that turn's delta", () => {
+  test("header cost is the session total and the turn keeps the latest result", () => {
     // The three results carry total_cost_usd 0.2286081 / 0.32379915 / 0.3585183.
     // Each equals its own cumulative modelUsage["claude-sonnet-5"].costUSD (whose
     // token counts also accumulate: cacheRead 143802 → 244263 → 331016), so
     // total_cost_usd is the CLI's running SESSION total, not the per-turn spend.
+    // The three legs merge into one turn (no user frames between them), which
+    // settles on the LAST result; the header total is unaffected.
     expect(model.usage.costUsd).toBeCloseTo(0.3585183, 7);
-    const totals = model.turns.map((turn) => turn.result?.totalCostUsd);
-    expect(totals).toEqual([0.2286081, 0.32379915000000004, 0.3585183]);
-
-    const deltas = model.turns.map((turn) => turn.result?.costDeltaUsd);
-    expect(deltas[0]).toBeCloseTo(0.2286081, 7);
-    expect(deltas[1]).toBeCloseTo(0.09519105, 7);
-    expect(deltas[2]).toBeCloseTo(0.03471915, 7);
-    // The deltas must reconstruct the header total exactly.
-    expect(deltas.reduce((sum, d) => sum! + d!, 0)).toBeCloseTo(model.usage.costUsd, 7);
+    const last = model.turns[model.turns.length - 1];
+    expect(last.result?.totalCostUsd).toBe(0.3585183);
+    expect(last.result?.costDeltaUsd).toBeCloseTo(0.03471915, 7);
   });
 
   test("a result that reports a lower running total never walks the header backwards", () => {
@@ -504,6 +503,83 @@ describe("idleness without a session_state_changed frame", () => {
       if (model.activity.sessionState !== "idle") stuck.push(`${name}=${model.activity.sessionState}`);
     }
     expect(stuck).toEqual([]);
+  });
+});
+
+/**
+ * One user message, one "Worked for" fold. The CLI can settle a turn and then
+ * keep going with no new user frame — a workflow's `result` lands the moment it
+ * is launched and a summary leg follows (init/status/message_start, no user) —
+ * and filing that continuation as a fresh turn gave a single prompt several
+ * fold headers stacked under it.
+ */
+describe("output after a result with no user message reopens the turn", () => {
+  const user = (uuid: string, text: string): ProtocolLine =>
+    ({ type: "user", message: { role: "user", content: text }, uuid }) as ProtocolLine;
+  const assistant = (id: string, uuid: string, text: string): ProtocolLine =>
+    ({
+      type: "assistant",
+      message: { id, role: "assistant", content: [{ type: "text", text }] },
+      uuid
+    }) as ProtocolLine;
+  const result = (uuid: string): ProtocolLine =>
+    ({ type: "result", subtype: "success", is_error: false, result: "ok", duration_ms: 500, uuid }) as ProtocolLine;
+
+  test("the continuation merges into the settled turn instead of opening a new one", () => {
+    const index = createIndex();
+    let model = createModel();
+    model = applyLine(model, index, user("u1", "run the workflow"), 1000);
+    model = applyLine(model, index, assistant("m1", "a1", "Launching."), 1010);
+    model = applyLine(model, index, result("r1"), 1020);
+    expect(model.turns.length).toBe(1);
+    expect(model.turns[0].state).toBe("complete");
+    // The CLI's own summary leg: assistant output, no user frame in between.
+    model = applyLine(model, index, assistant("m2", "a2", "All agents finished."), 2000);
+    expect(model.turns.length).toBe(1);
+    expect(model.turns[0].state).toBe("streaming");
+    expect(model.turns[0].result).toBeUndefined();
+    model = applyLine(model, index, result("r2"), 2100);
+    expect(model.turns.length).toBe(1);
+    expect(model.turns[0].state).toBe("complete");
+    expect(model.turns[0].folded).toBe(true);
+    const texts = model.turns[0].blocks.filter((b) => b.kind === "text");
+    expect(texts.length).toBe(2);
+  });
+
+  test("a NEW user message still opens a new turn", () => {
+    const index = createIndex();
+    let model = createModel();
+    model = applyLine(model, index, user("u1", "first"), 1000);
+    model = applyLine(model, index, assistant("m1", "a1", "one"), 1010);
+    model = applyLine(model, index, result("r1"), 1020);
+    model = applyLine(model, index, user("u2", "second"), 2000);
+    model = applyLine(model, index, assistant("m2", "a2", "two"), 2010);
+    model = applyLine(model, index, result("r2"), 2020);
+    expect(model.turns.length).toBe(2);
+    expect(model.turns[1].userText).toBe("second");
+  });
+
+  test("an errored or aborted turn is NOT reopened — that boundary stays visible", () => {
+    const index = createIndex();
+    let model = createModel();
+    model = applyLine(model, index, user("u1", "go"), 1000);
+    model = applyLine(model, index, assistant("m1", "a1", "trying"), 1010);
+    model = applyLine(
+      model,
+      index,
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        result: "boom",
+        uuid: "r1"
+      } as ProtocolLine,
+      1020
+    );
+    expect(model.turns[0].state).toBe("error");
+    model = applyLine(model, index, assistant("m2", "a2", "recovered"), 2000);
+    expect(model.turns.length).toBe(2);
+    expect(model.turns[0].state).toBe("error");
   });
 });
 

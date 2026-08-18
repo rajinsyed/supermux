@@ -220,9 +220,12 @@ describe("task frames after the result never reopen the turn", () => {
     expect(model.turns[0].folded).toBe(true);
   });
 
-  test("the CLI's own follow-up init opens a turn, and only that", () => {
+  test("the CLI's own follow-up leg merges into the turn it summarizes", () => {
+    // The post-result init/status/message_start leg carries no user frame, so
+    // it is the SAME piece of work continuing — filing it as a fresh turn gave
+    // one prompt two "Worked for" folds.
     const model = replayLines(workflowFixture);
-    expect(model.turns.length).toBe(2);
+    expect(model.turns.length).toBe(1);
     expect(model.session.sessionId).toBe("8e022168-39a3-4eba-ade1-cc6a5b24c51a");
   });
 });

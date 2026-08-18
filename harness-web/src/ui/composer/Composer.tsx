@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ImageAttachment, QueuedMessage } from "../../model/types";
-import type { PermissionMode, SlashCommandDescriptor } from "../../protocol/types";
+import type { ImageAttachment, QueuedMessage, SessionMeta } from "../../model/types";
+import type {
+  EffortLevel,
+  ModelDescriptor,
+  PermissionMode,
+  SlashCommandDescriptor
+} from "../../protocol/types";
 import { useCopy } from "../CopyContext";
 import { ArrowUp, Close, Plus, Stop } from "../Icons";
 import { basename } from "../format";
+import { ModelMenu } from "./ModelMenu";
 import { useComposerPopover } from "./usePopover";
 
 export interface ComposerProps {
@@ -25,6 +31,17 @@ export interface ComposerProps {
   queued: QueuedMessage[];
   commands: SlashCommandDescriptor[];
   permissionMode: PermissionMode;
+  /**
+   * The model picker lives in the composer pill, trailing edge, beside send —
+   * Cursor's grammar, and the honest one: the model is a property of the
+   * message about to be sent, not of the session's chrome. Optional so the
+   * composer still stands alone in tests and in the agent-view harness that
+   * has no session to pick a model for.
+   */
+  session?: Pick<SessionMeta, "model" | "models" | "effort">;
+  /** Catalog persisted from an earlier run of this binary; see modelMenuSource. */
+  cachedModels?: ModelDescriptor[];
+  onSetModel?(model: string, effort?: EffortLevel): void;
   draft: string;
   onDraftChange(text: string): void;
   onSend(text: string, images: ImageAttachment[]): void;
@@ -364,6 +381,13 @@ export function Composer(props: ComposerProps) {
           onPaste={onPaste}
         />
         <div className="composer-actions">
+          {props.session && props.onSetModel ? (
+            <ModelMenu
+              session={props.session}
+              cachedModels={props.cachedModels}
+              onSetModel={props.onSetModel}
+            />
+          ) : null}
           {props.planPending ? (
             // Under a pending plan the primary next action is the plan
             // decision, not a generic send: approving it is one click, and the

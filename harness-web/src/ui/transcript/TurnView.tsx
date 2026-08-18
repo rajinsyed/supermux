@@ -3,7 +3,7 @@ import { hasLiveBackgroundWork } from "../../model/tasks";
 import type { Block, RelayRecord, Turn } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
 import { Check, ChevronDown, ChevronRight, XCircle } from "../Icons";
-import { formatCost, formatDuration } from "../format";
+import { formatDuration } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 import { WorkingDots } from "../primitives/Spinner";
@@ -76,12 +76,12 @@ function hiddenWhileStreaming(
 
 export const TurnView = memo(function TurnView({
   turn,
-  isLast,
   onRewind,
   relay
 }: {
   turn: Turn;
-  isLast: boolean;
+  /** Kept for caller compatibility; folding no longer exempts the last turn. */
+  isLast?: boolean;
   /** Given the turn's user-message uuid; absent when the pane cannot rewind. */
   onRewind?: (uuid: string) => void;
   /**
@@ -110,7 +110,9 @@ export const TurnView = memo(function TurnView({
    * — so the affordance never stops working; only the automatic sweep defers.
    */
   const { held, Provider: FoldGuardProvider } = useFoldGuardHost();
-  const folded = override ?? (settled && turn.folded && !isLast && work.length > 0 && !held);
+  // The just-finished turn folds its work tree the moment it settles — the
+  // answer is what remains on screen, the way Cursor collapses a finished run.
+  const folded = override ?? (settled && turn.folded && work.length > 0 && !held);
   /**
    * A turn that has been ON SCREEN unfolded keeps its work tree mounted through
    * a later fold (hidden by class), so the reader's expanded disclosures and
@@ -141,9 +143,18 @@ export const TurnView = memo(function TurnView({
     const tools = earlier.filter((b) => b.kind === "tool").length;
     return tools > 0 ? tools : earlier.length;
   }, [work, hidden]);
+  /**
+   * The turn's own span when it is the larger number: a turn that settled and
+   * REOPENED (a workflow's summary leg) carries only its LAST result's
+   * duration_ms, and "Worked for 2s" over a 40-second run under-reports the
+   * very work the fold is summarizing.
+   */
+  const span = turn.endedAtMs !== undefined ? turn.endedAtMs - turn.startedAtMs : undefined;
+  const reported = turn.result?.durationMs;
   const duration =
-    turn.result?.durationMs ??
-    (turn.endedAtMs !== undefined ? turn.endedAtMs - turn.startedAtMs : undefined);
+    reported !== undefined && span !== undefined
+      ? Math.max(reported, span)
+      : reported ?? span;
 
   const durationText = formatDuration(duration, copy);
   const foldLabel =
@@ -278,12 +289,6 @@ export const TurnView = memo(function TurnView({
           <div className="turn-interrupted">
             <XCircle size={12} />
             {copy("supermux.harness.turn.interrupted")}
-          </div>
-        ) : null}
-
-        {turn.result && settled && turn.result.costDeltaUsd !== undefined && work.length > 0 ? (
-          <div className="turn-footer tnum">
-            {durationText} · {formatCost(turn.result.costDeltaUsd)}
           </div>
         ) : null}
       </div>

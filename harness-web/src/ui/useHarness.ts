@@ -13,7 +13,7 @@ import type {
 } from "../protocol/types";
 import { defaultDarkTheme } from "./theme";
 
-const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "plan"];
+const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
 function uuidv4(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -101,6 +101,13 @@ export function useHarness(store: HarnessStore): HarnessController {
   }, [store]);
 
   const restoredSessionId = useRef<string | undefined>(undefined);
+  /** Whether the pane's initial native permission snapshot has been projected into the store. */
+  const permissionModeBootstrapComplete = useRef(false);
+  /**
+   * Set only by the shared user mutation path. This is intent, not a second copy
+   * of the mode: the authoritative value remains `session.permissionMode`.
+   */
+  const permissionModeWasSelected = useRef(false);
   /**
    * The restore snapshot describes the pane as it was SERIALIZED, and it is
    * reread on every `harness.context` call — the binary dialog closing is one.
@@ -123,15 +130,29 @@ export function useHarness(store: HarnessStore): HarnessController {
         if (next.cachedModels && next.cachedModels.length > 0) {
           store.dispatch({ kind: "cachedModels", models: next.cachedModels });
         }
+        if (!permissionModeBootstrapComplete.current) {
+          const restoredMode = next.restore?.permissionMode;
+          if (restoredMode && !permissionModeWasSelected.current) {
+            store.dispatch({ kind: "setPermissionMode", mode: restoredMode });
+          }
+          permissionModeBootstrapComplete.current = true;
+        }
         const sessionId = next.restore?.sessionId;
         if (sessionId && !snapshotRetired.current && restoredSessionId.current !== sessionId) {
           restoredSessionId.current = sessionId;
           bridge
             .loadSessionHistory({ sessionId })
             .then((result) => {
+              const selectedMode = permissionModeWasSelected.current
+                ? store.getSnapshot().session.permissionMode
+                : undefined;
               store.dispatch({ kind: "reset" });
               if (result.truncated) store.dispatch({ kind: "historyTruncated" });
               store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
+              store.flushNow();
+              if (selectedMode) {
+                store.dispatch({ kind: "setPermissionMode", mode: selectedMode });
+              }
             })
             .catch(() => undefined);
         }
@@ -203,9 +224,13 @@ export function useHarness(store: HarnessStore): HarnessController {
       ...params,
       model: params.model ?? pendingModel.current?.model ?? context?.restore?.model,
       effort: params.effort ?? pendingModel.current?.effort,
-      permissionMode: params.permissionMode ?? context?.restore?.permissionMode
+      permissionMode:
+        params.permissionMode ??
+        store.getSnapshot().session.permissionMode ??
+        context?.restore?.permissionMode ??
+        "bypassPermissions"
     }),
-    [context]
+    [context, store]
   );
 
   const ensureStarted = useCallback(
@@ -515,6 +540,7 @@ export function useHarness(store: HarnessStore): HarnessController {
 
   const setPermissionMode = useCallback(
     (mode: PermissionMode) => {
+      permissionModeWasSelected.current = true;
       store.dispatch({ kind: "setPermissionMode", mode });
       bridge.setPermissionMode({ mode }).catch(() => undefined);
     },

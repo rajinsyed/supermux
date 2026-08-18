@@ -82,12 +82,6 @@
   white-space: nowrap;
 }
 
-.wf-row-elapsed {
-  font-size: 11px;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
-
 .wf-row-chev {
   color: var(--text-faint);
   flex: 0 0 auto;

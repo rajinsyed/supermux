@@ -113,6 +113,9 @@ final class SupermuxHarnessSessionController {
         } else {
             snapshot.workingDirectory = self.workingDirectory
         }
+        if snapshot.permissionMode == nil {
+            snapshot.permissionMode = SessionSupermuxHarnessPanelSnapshot.defaultPermissionMode
+        }
         processSession = processSessionFactory(
             { [weak self] line in
                 self?.consumeProtocolLine(line)
@@ -299,9 +302,13 @@ final class SupermuxHarnessSessionController {
             throw SupermuxHarnessBridgeError.sessionAlreadyRunning
         }
 
+        let resolvedPermissionMode = permissionMode
+            .flatMap(SupermuxHarnessPermissionMode.init(rawValue:))
+            ?? snapshot.permissionMode.flatMap(SupermuxHarnessPermissionMode.init(rawValue:))
+            ?? .bypassPermissions
         var options = SupermuxHarnessLaunchOptions()
         options.model = model
-        options.permissionMode = permissionMode.flatMap(SupermuxHarnessPermissionMode.init(rawValue:))
+        options.permissionMode = resolvedPermissionMode
         options.resumeSessionID = resumeSessionId
         options.resumeSessionAt = resumeSessionAt
         options.forkSession = forkSession
@@ -327,7 +334,7 @@ final class SupermuxHarnessSessionController {
         controlRouter = router
 
         if let model { snapshot.model = model }
-        if let permissionMode { snapshot.permissionMode = permissionMode }
+        snapshot.permissionMode = resolvedPermissionMode.rawValue
         snapshot.sessionId = forkSession ? nil : resumeSessionId
         if resumeSessionId == nil {
             restoreStateRetirementSink?()

@@ -17,16 +17,30 @@
 
 /* ---------- framed sub-views ---------- */
 
+/* A floating card over the page, not a full-bleed replacement for it. Cursor
+   insets the subagent panel from EVERY edge — the page shows as a margin on all
+   four sides, and the frame ends above the composer rather than running into
+   it. At 8px/14px ours was close enough to full-bleed that the pane read as
+   having navigated away instead of having opened something on top. */
 .view-frame {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin: 8px 14px 2px;
+  margin: 16px 18px 6px;
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
   background: var(--surface);
   overflow: hidden;
+}
+
+/* The frame is already inset, so its content column inherits that inset rather
+   than adding the transcript's full gutter on top of it — otherwise a 760px
+   window leaves the text in a channel barely wider than the breadcrumb. The
+   column still centres and still stops at --content-max on a wide pane. */
+.view-frame .transcript-inner {
+  padding-left: max(12px, calc(var(--gutter) - 8px));
+  padding-right: max(12px, calc(var(--gutter) - 8px));
 }
 
 .view-frame > .transcript-wrap,
@@ -42,12 +56,12 @@
   min-height: 0;
 }
 
-/* The frame's header: back arrow, breadcrumb trail, close. */
+/* The frame's own header row: back arrow, breadcrumb trail, close. */
 .view-crumbs {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 10px;
+  padding: 8px 10px 8px 8px;
   border-bottom: 1px solid var(--border-faint);
   flex: 0 0 auto;
   min-width: 0;
@@ -118,11 +132,16 @@
    quiet line under the composer. No bed, no border — the pills themselves are
    the only marks. */
 
+/* Calm, not crowded. Cursor's strip is a row of items at ONE weight — a small
+   folder glyph, a small ring, "Auto-edit ⌄" as plain text, a history glyph, a
+   "…" — separated by real air. The generous gap is what does most of the work:
+   at 4px the six controls read as a dense toolbar, and the eye has nowhere to
+   rest between them. */
 .header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 30px;
+  gap: 10px;
+  min-height: 28px;
   padding: 0 2px;
 }
 
@@ -140,7 +159,7 @@
 .header-right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex: 0 1 auto;
   min-width: 0;
   flex-shrink: 0.2;
@@ -205,10 +224,11 @@
   max-width: 24ch;
 }
 
+/* No inner padding: the strip's own gap is the spacing, and a badge that keeps
+   its own reads as a chip with an invisible bed. */
 .cost-badge {
   font-size: 11px;
   color: var(--text-faint);
-  padding: 2px 6px;
   flex: 0 0 auto;
 }
 
@@ -228,23 +248,25 @@
 
 /* Text-first controls — Cursor's grammar. At rest a pill is quiet ink with
    no bed; the bed appears only under the pointer. Semantic modes tint their
-   TEXT, never a filled chip, so the bar stays one calm line. */
+   TEXT, never a filled chip, so the bar stays one calm line. The ink is
+   `--text-faint`, the same tier as the folder chip and the cost, so nothing on
+   the strip is louder than anything else at rest. */
 .mode-pill,
 .model-pill,
 .icon-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
-  padding: 4px 8px;
+  padding: 3px 6px;
   border-radius: var(--r-sm);
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-faint);
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
 .icon-pill {
-  padding: 4px 6px;
+  padding: 4px;
 }
 
 .pill-label {
@@ -558,8 +580,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 5px;
-  border-radius: var(--r-pill);
+  padding: 3px 5px;
+  border-radius: var(--r-sm);
 }
 
 .ctx-btn:hover {
@@ -571,7 +593,7 @@
 }
 
 .ctx-value {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-faint);
 }
 

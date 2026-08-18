@@ -303,6 +303,14 @@ export interface Turn {
    * that stays open.
    */
   foldWhenTasksSettle?: boolean;
+  /**
+   * The user folded or unfolded this turn BY HAND, and that choice outranks
+   * every automatic fold. A turn the user opened stays open through a reopen
+   * (the CLI's post-result summary leg merging back in) and through the merged
+   * turn's own later result — collapsing it under them would undo an explicit
+   * act as the acknowledgement of finishing.
+   */
+  foldOverride?: boolean;
   revision: number;
 }
 

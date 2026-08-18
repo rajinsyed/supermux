@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fixtures, richSession } from "../src/dev/fixtures";
-import { activeModelFor, emptySession, emptyUsage } from "../src/model/helpers";
+import { richSession } from "../src/dev/fixtures";
+import { emptyUsage } from "../src/model/helpers";
 import { replayLines } from "../src/model/transcript";
 import type { SessionMeta } from "../src/model/types";
 import { CopyProvider } from "../src/ui/CopyContext";
-import { Header, modelMenuSource, type HeaderProps } from "../src/ui/header/Header";
+import { Header, type HeaderProps } from "../src/ui/header/Header";
 
 afterEach(cleanup);
 
@@ -34,262 +34,38 @@ function mount(session: SessionMeta, extra: Partial<HeaderProps> = {}) {
 
 /**
  * The real CLI reports the RESOLVED id in `system/init` ("claude-sonnet-5") while
- * the `initialize` catalog is keyed by short SELECTOR ("sonnet"). The two
- * namespaces never overlap, so a lookup on `value` alone leaves the pill printing
- * a raw id, no menu row checked, and the effort section unreachable.
+ * the `initialize` catalog is keyed by short SELECTOR ("sonnet"). Resolving across
+ * both namespaces is the MODEL PICKER's job, and the picker moved into the
+ * composer pill — tests/composer.test.tsx owns it, markup and all. What the
+ * header still owns is everything the strip kept: the session browser, the
+ * overflow menu, and the permission-mode pill.
  */
 function realSession(): SessionMeta {
   const model = replayLines(richSession);
   return model.session;
 }
 
-describe("the active model resolves across both identifier namespaces", () => {
-  test("the real trace still carries the mismatch that broke this", () => {
-    const session = realSession();
-    expect(session.model).toBe("claude-sonnet-5");
-    expect(session.models.some((m) => m.value === session.model)).toBe(false);
-    expect(session.models.some((m) => m.resolvedModel === session.model)).toBe(true);
-  });
-
-  test("the pill prints the display name, not the raw id", () => {
-    const { container } = mount(realSession());
-    const pill = container.querySelector(".model-pill .pill-label")!;
-    expect(pill.textContent).toBe("Sonnet");
-    expect(pill.textContent).not.toContain("claude-");
-  });
-
-  test("exactly one model row is checked in the menu", () => {
-    const { container } = mount(realSession());
-    fireEvent.click(screen.getByLabelText("Model"));
-    const checked = container.querySelectorAll('[role="menuitemradio"][aria-checked="true"]');
-    expect(checked.length).toBe(1);
-    expect(checked[0].textContent).toContain("Sonnet");
-  });
-
-  test("the effort section is reachable on a real session", () => {
-    const { container } = mount(realSession());
-    fireEvent.click(screen.getByLabelText("Model"));
-    const titles = Array.from(container.querySelectorAll(".menu-section-title")).map(
-      (node) => node.textContent
-    );
-    expect(titles).toContain("Effort");
-    // sonnet advertises all five levels in the live initialize response.
-    expect(container.querySelectorAll(".menu-section")[1].querySelectorAll(".menu-item").length)
-      .toBe(5);
-  });
-
-  test("an effort pick sends the catalog selector, never the resolved id", () => {
-    const sent: Array<[string, string | undefined]> = [];
-    render(
-      <CopyProvider dict={undefined}>
-        <Header
-          session={realSession()}
-          usage={emptyUsage()}
-          sessions={[]}
-          {...NOOP}
-          onSetModel={(model, effort) => sent.push([model, effort])}
-        />
-      </CopyProvider>
-    );
-    fireEvent.click(screen.getByLabelText("Model"));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "High" }));
-    expect(sent).toEqual([["sonnet", "high"]]);
-  });
-
-  test("effort rows read as labels, never as the raw wire tokens", () => {
-    // `xhigh` is a protocol token no user would write, and it sat lowercase
-    // beside "Auto-edit" and "Opus (1M context)". The pill printed the same
-    // value uppercased, so the menu and the pill disagreed about one setting.
-    const { container } = mount(realSession());
-    fireEvent.click(screen.getByLabelText("Model"));
-    const rows = Array.from(
-      container.querySelectorAll(".menu-section")[1].querySelectorAll(".menu-item")
-    ).map((node) => node.textContent ?? "");
-    expect(rows.some((row) => row.startsWith("Extra high"))).toBe(true);
-    expect(rows.some((row) => row.includes("xhigh"))).toBe(false);
-    for (const row of rows) expect(row).toMatch(/^[A-Z]/);
-  });
-
-  test("the pill and the menu print one effort value the same way", () => {
-    const session = replayLines(richSession).session;
-    const { container } = mount({ ...session, effort: "xhigh" });
-    expect(container.querySelector(".effort-tag")!.textContent).toBe("Extra high");
-  });
-
-  test("no scenario ever prints a raw model id in the pill", () => {
-    // Every scenario, not only the two real traces: a fixture that ships a model
-    // the catalog cannot resolve puts a raw id in the header of that scenario.
-    const raw: string[] = [];
-    for (const [name, lines] of Object.entries(fixtures)) {
-      const session = replayLines(lines as never).session;
-      if (!session.model || session.models.length === 0) continue;
-      const shown = activeModelFor(session)?.displayName ?? session.model;
-      if (/^(claude|gpt)-/.test(shown)) raw.push(`${name}=${shown}`);
-    }
-    expect(raw).toEqual([]);
-  });
-
-  test("the synthetic catalog keeps the real CLI's selector/resolved split", () => {
-    // The bug survived three rounds because build.ts listed a catalog whose
-    // `value` happened to equal the init model — a coincidence the CLI never
-    // produces (ctl_log.txt: default | opus[1m] | sonnet | haiku). Restore the
-    // coincidence and every synthetic scenario stops exercising the mismatch.
-    const session = replayLines(fixtures.todos).session;
-    expect(session.model).toBe("claude-sonnet-5");
-    for (const model of session.models) {
-      expect(model.value).not.toBe(model.resolvedModel);
-      expect(model.value.startsWith("claude-")).toBe(false);
-    }
-    expect(session.models.some((m) => m.value === session.model)).toBe(false);
-    expect(activeModelFor(session)?.displayName).toBe("Sonnet 5");
-  });
-
-  test("an unknown model still prints something rather than blanking the pill", () => {
-    const session = { ...emptySession(), model: "some-future-model" };
-    const { container } = mount(session);
-    expect(container.querySelector(".model-pill .pill-label")!.textContent).toBe(
-      "some-future-model"
-    );
-  });
-});
-
 /**
- * The catalog reaches a pane only through the `initialize` handshake of a
- * RUNNING process, so before the first send `session.models` is empty — and the
- * model menu opened onto nothing at all.
+ * The strip lost the model pill to the composer. Nothing in the bottom bar may
+ * quietly grow one back: two model controls on one screen is exactly the
+ * disagreement (pill says "opus[1m]", menu says "Opus 5") this pane already
+ * shipped once.
  */
-describe("the model menu is never an empty popup", () => {
-  const cached = replayLines(richSession).session.models;
-
-  test("the live catalog wins when a process is running", () => {
-    const live = realSession();
-    const source = modelMenuSource(live, [{ value: "stale", displayName: "Stale" }]);
-    expect(source.models).toBe(live.models);
-    expect(source.loading).toBe(false);
+describe("the bottom strip no longer carries the model", () => {
+  test("there is no model pill in the header", () => {
+    const { container } = mount(realSession());
+    expect(container.querySelector(".model-pill")).toBeNull();
+    expect(container.querySelector(".effort-tag")).toBeNull();
   });
 
-  test("a cached catalog fills the menu before any process has started", () => {
-    const source = modelMenuSource({ models: [] }, cached);
-    expect(source.models).toBe(cached);
-    expect(source.loading).toBe(false);
-  });
-
-  test("with neither source it reports loading rather than empty", () => {
-    expect(modelMenuSource({ models: [] }, undefined)).toEqual({ models: [], loading: true });
-    expect(modelMenuSource({ models: [] }, [])).toEqual({ models: [], loading: true });
-  });
-
-  test("a first-open pane renders rows from the cache, not a blank menu", () => {
-    const cold = { ...emptySession(), model: "claude-sonnet-5" };
-    const { container } = mount(cold, { cachedModels: cached });
-    fireEvent.click(screen.getByLabelText("Model"));
-    // The model section only — the effort section below it is populated from
-    // whichever row resolved as active.
-    const rows = container
-      .querySelectorAll(".menu-section")[0]
-      .querySelectorAll('[role="menuitemradio"]');
-    expect(rows.length).toBe(cached.length);
-    expect(container.querySelector(".menu-loading")).toBeNull();
-  });
-
-  test("the cached rows resolve the active model the same way the live ones do", () => {
-    // The catalog is keyed by selector and init reports the resolved id, so a
-    // cache that failed to resolve would leave every row unchecked.
-    const cold = { ...emptySession(), model: "claude-sonnet-5" };
-    const { container } = mount(cold, { cachedModels: cached });
-    fireEvent.click(screen.getByLabelText("Model"));
-    const checked = container.querySelectorAll('[role="menuitemradio"][aria-checked="true"]');
-    expect(checked.length).toBe(1);
-    expect(checked[0].textContent).toContain("Sonnet");
-  });
-
-  test("a pre-start pick reports the catalog selector, ready for the first start", () => {
-    const sent: Array<[string, string | undefined]> = [];
-    const cold = { ...emptySession(), model: "claude-sonnet-5" };
-    mount(cold, {
-      cachedModels: cached,
-      onSetModel: (model, effort) => sent.push([model, effort])
-    });
-    fireEvent.click(screen.getByLabelText("Model"));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Haiku/ }));
-    // The selector, not the resolved id: it is what `set_model` and the first
-    // start's `model` parameter both take.
-    expect(sent).toEqual([["haiku", undefined]]);
-  });
-
-  /**
-   * A model picked before the first start is held in the reducer as the SELECTOR
-   * the menu sends on the wire ("opus"), and `session.models` is still empty
-   * because no process has run its `initialize` handshake. The pill resolved only
-   * against that empty catalog, so it printed the bare selector — in the same
-   * header as a menu whose "Opus 5" row was correctly checked from the cache. Two
-   * controls, one selection, two different names for it.
-   */
-  describe("a pre-start selection reads as a name in the pill, not a wire token", () => {
-    // The selector as the MENU sends it, straight from the real trace: this is
-    // literally the string the pill was printing.
-    const cold = () => ({ ...emptySession(), model: "opus[1m]" });
-
-    test("the pill prints the display name from the cached catalog", () => {
-      const { container } = mount(cold(), { cachedModels: cached });
-      const pill = container.querySelector(".model-pill .pill-label")!;
-      expect(pill.textContent).toBe("Opus (1M context)");
-      expect(pill.textContent).not.toBe("opus[1m]");
-    });
-
-    test("the effort tag comes with it, clamped to what that model supports", () => {
-      // The tag is gated on the resolved model's capabilities, so a pill that
-      // failed to resolve could not show one at all — the selection looked like
-      // it had lost its effort level as well as its name.
-      const { container } = mount({ ...cold(), effort: "xhigh" }, { cachedModels: cached });
-      expect(container.querySelector(".effort-tag")!.textContent).toBe("Extra high");
-    });
-
-    test("an effort level the picked model does not support shows no tag", () => {
-      // haiku advertises no effort levels in the catalog; a tag here would
-      // promise a setting the CLI rejects.
-      const { container } = mount(
-        { ...emptySession(), model: "haiku", effort: "high" },
-        { cachedModels: cached }
-      );
-      expect(container.querySelector(".effort-tag")).toBeNull();
-    });
-
-    test("the pill and the checked menu row name the same model", () => {
-      // The disagreement is the bug: one resolution now feeds both.
-      const { container } = mount(cold(), { cachedModels: cached });
-      fireEvent.click(screen.getByLabelText("Model"));
-      const checked = container.querySelectorAll('[role="menuitemradio"][aria-checked="true"]');
-      expect(checked.length).toBe(1);
-      expect(checked[0].textContent).toContain(
-        container.querySelector(".model-pill .pill-label")!.textContent!
-      );
-    });
-
-    test("the effort submenu is reachable on a pre-start selection", () => {
-      const { container } = mount(cold(), { cachedModels: cached });
-      fireEvent.click(screen.getByLabelText("Model"));
-      const titles = Array.from(container.querySelectorAll(".menu-section-title")).map(
-        (node) => node.textContent
-      );
-      expect(titles).toContain("Effort");
-    });
-
-    test("with no catalog at all the selector is still shown rather than nothing", () => {
-      // Falling back to the raw value is correct when there is genuinely nothing
-      // to resolve against; the bug was doing it while a catalog was right there.
-      const { container } = mount(cold());
-      expect(container.querySelector(".model-pill .pill-label")!.textContent).toBe("opus[1m]");
-    });
-  });
-
-  test("with nothing yet it shows a spinner row instead of a void", () => {
-    const { container } = mount(emptySession());
-    fireEvent.click(screen.getByLabelText("Model"));
-    const loading = container.querySelector(".menu-loading");
-    expect(loading).not.toBeNull();
-    expect(loading!.textContent).toContain("Loading models…");
-    expect(container.querySelector(".spinner")).not.toBeNull();
+  test("the permission mode reads as text, with no icon beside it", () => {
+    // Cursor's "Auto-edit ⌄": the mode's own hue names it. A shield glyph here
+    // was a third icon weight on a line that already had a folder and a ring.
+    const { container } = mount(realSession());
+    const pill = container.querySelector(".mode-pill")!;
+    expect(pill.querySelector(".pill-label")).not.toBeNull();
+    // The chevron is the only glyph a text trigger earns.
+    expect(pill.querySelectorAll("svg").length).toBe(1);
   });
 });
 

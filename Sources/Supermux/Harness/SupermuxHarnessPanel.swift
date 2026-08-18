@@ -84,6 +84,7 @@ final class SupermuxHarnessPanel: Panel {
         }
         if snapshot.permissionMode == nil {
             snapshot.permissionMode = restoreState?.permissionMode
+                ?? SessionSupermuxHarnessPanelSnapshot.defaultPermissionMode
         }
         return snapshot
     }

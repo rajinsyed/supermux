@@ -68,7 +68,7 @@ export function TranscriptList({
   const hidden = turns.length - shown.length;
 
   return (
-    <div className={`transcript-wrap${showPill ? " has-pill" : ""}`}>
+    <div className="transcript-wrap">
       <div
         className="harness-scroll transcript"
         ref={scrollRef}

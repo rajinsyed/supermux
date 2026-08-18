@@ -166,12 +166,6 @@
   padding: 1px 3px;
 }
 
-.tool-elapsed {
-  font-size: 11px;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
-
 .tool-status {
   display: inline-flex;
   align-items: center;

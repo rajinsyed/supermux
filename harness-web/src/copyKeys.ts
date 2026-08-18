@@ -103,7 +103,8 @@ export const copyDefaults = {
   "supermux.harness.turn.exportTitle": "Claude session",
 
   "supermux.harness.thinking.label": "Thinking",
-  "supermux.harness.thinking.summary": "Thinking · {tokens} tokens · {duration}",
+  // `thinking.summary` (tokens + duration) retired with the per-step metric
+  // chrome: a settled thinking row now reads "Thinking · 4s" only.
   "supermux.harness.thinking.summaryNoTokens": "Thinking · {duration}",
   "supermux.harness.thinking.redacted": "Reasoning is not shown for this account.",
 
@@ -369,7 +370,10 @@ export const copyDefaults = {
   "supermux.harness.header.renameSave": "Save",
   "supermux.harness.header.renameCancel": "Cancel",
   "supermux.harness.header.model": "Model",
-  "supermux.harness.header.effort": "Effort",
+  // `header.effort` ("Effort") retired with the bottom bar's model pill: the
+  // picker moved into the composer, where the setting is a "Reasoning" row in
+  // the per-model flyout rather than a menu section heading. Its Swift and
+  // xcstrings rows should go with it.
   "supermux.harness.header.effortDefault": "Default",
   // The wire tokens are low | medium | high | xhigh | max. The set is closed and
   // enumerated in the contract, so each gets a display string rather than
@@ -401,6 +405,10 @@ export const copyDefaults = {
   "supermux.harness.header.newSession": "New session",
   "supermux.harness.header.binary": "Claude binary…",
   "supermux.harness.header.modelsLoading": "Loading models…",
+  "supermux.harness.model.search": "Search models",
+  "supermux.harness.model.noMatches": "No matching models",
+  "supermux.harness.model.reasoning": "Reasoning",
+  "supermux.harness.model.restoreDefaults": "Restore defaults",
 
   "supermux.harness.binary.title": "Claude binary",
   "supermux.harness.binary.resolved": "Currently using",

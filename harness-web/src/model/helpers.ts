@@ -44,7 +44,7 @@ export function streamScope(parent: string | null | undefined): string {
 
 export function emptySession(): SessionMeta {
   return {
-    permissionMode: "default",
+    permissionMode: "bypassPermissions",
     tools: [],
     slashCommands: [],
     commands: [],

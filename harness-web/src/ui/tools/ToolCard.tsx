@@ -1,7 +1,6 @@
 import { memo, useState, type ReactNode } from "react";
 import type { CopyKey } from "../../copyKeys";
 import type { ToolBlock, ToolStatus } from "../../model/types";
-import { workStartedAtMs } from "../../model/tasks";
 import { bashExitCode } from "../../model/toolStatus";
 import { useCopy } from "../CopyContext";
 import {
@@ -21,10 +20,8 @@ import {
   Terminal,
   XCircle
 } from "../Icons";
-import { formatCompactDuration } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Spinner } from "../primitives/Spinner";
-import { Elapsed } from "../primitives/Elapsed";
 import {
   BashBody,
   EditBody,
@@ -209,7 +206,6 @@ export const ToolCard = memo(function ToolCard({
   // status would paint a green check beside a "Still running" badge; its
   // chrome follows the task's status instead.
   const status = family === "bash" ? backgroundBashStatus(block) : block.status;
-  const running = status === "running" || status === "pending";
   // The default is re-derived rather than frozen at mount, so a card that lands
   // while its turn streams still opens once the turn settles — and a row that
   // later fails auto-opens on the failure instead of staying shut because it
@@ -232,8 +228,6 @@ export const ToolCard = memo(function ToolCard({
   const subtitle = toolSubtitle(block.name, block.input);
   const subtitleFull = toolSubtitleFull(block.name, block.input);
   const badges = badgesFor(block, family, copy);
-  const elapsed = block.endedAtMs !== undefined ? block.endedAtMs - block.startedAtMs : 0;
-  const duration = elapsed >= 250 ? formatCompactDuration(elapsed, copy) : undefined;
 
   return (
     <div className={`tool-card is-${status}${open ? " is-open" : ""}`} data-family={family}>
@@ -260,14 +254,6 @@ export const ToolCard = memo(function ToolCard({
           ) : null}
         </span>
         <span className="tool-badges">{badges}</span>
-        {running ? (
-          /* The task's clock when there is one: this card and its row in the
-             tasks strip describe the SAME background command, and they used to
-             count from two different instants. */
-          <Elapsed className="tool-elapsed tnum" startedAtMs={workStartedAtMs(block)} />
-        ) : duration ? (
-          <span className="tool-elapsed tnum">{duration}</span>
-        ) : null}
         <span className="tool-status">
           <StatusMark status={status} />
         </span>

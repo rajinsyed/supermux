@@ -92,6 +92,37 @@ export function ensureTurn(
     next = { ...model, queued: model.queued.slice(1) };
     next = startUserTurn(next, index, promoted.text, promoted.images, atMs, promoted.uuid);
   } else {
+    // Output arriving with NO user message since the last turn settled belongs
+    // to THAT turn, not to a new one. A workflow's `result` lands the instant it
+    // is launched and the CLI then opens its own summary leg (init/status/
+    // message_start, no user frame); filing that leg as a fresh turn gave one
+    // prompt two "Worked for" folds. The turn REOPENS: its result is cleared so
+    // the next `result` frame settles it again (a turn that already carries one
+    // is invisible to `unresolvedTurnIndex`), and the fold retires because the
+    // turn is visibly working again. Only a cleanly completed turn is reopened —
+    // an error or an abort is a boundary the user saw, and new output after it
+    // reads as a new attempt.
+    const lastIndex = model.turns.length - 1;
+    const last = model.turns[lastIndex];
+    if (last && last.state === "complete") {
+      const reopened: Turn = {
+        ...last,
+        state: "streaming",
+        endedAtMs: undefined,
+        result: undefined,
+        // A streaming turn never renders folded; the user's own foldOverride
+        // rides through the spread and settles the question again at the next
+        // result.
+        folded: false,
+        foldWhenTasksSettle: undefined,
+        revision: last.revision + 1
+      };
+      return {
+        model: withTurn(model, lastIndex, reopened),
+        turnIndex: lastIndex,
+        turnId: reopened.id
+      };
+    }
     index.nextSeq += 1;
     const turn: Turn = {
       id: `turn:${model.generation}:${index.nextSeq}`,
@@ -117,7 +148,11 @@ export function closeOpenTurns(
   const turns = model.turns.map((turn) => {
     if (turn.state !== "streaming") return turn;
     changed = true;
-    return { ...settleTurn(turn, atMs), state, folded: state === "complete" };
+    return {
+      ...settleTurn(turn, atMs),
+      state,
+      folded: turn.foldOverride !== undefined ? turn.foldOverride : state === "complete"
+    };
   });
   return changed ? { ...model, turns, revision: model.revision + 1 } : model;
 }
