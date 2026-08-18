@@ -128,15 +128,43 @@
   overflow: hidden;
 }
 
-/* Inside a router-owned view the browser IS the pane body: no floating panel,
-   no shadow, no rounded corners cutting into the pane's own edges. */
+/* Inside a router-owned view the browser IS the pane body, not a panel floating
+   over one: no shadow, no scrim behind it, and it gives up the width cap.
+
+   It sits inside the pane's own transcript scroller, so it must NOT try to fill
+   a height it has no claim on — two nested scrollers would leave the reader
+   unable to reach the hint bar. It sizes to its content instead, and its two
+   columns keep their own viewport-relative caps (below), which is what stops a
+   thirty-agent phase from running off the pane. */
+.view-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .view-body > .wf-browser {
   width: 100%;
-  border: none;
-  border-radius: 0;
+  border-radius: var(--r-md);
   background: transparent;
   box-shadow: none;
-  flex: 1 1 auto;
+}
+
+/* The browser takes focus on open so its ↑↓ / x / esc bindings work without a
+   click first. That focus is programmatic and the panel is not a control, so
+   the shared focus ring — a halo round a 600px box — would announce the whole
+   view as "the thing you are on" every time it opened. The bindings are named
+   in the hint bar and the SELECTED row carries its own treatment; that is where
+   the reader's eye belongs. Keyboard focus on the rows and buttons inside is
+   untouched. */
+.wf-browser:focus,
+.wf-browser:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.view-body > .wf-browser .wfb-phases,
+.view-body > .wf-browser .wfb-right {
+  max-height: min(460px, 58vh);
 }
 
 .wfb-head {
@@ -167,8 +195,13 @@
   min-width: 0;
 }
 
+/* The run's NAME is the one thing the header must always say in full: it is how
+   the reader knows which of three running workflows they are looking at. It
+   only gives way once it has run out of its own generous floor, and the
+   description — which the row above already showed — is the give before that. */
 .wfb-name {
   flex: 0 1 auto;
+  min-width: 12ch;
   font-size: 13px;
   font-weight: 600;
   color: var(--claude);
@@ -231,12 +264,24 @@
 }
 
 .wfb-col-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   margin: 0 0 2px 6px;
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-faint);
+}
+
+/* The count beside the column's name. Its own element rather than more of the
+   heading string: the heading is a PHASE TITLE, uppercase and tracked out, and
+   "GATHER2 AGENTS" is what running the two together produced. */
+.wfb-col-count {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .wfb-phase-list,
