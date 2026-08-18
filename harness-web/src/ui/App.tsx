@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { dockRows } from "../model/dock";
 import { resolveModel } from "../model/helpers";
 import { runningForegroundBash } from "../model/tasks";
 import type { HarnessStore } from "../model/store";
-import type { ImageAttachment } from "../model/types";
-import type { JsonObject } from "../protocol/types";
+import type { ImageAttachment, RelayTarget } from "../model/types";
+import type { JsonObject, ProtocolLine } from "../protocol/types";
 import { CopyProvider, useCopy } from "./CopyContext";
 import { Composer } from "./composer/Composer";
+import { AgentsDock } from "./dock/AgentsDock";
 import { EmptyState, ExitedState, NoCliState } from "./empty/EmptyStates";
 import { Header } from "./header/Header";
 import { AlertTriangle, Close } from "./Icons";
@@ -17,13 +19,19 @@ import { setModeSuggestion } from "./permission/permissionText";
 import { QuestionCard } from "./permission/QuestionCard";
 import { BannerStack } from "./status/BannerStack";
 import { StatusStrip } from "./status/StatusStrip";
-import { TasksStrip } from "./status/TasksStrip";
 import { TodoStrip } from "./status/TodoStrip";
 import { applyThemeVariables } from "./theme";
 import { TranscriptList } from "./transcript/TranscriptList";
 import { useScrollFollow } from "./transcript/useScrollFollow";
 import { exportTranscript } from "./exportTranscript";
 import { useHarness } from "./useHarness";
+import { AgentChatView } from "./views/AgentChatView";
+import { OpenViewContext } from "./views/OpenViewContext";
+import { ShellView } from "./views/ShellView";
+import { relayInstruction } from "./views/relay";
+import { useViewRouter } from "./views/useViewRouter";
+import { ViewBreadcrumb } from "./views/ViewBreadcrumb";
+import { WorkflowView } from "./workflow/WorkflowView";
 
 export function App({ store }: { store: HarnessStore }) {
   const harness = useHarness(store);
@@ -62,6 +70,25 @@ function AppBody({
     { text: string; degraded?: boolean } | undefined
   >(undefined);
   const composerFocus = useRef<(() => void) | undefined>(undefined);
+
+  const router = useViewRouter(model, copy);
+  const view = router.view;
+  const rows = useMemo(() => dockRows(model), [model]);
+  const thread = view.kind === "agent" ? model.agentThreads[view.toolUseId] : undefined;
+  /**
+   * The relays addressed to the agent on screen. Read from the model rather
+   * than kept in component state so switching away from an agent view and back
+   * shows the same delivery status — the send outlives the view that made it.
+   */
+  const viewRelays = useMemo(
+    () =>
+      view.kind === "agent"
+        ? Object.values(model.relays)
+            .filter((relay) => relay.toolUseId === view.toolUseId)
+            .sort((a, b) => a.sentAtMs - b.sentAtMs)
+        : [],
+    [model.relays, view]
+  );
 
   const { ref: scrollRef, contentRef, showPill, scrollToBottom } = useScrollFollow([
     model.revision,
@@ -157,6 +184,56 @@ function AppBody({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [harness.bridge, model]);
+
+  /**
+   * Sending from inside an agent view.
+   *
+   * The wire has no way to prompt an agent directly, so this is a two-step
+   * relay, and the ORDER matters:
+   *
+   *  1. Background the agent's Task if it has one. A relay only reaches main's
+   *     model at main's NEXT turn, and if main is blocked on this very agent's
+   *     foreground Task, that is after the agent has already finished — the
+   *     message would arrive too late to be guidance. `background_tasks` frees
+   *     main to take the turn. The reply is honoured honestly: a false or a
+   *     rejection is recorded on the relay, and the agent view says the message
+   *     will land when the agent finishes rather than pretending otherwise.
+   *  2. Send the probed relay instruction to main as an ordinary message.
+   *
+   * The user's own text — not the instruction — is what the chip and the
+   * agent's thread show; the instruction is plumbing and never appears as
+   * something the user said.
+   */
+  const sendToAgent = useCallback(
+    (text: string) => {
+      if (view.kind !== "agent" || !thread) return;
+      const description = thread.description ?? thread.subagentType ?? thread.toolUseId;
+      const target: RelayTarget = { toolUseId: thread.toolUseId, description: thread.description };
+      const instruction = relayInstruction(description, text);
+      const running = thread.status !== "completed" && thread.status !== "failed";
+      const needsBackgrounding = running && thread.background !== true;
+      const send = (backgrounded: boolean | undefined) =>
+        harness.sendRelay(instruction, text, target, backgrounded);
+      if (!needsBackgrounding) {
+        send(true);
+        return;
+      }
+      harness.bridge
+        .backgroundTask({ toolUseId: thread.toolUseId })
+        .then((result) => send(result?.backgrounded === true))
+        // A refusal is not a reason to drop the message: it still goes, and the
+        // relay carries the honest note about when it will arrive.
+        .catch(() => send(false));
+    },
+    [harness, thread, view]
+  );
+
+  const hydrateThread = useCallback(
+    (toolUseId: string, events: ProtocolLine[]) => {
+      store.dispatch({ kind: "hydrateThread", toolUseId, events });
+    },
+    [store]
+  );
 
   const cliUnavailable = context !== undefined && context.cliStatus.available === false;
 
@@ -254,7 +331,15 @@ function AppBody({
     return <PermissionCard pending={pending} queueCount={queueCount} onDecide={decide} />;
   }, [decide, model.pending.length, pending]);
 
+  const inAgentView = view.kind === "agent" && thread !== undefined;
+  // An agent that has finished cannot be messaged: there is no mailbox left to
+  // drop into, and a relay would just be an instruction main answers itself.
+  // The composer stays, addressed to Claude, and says so.
+  const agentReachable =
+    inAgentView && thread!.status !== "completed" && thread!.status !== "failed";
+
   return (
+    <OpenViewContext.Provider value={router.open}>
     <div className="app">
       <Header
         degraded={cliUnavailable}
@@ -290,6 +375,16 @@ function AppBody({
         onOpenBinarySettings={() => setBinaryOpen(true)}
       />
 
+      {/* Where you are, and one press back. Only ever present when the stack
+          has depth — the main chat has nowhere to return to, and a breadcrumb
+          reading just "Claude" would be a row of chrome that says nothing. */}
+      <ViewBreadcrumb
+        stack={router.stack}
+        labelFor={router.labelFor}
+        onBack={router.back}
+        onOpen={router.open}
+      />
+
       {cliUnavailable ? (
         <div className="harness-scroll transcript">
           <div className="transcript-inner">
@@ -300,9 +395,26 @@ function AppBody({
             />
           </div>
         </div>
+      ) : view.kind === "agent" ? (
+        <AgentChatView
+          thread={thread}
+          relays={viewRelays}
+          scrollRef={scrollRef}
+          contentRef={contentRef}
+          onHydrate={hydrateThread}
+        />
+      ) : view.kind === "workflow" ? (
+        <div className="harness-scroll transcript" ref={scrollRef}>
+          <div className="transcript-inner">
+            <WorkflowView model={model} taskId={view.taskId} onBack={router.back} />
+          </div>
+        </div>
+      ) : view.kind === "shell" ? (
+        <ShellView record={model.tasksById[view.taskId]} scrollRef={scrollRef} />
       ) : (
         <TranscriptList
           turns={model.turns}
+          relays={model.relays}
           scrollRef={scrollRef}
           contentRef={contentRef}
           showPill={showPill}
@@ -355,7 +467,11 @@ function AppBody({
           banners={model.banners}
           onDismiss={(id) => store.dispatch({ kind: "dismissBanner", id })}
         />
-        <TasksStrip tasks={model.backgroundTasks} tasksById={model.tasksById} />
+        {/* The CLI's agents dock, above the composer. It replaces the round-3
+            tasks strip entirely: same information, plus every agent and its
+            tree, and rows that persist for the session instead of vanishing
+            when the CLI's background set empties. */}
+        <AgentsDock rows={rows} activeView={view} onOpen={router.open} />
         <TodoStrip todos={model.todos} />
         {rewindNote ? (
           <div
@@ -410,7 +526,20 @@ function AppBody({
           permissionMode={model.session.permissionMode}
           draft={harness.draft}
           onDraftChange={harness.setDraft}
-          onSend={harness.send}
+          // In an agent view the composer addresses THAT agent, through the
+          // relay. A reachable agent takes the message; a finished one cannot,
+          // so the send falls back to Claude and the placeholder says so rather
+          // than silently redirecting what the user thought they were sending.
+          onSend={
+            agentReachable ? (text) => sendToAgent(text) : harness.send
+          }
+          agentName={
+            inAgentView
+              ? agentReachable
+                ? thread!.description ?? copy("supermux.harness.dock.untitledAgent")
+                : null
+              : undefined
+          }
           onInterrupt={harness.interrupt}
           onCancelQueued={harness.cancelQueued}
           onCyclePermissionMode={harness.cyclePermissionMode}
@@ -441,5 +570,6 @@ function AppBody({
         />
       ) : null}
     </div>
+    </OpenViewContext.Provider>
   );
 }

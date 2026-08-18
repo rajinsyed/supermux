@@ -1,14 +1,16 @@
 import { memo, useMemo, useRef, useState } from "react";
 import { hasLiveBackgroundWork } from "../../model/tasks";
-import type { Block, Turn } from "../../model/types";
+import type { Block, RelayRecord, Turn } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
-import { ChevronDown, ChevronRight, XCircle } from "../Icons";
+import { Check, ChevronDown, ChevronRight, XCircle } from "../Icons";
 import { formatCost, formatDuration } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 import { WorkingDots } from "../primitives/Spinner";
+import { isRelayAck } from "../views/relay";
 import { BlockView } from "./BlockView";
 import { useFoldGuardHost } from "./foldGuard";
+import { RelayChip } from "./RelayChip";
 import { UserMessage } from "./UserMessage";
 
 /** Trailing work rows kept visible while a turn is still running. */
@@ -75,12 +77,19 @@ function hiddenWhileStreaming(
 export const TurnView = memo(function TurnView({
   turn,
   isLast,
-  onRewind
+  onRewind,
+  relay
 }: {
   turn: Turn;
   isLast: boolean;
   /** Given the turn's user-message uuid; absent when the pane cannot rewind. */
   onRewind?: (uuid: string) => void;
+  /**
+   * This turn carries a message the user addressed to an AGENT, which the pane
+   * routed through main. It is not a conversation with Claude, so it does not
+   * get a bubble and its "RELAYED" answer does not get an answer's weight.
+   */
+  relay?: RelayRecord;
 }) {
   const copy = useCopy();
   const [override, setOverride] = useState<boolean | undefined>(undefined);
@@ -145,8 +154,10 @@ export const TurnView = memo(function TurnView({
         : copy("supermux.harness.turn.workedFor", { duration: durationText });
 
   return (
-    <article className={`turn is-${turn.state}`} data-turn-id={turn.id}>
-      {turn.userText !== undefined ? (
+    <article className={`turn is-${turn.state}${relay ? " is-relay" : ""}`} data-turn-id={turn.id}>
+      {relay ? (
+        <RelayChip relay={relay} />
+      ) : turn.userText !== undefined ? (
         <UserMessage
           text={turn.userText}
           images={turn.userImages}
@@ -235,9 +246,22 @@ export const TurnView = memo(function TurnView({
           </>
         ) : null}
 
-        {tail.map((block) => (
-          <BlockView key={block.key} block={block} />
-        ))}
+        {/* A relay turn's answer is the single word "RELAYED" — main confirming
+            it did the plumbing. Shown as an assistant message it reads as
+            Claude replying to the user with a shout, in a turn whose actual
+            content is elsewhere. It is compacted to a receipt beside the chip;
+            anything main says BEYOND the acknowledgment still renders, because
+            then it is telling the user something. */}
+        {tail.map((block) =>
+          relay && block.kind === "text" && isRelayAck(block.text) ? (
+            <div key={block.key} className="relay-ack">
+              <Check size={10} className="mark-ok" />
+              {copy("supermux.harness.relay.ack")}
+            </div>
+          ) : (
+            <BlockView key={block.key} block={block} />
+          )
+        )}
 
         {turn.state === "streaming" ? (
           <div className="turn-live">

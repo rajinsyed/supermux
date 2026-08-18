@@ -8,6 +8,15 @@
  * translators through the extract → merge pipeline and is paid for in every
  * language while appearing in none. Their SupermuxHarnessCopy.swift and
  * Localizable.xcstrings rows should go with them.
+ *
+ * Round 4 retires five more with the inline WorkflowCard the browser replaces:
+ * `workflow.showResult` / `workflow.hideResult` (the per-agent result
+ * disclosure — the browser's Outcome section is a heading and an Expand, not a
+ * show/hide toggle), `workflow.openAgent` (superseded by
+ * `workflow.browser.openTranscript`, which opens the agent's CHAT rather than
+ * an inline drill-in), and `workflow.collapse` / `workflow.expand` (the card's
+ * head fold; a full view has a back affordance instead). Same removal applies
+ * to their Swift and xcstrings rows.
  */
 export const copyDefaults = {
   "supermux.harness.app.untitledSession": "New session",
@@ -136,10 +145,12 @@ export const copyDefaults = {
   "supermux.harness.subagent.tokens": "{tokens} tokens",
   "supermux.harness.subagent.toolUsesOne": "{count} tool",
   "supermux.harness.subagent.toolUses": "{count} tools",
-  "supermux.harness.subagent.showTranscript": "Show subagent work",
-  "supermux.harness.subagent.hideTranscript": "Hide subagent work",
-  "supermux.harness.subagent.openTranscript": "Open transcript",
-  "supermux.harness.subagent.closeTranscript": "Close transcript",
+  // Retired in round 4 with the inline expandable subagent card: there is no
+  // "show/hide subagent work" toggle any more, because the agent's work is not
+  // rendered inline at all — the transcript keeps a one-line row and the
+  // conversation is a view. `subagent.shownAbove` went with them: it existed
+  // only to mark the duplicate an inline drill-in produced, and nothing draws
+  // one agent twice now.
   "supermux.harness.subagent.transcriptLoading": "Reading the agent's transcript…",
   "supermux.harness.subagent.transcriptMissing":
     "No transcript on disk yet — it appears once the agent writes its first message.",
@@ -161,10 +172,6 @@ export const copyDefaults = {
   "supermux.harness.subagent.waiting": "Waiting to start…",
   "supermux.harness.subagent.nestedOne": "{count} nested agent",
   "supermux.harness.subagent.nested": "{count} nested agents",
-  // A drill-in replays the agent's own file, which contains the nested agents
-  // the card already draws inline. The second copy is a cross-reference, not a
-  // second agent.
-  "supermux.harness.subagent.shownAbove": "shown above",
 
   "supermux.harness.workflow.badge": "Workflow",
   "supermux.harness.workflow.untitled": "Workflow",
@@ -191,18 +198,101 @@ export const copyDefaults = {
   "supermux.harness.workflow.attempt": "Attempt {count}",
   "supermux.harness.workflow.isolationWorktree": "Worktree",
   "supermux.harness.workflow.isolationRemote": "Remote",
-  "supermux.harness.workflow.showResult": "Show result",
-  "supermux.harness.workflow.hideResult": "Hide result",
   "supermux.harness.workflow.showLogsOne": "{count} log line",
   "supermux.harness.workflow.showLogs": "{count} log lines",
   "supermux.harness.workflow.hideLogs": "Hide log",
   "supermux.harness.workflow.noAgents": "No agents have been scheduled yet.",
   "supermux.harness.workflow.unphased": "Unphased",
-  "supermux.harness.workflow.openAgent": "Open agent transcript",
   "supermux.harness.workflow.viewAgents": "Pick an agent to open its transcript:",
-  // The head fold, matching every other card in the pane.
-  "supermux.harness.workflow.collapse": "Collapse workflow",
-  "supermux.harness.workflow.expand": "Expand workflow",
+
+  // --- Round 4: the multi-pane workflow browser ---
+  // The transcript keeps a one-line row; the run itself is browsed in a full
+  // view with a phases column, a phase agent list, and an agent detail pane.
+  "supermux.harness.workflow.browser.title": "Workflow",
+  "supermux.harness.workflow.browser.open": "Open",
+  "supermux.harness.workflow.browser.back": "Back",
+  "supermux.harness.workflow.browser.phases": "Phases",
+  "supermux.harness.workflow.browser.agentCount": "{done}/{total} agents",
+  "supermux.harness.workflow.browser.prompt": "Prompt",
+  "supermux.harness.workflow.browser.activity": "Activity",
+  "supermux.harness.workflow.browser.outcome": "Outcome",
+  "supermux.harness.workflow.browser.noActivity": "No tool activity reported.",
+  "supermux.harness.workflow.browser.expand": "Expand",
+  "supermux.harness.workflow.browser.collapse": "Collapse",
+  "supermux.harness.workflow.browser.loadingFull": "Reading the agent's transcript…",
+  "supermux.harness.workflow.browser.fullMissing":
+    "The agent's transcript is not on disk yet — only the preview is available.",
+  "supermux.harness.workflow.browser.fullFailed": "Could not read the agent's transcript.",
+  "supermux.harness.workflow.browser.retry": "Retry",
+  "supermux.harness.workflow.browser.truncated": "Only the most recent messages are shown.",
+  "supermux.harness.workflow.browser.openTranscript": "Open full transcript",
+  "supermux.harness.workflow.browser.cachedBadge": "Cached",
+  "supermux.harness.workflow.browser.toolCallsOne": "{count} tool call",
+  "supermux.harness.workflow.browser.toolCalls": "{count} tool calls",
+  // The footer hint bar. These are REAL bindings on the browser, not decoration:
+  // ↑↓ move the selection, x stops the run, esc steps back out.
+  "supermux.harness.workflow.browser.hintSelect": "select",
+  "supermux.harness.workflow.browser.hintBack": "back",
+  // The routed view outlived its task: the process restarted, or the
+  // conversation was rewound past the turn that launched the run.
+  "supermux.harness.workflow.browser.gone": "This workflow is no longer available.",
+
+  // --- Round 4: the agents dock, above the composer ---
+  "supermux.harness.dock.title": "Agents",
+  "supermux.harness.dock.main": "Claude",
+  "supermux.harness.dock.mainHint": "Main conversation",
+  "supermux.harness.dock.collapse": "Hide agents",
+  "supermux.harness.dock.expand": "Show agents",
+  "supermux.harness.dock.countOne": "{count} agent",
+  "supermux.harness.dock.count": "{count} agents",
+  "supermux.harness.dock.open": "Open",
+  "supermux.harness.dock.stop": "Stop",
+  "supermux.harness.dock.stopping": "Stopping…",
+  "supermux.harness.dock.stopFailed": "Could not stop this task.",
+  "supermux.harness.dock.untitledAgent": "Agent",
+  "supermux.harness.dock.untitledShell": "Shell",
+  "supermux.harness.dock.untitledWorkflow": "Workflow",
+  "supermux.harness.dock.statusRunning": "Running",
+  "supermux.harness.dock.statusDone": "Done",
+  "supermux.harness.dock.statusFailed": "Failed",
+  "supermux.harness.dock.statusStopped": "Stopped",
+  "supermux.harness.dock.statusIdle": "Idle",
+  "supermux.harness.dock.workflowAgents": "{done}/{total} agents",
+  "supermux.harness.dock.a11y": "Agents and background tasks",
+  "supermux.harness.dock.keyHint": "↑↓ select · ⏎ open · esc back",
+
+  // --- Round 4: full-chat agent views ---
+  "supermux.harness.view.back": "Back",
+  "supermux.harness.view.backTo": "Back to {label}",
+  "supermux.harness.view.rootCrumb": "Claude",
+  "supermux.harness.agentView.prompt": "Prompt",
+  "supermux.harness.agentView.empty": "This agent has not said anything yet.",
+  "supermux.harness.agentView.loading": "Loading this agent's conversation…",
+  "supermux.harness.agentView.unavailable":
+    "No transcript for this agent yet — it appears once the agent writes its first message.",
+  "supermux.harness.agentView.failed": "Could not load this agent's conversation.",
+  "supermux.harness.agentView.retry": "Try again",
+  "supermux.harness.agentView.fromDisk": "Loaded from this agent's transcript on disk.",
+  "supermux.harness.agentView.childAgents": "Agents this one started",
+  "supermux.harness.agentView.openChild": "Open agent",
+  // The composer inside an agent view sends TO the agent, which is a different
+  // act from messaging Claude and must not wear the same placeholder.
+  "supermux.harness.agentView.composerPlaceholder": "Message {agent}…",
+  "supermux.harness.agentView.composerPlaceholderDone":
+    "This agent has finished — messages go to Claude instead",
+  "supermux.harness.agentView.relayHint":
+    "Delivered through Claude at the agent's next tool call.",
+  "supermux.harness.agentView.relaySending": "Sending…",
+  "supermux.harness.agentView.relayRelayed": "Passed to the agent",
+  "supermux.harness.agentView.relayDelivered": "Received by the agent",
+  "supermux.harness.agentView.relayFailed": "Could not reach this agent.",
+  // Honest about the one delivery case the wire cannot promise: main is blocked
+  // on the agent's own foreground Task and could not be freed.
+  "supermux.harness.agentView.relayQueuedForeground":
+    "Claude is waiting on this agent, so the message arrives when it finishes.",
+  "supermux.harness.relay.chip": "Sent to {agent}",
+  "supermux.harness.relay.chipUnknown": "Sent to an agent",
+  "supermux.harness.relay.ack": "Relayed",
 
   "supermux.harness.tasks.title": "Background tasks",
   "supermux.harness.tasks.countOne": "{count} task",

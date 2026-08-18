@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getBridge, installReceiver, type HarnessBridge, type StartParams } from "../bridge";
 import { HarnessStore } from "../model/store";
-import type { ImageAttachment, TranscriptModel } from "../model/types";
+import type { ImageAttachment, RelayTarget, TranscriptModel } from "../model/types";
 import type {
   EffortLevel,
   HarnessContext,
@@ -42,6 +42,21 @@ export interface HarnessController {
   restarting: boolean;
   setDraft(text: string): void;
   send(text: string, images: ImageAttachment[]): void;
+  /**
+   * A message for an AGENT, carried to it through main.
+   *
+   * Two texts, deliberately: `instruction` is what goes on the wire (the probed
+   * "relay this verbatim … reply only RELAYED" pattern), and `text` is what the
+   * user actually typed, which is what the chip and the agent's thread show.
+   * Collapsing them would either put protocol scaffolding in the user's mouth
+   * or send main a bare message it would answer itself.
+   */
+  sendRelay(
+    instruction: string,
+    text: string,
+    target: RelayTarget,
+    backgrounded: boolean | undefined
+  ): void;
   interrupt(cancelQueued: boolean): void;
   cancelQueued(uuid: string): void;
   restart(resumeSessionId?: string, fork?: boolean): void;
@@ -316,6 +331,28 @@ export function useHarness(store: HarnessStore): HarnessController {
     [bridge, enqueueSend, flushStranded, store]
   );
 
+  const sendRelay = useCallback(
+    (instruction: string, text: string, target: RelayTarget, backgrounded: boolean | undefined) => {
+      flushStranded();
+      const uuid = uuidv4();
+      // The model records the user's OWN text against this uuid; the wire gets
+      // the instruction. One uuid ties the two together, which is what lets the
+      // main transcript draw a chip where the instruction's bubble would be.
+      store.dispatch({
+        kind: "localSend",
+        uuid,
+        text,
+        atMs: Date.now(),
+        relay: target,
+        backgrounded
+      });
+      setDraftState("");
+      bridge.saveDraft({ text: "" }).catch(() => undefined);
+      enqueueSend(instruction, undefined, uuid);
+    },
+    [bridge, enqueueSend, flushStranded, store]
+  );
+
   /**
    * The other way out of a crash: a run came back up — a Restart, or a resume —
    * with nobody having typed since. The CLI-side queue died with the process, so
@@ -500,6 +537,7 @@ export function useHarness(store: HarnessStore): HarnessController {
     restarting,
     setDraft,
     send,
+    sendRelay,
     interrupt,
     cancelQueued,
     restart,

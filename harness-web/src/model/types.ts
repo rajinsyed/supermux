@@ -333,7 +333,7 @@ export interface RelayTarget {
   description?: string;
 }
 
-export type RelayState = "sending" | "relayed" | "delivered";
+export type RelayState = "sending" | "relayed" | "delivered" | "failed";
 
 export interface RelayRecord {
   uuid: string;
@@ -345,9 +345,10 @@ export interface RelayRecord {
    * `sending` until main answers, `relayed` once the turn carrying the request
    * settles (main ran SendMessage and said RELAYED), `delivered` when the agent
    * itself shows a user-side message afterwards — the mailbox drop landing at
-   * its next tool round. Three states because the two later ones are genuinely
-   * different news: relayed means main did its part, delivered means the agent
-   * has it.
+   * its next tool round. Distinct states because they are genuinely different
+   * news: relayed means main did its part, delivered means the agent has it.
+   * `failed` is the turn erroring or being interrupted before either — the one
+   * outcome where the message did NOT arrive and the user must be told.
    */
   state: RelayState;
   /** The agent was backgrounded first so main could act on the relay. */
@@ -509,6 +510,8 @@ export interface AgentThread {
   totalTokens?: number;
   toolUses?: number;
   durationMs?: number;
+  /** AgentOutput.toolStats — what it actually did, once it is done. */
+  toolStats?: SubagentToolStats;
   background?: boolean;
   /** Null for the main thread; the parent Agent's tool_use id otherwise. */
   parentToolUseId?: string;

@@ -289,9 +289,16 @@ function applyResult(
   // mailbox at its next tool round), so the record advances one step, not two.
   const relay = turn.userUuid ? next.relays[turn.userUuid] : undefined;
   if (relay && relay.state === "sending") {
+    // A turn that errored or was interrupted never ran SendMessage, so the
+    // message did not go anywhere. Reporting that as "passed to the agent"
+    // would be the one relay lie that matters.
+    const failed = aborted || line.is_error === true;
     next = {
       ...next,
-      relays: { ...next.relays, [relay.uuid]: { ...relay, state: "relayed" } }
+      relays: {
+        ...next.relays,
+        [relay.uuid]: { ...relay, state: failed ? "failed" : "relayed" }
+      }
     };
   }
   const settled = aborted ? markTurnAborted(turn, nowMs) : settleTurn(turn, nowMs);

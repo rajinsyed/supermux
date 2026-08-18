@@ -7,5 +7,13 @@
 /* After cards.css: .btn-quiet refines .btn, and at equal specificity the later
    rule has to win (same ordering reason .icon-btn documents in styles.test.ts). */
 @import "./tasks.css";
+/* After tasks.css: the browser reuses the strip's `.btn-quiet` and `.tool-badge`
+   refinements, and the shared agent-state chips it inherited from the workflow
+   card it replaces have to win at equal specificity. */
+@import "./workflow.css";
 @import "./dock.css";
+/* After dock.css: the agents dock lives INSIDE `.dock` and its rows refine the
+   generic `.btn-quiet`/`.dock > *` rules there, which at equal specificity only
+   the later sheet can win. */
+@import "./agents.css";
 @import "./modal.css";

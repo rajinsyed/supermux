@@ -487,8 +487,20 @@ export function applyAgentOutputToThread(
   if (!existing || !structured) return model;
   const status = asString(structured.status);
   const done = status === "completed" || status === "failed";
+  const raw = isPlainObject(structured.toolStats) ? structured.toolStats : undefined;
   return writeThread(model, {
     ...existing,
+    toolStats: raw
+      ? {
+          readCount: asNumber(raw.readCount),
+          searchCount: asNumber(raw.searchCount),
+          bashCount: asNumber(raw.bashCount),
+          editFileCount: asNumber(raw.editFileCount),
+          linesAdded: asNumber(raw.linesAdded),
+          linesRemoved: asNumber(raw.linesRemoved),
+          otherToolCount: asNumber(raw.otherToolCount)
+        }
+      : existing.toolStats,
     agentId: asString(structured.agentId) ?? existing.agentId,
     taskId: existing.taskId ?? asString(structured.agentId),
     subagentType: existing.subagentType ?? asString(structured.agentType),

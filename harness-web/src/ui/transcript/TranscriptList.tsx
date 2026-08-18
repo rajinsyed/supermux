@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { Turn } from "../../model/types";
+import type { RelayRecord, Turn } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
 import { ArrowDown } from "../Icons";
 import { Timeline } from "./Timeline";
@@ -10,6 +10,8 @@ const WINDOW_STEP = 18;
 
 interface TranscriptListProps {
   turns: Turn[];
+  /** Relays keyed by the uuid of the main-thread user message they rode on. */
+  relays?: Record<string, RelayRecord>;
   scrollRef: RefObject<HTMLDivElement | null>;
   /** Observed for size changes so late-growing cards keep the bottom pinned. */
   contentRef?: RefObject<HTMLDivElement | null>;
@@ -22,6 +24,7 @@ interface TranscriptListProps {
 
 export function TranscriptList({
   turns,
+  relays,
   scrollRef,
   contentRef,
   showPill,
@@ -97,6 +100,7 @@ export function TranscriptList({
               turn={turn}
               isLast={i === shown.length - 1}
               onRewind={onRewind}
+              relay={turn.userUuid ? relays?.[turn.userUuid] : undefined}
             />
           ))}
           {footer}

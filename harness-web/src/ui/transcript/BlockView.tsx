@@ -53,6 +53,38 @@ function NoticeView({ block }: { block: Extract<Block, { kind: "notice" }> }) {
   );
 }
 
+/**
+ * The user side of an agent's conversation.
+ *
+ * Two things arrive here and they must not look alike: the PROMPT the parent
+ * wrote when it spawned this agent — which is the brief, and reads as the
+ * opening of the conversation — and a message delivered to it mid-run, which is
+ * someone talking to it. A pending one is a message the composer has sent and
+ * the agent has not acknowledged yet; it is shown immediately, because a
+ * composer that swallows what you typed until a round trip completes reads as a
+ * send that failed.
+ */
+function ThreadUserMessage({ block }: { block: Extract<Block, { kind: "userText" }> }) {
+  const copy = useCopy();
+  return (
+    <div
+      className={`thread-user${block.prompt ? " is-prompt" : ""}${
+        block.pending ? " is-pending" : ""
+      }`}
+    >
+      {block.prompt ? (
+        <div className="thread-user-label">{copy("supermux.harness.agentView.prompt")}</div>
+      ) : null}
+      <div className="thread-user-body">{block.text}</div>
+      {block.pending ? (
+        <div className="thread-user-pending">
+          {copy("supermux.harness.agentView.relaySending")}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export const BlockView = memo(function BlockView({
   block,
   live = false
@@ -76,6 +108,8 @@ export const BlockView = memo(function BlockView({
       return <DividerView block={block} />;
     case "notice":
       return <NoticeView block={block} />;
+    case "userText":
+      return <ThreadUserMessage block={block} />;
     case "image":
       return (
         <img

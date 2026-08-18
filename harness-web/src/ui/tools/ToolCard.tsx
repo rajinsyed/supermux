@@ -40,25 +40,9 @@ import {
 } from "./ToolBodies";
 import { diffStats } from "../primitives/DiffView";
 import { BackgroundBashStrip, backgroundBashBadges, backgroundBashStatus } from "./BackgroundBash";
-import { DuplicateAgentRow, SubagentCard, useAlreadyRendered } from "./SubagentCard";
-import { WorkflowCard } from "./WorkflowCard";
+import { AgentRow } from "./AgentRow";
+import { WorkflowRow } from "../workflow/WorkflowRow";
 import { toolFamily, toolHeadline, toolSubtitle, toolSubtitleFull, type ToolFamily } from "./toolMeta";
-
-/**
- * An agent card, unless the very same agent is already drawn on this card — a
- * drill-in transcript replays the agent's own file, which contains the nested
- * `tool_use` blocks the inline children already rendered. Two full cards for one
- * agent, wearing different chips because only one of them has task frames, reads
- * as two agents that did identical work.
- *
- * Split out as its own component because the check is a hook, and `ToolCard`
- * dispatches on family after other hooks have run.
- */
-function TaskCard({ block, depth }: { block: ToolBlock; depth: number }) {
-  const duplicate = useAlreadyRendered(block);
-  if (duplicate) return <DuplicateAgentRow block={block} />;
-  return <SubagentCard block={block} depth={depth} />;
-}
 
 const ICONS: Record<ToolFamily, (props: { size?: number }) => ReactNode> = {
   interactive: Sparkle,
@@ -233,8 +217,15 @@ export const ToolCard = memo(function ToolCard({
   const [override, setOverride] = useState<boolean | undefined>(undefined);
   const open = override ?? (status === "error" || defaultOpen(block, family, live));
 
-  if (family === "task") return <TaskCard block={block} depth={depth} />;
-  if (family === "workflow") return <WorkflowCard block={block} />;
+  // An agent's whole record in the transcript is ONE row too: the conversation
+  // it had is read in its own full-chat view, not unrolled inline under the
+  // turn that spawned it. Nested spawns show as indented rows so the SHAPE of
+  // the tree is visible here without descending into it.
+  if (family === "task") return <AgentRow block={block} />;
+  // A workflow's whole record in the transcript is ONE row; the run itself is
+  // browsed in a full multi-pane view (src/ui/workflow), the way the CLI does
+  // it, rather than unrolled inline into 600px of nested disclosures.
+  if (family === "workflow") return <WorkflowRow block={block} />;
 
   const Icon = ICONS[family];
   const headline = toolHeadline(block.name, block.input);

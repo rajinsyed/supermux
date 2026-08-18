@@ -28,6 +28,15 @@ export interface ComposerProps {
   draft: string;
   onDraftChange(text: string): void;
   onSend(text: string, images: ImageAttachment[]): void;
+  /**
+   * The composer is inside an agent view and addresses that agent.
+   *
+   * Three states, not two: `undefined` is the main chat, a NAME is a reachable
+   * agent this message will be relayed to, and `null` is an agent view whose
+   * agent has finished — where the send still works but goes to Claude, and
+   * saying so is the difference between a redirect and a surprise.
+   */
+  agentName?: string | null;
   onInterrupt(cancelQueued: boolean): void;
   onCancelQueued(uuid: string): void;
   onCyclePermissionMode(): void;
@@ -221,9 +230,19 @@ export function Composer(props: ComposerProps) {
         ? copy("supermux.harness.composer.placeholderPlan")
         : props.awaitingPermission
           ? copy("supermux.harness.composer.placeholderWaiting")
-          : props.running
-            ? copy("supermux.harness.composer.placeholderRunning")
-            : copy("supermux.harness.composer.placeholder");
+          : // WHO this message is for outranks whether Claude is busy: in an
+            // agent view the send does not queue behind main's turn, it is
+            // relayed to the agent, and "it will be queued" would be a lie
+            // about a different destination.
+            props.agentName !== undefined
+            ? props.agentName === null
+              ? copy("supermux.harness.agentView.composerPlaceholderDone")
+              : copy("supermux.harness.agentView.composerPlaceholder", {
+                  agent: props.agentName
+                })
+            : props.running
+              ? copy("supermux.harness.composer.placeholderRunning")
+              : copy("supermux.harness.composer.placeholder");
 
   const canSend = props.draft.trim().length > 0 || images.length > 0;
   const tokens = approximateTokens(props.draft);
@@ -379,6 +398,14 @@ export function Composer(props: ComposerProps) {
         <span className="composer-hint is-hint-mode">
           {copy("supermux.harness.composer.hintMode")}
         </span>
+        {/* The one thing a user needs to know before pressing Enter here: this
+            does not reach the agent instantly. It goes through Claude and is
+            picked up at the agent's next tool call. */}
+        {props.agentName ? (
+          <span className="composer-hint is-hint-relay">
+            {copy("supermux.harness.agentView.relayHint")}
+          </span>
+        ) : null}
         {props.running ? (
           <span className="composer-hint is-hint-interrupt">
             {copy("supermux.harness.composer.hintInterrupt")}
