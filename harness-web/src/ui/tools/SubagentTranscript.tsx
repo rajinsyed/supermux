@@ -34,14 +34,25 @@ export interface SubagentTranscriptKey {
 type Phase = "loading" | "ready" | "missing" | "failed";
 
 interface State {
+  identity: string;
   phase: Phase;
   model?: TranscriptModel;
+  sourceGeneration: number;
   truncated: boolean;
   meta?: { agentType?: string; description?: string; spawnDepth?: number };
 }
 
 function keyOf(key: SubagentTranscriptKey): string {
   return `${key.taskId ?? ""}|${key.workflowRunId ?? ""}|${key.agentId ?? ""}`;
+}
+
+function loadingState(identity: string, sourceGeneration: number): State {
+  return {
+    identity,
+    phase: "loading",
+    sourceGeneration,
+    truncated: false
+  };
 }
 
 /**
@@ -62,10 +73,11 @@ export function useSubagentTranscript(
   open: boolean,
   tick: number | undefined
 ): State & { reload(): void } {
-  const [state, setState] = useState<State>({ phase: "loading", truncated: false });
-  const [manual, setManual] = useState(0);
   const identity = keyOf(key);
+  const [state, setState] = useState<State>(() => loadingState(identity, 0));
+  const [manual, setManual] = useState(0);
   const live = useRef(true);
+  const latestRequest = useRef(0);
 
   useEffect(() => {
     live.current = true;
@@ -76,14 +88,31 @@ export function useSubagentTranscript(
 
   useEffect(() => {
     if (!open) return;
+    const requestId = latestRequest.current + 1;
+    latestRequest.current = requestId;
+    const transitionIdentity = (previous: State): State =>
+      previous.identity === identity
+        ? previous
+        : loadingState(identity, previous.sourceGeneration + 1);
+
     if (!key.taskId && !(key.workflowRunId && key.agentId)) {
-      setState({ phase: "missing", truncated: false });
+      setState((previous) => {
+        const current = transitionIdentity(previous);
+        return {
+          identity,
+          phase: "missing",
+          sourceGeneration: current.sourceGeneration,
+          truncated: false
+        };
+      });
       return;
     }
+
+    // A different target clears synchronously through the derived return value
+    // below and is committed here. A same-target tick keeps the ready snapshot
+    // visible while its refresh is pending.
+    setState(transitionIdentity);
     let cancelled = false;
-    // Not a reset to `loading`: a re-fetch on a progress tick would blank a
-    // transcript the user is reading several times a minute. The first load has
-    // nothing to blank, and every later one swaps content in place.
     getBridge()
       .loadSubagentTranscript({
         taskId: key.taskId,
@@ -91,25 +120,39 @@ export function useSubagentTranscript(
         agentId: key.agentId
       })
       .then((result) => {
-        if (cancelled || !live.current) return;
-        if (result.missing) {
-          setState({ phase: "missing", truncated: false, meta: result.meta });
-          return;
-        }
-        setState({
-          phase: "ready",
-          model: replayLines(result.events ?? []),
-          truncated: result.truncated === true,
-          meta: result.meta
+        if (cancelled || !live.current || latestRequest.current !== requestId) return;
+        setState((previous) => {
+          if (previous.identity !== identity) return previous;
+          if (result.missing) {
+            return {
+              identity,
+              phase: "missing",
+              sourceGeneration: previous.sourceGeneration,
+              truncated: false,
+              meta: result.meta
+            };
+          }
+          return {
+            identity,
+            phase: "ready",
+            model: replayLines(result.events ?? []),
+            sourceGeneration: previous.sourceGeneration + 1,
+            truncated: result.truncated === true,
+            meta: result.meta
+          };
         });
       })
       .catch(() => {
-        if (cancelled || !live.current) return;
-        setState((previous) =>
-          // A failed refresh must not throw away a transcript that already
-          // rendered; only a failed FIRST load has nothing better to show.
-          previous.phase === "ready" ? previous : { phase: "failed", truncated: false }
-        );
+        if (cancelled || !live.current || latestRequest.current !== requestId) return;
+        setState((previous) => {
+          if (previous.identity !== identity || previous.phase === "ready") return previous;
+          return {
+            identity,
+            phase: "failed",
+            sourceGeneration: previous.sourceGeneration,
+            truncated: false
+          };
+        });
       });
     return () => {
       cancelled = true;
@@ -117,7 +160,11 @@ export function useSubagentTranscript(
   }, [identity, key.agentId, key.taskId, key.workflowRunId, manual, open, tick]);
 
   const reload = useCallback(() => setManual((value) => value + 1), []);
-  return { ...state, reload };
+  const visible =
+    state.identity === identity
+      ? state
+      : loadingState(identity, state.sourceGeneration + 1);
+  return { ...visible, reload };
 }
 
 function blocksOf(model: TranscriptModel): Block[] {
@@ -227,7 +274,11 @@ export function SubagentTranscriptView({
       <div className="drill-transcript">
         <DrillTrail.Provider value={trail}>
           {blocks.map((block) => (
-            <BlockView key={block.key} block={block} />
+            <BlockView
+              key={block.key}
+              block={block}
+              generation={state.sourceGeneration}
+            />
           ))}
         </DrillTrail.Provider>
       </div>

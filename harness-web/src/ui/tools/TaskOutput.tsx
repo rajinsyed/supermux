@@ -16,16 +16,30 @@ const POLL_MS = 1200;
 
 type Phase = "loading" | "ready" | "missing" | "failed";
 
-export function TaskOutputView({
-  taskId,
-  running,
-  className
-}: {
+interface TaskOutputViewProps {
   taskId: string;
   /** Poll while true; a settled task is read exactly once. */
   running: boolean;
   className?: string;
-}) {
+  /** False while an animating disclosure is mounted but no longer visible. */
+  presented?: boolean;
+}
+
+/**
+ * A task id is the state identity, not just an effect dependency. Keying the
+ * polling body makes loading state switch in the same render and prevents a
+ * completion from the previous task from ever painting into the next one.
+ */
+export function TaskOutputView(props: TaskOutputViewProps) {
+  return <TaskOutputPoller key={props.taskId} {...props} />;
+}
+
+function TaskOutputPoller({
+  taskId,
+  running,
+  className,
+  presented = true
+}: TaskOutputViewProps) {
   const copy = useCopy();
   const [phase, setPhase] = useState<Phase>("loading");
   const [text, setText] = useState("");
@@ -33,10 +47,16 @@ export function TaskOutputView({
   const alive = useRef(true);
 
   useEffect(() => {
+    if (!presented) return;
     alive.current = true;
     let timer = 0;
     let cancelled = false;
 
+    const schedule = () => {
+      if (running && !cancelled && alive.current) {
+        timer = window.setTimeout(read, POLL_MS);
+      }
+    };
     const read = () => {
       getBridge()
         .readTaskOutput({ taskId })
@@ -49,14 +69,14 @@ export function TaskOutputView({
             setText(result.text ?? "");
             setPhase("ready");
           }
-          if (running) timer = window.setTimeout(read, POLL_MS);
+          schedule();
         })
         .catch(() => {
           if (cancelled || !alive.current) return;
-          // A failed poll keeps whatever already rendered: the file is written
-          // by another process and a transient read error is not a reason to
-          // blank output the user is reading.
+          // Keep the last successful text and retry: output files can be between
+          // writes or briefly unavailable while the producer rotates them.
           setPhase((previous) => (previous === "ready" ? previous : "failed"));
+          schedule();
         });
     };
     read();
@@ -66,7 +86,7 @@ export function TaskOutputView({
       alive.current = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [running, taskId]);
+  }, [presented, running, taskId]);
 
   return (
     <div className={className ?? "task-output"}>
@@ -94,7 +114,12 @@ export function TaskOutputView({
       ) : text.trim().length === 0 ? (
         <div className="drill-status">{copy("supermux.harness.tasks.outputEmpty")}</div>
       ) : (
-        <AnsiOutput text={text} maxLines={18} />
+        <AnsiOutput
+          text={text}
+          maxLines={18}
+          stateKey={`task:${taskId}:output`}
+          streaming={running}
+        />
       )}
     </div>
   );

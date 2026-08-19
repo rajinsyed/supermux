@@ -1,9 +1,10 @@
-import { memo, useContext, useState } from "react";
+import { memo, useContext } from "react";
 import type { ToolBlock } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
 import { ChevronRight } from "../Icons";
 import { formatCompactDuration } from "../format";
 import { WorkingGlyph } from "../primitives/Spinner";
+import { usePresentationState } from "../presentationState";
 import { useFoldHold } from "../transcript/foldGuard";
 import { OpenViewContext } from "../views/OpenViewContext";
 import { WorkflowBrowser } from "./WorkflowBrowser";
@@ -31,7 +32,10 @@ export const WorkflowRow = memo(function WorkflowRow({ block }: { block: ToolBlo
    * router has nothing to route TO. The browser opens over the pane instead, so
    * the affordance is never dead.
    */
-  const [openLocal, setOpenLocal] = useState(false);
+  const [openLocal, setOpenLocal] = usePresentationState(
+    `block:${block.key}:workflow-local`,
+    false
+  );
   // The reader is inside this workflow; the turn around it must not fold itself
   // away underneath them.
   useFoldHold(openLocal);

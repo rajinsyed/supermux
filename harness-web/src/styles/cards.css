@@ -293,53 +293,48 @@
 
 /* ---------- the streaming mark ----------
 
-   Was three dots pulsing their opacity in sequence. It said "something is
-   happening" and nothing else, it animated three elements to do it, and the
-   label beside it had to carry the actual news anyway.
-
-   It is a single sweeping sliver now, and — the point of the change — the LABEL
-   beside it shimmers in step (the sibling rule below), so the animation lands on
-   the words that already say what is happening. `.sheen` / `.sheen-bar` are
-   declared once in base.css and honour prefers-reduced-motion there. */
+   The status words are the indicator. There is no dot constellation and no
+   animated text gradient: a quiet opacity/transform pulse stays on the
+   compositor while the readable label continues to name the state and elapsed
+   time directly. */
 
 .working-dots {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  height: 12px;
+  min-height: 12px;
 }
 
-.working-dots i {
-  width: 16px;
-  height: 2px;
+.working-status-slot {
+  display: inline-block;
+  width: 0;
+  height: 0;
 }
 
-/* The live row's label sweeps with its mark: "Working for 12s" IS the state, and
-   a shimmer on the words is the whole reason the dots could go. Written here
-   rather than in transcript.css because the mark and its sheen are one object;
-   cards.css is imported after transcript.css, so at equal specificity this
-   wins. */
-.turn-live .working-dots + .turn-live-label {
-  background-image: linear-gradient(
-    100deg,
-    var(--shimmer-base) 32%,
-    var(--shimmer-sheen) 50%,
-    var(--shimmer-base) 68%
-  );
-  background-size: 260% 100%;
-  background-repeat: no-repeat;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  animation: sheen-sweep 2.2s linear infinite;
+.turn-live .working-dots > .turn-live-label {
+  display: inline-block;
+  color: var(--text-muted);
+  transform-origin: left center;
+  animation: status-breathe 2.2s var(--ease) infinite;
+}
+
+@keyframes status-breathe {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-0.5px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .turn-live .working-dots + .turn-live-label {
-    background-image: none;
-    color: var(--shimmer-sheen);
-    -webkit-text-fill-color: var(--shimmer-sheen);
+  .turn-live .working-dots > .turn-live-label {
+    animation-name: none;
+    opacity: 1;
+    transform: none;
   }
 }
 

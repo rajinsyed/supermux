@@ -205,10 +205,10 @@ export function ensureTurn(
         state: "streaming",
         endedAtMs: undefined,
         result: undefined,
-        // A streaming turn never renders folded; the user's own foldOverride
-        // rides through the spread and settles the question again at the next
-        // result.
-        folded: false,
+        // Automatic folds reopen so the continuation stays visible. An explicit
+        // reader fold is authoritative, however: reopening a completed turn must
+        // not undo the choice before the next result arrives.
+        folded: last.foldOverride === true,
         foldWhenTasksSettle: undefined,
         revision: last.revision + 1
       };
@@ -390,30 +390,195 @@ export function truncateBeforeUserMessage(
 ): TranscriptModel {
   const cut = model.turns.findIndex((turn) => turn.userUuid === uuid);
   if (cut < 0) return model;
-  const turns = model.turns.slice(0, cut);
-  const kept = new Set(turns.map((turn) => turn.id));
-  for (const [toolUseId, location] of index.toolLocations) {
-    if (!kept.has(location.turnId)) index.toolLocations.delete(toolUseId);
+
+  const retainedTurns = model.turns.slice(0, cut);
+  const retainedTurnIds = new Set(retainedTurns.map((turn) => turn.id));
+  const retainedUserUuids = new Set<string>();
+  const retainedToolIds = new Set<string>();
+  const retainedTaskIds = new Set<string>();
+  const retainedBlockKeys = new Set<string>();
+  const retainedUuids = new Set<string>();
+
+  const collectBlocks = (blocks: Block[], onTool?: (toolUseId: string) => void) => {
+    for (const block of blocks) {
+      retainedBlockKeys.add(block.key);
+      if ("uuid" in block && block.uuid) retainedUuids.add(block.uuid);
+      if (block.kind !== "tool") continue;
+      retainedToolIds.add(block.toolUseId);
+      onTool?.(block.toolUseId);
+      if (block.subagent?.taskId) retainedTaskIds.add(block.subagent.taskId);
+      collectBlocks(block.children, onTool);
+    }
+  };
+
+  for (const turn of retainedTurns) {
+    if (turn.userUuid) {
+      retainedUserUuids.add(turn.userUuid);
+      retainedUuids.add(turn.userUuid);
+    }
+    collectBlocks(turn.blocks);
   }
-  // A relay is remembered so the MAIN transcript can draw its user message as a
-  // chip instead of a bubble. Once that turn is gone the record describes
-  // nothing on screen, and keeping it would compact a LATER message that
-  // happened to reuse the uuid.
+  // Only the main turn tree participates in these reducer indexes. Thread blocks
+  // may share wire keys, so snapshot this set before collecting them.
+  const indexedBlockKeys = new Set(retainedBlockKeys);
+
+  // A retained Agent tool owns its thread, its nested child threads, and any
+  // task records or hydrated tools reachable from those threads.
+  const retainedThreadIds = new Set<string>();
+  const threadQueue = [...retainedToolIds].filter((id) => model.agentThreads[id] !== undefined);
+  while (threadQueue.length > 0) {
+    const id = threadQueue.shift();
+    if (!id || retainedThreadIds.has(id)) continue;
+    const thread = model.agentThreads[id];
+    if (!thread) continue;
+    retainedThreadIds.add(id);
+    if (thread.taskId) retainedTaskIds.add(thread.taskId);
+    collectBlocks(thread.blocks, (toolUseId) => {
+      if (model.agentThreads[toolUseId]) threadQueue.push(toolUseId);
+    });
+    for (const childId of thread.childIds) threadQueue.push(childId);
+  }
+
+  for (const [taskId, record] of Object.entries(model.tasksById)) {
+    if (record.toolUseId && retainedToolIds.has(record.toolUseId)) retainedTaskIds.add(taskId);
+  }
+
   const relays: Record<string, RelayRecord> = {};
-  for (const [uuid, relay] of Object.entries(model.relays)) {
-    if (kept.has(uuid)) relays[uuid] = relay;
+  for (const [relayUuid, relay] of Object.entries(model.relays)) {
+    if (
+      retainedUserUuids.has(relayUuid) &&
+      (retainedToolIds.has(relay.toolUseId) || retainedThreadIds.has(relay.toolUseId))
+    ) {
+      relays[relayUuid] = relay;
+      retainedUuids.add(relayUuid);
+    }
   }
+  const retainedRelayUuids = new Set(Object.keys(relays));
+
+  const sanitizeBlocks = (blocks: Block[]): Block[] => {
+    let changed = false;
+    const next: Block[] = [];
+    for (const block of blocks) {
+      if (
+        block.kind === "userText" &&
+        block.pending &&
+        (!block.uuid || !retainedRelayUuids.has(block.uuid))
+      ) {
+        changed = true;
+        continue;
+      }
+      if (block.kind !== "tool") {
+        next.push(block);
+        continue;
+      }
+      const children = sanitizeBlocks(block.children);
+      const supersededByToolUseId =
+        block.supersededByToolUseId && retainedToolIds.has(block.supersededByToolUseId)
+          ? block.supersededByToolUseId
+          : undefined;
+      if (
+        children !== block.children ||
+        supersededByToolUseId !== block.supersededByToolUseId
+      ) {
+        changed = true;
+        next.push({ ...block, children, supersededByToolUseId });
+      } else {
+        next.push(block);
+      }
+    }
+    return changed ? next : blocks;
+  };
+
+  const turns = retainedTurns.map((turn) => {
+    const blocks = sanitizeBlocks(turn.blocks);
+    return blocks === turn.blocks
+      ? turn
+      : { ...turn, blocks, revision: turn.revision + 1 };
+  });
+
+  const agentThreads: TranscriptModel["agentThreads"] = {};
+  for (const id of retainedThreadIds) {
+    const thread = model.agentThreads[id];
+    if (!thread) continue;
+    const blocks = sanitizeBlocks(thread.blocks);
+    const childIds = thread.childIds.filter((childId) => retainedThreadIds.has(childId));
+    const parentToolUseId =
+      thread.parentToolUseId && retainedThreadIds.has(thread.parentToolUseId)
+        ? thread.parentToolUseId
+        : undefined;
+    const supersededByToolUseId =
+      thread.supersededByToolUseId && retainedToolIds.has(thread.supersededByToolUseId)
+        ? thread.supersededByToolUseId
+        : undefined;
+    const changed =
+      blocks !== thread.blocks ||
+      childIds.length !== thread.childIds.length ||
+      parentToolUseId !== thread.parentToolUseId ||
+      supersededByToolUseId !== thread.supersededByToolUseId;
+    agentThreads[id] = changed
+      ? {
+          ...thread,
+          blocks,
+          childIds,
+          parentToolUseId,
+          supersededByToolUseId,
+          revision: thread.revision + 1
+        }
+      : thread;
+  }
+
+  const tasksById: TranscriptModel["tasksById"] = {};
+  for (const [taskId, record] of Object.entries(model.tasksById)) {
+    if (retainedTaskIds.has(taskId)) tasksById[taskId] = record;
+  }
+
+  for (const [toolUseId, location] of index.toolLocations) {
+    if (!retainedToolIds.has(toolUseId) || !retainedTurnIds.has(location.turnId)) {
+      index.toolLocations.delete(toolUseId);
+    }
+  }
+  for (const [taskId, toolUseId] of index.taskToTool) {
+    if (!retainedTaskIds.has(taskId) || !retainedToolIds.has(toolUseId)) {
+      index.taskToTool.delete(taskId);
+    }
+  }
+  for (const key of index.finalizedBlocks) {
+    if (!indexedBlockKeys.has(key)) index.finalizedBlocks.delete(key);
+  }
+  for (const [key, encodedLocation] of index.streamBlockKeys) {
+    const turnId = encodedLocation.split("|", 1)[0];
+    if (!indexedBlockKeys.has(key) || !retainedTurnIds.has(turnId)) {
+      index.streamBlockKeys.delete(key);
+    }
+  }
+  index.streamMessageIds.clear();
+  index.seenUuids.clear();
+  for (const retainedUuid of retainedUuids) index.seenUuids.add(retainedUuid);
+  index.nextSeq = turns.reduce((maximum, turn) => Math.max(maximum, turn.seq), 0);
+  index.blockCounter = [...indexedBlockKeys].reduce((maximum, key) => {
+    const match = /!(\d+)$/.exec(key);
+    return match ? Math.max(maximum, Number(match[1])) : maximum;
+  }, 0);
+
   return {
     ...model,
+    // Rewind creates a new reducer/presentation generation. Any async work from
+    // the discarded continuation is stale, and virtual measurements from its
+    // row set must not survive into the retained destination.
+    generation: model.generation + 1,
     turns,
     relays,
-    // Everything below described the dropped turns: an approval prompt for a
-    // tool call that no longer exists cannot be answered, and a queued message
-    // was typed against a conversation that is being rewritten.
+    agentThreads,
+    agentRootIds: model.agentRootIds.filter((id) => retainedThreadIds.has(id)),
+    tasksById,
+    backgroundTasks: [],
+    // Everything below described the discarded continuation or the process that
+    // rewind replaced.
     pending: [],
     queued: [],
     stranded: [],
     todos: [],
+    banners: model.banners.filter((banner) => banner.retry === undefined),
     activity: { sessionState: "idle", status: null, thinkingTokens: 0 },
     revision: model.revision + 1
   };

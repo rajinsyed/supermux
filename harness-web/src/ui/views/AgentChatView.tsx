@@ -138,6 +138,7 @@ export function AgentChatView({
   relays,
   scrollRef,
   contentRef,
+  generation = 0,
   showPill = false,
   onJump,
   onHydrate
@@ -149,6 +150,8 @@ export function AgentChatView({
   relays: RelayRecord[];
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef?: RefObject<HTMLDivElement | null>;
+  /** Conversation generation disambiguating reused wire block identities. */
+  generation?: number;
   /**
    * The reader has scrolled away from the bottom of a thread that is still
    * growing. The main chat has always had this; an agent view is exactly as
@@ -264,7 +267,7 @@ export function AgentChatView({
             the report this round is fixing. The status line below is about the
             agent's OUTPUT, so it is keyed on there being none. */}
         {blocks.map((block) => (
-          <BlockView key={block.key} block={block} />
+          <BlockView key={block.key} block={block} generation={generation} />
         ))}
 
         {thread.blocks.length === 0 ? (

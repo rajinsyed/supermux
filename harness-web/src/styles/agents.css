@@ -213,39 +213,23 @@
   flex: 0 0 auto;
 }
 
-/* The row's name sweeps with its mark. Scoped to rows that HAVE the mark: a
-   settled row keeps its ordinary ink.
-
-   3.4s, against the turn's 2.2s in cards.css, and the gap is the point: two
-   sheens at the SAME tempo are one effect wearing two labels, which is the
-   round-5 state this pass is undoing. The turn is actively producing output and
-   sweeps at conversational speed; a delegated row is quietly alive and sweeps
-   slower, in step with the breath beside it rather than with the turn below. */
+/* Delegated names retain their slower ambient cadence, but the old moving text
+   gradient is gone. The label itself breathes with compositor-only properties;
+   the grid still communicates the delegated-work kind. */
 .dock-glyph + .dock-label,
 .agent-row-glyph + .agent-row-main .agent-row-name,
 .agent-row-glyph + .wf-row-main .wf-row-name {
-  background-image: linear-gradient(
-    100deg,
-    var(--shimmer-base) 32%,
-    var(--shimmer-sheen) 50%,
-    var(--shimmer-base) 68%
-  );
-  background-size: 260% 100%;
-  background-repeat: no-repeat;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  animation: sheen-sweep 3.4s linear infinite;
+  transform-origin: left center;
+  animation: status-breathe 3.4s var(--ease) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .dock-glyph + .dock-label,
   .agent-row-glyph + .agent-row-main .agent-row-name,
   .agent-row-glyph + .wf-row-main .wf-row-name {
-    background-image: none;
-    color: var(--shimmer-sheen);
-    -webkit-text-fill-color: var(--shimmer-sheen);
+    animation-name: none;
+    opacity: 1;
+    transform: none;
   }
 }
 

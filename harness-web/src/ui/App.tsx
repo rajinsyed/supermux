@@ -8,6 +8,7 @@ import type { ImageAttachment, RelayTarget } from "../model/types";
 import type { JsonObject, ProtocolLine } from "../protocol/types";
 import { CopyProvider, useCopy } from "./CopyContext";
 import { Composer } from "./composer/Composer";
+import { PresentationStateProvider } from "./presentationState";
 import { AgentsDock } from "./dock/AgentsDock";
 import { EmptyState, ExitedState, NoCliState } from "./empty/EmptyStates";
 import { Header } from "./header/Header";
@@ -34,6 +35,14 @@ import { useViewRouter } from "./views/useViewRouter";
 import { ViewBreadcrumb } from "./views/ViewBreadcrumb";
 import { WorkflowView } from "./workflow/WorkflowView";
 
+function firstUserUuid(store: HarnessStore, turnIds: readonly string[]): string | undefined {
+  for (const id of turnIds) {
+    const uuid = store.getTurnSnapshot(id)?.turn.userUuid;
+    if (uuid) return uuid;
+  }
+  return undefined;
+}
+
 export function App({ store }: { store: HarnessStore }) {
   const harness = useHarness(store);
 
@@ -45,7 +54,9 @@ export function App({ store }: { store: HarnessStore }) {
   // ancestor of its consumers.
   return (
     <CopyProvider dict={harness.context?.copy}>
-      <AppBody store={store} harness={harness} />
+      <PresentationStateProvider generation={harness.model.generation}>
+        <AppBody store={store} harness={harness} />
+      </PresentationStateProvider>
     </CopyProvider>
   );
 }
@@ -78,6 +89,12 @@ function AppBody({
   const router = useViewRouter(model, copy);
   const view = router.view;
   const rows = useMemo(() => dockRows(model), [model]);
+  // The store replaces this array only when transcript structure changes. Stable
+  // ids let memoized row boundaries ignore every streamed update to another row.
+  const mainTurnIds = store.getTurnIds();
+  const blockedRewindUuid = model.historyTruncated
+    ? firstUserUuid(store, mainTurnIds)
+    : undefined;
   const thread = view.kind === "agent" ? model.agentThreads[view.toolUseId] : undefined;
   /**
    * The relays addressed to the agent on screen. Read from the model rather
@@ -99,8 +116,10 @@ function AppBody({
     contentRef,
     showPill,
     scrollToBottom,
+    correctAnchor,
     isFollowing
   } = useScrollFollow([model.revision, model.turns.length, model.pending.length]);
+  const jumpToLatest = useCallback(() => scrollToBottom(true), [scrollToBottom]);
 
   /**
    * The dock FLOATS over the transcript rather than sitting beside it in the
@@ -320,20 +339,27 @@ function AppBody({
    */
   const openRewind = useCallback(
     (uuid: string) => {
-      const index = model.turns.findIndex((turn) => turn.userUuid === uuid);
+      // Read at click time. Capturing `model.turns` gave this callback a new
+      // identity on every streamed block and invalidated every memoized row.
+      const snapshot = store.getSnapshot();
+      const turns = snapshot.turns;
+      const index = turns.findIndex((turn) => turn.userUuid === uuid);
       if (index < 0) return;
-      const turn = model.turns[index];
+      const turn = turns[index];
       let resumeAtUuid: string | undefined;
       for (let i = index - 1; i >= 0; i -= 1) {
-        if (model.turns[i].userUuid) {
-          resumeAtUuid = model.turns[i].userUuid;
+        if (turns[i].userUuid) {
+          resumeAtUuid = turns[i].userUuid;
           break;
         }
       }
+      // In truncated history an absent predecessor means "off page", not "start
+      // a fresh session". The row is hidden too, but this guards stale clicks.
+      if (snapshot.historyTruncated && resumeAtUuid === undefined) return;
       setRewindNote(undefined);
       setRewindTarget({ uuid, text: turn.userText ?? "", resumeAtUuid });
     },
-    [model.turns]
+    [store]
   );
 
   const confirmRewind = useCallback(
@@ -423,8 +449,9 @@ function AppBody({
             relays={viewRelays}
             scrollRef={scrollRef}
             contentRef={contentRef}
+            generation={model.generation}
             showPill={showPill}
-            onJump={() => scrollToBottom(true)}
+            onJump={jumpToLatest}
             onHydrate={hydrateThread}
           />
         )
@@ -441,12 +468,16 @@ function AppBody({
       ) : (
         <>
         <TranscriptList
-          turns={model.turns}
-          relays={model.relays}
+          turnIds={mainTurnIds}
+          store={store}
           scrollRef={scrollRef}
           contentRef={contentRef}
+          following={isFollowing}
+          onAnchorCorrection={correctAnchor}
+          resetKey={model.generation}
+          blockedRewindUuid={blockedRewindUuid}
           showPill={showPill}
-          onJump={() => scrollToBottom(true)}
+          onJump={jumpToLatest}
           onRewind={openRewind}
           header={
             model.turns.length === 0 ? (

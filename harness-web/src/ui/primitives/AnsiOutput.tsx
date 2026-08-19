@@ -1,43 +1,62 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useCopy } from "../CopyContext";
 import { parseAnsi, stripAnsi } from "../ansi";
+import { usePresentationState } from "../presentationState";
+import { clipAnsiUtf8, lineCount } from "../utf8";
 import { CopyButton } from "./CopyButton";
+
+const PREVIEW_BYTES = 24 * 1024;
 
 export function AnsiOutput({
   text,
   maxLines = 12,
   tone = "default",
-  wrap = false
+  wrap = false,
+  stateKey,
+  streaming = false
 }: {
   text: string;
   maxLines?: number;
   tone?: "default" | "error";
   /**
    * Prose output — a failure message, not a rendered layout — wraps instead of
-   * scrolling sideways. A one-line ENOENT naming a 90-character path is exactly
-   * the string the reader opened the card for, and `pre` puts its second half
-   * behind a horizontal scrollbar. Structured output (aligned compiler
-   * diagnostics, tables) keeps `pre`, where a wrap would shear the columns.
+   * scrolling sideways. Structured output keeps `pre`, where wrapping would
+   * shear aligned diagnostics and tables.
    */
   wrap?: boolean;
+  /** Stable transcript identity used to restore expansion after unmount. */
+  stateKey?: string;
+  /** The payload is still appending; line accounting stays preview-bounded. */
+  streaming?: boolean;
 }) {
   const copy = useCopy();
-  const [expanded, setExpanded] = useState(false);
-  const lines = useMemo(() => parseAnsi(text.replace(/\n+$/, "")), [text]);
-  const clipped = !expanded && lines.length > maxLines;
-  const shown = clipped ? lines.slice(0, maxLines) : lines;
-  const plain = useMemo(() => stripAnsi(text), [text]);
+  const localId = useId();
+  const [expanded, setExpanded] = usePresentationState(
+    `${stateKey ?? `ansi:${localId}`}:expanded`,
+    false
+  );
+  const normalized = text.replace(/\n+$/, "");
+  const preview = useMemo(() => clipAnsiUtf8(normalized, PREVIEW_BYTES), [normalized]);
+  const totalLines = useMemo(
+    () =>
+      streaming && preview.truncated
+        ? lineCount(preview.text) + 1
+        : lineCount(normalized),
+    [normalized, preview, streaming]
+  );
+  const source = expanded ? normalized : preview.text;
+  const parsed = useMemo(
+    () => parseAnsi(source, expanded ? Number.MAX_SAFE_INTEGER : maxLines + 1),
+    [expanded, maxLines, source]
+  );
+  const lineClipped = !expanded && parsed.length > maxLines;
+  const shown = lineClipped ? parsed.slice(0, maxLines) : parsed;
+  const truncated = preview.truncated || totalLines > maxLines;
+  const copyText = useCallback(() => stripAnsi(text), [text]);
 
   const body = useRef<HTMLPreElement>(null);
   const [clippedEnd, setClippedEnd] = useState(false);
 
-  /**
-   * A `pre` line wider than the box is technically scrollable, but with no
-   * scrollbar at rest it reads as truncated-and-lost — the output-file path
-   * simply ends mid-token at the card edge. A soft fade over the clip edge is
-   * the signal that the text continues; it lifts once the reader has scrolled
-   * to the end, so the final characters are never dimmed.
-   */
   useEffect(() => {
     const node = body.current;
     if (!node || wrap) {
@@ -65,19 +84,19 @@ export function AnsiOutput({
   return (
     <div className={`terminal${tone === "error" ? " is-error" : ""}`}>
       <div className="terminal-copy">
-        <CopyButton text={plain} />
+        <CopyButton text={copyText} />
       </div>
       <pre
         className={`terminal-body mono${wrap ? " is-wrapped" : ""}${clippedEnd ? " is-clipped-end" : ""}`}
         ref={body}
       >
-        {shown.map((line, i) => (
-          <div key={i} className="terminal-line">
+        {shown.map((line, lineIndex) => (
+          <div key={lineIndex} className="terminal-line">
             {line.spans.length === 0 ? (
               <span>&nbsp;</span>
             ) : (
-              line.spans.map((span, j) => (
-                <span key={j} className={span.className} style={span.style}>
+              line.spans.map((span, spanIndex) => (
+                <span key={spanIndex} className={span.className} style={span.style}>
                   {span.text}
                 </span>
               ))
@@ -85,11 +104,13 @@ export function AnsiOutput({
           </div>
         ))}
       </pre>
-      {lines.length > maxLines ? (
-        <button type="button" className="terminal-more" onClick={() => setExpanded((v) => !v)}>
+      {truncated ? (
+        <button type="button" className="terminal-more" onClick={() => setExpanded((value) => !value)}>
           {expanded
             ? copy("supermux.harness.tool.showLess")
-            : copy("supermux.harness.tool.showMore", { count: lines.length - maxLines })}
+            : copy("supermux.harness.tool.showMore", {
+                count: Math.max(1, totalLines - maxLines)
+              })}
         </button>
       ) : null}
     </div>

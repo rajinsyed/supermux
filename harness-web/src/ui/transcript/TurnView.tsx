@@ -1,9 +1,14 @@
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { hasLiveBackgroundWork } from "../../model/tasks";
 import type { Block, RelayRecord, Turn } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
 import { Check, ChevronDown, ChevronRight, ChevronUp, XCircle } from "../Icons";
 import { formatDuration } from "../format";
+import {
+  usePresentationOverride,
+  usePresentationState,
+  useWasLiveKeys
+} from "../presentationState";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
 import { WorkingDots } from "../primitives/Spinner";
@@ -70,7 +75,7 @@ function isLive(block: Block): boolean {
 function hiddenWhileStreaming(
   work: Block[],
   settled: boolean,
-  wasLive: Set<string>
+  wasLive: ReadonlySet<string>
 ): boolean[] {
   if (settled || work.length <= LIVE_TAIL) return work.map(() => false);
   const keepFrom = work.length - LIVE_TAIL;
@@ -86,14 +91,25 @@ function hiddenWhileStreaming(
 
 export const TurnView = memo(function TurnView({
   turn,
+  position,
+  total,
+  generation = 0,
   onRewind,
+  onFoldChange,
   relay
 }: {
   turn: Turn;
   /** Kept for caller compatibility; folding no longer exempts the last turn. */
   isLast?: boolean;
+  /** Absolute position metadata for screen readers in a virtualized log. */
+  position?: number;
+  total?: number;
+  /** Conversation generation disambiguating reused wire block identities. */
+  generation?: number;
   /** Given the turn's user-message uuid; absent when the pane cannot rewind. */
   onRewind?: (uuid: string) => void;
+  /** Shared reducer action in production; direct renders use pane UI state. */
+  onFoldChange?: (folded: boolean) => void;
   /**
    * This turn carries a message the user addressed to an AGENT, which the pane
    * routed through main. It is not a conversation with Claude, so it does not
@@ -102,50 +118,44 @@ export const TurnView = memo(function TurnView({
   relay?: RelayRecord;
 }) {
   const copy = useCopy();
-  const [override, setOverride] = useState<boolean | undefined>(undefined);
-  const [showEarlier, setShowEarlier] = useState(false);
+  const [localFoldOverride, setLocalFoldOverride] = usePresentationOverride(
+    `turn:${turn.id}:fold`
+  );
+  const [showEarlier, setShowEarlier] = usePresentationState(
+    `turn:${turn.id}:streaming-overflow`,
+    false
+  );
+  const [rememberedHold, setRememberedHold] = usePresentationState(
+    `turn:${turn.id}:reader-hold`,
+    false
+  );
   const { work, tail } = useMemo(() => splitBlocks(turn), [turn.blocks]);
 
   const settled = turn.state !== "streaming";
   /**
-   * Something inside this turn is open because the reader opened it — a workflow
-   * card, a subagent drill-in, a log strip, an output tail. The automatic fold
-   * (the `result`, or a background task settling minutes later) is a
-   * housekeeping convenience and loses to that: a turn that sweeps the reader's
-   * open disclosures behind "6 earlier tool calls" while they are reading them
-   * is the worst thing this pane can do with a scroll position.
-   *
-   * Their OWN click on the fold header still wins — `override` is checked first
-   * — so the affordance never stops working; only the automatic sweep defers.
+   * Something inside this turn is open because the reader opened it. Automatic
+   * folding yields to that choice, while an explicit click on the turn header
+   * remains authoritative in either direction.
    */
   const { held, Provider: FoldGuardProvider } = useFoldGuardHost();
-  // The just-finished turn folds its work tree the moment it settles — the
-  // answer is what remains on screen, the way Cursor collapses a finished run.
-  const folded = override ?? (settled && turn.folded && work.length > 0 && !held);
-  /**
-   * A turn that has been ON SCREEN unfolded keeps its work tree mounted through
-   * a later fold (hidden by class), so the reader's expanded disclosures and
-   * scroll positions inside it survive. A turn that mounts already-folded —
-   * history replay, the virtualized scrollback window — skips the render
-   * entirely until first opened: a 200-turn session must not mount every card
-   * it will never show.
-   */
-  const everOpen = useRef(!folded);
-  if (!folded) everOpen.current = true;
-  const renderWork = everOpen.current;
-  /**
-   * Every block that has run at some point in this turn. Written during render
-   * on purpose — it is derived from the blocks being rendered right now, and an
-   * effect would run a frame LATE, which is exactly the frame in which a stopped
-   * card would vanish.
-   */
-  const wasLive = useRef<Set<string>>(new Set());
-  for (const block of work) {
-    if (isLive(block)) wasLive.current.add(block.key);
-  }
+  useEffect(() => {
+    if (held !== rememberedHold) setRememberedHold(held);
+  }, [held, rememberedHold, setRememberedHold]);
+  const explicitFold = onFoldChange ? turn.foldOverride : localFoldOverride;
+  const folded =
+    work.length > 0 &&
+    (explicitFold === true ||
+      (explicitFold !== false && settled && turn.folded && !held && !rememberedHold));
+
+  const currentLiveKeys = useMemo(
+    () => work.filter(isLive).map((block) => block.key),
+    [work]
+  );
+  const reachableWorkKeys = useMemo(() => work.map((block) => block.key), [work]);
+  const wasLive = useWasLiveKeys(turn.id, currentLiveKeys, reachableWorkKeys);
   const hidden = useMemo(
-    () => hiddenWhileStreaming(work, settled, wasLive.current),
-    [work, settled]
+    () => hiddenWhileStreaming(work, settled, wasLive),
+    [work, settled, wasLive]
   );
   const earlierCount = useMemo(() => {
     const earlier = work.filter((_, i) => hidden[i]);
@@ -174,7 +184,12 @@ export const TurnView = memo(function TurnView({
         : copy("supermux.harness.turn.workedFor", { duration: durationText });
 
   return (
-    <article className={`turn is-${turn.state}${relay ? " is-relay" : ""}`} data-turn-id={turn.id}>
+    <article
+      className={`turn is-${turn.state}${relay ? " is-relay" : ""}`}
+      data-turn-id={turn.id}
+      aria-posinset={position}
+      aria-setsize={total}
+    >
       {relay ? (
         <RelayChip relay={relay} />
       ) : turn.command ? (
@@ -191,6 +206,7 @@ export const TurnView = memo(function TurnView({
         <UserMessage
           text={turn.userText}
           images={turn.userImages}
+          stateKey={`turn:${turn.id}:user`}
           onRewind={
             onRewind && turn.userUuid ? () => onRewind(turn.userUuid as string) : undefined
           }
@@ -203,7 +219,7 @@ export const TurnView = memo(function TurnView({
             {/* One button slot for both states: the settled fold header and the
                 streaming overflow expander swap PROPS on the same element, so
                 settling never rebuilds the sibling work tree below. */}
-            {settled ? (
+            {settled || folded ? (
               /**
                * The settled turn's summary row: "Worked for 2m 30s", and
                * nothing else.
@@ -232,10 +248,24 @@ export const TurnView = memo(function TurnView({
               <button
                 type="button"
                 className={`fold-head${folded ? " is-folded" : ""}`}
-                onClick={() => setOverride(!folded)}
+                onClick={() => {
+                  const next = !folded;
+                  if (onFoldChange) onFoldChange(next);
+                  else setLocalFoldOverride(next);
+                }}
                 aria-expanded={!folded}
               >
-                <span className="fold-label">{foldLabel}</span>
+                <span className="fold-label">
+                  {settled ? (
+                    foldLabel
+                  ) : (
+                    <Elapsed
+                      className="tnum"
+                      startedAtMs={turn.startedAtMs}
+                      prefix={`${copy("supermux.harness.status.workingFor", { duration: "" }).trim()} `}
+                    />
+                  )}
+                </span>
                 {/* Not a nested button — a button inside a button is invalid and
                     unfocusable. It is the row's own trailing glyph: bare, with
                     no bed of its own, because the row it sits on is a sentence
@@ -262,38 +292,25 @@ export const TurnView = memo(function TurnView({
                 </span>
               </button>
             ) : null}
-            {/* ONE work tree for the turn's whole life. Every block keeps the
-                same parent and key from its first frame to the fold, so a turn
-                settling — or a block moving out of the streaming overflow — is a
-                prop change and a Disclosure animation, never a remount. An
-                expanded subagent drill-in, workflow log strip, or scrolled
-                transcript therefore survives the streaming→complete edge intact,
-                and folding hides via a class rather than unmounting so a reader
-                who walks away finds everything exactly where they left it. */}
-            <div className={`turn-work${folded ? " is-folded" : ""}`}>
-              <FoldGuardProvider>
-                {renderWork &&
-                  work.map((block, i) => (
+            {/* Streaming overflow keeps one stable tree while the turn is live.
+                A completed or explicitly closed fold unmounts it completely;
+                reader choices below are restored from the pane presentation store. */}
+            {!folded ? (
+              <div className="turn-work">
+                <FoldGuardProvider>
+                  {work.map((block, i) => (
                     <Disclosure
                       key={block.key}
-                      // Streaming overflow hides a block until "N earlier tool
-                      // calls" reveals it; at settle every block eases open.
                       open={!hidden[i] || showEarlier}
-                      // `keepMounted` is what makes the whole tree stable: a card
-                      // sliding into the overflow, or easing open at settle, is
-                      // the SAME mounted subtree changing visibility — its open
-                      // drill-ins and scroll positions ride along.
                       keepMounted
                       className={hidden[i] ? "turn-work-hidden" : "turn-work-item"}
                     >
-                      {/* Marked live while it is the visible tail of a streaming
-                          turn: that row must not auto-size and drag the settled
-                          transcript above it. */}
-                      <BlockView block={block} live={!settled && !hidden[i]} />
+                      <BlockView block={block} live={!settled && !hidden[i]} generation={generation} />
                     </Disclosure>
                   ))}
-              </FoldGuardProvider>
-            </div>
+                </FoldGuardProvider>
+              </div>
+            ) : null}
           </>
         ) : null}
 
@@ -310,18 +327,19 @@ export const TurnView = memo(function TurnView({
               {copy("supermux.harness.relay.ack")}
             </div>
           ) : (
-            <BlockView key={block.key} block={block} />
+            <BlockView key={block.key} block={block} generation={generation} />
           )
         )}
 
-        {turn.state === "streaming" ? (
+        {turn.state === "streaming" && !folded ? (
           <div className="turn-live">
-            <WorkingDots />
-            <Elapsed
-              className="turn-live-label tnum"
-              startedAtMs={turn.startedAtMs}
-              prefix={`${copy("supermux.harness.status.workingFor", { duration: "" }).trim()} `}
-            />
+            <WorkingDots>
+              <Elapsed
+                className="turn-live-label tnum"
+                startedAtMs={turn.startedAtMs}
+                prefix={`${copy("supermux.harness.status.workingFor", { duration: "" }).trim()} `}
+              />
+            </WorkingDots>
           </div>
         ) : null}
 

@@ -31,7 +31,8 @@ export function CopyButton({
   className,
   label
 }: {
-  text: string;
+  /** A getter avoids materializing large sanitized copies until the click. */
+  text: string | (() => string);
   className?: string;
   label?: string;
 }) {
@@ -55,7 +56,8 @@ export function CopyButton({
   const onClick = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
-      void writeClipboard(text).then((ok) => {
+      const value = typeof text === "function" ? text() : text;
+      void writeClipboard(value).then((ok) => {
         if (!alive.current) return;
         setCopied(ok);
         setFailed(!ok);

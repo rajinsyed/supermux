@@ -22,9 +22,27 @@ export interface ViewRouter {
  * popped the view anyway would close a dialog AND leave the agent view in one
  * press.
  */
+function pruneStack(stack: HarnessView[], model: TranscriptModel): HarnessView[] {
+  const pruned = stack.filter((entry) => {
+    if (entry.kind === "agent") return model.agentThreads[entry.toolUseId] !== undefined;
+    if (entry.kind === "workflow" || entry.kind === "shell") {
+      return model.tasksById[entry.taskId] !== undefined;
+    }
+    return true;
+  });
+  if (pruned.length === stack.length) return stack;
+  return pruned.length === 0 ? createStack() : pruned;
+}
+
 export function useViewRouter(model: TranscriptModel, copy: CopyFn): ViewRouter {
   const [stack, setStack] = useState<HarnessView[]>(createStack);
-  const view = activeView(stack);
+  // Prune for THIS render. The synchronization effect below makes it durable,
+  // but no committed frame may point at a subject rewind/reset already removed.
+  const effectiveStack = useMemo(
+    () => pruneStack(stack, model),
+    [model.agentThreads, model.tasksById, stack]
+  );
+  const view = activeView(effectiveStack);
 
   const open = useCallback((next: HarnessView) => {
     setStack((current) => pushView(current, next));
@@ -45,18 +63,9 @@ export function useViewRouter(model: TranscriptModel, copy: CopyFn): ViewRouter 
    * PARENT workflow vanished still returns somewhere sensible.
    */
   useEffect(() => {
-    setStack((current) => {
-      const pruned = current.filter((entry) => {
-        if (entry.kind === "agent") return model.agentThreads[entry.toolUseId] !== undefined;
-        if (entry.kind === "workflow" || entry.kind === "shell") {
-          return model.tasksById[entry.taskId] !== undefined;
-        }
-        return true;
-      });
-      if (pruned.length === current.length) return current;
-      return pruned.length === 0 ? createStack() : pruned;
-    });
-  }, [model.agentThreads, model.tasksById]);
+    if (effectiveStack === stack) return;
+    setStack(effectiveStack);
+  }, [effectiveStack, stack]);
 
   /**
    * The current depth, readable SYNCHRONOUSLY from the Escape handler.
@@ -67,8 +76,8 @@ export function useViewRouter(model: TranscriptModel, copy: CopyFn): ViewRouter 
    * updater runs before the listener returns, and when it did not, Escape on an
    * agent view fell through to the composer's interrupt as well as navigating.
    */
-  const depth = useRef(stack.length);
-  depth.current = stack.length;
+  const depth = useRef(effectiveStack.length);
+  depth.current = effectiveStack.length;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -113,7 +122,7 @@ export function useViewRouter(model: TranscriptModel, copy: CopyFn): ViewRouter 
   );
 
   return useMemo(
-    () => ({ stack, view, open, back, labelFor }),
-    [back, labelFor, open, stack, view]
+    () => ({ stack: effectiveStack, view, open, back, labelFor }),
+    [back, effectiveStack, labelFor, open, view]
   );
 }

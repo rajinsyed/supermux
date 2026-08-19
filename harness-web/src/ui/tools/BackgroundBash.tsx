@@ -8,6 +8,7 @@ import { formatCompactDuration } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Spinner } from "../primitives/Spinner";
 import { useDismissible } from "../primitives/useDismissible";
+import { usePresentationState } from "../presentationState";
 import { useFoldHold } from "../transcript/foldGuard";
 import { TaskOutputView } from "./TaskOutput";
 
@@ -96,7 +97,10 @@ export function backgroundBashBadges(block: ToolBlock, copy: CopyFn): ReactNode[
  */
 export function BackgroundBashStrip({ block }: { block: ToolBlock }) {
   const copy = useCopy();
-  const [openOutput, setOpenOutput] = useState(false);
+  const [openOutput, setOpenOutput] = usePresentationState(
+    `block:${block.key}:background-output`,
+    false
+  );
   const [busy, setBusy] = useState<"move" | "stop" | undefined>(undefined);
   const [error, setError] = useState<CopyKey | undefined>(undefined);
   // Escape closes the tail, through the one contract all three inline drill-ins
@@ -214,7 +218,7 @@ export function BackgroundBashStrip({ block }: { block: ToolBlock }) {
       {error ? <div className="bash-bg-error">{copy(error)}</div> : null}
       {background && taskId ? (
         <Disclosure open={openOutput}>
-          <TaskOutputView taskId={taskId} running={taskRunning} />
+          <TaskOutputView taskId={taskId} running={taskRunning} presented={openOutput} />
         </Disclosure>
       ) : null}
       {summary ? <div className="bash-bg-summary">{summary}</div> : null}

@@ -306,6 +306,7 @@ function applyToolResult(
   const subagent = subagentFromResult(found.block.subagent, structured, status);
   const nextBlock: ToolBlock = {
     ...found.block,
+    partialInput: undefined,
     status,
     streaming: false,
     inputComplete: true,

@@ -38,6 +38,7 @@ function ResultText({ block }: { block: ToolBlock }) {
       text={text}
       tone={error ? "error" : "default"}
       maxLines={14}
+      stateKey={`block:${block.key}:result`}
       // A failure is prose (`ENOENT … open '/very/long/path'`); wrapping it keeps
       // the path on screen. Non-error text may be aligned output, so it scrolls.
       wrap={error}
@@ -81,14 +82,37 @@ export function BashBody({ block }: { block: ToolBlock }) {
   const body = stdout ?? (stderr ? "" : output);
   return (
     <div className="tool-body">
-      {command ? <CodeBlock code={command} language="bash" dense maxLines={10} /> : null}
+      {command ? (
+        <CodeBlock
+          code={command}
+          language="bash"
+          dense
+          maxLines={10}
+          stateKey={`block:${block.key}:command`}
+        />
+      ) : null}
       {block.status === "running" && !body && !stderr ? (
         <div className="tool-waiting mono">{copy("supermux.harness.tool.running")}…</div>
       ) : null}
-      {body !== undefined && body.length > 0 ? <AnsiOutput text={body} /> : null}
-      {stderr && stderr.length > 0 ? <AnsiOutput text={stderr} tone="error" maxLines={10} /> : null}
+      {body !== undefined && body.length > 0 ? (
+        <AnsiOutput text={body} stateKey={`block:${block.key}:stdout`} streaming={block.streaming} />
+      ) : null}
+      {stderr && stderr.length > 0 ? (
+        <AnsiOutput
+          text={stderr}
+          tone="error"
+          maxLines={10}
+          stateKey={`block:${block.key}:stderr`}
+          streaming={block.streaming}
+        />
+      ) : null}
       {!body && !stderr && block.status !== "running" && output.length > 0 ? (
-        <AnsiOutput text={output} tone={block.status === "error" ? "error" : "default"} />
+        <AnsiOutput
+          text={output}
+          tone={block.status === "error" ? "error" : "default"}
+          stateKey={`block:${block.key}:output`}
+          streaming={block.streaming}
+        />
       ) : null}
     </div>
   );
@@ -126,8 +150,24 @@ export function EditBody({ block }: { block: ToolBlock }) {
     if (oldText || newText) {
       return (
         <div className="tool-body">
-          {oldText ? <CodeBlock code={oldText} language={language} dense maxLines={8} /> : null}
-          {newText ? <CodeBlock code={newText} language={language} dense maxLines={8} /> : null}
+          {oldText ? (
+            <CodeBlock
+              code={oldText}
+              language={language}
+              dense
+              maxLines={8}
+              stateKey={`block:${block.key}:old`}
+            />
+          ) : null}
+          {newText ? (
+            <CodeBlock
+              code={newText}
+              language={language}
+              dense
+              maxLines={8}
+              stateKey={`block:${block.key}:new`}
+            />
+          ) : null}
           <ErrorText block={block} />
           <OpenFile path={path} />
         </div>
@@ -137,7 +177,7 @@ export function EditBody({ block }: { block: ToolBlock }) {
   }
   return (
     <div className="tool-body">
-      <DiffView hunks={hunks} language={language} />
+      <DiffView hunks={hunks} language={language} stateKey={`block:${block.key}:diff`} />
       <ErrorText block={block} />
       <OpenFile path={path} />
     </div>
@@ -151,7 +191,7 @@ export function WriteBody({ block }: { block: ToolBlock }) {
   if (hunks.length > 0) {
     return (
       <div className="tool-body">
-        <DiffView hunks={hunks} language={language} />
+        <DiffView hunks={hunks} language={language} stateKey={`block:${block.key}:diff`} />
         <ErrorText block={block} />
         <OpenFile path={path} />
       </div>
@@ -161,7 +201,13 @@ export function WriteBody({ block }: { block: ToolBlock }) {
   if (!content) return <ResultFallback block={block} />;
   return (
     <div className="tool-body">
-      <CodeBlock code={content} language={language} filename={path ? shortenPath(path, 2) : undefined} maxLines={18} />
+      <CodeBlock
+        code={content}
+        language={language}
+        filename={path ? shortenPath(path, 2) : undefined}
+        maxLines={18}
+        stateKey={`block:${block.key}:content`}
+      />
       <ErrorText block={block} />
       <OpenFile path={path} />
     </div>
@@ -180,6 +226,7 @@ export function ReadBody({ block }: { block: ToolBlock }) {
         language={languageForPath(path)}
         filename={path ? shortenPath(path, 2) : undefined}
         maxLines={16}
+        stateKey={`block:${block.key}:content`}
       />
       <ErrorText block={block} />
       <OpenFile path={path} />
@@ -233,7 +280,7 @@ export function WebBody({ block }: { block: ToolBlock }) {
   if (block.status === "error") return <ResultFallback block={block} />;
   return (
     <div className="tool-body">
-      <Markdown text={text.slice(0, 4000)} />
+      <Markdown text={text.slice(0, 4000)} stateKey={`block:${block.key}:web`} />
     </div>
   );
 }
@@ -264,7 +311,7 @@ export function InteractiveBody({ block }: { block: ToolBlock }) {
   if (plan) {
     return (
       <div className="tool-body">
-        <Markdown text={plan} />
+        <Markdown text={plan} stateKey={`block:${block.key}:plan`} />
         <ErrorText block={block} />
       </div>
     );
@@ -315,8 +362,23 @@ export function McpBody({ block }: { block: ToolBlock }) {
   return (
     <div className="tool-body">
       {server ? <div className="mcp-server">{copy("supermux.harness.tool.mcpServer", { server })}</div> : null}
-      {input !== "{}" ? <CodeBlock code={input} language="json" dense maxLines={12} /> : null}
-      {output ? <AnsiOutput text={output} maxLines={14} tone={block.status === "error" ? "error" : "default"} /> : null}
+      {input !== "{}" ? (
+        <CodeBlock
+          code={input}
+          language="json"
+          dense
+          maxLines={12}
+          stateKey={`block:${block.key}:input`}
+        />
+      ) : null}
+      {output ? (
+        <AnsiOutput
+          text={output}
+          maxLines={14}
+          tone={block.status === "error" ? "error" : "default"}
+          stateKey={`block:${block.key}:output`}
+        />
+      ) : null}
     </div>
   );
 }
@@ -332,13 +394,24 @@ export function GenericBody({ block }: { block: ToolBlock }) {
       {input !== "{}" ? (
         <>
           <div className="tool-section-label">{copy("supermux.harness.tool.rawInput")}</div>
-          <CodeBlock code={input} language="json" dense maxLines={12} />
+          <CodeBlock
+            code={input}
+            language="json"
+            dense
+            maxLines={12}
+            stateKey={`block:${block.key}:input`}
+          />
         </>
       ) : null}
       {output ? (
         <>
           <div className="tool-section-label">{copy("supermux.harness.tool.rawOutput")}</div>
-          <AnsiOutput text={output} maxLines={14} tone={block.status === "error" ? "error" : "default"} />
+          <AnsiOutput
+            text={output}
+            maxLines={14}
+            tone={block.status === "error" ? "error" : "default"}
+            stateKey={`block:${block.key}:output`}
+          />
         </>
       ) : null}
       {input === "{}" && !output ? (

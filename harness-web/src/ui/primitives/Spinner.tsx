@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 /**
  * The pane's working marks — three of them, and the differences are the point.
  *
@@ -14,14 +16,13 @@
  *     travelling head is the honest shape for "waiting on one thing".
  *
  *   • PULSE (`WorkingDots`) — no glyph at all. The turn-level state is ambient
- *     and its own label already says everything ("Working for 54s"), so the
- *     animation lands on the WORDS (the sheen sweep in cards.css, keyed off
- *     this element's presence) with a soft accent tick keeping time after them.
+ *     and its own label already says everything ("Working for 54s"), so those
+ *     words carry a compositor-only opacity/transform pulse.
  *
  *   • GRID (`WorkingGlyph`) — a 3×3 pixel grid. Delegated work: a subagent's
  *     comet laps the grid's perimeter (`orbit`), a workflow's chevron
  *     wavefront drives right (`drive`), so even the two kinds of delegation
- *     stay distinct. The row's name sheens at a slower tempo than the turn's.
+ *     stay distinct. The row name breathes at a slower tempo than the turn's.
  *
  * Every one is transform/opacity only and honours prefers-reduced-motion.
  *
@@ -49,14 +50,25 @@ export function Spinner({ size = 12, className }: { size?: number; className?: s
 }
 
 /**
- * The turn's streaming mark. It draws NOTHING: the live row's own label carries
- * the animation (the `.turn-live .working-dots + .turn-live-label` sheen), and
- * this element is the anchor that rule selects on. Rendering a glyph here is
- * what made the turn state indistinguishable from a running tool row.
+ * The turn's streaming mark has no abstract glyph. It wraps the status words so
+ * those words can carry a compositor-only pulse. The empty slot is retained for
+ * isolated callers and keeps the primitive's DOM contract observable without
+ * bringing back a stack of decorative dots.
  */
-export function WorkingDots({ className }: { className?: string }) {
+export function WorkingDots({
+  className,
+  children
+}: {
+  className?: string;
+  children?: ReactNode;
+}) {
   return (
-    <span className={`working-dots${className ? ` ${className}` : ""}`} aria-hidden="true" />
+    <span
+      className={`working-dots${className ? ` ${className}` : ""}`}
+      aria-hidden={children === undefined ? true : undefined}
+    >
+      {children ?? <span className="working-status-slot" />}
+    </span>
   );
 }
 

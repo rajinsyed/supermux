@@ -112,41 +112,38 @@ describe("each kind of waiting has its own motion", () => {
     expect(orbit.container.querySelector(".orbit")).not.toBeNull();
     expect(delegated.container.querySelector(".dock-glyph.pxgrid")).not.toBeNull();
 
-    // The turn's mark draws NO glyph: its label carries the animation, which is
-    // the whole reason it no longer collides with a tool row's indicator.
+    // The turn mark has one status-text slot and zero dot glyphs. The slot keeps
+    // the unchanged primitive observable in isolation; production fills it with
+    // the readable elapsed label.
     const anchor = turn.container.querySelector(".working-dots")!;
-    expect(anchor.children.length).toBe(0);
+    expect(anchor.querySelectorAll("i")).toHaveLength(0);
+    expect(anchor.querySelector(".working-status-slot")).not.toBeNull();
   });
 
   test("the turn-level mark is the label, and ONLY the label", async () => {
-    // Round 7's item 5. Round 6 trailed the sweeping sentence with a small
-    // accent tick; with the words already sweeping, that is two animations
-    // saying one thing, and at 4px beside 12px type it read as a stray bullet
-    // rather than as a caret. The sweep IS the mark — which is the whole claim
-    // of the round-6 split, and the tick was the last part of it still drawing
-    // a glyph.
-    const sheet = await rules("transcript.css");
-    // The sweep is declared in cards.css (which this change does not own); what
-    // transcript.css owns is the anchor collapsing to nothing.
-    expect(/\.turn-live\s\.working-dots\s*\{([^}]*)\}/.exec(sheet)![1]).toMatch(/width:\s*0/);
-    // No glyph after the words, and no dead keyframe left behind driving one.
-    expect(sheet).not.toMatch(/\.turn-live-label::(?:after|before)\s*\{/);
-    expect(sheet).not.toMatch(/@keyframes turn-tick/);
-    expect(sheet).not.toContain("animation: turn-tick");
-    // The label itself is still the plain ink the sweep paints over.
-    expect(/\n\.turn-live-label\s*\{([^}]*)\}/.exec(sheet)![1]).toMatch(/color:\s*var\(--text/);
+    const base = settledTurn();
+    const live = { ...base, state: "streaming" as const, endedAtMs: undefined };
+    const { container } = mount(<TurnView turn={live} isLast />);
+    const mark = container.querySelector(".turn-live .working-dots")!;
+    expect(mark.querySelectorAll("i")).toHaveLength(0);
+    expect(mark.querySelector(".turn-live-label")?.textContent).toContain("Working for");
+
+    const transcript = await rules("transcript.css");
+    expect(transcript).not.toMatch(/\.turn-live-label::(?:after|before)\s*\{/);
+    expect(transcript).not.toMatch(/@keyframes turn-tick/);
+    const cards = await rules("cards.css");
+    expect(cards).toContain(".turn-live .working-dots > .turn-live-label");
+    expect(cards).not.toContain("background-clip: text");
   });
 
-  test("delegated rows breathe, and their names sweep SLOWER than the turn's", async () => {
-    // Two sheens at the same tempo are one effect wearing two labels, which is
-    // the round-5 state this item exists to undo. The gap is the design.
+  test("delegated rows breathe more slowly than the turn status", async () => {
     const agents = await css("agents.css");
     const cards = await css("cards.css");
     const rowTempo = Number(
-      /\.dock-glyph \+ \.dock-label,[\s\S]*?animation: sheen-sweep ([\d.]+)s/.exec(agents)![1]
+      /\.dock-glyph \+ \.dock-label,[\s\S]*?animation: status-breathe ([\d.]+)s/.exec(agents)![1]
     );
     const turnTempo = Number(
-      /\.turn-live \.working-dots \+ \.turn-live-label\s*\{[\s\S]*?animation: sheen-sweep ([\d.]+)s/.exec(
+      /\.turn-live \.working-dots > \.turn-live-label\s*\{[\s\S]*?animation: status-breathe ([\d.]+)s/.exec(
         cards
       )![1]
     );
@@ -188,9 +185,9 @@ describe("each kind of waiting has its own motion", () => {
     // Anything that animates a layout property makes the transcript reflow at
     // 60fps while a turn streams — the class of bug this pane has already paid
     // for twice.
-    const sheet = await css("base.css");
-    for (const name of ["orbit-travel", "pixel-on"]) {
-      const frames = new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(sheet)![1];
+    const sheets = `${await css("base.css")}\n${await css("cards.css")}`;
+    for (const name of ["orbit-travel", "pixel-on", "status-breathe"]) {
+      const frames = new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(sheets)![1];
       const properties = [...frames.matchAll(/([a-z-]+):\s*[^;]+;/g)].map((m) => m[1]);
       expect(properties.length).toBeGreaterThan(0);
       for (const property of properties) {
@@ -217,6 +214,10 @@ describe("each kind of waiting has its own motion", () => {
     // gauge, which is what a static spinner ought to be.
     expect(declared).toContain(".orbit::before");
     expect(sheet).toMatch(/animation-duration:\s*0\.001ms\s*!important/);
+    const cards = await css("cards.css");
+    const statusRest = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/.exec(cards)![1];
+    expect(statusRest).toContain("animation-name: none");
+    expect(statusRest).toContain("opacity: 1");
   });
 });
 

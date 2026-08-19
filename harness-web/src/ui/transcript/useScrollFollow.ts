@@ -101,6 +101,20 @@ export function useScrollFollow(deps: unknown[]) {
   }, []);
 
   /**
+   * Virtual-window anchor transaction. Row replacement changes scrollHeight and
+   * then restores the measured row under the reader; updating all three readings
+   * together prevents that programmatic correction from masquerading as a wheel
+   * gesture in the next scroll event.
+   */
+  const correctAnchor = useCallback((delta: number) => {
+    const target = ref.current;
+    if (!target || !Number.isFinite(delta) || Math.abs(delta) < 0.5) return;
+    target.scrollTop += delta;
+    lastTop.current = target.scrollTop;
+    lastHeight.current = target.scrollHeight;
+  }, []);
+
+  /**
    * A freshly mounted scroller starts at the bottom, following.
    *
    * Opening an agent view is a new place, not a continuation of wherever the
@@ -227,5 +241,12 @@ export function useScrollFollow(deps: unknown[]) {
     return () => observer.disconnect();
   }, [atBottom, content, node, pin]);
 
-  return { ref, contentRef, showPill, scrollToBottom, isFollowing: following };
+  return {
+    ref,
+    contentRef,
+    showPill,
+    scrollToBottom,
+    correctAnchor,
+    isFollowing: following
+  };
 }

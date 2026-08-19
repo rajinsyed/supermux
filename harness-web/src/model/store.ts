@@ -1,18 +1,27 @@
 import type { NativeEvent } from "../protocol/types";
 import { applyEvents, applyLocalAction, createIndex, createModel } from "./transcript";
-import type { LocalAction, TranscriptModel, Turn } from "./types";
+import type { LocalAction, RelayRecord, TranscriptModel, Turn } from "./types";
 
 type Listener = () => void;
+type ScheduledDrain = { kind: "animationFrame" | "timeout"; id: number };
+
+export interface TurnSnapshot {
+  turn: Turn;
+  relay?: RelayRecord;
+}
 
 export class HarnessStore {
   private model: TranscriptModel = createModel();
   private index = createIndex();
   private queue: NativeEvent[] = [];
-  private frame = 0;
+  private scheduled: ScheduledDrain | undefined;
   private rootListeners = new Set<Listener>();
   private turnListeners = new Map<string, Set<Listener>>();
   private lastTurnRevisions = new Map<string, number>();
+  private lastRelaysByTurn = new Map<string, RelayRecord | undefined>();
   private lastTurnIds: string[] = [];
+  private turnsById = new Map<string, Turn>();
+  private turnSnapshots = new Map<string, TurnSnapshot>();
 
   getSnapshot = (): TranscriptModel => this.model;
 
@@ -38,8 +47,12 @@ export class HarnessStore {
     };
   };
 
-  getTurn = (turnId: string): Turn | undefined =>
-    this.model.turns.find((turn) => turn.id === turnId);
+  getTurn = (turnId: string): Turn | undefined => this.turnsById.get(turnId);
+
+  getTurnIds = (): readonly string[] => this.lastTurnIds;
+
+  getTurnSnapshot = (turnId: string): TurnSnapshot | undefined =>
+    this.turnSnapshots.get(turnId);
 
   receive = (events: NativeEvent[]): void => {
     if (events.length === 0) return;
@@ -53,23 +66,31 @@ export class HarnessStore {
   };
 
   flushNow = (): void => {
-    if (this.frame) {
-      cancelAnimationFrame(this.frame);
-      this.frame = 0;
+    const scheduled = this.scheduled;
+    this.scheduled = undefined;
+    if (scheduled?.kind === "animationFrame") {
+      globalThis.cancelAnimationFrame?.(scheduled.id);
+    } else if (scheduled?.kind === "timeout") {
+      globalThis.clearTimeout(scheduled.id);
     }
     this.drain();
   };
 
   private schedule(): void {
-    if (this.frame) return;
-    const raf =
-      typeof requestAnimationFrame === "function"
-        ? requestAnimationFrame
-        : (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 16) as unknown as number;
-    this.frame = raf(() => {
-      this.frame = 0;
+    if (this.scheduled) return;
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      const id = globalThis.requestAnimationFrame(() => {
+        this.scheduled = undefined;
+        this.drain();
+      });
+      this.scheduled = { kind: "animationFrame", id };
+      return;
+    }
+    const id = globalThis.setTimeout(() => {
+      this.scheduled = undefined;
       this.drain();
-    }) as unknown as number;
+    }, 16) as unknown as number;
+    this.scheduled = { kind: "timeout", id };
   }
 
   private drain(): void {
@@ -83,20 +104,44 @@ export class HarnessStore {
   private notify(): void {
     const ids = this.model.turns.map((turn) => turn.id);
     const structureChanged =
-      ids.length !== this.lastTurnIds.length || ids.some((id, i) => id !== this.lastTurnIds[i]);
+      ids.length !== this.lastTurnIds.length ||
+      ids.some((id, index) => id !== this.lastTurnIds[index]);
+    const nextTurnsById = new Map<string, Turn>();
+    const nextSnapshots = new Map<string, TurnSnapshot>();
+    const changedIds: string[] = [];
+
     for (const turn of this.model.turns) {
-      const previous = this.lastTurnRevisions.get(turn.id);
-      if (previous === turn.revision) continue;
+      nextTurnsById.set(turn.id, turn);
+      const relay = turn.userUuid ? this.model.relays[turn.userUuid] : undefined;
+      const revisionChanged = this.lastTurnRevisions.get(turn.id) !== turn.revision;
+      const relayChanged = this.lastRelaysByTurn.get(turn.id) !== relay;
+      const previousSnapshot = this.turnSnapshots.get(turn.id);
+      nextSnapshots.set(
+        turn.id,
+        !revisionChanged && !relayChanged && previousSnapshot
+          ? previousSnapshot
+          : { turn, relay }
+      );
       this.lastTurnRevisions.set(turn.id, turn.revision);
-      const listeners = this.turnListeners.get(turn.id);
-      if (!listeners) continue;
-      for (const listener of listeners) listener();
+      this.lastRelaysByTurn.set(turn.id, relay);
+      if (revisionChanged || relayChanged) changedIds.push(turn.id);
     }
+
+    // Publish snapshots before listeners run: useSyncExternalStore reads them
+    // synchronously from inside the notification.
+    this.turnsById = nextTurnsById;
+    this.turnSnapshots = nextSnapshots;
+    for (const id of changedIds) {
+      for (const listener of this.turnListeners.get(id) ?? []) listener();
+    }
+
     if (structureChanged) {
       this.lastTurnIds = ids;
       const live = new Set(ids);
       for (const id of this.lastTurnRevisions.keys()) {
-        if (!live.has(id)) this.lastTurnRevisions.delete(id);
+        if (live.has(id)) continue;
+        this.lastTurnRevisions.delete(id);
+        this.lastRelaysByTurn.delete(id);
       }
     }
     for (const listener of this.rootListeners) listener();

@@ -50,7 +50,7 @@ function NoticeView({ block }: { block: Extract<Block, { kind: "notice" }> }) {
       <Icon size={13} className="notice-icon" />
       <div className="notice-body">
         {title ? <div className="notice-title">{title}</div> : null}
-        <Markdown text={block.text} />
+        <Markdown text={block.text} stateKey={`block:${block.key}:notice`} />
       </div>
     </div>
   );
@@ -90,11 +90,14 @@ function ThreadUserMessage({ block }: { block: Extract<Block, { kind: "userText"
 
 export const BlockView = memo(function BlockView({
   block,
-  live = false
+  live = false,
+  generation = 0
 }: {
   block: Block;
   /** The block is the visible tail of a turn that is still streaming. */
   live?: boolean;
+  /** Conversation generation disambiguating reused wire block identities. */
+  generation?: number;
 }) {
   switch (block.kind) {
     case "text":
@@ -104,13 +107,19 @@ export const BlockView = memo(function BlockView({
       if (block.text.trim().length === 0) return null;
       return (
         <div className={`assistant-text${block.streaming ? " is-streaming" : ""}`}>
-          <Markdown text={block.text} streaming={block.streaming} />
+          <Markdown
+            text={block.text}
+            streaming={block.streaming}
+            streamGeneration={generation}
+            streamEpoch={block.textEpoch}
+            stateKey={`block:${block.key}:markdown`}
+          />
         </div>
       );
     case "thinking":
-      return <ThinkingBlockView block={block} />;
+      return <ThinkingBlockView block={block} stateKey={`block:${block.key}`} />;
     case "tool":
-      return <ToolCard block={block} live={live} />;
+      return <ToolCard block={block} live={live} stateKey={`block:${block.key}`} />;
     case "divider":
       return <DividerView block={block} />;
     case "notice":
@@ -126,7 +135,11 @@ export const BlockView = memo(function BlockView({
       if (block.interjection) {
         return (
           <div className="turn-interjection">
-            <UserMessage text={block.text} images={block.images} />
+            <UserMessage
+              text={block.text}
+              images={block.images}
+              stateKey={`block:${block.key}:user`}
+            />
           </div>
         );
       }

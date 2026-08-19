@@ -114,7 +114,7 @@ export function findOpenBlock(
 }
 
 export function makeTextBlock(key: string, messageId: string, text: string, streaming: boolean): TextBlock {
-  return { kind: "text", key, messageId, text, streaming };
+  return { kind: "text", key, messageId, text, streaming, textEpoch: 0 };
 }
 
 export function makeThinkingBlock(
@@ -174,7 +174,14 @@ export function mergeTextBlock(
     block.uuid = uuid;
     return block;
   }
-  return { ...existing, text, streaming: false, uuid };
+  return {
+    ...existing,
+    text,
+    streaming: false,
+    uuid,
+    textEpoch:
+      text === existing.text ? existing.textEpoch ?? 0 : (existing.textEpoch ?? 0) + 1
+  };
 }
 
 export function mergeThinkingBlock(
@@ -231,6 +238,7 @@ export function mergeToolUseBlock(
   return {
     ...existing,
     input: tool.input ?? existing.input,
+    partialInput: undefined,
     inputComplete: true,
     streaming: false,
     status: existing.status === "pending" ? "running" : existing.status,
@@ -281,7 +289,16 @@ export function markTurnAborted(turn: Turn, atMs: number): Turn {
       if (block.kind === "tool") {
         const children = abort(block.children);
         if (block.status === "running" || block.status === "pending") {
-          return { ...block, children, status: "aborted", streaming: false, aborted: true, endedAtMs: atMs };
+          return {
+            ...block,
+            children,
+            partialInput: undefined,
+            inputComplete: true,
+            status: "aborted",
+            streaming: false,
+            aborted: true,
+            endedAtMs: atMs
+          };
         }
         return children === block.children ? block : { ...block, children };
       }
@@ -299,7 +316,15 @@ export function settleTurn(turn: Turn, atMs: number): Turn {
       if (block.kind === "tool") {
         const children = settle(block.children);
         if (block.status === "running" || block.status === "pending") {
-          return { ...block, children, status: "success", streaming: false, endedAtMs: atMs };
+          return {
+            ...block,
+            children,
+            partialInput: undefined,
+            inputComplete: true,
+            status: "success",
+            streaming: false,
+            endedAtMs: atMs
+          };
         }
         return children === block.children ? block : { ...block, children };
       }

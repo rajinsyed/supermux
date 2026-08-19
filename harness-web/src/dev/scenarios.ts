@@ -31,6 +31,14 @@ import { planApproval } from "./fixtures/plan";
 import { queuedDrafts } from "./fixtures/queue";
 import { resumeHistory } from "./fixtures/resume";
 import { rewindHistory } from "./fixtures/rewind";
+import {
+  assistantText,
+  initLine,
+  initializeResponse,
+  messageStart,
+  resultLine,
+  userLine
+} from "./fixtures/build";
 
 export type ScenarioName =
   | "empty"
@@ -48,6 +56,7 @@ export type ScenarioName =
   | "compact"
   | "queue"
   | "longform"
+  | "performance"
   | "sessions"
   | "resume"
   | "rewind"
@@ -75,6 +84,7 @@ export const SCENARIO_NAMES: ScenarioName[] = [
   "compact",
   "queue",
   "longform",
+  "performance",
   "sessions",
   "resume",
   "rewind",
@@ -164,6 +174,34 @@ export interface Scenario {
   taskOutput?: Record<string, string[]>;
   /** Canned `loadSubagentTranscript` replies, keyed by taskId or runId/agentId. */
   subagentTranscripts?: Record<string, ProtocolLine[]>;
+}
+
+function performanceHistory(): ProtocolLine[] {
+  const lines: ProtocolLine[] = [
+    initializeResponse(),
+    initLine({ session_id: "performance-session-1000" })
+  ];
+  for (let index = 1; index <= 1000; index += 1) {
+    const messageId = `msg_performance_${index}`;
+    const detail = Array.from(
+      { length: index % 7 },
+      (_, line) => `variable-height detail ${line + 1}`
+    ).join("\n");
+    lines.push(
+      userLine(`Performance turn ${index}${detail ? `\n${detail}` : ""}`),
+      messageStart(messageId),
+      assistantText(
+        messageId,
+        `Settled response ${index}. ${"Measured anchor text. ".repeat((index % 5) + 1)}`
+      ),
+      resultLine({
+        result: `Performance turn ${index} complete.`,
+        duration_ms: 200 + (index % 13) * 50,
+        num_turns: 1
+      })
+    );
+  }
+  return lines;
 }
 
 function streamingCut(): number {
@@ -257,6 +295,14 @@ export function scenarioFor(name: string, options: ScenarioOptions = {}): Scenar
         restoreSessionId: "rewind-session-7712",
         rewindUnavailable: options.degraded === true,
         restoreFails: options.restoreFails === true
+      };
+    case "performance":
+      return {
+        name: key,
+        lines: performanceHistory(),
+        cliAvailable: true,
+        hasSessions: true,
+        cachedModels: true
       };
     case "streaming":
       return {

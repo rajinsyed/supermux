@@ -21,6 +21,7 @@ import {
   isPlainObject,
   permissionKindFor,
   permissionModeOf,
+  streamScope,
   unresolvedTurnIndex,
   withTurn,
   type TranscriptIndex
@@ -59,8 +60,112 @@ export function applyEvents(
   events: NativeEvent[],
   nowMs: number
 ): TranscriptModel {
+  // input_json_delta is cumulative work: parsing the growing prefix after every
+  // fragment is quadratic. A store drain is already one visual transaction, so
+  // collect each block's fragments and parse them once at the batch boundary (or
+  // immediately before the event that consumes that same block).
+  interface PartialBatch {
+    key: string;
+    scope: string;
+    blockIndex: number;
+    line: StreamEventLine;
+    fragments: string[];
+  }
+  const pending = new Map<string, PartialBatch>();
   let next = model;
-  for (const event of events) next = applyEvent(next, index, event, nowMs);
+
+  const keyFor = (line: StreamEventLine): string | undefined => {
+    if (typeof line.event.index !== "number") return undefined;
+    const scope = streamScope(line.parent_tool_use_id);
+    const messageId = index.streamMessageIds.get(scope);
+    if (!messageId) return undefined;
+    return JSON.stringify([scope, messageId, line.event.index]);
+  };
+
+  const flush = (key: string) => {
+    const entry = pending.get(key);
+    if (!entry) return;
+    pending.delete(key);
+    next = applyStreamEvent(
+      next,
+      index,
+      {
+        ...entry.line,
+        uuid: undefined,
+        event: {
+          ...entry.line.event,
+          delta: {
+            ...entry.line.event.delta,
+            partial_json: entry.fragments.join("")
+          }
+        }
+      },
+      nowMs
+    );
+  };
+
+  const flushScope = (scope: string) => {
+    for (const entry of [...pending.values()]) {
+      if (entry.scope === scope) flush(entry.key);
+    }
+  };
+
+  const flushAll = () => {
+    for (const key of [...pending.keys()]) flush(key);
+  };
+
+  for (const event of events) {
+    if (event.kind === "protocol" && event.line.type === "stream_event") {
+      const line = event.line as StreamEventLine;
+      const partial = line.event.delta?.partial_json;
+      if (line.event.type === "content_block_delta" && typeof partial === "string") {
+        const key = keyFor(line);
+        // An absent index has no honest target. Treating it as block zero mutates
+        // unrelated tool input and is worse than dropping the malformed fragment.
+        if (!key || typeof line.event.index !== "number") continue;
+        if (line.uuid) {
+          if (index.seenUuids.has(line.uuid)) continue;
+          index.seenUuids.add(line.uuid);
+        }
+        const existing = pending.get(key);
+        if (existing) existing.fragments.push(partial);
+        else {
+          pending.set(key, {
+            key,
+            scope: streamScope(line.parent_tool_use_id),
+            blockIndex: line.event.index,
+            line,
+            fragments: [partial]
+          });
+        }
+        continue;
+      }
+
+      const scope = streamScope(line.parent_tool_use_id);
+      if (line.event.type === "message_start" || line.event.type === "message_stop") {
+        // Message identity changes only inside this scope. Forwarded streams can
+        // interleave with main, so flushing every scope here would split another
+        // block into multiple parses and used to drop its later fragments.
+        flushScope(scope);
+      } else {
+        const key = keyFor(line);
+        if (key) flush(key);
+      }
+    } else if (
+      event.kind === "runStarted" ||
+      event.kind === "runExited" ||
+      (event.kind === "protocol" &&
+        (event.line.type === "assistant" ||
+          event.line.type === "user" ||
+          event.line.type === "result"))
+    ) {
+      // Authoritative full frames and process boundaries consume the live
+      // preview first. Exact assistant input then wins and clears the raw prefix.
+      flushAll();
+    }
+    next = applyEvent(next, index, event, nowMs);
+  }
+  flushAll();
   return next;
 }
 

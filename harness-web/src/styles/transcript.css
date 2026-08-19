@@ -58,10 +58,30 @@
   height: 24px;
 }
 
-.transcript-earlier {
+.transcript-spacer {
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.transcript-spacer.is-top {
+  align-items: flex-end;
+}
+
+.transcript-spacer.is-bottom {
+  align-items: flex-start;
+}
+
+.transcript-earlier,
+.transcript-later {
   display: flex;
   justify-content: center;
   padding: 6px 0 14px;
+}
+
+.transcript-later {
+  padding: 14px 0 6px;
 }
 
 .link-btn {
@@ -88,6 +108,16 @@
 }
 
 .turn:last-child {
+  margin-bottom: 8px;
+}
+
+/* Virtual wrappers make every article its wrapper's last child. Restore the
+   ordinary rhythm except on the actual final transcript row. */
+.virtual-turn .turn:last-child {
+  margin-bottom: 18px;
+}
+
+.virtual-turn.is-last .turn:last-child {
   margin-bottom: 8px;
 }
 
@@ -477,34 +507,40 @@
 }
 
 .thinking-icon {
-  display: none;
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.thinking.is-streaming .thinking-icon {
+  animation: thinking-pulse 1.4s var(--ease) infinite;
 }
 
 .thinking-label {
   font-weight: 500;
 }
 
-@keyframes shimmer-sweep {
-  from {
-    background-position: 200% 0;
+.thinking-label.shimmer {
+  color: var(--text-muted);
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.9);
   }
-  to {
-    background-position: -200% 0;
+  50% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
-.thinking-label.shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--text-muted) 30%,
-    var(--text) 50%,
-    var(--text-muted) 70%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer-sweep 2.2s linear infinite;
+@media (prefers-reduced-motion: reduce) {
+  .thinking.is-streaming .thinking-icon {
+    animation-name: none;
+    opacity: 0.75;
+    transform: none;
+  }
 }
 
 .thinking-body {
@@ -536,40 +572,24 @@
    The TURN-level member of the loading family (base.css documents all three).
 
    It was a sweeping dash beside "Working for 54s" — the SAME dash a running
-   Workflow row wore two lines above it, which is exactly what made the two
-   states unreadable from each other. The dash is gone: this row's label is
-   already the most specific thing on it (it names the state AND counts the
-   seconds), so the animation lands on the words — the sheen sweep declared in
-   cards.css, keyed off the `.working-dots` anchor.
+   Workflow row wore two lines above it. The dash and later dot constellation
+   are gone. The status label already names the state and elapsed time, so that
+   text itself carries the compositor-only pulse declared in cards.css.
 
-   Round 6 also trailed the sentence with a small accent tick, and round 7's
-   dogfood took it back off: with the label ALREADY sweeping, a second mark
-   beating beside it is two animations saying one thing, and at 4px beside 12px
-   type it read as a stray bullet rather than as a caret. THE SWEEPING LABEL IS
-   THE MARK — that is the whole point of the round-6 split, and the tick was the
-   one piece of it still drawing a glyph. (`@keyframes turn-tick` went with it;
-   nothing else drove it.)
-
-   `.working-dots` renders no glyph now. It stays as the anchor that sibling
-   selector needs, collapsed to zero width, and `gap: 0` on the row keeps the
-   label at the turn body's own left edge rather than indented past an empty
-   box. */
+   `.working-dots` is retained as the primitive's status-text wrapper; it draws
+   no separate glyph and therefore adds no second visual statement beside the
+   words. */
 
 .turn-live {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 6px;
   margin: 8px 0 2px;
   min-height: 18px;
 }
 
-.turn-live .working-dots {
-  width: 0;
-}
-
 .turn-live-label {
   font-size: 12px;
-  color: var(--text-muted);
 }
 
 .turn-interrupted {

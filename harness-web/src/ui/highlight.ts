@@ -23,6 +23,7 @@ import swift from "highlight.js/lib/languages/swift";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
+import { utf8ByteLength } from "./utf8";
 
 const LANGUAGES: Record<string, Parameters<typeof hljs.registerLanguage>[1]> = {
   bash,
@@ -67,10 +68,18 @@ hljs.registerAliases(["rs"], { languageName: "rust" });
 hljs.registerAliases(["rb"], { languageName: "ruby" });
 hljs.registerAliases(["kt"], { languageName: "kotlin" });
 
-const MAX_HIGHLIGHT_CHARS = 80000;
-const CACHE_LIMIT = 240;
-const REPORTED_CACHE_BUDGET_BYTES = 4 * 1024 * 1024;
-const cache = new Map<string, string>();
+const MAX_HIGHLIGHT_BYTES = 512 * 1024;
+const CACHE_BUDGET_BYTES = 4 * 1024 * 1024;
+const MAX_CACHE_ENTRY_BYTES = 256 * 1024;
+const CACHE_ENTRY_LIMIT = 120;
+
+interface CacheEntry {
+  html: string;
+  bytes: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+let cacheBytes = 0;
 
 export function supportsLanguage(language: string | undefined): boolean {
   if (!language) return false;
@@ -78,36 +87,58 @@ export function supportsLanguage(language: string | undefined): boolean {
 }
 
 export function highlightToHtml(code: string, language: string | undefined, cacheable = true): string {
-  if (code.length > MAX_HIGHLIGHT_CHARS || !supportsLanguage(language)) return escapeHtml(code);
-  const key = cacheable ? `${language}:${code.length}:${hash(code)}` : "";
+  if (utf8ByteLength(code) > MAX_HIGHLIGHT_BYTES || !supportsLanguage(language)) {
+    return escapeHtml(code);
+  }
+  const normalizedLanguage = language!.toLowerCase();
+  // Exact source identity avoids hash collisions returning another snippet's
+  // markup. Its bytes count toward the same budget as the generated HTML.
+  const key = cacheable ? `${normalizedLanguage}\0${code}` : "";
   if (key) {
     const hit = cache.get(key);
-    if (hit !== undefined) return hit;
+    if (hit) {
+      cache.delete(key);
+      cache.set(key, hit);
+      return hit.html;
+    }
   }
+
   let html: string;
   try {
-    html = hljs.highlight(code, { language: language!.toLowerCase(), ignoreIllegals: true }).value;
+    html = hljs.highlight(code, {
+      language: normalizedLanguage,
+      ignoreIllegals: true
+    }).value;
   } catch {
     html = escapeHtml(code);
   }
+
   if (key) {
-    if (cache.size >= CACHE_LIMIT) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
+    const bytes = utf8ByteLength(key) + utf8ByteLength(html);
+    if (bytes <= MAX_CACHE_ENTRY_BYTES) {
+      while (
+        cache.size >= CACHE_ENTRY_LIMIT ||
+        cacheBytes + bytes > CACHE_BUDGET_BYTES
+      ) {
+        const oldest = cache.entries().next().value as [string, CacheEntry] | undefined;
+        if (!oldest) break;
+        cache.delete(oldest[0]);
+        cacheBytes -= oldest[1].bytes;
+      }
+      cache.set(key, { html, bytes });
+      cacheBytes += bytes;
     }
-    cache.set(key, html);
   }
   return html;
 }
 
 export function highlightCacheStats(): { entries: number; bytes: number; budgetBytes: number } {
-  let bytes = 0;
-  for (const [key, html] of cache) bytes += utf8ByteLength(key) + utf8ByteLength(html);
-  return { entries: cache.size, bytes, budgetBytes: REPORTED_CACHE_BUDGET_BYTES };
+  return { entries: cache.size, bytes: cacheBytes, budgetBytes: CACHE_BUDGET_BYTES };
 }
 
 export function clearHighlightCache(): void {
   cache.clear();
+  cacheBytes = 0;
 }
 
 export function escapeHtml(text: string): string {
@@ -116,25 +147,4 @@ export function escapeHtml(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function utf8ByteLength(text: string): number {
-  let bytes = 0;
-  for (const character of text) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    if (codePoint <= 0x7f) bytes += 1;
-    else if (codePoint <= 0x7ff) bytes += 2;
-    else if (codePoint <= 0xffff) bytes += 3;
-    else bytes += 4;
-  }
-  return bytes;
-}
-
-function hash(text: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i += 1) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(36);
 }

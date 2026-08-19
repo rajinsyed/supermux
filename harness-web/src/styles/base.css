@@ -53,9 +53,8 @@ body {
   --gutter: 20px;
   /* One text origin for the floating dock: the status label, the composer's
      own text, and the hint row all start exactly this far in from the gutter,
-     with the status indicator centred in the reserved space to their left.
-     24 rather than 18 because the widest indicator — the three working dots —
-     is 18px wide, and 18px of space left its last dot touching the text. */
+     with the widest status indicator centred in the reserved space to their
+     left. */
   --dock-indent: 24px;
   /* Assistant content sits in a single column whose left edge never moves;
      the work rail is drawn inside this indent rather than adding to it. */
@@ -181,13 +180,10 @@ a:hover {
                                head is the honest shape for "waiting on one
                                thing", and it is the only mark that spins.
 
-     SHEEN   `sheen-sweep`   — no glyph at all; the animation is on the WORDS.
-                               The turn-level state ("Working for 54s") already
-                               says what is happening and how long it has been
-                               happening, so a second element repeating it in
-                               abstract was noise. Consumed by the live-row rule
-                               in cards.css and by the row-name rules in
-                               agents.css, at two deliberately different tempos.
+     STATUS  `status-breathe` — no glyph at all; the readable status WORDS
+                               carry a quiet opacity/transform pulse. The turn
+                               label and delegated row names run at deliberately
+                               different tempos without repainting text gradients.
 
      GRID    `.pxgrid`       — a 3×3 pixel grid, per the reference loader the
                                round-6 review supplied. DELEGATED work, in two
@@ -199,22 +195,14 @@ a:hover {
                                later read as the same dot again — the grid is a
                                different SHAPE, not a different tempo.)
 
-   Every one animates transform/opacity or one background-position, so thirty on
+   Every one animates transform/opacity only, so thirty on
    screen cost nothing, and every one has a reduced-motion resting state that
    still reads as "in progress" rather than freezing mid-effect.
 
-   `.sheen` / `.sheen-bar` are GONE. The bar was the round-5 dash the round-6
-   review asked to be rid of; the text class had no callers left once the two
-   sibling rules that do the sweeping inlined their own gradients. The keyframe
-   they shared stays, because those sibling rules still drive it.
-
-   `sheen-sweep` is NAMED that, not `shimmer-sweep`, and that is load-bearing.
-   transcript.css declares its OWN `@keyframes shimmer-sweep` for the thinking
-   label, with a different travel range (200% → -200%) tuned to a different
-   background-size. Keyframe names are global and last-declared wins, so while
-   both were called `shimmer-sweep` the thinking label's range silently overrode
-   this one and the working labels blanked out mid-cycle — half of "Working for
-   6s" vanished on every pass. Two geometries need two names. */
+   `.sheen` / `.sheen-bar` and animated background-clipped labels are gone.
+   They repainted text every frame and could freeze transparent under reduced
+   motion. The status pulse lives in cards.css; delegated names reuse it at the
+   slower tempo declared in agents.css. */
 
 /* The orbit.
  *
@@ -313,35 +301,12 @@ a:hover {
   }
 }
 
-/* The travel is 100% → 0%, and the bounds are NOT cosmetic.
- *
- * With `background-size: 260%` the image is 2.6× the element, and a percentage
- * position resolves as `P × (element − image)` — a NEGATIVE span. Every P inside
- * [0, 100] therefore still covers the element edge to edge, and every P outside
- * it slides an edge of the image into view: with `background-repeat: no-repeat`
- * and `color: transparent`, the glyphs in that strip have no paint at all and
- * simply vanish. The first cut of this ran 130% → -30% and did exactly that —
- * half of "Working for 6s" disappeared on every cycle, which is worse than the
- * dots it replaced.
- *
- * 100% puts the sheen just off the left edge and 0% just off the right, so the
- * band crosses the glyphs once per cycle with the text painted the whole time. */
-@keyframes sheen-sweep {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: 0% 0;
-  }
-}
-
 /* Motion off. Each of the three has a RESTING state that still says "in
    progress" — a stopped animation must not mean a mark that reads as settled.
    The orbit keeps its dot parked on a full ring (a determinate-looking gauge,
-   which is what a static spinner ought to be), and the breath sits at its
-   half-lit tone rather than at whichever frame it happened to stop on. The
-   sheen's resting state is handled where each sweeping label declares itself,
-   because there the frozen gradient is INVISIBLE TEXT rather than a still mark. */
+   which is what a static spinner ought to be), and the grid sits at its
+   half-lit tone rather than at whichever frame it happened to stop on. Status
+   labels declare their own full-opacity resting state beside their animation. */
 @media (prefers-reduced-motion: reduce) {
   .orbit::before {
     background: var(--claude-strong);

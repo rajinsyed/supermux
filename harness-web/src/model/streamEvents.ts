@@ -1,5 +1,12 @@
 import type { JsonObject, StreamEventLine } from "../protocol/types";
-import { insertBlock, locateByKey, makeTextBlock, makeThinkingBlock, makeToolBlock, writeBlock } from "./blocks";
+import {
+  insertBlock,
+  locateByKey,
+  makeTextBlock,
+  makeThinkingBlock,
+  makeToolBlock,
+  writeBlock
+} from "./blocks";
 import {
   adoptSessionModel,
   asString,
@@ -33,14 +40,6 @@ export function applyStreamEvent(
       index.streamMessageIds.set(scope, messageId);
       const ensured = ensureTurn(model, index, nowMs, parent);
       const turn = ensured.model.turns[ensured.turnIndex];
-      // Through the SAME adoption path as init and historyReplayed, never a
-      // raw overwrite. `message_start` stamps the bare API id ("claude-opus-5"
-      // for a session running "opus[1m]"), and writing it directly is what
-      // renamed the picker to a slug on the first send: the raw id then only
-      // resolved against the catalog by strict equality, which failed. The
-      // adoption compares through the catalog with the variant suffix
-      // stripped, keeps the carried effort when it is the same model, and
-      // defers to a user pick the wire has not confirmed yet.
       const model2 =
         event.message?.model && event.message.model !== model.session.model && !parent
           ? {
@@ -59,24 +58,39 @@ export function applyStreamEvent(
     case "content_block_delta":
       return deltaStreamBlock(model, index, line, scope);
     case "content_block_stop": {
+      if (typeof event.index !== "number") return model;
       const messageId = index.streamMessageIds.get(scope);
       if (!messageId) return model;
-      const location = locateByKey(model, index, `${messageId}#${event.index ?? 0}`);
+      const location = locateByKey(model, index, `${messageId}#${event.index}`);
       if (!location) return model;
       const target = blockAtPath(model.turns[location.turnIndex], location.path);
       if (!target) return model;
       index.finalizedBlocks.add(target.key);
-      if (target.kind === "text") return writeBlock(model, location, { ...target, streaming: false });
-      if (target.kind === "thinking")
-        return writeBlock(model, location, { ...target, streaming: false, endedAtMs: nowMs });
-      if (target.kind === "tool" && target.status === "pending")
+      if (target.kind === "text") {
+        return writeBlock(model, location, { ...target, streaming: false });
+      }
+      if (target.kind === "thinking") {
         return writeBlock(model, location, {
           ...target,
           streaming: false,
-          inputComplete: true,
-          status: "running"
+          endedAtMs: nowMs
         });
+      }
+      if (target.kind === "tool") {
+        return writeBlock(model, location, {
+          ...target,
+          partialInput: undefined,
+          streaming: false,
+          inputComplete: true,
+          status: target.status === "pending" ? "running" : target.status
+        });
+      }
       return model;
+    }
+    case "message_stop": {
+      const messageId = index.streamMessageIds.get(scope);
+      index.streamMessageIds.delete(scope);
+      return messageId ? clearMessagePartials(model, index, messageId) : model;
     }
     default:
       return model;
@@ -92,8 +106,8 @@ function startStreamBlock(
   parent: string | null
 ): TranscriptModel {
   const block = line.event.content_block;
-  if (!block) return model;
-  const blockIndex = line.event.index ?? 0;
+  if (!block || typeof line.event.index !== "number") return model;
+  const blockIndex = line.event.index;
   const ensured = ensureTurn(model, index, nowMs, parent);
   const messageId = index.streamMessageIds.get(scope) ?? `stream:${scope}`;
   const key = `${messageId}#${blockIndex}`;
@@ -126,9 +140,10 @@ function deltaStreamBlock(
   line: StreamEventLine,
   scope: string
 ): TranscriptModel {
+  if (typeof line.event.index !== "number") return model;
   const messageId = index.streamMessageIds.get(scope);
   if (!messageId) return model;
-  const location = locateByKey(model, index, `${messageId}#${line.event.index ?? 0}`);
+  const location = locateByKey(model, index, `${messageId}#${line.event.index}`);
   if (!location) return model;
   const target = blockAtPath(model.turns[location.turnIndex], location.path);
   if (!target) return model;
@@ -144,11 +159,19 @@ function deltaStreamBlock(
       } as ThinkingBlock);
     }
     if (typeof delta.estimated_tokens === "number") {
-      return writeBlock(model, location, { ...target, tokens: delta.estimated_tokens } as ThinkingBlock);
+      return writeBlock(model, location, {
+        ...target,
+        tokens: delta.estimated_tokens
+      } as ThinkingBlock);
     }
     return model;
   }
-  if (target.kind === "tool" && typeof delta.partial_json === "string") {
+  if (
+    target.kind === "tool" &&
+    target.streaming &&
+    !target.inputComplete &&
+    typeof delta.partial_json === "string"
+  ) {
     const partial = (target.partialInput ?? "") + delta.partial_json;
     const parsed = parsePartialJson(partial);
     return writeBlock(model, location, {
@@ -158,4 +181,22 @@ function deltaStreamBlock(
     } as ToolBlock);
   }
   return model;
+}
+
+function clearMessagePartials(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  messageId: string
+): TranscriptModel {
+  let next = model;
+  const prefix = `${messageId}#`;
+  for (const key of index.streamBlockKeys.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    const location = locateByKey(next, index, key);
+    if (!location) continue;
+    const target = blockAtPath(next.turns[location.turnIndex], location.path);
+    if (!target || target.kind !== "tool" || target.partialInput === undefined) continue;
+    next = writeBlock(next, location, { ...target, partialInput: undefined, inputComplete: true });
+  }
+  return next;
 }

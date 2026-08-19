@@ -360,8 +360,18 @@ export function findTurnIndex(model: TranscriptModel, turnId: string): number {
 
 export function withTurn(model: TranscriptModel, index: number, turn: Turn): TranscriptModel {
   if (index < 0) return model;
+  const previous = model.turns[index];
+  if (!previous || previous === turn) return model;
+  // Turn.revision is the complete invalidation contract consumed by per-row
+  // subscriptions. Nested block writers often advance it themselves; top-level
+  // writers historically did not. Normalize at the shared write boundary so a
+  // changed row can never retain its prior revision.
+  const nextTurn =
+    turn.revision > previous.revision
+      ? turn
+      : { ...turn, revision: previous.revision + 1 };
   const turns = model.turns.slice();
-  turns[index] = turn;
+  turns[index] = nextTurn;
   return { ...model, turns, revision: model.revision + 1 };
 }
 

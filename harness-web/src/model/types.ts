@@ -25,6 +25,12 @@ export interface TextBlock {
   uuid?: string;
   text: string;
   streaming: boolean;
+  /**
+   * Authoritative replacements advance this epoch; stream deltas retain it.
+   * The renderer can therefore slice only the newly appended suffix without
+   * comparing the already-rendered document.
+   */
+  textEpoch?: number;
   aborted?: boolean;
 }
 

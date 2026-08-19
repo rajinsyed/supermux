@@ -1,3 +1,5 @@
+import { ansiControlSequenceEnd, isAnsiControlStart } from "./utf8";
+
 export interface AnsiSpan {
   text: string;
   className?: string;
@@ -128,10 +130,21 @@ function applySgr(state: State, codes: number[]): void {
   }
 }
 
-const ESCAPE = new RegExp(
-  "\\u001b\\[([0-9;]*)m|\\u001b\\][^\\u0007\\u001b]*(?:\\u0007|\\u001b\\\\)|\\u001b\\[[0-9;?]*[A-Za-z]",
-  "g"
-);
+const INVISIBLE_CONTROLS = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+
+function sgrParameters(text: string, start: number, end: number): number[] | undefined {
+  const c1 = text.charCodeAt(start) === 0x9b;
+  const escaped = text.charCodeAt(start) === 0x1b && text[start + 1] === "[";
+  if ((!c1 && !escaped) || text[end - 1] !== "m") return undefined;
+  const parametersStart = c1 ? start + 1 : start + 2;
+  const raw = text.slice(parametersStart, end - 1);
+  if (!/^[0-9;]*$/.test(raw)) return undefined;
+  const codes = raw
+    .split(";")
+    .map((part) => (part === "" ? 0 : Number.parseInt(part, 10)))
+    .filter((code) => Number.isFinite(code));
+  return codes.length > 0 ? codes : [0];
+}
 
 export function parseAnsi(text: string, maxLines = 4000): AnsiLine[] {
   const lines: AnsiLine[] = [];
@@ -141,13 +154,13 @@ export function parseAnsi(text: string, maxLines = 4000): AnsiLine[] {
   const push = (chunk: string) => {
     if (!chunk) return;
     const parts = chunk.split("\n");
-    for (let i = 0; i < parts.length; i += 1) {
-      if (i > 0) {
+    for (let index = 0; index < parts.length; index += 1) {
+      if (index > 0) {
         lines.push({ spans: current });
         current = [];
         if (lines.length >= maxLines) return;
       }
-      const piece = parts[i].replace(/\r/g, "");
+      const piece = parts[index].replace(/\r/g, "").replace(INVISIBLE_CONTROLS, "");
       if (!piece) continue;
       const className = classNames(state);
       const style =
@@ -159,20 +172,26 @@ export function parseAnsi(text: string, maxLines = 4000): AnsiLine[] {
   };
 
   let cursor = 0;
-  ESCAPE.lastIndex = 0;
-  let match = ESCAPE.exec(text);
-  while (match) {
-    push(text.slice(cursor, match.index));
-    if (lines.length >= maxLines) break;
-    if (match[1] !== undefined) {
-      const codes = match[1]
-        .split(";")
-        .map((part) => (part === "" ? 0 : Number.parseInt(part, 10)))
-        .filter((n) => Number.isFinite(n));
-      applySgr(state, codes.length > 0 ? codes : [0]);
+  let index = 0;
+  while (index < text.length && lines.length < maxLines) {
+    const code = text.charCodeAt(index);
+    if (!isAnsiControlStart(code)) {
+      index += 1;
+      continue;
     }
-    cursor = match.index + match[0].length;
-    match = ESCAPE.exec(text);
+
+    push(text.slice(cursor, index));
+    if (lines.length >= maxLines) break;
+    const end = ansiControlSequenceEnd(text, index);
+    if (end === undefined) {
+      cursor = text.length;
+      index = text.length;
+      break;
+    }
+    const parameters = sgrParameters(text, index, end);
+    if (parameters) applySgr(state, parameters);
+    cursor = end;
+    index = end;
   }
   if (lines.length < maxLines) push(text.slice(cursor));
   lines.push({ spans: current });
@@ -180,9 +199,31 @@ export function parseAnsi(text: string, maxLines = 4000): AnsiLine[] {
 }
 
 export function stripAnsi(text: string): string {
-  return text.replace(ESCAPE, "");
+  const visible: string[] = [];
+  let cursor = 0;
+  let index = 0;
+  while (index < text.length) {
+    const code = text.charCodeAt(index);
+    if (!isAnsiControlStart(code)) {
+      index += 1;
+      continue;
+    }
+    visible.push(text.slice(cursor, index));
+    const end = ansiControlSequenceEnd(text, index);
+    if (end === undefined) {
+      cursor = text.length;
+      break;
+    }
+    cursor = end;
+    index = end;
+  }
+  visible.push(text.slice(cursor));
+  return visible.join("").replace(INVISIBLE_CONTROLS, "");
 }
 
 export function hasAnsi(text: string): boolean {
-  return text.indexOf("\u001b[") !== -1;
+  for (let index = 0; index < text.length; index += 1) {
+    if (isAnsiControlStart(text.charCodeAt(index))) return true;
+  }
+  return false;
 }

@@ -152,7 +152,7 @@ describe("work-group overflow while a turn runs", () => {
     expect(container.querySelector(".fold-head")).not.toBeNull();
   });
 
-  test("folding a settled turn hides the work tree without unmounting it", () => {
+  test("folding a settled turn unmounts the completed work tree", () => {
     const turn = streamingTurn();
     const settled = { ...turn, state: "complete" as const, folded: false, endedAtMs: turn.startedAtMs + 4000 };
     const { container } = mount(settled);
@@ -160,10 +160,10 @@ describe("work-group overflow while a turn runs", () => {
     expect(saved).not.toBeNull();
 
     fireEvent.click(container.querySelector(".fold-head")!);
-    const work = container.querySelector<HTMLElement>(".turn-work")!;
-    expect(work.classList.contains("is-folded")).toBe(true);
-    // Still the same node — reopening finds everything where the reader left it.
-    expect(container.contains(saved)).toBe(true);
+    expect(container.querySelector(".turn-work")).toBeNull();
+    expect(container.contains(saved)).toBe(false);
+    // The header remains keyboard-accessible and can restore pane-scoped choices.
+    expect(container.querySelector(".fold-head")!.getAttribute("aria-expanded")).toBe("false");
   });
 });
 
@@ -275,7 +275,8 @@ describe("an automatic fold never sweeps away what the reader opened", () => {
         <TurnView turn={turn} isLast={false} />
       </CopyProvider>
     );
-    expect(container.querySelector(".turn-work")!.classList.contains("is-folded")).toBe(true);
+    expect(container.querySelector(".turn-work")).toBeNull();
+    expect(container.querySelector(".fold-head")!.getAttribute("aria-expanded")).toBe("false");
   });
 
   /**

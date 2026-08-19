@@ -1,4 +1,4 @@
-import { memo, useState, type ReactNode } from "react";
+import { memo, useId, type ReactNode } from "react";
 import type { CopyKey } from "../../copyKeys";
 import type { ToolBlock, ToolStatus } from "../../model/types";
 import { bashExitCode } from "../../model/toolStatus";
@@ -36,6 +36,7 @@ import {
   toolMetrics
 } from "./ToolBodies";
 import { diffStats } from "../primitives/DiffView";
+import { usePresentationOverride } from "../presentationState";
 import { BackgroundBashStrip, backgroundBashBadges, backgroundBashStatus } from "./BackgroundBash";
 import { AgentRow } from "./AgentRow";
 import { WorkflowRow } from "../workflow/WorkflowRow";
@@ -194,13 +195,16 @@ function defaultOpen(block: ToolBlock, family: ToolFamily, live: boolean): boole
 export const ToolCard = memo(function ToolCard({
   block,
   depth = 0,
-  live = false
+  live = false,
+  stateKey
 }: {
   block: ToolBlock;
   depth?: number;
   live?: boolean;
+  stateKey?: string;
 }) {
   const copy = useCopy();
+  const localId = useId();
   const family = toolFamily(block.name);
   // A backgrounded Bash's tool_result lands instantly, so the block's own
   // status would paint a green check beside a "Still running" badge; its
@@ -209,8 +213,11 @@ export const ToolCard = memo(function ToolCard({
   // The default is re-derived rather than frozen at mount, so a card that lands
   // while its turn streams still opens once the turn settles — and a row that
   // later fails auto-opens on the failure instead of staying shut because it
-  // was pending when it first rendered. A user toggle wins over both.
-  const [override, setOverride] = useState<boolean | undefined>(undefined);
+  // was pending when it first rendered. A user toggle wins over both and lives
+  // outside the virtual subtree.
+  const [override, setOverride] = usePresentationOverride(
+    `${stateKey ?? `tool:${block.key || localId}`}:open`
+  );
   const open = override ?? (status === "error" || defaultOpen(block, family, live));
 
   // An agent's whole record in the transcript is ONE row too: the conversation

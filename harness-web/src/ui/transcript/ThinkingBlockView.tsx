@@ -1,17 +1,24 @@
-import { memo, useState } from "react";
+import { memo, useId } from "react";
 import type { ThinkingBlock } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { Brain, ChevronDown, ChevronRight } from "../Icons";
 import { formatDuration } from "../format";
+import { usePresentationState } from "../presentationState";
 import { Disclosure } from "../primitives/Disclosure";
 
 export const ThinkingBlockView = memo(function ThinkingBlockView({
-  block
+  block,
+  stateKey
 }: {
   block: ThinkingBlock;
+  stateKey?: string;
 }) {
   const copy = useCopy();
-  const [open, setOpen] = useState(false);
+  const localId = useId();
+  const [open, setOpen] = usePresentationState(
+    `${stateKey ?? `thinking:${localId}`}:open`,
+    false
+  );
   const rawDuration = block.endedAtMs !== undefined ? block.endedAtMs - block.startedAtMs : 0;
   const duration = rawDuration >= 1000 ? formatDuration(rawDuration, copy) : undefined;
 

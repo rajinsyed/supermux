@@ -86,23 +86,14 @@ describe("the shimmer is not overridden by another sheet's keyframe", () => {
     expect(missing).toEqual([]);
   });
 
-  test("the sweep never slides the gradient off the glyphs it paints", async () => {
-    // With `background-size: 260%`, a percentage position resolves against a
-    // NEGATIVE span (element − image), so every value inside [0, 100] still
-    // covers the element edge to edge and every value outside it exposes an
-    // unpainted strip. `background-clip: text` + `color: transparent` means an
-    // unpainted strip is INVISIBLE TEXT, not a dimmer sheen.
-    const sheet = await css("base.css");
-    const frames = /@keyframes sheen-sweep\s*\{([\s\S]*?)\n\}/.exec(sheet);
+  test("the status pulse changes compositor properties, never paint or layout", async () => {
+    const sheet = await css("cards.css");
+    const frames = /@keyframes status-breathe\s*\{([\s\S]*?)\n\}/.exec(sheet);
     expect(frames).not.toBeNull();
-    const positions = [...frames![1].matchAll(/background-position:\s*(-?[\d.]+)%/g)].map((m) =>
-      Number(m[1])
-    );
-    expect(positions.length).toBeGreaterThanOrEqual(2);
-    for (const position of positions) {
-      expect(position).toBeGreaterThanOrEqual(0);
-      expect(position).toBeLessThanOrEqual(100);
-    }
+    const properties = [...frames![1].matchAll(/([a-z-]+):\s*[^;]+;/g)].map((match) => match[1]);
+    expect(properties.length).toBeGreaterThan(0);
+    for (const property of properties) expect(["opacity", "transform"]).toContain(property);
+    expect(frames![1]).not.toContain("background-position");
   });
 
   test("with motion off the shimmering text is painted, not frozen transparent", async () => {
@@ -133,14 +124,14 @@ describe("the three-dot loaders are gone", () => {
     }
   });
 
-  test("the working label sweeps with its mark, not beside it", async () => {
-    // The whole reason the dots could go: the animation lands on the words that
-    // already say what is happening.
+  test("the working words carry the motion instead of a sibling glyph", async () => {
     const cards = await css("cards.css");
-    expect(cards).toContain(".turn-live .working-dots + .turn-live-label");
-    expect(cards).toContain("background-clip: text");
+    expect(cards).toContain(".turn-live .working-dots > .turn-live-label");
+    expect(cards).toContain("animation: status-breathe");
+    expect(cards).not.toContain("background-clip: text");
     const agents = await css("agents.css");
     expect(agents).toContain(".dock-glyph + .dock-label");
+    expect(agents).toContain("animation: status-breathe");
   });
 });
 
