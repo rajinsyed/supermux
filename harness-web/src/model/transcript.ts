@@ -626,7 +626,19 @@ export function applyLocalAction(
       // record of what it was actually running, so the trigger adopts it here,
       // and startOptions carries it onto the restart so the CLI does not fall
       // back to the settings default and silently switch the session's model.
-      if (next.lastAssistantModel && next.lastAssistantModel !== next.session.model) {
+      //
+      // UNLESS an unconfirmed user pick is pending: the restore-bootstrap
+      // replay lands seconds late on a big session file, and what it records
+      // is by definition OLDER than a pick made while it was loading. Both
+      // adoptions — model and effort — describe that old session, so both
+      // defer to the pick (adoptSessionModel enforces the model half; the
+      // effort half is guarded here for the same reason).
+      const pickPending = next.session.modelPickPending === true;
+      if (
+        !pickPending &&
+        next.lastAssistantModel &&
+        next.lastAssistantModel !== next.session.model
+      ) {
         next = {
           ...(next === model ? { ...next } : next),
           session: adoptSessionModel(next.session, next.cachedModels, next.lastAssistantModel),
@@ -639,7 +651,11 @@ export function applyLocalAction(
       // restart must carry it rather than silently dropping to a default.
       // After adoptSessionModel, so a model change's deliberate effort drop is
       // immediately refilled with the resumed session's own recorded level.
-      if (next.lastAssistantEffort && next.lastAssistantEffort !== next.session.effort) {
+      if (
+        !pickPending &&
+        next.lastAssistantEffort &&
+        next.lastAssistantEffort !== next.session.effort
+      ) {
         next = {
           ...next,
           session: { ...next.session, effort: next.lastAssistantEffort },
@@ -649,7 +665,9 @@ export function applyLocalAction(
       return next;
     }
     case "reset":
-      return resetConversation(model, index);
+      return resetConversation(model, index, {
+        preserveModelPick: action.preserveModelPick
+      });
     default:
       return model;
   }

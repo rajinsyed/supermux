@@ -258,7 +258,11 @@ export function closeOpenTurns(
   return changed ? { ...model, turns, revision: model.revision + 1 } : model;
 }
 
-export function resetConversation(model: TranscriptModel, index: TranscriptIndex): TranscriptModel {
+export function resetConversation(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  options?: { preserveModelPick?: boolean }
+): TranscriptModel {
   index.seenUuids.clear();
   index.toolLocations.clear();
   index.taskToTool.clear();
@@ -273,16 +277,21 @@ export function resetConversation(model: TranscriptModel, index: TranscriptIndex
     // A cleared pane is on NO session. Carrying the old id forward is what made
     // "New session" resume the very conversation it had just discarded: the id
     // is the pane's session identity, and every resume path reads it.
-    // The pending-pick latch clears with it: every reset precedes either a
-    // restart whose params carry the pick (New Session — the init frame then
-    // confirms it) or a deliberate move onto another session whose own model
-    // must win (an explicit resume). A latch surviving into a resume would
-    // make historyReplayed ignore the resumed session's recorded model.
+    // The pending-pick latch NORMALLY clears with it: a plain reset precedes
+    // either a restart whose params carry the pick (New Session — the init
+    // frame then confirms it) or a deliberate move onto another session whose
+    // own model must win (an explicit resume). A latch surviving into a resume
+    // would make historyReplayed ignore the resumed session's recorded model.
+    // The one exception is the RESTORE-bootstrap replay (`preserveModelPick`):
+    // that reset replays the pane's own serialized session, often seconds
+    // late, and a pick the user made in the meantime is newer than everything
+    // the replay carries — clearing the latch there let the late replay adopt
+    // the OLD session's model over the user's fresh choice.
     session: {
       ...model.session,
       title: undefined,
       sessionId: undefined,
-      modelPickPending: undefined
+      modelPickPending: options?.preserveModelPick ? model.session.modelPickPending : undefined
     },
     runPhase: model.runPhase,
     runId: model.runId,

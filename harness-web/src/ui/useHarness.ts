@@ -176,13 +176,36 @@ export function useHarness(store: HarnessStore): HarnessController {
         const sessionId = next.restore?.sessionId;
         if (sessionId && !snapshotRetired.current && restoredSessionId.current !== sessionId) {
           restoredSessionId.current = sessionId;
+          // The load is ASYNC and the file can be large (a real restored
+          // session was 322KB), so this `.then` lands seconds after the pane
+          // opened — plenty of time for the user to have moved the pane: New
+          // Session, an explicit resume, or simply a new run coming up. The
+          // world as of the request is captured here, and the reply is
+          // dropped wholesale if the pane has moved on: replaying a stale
+          // snapshot over the user's newer state is exactly the "still always
+          // gpt 5.6 sol no matter what" overwrite.
+          const requestGeneration = store.getSnapshot().generation;
+          const requestRunId = store.getSnapshot().runId;
           bridge
             .loadSessionHistory({ sessionId })
             .then((result) => {
+              // A deliberate swap retired the snapshot while we loaded.
+              if (snapshotRetired.current) return;
+              const now = store.getSnapshot();
+              // The conversation was reset (New Session, another resume) or a
+              // different run came up since the request: this reply describes
+              // a pane that no longer exists.
+              if (now.generation !== requestGeneration) return;
+              if (now.runId !== requestRunId) return;
               const selectedMode = permissionModeWasSelected.current
-                ? store.getSnapshot().session.permissionMode
+                ? now.session.permissionMode
                 : undefined;
-              store.dispatch({ kind: "reset" });
+              // preserveModelPick: this reset is the pane RESTORING ITSELF,
+              // not the user moving to another session — a model pick made
+              // while the file loaded is newer than anything in it and must
+              // survive the replay (the reducer's historyReplayed adoption
+              // defers to the pending pick for the same reason).
+              store.dispatch({ kind: "reset", preserveModelPick: true });
               if (result.truncated) store.dispatch({ kind: "historyTruncated" });
               store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
               store.flushNow();

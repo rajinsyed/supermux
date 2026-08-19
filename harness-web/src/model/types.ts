@@ -757,4 +757,12 @@ export type LocalAction =
    * of its own last frame rather than at wall-now.
    */
   | { kind: "historyReplayed" }
-  | { kind: "reset" };
+  /**
+   * `preserveModelPick` marks the RESTORE-bootstrap reset (the pane's own
+   * serialized session replayed on open), which is not the user moving to
+   * another session: a model pick made while that replay was still loading
+   * must survive it. The deliberate swaps — New Session, an explicit resume —
+   * dispatch a plain reset, which clears the latch so the destination
+   * session's own model can win.
+   */
+  | { kind: "reset"; preserveModelPick?: boolean };

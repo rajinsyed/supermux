@@ -247,6 +247,14 @@ interface Script {
   setModelCalls: { model: string; effort?: string }[];
   historyEvents: ProtocolLine[];
   restore?: { sessionId: string; model?: string };
+  /**
+   * When set, the RESTORED session's history load stalls until
+   * `releaseHistory()` runs — the shape of the real bug: the user's restored
+   * session file was 322KB and its parse+load landed seconds after the pane
+   * opened, long after the user had picked a model.
+   */
+  holdRestoreHistory?: boolean;
+  releaseHistory?: () => void;
 }
 
 function makeBridge(script: Script): HarnessBridge {
@@ -267,7 +275,14 @@ function makeBridge(script: Script): HarnessBridge {
     async listSessions() {
       return { sessions: [] };
     },
-    async loadSessionHistory() {
+    async loadSessionHistory(params) {
+      // Only the restore-bootstrap load stalls; an explicit resume's own load
+      // (a different session id) resolves immediately.
+      if (script.holdRestoreHistory && params.sessionId === script.restore?.sessionId) {
+        await new Promise<void>((resolve) => {
+          script.releaseHistory = resolve;
+        });
+      }
       return { events: script.historyEvents, truncated: false };
     },
     async start(params = {}) {
@@ -483,5 +498,134 @@ describe("bug 1: the picker does not stay on the settings default", () => {
     });
     expect(triggerLabel(store)).toBe("GPT 5.6 Sol");
     expect(triggerEffort(store)).toBe("xhigh");
+  });
+});
+
+/* =========================================================================
+   Bug 1, round 2 — the RESTORE replay that lands seconds late.
+
+   The dogfood repro after the first fix: the pick reached the CLI (the new
+   session's JSONL shows claude-opus-5 + xhigh) but the trigger still said
+   "GPT 5.6 Sol Extra high". The pane had a restore snapshot whose 322KB
+   session file loaded asynchronously; its `.then` reset the conversation
+   (clearing the pending-pick latch), replayed the OLD session — last
+   assistant frame gpt-5.6-sol/xhigh — and `historyReplayed` adopted that over
+   whatever the user had picked in the meantime.
+   ========================================================================= */
+
+describe("bug 1 round 2: a late restore replay cannot clobber the user's pick", () => {
+  /** The old session's records: it ran gpt-5.6-sol at xhigh. */
+  const oldSessionHistory = () => [
+    diskUser("old prompt"),
+    diskAssistant("gpt-5.6-sol", "xhigh")
+  ];
+
+  function restoredScript(): Script {
+    return {
+      restartParams: [],
+      startParams: [],
+      setModelCalls: [],
+      historyEvents: oldSessionHistory(),
+      restore: { sessionId: "restored-322kb", model: "gpt-5.6-sol" },
+      holdRestoreHistory: true
+    };
+  }
+
+  test("a pick made while the restore file is still loading survives the replay landing", async () => {
+    const script = restoredScript();
+    const { store, out } = await mount(script);
+
+    // The load is in flight; the snapshot model shows meanwhile.
+    expect(triggerLabel(store)).toBe("GPT 5.6 Sol");
+
+    // The user picks another model before the file finishes parsing.
+    act(() => {
+      out.current!.setModel("opus[1m]", undefined);
+    });
+    expect(triggerLabel(store)).toBe("Opus (1M context)");
+
+    // The replay lands late.
+    await act(async () => {
+      script.releaseHistory?.();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+
+    // Pre-fix: the replay reset cleared the latch and historyReplayed adopted
+    // the OLD session's gpt-5.6-sol/xhigh — "still always gpt 5.6 sol extra
+    // high no matter what". The pick must hold.
+    expect(triggerLabel(store)).toBe("Opus (1M context)");
+    expect(store.getSnapshot().session.effort).toBeUndefined();
+  });
+
+  test("newSession + confirming init while the restore load is in flight drops the stale replay wholesale", async () => {
+    const script = restoredScript();
+    const { store, out } = await mount(script);
+
+    // User immediately starts a new session and picks a model.
+    act(() => {
+      out.current!.setModel("sonnet", undefined);
+    });
+    await act(async () => {
+      out.current!.newSession();
+    });
+    await flush();
+    expect(script.restartParams[0]?.model).toBe("sonnet");
+
+    // The new process's init confirms the pick.
+    act(() => {
+      store.receive([{ kind: "protocol", line: initLine("claude-sonnet-5", "brand-new") }]);
+      store.flushNow();
+    });
+    expect(triggerLabel(store)).toBe("Sonnet");
+
+    // Now the OLD pane's history load finally resolves. snapshotRetired and
+    // the generation check both say the pane moved on: nothing may change.
+    const turnsBefore = store.getSnapshot().turns.length;
+    await act(async () => {
+      script.releaseHistory?.();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    expect(triggerLabel(store)).toBe("Sonnet");
+    expect(store.getSnapshot().session.sessionId).toBe("brand-new");
+    // And the old transcript was not shoved back on screen either.
+    expect(store.getSnapshot().turns.length).toBe(turnsBefore);
+  });
+
+  test("with NO pick, the late replay still restores normally — model, effort, transcript", async () => {
+    const script = restoredScript();
+    const { store } = await mount(script);
+    expect(store.getSnapshot().turns.length).toBe(0);
+
+    await act(async () => {
+      script.releaseHistory?.();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+
+    // The untouched pane restores exactly as before the fix.
+    expect(triggerLabel(store)).toBe("GPT 5.6 Sol");
+    expect(store.getSnapshot().session.effort).toBe("xhigh");
+    expect(store.getSnapshot().turns.length).toBeGreaterThan(0);
+  });
+
+  test("an explicit resume DURING the stalled restore load wins over the late replay", async () => {
+    const script = restoredScript();
+    const { store, out } = await mount(script);
+
+    // The user resumes a different session while the restore file loads. The
+    // resume's own history (a session that ran claude-opus-5/xhigh) resolves
+    // immediately; only the restore load is stalled.
+    script.historyEvents = [diskUser("other"), diskAssistant("claude-opus-5", "xhigh")];
+    await act(async () => {
+      out.current!.restart("another-session", false);
+    });
+    await flush();
+    expect(triggerLabel(store)).toBe("Opus (1M context)");
+
+    await act(async () => {
+      script.releaseHistory?.();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    // snapshotRetired: the stale restore reply is dropped.
+    expect(triggerLabel(store)).toBe("Opus (1M context)");
   });
 });
