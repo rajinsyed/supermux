@@ -12,7 +12,14 @@ import {
   settleTurn,
   writeBlock
 } from "./blocks";
-import { asString, blockAtPath, findTurnIndex, withTurn, type TranscriptIndex } from "./helpers";
+import {
+  asString,
+  blockAtPath,
+  effortLevelOf,
+  findTurnIndex,
+  withTurn,
+  type TranscriptIndex
+} from "./helpers";
 import { appendNotice, ensureTurn, nextBlockKey } from "./turns";
 import type {
   Block,
@@ -48,6 +55,13 @@ export function applyAssistant(
   const wireModel = !parent ? asString(line.message.model) : undefined;
   if (wireModel && wireModel !== next.lastAssistantModel) {
     next = { ...next, lastAssistantModel: wireModel };
+  }
+  // The CLI stamps `"effort"` on every DISK assistant record, which makes it
+  // the resumed session's one account of the effort it was actually running —
+  // the companion to `message.model` above, adopted by `historyReplayed`.
+  const wireEffort = !parent ? effortLevelOf(line.effort) : undefined;
+  if (wireEffort && wireEffort !== next.lastAssistantEffort) {
+    next = { ...next, lastAssistantEffort: wireEffort };
   }
   // The SAME frame builds two things: the inline block tree the transcript
   // nests under the launching Task card, and the agent's own thread, which is

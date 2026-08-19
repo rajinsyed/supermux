@@ -23,6 +23,11 @@ struct SupermuxHarnessSessionRecordMapper: Sendable {
             "timestamp",
             "subagent_type",
             "task_description",
+            // The CLI stamps the reasoning effort on every persisted assistant
+            // record; it is the one account a resumed session has of the level
+            // it was running (history has no init frame), and the web reducer
+            // adopts it on historyReplayed.
+            "effort",
             "error",
             "aborted",
             "supersedes",

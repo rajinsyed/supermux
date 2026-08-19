@@ -1,4 +1,4 @@
-import type { JsonObject, ModelDescriptor, PermissionMode } from "../protocol/types";
+import type { EffortLevel, JsonObject, ModelDescriptor, PermissionMode } from "../protocol/types";
 import type {
   Block,
   PendingKind,
@@ -98,22 +98,25 @@ export function activeModelFor(
  * cache is that same catalog from that same binary, so it answers just as well.
  */
 export function resolveModel(
-  session: Pick<SessionMeta, "models" | "model">,
+  session: Pick<SessionMeta, "models" | "model"> & { defaultModel?: string },
   cachedModels: ModelDescriptor[] | undefined
 ): ModelDescriptor | undefined {
-  const active =
-    activeModelFor(session) ??
+  const resolveAgainstBoth = (id: string | undefined): ModelDescriptor | undefined =>
+    activeModelFor({ models: session.models, model: id }) ??
     (cachedModels && cachedModels.length > 0
-      ? activeModelFor({ models: cachedModels, model: session.model })
+      ? activeModelFor({ models: cachedModels, model: id })
       : undefined);
+  const active = resolveAgainstBoth(session.model);
   if (active) return active;
   // NO selection at all — a pane that has never started a process and carries
-  // no restore. The process this pane spawns will run the catalog's "default"
-  // row (the live CLI's catalog carries one: default | opus[1m] | sonnet |
-  // haiku), so naming that row is the honest answer, where the bare "Model"
-  // placeholder is a blank the trigger shows the user for no reason.
+  // no restore. Item 12: what that pane will ACTUALLY run is the CLI's own
+  // settings default (`~/.claude/settings.json` "model", surfaced as
+  // `session.defaultModel`), so that row is named first. The catalog's generic
+  // "default" row is the fallback when the settings name nothing resolvable —
+  // still more honest than the bare "Model" placeholder.
   if (!session.model) {
     return (
+      resolveAgainstBoth(session.defaultModel) ??
       session.models.find((m) => m.value === "default") ??
       cachedModels?.find((m) => m.value === "default")
     );
@@ -141,6 +144,45 @@ export function adoptSessionModel(
     return { ...session, model: wireModel };
   }
   return { ...session, model: wireModel, effort: undefined };
+}
+
+/**
+ * The effort that is ACTUALLY in force, which is never "none" on a model that
+ * supports effort: when the session carries no explicit level (a fresh pane, a
+ * resume, a model switch that dropped the carried level), the CLI runs at a
+ * default anyway — the catalog's per-model `defaultEffortLevel` when it ships
+ * one, or the CLI's own settings default (`~/.claude/settings.json
+ * effortLevel`, delivered as `session.defaultEffort`). Every surface that
+ * shows effort reads this; showing nothing while the CLI runs at `xhigh` told
+ * the user reasoning was somehow off. `session.effort` stays the record of an
+ * EXPLICIT pick — the "Restore defaults" affordance keys off that difference —
+ * and this is the display answer layered over it.
+ */
+export function effectiveEffort(
+  model: ModelDescriptor | undefined,
+  explicit: EffortLevel | undefined,
+  inherited?: EffortLevel
+): EffortLevel | undefined {
+  if (!model?.supportsEffort) return undefined;
+  const levels = model.supportedEffortLevels;
+  if (!levels || levels.length === 0) return undefined;
+  if (explicit && levels.includes(explicit)) return explicit;
+  if (inherited && levels.includes(inherited)) return inherited;
+  return model.defaultEffortLevel;
+}
+
+/** The wire's effort strings, validated into the enum the session stores. */
+export function effortLevelOf(value: unknown): EffortLevel | undefined {
+  if (
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh" ||
+    value === "max"
+  ) {
+    return value;
+  }
+  return undefined;
 }
 
 export function isPlainObject(value: unknown): value is JsonObject {

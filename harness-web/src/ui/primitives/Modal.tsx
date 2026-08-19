@@ -18,13 +18,28 @@ const FOCUSABLE =
  * than each remembering to arrange it. A consumer that wants a particular
  * control instead (the binary dialog puts the caret in its path field) still
  * wins: Modal is its CHILD, and child effects run before the parent's.
+ *
+ * Round 6 gives it the popover kit's own motion language rather than a second
+ * one: the scrim fades and the panel scales up from its centre on the same
+ * exponential ease-out, at the same 150ms. A dialog and a menu are the two
+ * things in this pane that arrive over content, and arriving differently made
+ * them read as parts of two different products. `prefers-reduced-motion` is
+ * honoured by base.css's blanket rule plus the explicit reset in modal.css.
+ *
+ * Sizing is the consumer's: `size="compact"` is the tight 400px dialog the
+ * rewind confirm wants, and the default is the 460px form panel.
  */
 export function Modal({
   title,
+  subtitle,
+  size = "default",
   onClose,
   children
 }: {
   title: string;
+  /** One line under the title, for a dialog whose title is not the whole story. */
+  subtitle?: string;
+  size?: "default" | "compact";
   onClose(): void;
   children: ReactNode;
 }) {
@@ -78,7 +93,7 @@ export function Modal({
       if (event.target === event.currentTarget) onClose();
     }}>
       <div
-        className="modal"
+        className={`modal is-${size}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -90,7 +105,10 @@ export function Modal({
         onKeyDown={onKeyDown}
       >
         <div className="modal-head">
-          <h2 className="modal-title">{title}</h2>
+          <div className="modal-heading">
+            <h2 className="modal-title">{title}</h2>
+            {subtitle ? <p className="modal-subtitle">{subtitle}</p> : null}
+          </div>
           <button
             type="button"
             className="icon-btn modal-close"

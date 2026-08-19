@@ -304,7 +304,11 @@ export function installMockBridge(store: HarnessStore): Scenario {
         restore: scenario.restoreSessionId
           ? { sessionId: scenario.restoreSessionId, model: "sonnet", permissionMode: "default" }
           : undefined,
-        cachedModels
+        cachedModels,
+        // What the native side reads from the CLI's settings files — the model
+        // and effort a flagless start actually runs (item 12/5). The dev pane
+        // mirrors a machine whose ~/.claude/settings.json picks sonnet at high.
+        defaults: { model: "sonnet", effort: "high" }
       };
     },
     async listSessions() {

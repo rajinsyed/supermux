@@ -144,6 +144,19 @@ export function useHarness(store: HarnessStore): HarnessController {
         if (next.cachedModels && next.cachedModels.length > 0) {
           store.dispatch({ kind: "cachedModels", models: next.cachedModels });
         }
+        // Item 12: the CLI's settings defaults — the model/effort a flagless
+        // start will actually run. Projected as the WEAKEST source: display
+        // resolution consults them only when no init frame, pick, snapshot, or
+        // replayed history has answered, so they can never contradict a
+        // stronger one, and the init frame overwrites nothing here (it writes
+        // session.model, which always outranks these).
+        if (next.defaults && (next.defaults.model || next.defaults.effort)) {
+          store.dispatch({
+            kind: "sessionDefaults",
+            model: next.defaults.model,
+            effort: next.defaults.effort
+          });
+        }
         if (!permissionModeBootstrapComplete.current) {
           const restoredMode = next.restore?.permissionMode;
           if (restoredMode && !permissionModeWasSelected.current) {

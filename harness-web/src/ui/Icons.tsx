@@ -134,11 +134,22 @@ export const Info = (p: IconProps) =>
     p
   );
 
+/**
+ * Two sheets, one behind the other.
+ *
+ * The previous draw had a 1.75-radius front sheet over a 1.5-radius back one,
+ * offset 3.5px one way and 3.5px the other from an asymmetric origin (2.25 left,
+ * 13.75 right) — so the two corners did not rhyme and the whole glyph sat right
+ * of centre in its box. Redrawn on one grid: both sheets are 8×8 at r 2.25, the
+ * offset is exactly 4px on both axes, and the margins are 2px on every side. The
+ * back sheet is an outline that STOPS where the front one covers it, so at 12px
+ * there is no doubled stroke tucked behind the front corner.
+ */
 export const Copy = (p: IconProps) =>
   svg(
     <>
-      <rect x="5.75" y="5.75" width="8" height="8" rx="1.75" />
-      <path d="M10.25 3.75A1.5 1.5 0 0 0 8.75 2.25h-5A1.5 1.5 0 0 0 2.25 3.75v5a1.5 1.5 0 0 0 1.5 1.5" />
+      <rect x="6" y="6" width="8" height="8" rx="2.25" />
+      <path d="M6 10H4.25A2.25 2.25 0 0 1 2 7.75v-3.5A2.25 2.25 0 0 1 4.25 2h3.5A2.25 2.25 0 0 1 10 4.25V6" />
     </>,
     p
   );
@@ -338,12 +349,30 @@ export const Resume = (p: IconProps) =>
     p
   );
 
-/** Counter-clockwise arrow: the direction of travel is the whole meaning here. */
+/**
+ * Counter-clockwise arrow: the direction of travel is the whole meaning here.
+ *
+ * The previous draw put a 5.25 arc and a bare corner bracket in the same box
+ * without joining them — the arc ended at (4.35, 4.22) and the bracket's corner
+ * sat at (2.25, 5.75), so at 12px the head read as a stray tick floating beside
+ * an almost-closed ring, and `History` (same file) was a strictly better drawing
+ * of the same idea. Redrawn so the arc's TAIL runs into the corner: the head is
+ * the termination of the stroke rather than an ornament near it, which is what
+ * makes the direction legible at 12px instead of merely inferable.
+ */
 export const Rewind = (p: IconProps) =>
   svg(
     <>
-      <path d="M2.75 8a5.25 5.25 0 1 0 1.6-3.78" />
-      <path d="M2.25 2.75v3h3" />
+      {/* A true 6-radius circle on the box's own centre (8, 8), so the ring
+          touches all four margins evenly — the old 5.25 arc left the glyph
+          floating small inside its box beside 13px siblings. It runs
+          counter-clockwise from 9 o'clock the long way round and STOPS at
+          (3.76, 3.76), which is exactly on the diagonal of the corner bracket
+          below: the arrowhead is the termination of the stroke rather than a
+          tick parked near it, which is what makes the direction readable at
+          12px. */}
+      <path d="M2 8a6 6 0 1 0 1.76-4.24" />
+      <path d="M2 2v3.33h3.33" />
     </>,
     p
   );

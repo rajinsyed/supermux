@@ -118,11 +118,16 @@ describe("QuestionCard keyboard", () => {
       expect(last.options.block).toBe("nearest");
       // It is the option that just took focus, and it belongs to the question
       // the advance moved to — not the one that was already on screen.
+      //
+      // Round 6 shows ONE question at a time, so "which question" is the live
+      // section's own index rather than its position among several rendered
+      // sections. The promise is unchanged: the focused option belongs to
+      // question two, and the card scrolled it into view.
       expect(last.target === document.activeElement).toBe(true);
       const item = last.target.closest(".question-item");
-      const items = Array.from(document.querySelectorAll(".question-item"));
       expect(item).not.toBeNull();
-      expect(items.indexOf(item!)).toBe(1);
+      expect(document.querySelectorAll(".question-item").length).toBe(1);
+      expect(item!.getAttribute("data-index")).toBe("1");
     } finally {
       Element.prototype.scrollIntoView = original;
     }
@@ -130,19 +135,52 @@ describe("QuestionCard keyboard", () => {
 
   test("typed free text is merged with the picked options, not substituted for them", () => {
     const decisions = setup();
-    const multi = questions.find((q) => q.multiSelect);
-    expect(multi).toBeDefined();
-    // Move to the multi-select question and pick one option.
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(multi!.question.slice(0, 24)) }));
-    const first = screen.getByRole("button", { name: new RegExp(multi!.options[0].label) });
+    const multi = questions.findIndex((q) => q.multiSelect);
+    expect(multi).toBeGreaterThan(-1);
+    // Step to the multi-select question. The prompt is no longer a button (one
+    // question is on screen at a time), so the stepper is how you get there.
+    fireEvent.click(screen.getByRole("button", { name: `Question ${multi + 1}, not answered` }));
+    const spec = questions[multi];
+    const first = screen.getByRole("button", { name: new RegExp(spec.options[0].label) });
     fireEvent.click(first);
 
+    // The free-text field is opened by its row rather than standing permanently
+    // open under every option list.
+    fireEvent.click(screen.getByRole("button", { name: "Something else…" }));
     const input = screen.getByPlaceholderText("Type your answer…");
     fireEvent.change(input, { target: { value: "Team seats too" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
     const answers = (decisions[0].updatedInput as { answers: Record<string, string> }).answers;
-    expect(answers[multi!.question]).toBe(`${multi!.options[0].label}, Team seats too`);
+    expect(answers[spec.question]).toBe(`${spec.options[0].label}, Team seats too`);
+  });
+
+  test("only the live question is rendered — no dead 'Not answered yet' sections", () => {
+    // Round-6 report: three questions produced one live list and two blocks of
+    // card held open to say nothing. The unanswered ones are marks in the
+    // stepper now, not sections.
+    const { container } = mount(<QuestionCard pending={pending} onDecide={() => {}} />);
+    expect(container.querySelectorAll(".question-item").length).toBe(1);
+    expect(container.textContent).not.toContain("Not answered yet");
+    expect(container.querySelectorAll(".q-step-dot").length).toBe(questions.length);
+  });
+
+  test("the stepper walks questions without answering them", () => {
+    const { container } = mount(<QuestionCard pending={pending} onDecide={() => {}} />);
+    expect(container.querySelector(".question-item")!.getAttribute("data-index")).toBe("0");
+    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+    expect(container.querySelector(".question-item")!.getAttribute("data-index")).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "Previous question" }));
+    expect(container.querySelector(".question-item")!.getAttribute("data-index")).toBe("0");
+  });
+
+  test("a step's mark reports whether that question has an answer", () => {
+    const { container } = mount(<QuestionCard pending={pending} onDecide={() => {}} />);
+    const dots = () => Array.from(container.querySelectorAll(".q-step-dot"));
+    expect(dots()[0].className).not.toContain("is-done");
+    fireEvent.click(screen.getByRole("button", { name: /Clerk/ }));
+    expect(dots()[0].className).toContain("is-done");
+    expect(dots()[0].getAttribute("aria-label")).toBe("Question 1, answered");
   });
 });
 

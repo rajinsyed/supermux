@@ -269,12 +269,22 @@ export function InteractiveBody({ block }: { block: ToolBlock }) {
       </div>
     );
   }
-  const questions = block.input.questions;
+  const questions = block.input.questions ?? block.structured?.questions;
   if (Array.isArray(questions)) {
-    // The answers ride back on the same input the card submitted, keyed by the
-    // question text. Rendering both halves is what makes the settled card a
-    // record of the exchange rather than a list of things you were once asked.
-    const answers = (block.input.answers ?? {}) as Record<string, unknown>;
+    // Where the answers actually are depends on how the card reached the
+    // screen. A question with NO streamed tool_use block is materialised by the
+    // reducer from the control response, with the answers folded into `input`.
+    // But when the CLI DID stream an assistant tool_use frame — every recent
+    // trace does — the block's input is the original questions alone, and the
+    // answers arrive on the `tool_use_result` of the settling user frame
+    // (`toolUseResult.answers` on disk, the same object live), which lands in
+    // `structured`. Reading only `input.answers` is the round-6 screenshot:
+    // "Asked you a question" expanded to three em-dashes over answers the agent
+    // had plainly received. Both sources are consulted; input wins because it
+    // is what THIS user submitted, and structured is the CLI's record of it.
+    const answers = (block.input.answers ??
+      block.structured?.answers ??
+      {}) as Record<string, unknown>;
     return (
       <div className="tool-body">
         <dl className="qa-list">

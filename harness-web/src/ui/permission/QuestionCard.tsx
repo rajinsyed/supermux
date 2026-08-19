@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PendingPermission } from "../../model/types";
 import { useCopy } from "../CopyContext";
-import { Check, Sparkle } from "../Icons";
+import { Check, ChevronRight, Sparkle } from "../Icons";
 import { prefersReducedMotion } from "../motion";
 import type { PermissionDecision } from "./PermissionCard";
 import { useCardKeys } from "./useCardKeys";
@@ -21,15 +21,33 @@ interface QuestionSpec {
 const ADVANCE_MS = 200;
 
 /**
- * A question can be answered by picking options, by typing, or by both. Letting
- * free text silently win drops selections the user can still see ticked, so the
- * submitted value is always everything they expressed, in the order they see it.
+ * The AskUserQuestion card.
+ *
+ * Round 5 rendered every question at once, which is what the round-6 report
+ * ("looks so ugly… redesign a minimal clean design for it") was looking at: a
+ * card the height of the pane, with an all-caps orange kicker over every
+ * section, boxy full-width option rows carrying bordered number squares, and —
+ * the worst of it — a "Not answered yet" line holding open a dead section for
+ * every question the user had not reached. Three questions produced three
+ * headings, two placeholders, and one live list.
+ *
+ * It is one question at a time now, in Beautiful UI's approval-card shape: a
+ * tight header (what this is, what is being asked, where you are in it), a
+ * single column of quiet option rows that only light up when chosen, and a small
+ * footer. The dead sections are replaced by a stepper — position, per-step
+ * answered marks, and two arrows — which occupies one 20px row instead of one
+ * empty block per unasked question.
+ *
+ * Adapted into the token system by hand; nothing is imported. The selection
+ * grammar is the pane's own (accent border + faint accent bed + a check), the
+ * same one the menu kit's active row and the rewind dialog's armed checkbox
+ * wear, so a chosen thing looks chosen everywhere.
+ *
+ * NOTHING about the protocol changes. `submit` still merges picked options with
+ * free text per question and sends the same `{ questions, answers }` shape, Skip
+ * still denies with the same message, and the 1–9 / Enter / Space bindings are
+ * unchanged. This is a layout and a skin.
  */
-function mergeAnswer(picked: string[], free: string | undefined): string {
-  const typed = free?.trim() ?? "";
-  return picked.concat(typed.length > 0 ? [typed] : []).join(", ");
-}
-
 export function QuestionCard({
   pending,
   onDecide
@@ -47,6 +65,8 @@ export function QuestionCard({
   const [active, setActive] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
+  /** Questions whose free-text row has been opened, so it survives a step away. */
+  const [otherOpen, setOtherOpen] = useState<Record<string, boolean>>({});
   const cardRef = useRef<HTMLElement>(null);
   const headingId = useId();
   // Set when auto-advance moves the active question, so focus follows the card
@@ -54,6 +74,19 @@ export function QuestionCard({
   const claimFocus = useRef(true);
 
   const current = questions[active];
+
+  const answerFor = useCallback(
+    (question: QuestionSpec) => mergeAnswer(answers[question.question] ?? [], other[question.question]),
+    [answers, other]
+  );
+
+  const goTo = useCallback(
+    (index: number) => {
+      claimFocus.current = true;
+      setActive(Math.max(0, Math.min(questions.length - 1, index)));
+    },
+    [questions.length]
+  );
 
   const toggle = useCallback(
     (question: QuestionSpec, label: string) => {
@@ -115,12 +148,19 @@ export function QuestionCard({
         toggle(current, current.options![digit - 1].label);
         return;
       }
+      // The stepper's arrows, from the keyboard. Only claimed when there is
+      // somewhere to go, so a single-question card leaves ←/→ alone.
+      if (questions.length > 1 && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        event.preventDefault();
+        goTo(active + (event.key === "ArrowRight" ? 1 : -1));
+        return;
+      }
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         submit();
       }
     },
-    [current, submit, toggle]
+    [active, current, goTo, questions.length, submit, toggle]
   );
 
   useCardKeys(cardRef, onKey);
@@ -138,9 +178,11 @@ export function QuestionCard({
     [submit]
   );
 
-  const answeredCount = questions.filter(
-    (q) => mergeAnswer(answers[q.question] ?? [], other[q.question]).length > 0
-  ).length;
+  const answeredCount = questions.filter((q) => answerFor(q).length > 0).length;
+  const multi = questions.length > 1;
+  const selected = current ? answers[current.question] ?? [] : [];
+  const freeText = current ? other[current.question] ?? "" : "";
+  const showOther = current ? (otherOpen[current.question] ?? false) || freeText.length > 0 : false;
 
   return (
     <section
@@ -160,100 +202,170 @@ export function QuestionCard({
             {request.title ?? request.display_name ?? copy("supermux.harness.question.title")}
           </h3>
         </div>
-        {questions.length > 1 ? (
-          <span className="question-progress tnum">
-            {answeredCount}/{questions.length}
-          </span>
+        {multi ? (
+          /* The stepper replaces the two "Not answered yet" blocks: position,
+             one mark per question saying whether it has an answer, and the two
+             ways to move. One row, whatever the question count. */
+          <nav className="q-steps" aria-label={copy("supermux.harness.question.badge")}>
+            <button
+              type="button"
+              className="q-step-arrow"
+              onClick={() => goTo(active - 1)}
+              disabled={active === 0}
+              title={copy("supermux.harness.question.previous")}
+              aria-label={copy("supermux.harness.question.previous")}
+            >
+              <ChevronRight size={11} />
+            </button>
+            <span className="q-step-dots">
+              {questions.map((question, index) => {
+                const done = answerFor(question).length > 0;
+                return (
+                  <button
+                    key={question.question}
+                    type="button"
+                    className={`q-step-dot${index === active ? " is-active" : ""}${
+                      done ? " is-done" : ""
+                    }`}
+                    onClick={() => goTo(index)}
+                    aria-current={index === active ? "step" : undefined}
+                    aria-label={copy(
+                      done
+                        ? "supermux.harness.question.stepAnswered"
+                        : "supermux.harness.question.stepUnanswered",
+                      { index: index + 1 }
+                    )}
+                  />
+                );
+              })}
+            </span>
+            <button
+              type="button"
+              className="q-step-arrow"
+              onClick={() => goTo(active + 1)}
+              disabled={active === questions.length - 1}
+              title={copy("supermux.harness.question.next")}
+              aria-label={copy("supermux.harness.question.next")}
+            >
+              <ChevronRight size={11} />
+            </button>
+          </nav>
         ) : null}
       </header>
 
-      <div className="question-list">
-        {questions.map((question, index) => {
-          const selected = answers[question.question] ?? [];
-          const answer = mergeAnswer(selected, other[question.question]);
-          const isActive = index === active;
-          return (
-            <div
-              key={question.question}
-              className={`question-item${isActive ? " is-active" : ""}`}
-              onFocusCapture={() => setActive(index)}
-            >
-              <button
-                type="button"
-                className="question-prompt"
-                onClick={() => setActive(index)}
-                aria-expanded={isActive}
-              >
-                {question.header ? <span className="question-header">{question.header}</span> : null}
-                <span className="question-text">{question.question}</span>
-                {question.multiSelect ? (
-                  <span className="question-hint">
-                    {copy("supermux.harness.question.selectMultiple")}
+      {current ? (
+        <div className="question-item is-active" data-index={active}>
+          <div className="q-prompt">
+            {/* One caption line, not three stacked ones: where you are, what
+                this question is about, and whether it takes more than one
+                answer are all the same tier of information. The kicker was an
+                all-caps ORANGE label on its own row and the loudest thing in
+                the card; the QUESTION is what carries the weight now. */}
+            {multi || current.header || current.multiSelect ? (
+              <span className="q-caption">
+                {multi ? (
+                  <span className="q-position tnum">
+                    {copy("supermux.harness.question.step", {
+                      index: active + 1,
+                      total: questions.length
+                    })}
                   </span>
                 ) : null}
-              </button>
-              {isActive ? (
-                <div className="question-options">
-                  {(question.options ?? []).map((option, optionIndex) => {
-                    const on = selected.includes(option.label);
-                    return (
-                      <button
-                        key={option.label}
-                        type="button"
-                        className={`option${on ? " is-on" : ""}`}
-                        onClick={() => toggle(question, option.label)}
-                        onKeyDown={onOptionKey}
-                        aria-pressed={on}
-                      >
-                        <span className="option-key tnum">{optionIndex + 1}</span>
-                        <span className="option-text">
-                          <span className="option-label">{option.label}</span>
-                          {option.description ? (
-                            <span className="option-desc">{option.description}</span>
-                          ) : null}
-                        </span>
-                        {on ? <Check size={12} className="option-check" /> : null}
-                      </button>
-                    );
-                  })}
-                  <input
-                    className="question-other"
-                    aria-label={copy("supermux.harness.question.other")}
-                    placeholder={copy("supermux.harness.question.otherPlaceholder")}
-                    value={other[question.question] ?? ""}
-                    onChange={(event) =>
-                      setOther((prev) => ({ ...prev, [question.question]: event.target.value }))
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" || event.shiftKey) return;
-                      event.preventDefault();
-                      submit();
-                    }}
-                  />
-                  {selected.length > 0 && (other[question.question] ?? "").trim().length > 0 ? (
-                    // Both were expressed, so both are sent — say so, rather than
-                    // leaving chips ticked next to text and no clue which wins.
-                    <span className="question-merged">
-                      {copy("supermux.harness.question.willSend", { answer })}
-                    </span>
-                  ) : null}
-                </div>
-              ) : answer ? (
-                <div className="question-answer">
-                  <span className="answer-chip">
-                    <Check size={11} />
-                    {answer}
+                {current.header ? <span className="q-kicker">{current.header}</span> : null}
+                {current.multiSelect ? (
+                  <span className="q-hint">{copy("supermux.harness.question.selectMultiple")}</span>
+                ) : null}
+              </span>
+            ) : null}
+            <p className="q-question">{current.question}</p>
+          </div>
+
+          <div className="question-options" role="group" aria-labelledby={headingId}>
+            {(current.options ?? []).map((option, optionIndex) => {
+              const on = selected.includes(option.label);
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  className={`option${on ? " is-on" : ""}`}
+                  onClick={() => toggle(current, option.label)}
+                  onKeyDown={onOptionKey}
+                  aria-pressed={on}
+                >
+                  {/* The affordance is a hairline ring that fills with the
+                      accent when chosen — subtle until it matters. A square is
+                      drawn for multi-select and a circle for single, which is
+                      the one honest way to say "you may pick more than one"
+                      without a sentence. */}
+                  <span
+                    className={`option-mark${current.multiSelect ? " is-multi" : ""}`}
+                    aria-hidden="true"
+                  >
+                    {on ? <Check size={9} /> : null}
                   </span>
-                </div>
-              ) : (
-                <div className="question-answer is-unanswered">
-                  {copy("supermux.harness.question.unanswered")}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                  <span className="option-text">
+                    <span className="option-label">{option.label}</span>
+                    {option.description ? (
+                      <span className="option-desc">{option.description}</span>
+                    ) : null}
+                  </span>
+                  {/* The number key, printed as a bare glyph rather than in a
+                      bordered box: it is a hint about the keyboard, not a
+                      second control beside the one it labels. */}
+                  <span className="option-key tnum" aria-hidden="true">
+                    {optionIndex + 1}
+                  </span>
+                </button>
+              );
+            })}
+
+            {showOther ? (
+              <input
+                className="question-other"
+                aria-label={copy("supermux.harness.question.other")}
+                placeholder={copy("supermux.harness.question.otherPlaceholder")}
+                value={freeText}
+                autoFocus={freeText.length === 0}
+                onChange={(event) =>
+                  setOther((prev) => ({ ...prev, [current.question]: event.target.value }))
+                }
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey) return;
+                  event.preventDefault();
+                  submit();
+                }}
+              />
+            ) : (
+              /* A permanently-open text field under a three-option question read
+                 as a fourth, emptier option. It is a row that opens one. */
+              <button
+                type="button"
+                className="option is-other"
+                onClick={() =>
+                  setOtherOpen((prev) => ({ ...prev, [current.question]: true }))
+                }
+              >
+                <span className="option-mark" aria-hidden="true" />
+                <span className="option-text">
+                  <span className="option-label">
+                    {copy("supermux.harness.question.otherRow")}
+                  </span>
+                </span>
+              </button>
+            )}
+
+            {selected.length > 0 && freeText.trim().length > 0 ? (
+              // Both were expressed, so both are sent — say so, rather than
+              // leaving chips ticked next to text and no clue which wins.
+              <span className="question-merged">
+                {copy("supermux.harness.question.willSend", {
+                  answer: mergeAnswer(selected, freeText)
+                })}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <footer className="question-actions">
         <button
@@ -278,4 +390,14 @@ export function QuestionCard({
       </footer>
     </section>
   );
+}
+
+/**
+ * A question can be answered by picking options, by typing, or by both. Letting
+ * free text silently win drops selections the user can still see ticked, so the
+ * submitted value is always everything they expressed, in the order they see it.
+ */
+function mergeAnswer(picked: string[], free: string | undefined): string {
+  const typed = free?.trim() ?? "";
+  return picked.concat(typed.length > 0 ? [typed] : []).join(", ");
 }

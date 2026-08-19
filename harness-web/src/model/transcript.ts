@@ -10,7 +10,7 @@ import type {
   UserLine
 } from "../protocol/types";
 import { appendPendingRelay, hydrateThread, isThreadRunning } from "./agentThreads";
-import { insertBlock, locateTool, markTurnAborted, settleTurn } from "./blocks";
+import { insertBlock, markTurnAborted, readTool, settleTurn, writeBlock } from "./blocks";
 import {
   activeTurnIndex,
   adoptSessionModel,
@@ -366,17 +366,22 @@ function applyControlRequest(
 }
 
 /**
- * An AskUserQuestion arrives ONLY as a `can_use_tool` control request — unlike
- * Bash or ExitPlanMode, no `assistant` frame ever announces it — so answering it
- * used to erase the exchange entirely: neither the question, nor the options,
- * nor the choice survived anywhere in the transcript. Scrolling back to see what
- * you were asked and what you picked is ordinary. On resolution the request is
- * therefore materialised as a settled interactive block carrying both the
- * original input and the submitted answers, which `InteractiveBody` renders.
+ * The transcript's record of an answered question, in BOTH the shapes the CLI
+ * ships it.
  *
- * Scoped to the interactive tools and guarded on the id not already being on
- * screen, so an ordinary Bash or Edit approval — which does have its own
- * streamed block — is never duplicated here.
+ * Older CLIs raised AskUserQuestion ONLY as a `can_use_tool` control request —
+ * no `assistant` frame announced it — so answering it erased the exchange
+ * entirely, and resolution materialises a settled interactive block carrying
+ * the input and the submitted answers. The CURRENT CLI (2.1.23x traces) DOES
+ * stream an assistant `tool_use` frame first, so the card is usually already on
+ * screen when the user submits; for that shape the submitted answers are merged
+ * into the existing block's input instead — the round-6 screenshot ("Asked you
+ * a question" expanded to em-dashes) was this path silently skipping, leaving
+ * the answers to exist nowhere until the CLI's tool_result echoed them back.
+ *
+ * Still scoped to questions: an ordinary Bash or Edit approval's streamed block
+ * needs neither a duplicate card nor an input merge (its `updatedInput` is the
+ * unmodified request input, and its real outcome arrives in the tool_result).
  */
 function recordAnsweredRequest(
   model: TranscriptModel,
@@ -387,7 +392,23 @@ function recordAnsweredRequest(
 ): TranscriptModel {
   const toolUseId = resolved.request.tool_use_id;
   if (resolved.kind !== "question") return model;
-  if (!toolUseId || locateTool(model, index, toolUseId)) return model;
+  if (!toolUseId) return model;
+  // The current CLI DOES stream an assistant tool_use frame for
+  // AskUserQuestion (the round-6 trace has one), so the card is often already
+  // on screen when the user submits. Skipping entirely here — the old guard —
+  // dropped the submitted answers on the floor: the block's input held the
+  // questions alone, and the settled card showed "—" for every answer until
+  // (and unless) the CLI's tool_result echoed them back. The answers exist
+  // only in this action's payload at this moment, so they are merged into the
+  // block the user is looking at.
+  const existing = readTool(model, index, toolUseId);
+  if (existing) {
+    if (action.behavior === "deny" || !action.updatedInput) return model;
+    return writeBlock(model, existing.location, {
+      ...existing.block,
+      input: { ...existing.block.input, ...action.updatedInput }
+    });
+  }
   const turnIndex = model.turns.length - 1;
   if (turnIndex < 0) return model;
   const denied = action.behavior === "deny";
@@ -557,6 +578,22 @@ export function applyLocalAction(
       return truncateBeforeUserMessage(model, index, action.uuid);
     case "cachedModels":
       return { ...model, cachedModels: action.models, revision: model.revision + 1 };
+    case "sessionDefaults":
+      // A property of the BINARY'S SETTINGS, not of this conversation, held on
+      // the session because that is what every display site already resolves
+      // from. It never overwrites a real selection: resolveModel and
+      // effectiveEffort consult these only when nothing stronger exists.
+      if (
+        model.session.defaultModel === action.model &&
+        model.session.defaultEffort === action.effort
+      ) {
+        return model;
+      }
+      return {
+        ...model,
+        session: { ...model.session, defaultModel: action.model, defaultEffort: action.effort },
+        revision: model.revision + 1
+      };
     case "historyTruncated":
       return { ...model, historyTruncated: true, revision: model.revision + 1 };
     case "historyReplayed": {
@@ -584,6 +621,19 @@ export function applyLocalAction(
         next = {
           ...(next === model ? { ...next } : next),
           session: adoptSessionModel(next.session, next.cachedModels, next.lastAssistantModel),
+          revision: next.revision + 1
+        };
+      }
+      // The records stamp effort too ("effort":"xhigh" on every assistant
+      // line), and it is adopted for the same reason as the model: the resumed
+      // session was RUNNING at that level, so the trigger must say so and the
+      // restart must carry it rather than silently dropping to a default.
+      // After adoptSessionModel, so a model change's deliberate effort drop is
+      // immediately refilled with the resumed session's own recorded level.
+      if (next.lastAssistantEffort && next.lastAssistantEffort !== next.session.effort) {
+        next = {
+          ...next,
+          session: { ...next.session, effort: next.lastAssistantEffort },
           revision: next.revision + 1
         };
       }

@@ -71,14 +71,24 @@
    sane cap, while the assistant's answer stays bare ink across the full
    column. The asymmetry is what lets the eye find the turns. */
 
+/* A real bubble.
+ *
+ * It was a 14px box with its trailing corner cut to 5px — which at a 34px
+ * single-line height reads as a slightly-rounded rectangle with one chipped
+ * corner, not as speech. The radius is generous now (18px, the pane's --r-xl,
+ * against a 15px inner padding) so the curve is visible along the whole edge,
+ * and the trailing corner keeps a TAIL rather than a chip: 7px, enough to point
+ * the bubble at the user's side of the column without breaking the shape. The
+ * asymmetry is the only thing saying which way the message is going, so it has
+ * to survive the bigger radius rather than be swallowed by it. */
 .user-msg {
   position: relative;
   margin: 0 0 10px auto;
   width: fit-content;
   max-width: 85%;
-  padding: 8px 13px;
-  border-radius: var(--r-lg);
-  border-bottom-right-radius: var(--r-xs);
+  padding: 9px 15px;
+  border-radius: var(--r-xl);
+  border-bottom-right-radius: 7px;
   background: var(--surface-raised);
   border: 1px solid var(--border);
   font-size: 13px;
@@ -92,11 +102,13 @@
 }
 
 /* Reserve the hover tools' footprint on the first line at rest, so the text
-   never runs under them and hover never reflows the words. */
+   never runs under them and hover never reflows the words. Sized for the whole
+   PILL now (two 22px controls plus its padding and hairline), not for two bare
+   buttons — the group is wider than the sum of what it holds. */
 .user-msg-body::before {
   content: "";
   float: right;
-  width: 48px;
+  width: 56px;
   height: 1px;
 }
 
@@ -125,19 +137,76 @@
   margin-top: 4px;
 }
 
+/* ---------- the bubble's own actions ----------
+
+   Rewind and copy, pinned to the bubble's top-trailing corner.
+
+   They were two bare 24px icon buttons fading in from nothing, which at rest
+   left a 48px hole in the corner of every bubble and on hover produced two
+   glyphs floating with no visible relationship to each other. They are a PILL
+   now: one soft raised group with a hairline, holding both, so what appears
+   under the pointer reads as a small toolbar attached to this message rather
+   than two icons that happen to be near it.
+
+   The reveal carries a 3px rise as well as the fade — enough to read as the
+   group arriving, short enough not to draw the eye while scrolling — and
+   `visibility` rides along so the hidden state is not an invisible click target
+   sitting over the first line of the user's own words.
+
+   `:focus-within` on the bubble is what makes it keyboard-reachable: tabbing to
+   either control reveals the group exactly as hovering does. */
+
 .user-msg .user-msg-tools {
   position: absolute;
-  top: 7px;
-  right: 8px;
+  top: 5px;
+  right: 6px;
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border-radius: var(--r-pill);
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lifted);
   opacity: 0;
-  transition: opacity var(--dur) var(--ease);
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease),
+    visibility var(--dur) var(--ease);
 }
 
 .user-msg:hover .user-msg-tools,
 .user-msg:focus-within .user-msg-tools {
   opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+/* Inside the pill the buttons are round and tighter than the pane's default
+   24px square — the pill is the bed now, so each control only needs to own its
+   own glyph. */
+.user-msg .user-msg-tools .icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  color: var(--text-faint);
+}
+
+.user-msg .user-msg-tools .icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.user-msg .user-msg-tools .icon-btn:focus-visible {
+  color: var(--text);
+}
+
+/* The copy confirmation is a colour change on a glyph that cross-fades in
+   place (`.copy-glyph` in base.css); the toast under a 22px button in a pill
+   would be wider than the pill itself, so this one instance speaks with the
+   check alone. */
+.user-msg .user-msg-tools .copy-toast {
+  display: none;
 }
 
 /* ---------- assistant column ---------- */
@@ -202,7 +271,27 @@
   margin: 1px 0;
 }
 
-/* ---------- fold header / streaming overflow ---------- */
+/* ---------- fold header / streaming overflow ----------
+
+   Two controls that read alike but say different things.
+
+   `.work-overflow` is the STREAMING expander: rows are hidden right now and the
+   count is the whole point, so it keeps its leading chevron and its number.
+
+   `.fold-head` is the SETTLED summary: "Worked for 2m 30s". It shipped as a
+   left-hand chevron, the duration, and "1 earlier tool call" — three pieces of
+   chrome permanently on screen for one fact. Round 6:
+
+     • the count is gone (dropped in TurnView; the fold's contents are the
+       honest answer to "how much work", one click away);
+     • the affordance moved to the row's TRAILING edge, where the eye lands
+       after reading the label rather than before it; and
+     • it is hidden until the row is hovered or focused, so a settled
+       transcript is a column of sentences instead of a column of controls.
+
+   The whole row stays the button — keyboard reach and hit target are unchanged
+   — and `:focus-visible` reveals the glyph exactly as hover does, so a keyboard
+   reader is never shown less than a pointer reader. */
 
 .fold-head,
 .work-overflow {
@@ -214,6 +303,14 @@
   border-radius: var(--r-sm);
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* The settled row reserves its trailing affordance's footprint at rest, so
+   revealing the glyph never nudges the label. Padding rather than a gap: the
+   ghost button is 20px and sits inside it. */
+.fold-head {
+  gap: 8px;
+  padding: 3px 4px 3px 2px;
 }
 
 .fold-head:hover,
@@ -231,9 +328,48 @@
   font-weight: 500;
 }
 
-.fold-count {
-  color: var(--text-faint);
-  font-size: 11.5px;
+/* The trailing affordance: a small ghost button. It carries a bed and a border
+   of its own precisely BECAUSE it only appears on hover — an affordance that
+   shows up unannounced has to look, at a glance, like something that can be
+   pressed, and a bare 12px chevron does not.
+
+   `visibility` alongside opacity, so the hidden state is not a transparent
+   click target sitting over the row's own trailing edge. */
+.fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-3px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease),
+    visibility var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.fold-head:hover .fold-toggle,
+.fold-head:focus-visible .fold-toggle {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* A FOLDED turn keeps its affordance visible. There is hidden content and no
+   other sign of it — the count that used to say so is gone — so the one row
+   whose state is not self-evident from the transcript always shows the way in. */
+.fold-head.is-folded .fold-toggle {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
 }
 
 /* ---------- thinking ----------
@@ -323,19 +459,71 @@
   color: var(--text-faint);
 }
 
-/* ---------- live indicator ---------- */
+/* ---------- live indicator ----------
+
+   The TURN-level member of the loading family (base.css documents all three).
+
+   It was a sweeping dash beside "Working for 54s" — the SAME dash a running
+   Workflow row wore two lines above it, which is exactly what made the two
+   states unreadable from each other. The dash is gone: this row's label is
+   already the most specific thing on it (it names the state AND counts the
+   seconds), so the animation lands on the words — the sheen sweep declared in
+   cards.css, keyed off the `.working-dots` anchor — and a small accent tick
+   trails the sentence, the way a caret trails a line still being written.
+
+   `.working-dots` renders no glyph now. It stays as the anchor that sibling
+   selector needs, collapsed to zero width, and `gap: 0` on the row keeps the
+   label at the turn body's own left edge rather than indented past an empty
+   box. */
 
 .turn-live {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   margin: 8px 0 2px;
   min-height: 18px;
+}
+
+.turn-live .working-dots {
+  width: 0;
 }
 
 .turn-live-label {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* The tick: one accent dot keeping the turn's time. Deliberately NOT a spinner
+   — the orbit means "one request is in flight", and a streaming turn is not one
+   request — and deliberately not a bar, which is the mark this pass removes. */
+.turn-live-label::after {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 6px;
+  vertical-align: 1px;
+  border-radius: var(--r-pill);
+  background: var(--claude-strong);
+  animation: turn-tick 2.2s ease-in-out infinite;
+}
+
+/* Same 2.2s period as the label's sweep, so the tick brightens as the crest
+   crosses the words rather than beating against them. */
+@keyframes turn-tick {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-live-label::after {
+    opacity: 0.85;
+  }
 }
 
 .turn-interrupted {

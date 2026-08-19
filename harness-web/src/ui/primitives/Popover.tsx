@@ -6,6 +6,7 @@ import {
   type ReactNode,
   type RefObject
 } from "react";
+import { popoverExitDelay } from "../motion";
 
 /**
  * The pane's ONE floating surface.
@@ -18,11 +19,24 @@ import {
  * rows with the arrow keys". That is what "the pickers and menus still look
  * ugly" names: not one bad menu, but no menu system at all.
  *
- * Everything that floats now comes from this file and `MenuList.tsx`, and wears
- * the material declared once in `styles/menu.css` — a crisp hairline, one
- * radius, shadcn's layered popover shadow, and 13px rows on a 7px radius. A
- * surface that needs its own geometry passes a class; nothing re-declares the
- * material.
+ * Round 5 unified the GEOMETRY and stopped there, which is why the round-6
+ * report said the menus "still look same and ugly. no animations or good taste
+ * whatsoever". Two things were missing and are added here:
+ *
+ *  1. MOTION. A surface appeared with a 110ms fade and disappeared between two
+ *     frames, because nothing kept it mounted long enough to leave. A panel is
+ *     now held through its exit (`is-closing`) and both halves scale from the
+ *     trigger's own edge, so the panel visibly grows out of the control that
+ *     opened it rather than materialising over it. See `motion.ts` for the two
+ *     durations and `styles/menu.css` for the keyframes.
+ *  2. ORIGIN. `transform-origin` is derived from side AND align — a menu pinned
+ *     to the right edge of a bottom bar grows from its bottom-RIGHT corner, not
+ *     from its centre, which is the difference between "this came from that
+ *     button" and "a rectangle appeared".
+ *
+ * Everything that floats comes from this file and `MenuList.tsx`, and wears the
+ * material declared once in `styles/menu.css`. A surface that needs its own
+ * geometry passes a class; nothing re-declares the material.
  *
  * shadcn itself was considered and NOT adopted: it is Tailwind + Radix + cva,
  * and this pane is an esbuild single-file bundle whose entire palette is CSS
@@ -94,6 +108,13 @@ export interface PopoverSurfaceProps {
   role?: string;
   label?: string;
   surfaceRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * The panel is on its way out: it plays the exit animation and is taken out
+   * of the accessibility tree and the tab order for the ~100ms it survives, so
+   * a screen reader never reads a menu that has already been answered and a
+   * stray Tab cannot land on a row that is about to unmount.
+   */
+  closing?: boolean;
   onKeyDown?(event: React.KeyboardEvent<HTMLDivElement>): void;
   children: ReactNode;
 }
@@ -110,15 +131,20 @@ export function PopoverSurface({
   role,
   label,
   surfaceRef,
+  closing,
   onKeyDown,
   children
 }: PopoverSurfaceProps) {
   return (
     <div
       ref={surfaceRef}
-      className={`ui-pop is-${side} is-${align}${className ? ` ${className}` : ""}`}
+      className={`ui-pop is-${side} is-${align}${closing ? " is-closing" : ""}${
+        className ? ` ${className}` : ""
+      }`}
       role={role}
       aria-label={label}
+      aria-hidden={closing ? true : undefined}
+      inert={closing ? true : undefined}
       onKeyDown={onKeyDown}
     >
       {children}
@@ -155,6 +181,8 @@ export interface PopoverProps {
   autoFocus?: "checked" | "first" | "none";
 }
 
+type Phase = "closed" | "open" | "closing";
+
 export function Popover({
   trigger,
   children,
@@ -167,21 +195,52 @@ export function Popover({
   onOpen,
   autoFocus = "none"
 }: PopoverProps) {
-  const [open, setOpen] = useState(false);
+  const [phase, setPhase] = useState<Phase>("closed");
   const root = useRef<HTMLDivElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const exitTimer = useRef<number | undefined>(undefined);
   const onPopKeyDown = usePopoverKeys(pop);
+  const open = phase === "open";
 
-  const close = useCallback((restoreFocus = false) => {
-    setOpen(false);
-    if (restoreFocus) triggerRef.current?.focus();
+  const clearExit = useCallback(() => {
+    if (exitTimer.current === undefined) return;
+    window.clearTimeout(exitTimer.current);
+    exitTimer.current = undefined;
   }, []);
+
+  /**
+   * Closing is two steps, and the panel is INERT for the second one.
+   *
+   * Focus is handed back before the exit rather than after it: a control that is
+   * still visible but no longer focusable is exactly where a keyboard user gets
+   * stranded, and Escape must put the caret back on the trigger immediately, not
+   * a tenth of a second later.
+   */
+  const close = useCallback(
+    (restoreFocus = false) => {
+      clearExit();
+      setPhase((prev) => (prev === "open" ? "closing" : prev));
+      if (restoreFocus) triggerRef.current?.focus();
+      const delay = popoverExitDelay();
+      if (delay === 0) {
+        setPhase("closed");
+        return;
+      }
+      exitTimer.current = window.setTimeout(() => {
+        exitTimer.current = undefined;
+        setPhase("closed");
+      }, delay);
+    },
+    [clearExit]
+  );
+
+  useEffect(() => clearExit, [clearExit]);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      if (!root.current?.contains(event.target as Node)) close();
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -219,8 +278,9 @@ export function Popover({
             close();
             return;
           }
+          clearExit();
           onOpen?.();
-          setOpen(true);
+          setPhase("open");
         }}
         aria-haspopup={role === "menu" ? "menu" : "dialog"}
         aria-expanded={open}
@@ -228,7 +288,7 @@ export function Popover({
       >
         {trigger(open)}
       </button>
-      {open ? (
+      {phase !== "closed" ? (
         <PopoverSurface
           side={side}
           align={align}
@@ -236,6 +296,7 @@ export function Popover({
           role={role}
           label={label}
           surfaceRef={pop}
+          closing={phase === "closing"}
           onKeyDown={onPopKeyDown}
         >
           {children((restoreFocus = false) => close(restoreFocus))}

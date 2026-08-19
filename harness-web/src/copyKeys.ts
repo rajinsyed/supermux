@@ -368,8 +368,21 @@ export const copyDefaults = {
   "supermux.harness.question.selectMultiple": "Select all that apply",
   "supermux.harness.question.dismiss": "Skip",
   "supermux.harness.question.dismissed": "Dismissed",
-  "supermux.harness.question.unanswered": "Not answered yet",
   "supermux.harness.question.willSend": "Will send: {answer}",
+  // Round 6: the card shows ONE question at a time with a stepper, so the
+  // "Not answered yet" placeholder that used to fill every inactive section is
+  // retired — `question.unanswered` should lose its Swift and xcstrings rows
+  // with it. What replaces it is a position ("2 of 3") plus per-step marks that
+  // say which steps are answered, and two controls to walk between them.
+  "supermux.harness.question.step": "{index} of {total}",
+  "supermux.harness.question.previous": "Previous question",
+  "supermux.harness.question.next": "Next question",
+  "supermux.harness.question.stepAnswered": "Question {index}, answered",
+  "supermux.harness.question.stepUnanswered": "Question {index}, not answered",
+  // The single-select's "or type your own" affordance. It was an always-open
+  // text field under every option list — a fourth box in a three-option
+  // question — and is a quiet row that opens one now.
+  "supermux.harness.question.otherRow": "Something else…",
 
   // `header.rename` / `header.renameSave` / `header.renameCancel` retired with
   // the bottom bar's session title. The strip carries the pane's ADDRESS (the
@@ -450,6 +463,12 @@ export const copyDefaults = {
   "supermux.harness.rewind.title": "Rewind to this message",
   "supermux.harness.rewind.body":
     "Everything after this message is dropped, and its text goes back in the composer to edit.",
+  // Round 6: the dialog lists the two things a rewind does rather than
+  // describing them in one sentence, so each half needs a name of its own and
+  // the always-on half needs to say that it is not a choice.
+  "supermux.harness.rewind.quoteLabel": "Rewinding to",
+  "supermux.harness.rewind.conversationTitle": "Rewind the conversation",
+  "supermux.harness.rewind.always": "Always",
   "supermux.harness.rewind.restoreFiles": "Also restore files to this point",
   "supermux.harness.rewind.checking": "Checking what changed…",
   "supermux.harness.rewind.filesChangedOne": "{count} file · +{added} −{removed}",

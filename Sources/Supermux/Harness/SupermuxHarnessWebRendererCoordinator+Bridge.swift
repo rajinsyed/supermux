@@ -33,6 +33,11 @@ extension SupermuxHarnessWebRendererCoordinator {
             if let cachedModels = bootstrap.cachedModels {
                 context["cachedModels"] = cachedModels
             }
+            // The CLI's settings defaults — what a flagless start actually
+            // runs. See SupermuxHarnessSessionController.settingsDefaults().
+            if let defaults = controller.settingsDefaults() {
+                context["defaults"] = defaults
+            }
             return context
         case "harness.listSessions":
             return ["sessions": try await controller.listSessions(limit: request.integer("limit"))]

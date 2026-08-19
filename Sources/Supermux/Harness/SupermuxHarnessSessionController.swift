@@ -181,6 +181,63 @@ final class SupermuxHarnessSessionController {
         return (status, cachedModels?.isEmpty == false ? cachedModels : nil)
     }
 
+    /// The model and effort a flagless `claude` start in this working directory
+    /// will actually run, read from the CLI's own settings files in its own
+    /// precedence order: project `.claude/settings.local.json`, then project
+    /// `.claude/settings.json`, then `~/.claude/settings.json`. Delivered with
+    /// `harness.context` so a fresh pane can name the real session-default
+    /// model immediately (round-6 item 12) instead of showing the catalog's
+    /// generic "Default (recommended)" row until the first init frame — and the
+    /// settings `effortLevel` is the only source for which effort an un-picked
+    /// session runs at (item 5), since the live catalog ships no per-model
+    /// default. Best-effort: unreadable or absent files simply contribute
+    /// nothing, and an init frame later outranks whatever this said.
+    func settingsDefaults() -> [String: Any]? {
+        Self.settingsDefaults(
+            workingDirectoryURL: workingDirectoryURL,
+            homeDirectoryURL: fileManager.homeDirectoryForCurrentUser
+        )
+    }
+
+    /// The pure half of `settingsDefaults()`, split out so tests can point the
+    /// "home" at a fixture directory instead of the real account's settings.
+    nonisolated static func settingsDefaults(
+        workingDirectoryURL: URL?,
+        homeDirectoryURL: URL
+    ) -> [String: Any]? {
+        var candidates: [URL] = []
+        if let workingDirectoryURL {
+            let project = workingDirectoryURL.appendingPathComponent(".claude", isDirectory: true)
+            candidates.append(project.appendingPathComponent("settings.local.json"))
+            candidates.append(project.appendingPathComponent("settings.json"))
+        }
+        candidates.append(
+            homeDirectoryURL
+                .appendingPathComponent(".claude", isDirectory: true)
+                .appendingPathComponent("settings.json")
+        )
+        var model: String?
+        var effort: String?
+        for url in candidates {
+            guard model == nil || effort == nil else { break }
+            guard let data = try? Data(contentsOf: url),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+            if model == nil, let value = normalized(object["model"] as? String) {
+                model = value
+            }
+            if effort == nil, let value = normalized(object["effortLevel"] as? String) {
+                effort = value
+            }
+        }
+        guard model != nil || effort != nil else { return nil }
+        var defaults: [String: Any] = [:]
+        if let model { defaults["model"] = model }
+        if let effort { defaults["effort"] = effort }
+        return defaults
+    }
+
     func binarySettingState() async -> [String: Any] {
         let status = await cliStatus()
         var setting: [String: Any] = [:]

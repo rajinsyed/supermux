@@ -6,11 +6,18 @@ import { Check } from "../Icons";
  *
  * One row shape, one section shape, one footer shape, one empty/loading shape.
  * A model row, a permission mode, a session, a slash command, and a workflow
- * phase are all THE SAME OBJECT as far as the eye is concerned — a 26px line
+ * phase are all THE SAME OBJECT as far as the eye is concerned — a 28px line
  * with an optional leading mark, a label that ellipsizes, optional trailing
  * metadata, and an optional check — and round 4's problem was that each of them
- * was drawn by hand instead. See `Popover.tsx` for the surface they sit on and
- * the shadcn decision.
+ * was drawn by hand instead. See `Popover.tsx` for the surface they sit on, the
+ * motion they arrive with, and the shadcn decision.
+ *
+ * Round 6 adds the TYPOGRAPHIC tier the rows were missing. A section title, a
+ * row label, a row's consequence line, and a trailing fact were four things
+ * rendered at 11.5–13px in three greys, which is close enough to read as one
+ * undifferentiated list: the report's "no typographic hierarchy". They are now
+ * four deliberately separated tiers — see the `--menu-*` scale at the head of
+ * `styles/menu.css` — and the label alone is allowed to be the row's ink.
  */
 
 export function MenuList({
@@ -158,6 +165,20 @@ export function CommandList({ children, label }: { children: ReactNode; label?: 
   );
 }
 
+/**
+ * One completion row.
+ *
+ * The round-6 report called the slash menu out twice, and the shape was the
+ * reason: name, argument hint and description were three baseline-aligned spans
+ * on ONE line, so a command with a long description pushed its own name's
+ * meaning off the right edge and every row was a different length of grey.
+ *
+ * It is a two-line row now — the command (mono, the pane's ink) over its
+ * description (the meta tier) — which is the same object as a `MenuItem` with a
+ * `detail`, and reads as one list rather than as a wrapped sentence per line.
+ * The keyboard mark stays a tinted bed plus a leading accent bar, because ⏎ acts
+ * on the MARKED row while the pointer may be hovering a different one.
+ */
 export function CommandItem({
   label,
   hint,
@@ -184,8 +205,10 @@ export function CommandItem({
         onPick();
       }}
     >
-      <span className="ui-cmd-label mono">{label}</span>
-      {hint ? <span className="ui-cmd-hint mono">{hint}</span> : null}
+      <span className="ui-cmd-line">
+        <span className="ui-cmd-label mono">{label}</span>
+        {hint ? <span className="ui-cmd-hint mono">{hint}</span> : null}
+      </span>
       {detail ? <span className="ui-cmd-detail">{detail}</span> : null}
     </button>
   );

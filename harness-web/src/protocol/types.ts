@@ -333,6 +333,13 @@ export interface AssistantLine {
   session_id?: string;
   uuid?: string;
   timestamp?: string;
+  /**
+   * The reasoning effort the frame was produced at. The CLI stamps it on the
+   * DISK record of every assistant message ("effort":"xhigh"), which makes it
+   * the one record a resumed session has of what it was actually running —
+   * history carries no init frame. Live wire frames may omit it.
+   */
+  effort?: string;
   error?: AssistantErrorKind | { type?: string; message?: string };
   aborted?: boolean;
   supersedes?: string[];
@@ -506,6 +513,17 @@ export interface HarnessContext {
    * first process start — the live catalog only arrives with the first run.
    */
   cachedModels?: ModelDescriptor[];
+  /**
+   * The CLI's own settings defaults, read from its settings files (project
+   * `.claude/settings.local.json` and `.claude/settings.json` over the user's
+   * `~/.claude/settings.json`): the `model` selector and `effortLevel` a
+   * process started with no flags will actually run. Item 12: this is what
+   * lets a fresh pane name the real model immediately instead of the catalog's
+   * generic "Default (recommended)" row until the first send's init frame.
+   * Weakest source — an init frame, a user pick, a restore snapshot, or
+   * replayed history all outrank it.
+   */
+  defaults?: { model?: string; effort?: EffortLevel };
 }
 
 /** Where the harness will look for the Claude binary, and what it found. */

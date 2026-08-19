@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { resolveModel } from "../../model/helpers";
+import { effectiveEffort, resolveModel } from "../../model/helpers";
 import type { ImageAttachment, QueuedMessage, SessionMeta } from "../../model/types";
 import type {
   EffortLevel,
@@ -41,7 +41,7 @@ export interface ComposerProps {
    * composer still stands alone in tests and in the agent-view harness that
    * has no session to pick a model for.
    */
-  session?: Pick<SessionMeta, "model" | "models" | "effort">;
+  session?: Pick<SessionMeta, "model" | "models" | "effort" | "defaultModel" | "defaultEffort">;
   /** Catalog persisted from an earlier run of this binary; see modelMenuSource. */
   cachedModels?: ModelDescriptor[];
   onSetModel?(model: string, effort?: EffortLevel): void;
@@ -284,7 +284,14 @@ export function Composer(props: ComposerProps) {
         const model = activeModel;
         if (!model || !props.onSetModel) return;
         event.preventDefault();
-        const next = stepEffort(model, props.session?.effort, event.code === "Period" ? 1 : -1);
+        // Stepping starts from the EFFECTIVE level (item 5): with no explicit
+        // pick the session is running at a default, and stepping from that
+        // level is what the visible strip promises.
+        const next = stepEffort(
+          model,
+          effectiveEffort(model, props.session?.effort, props.session?.defaultEffort),
+          event.code === "Period" ? 1 : -1
+        );
         if (!next) return;
         props.onSetModel(model.value, next);
       }
@@ -338,10 +345,19 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div className={`composer${props.awaitingPermission ? " is-waiting" : ""}`}>
-      {/* Completion popover — one compact panel, no chrome above the rows.
-          The kind is named once in the footer rather than in a heading, so the
-          first row sits at the top edge where the eye and the arrow keys both
-          start, and a two-item list is two items tall instead of four. */}
+      {/* The slash / @ completion popover.
+   *
+   * Called out twice in the round-6 report, and the reason was the ROW: name,
+   * argument hint and description sat on one baseline, so a long description
+   * pushed the command's own meaning off the right edge and every row was a
+   * different length of grey. `CommandItem` is a two-line row now — the command
+   * over its description — which makes this list the same object as every other
+   * menu in the pane, and the panel it sits on is the kit's, so it inherits the
+   * round-6 material and motion without a line of its own.
+   *
+   * The kind is still named once in the FOOTER rather than in a heading, so the
+   * first row sits at the top edge where the eye and the arrow keys both start,
+   * and a two-item list is two items tall instead of four. */}
       {popover.kind ? (
         <PopoverSurface align="stretch" className={`pop-complete is-${popover.kind}`}>
           {popover.items.length === 0 ? (
@@ -351,7 +367,13 @@ export function Composer(props: ComposerProps) {
                 : copy("supermux.harness.composer.mentionEmpty")}
             </MenuEmpty>
           ) : (
-            <CommandList>
+            <CommandList
+              label={
+                popover.kind === "command"
+                  ? copy("supermux.harness.composer.commandTitle")
+                  : copy("supermux.harness.composer.mentionTitle")
+              }
+            >
               {popover.items.map((item, index) => (
                 <CommandItem
                   key={item.id}

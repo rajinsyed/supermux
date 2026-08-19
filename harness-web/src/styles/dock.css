@@ -593,10 +593,32 @@
   min-width: 0;
 }
 
-/* Same ink as the name it continues: one label, not a tag on a label. */
+/* Item 6: the effort is the label's QUALIFIER, not more of its name — "GPT 5.6
+   Sol Extra high" read as one run-on model name. One size down, one ink tier
+   down, behind a hairline interpunct: still one label to the eye, but the two
+   words now parse as name · setting. The interpunct is drawn here rather than
+   in markup so the accessible name stays clean. No `opacity` — the pane's
+   contrast tests composite real color tiers, and a second dim on top of a tier
+   is the class of rule they exist to reject. */
 .composer-model-effort {
   flex: 0 0 auto;
-  color: inherit;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.composer-model-effort::before {
+  content: "·";
+  margin-right: 4px;
+  color: var(--text-faint);
+}
+
+/* The hover/open state brightens the trigger to full ink; the effort rises one
+   tier with it but stays a step behind, so the hierarchy survives the hover
+   instead of flattening back into a run-on. */
+.composer-model-trigger:hover .composer-model-effort,
+.composer-model-trigger.is-open .composer-model-effort,
+.composer-model-trigger:focus-visible .composer-model-effort {
+  color: var(--text-muted);
 }
 
 /* ---------- the model panel ----------

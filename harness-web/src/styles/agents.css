@@ -178,29 +178,43 @@
   padding-left: 68px;
 }
 
-/* The running mark on a row.
+/* The running mark on a DELEGATED-work row — a subagent, a workflow, a
+   background shell. The third member of the loading family (base.css documents
+   all three), and the one whose job is to be calm.
 
-   Was a 2×2 constellation of dots drifting through a staggered pulse — four
-   elements, four animation delays, and the same "something is happening" the
-   label beside it already said. It is one sweeping sliver now, matching the
-   transcript's streaming mark exactly, so the dock and the transcript animate as
-   one system. The row's LABEL shimmers with it (rule below), which is where the
-   information actually is. */
+   Round 5 gave this the same sweeping dash the turn's "Working for 54s" wore,
+   which is what the round-6 review caught: a running Workflow row and the
+   turn-level state were the same animation two lines apart, so the pane said
+   "something is loading" three times and "what kind of thing" never. It is a
+   slow BREATH now — a pip swelling and fading over 2.4s. Nothing is being waited
+   on here (that is the orbit's meaning, and the orbit spins); an agent is simply
+   alive somewhere, which is the slowest news on the pane and gets the slowest
+   motion.
+
+   The pip is centred in a fixed 11px box so a breathing row is exactly as tall
+   as a settled one and the dock cannot twitch as agents finish. */
 .dock-glyph {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   width: 11px;
   height: 11px;
   flex: 0 0 auto;
 }
 
-.dock-glyph i {
-  width: 11px;
-  height: 2px;
+.dock-glyph .breathe-pip {
+  width: 7px;
+  height: 7px;
 }
 
 /* The row's name sweeps with its mark. Scoped to rows that HAVE the mark: a
-   settled row keeps its ordinary ink. */
+   settled row keeps its ordinary ink.
+
+   3.4s, against the turn's 2.2s in cards.css, and the gap is the point: two
+   sheens at the SAME tempo are one effect wearing two labels, which is the
+   round-5 state this pass is undoing. The turn is actively producing output and
+   sweeps at conversational speed; a delegated row is quietly alive and sweeps
+   slower, in step with the breath beside it rather than with the turn below. */
 .dock-glyph + .dock-label,
 .agent-row-glyph + .agent-row-main .agent-row-name,
 .agent-row-glyph + .wf-row-main .wf-row-name {
@@ -216,7 +230,7 @@
   background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  animation: sheen-sweep 2.2s linear infinite;
+  animation: sheen-sweep 3.4s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

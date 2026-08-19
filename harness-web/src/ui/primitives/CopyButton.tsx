@@ -86,7 +86,26 @@ export function CopyButton({
       title={title}
       aria-label={label ?? copy("supermux.harness.tool.copy")}
     >
-      {copied ? <Check size={12} /> : <Copy size={12} />}
+      {/*
+       * Both glyphs are always mounted, stacked on one grid cell, and the
+       * success state CROSS-FADES between them (the `.copy-glyph` rules in
+       * cards.css).
+       *
+       * Swapping the element instead — `copied ? <Check/> : <Copy/>` — made the
+       * confirmation a hard cut, and worse, the two icons do not occupy the same
+       * width, so in any inline row (a code block's head, the terminal chrome)
+       * the button resized on click and shoved its neighbours. Stacking makes
+       * the box the max of the two forever, so the confirmation is a change of
+       * ink and nothing moves.
+       */}
+      <span className="copy-glyph" aria-hidden="true">
+        <span className="copy-glyph-idle">
+          <Copy size={12} />
+        </span>
+        <span className="copy-glyph-done">
+          <Check size={12} />
+        </span>
+      </span>
       {copied || failed ? <span className="copy-toast">{title}</span> : null}
     </button>
   );

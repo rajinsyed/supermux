@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CopyKey } from "../../copyKeys";
-import { resolveModel } from "../../model/helpers";
+import { effectiveEffort, resolveModel } from "../../model/helpers";
 import type { SessionMeta } from "../../model/types";
 import type { EffortLevel, ModelDescriptor } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
@@ -106,8 +106,63 @@ export function stepEffort(
   return levels[next];
 }
 
+/**
+ * Item 2: the wheel over the effort dial, tamed into a pure accumulator.
+ *
+ * The round-5 build stepped on ANY event with |deltaY| ≥ 1 — but a macOS
+ * trackpad emits a stream of 1–8px deltas for the gentlest drift, so resting
+ * two fingers on the chip yanked the level several steps ("even a tiny scroll
+ * makes it go boogsh"). Deltas now pool here and one step fires per crossing of
+ * a threshold sized so a deliberate flick steps once, a discrete mouse-wheel
+ * notch (±120 on macOS, ~±53 in Firefox line-mode×16) still steps once, and
+ * incidental drift steps never.
+ *
+ * Two resets keep the pool honest: a DIRECTION change zeroes it (leftover
+ * momentum from an up-roll must not subsidise the first down-tick), and a pause
+ * longer than {@link WHEEL_DIAL_IDLE_MS} zeroes it (each new gesture starts
+ * from rest rather than inheriting a half-full pool from the last one). After a
+ * step the pool re-arms at zero, so one notch is one step no matter how big the
+ * notch was.
+ */
+export const WHEEL_DIAL_THRESHOLD = 60;
+export const WHEEL_DIAL_IDLE_MS = 250;
+
+export interface WheelDialState {
+  accumulated: number;
+  lastEventAtMs: number;
+}
+
+export function createWheelDial(): WheelDialState {
+  return { accumulated: 0, lastEventAtMs: 0 };
+}
+
+/**
+ * Pool one wheel event; report `1`/`-1` when the gesture has crossed the
+ * threshold and `0` while it is still drift. Mutation-free so the tests can
+ * replay recorded delta streams against it directly.
+ */
+export function wheelDialStep(
+  state: WheelDialState,
+  deltaY: number,
+  nowMs: number
+): { state: WheelDialState; step: -1 | 0 | 1 } {
+  let pooled = state.accumulated;
+  if (nowMs - state.lastEventAtMs > WHEEL_DIAL_IDLE_MS) pooled = 0;
+  if (pooled !== 0 && Math.sign(deltaY) !== 0 && Math.sign(deltaY) !== Math.sign(pooled)) {
+    pooled = 0;
+  }
+  pooled += deltaY;
+  if (Math.abs(pooled) < WHEEL_DIAL_THRESHOLD) {
+    return { state: { accumulated: pooled, lastEventAtMs: nowMs }, step: 0 };
+  }
+  return {
+    state: { accumulated: 0, lastEventAtMs: nowMs },
+    step: pooled > 0 ? 1 : -1
+  };
+}
+
 export interface ModelMenuProps {
-  session: Pick<SessionMeta, "model" | "models" | "effort">;
+  session: Pick<SessionMeta, "model" | "models" | "effort" | "defaultModel" | "defaultEffort">;
   /** Catalog persisted from an earlier run of this binary; see modelMenuSource. */
   cachedModels?: ModelDescriptor[];
   onSetModel(model: string, effort?: EffortLevel): void;
@@ -131,9 +186,12 @@ export function ModelMenu(props: ModelMenuProps) {
   // "Opus 5" row checked.
   const activeRow = resolveModel(session, props.cachedModels);
   const modelName = activeRow?.displayName ?? session.model ?? copy("supermux.harness.header.model");
-  // The label must never outlive the capability it describes: a model with no
-  // effort levels shows no effort word, whatever the session last carried.
-  const effort = clampEffort(activeRow, session.effort);
+  // Item 5: the EFFECTIVE effort, not just the explicit pick. A session with no
+  // explicit level is not running at "no reasoning" — the CLI runs at a default
+  // — so the trigger and the strip always name a level whenever the active
+  // model supports one. The label still never outlives the capability it
+  // describes: a model with no effort levels shows no effort word.
+  const effort = effectiveEffort(activeRow, session.effort, session.defaultEffort);
 
   const close = useCallback((restoreFocus = false) => {
     setOpen(false);
@@ -183,32 +241,43 @@ export function ModelMenu(props: ModelMenuProps) {
   );
 
   /**
-   * Item 7: the wheel over the trigger or the reasoning strip is the effort
-   * dial.
+   * Item 7 / round-6 item 2: the wheel over the trigger or the reasoning strip
+   * is the effort dial — now with an accumulator and the direction the user's
+   * fingers actually mean.
    *
-   * Wheel UP increases, matching every stepper the OS ships. It goes through
-   * `props.onSetModel` — the one path the menu rows use — rather than keeping a
-   * second copy of the setting, so the trigger label, the checked level and the
-   * CLI can never disagree about what was sent. The panel STAYS OPEN: the
-   * gesture is a dial, and closing under the pointer after each notch would make
-   * a two-step adjustment impossible.
+   * DIRECTION: `deltaY > 0` increases. On the macOS natural-scrolling trackpad
+   * this pane ships on, fingers moving UP produce positive deltaY — the same
+   * gesture that moves content up a list — and the round-5 build's
+   * `deltaY < 0 → +1` mapping was reported as reversed by the person using it.
    *
-   * `preventDefault` unconditionally while a tunable model is active, including
-   * at the ends of the scale, or the dock scrolls the transcript out from under
-   * a reader who was trying to nudge `max` one higher.
+   * SENSITIVITY: deltas pool in `wheelDialStep` and one step fires per
+   * threshold crossing, so trackpad drift no longer yanks the level (see the
+   * helper's own comment for the tuning).
+   *
+   * It still goes through `props.onSetModel` — the one path the menu rows use —
+   * so the trigger label, the checked step and the CLI can never disagree, and
+   * `preventDefault` still runs unconditionally while a tunable model is
+   * active, or the dock scrolls the transcript out from under the dial.
    */
+  const dial = useRef(createWheelDial());
   const onWheel = useCallback(
     (event: WheelEvent) => {
       if (!supportsEffort(activeRow)) return;
-      // Trackpads emit a stream of small deltas including horizontal noise; only
-      // a decisive vertical roll moves the dial.
-      if (Math.abs(event.deltaY) < 1 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+      // Horizontal trackpad noise: a sideways swipe must not change reasoning.
+      if (Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
       event.preventDefault();
-      const next = stepEffort(activeRow, session.effort, event.deltaY < 0 ? 1 : -1);
+      const pooled = wheelDialStep(dial.current, event.deltaY, event.timeStamp || Date.now());
+      dial.current = pooled.state;
+      if (pooled.step === 0) return;
+      const next = stepEffort(
+        activeRow,
+        effectiveEffort(activeRow, session.effort, session.defaultEffort),
+        pooled.step
+      );
       if (!next) return;
       props.onSetModel(activeRow.value, next);
     },
-    [activeRow, props, session.effort]
+    [activeRow, props, session.defaultEffort, session.effort]
   );
 
   /**
@@ -281,9 +350,12 @@ export function ModelMenu(props: ModelMenuProps) {
           />
           {levels.length > 0 ? (
             <EffortStrip
-              model={activeRow!}
               levels={levels}
               current={effort}
+              // The level in force with NO explicit pick — the catalog's own
+              // default, or the CLI settings default behind it. It is what the
+              // ● marks and what "Restore defaults" returns to.
+              defaultLevel={effectiveEffort(activeRow, undefined, session.defaultEffort)}
               onPick={(level) => props.onSetModel(activeRow!.value, level)}
               onRestore={(level) => props.onSetModel(activeRow!.value, level)}
               bindWheel={bindWheel}
@@ -369,16 +441,17 @@ function ModelRows({
  * to move.
  */
 function EffortStrip({
-  model,
   levels,
   current,
+  defaultLevel,
   onPick,
   onRestore,
   bindWheel
 }: {
-  model: ModelDescriptor;
   levels: EffortLevel[];
   current?: EffortLevel;
+  /** The level in force with no explicit pick; what Restore returns to. */
+  defaultLevel?: EffortLevel;
   onPick(level: EffortLevel): void;
   onRestore(level: EffortLevel | undefined): void;
   /** See ModelMenu: the wheel listener must be non-passive to preventDefault. */
@@ -409,7 +482,7 @@ function EffortStrip({
             aria-pressed={option === current}
             className={`effort-step${option === current ? " is-active" : ""}`}
             title={
-              option === model.defaultEffortLevel
+              option === defaultLevel
                 ? copy("supermux.harness.header.effortDefault")
                 : undefined
             }
@@ -418,7 +491,7 @@ function EffortStrip({
             {effortLabel(option, copy)}
             {/* States a fact about the option, not its state — it is what
                 "Restore defaults" restores to. */}
-            {option === model.defaultEffortLevel ? (
+            {option === defaultLevel ? (
               <span className="effort-default-mark" aria-hidden="true" />
             ) : null}
           </button>
@@ -428,11 +501,11 @@ function EffortStrip({
           no `defaultEffortLevel` still has one — "whatever the CLI picks" — and
           restoring to it means sending no level at all, which is why the
           undefined case is a real target rather than a disabled button. */}
-      {current !== model.defaultEffortLevel ? (
+      {current !== defaultLevel ? (
         <button
           type="button"
           className="effort-restore"
-          onClick={() => onRestore(model.defaultEffortLevel)}
+          onClick={() => onRestore(defaultLevel)}
         >
           <Undo size={11} />
           {copy("supermux.harness.model.restoreDefaults")}

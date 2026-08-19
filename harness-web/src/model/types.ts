@@ -410,7 +410,28 @@ export interface SessionMeta {
   cwd?: string;
   model?: string;
   modelDisplayName?: string;
+  /**
+   * The EXPLICIT effort selection — a picker click, a wheel step, or a level
+   * adopted from a resumed session's own records. `undefined` does not mean "no
+   * reasoning": the CLI then runs at a default, and every display surface goes
+   * through `effectiveEffort` so a selected level is always shown.
+   */
   effort?: EffortLevel;
+  /**
+   * The CLI's own session-default model, read from its settings
+   * (`~/.claude/settings.json` "model", project files first) and delivered in
+   * `harness.context`. This is what a process started with NO --model flag will
+   * actually run, so the trigger names it instead of the catalog's generic
+   * "Default (recommended)" row while nothing stronger (init frame, user pick,
+   * restore snapshot) exists. Weakest source: any of those overwrite it.
+   */
+  defaultModel?: string;
+  /**
+   * The CLI's settings default for reasoning effort (`effortLevel`). The live
+   * catalog ships NO per-model `defaultEffortLevel`, so without this the pane
+   * cannot say which level an un-picked session actually runs at.
+   */
+  defaultEffort?: EffortLevel;
   permissionMode: PermissionMode;
   tools: string[];
   slashCommands: string[];
@@ -646,6 +667,15 @@ export interface TranscriptModel {
    * restart params before the new process's init frame arrives.
    */
   lastAssistantModel?: string;
+  /**
+   * The reasoning effort stamped on the most recent MAIN-thread assistant
+   * record (`"effort":"xhigh"` on every disk record; live frames may omit it).
+   * The companion to `lastAssistantModel` for the same reason: a resumed
+   * session's records are the only account of what effort it was actually
+   * running, and `historyReplayed` adopts it so the trigger and the restart
+   * params do not silently fall back to a default the session was not on.
+   */
+  lastAssistantEffort?: EffortLevel;
   stderrTail: string[];
   revision: number;
 }
@@ -693,6 +723,13 @@ export type LocalAction =
    */
   | { kind: "truncateBeforeUserMessage"; uuid: string }
   | { kind: "cachedModels"; models: ModelDescriptor[] }
+  /**
+   * The CLI's own settings defaults (`~/.claude/settings.json` "model" /
+   * "effortLevel"), delivered with `harness.context`. Weakest model source:
+   * display resolution consults them only when neither an init frame, a user
+   * pick, a restore snapshot, nor replayed history has said anything stronger.
+   */
+  | { kind: "sessionDefaults"; model?: string; effort?: EffortLevel }
   | { kind: "historyTruncated" }
   /**
    * A history replay just finished draining. Replayed history has no `result`

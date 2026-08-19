@@ -1,57 +1,74 @@
 /**
- * The pane's working marks.
+ * The pane's working marks — three of them, and the differences are the point.
  *
- * The three pulsing dots are gone. They were a placeholder standing in for a
- * designed state: three elements animating opacity to say "something is
- * happening" at the resolution of a dial-up modem, carrying no information, so
- * the row beside them had to spell out what was happening anyway. Every one is
- * now a SHIMMER — a bright band sweeping left to right — and where the mark sits
- * beside a label, the label shimmers with it (the sibling rules in cards.css,
- * agents.css and workflow.css), so the animation is on the words that already
- * say what is happening rather than beside them.
+ * Round 5 collapsed every loading state onto ONE sliver: the turn's "Working for
+ * 54s", a running Workflow row, and a tool call in flight all wore the same
+ * dash. That is honest about nothing — a reader glancing at the pane could not
+ * tell "the model is thinking" from "this one shell command is running" from
+ * "an agent is off doing work somewhere". Round 6 splits them by MOTION, so the
+ * kind of work is legible before a single word is read:
+ *
+ *   • ORBIT (`Spinner`) — a dot travelling a closed ring. ONE request is in
+ *     flight and the pane is waiting on its answer: a tool call, a task-output
+ *     poll, a model-catalog fetch, a rewind preview. A closed circuit with a
+ *     travelling head is the honest shape for "waiting on one thing".
+ *
+ *   • PULSE (`WorkingDots`) — no glyph at all. The turn-level state is ambient
+ *     and its own label already says everything ("Working for 54s"), so the
+ *     animation lands on the WORDS (the sheen sweep in cards.css, keyed off
+ *     this element's presence) with a soft accent tick keeping time after them.
+ *
+ *   • BREATH (`WorkingGlyph`) — a pip swelling and fading, slowly. Delegated
+ *     work: a subagent, a workflow, a background shell. It is long-lived and
+ *     nothing is being waited on right now, so it gets the calmest motion in
+ *     the pane and the row's name sheens at a slower tempo than the turn's.
+ *
+ * Every one is transform/opacity only and honours prefers-reduced-motion.
  *
  * The exported names and prop signatures are unchanged on purpose: TurnView, the
- * agents dock, the agent rows and the workflow rows consume these, and swapping
- * the internals is how the new visuals reach surfaces this change does not
- * touch.
+ * agents dock, the agent rows, the workflow rows, the model menu and the tool
+ * cards consume these, and swapping the internals is how the new visuals reach
+ * surfaces this change does not touch.
  */
 
 /**
- * The determinate-looking spinner, still a ring: it marks a request in flight
- * (a model catalog load, a workflow header) rather than a stream of work
- * arriving, and a ring is the honest shape for "waiting on one answer".
+ * The orbit: a dot travelling a faint ring, accent-coloured.
+ *
+ * Everything is derived from `--orbit-size` so one element is crisp from 8px (a
+ * status badge) to 14px (a view header) without a second rule per call site —
+ * a fixed 1.5px ring reads as a heavy blob at 8px and a hairline at 14px.
  */
 export function Spinner({ size = 12, className }: { size?: number; className?: string }) {
   return (
     <span
-      className={`spinner${className ? ` ${className}` : ""}`}
-      style={{ width: size, height: size }}
+      className={`orbit${className ? ` ${className}` : ""}`}
+      style={{ width: size, height: size, ["--orbit-size" as string]: `${size}px` }}
       aria-hidden="true"
     />
   );
 }
 
 /**
- * The streaming mark, in the transcript: a slim sweeping sliver on the turn's
- * live row. Its sibling label ("Working for 12s") shimmers in step with it.
+ * The turn's streaming mark. It draws NOTHING: the live row's own label carries
+ * the animation (the `.turn-live .working-dots + .turn-live-label` sheen), and
+ * this element is the anchor that rule selects on. Rendering a glyph here is
+ * what made the turn state indistinguishable from a running tool row.
  */
 export function WorkingDots({ className }: { className?: string }) {
   return (
-    <span className={`working-dots${className ? ` ${className}` : ""}`} aria-hidden="true">
-      <i className="sheen-bar" />
-    </span>
+    <span className={`working-dots${className ? ` ${className}` : ""}`} aria-hidden="true" />
   );
 }
 
 /**
- * The running mark on a row — the agents dock, an inline agent, a workflow. Same
- * sliver at row scale, so one glance across the dock and the transcript reads as
- * one system rather than two different animations for the same fact.
+ * The running mark on a delegated-work row — the agents dock, an inline agent,
+ * a workflow. A slow breath, so one glance across the dock and the transcript
+ * separates "an agent is alive" from "the pane is waiting on a call".
  */
 export function WorkingGlyph({ className }: { className?: string }) {
   return (
     <span className={`dock-glyph${className ? ` ${className}` : ""}`} aria-hidden="true">
-      <i className="sheen-bar" />
+      <i className="breathe-pip" />
     </span>
   );
 }

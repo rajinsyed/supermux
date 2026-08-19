@@ -164,59 +164,128 @@ a:hover {
   background-clip: content-box;
 }
 
-/* ---------- shimmer ----------
+/* ---------- the loading family ----------
 
-   The pane's ONE loading indicator, replacing the three pulsing dots.
+   THREE loading treatments, and the differences between them are the design.
 
-   Three dots are a placeholder for a designed state: they say "something is
-   happening" at the resolution of a dial-up modem, they animate opacity on
-   three separate elements, and they carry no text — so the row beside them had
-   to spell out what was happening anyway. A shimmer puts the animation ON the
-   words that already say it: a bright band sweeps left to right through the
-   glyphs (`background-clip: text` over a moving gradient), which reads as work
-   in progress at a glance and costs one animated background-position.
+   Round 5 had one: a sweeping dash, worn identically by the turn's "Working for
+   54s", by a running Workflow row, and by a tool call in flight. A reader could
+   not tell "the model is thinking" from "one shell command is running" from "an
+   agent is off working somewhere" without reading the words beside the mark,
+   which is the whole job the mark exists to do. Round 6 splits them by MOTION:
 
-   `.sheen` is the text treatment; `.sheen-bar` is the same sweep on a solid
-   block, for the places a label has not arrived yet. Both are pure CSS, so
-   thirty on screen cost nothing, and both are honoured by the reduced-motion
-   rule at the foot of this file — where the sweep stops, the text stays fully
-   legible in its own ink rather than freezing mid-gradient.
+     ORBIT   `.orbit`        — a dot travelling a closed ring, accent-coloured.
+                               ONE request is in flight and the pane is waiting
+                               on its answer: a tool call, an output poll, a
+                               catalog fetch. A closed circuit with a travelling
+                               head is the honest shape for "waiting on one
+                               thing", and it is the only mark that spins.
 
-   NAMED `sheen`, not `shimmer`, and that is load-bearing. transcript.css
-   declares its OWN `@keyframes shimmer-sweep` for the thinking label, with a
-   different travel range (200% → -200%) tuned to a different background-size.
-   Keyframe names are global and last-declared wins, so while both were called
-   `shimmer-sweep` the thinking label's range silently overrode this one and the
-   working labels blanked out mid-cycle — half of "Working for 6s" vanished on
-   every pass. Two effects with two geometries need two names; this one keeps
-   its own. */
-.sheen {
-  background-image: linear-gradient(
-    100deg,
-    var(--shimmer-base) 32%,
-    var(--shimmer-sheen) 50%,
-    var(--shimmer-base) 68%
-  );
-  background-size: 260% 100%;
-  background-repeat: no-repeat;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  animation: sheen-sweep 2.2s linear infinite;
+     SHEEN   `sheen-sweep`   — no glyph at all; the animation is on the WORDS.
+                               The turn-level state ("Working for 54s") already
+                               says what is happening and how long it has been
+                               happening, so a second element repeating it in
+                               abstract was noise. Consumed by the live-row rule
+                               in cards.css and by the row-name rules in
+                               agents.css, at two deliberately different tempos.
+
+     BREATH  `.breathe-pip`  — a pip swelling and fading, slowly. DELEGATED work:
+                               a subagent, a workflow, a background shell. It is
+                               long-lived and nothing is being waited on right
+                               now, so it gets the calmest motion in the pane.
+
+   Every one animates transform/opacity or one background-position, so thirty on
+   screen cost nothing, and every one has a reduced-motion resting state that
+   still reads as "in progress" rather than freezing mid-effect.
+
+   `.sheen` / `.sheen-bar` are GONE. The bar was the round-5 dash the round-6
+   review asked to be rid of; the text class had no callers left once the two
+   sibling rules that do the sweeping inlined their own gradients. The keyframe
+   they shared stays, because those sibling rules still drive it.
+
+   `sheen-sweep` is NAMED that, not `shimmer-sweep`, and that is load-bearing.
+   transcript.css declares its OWN `@keyframes shimmer-sweep` for the thinking
+   label, with a different travel range (200% → -200%) tuned to a different
+   background-size. Keyframe names are global and last-declared wins, so while
+   both were called `shimmer-sweep` the thinking label's range silently overrode
+   this one and the working labels blanked out mid-cycle — half of "Working for
+   6s" vanished on every pass. Two geometries need two names. */
+
+/* The orbit.
+ *
+ * One element: `::after` is the track, `::before` is the travelling dot, and
+ * the whole box rotates — which is invisible on the ring (a circle rotated is
+ * the same circle) and is the entire animation for the dot. One transform on
+ * one compositor layer, no per-frame layout.
+ *
+ * Every dimension derives from `--orbit-size`, which `Spinner` sets from its
+ * `size` prop, because the call sites run 8px (a status badge) to 14px (a view
+ * header): a fixed 1.5px track reads as a heavy blob at 8px and as a hairline
+ * at 14px. Proportional keeps one glyph crisp across the whole range. */
+.orbit {
+  --orbit-size: 12px;
+  --orbit-track: max(1px, calc(var(--orbit-size) * 0.085));
+  --orbit-dot: max(2.5px, calc(var(--orbit-size) * 0.3));
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  animation: orbit-travel 1.05s linear infinite;
 }
 
-.sheen-bar {
-  display: inline-block;
+/* The track: a full ring in the page's own ink, quiet enough that the dot is
+   what the eye follows. */
+.orbit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   border-radius: var(--r-pill);
-  background-image: linear-gradient(
-    100deg,
-    var(--shimmer-base) 32%,
-    var(--shimmer-sheen) 50%,
-    var(--shimmer-base) 68%
-  );
-  background-size: 260% 100%;
-  animation: sheen-sweep 2.2s linear infinite;
+  border: var(--orbit-track) solid var(--border-strong);
+}
+
+/* The travelling head, parked at twelve o'clock and carried round by the
+   parent's rotation. Centred on the track rather than inside it, so the dot
+   reads as riding the ring instead of rattling around in it. */
+.orbit::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--orbit-track) / 2);
+  left: 50%;
+  width: var(--orbit-dot);
+  height: var(--orbit-dot);
+  margin-left: calc(var(--orbit-dot) / -2);
+  margin-top: calc(var(--orbit-dot) / -2);
+  border-radius: var(--r-pill);
+  background: var(--claude-strong);
+}
+
+@keyframes orbit-travel {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The breath: delegated work, alive but not waiting on anything. Scale AND
+   opacity together so it reads at 7px, where opacity alone is nearly nothing. */
+.breathe-pip {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--claude-strong);
+  animation: breathe-swell 2.4s ease-in-out infinite;
+}
+
+@keyframes breathe-swell {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* The travel is 100% → 0%, and the bounds are NOT cosmetic.
@@ -241,19 +310,65 @@ a:hover {
   }
 }
 
-/* A sweep is decoration on a state the text already states; with motion off the
-   words must simply be readable, which a frozen gradient is not. */
+/* Motion off. Each of the three has a RESTING state that still says "in
+   progress" — a stopped animation must not mean a mark that reads as settled.
+   The orbit keeps its dot parked on a full ring (a determinate-looking gauge,
+   which is what a static spinner ought to be), and the breath sits at its
+   half-lit tone rather than at whichever frame it happened to stop on. The
+   sheen's resting state is handled where each sweeping label declares itself,
+   because there the frozen gradient is INVISIBLE TEXT rather than a still mark. */
 @media (prefers-reduced-motion: reduce) {
-  .sheen {
-    background-image: none;
-    color: var(--shimmer-sheen);
-    -webkit-text-fill-color: var(--shimmer-sheen);
+  .orbit::before {
+    background: var(--claude-strong);
   }
 
-  .sheen-bar {
-    background-image: none;
-    background-color: var(--shimmer-base);
+  .breathe-pip {
+    opacity: 0.75;
+    transform: none;
   }
+}
+
+/* ---------- the copy button's glyph stack ----------
+
+   `CopyButton` renders the copy sheet and the check on ONE grid cell and
+   cross-fades between them. The alternative — swapping the element on success —
+   is a hard cut, and the two glyphs do not have identical advance widths, so
+   every inline row that holds a copy button (a code block's head, the terminal
+   chrome, a user bubble) resized on click and shoved its neighbours. Stacked,
+   the box is the max of the two forever: confirmation is a change of ink and
+   nothing moves.
+
+   The check also arrives with a small scale, so success reads as the glyph
+   settling into place rather than blinking on.
+
+   Declared HERE rather than beside `.icon-btn` in cards.css because it belongs
+   to the primitive, not to the button chrome, and every sheet in the pane can
+   see base.css. */
+.copy-glyph {
+  display: grid;
+  place-items: center;
+}
+
+.copy-glyph-idle,
+.copy-glyph-done {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.copy-glyph-done {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.copy-btn.is-copied .copy-glyph-idle {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.copy-btn.is-copied .copy-glyph-done {
+  opacity: 1;
+  transform: none;
 }
 
 /* The floating chrome's shared material: page-tinted glass, blurred backdrop,

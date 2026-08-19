@@ -96,7 +96,10 @@ describe("background Bash card", () => {
     const card = container.querySelector(".tool-card")!;
     expect(card.classList.contains("is-running")).toBe(true);
     expect(card.querySelector(".tool-status .mark-ok")).toBeNull();
-    expect(card.querySelector(".tool-status .spinner")).not.toBeNull();
+    // `.orbit` since round 6: the ring-and-travelling-dot mark that means "one
+    // request is in flight", which is exactly what a still-running background
+    // command is from the card's point of view.
+    expect(card.querySelector(".tool-status .orbit")).not.toBeNull();
   });
 
   test("once the task is stopped the card settles as stopped, not success", () => {

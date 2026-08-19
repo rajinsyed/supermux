@@ -2,7 +2,7 @@ import { memo, useMemo, useRef, useState } from "react";
 import { hasLiveBackgroundWork } from "../../model/tasks";
 import type { Block, RelayRecord, Turn } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
-import { Check, ChevronDown, ChevronRight, XCircle } from "../Icons";
+import { Check, ChevronDown, ChevronRight, ChevronUp, XCircle } from "../Icons";
 import { formatDuration } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
@@ -102,7 +102,6 @@ export const TurnView = memo(function TurnView({
   const { work, tail } = useMemo(() => splitBlocks(turn), [turn.blocks]);
 
   const settled = turn.state !== "streaming";
-  const toolCount = useMemo(() => work.filter((b) => b.kind === "tool").length, [work]);
   /**
    * Something inside this turn is open because the reader opened it — a workflow
    * card, a subagent drill-in, a log strip, an output tail. The automatic fold
@@ -200,24 +199,38 @@ export const TurnView = memo(function TurnView({
                 streaming overflow expander swap PROPS on the same element, so
                 settling never rebuilds the sibling work tree below. */}
             {settled ? (
+              /**
+               * The settled turn's summary row: "Worked for 2m 30s", and
+               * nothing else.
+               *
+               * It used to lead with a chevron and trail with "1 earlier tool
+               * call" — a count of rows the reader is one click from simply
+               * SEEING, printed permanently on a line whose job is to state the
+               * outcome. Round 6 drops it: the fold's own contents are the
+               * honest answer to "how much work", and the streaming overflow
+               * (below) still counts, because there the hidden rows are the
+               * point of the control.
+               *
+               * The affordance moved to the trailing edge and reveals on hover
+               * or focus — the CSS carries that, but the ROW stays the button,
+               * so the whole line is the target and keyboard reach is
+               * unchanged. `aria-expanded` lives here, on the thing that
+               * actually toggles.
+               */
               <button
                 type="button"
-                className="fold-head"
+                className={`fold-head${folded ? " is-folded" : ""}`}
                 onClick={() => setOverride(!folded)}
                 aria-expanded={!folded}
               >
-                {folded ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                 <span className="fold-label">{foldLabel}</span>
-                {toolCount > 0 ? (
-                  <span className="fold-count tnum">
-                    {plural(
-                      copy,
-                      toolCount,
-                      "supermux.harness.turn.previousToolCallsOne",
-                      "supermux.harness.turn.previousToolCalls"
-                    )}
-                  </span>
-                ) : null}
+                {/* Not a nested button — a button inside a button is invalid and
+                    unfocusable. It is the row's own trailing glyph, styled as a
+                    ghost control so that when it appears it obviously does
+                    something. */}
+                <span className="fold-toggle" aria-hidden="true">
+                  {folded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+                </span>
               </button>
             ) : earlierCount > 0 ? (
               <button

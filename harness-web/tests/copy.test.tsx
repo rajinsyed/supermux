@@ -65,34 +65,53 @@ describe("ToolSearch metrics name what they count", () => {
   });
 });
 
+/**
+ * The counted string moved in round 6.
+ *
+ * "N earlier tool calls" used to be printed TWICE: on the streaming overflow,
+ * where the rows really are hidden and the count is the control's whole
+ * meaning, and again on the settled fold header beside "Worked for 2m 30s",
+ * where it was a permanent tally of rows the reader is one click from simply
+ * seeing. The settled header dropped it; the key still ships because the
+ * streaming expander is still counting, so its inflection is still asserted —
+ * against the surface that actually renders it now.
+ */
 describe("counted strings inflect at one", () => {
-  test("a single earlier tool call is singular", () => {
-    // The CLI's summary legs now merge back into the turn they follow, so the
-    // replayed fixture has no naturally one-tool turn left; trim a real one
-    // down to a single tool block instead.
+  /** A streaming turn whose work is exactly `count` tool blocks. */
+  function streamingToolTurn(count: number): Turn {
     const model = replayLines(richSession);
-    const source = model.turns.find(
-      (candidate) => candidate.blocks.some((b) => b.kind === "tool")
+    const source = model.turns.find((candidate) =>
+      candidate.blocks.some((b) => b.kind === "tool")
     );
     expect(source).toBeDefined();
-    const firstTool = source!.blocks.find((b) => b.kind === "tool")!;
-    const turn = { ...(source as Turn), blocks: [firstTool], folded: true } as Turn;
-    const { container } = mount(<TurnView turn={turn} isLast={false} />);
-    const fold = container.querySelector(".fold-count")!.textContent;
-    expect(fold).toBe("1 earlier tool call");
-    expect(fold).not.toBe("1 earlier tool calls");
+    const tools = model.turns
+      .flatMap((turn) => turn.blocks)
+      .filter((block) => block.kind === "tool")
+      .slice(0, count);
+    expect(tools.length).toBe(count);
+    return {
+      ...(source as Turn),
+      blocks: tools,
+      state: "streaming",
+      endedAtMs: undefined,
+      result: undefined
+    } as Turn;
+  }
+
+  test("a single earlier tool call is singular", () => {
+    // Two tools while the turn streams: the live tail keeps ONE on screen, so
+    // exactly one is behind the expander.
+    const { container } = mount(<TurnView turn={streamingToolTurn(2)} isLast={false} />);
+    const overflow = container.querySelector(".work-overflow")!.textContent;
+    expect(overflow).toBe("1 earlier tool call");
+    expect(overflow).not.toBe("1 earlier tool calls");
   });
 
   test("two or more stays plural", () => {
-    const model = replayLines(richSession);
-    const turn = model.turns.find(
-      (candidate) => candidate.blocks.filter((b) => b.kind === "tool").length > 1
+    const { container } = mount(<TurnView turn={streamingToolTurn(4)} isLast={false} />);
+    expect(container.querySelector(".work-overflow")!.textContent).toMatch(
+      /^\d+ earlier tool calls$/
     );
-    expect(turn).toBeDefined();
-    const { container } = mount(
-      <TurnView turn={{ ...(turn as Turn), folded: true } as Turn} isLast={false} />
-    );
-    expect(container.querySelector(".fold-count")!.textContent).toMatch(/^\d+ earlier tool calls$/);
   });
 
   test("tool metrics inflect too", () => {

@@ -255,6 +255,84 @@ struct SupermuxHarnessTests {
         ))
     }
 
+    /// Round 6: the unread treatment is a top-edge light, not the old breathing
+    /// tick. A read pane must draw nothing at all — no residual seam, no glow —
+    /// so the pane returns to a completely clean surface on dismissal.
+    @Test
+    func testReadHarnessPaneDrawsNoUnreadTreatment() throws {
+        for appearance: SupermuxHarnessUnreadAppearance in [.light, .dark] {
+            for reduceMotion in [false, true] {
+                let presentation = SupermuxHarnessUnreadPresentation.resolve(
+                    isUnread: false,
+                    appearance: appearance,
+                    reduceMotion: reduceMotion
+                )
+                #expect(!presentation.isVisible)
+                #expect(presentation.seamOpacity == 0)
+                #expect(presentation.glowOpacity == 0)
+                #expect(!presentation.animatesOnArrival)
+            }
+        }
+    }
+
+    /// The whole point of the redesign is that it survives the app's translucent
+    /// dark chrome as well as a light surface. Both appearances must clear the
+    /// legibility floors; a future tuning pass that dims past them is a
+    /// regression, not a taste change.
+    @Test
+    func testUnreadTreatmentIsLegibleInBothAppearances() throws {
+        for appearance: SupermuxHarnessUnreadAppearance in [.light, .dark] {
+            let presentation = SupermuxHarnessUnreadPresentation.resolve(
+                isUnread: true,
+                appearance: appearance,
+                reduceMotion: false
+            )
+            #expect(presentation.isVisible)
+            #expect(presentation.seamOpacity >= SupermuxHarnessUnreadPresentation.seamLegibilityFloor)
+            #expect(presentation.glowOpacity >= SupermuxHarnessUnreadPresentation.glowLegibilityFloor)
+            // The bleed must stay a wash behind the seam, never a second bar.
+            #expect(presentation.glowOpacity < presentation.seamOpacity)
+        }
+
+        // The appearance comes from the pane's own theme, not the system colour
+        // scheme: a dark Ghostty theme under a Light system appearance is a dark
+        // pane, and the indicator must dress for the surface it sits on.
+        #expect(SupermuxHarnessUnreadAppearance(isDark: true) == .dark)
+        #expect(SupermuxHarnessUnreadAppearance(isDark: false) == .light)
+
+        // Dark panes carry more bloom, because vibrancy eats a faint wash there.
+        let dark = SupermuxHarnessUnreadPresentation.resolve(
+            isUnread: true, appearance: .dark, reduceMotion: false
+        )
+        let light = SupermuxHarnessUnreadPresentation.resolve(
+            isUnread: true, appearance: .light, reduceMotion: false
+        )
+        #expect(dark.glowOpacity > light.glowOpacity)
+    }
+
+    /// Reduce Motion drops the arrival settle and nothing else: the indicator is
+    /// pixel-identical at rest, it simply appears already settled. It must never
+    /// degrade to "no indicator".
+    @Test
+    func testReduceMotionKeepsTheIndicatorAndDropsOnlyTheArrivalMotion() throws {
+        for appearance: SupermuxHarnessUnreadAppearance in [.light, .dark] {
+            let animated = SupermuxHarnessUnreadPresentation.resolve(
+                isUnread: true, appearance: appearance, reduceMotion: false
+            )
+            let still = SupermuxHarnessUnreadPresentation.resolve(
+                isUnread: true, appearance: appearance, reduceMotion: true
+            )
+
+            #expect(animated.animatesOnArrival)
+            #expect(!still.animatesOnArrival)
+            #expect(still.entryDuration == 0)
+            #expect(still.isVisible)
+            // Resting appearance is unchanged by the motion setting.
+            #expect(still.seamOpacity == animated.seamOpacity)
+            #expect(still.glowOpacity == animated.glowOpacity)
+        }
+    }
+
     @MainActor
     @Test
     func testRejectedFileRestoreReturnsDegradedReplyAndRestartsConversation() async throws {
@@ -825,6 +903,73 @@ struct SupermuxHarnessTests {
         #expect(meta["spawnDepth"] as? Int == 1)
         #expect(process.operations.contains(.control(subtype: "stop_task")))
         #expect(process.operations.contains(.control(subtype: "background_tasks")))
+    }
+
+    /// Round-6 item 12: `harness.context` carries the CLI's settings defaults —
+    /// the model/effort a flagless start actually runs — read in the CLI's own
+    /// precedence order (project settings.local.json → project settings.json →
+    /// user settings.json), so a fresh pane can name the real session-default
+    /// model instead of the catalog's generic "Default (recommended)" row.
+    @Test
+    func testSettingsDefaultsReadClaudeSettingsInPrecedenceOrder() throws {
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-harness-settings-\(UUID().uuidString)", isDirectory: true)
+        let home = container.appendingPathComponent("home", isDirectory: true)
+        let project = container.appendingPathComponent("project", isDirectory: true)
+        let homeClaude = home.appendingPathComponent(".claude", isDirectory: true)
+        let projectClaude = project.appendingPathComponent(".claude", isDirectory: true)
+        try FileManager.default.createDirectory(at: homeClaude, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectClaude, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        // Only the user settings exist: both values come from home.
+        try Data(#"{"model": "gpt-5.6-sol", "effortLevel": "xhigh"}"#.utf8)
+            .write(to: homeClaude.appendingPathComponent("settings.json"))
+        var defaults = SupermuxHarnessSessionController.settingsDefaults(
+            workingDirectoryURL: project,
+            homeDirectoryURL: home
+        )
+        #expect(defaults?["model"] as? String == "gpt-5.6-sol")
+        #expect(defaults?["effort"] as? String == "xhigh")
+
+        // A project settings.json overrides the model; the effort still falls
+        // through to the user file — per-key precedence, not per-file.
+        try Data(#"{"model": "sonnet"}"#.utf8)
+            .write(to: projectClaude.appendingPathComponent("settings.json"))
+        defaults = SupermuxHarnessSessionController.settingsDefaults(
+            workingDirectoryURL: project,
+            homeDirectoryURL: home
+        )
+        #expect(defaults?["model"] as? String == "sonnet")
+        #expect(defaults?["effort"] as? String == "xhigh")
+
+        // settings.local.json outranks both.
+        try Data(#"{"model": "opus", "effortLevel": "low"}"#.utf8)
+            .write(to: projectClaude.appendingPathComponent("settings.local.json"))
+        defaults = SupermuxHarnessSessionController.settingsDefaults(
+            workingDirectoryURL: project,
+            homeDirectoryURL: home
+        )
+        #expect(defaults?["model"] as? String == "opus")
+        #expect(defaults?["effort"] as? String == "low")
+
+        // No settings anywhere: nil, so the context omits the key entirely.
+        let emptyHome = container.appendingPathComponent("empty-home", isDirectory: true)
+        try FileManager.default.createDirectory(at: emptyHome, withIntermediateDirectories: true)
+        #expect(SupermuxHarnessSessionController.settingsDefaults(
+            workingDirectoryURL: nil,
+            homeDirectoryURL: emptyHome
+        ) == nil)
+
+        // Corrupt JSON is a cache miss, not a crash.
+        let corruptHome = container.appendingPathComponent("corrupt-home", isDirectory: true)
+        let corruptClaude = corruptHome.appendingPathComponent(".claude", isDirectory: true)
+        try FileManager.default.createDirectory(at: corruptClaude, withIntermediateDirectories: true)
+        try Data("{not json".utf8).write(to: corruptClaude.appendingPathComponent("settings.json"))
+        #expect(SupermuxHarnessSessionController.settingsDefaults(
+            workingDirectoryURL: nil,
+            homeDirectoryURL: corruptHome
+        ) == nil)
     }
 
     @MainActor

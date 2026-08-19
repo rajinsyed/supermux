@@ -469,7 +469,9 @@ describe("the model menu is never an empty popup", () => {
     const loading = container.querySelector(".ui-menu-empty.is-loading");
     expect(loading).not.toBeNull();
     expect(loading!.textContent).toContain("Loading models…");
-    expect(container.querySelector(".spinner")).not.toBeNull();
+    // `.orbit` since round 6 — a catalog fetch is one request in flight, which
+    // is the orbit's whole meaning in the round-6 loading family.
+    expect(container.querySelector(".orbit")).not.toBeNull();
   });
 
   test("a first-open pane renders rows from the cache, not a blank menu", () => {
@@ -587,7 +589,10 @@ describe("reasoning has two gestures beside the menu", () => {
     return { sent: [], session };
   };
 
-  test("the wheel over the trigger steps one level per notch", () => {
+  test("the wheel over the trigger steps one level per notch — deltaY>0 increases", () => {
+    // Round-6 item 2: on the macOS natural-scrolling trackpad this pane ships
+    // on, fingers moving UP produce POSITIVE deltaY; the round-5 `deltaY<0 →
+    // up` mapping was experienced as reversed by the person using it.
     const { sent, session } = stepped();
     const sonnet = session.models.find((m) => m.value === "sonnet")!;
     const { container } = mountPicker(
@@ -596,14 +601,29 @@ describe("reasoning has two gestures beside the menu", () => {
     );
     const trigger = container.querySelector<HTMLElement>(".composer-model-trigger")!;
 
-    // Up increases, matching every stepper the OS ships.
-    fireEvent.wheel(trigger, { deltaY: -120 });
-    expect(sent).toEqual([["sonnet", "high"]]);
-    // Down decreases.
     fireEvent.wheel(trigger, { deltaY: 120 });
+    expect(sent).toEqual([["sonnet", "high"]]);
+    fireEvent.wheel(trigger, { deltaY: -120 });
     expect(sent[1]).toEqual(["sonnet", "low"]);
     // Always the model's own selector, never the resolved id the CLI rejects.
     for (const [model] of sent) expect(model).toBe(sonnet.value);
+  });
+
+  test("trackpad drift below the threshold never steps (round-6 item 2)", () => {
+    // The round-5 build stepped on ANY |deltaY| ≥ 1, so resting two fingers on
+    // the chip yanked the level ("even a tiny scroll makes it go boogsh").
+    // Small deltas must pool, not fire.
+    const { sent, session } = stepped();
+    const { container } = mountPicker(
+      { ...session, effort: "medium" },
+      { onSetModel: (model, effort) => sent.push([model, effort]) }
+    );
+    const trigger = container.querySelector<HTMLElement>(".composer-model-trigger")!;
+    for (let i = 0; i < 5; i += 1) fireEvent.wheel(trigger, { deltaY: 6 });
+    expect(sent).toEqual([]);
+    // …but a sustained deliberate roll does cross it and steps ONCE.
+    for (let i = 0; i < 10; i += 1) fireEvent.wheel(trigger, { deltaY: 6 });
+    expect(sent).toEqual([["sonnet", "high"]]);
   });
 
   test("horizontal trackpad noise is not a reasoning change", () => {
@@ -621,15 +641,14 @@ describe("reasoning has two gestures beside the menu", () => {
   });
 
   test("it clamps at both ends rather than wrapping round", () => {
-    // A wheel that rolls `max` back round to `low` is a gesture that can
-    // silently downgrade a turn.
+    // A wheel that rolls `max` over the top must not wrap back to `low`.
     const { sent, session } = stepped();
     const { container } = mountPicker(
       { ...session, effort: "max" },
       { onSetModel: (model, effort) => sent.push([model, effort]) }
     );
     fireEvent.wheel(container.querySelector<HTMLElement>(".composer-model-trigger")!, {
-      deltaY: -120
+      deltaY: 120
     });
     expect(sent).toEqual([]);
   });
@@ -641,7 +660,7 @@ describe("reasoning has two gestures beside the menu", () => {
       { onSetModel: (model, effort) => sent.push([model, effort]) }
     );
     fireEvent.wheel(container.querySelector<HTMLElement>(".composer-model-trigger")!, {
-      deltaY: -120
+      deltaY: 120
     });
     expect(sent).toEqual([]);
   });
