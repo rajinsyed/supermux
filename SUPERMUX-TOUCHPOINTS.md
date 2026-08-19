@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **412**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **449**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -466,6 +466,9 @@ Rules for adding a touchpoint:
 | 444 | `Sources/TabManager+SidebarGitHosting.swift` | `claude-harness-git-probe-eligible` | `hasTerminalPanel(workspaceId:panelId:)` also returns `true` for a `SupermuxHarnessPanel`. That `SidebarGitHosting` seam has exactly one caller — `SidebarGitMetadataService.restartWorkspaceGitMetadataWatching` — where it gates "may this panel be git-probed", so a harness-only workspace would lose its branch after the sidebar-git watch setting is toggled back on |
 | 445 | `Sources/Panels/PanelContentView.swift` | `claude-harness-panel-render` | (Existing fence, widened.) The `.claudeHarness` arm now also passes `hasUnreadNotification: hasUnreadNotification` into `SupermuxHarnessPanelView`, the same value the terminal arm passes to `TerminalPanelView`. This is what lets a harness pane render an unread indicator at all |
 | 446 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the fork-owned `Sources/Supermux/Harness/SupermuxHarnessUnreadIndicator.swift` into the cmux target with reserved ids `50BE0001…0138` (file reference) / `…0139` (build file); 4 `50BE0001` occurrences (build file, file reference, group membership, sources phase) |
+| 447 | `.github/workflows/ci.yml` | `harness-web-ci` | Adds the `harness_web` route output and pinned-Bun Linux `harness-web` job (frozen install, typecheck, full Bun suite, production bundle build, committed-resource freshness check), then makes that job a direct dependency of `linux-preflight`, the stable `tests` aggregate, and `ci-status` |
+| 448 | `scripts/ci/detect_ci_change_areas.py` | `harness-web-ci` | Adds the independent `harness_web` change area for `harness-web/**`, the committed `Resources/supermux-harness/**` bundle, its build script, and the root package script registry without widening the broad website area or changing existing macOS classification |
+| 449 | `tests/test_ci_change_areas.py` | `harness-web-ci` | Executable routing and aggregate-gate coverage for harness sources/package metadata, the bundled resource, workflow-dispatch fail-open output, stale routed-job handling in Linux preflight, the stable `tests` gate, pinned Bun/build commands, and website-only exclusions |
 
 ## How to re-apply
 
@@ -3913,3 +3916,35 @@ User-facing entrypoints for the harness pane, all routed through the one shared 
    `|| panelType == .claudeHarness`; CLI help strings in `CLI/cmux.swift` list `claude-harness`.
 9. Docs (#442) and schema (#14): shortcut row in `web/data/cmux-shortcuts.ts` (surfaces section)
    and the `supermuxNewClaudeHarness` enum id in `web/data/cmux.schema.json`.
+
+### 447–449. Harness web CI — `harness-web-ci`
+
+The harness web app is fork-owned (`harness-web/`) but its generated, committed single-file bundle
+ships inside the macOS app at `Resources/supermux-harness/index.html`. Keep one independent
+`harness_web` route rather than folding it into the broad `web` area: ordinary website and diff
+webview changes must not pay for the harness suite, while every harness source/test/package/lock
+change, the committed bundle, `scripts/supermux-build-harness-web.sh`, and the root `package.json`
+script registry must run it. Do not add the root `bun.lock`: the harness installs from
+`harness-web/bun.lock` and does not consume the root dependency graph. The new predicate is additive;
+leave every existing `web`, `agent_session_web`, and `macos` decision unchanged. In particular, the
+committed resource remains app-affecting under the existing macOS classifier.
+
+In `.github/workflows/ci.yml`, preserve all of these together:
+
+1. Export `harness_web` from `changes` and emit it as `true` from the fail-open/all-areas path, so
+   `workflow_dispatch`, empty diffs, router changes, and diff failures run the lane.
+2. The routed Linux `harness-web` job uses the repository's pinned
+   `oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6` action with Bun `1.3.14`, installs
+   `harness-web/bun.lock` frozen, runs `bun run typecheck` and the full `bun run test`, then invokes
+   the root `bun run harness-web:build` production path and fails on any diff in
+   `Resources/supermux-harness/index.html`.
+3. Add `harness-web` as a direct need of `linux-preflight`, `tests`, and `ci-status`. Map it to the
+   `harness_web` output in Linux preflight so a routed skip is a failure and an unrouted skip is
+   accepted. Keep it in the stable `tests` aggregate's explicit allowed-results loop too; the direct
+   dependency prevents a future topology edit from silently dropping the lane.
+
+The tests execute the classifier and the embedded Python gate scripts through the workflow's
+existing extraction helpers. Keep the positive cases separate from website-only negatives, and keep
+the behavior checks that a routed harness skip fails Linux preflight and a failed harness job fails
+the stable aggregate. Do not replace those with source grep assertions; only the established
+workflow-shape helper is used to pin the action version and exact validation commands.

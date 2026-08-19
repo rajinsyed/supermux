@@ -31,12 +31,18 @@ def assert_areas(
     web: bool,
     go: bool,
     agent_session_web: bool = False,
+    # SUPERMUX:begin harness-web-ci
+    harness_web: bool = False,
+    # SUPERMUX:end harness-web-ci
 ) -> None:
     actual = module.classify_files(paths)
     assert actual.macos is macos, (paths, actual)
     assert actual.web is web, (paths, actual)
     assert actual.go is go, (paths, actual)
     assert actual.agent_session_web is agent_session_web, (paths, actual)
+    # SUPERMUX:begin harness-web-ci
+    assert actual.harness_web is harness_web, (paths, actual)
+    # SUPERMUX:end harness-web-ci
 
 
 def test_docs_only_skips_expensive_areas() -> None:
@@ -70,6 +76,24 @@ def test_website_only_does_not_run_agent_session_resource_check() -> None:
     assert_areas(["web/app/page.tsx"], macos=False, web=True, go=False, agent_session_web=False)
 
 
+# SUPERMUX:begin harness-web-ci
+def test_harness_web_inputs_route_the_dedicated_area_without_the_broad_web_area() -> None:
+    for path in [
+        "harness-web/src/main.tsx",
+        "harness-web/package.json",
+        "harness-web/bun.lock",
+        "scripts/supermux-build-harness-web.sh",
+        "Resources/supermux-harness/index.html",
+    ]:
+        assert_areas([path], macos=True, web=False, go=False, harness_web=True)
+
+
+def test_unrelated_website_files_do_not_route_harness_web() -> None:
+    assert_areas(["web/app/page.tsx"], macos=False, web=True, go=False, harness_web=False)
+    assert_areas(["webviews/src/diff/App.tsx"], macos=False, web=True, go=False, harness_web=False)
+# SUPERMUX:end harness-web-ci
+
+
 def test_agent_session_webview_sources_run_bundled_asset_check() -> None:
     assert_areas(
         ["webviews/src/agent-session/shared/message.test.ts"],
@@ -101,13 +125,24 @@ def test_markdown_viewer_webview_app_does_not_run_agent_session_resource_check()
 
 
 def test_root_agent_web_dependencies_run_web_and_macos() -> None:
+    # SUPERMUX:begin harness-web-ci
     assert_areas(
-        ["package.json", "bun.lock"],
+        ["package.json"],
         macos=True,
         web=True,
         go=False,
         agent_session_web=True,
+        harness_web=True,
     )
+    assert_areas(
+        ["bun.lock"],
+        macos=True,
+        web=True,
+        go=False,
+        agent_session_web=True,
+        harness_web=False,
+    )
+    # SUPERMUX:end harness-web-ci
 
 
 def test_agent_session_resources_run_web_and_macos() -> None:
@@ -155,6 +190,9 @@ def test_workflow_changes_run_everything() -> None:
         web=True,
         go=True,
         agent_session_web=True,
+        # SUPERMUX:begin harness-web-ci
+        harness_web=True,
+        # SUPERMUX:end harness-web-ci
     )
 
 
@@ -233,6 +271,21 @@ def run_linux_preflight(needs: dict[str, object]) -> subprocess.CompletedProcess
     )
 
 
+# SUPERMUX:begin harness-web-ci
+def run_required_tests_gate(needs: dict[str, object]) -> subprocess.CompletedProcess[str]:
+    script = workflow_job_step_script("tests", "Check app-host unit test routing")
+    env = {**os.environ, "TESTS_NEEDS": json.dumps(needs)}
+    return subprocess.run(
+        ["bash", "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+# SUPERMUX:end harness-web-ci
+
+
 def linux_preflight_needs(
     *,
     outputs: dict[str, str] | None = None,
@@ -243,6 +296,9 @@ def linux_preflight_needs(
         "web": "true",
         "go": "true",
         "agent_session_web": "true",
+        # SUPERMUX:begin harness-web-ci
+        "harness_web": "true",
+        # SUPERMUX:end harness-web-ci
     }
     if outputs:
         route_outputs.update(outputs)
@@ -255,6 +311,9 @@ def linux_preflight_needs(
         "diff-sidecar-check": "success",
         "web-db-migrations": "success",
         "agent-session-web-resources": "success",
+        # SUPERMUX:begin harness-web-ci
+        "harness-web": "success",
+        # SUPERMUX:end harness-web-ci
     }
     if results:
         job_results.update(results)
@@ -262,6 +321,19 @@ def linux_preflight_needs(
         name: {"result": result, "outputs": route_outputs if name == "changes" else {}}
         for name, result in job_results.items()
     }
+
+
+# SUPERMUX:begin harness-web-ci
+def required_tests_needs(*, harness_web_result: str = "success") -> dict[str, object]:
+    return {
+        "changes": {"result": "success", "outputs": {"macos": "true"}},
+        "linux-preflight": {"result": "success", "outputs": {}},
+        "app-host-unit-tests": {"result": "success", "outputs": {}},
+        "swift-package-tests": {"result": "success", "outputs": {}},
+        "agent-session-web-resources": {"result": "success", "outputs": {}},
+        "harness-web": {"result": harness_web_result, "outputs": {}},
+    }
+# SUPERMUX:end harness-web-ci
 
 
 def run_detect_step_for_paths(
@@ -318,7 +390,29 @@ def test_workflow_self_change_guard_runs_before_detector_imports() -> None:
     result, outputs = run_detect_step_for_paths(["scripts/ci/subprocess.py"])
 
     assert "CI router changed; running all CI areas." in result.stdout
-    assert outputs == ["macos=true", "web=true", "go=true", "agent_session_web=true"]
+    # SUPERMUX:begin harness-web-ci
+    assert outputs == [
+        "macos=true",
+        "web=true",
+        "go=true",
+        "agent_session_web=true",
+        "harness_web=true",
+    ]
+    # SUPERMUX:end harness-web-ci
+
+
+# SUPERMUX:begin harness-web-ci
+def test_workflow_routes_harness_web_without_the_broad_web_jobs() -> None:
+    _, outputs = run_detect_step_for_paths(["harness-web/tests/composer.test.tsx"])
+
+    assert outputs == [
+        "macos=true",
+        "web=false",
+        "go=false",
+        "agent_session_web=false",
+        "harness_web=true",
+    ]
+# SUPERMUX:end harness-web-ci
 
 
 def test_workflow_diff_failure_runs_all_areas() -> None:
@@ -350,6 +444,9 @@ def test_workflow_diff_failure_runs_all_areas() -> None:
             "web=true",
             "go=true",
             "agent_session_web=true",
+            # SUPERMUX:begin harness-web-ci
+            "harness_web=true",
+            # SUPERMUX:end harness-web-ci
         ]
 
 
@@ -434,6 +531,9 @@ def test_workflow_routes_from_shallow_synthetic_merge() -> None:
             "web=true",
             "go=false",
             "agent_session_web=false",
+            # SUPERMUX:begin harness-web-ci
+            "harness_web=false",
+            # SUPERMUX:end harness-web-ci
         ]
 
 
@@ -441,31 +541,33 @@ def test_workflow_empty_diff_runs_all_areas() -> None:
     result, outputs = run_detect_step_for_paths([])
 
     assert "PR diff is empty; running all CI areas." in result.stdout
-    assert outputs == ["macos=true", "web=true", "go=true", "agent_session_web=true"]
+    # SUPERMUX:begin harness-web-ci
+    assert outputs == [
+        "macos=true",
+        "web=true",
+        "go=true",
+        "agent_session_web=true",
+        "harness_web=true",
+    ]
+    # SUPERMUX:end harness-web-ci
 
 
 def test_router_changes_run_everything() -> None:
-    assert_areas(
-        ["scripts/ci/detect_ci_change_areas.py"],
-        macos=True,
-        web=True,
-        go=True,
-        agent_session_web=True,
-    )
-    assert_areas(
-        ["scripts/ci/subprocess.py"],
-        macos=True,
-        web=True,
-        go=True,
-        agent_session_web=True,
-    )
-    assert_areas(
-        ["tests/test_ci_change_areas.py"],
-        macos=True,
-        web=True,
-        go=True,
-        agent_session_web=True,
-    )
+    # SUPERMUX:begin harness-web-ci
+    for path in [
+        "scripts/ci/detect_ci_change_areas.py",
+        "scripts/ci/subprocess.py",
+        "tests/test_ci_change_areas.py",
+    ]:
+        assert_areas(
+            [path],
+            macos=True,
+            web=True,
+            go=True,
+            agent_session_web=True,
+            harness_web=True,
+        )
+    # SUPERMUX:end harness-web-ci
 
 
 def test_ghosttykit_checksum_pin_runs_macos() -> None:
@@ -509,6 +611,9 @@ def test_cli_writes_github_outputs() -> None:
             "web=true",
             "go=false",
             "agent_session_web=false",
+            # SUPERMUX:begin harness-web-ci
+            "harness_web=false",
+            # SUPERMUX:end harness-web-ci
         ]
 
 
@@ -536,12 +641,20 @@ def test_cli_empty_diff_runs_all_areas() -> None:
         )
 
         assert "PR diff is empty; running all CI areas." in result.stdout
-        assert "Resolved areas: macos=true web=true go=true agent_session_web=true" in result.stdout
+        # SUPERMUX:begin harness-web-ci
+        assert (
+            "Resolved areas: macos=true web=true go=true agent_session_web=true harness_web=true"
+            in result.stdout
+        )
+        # SUPERMUX:end harness-web-ci
         assert output_path.read_text(encoding="utf-8").splitlines() == [
             "macos=true",
             "web=true",
             "go=true",
             "agent_session_web=true",
+            # SUPERMUX:begin harness-web-ci
+            "harness_web=true",
+            # SUPERMUX:end harness-web-ci
         ]
 
 
@@ -554,7 +667,12 @@ def test_non_pr_events_run_all_areas() -> None:
         stderr=subprocess.PIPE,
     )
 
-    assert "Resolved areas: macos=true web=true go=true agent_session_web=true" in result.stdout
+    # SUPERMUX:begin harness-web-ci
+    assert (
+        "Resolved areas: macos=true web=true go=true agent_session_web=true harness_web=true"
+        in result.stdout
+    )
+    # SUPERMUX:end harness-web-ci
 
 
 def test_ci_status_job_accepts_skipped_routed_jobs() -> None:
@@ -568,6 +686,9 @@ def test_ci_status_job_accepts_skipped_routed_jobs() -> None:
         "react-apps-check",
         "diff-sidecar-check",
         "web-db-migrations",
+        # SUPERMUX:begin harness-web-ci
+        "harness-web",
+        # SUPERMUX:end harness-web-ci
         "linux-preflight",
         "app-host-unit-tests",
         "tests",
@@ -587,10 +708,22 @@ def test_required_tests_status_waits_for_app_host_matrix() -> None:
     assert "      - changes" in block
     assert "      - linux-preflight" in block
     assert "      - app-host-unit-tests" in block
+    # SUPERMUX:begin harness-web-ci
+    assert "      - harness-web" in block
+    # SUPERMUX:end harness-web-ci
     assert "if: ${{ always() }}" in block
     assert 'preflight["result"] != "success"' in block
     assert 'macos == "true" and tests["result"] != "success"' in block
     assert 'tests["result"] not in {"success", "skipped"}' in block
+
+
+# SUPERMUX:begin harness-web-ci
+def test_required_tests_status_rejects_a_failed_harness_web_job() -> None:
+    result = run_required_tests_gate(required_tests_needs(harness_web_result="failure"))
+
+    assert result.returncode != 0
+    assert "harness-web did not pass: failure" in result.stderr
+# SUPERMUX:end harness-web-ci
 
 
 def test_macos_jobs_wait_for_linux_preflight() -> None:
@@ -632,6 +765,10 @@ def test_linux_preflight_blocks_macos_on_cheap_layer_failure() -> None:
     assert "      - diff-sidecar-check" in block
     assert "      - web-db-migrations" in block
     assert "      - agent-session-web-resources" in block
+    # SUPERMUX:begin harness-web-ci
+    assert "      - harness-web" in block
+    assert '"harness-web": "harness_web"' in block
+    # SUPERMUX:end harness-web-ci
     assert "if: ${{ always() }}" in block
     assert 'required = ("changes", "workflow-guard-tests")' in block
     assert 'allowed_routed = {' in block
@@ -658,6 +795,25 @@ def test_linux_preflight_allows_unrouted_job_skip() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "remote-daemon-tests: skipped" in result.stdout
+
+
+# SUPERMUX:begin harness-web-ci
+def test_linux_preflight_requires_harness_web_only_when_routed() -> None:
+    routed = run_linux_preflight(
+        linux_preflight_needs(results={"harness-web": "skipped"})
+    )
+    assert routed.returncode != 0
+    assert "harness-web: skipped (route harness_web=true)" in routed.stderr
+
+    unrouted = run_linux_preflight(
+        linux_preflight_needs(
+            outputs={"harness_web": "false"},
+            results={"harness-web": "skipped"},
+        )
+    )
+    assert unrouted.returncode == 0, unrouted.stderr
+    assert "harness-web: skipped" in unrouted.stdout
+# SUPERMUX:end harness-web-ci
 
 
 def test_macos_jobs_use_lane_specific_xcode_pin_vars() -> None:
@@ -726,11 +882,34 @@ def test_agent_session_web_resources_runs_only_for_agent_session_web_area() -> N
     assert "if: ${{ needs.changes.outputs.agent_session_web == 'true' }}" in block
 
 
+# SUPERMUX:begin harness-web-ci
+def test_harness_web_job_runs_the_full_production_validation() -> None:
+    block = workflow_job_block("harness-web")
+
+    assert "if: ${{ needs.changes.outputs.harness_web == 'true' }}" in block
+    assert "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6" in block
+    assert 'bun-version: "1.3.14"' in block
+    assert "bun install --frozen-lockfile" in block
+    assert "bun run typecheck" in block
+    assert "bun run test" in block
+    assert "bun run harness-web:build" in block
+    assert "git diff --exit-code -- Resources/supermux-harness/index.html" in block
+# SUPERMUX:end harness-web-ci
+
+
 def test_perf_activation_workflow_keeps_required_status_while_gating_benchmark() -> None:
     result, outputs = run_detect_step_for_paths(["docs/ci-runners.md"], PERF_ACTIVATION_WORKFLOW)
 
     assert "Resolved areas: macos=false web=false go=false" in result.stdout
-    assert outputs == ["macos=false", "web=false", "go=false", "agent_session_web=false"]
+    # SUPERMUX:begin harness-web-ci
+    assert outputs == [
+        "macos=false",
+        "web=false",
+        "go=false",
+        "agent_session_web=false",
+        "harness_web=false",
+    ]
+    # SUPERMUX:end harness-web-ci
 
     benchmark = workflow_job_block("activation-session-benchmark", PERF_ACTIVATION_WORKFLOW)
     sentinel = workflow_job_block("activation-session", PERF_ACTIVATION_WORKFLOW)
