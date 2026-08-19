@@ -234,6 +234,74 @@ export function ensureTurn(
   return { model: next, turnIndex, turnId: next.turns[turnIndex].id };
 }
 
+/**
+ * A queued message the CLI consumed MID-TURN. Claude Code does not hold a
+ * queued message for the next turn: its `command_lifecycle` frame flips to
+ * "started" at the running turn's next step, the model reads it as context,
+ * and the SAME turn's remaining output answers it (probed against claude
+ * 2.1.235 — "also say BANANA" queued mid-count made the running turn's final
+ * message say BANANA, and the `result` closed both). So the chip does not
+ * drain into a turn of its own — that would draw the message BELOW the answer
+ * it already received, and leave a turn open that no result will ever settle.
+ * It becomes a user bubble inside the running turn, at the position it
+ * actually interjected.
+ */
+export function interjectQueuedMessage(
+  model: TranscriptModel,
+  uuid: string,
+  atMs: number
+): TranscriptModel {
+  const message = model.queued.find((q) => q.uuid === uuid);
+  if (!message) return model;
+  // A relay is a message addressed to an AGENT, not to Claude: its record in
+  // `model.relays` draws it as a chip and its delivery is read in the agent
+  // view. Interjecting it as a main-transcript user bubble would show it as
+  // speech aimed at the wrong party; the existing relay flow keeps it.
+  if (message.relay) return model;
+  const next = appendInterjection(model, uuid, message.text, message.images, atMs);
+  // No open turn: the lifecycle raced the turn boundary and the CLI is opening
+  // a fresh turn for this message after all. The chip stays queued, and
+  // `ensureTurn` promotes it onto that turn's first frame as before.
+  if (!next) return model;
+  return {
+    ...next,
+    queued: model.queued.filter((q) => q.uuid !== uuid),
+    revision: next.revision + 1
+  };
+}
+
+/**
+ * The interjected bubble itself, appended to the open turn's work — shared by
+ * the live path above and the replay path (a `queued_command` attachment the
+ * history mapper forwards as a `mid_turn` user line). Returns `null` when no
+ * turn is open, so each caller keeps its own honest fallback.
+ */
+export function appendInterjection(
+  model: TranscriptModel,
+  uuid: string | undefined,
+  text: string,
+  images: ImageAttachment[] | undefined,
+  atMs: number
+): TranscriptModel | null {
+  const open = activeTurnIndex(model);
+  if (open < 0) return null;
+  const turn = model.turns[open];
+  const block: Block = {
+    kind: "userText",
+    key: `interject:${uuid ?? model.revision}`,
+    uuid,
+    text,
+    images,
+    interjection: true
+  };
+  return withTurn(model, open, {
+    ...turn,
+    blocks: turn.blocks.concat(block),
+    lastFrameAtMs: atMs,
+    revision: turn.revision + 1
+  });
+}
+
 export function closeOpenTurns(
   model: TranscriptModel,
   atMs: number,

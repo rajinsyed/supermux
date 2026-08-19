@@ -7,9 +7,6 @@
 @import "./content.css";
 @import "./layout.css";
 @import "./transcript.css";
-/* After transcript.css: the message rail replaces the right-edge `.timeline`
-   rail declared there, and mounts as a sibling of the scroller from App.tsx. */
-@import "./rail.css";
 @import "./tools.css";
 @import "./cards.css";
 /* After cards.css: .btn-quiet refines .btn, and at equal specificity the later

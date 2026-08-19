@@ -250,6 +250,48 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(page.events.compactMap { $0.string(forKey: "uuid") } == ["u1", "a1", "u2", "a2"])
     }
 
+    @Test func historyReplaysQueuedPromptAttachmentsAsMidTurnUserLines() throws {
+        // A message the user queues mid-turn is consumed INSIDE the running
+        // turn by the CLI (its command_lifecycle frame says "started"
+        // mid-stream) and never becomes a `user` record on disk — the
+        // `queued_command` attachment is its only trace. It must replay as a
+        // `mid_turn` user line so the web reducer files it inside the turn it
+        // interjected into. Task-notification refeeds share the attachment
+        // shape and must NOT replay: they are machine-authored.
+        let sandbox = try makeSandbox(named: "queued-prompt")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        try writeSession(id: "queued", directory: directory, records: [
+            ["type": "user", "uuid": "u1", "parentUuid": NSNull(), "isSidechain": false, "message": ["role": "user", "content": "count to five"]],
+            ["type": "assistant", "uuid": "a1", "parentUuid": "u1", "isSidechain": false, "message": ["role": "assistant", "content": "counting"]],
+            ["type": "attachment", "uuid": "att1", "parentUuid": "a1", "attachment": [
+                "type": "queued_command",
+                "commandMode": "prompt",
+                "prompt": "also say BANANA",
+                "source_uuid": "q1",
+                "timestamp": "2026-08-19T13:38:24.742Z",
+            ]],
+            ["type": "attachment", "uuid": "att2", "parentUuid": "att1", "attachment": [
+                "type": "queued_command",
+                "commandMode": "task-notification",
+                "prompt": "<task-notification>machine payload</task-notification>",
+            ]],
+            ["type": "assistant", "uuid": "a2", "parentUuid": "att2", "isSidechain": false, "message": ["role": "assistant", "content": "DONE BANANA"]],
+        ])
+
+        let page = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "queued"
+        )
+        #expect(page.events.compactMap { $0.string(forKey: "uuid") } == ["u1", "a1", "q1", "a2"])
+        let queued = page.events.first { $0.string(forKey: "uuid") == "q1" }
+        #expect(queued?.string(forKey: "type") == "user")
+        #expect(queued?.bool(forKey: "mid_turn") == true)
+        #expect(queued?.string(forKey: "timestamp") == "2026-08-19T13:38:24.742Z")
+        let message = queued?.rawValue["message"] as? [String: Any]
+        #expect(message?["content"] as? String == "also say BANANA")
+    }
+
     @Test func sessionTitleFollowsPrecedenceAndReturnsNilWhenUntitled() throws {
         let sandbox = try makeSandbox(named: "session-title")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }

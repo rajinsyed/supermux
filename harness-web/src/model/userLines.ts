@@ -10,6 +10,7 @@ import { classifyLocalUserText } from "./localText";
 import { classifyToolStatus, extractTodos } from "./toolStatus";
 import {
   appendCommandOutput,
+  appendInterjection,
   startCommandTurn,
   startContinuationTurn,
   startUserTurn
@@ -44,6 +45,7 @@ export function applyUser(
 
   if (typeof content === "string") {
     if (parent || line.isReplay) return next;
+    if (line.mid_turn) return applyMidTurnText(next, index, content, line.uuid, atMs);
     return applyUserText(next, index, content, line.uuid, atMs);
   }
 
@@ -62,10 +64,39 @@ export function applyUser(
       // one-line row and the conversation is read in the agent view.
       if (parent) continue;
       if (line.isReplay) continue;
+      if (line.mid_turn) {
+        next = applyMidTurnText(next, index, text, line.uuid, atMs);
+        continue;
+      }
       next = applyUserText(next, index, text, line.uuid, atMs);
     }
   }
   return next;
+}
+
+/**
+ * A replayed `queued_command` record: a message the user queued while a turn
+ * ran, which the CLI consumed INSIDE that turn (its lifecycle frame says
+ * "started" mid-stream and the same turn's remaining output answers it — see
+ * the `command_lifecycle` case in transcript.ts, which handles the live wire).
+ * On replay it files into the open turn as the interjected bubble it was;
+ * opening a fresh turn for it would draw the question below its own answer.
+ * With no turn open — the record somehow leads the replay — it falls back to
+ * an ordinary user turn, because dropping typed text is never the answer.
+ */
+function applyMidTurnText(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  text: string,
+  uuid: string | undefined,
+  atMs: number
+): TranscriptModel {
+  const cleaned = text.trim();
+  if (cleaned.length === 0) return model;
+  return (
+    appendInterjection(model, uuid, text, undefined, atMs) ??
+    startUserTurn(model, index, text, undefined, atMs, uuid)
+  );
 }
 
 /**

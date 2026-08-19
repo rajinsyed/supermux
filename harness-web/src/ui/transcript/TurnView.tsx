@@ -75,8 +75,13 @@ function hiddenWhileStreaming(
   if (settled || work.length <= LIVE_TAIL) return work.map(() => false);
   const keepFrom = work.length - LIVE_TAIL;
   // Anything still running stays on screen wherever it sits: a subagent that
-  // spawned ten tools ago is the row a user most wants to watch.
-  return work.map((block, index) => index < keepFrom && !wasLive.has(block.key));
+  // spawned ten tools ago is the row a user most wants to watch. The user's
+  // own interjected message stays too — a bubble that vanishes behind
+  // "3 earlier tool calls" seconds after it was sent reads as a swallowed send.
+  return work.map(
+    (block, index) =>
+      index < keepFrom && block.kind !== "userText" && !wasLive.has(block.key)
+  );
 }
 
 export const TurnView = memo(function TurnView({

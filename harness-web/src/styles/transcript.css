@@ -214,6 +214,18 @@
   transform: none;
 }
 
+/* A queued message the CLI consumed mid-turn, drawn INSIDE the turn's work at
+   the position it interjected. The bubble keeps its right-aligned identity —
+   it is the user speaking — with a little air above and below so it reads as
+   an aside within the run rather than the turn's own opening prompt. */
+.turn-interjection {
+  margin: 10px 0 4px;
+}
+
+.turn-interjection .user-msg {
+  margin-bottom: 0;
+}
+
 /* Inside the pill the buttons are round and tighter than the pane's default
    24px square — the pill is the bed now, so each control only needs to own its
    own glyph. */
@@ -832,84 +844,6 @@
 
 .jump-pill:focus-visible {
   color: var(--text);
-}
-
-/* ---------- timeline rail ---------- */
-
-.timeline {
-  position: absolute;
-  top: 12px;
-  right: 4px;
-  bottom: 12px;
-  width: 14px;
-  display: none;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 4px;
-  z-index: 10;
-}
-
-@media (pointer: fine) {
-  .timeline {
-    display: flex;
-  }
-}
-
-.timeline-tick {
-  width: 8px;
-  height: 2px;
-  margin-left: 3px;
-  border-radius: var(--r-pill);
-  background: var(--border-strong);
-  opacity: 0.45;
-  transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-
-.timeline-tick:hover {
-  opacity: 1;
-  background: var(--claude-strong);
-}
-
-/* The on-screen window brightens in the page's own ink — the accent is saved
-   for the pointer, or the rail reads as a glowing menu glyph in the corner. */
-.timeline-tick[data-active="true"] {
-  opacity: 0.9;
-  background: var(--text-faint);
-}
-
-.timeline-tick.is-error {
-  background: var(--danger-dot);
-}
-
-.timeline-preview {
-  position: absolute;
-  right: 18px;
-  width: 240px;
-  background: var(--popover-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-panel);
-  padding: 9px 11px;
-  font-size: 11.5px;
-  pointer-events: none;
-  z-index: 30;
-}
-
-.timeline-preview-user {
-  font-weight: 600;
-  margin-bottom: 3px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.timeline-preview-body {
-  color: var(--text-muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 /* ---------- misc statuses ---------- */

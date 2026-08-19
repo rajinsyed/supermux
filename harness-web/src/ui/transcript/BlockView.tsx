@@ -7,6 +7,7 @@ import { formatTokens } from "../format";
 import { Markdown } from "../primitives/Markdown";
 import { ToolCard } from "../tools/ToolCard";
 import { ThinkingBlockView } from "./ThinkingBlockView";
+import { UserMessage } from "./UserMessage";
 
 function DividerView({ block }: { block: Extract<Block, { kind: "divider" }> }) {
   const copy = useCopy();
@@ -119,6 +120,16 @@ export const BlockView = memo(function BlockView({
       // ("Set model to opus[1m] (claude-opus-5[1m])"), never a bubble.
       return <div className="command-output">{block.text}</div>;
     case "userText":
+      // An interjection is the user speaking in the MAIN transcript — a queued
+      // message the CLI consumed mid-turn — so it wears the user bubble, not
+      // the agent-thread message style the other userText blocks carry.
+      if (block.interjection) {
+        return (
+          <div className="turn-interjection">
+            <UserMessage text={block.text} images={block.images} />
+          </div>
+        );
+      }
       return <ThreadUserMessage block={block} />;
     case "image":
       return (

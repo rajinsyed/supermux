@@ -102,7 +102,6 @@ export const copyDefaults = {
   "supermux.harness.turn.previousToolCalls": "{count} earlier tool calls",
   "supermux.harness.turn.earlierMessagesOne": "{count} earlier message",
   "supermux.harness.turn.earlierMessages": "{count} earlier messages",
-  "supermux.harness.turn.turnNumber": "Turn {seq}",
   "supermux.harness.turn.exportTitle": "Claude session",
   "supermux.harness.turn.commandChip": "Slash command",
   "supermux.harness.divider.continued": "Continued from a previous conversation",
@@ -524,7 +523,6 @@ export const copyDefaults = {
   "supermux.harness.a11y.transcript": "Conversation transcript",
   "supermux.harness.a11y.composer": "Message composer",
   "supermux.harness.a11y.permissionAlert": "Claude needs permission to continue",
-  "supermux.harness.a11y.timeline": "Conversation timeline",
   "supermux.harness.a11y.closeDialog": "Close",
 
   "supermux.harness.time.seconds": "{value}s",

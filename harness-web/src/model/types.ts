@@ -269,6 +269,16 @@ export interface UserTextBlock {
    * echoed it back yet. Cleared when the real delivery arrives.
    */
   pending?: boolean;
+  /**
+   * A MAIN-transcript message the user queued while the turn ran, which the
+   * CLI consumed mid-turn (its `command_lifecycle` frame said "started" while
+   * the turn was still streaming). It renders as a user bubble inside the turn
+   * it interjected into — the CLI answered it there, so drawing it as its own
+   * later turn would show a question the transcript already answered.
+   */
+  interjection?: boolean;
+  /** Attachments the interjected message carried. */
+  images?: ImageAttachment[];
 }
 
 export type Block =

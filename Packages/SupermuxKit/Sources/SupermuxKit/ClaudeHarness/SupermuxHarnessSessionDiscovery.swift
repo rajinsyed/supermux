@@ -310,12 +310,22 @@ public struct SupermuxHarnessSessionDiscovery {
                 }
                 let isConversation = type == "user" || type == "assistant"
                 let isSidechain = record["isSidechain"] as? Bool == true
+                // A message the user queued mid-turn persists ONLY as a
+                // `queued_command` attachment (the CLI consumes it inside the
+                // running turn and writes no `user` record); it joins the
+                // replay chain so the record mapper can resurface it. Other
+                // commandModes refeed machine-authored payloads and stay out.
+                let attachment = record["attachment"] as? [String: Any]
+                let isQueuedPrompt = type == "attachment" &&
+                    attachment?["type"] as? String == "queued_command" &&
+                    attachment?["commandMode"] as? String == "prompt"
                 linksByUUID[uuid] = SessionRecordLink(
                     parentUUID: nonemptyString(record["parentUuid"]),
-                    isVisible: isConversation &&
+                    isVisible: (isConversation &&
                         record["isMeta"] as? Bool != true &&
                         !isSidechain &&
-                        record["message"] is [String: Any]
+                        record["message"] is [String: Any]) ||
+                        (isQueuedPrompt && !isSidechain)
                 )
                 if isConversation, !isSidechain {
                     lastMainUUID = uuid

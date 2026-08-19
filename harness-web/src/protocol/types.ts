@@ -357,6 +357,30 @@ export interface UserLine {
   isReplay?: boolean;
   isMeta?: boolean;
   tool_use_result?: JsonObject;
+  /**
+   * Synthesized by the native history mapper from a `queued_command`
+   * attachment record: a message the user queued during a turn, which the CLI
+   * consumed MID-TURN as context rather than answering as its own turn. It
+   * renders inside the turn it interjected into — replaying it as a fresh user
+   * turn would re-ask a question the transcript shows already answered.
+   */
+  mid_turn?: boolean;
+}
+
+/**
+ * The CLI's own account of a queued message's life: `queued` when it accepts
+ * one mid-turn, `started` the moment it feeds it to the model — on the next
+ * STEP of the running turn, not the next turn — and `completed` when the work
+ * it triggered settles. `command_uuid` is the uuid the client stamped on the
+ * user-message frame, which is what ties a lifecycle event back to the chip
+ * the composer is holding.
+ */
+export interface CommandLifecycleLine {
+  type: "command_lifecycle";
+  command_uuid?: string;
+  state?: "queued" | "started" | "completed" | string;
+  uuid?: string;
+  session_id?: string;
 }
 
 export interface ResultLine {
@@ -448,6 +472,7 @@ export type ProtocolLine =
   | ControlRequestLine
   | ControlCancelRequestLine
   | ControlResponseLine
+  | CommandLifecycleLine
   | { type: "keep_alive" }
   | { type: string; [key: string]: Json | undefined };
 

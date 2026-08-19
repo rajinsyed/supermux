@@ -324,12 +324,8 @@ describe("keyboard focus is never the weaker affordance", () => {
     "tools.css",
     "transcript.css"
   ];
-  /**
-   * The only sanctioned exemption: a pointer-only affordance that is hidden
-   * outright without a fine pointer and is kept out of the tab order
-   * (`tabIndex={-1}` on every tick), so it has no keyboard state to design.
-   */
-  const POINTER_ONLY = new Set([".timeline-tick"]);
+  /** Pointer-only affordances exempt from keyboard styling; none currently. */
+  const POINTER_ONLY = new Set<string>([]);
 
   test("every class with a :hover treatment has a matching focus rule", async () => {
     // Hover changes background AND border AND colour; a bare UA outline over an

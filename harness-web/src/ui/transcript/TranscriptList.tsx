@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import type { RelayRecord, Turn } from "../../model/types";
 import { plural, useCopy } from "../CopyContext";
 import { ArrowDown } from "../Icons";
-import { Timeline } from "./Timeline";
 import { TurnView } from "./TurnView";
 
 const WINDOW_SIZE = 26;
@@ -107,7 +106,6 @@ export function TranscriptList({
           <div className="transcript-pad" />
         </div>
       </div>
-      <Timeline turns={turns} scrollRef={scrollRef} />
       {showPill ? (
         <button type="button" className="jump-pill" onClick={onJump}>
           <ArrowDown size={12} />

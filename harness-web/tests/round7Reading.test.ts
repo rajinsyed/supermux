@@ -1,18 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { RAIL_TICK_GEOMETRY } from "../src/ui/primitives/MessageRail";
 
 /**
- * Round-7 review, items 5 and 6.
- *
- * Item 5 is the transcript's reading experience, against the note "it doesn't
- * look good and readable — can't exactly tell why it looks worse". Every
- * assertion here is one of the measured causes, so a later restyle that
- * reintroduces one fails rather than quietly undoing the pass.
- *
- * Item 6 is the message rail, restyled after Synara's `MessageTrail`
- * (apps/web/src/components/chat/MessageTrail.tsx). Its numbers are asserted
- * against the constants the component exports, so the CSS and the magnification
- * math cannot drift apart — they are two halves of one effect.
+ * Round-7 review, item 5: the transcript's reading experience, against the
+ * note "it doesn't look good and readable — can't exactly tell why it looks
+ * worse". Every assertion here is one of the measured causes, so a later
+ * restyle that reintroduces one fails rather than quietly undoing the pass.
+ * (Item 6's Synara rail shipped here too, then was removed entirely in round
+ * 8 at the user's request — round5.test.ts holds the stays-retired guard.)
  */
 
 async function css(name: string): Promise<string> {
@@ -151,116 +145,5 @@ describe("item 5: the inline-code chip sits IN the line, not on top of it", () =
     const token = /"--inline-code-bg":\s*dark\s*\?\s*"([^"]+)"/.exec(theme);
     expect(token).not.toBeNull();
     expect(token![1]).toMatch(/rgba\(255,\s*255,\s*255/);
-  });
-});
-
-describe("item 6: the rail is Synara's message trail", () => {
-  test("the tick geometry is theirs, exactly", () => {
-    // MessageTrail.tsx lines 61–69. The base→max gap is what reads as a real
-    // Dock magnification rather than a nudge, and the pitch is tight because
-    // ticks grow SIDEWAYS — a close stack never limits the focal tick.
-    expect(RAIL_TICK_GEOMETRY.height).toBe(2);
-    expect(RAIL_TICK_GEOMETRY.base).toBe(6);
-    expect(RAIL_TICK_GEOMETRY.max).toBe(30);
-    expect(RAIL_TICK_GEOMETRY.pitch).toBe(10);
-  });
-
-  test("sigma follows their formula, so the focus radius stays ~1.5 ticks", () => {
-    // clamp(spacing*1.5, min(spacing*2, 8), 22) — messageTrail.logic.ts.
-    const { pitch, sigma } = RAIL_TICK_GEOMETRY;
-    expect(sigma).toBe(Math.min(Math.max(pitch * 1.5, Math.min(pitch * 2, 8)), 22));
-  });
-
-  test("the sheet's tick matches the component's constants", async () => {
-    // The CSS resting state and the JS magnification are two halves of one
-    // effect; if they disagree the rail snaps on first hover.
-    const sheet = await rules("rail.css");
-    const tick = block(sheet, ".msg-rail-tick");
-    expect(tick).toMatch(new RegExp(`width:\\s*${RAIL_TICK_GEOMETRY.base}px`));
-    expect(tick).toMatch(new RegExp(`height:\\s*${RAIL_TICK_GEOMETRY.height}px`));
-    // 10px centre-to-centre on a 2px tick is an 8px flex gap.
-    const gap = Number(/gap:\s*(\d+)px/.exec(block(sheet, ".msg-rail-ticks"))![1]);
-    expect(gap + RAIL_TICK_GEOMETRY.height).toBe(RAIL_TICK_GEOMETRY.pitch);
-  });
-
-  test("the rail box has room for a fully magnified tick", async () => {
-    // Their 56px box holds a 14px inset plus a 30px tick; a box that had to
-    // grow would reflow the whole rail on every pointer move.
-    const sheet = await rules("rail.css");
-    const width = Number(/width:\s*(\d+)px/.exec(block(sheet, ".msg-rail"))![1]);
-    const inset = Number(/margin-left:\s*(\d+)px/.exec(block(sheet, ".msg-rail-tick"))![1]);
-    expect(inset + RAIL_TICK_GEOMETRY.max).toBeLessThanOrEqual(width);
-  });
-
-  test("width follows the pointer; TONE never does", async () => {
-    // Synara is explicit: "opacity is a fixed per-state colour — it never
-    // follows the cursor as a gradient". Size says where the POINTER is, tone
-    // says where the READER is, and blurring the two is what makes a rail read
-    // as a glow instead of an instrument. So the rAF may write width, and must
-    // not write opacity — the tiers are CSS's, keyed off data attributes.
-    const rail = await source("ui/primitives/MessageRail.tsx");
-    const frame = rail.slice(rail.indexOf("const frame = useCallback"), rail.indexOf("const schedule"));
-    expect(frame).toMatch(/style\.width/);
-    expect(frame).not.toMatch(/style\.opacity/);
-    expect(frame).toMatch(/Math\.exp/);
-  });
-
-  test("the four tone tiers are Synara's, in the sheet", async () => {
-    // rest 0.20 · visible 0.52 · anchor 0.90 · under-pointer 1.00.
-    const sheet = await rules("rail.css");
-    expect(block(sheet, ".msg-rail-tick")).toMatch(/opacity:\s*0\.2\b/);
-    expect(block(sheet, '.msg-rail-tick[data-visible="true"]')).toMatch(/opacity:\s*0\.52/);
-    expect(block(sheet, '.msg-rail-tick[data-active="true"]')).toMatch(/opacity:\s*0\.9/);
-    expect(block(sheet, '.msg-rail-tick[data-focus="true"]')).toMatch(/opacity:\s*1/);
-  });
-
-  test("exactly one tick is the reading anchor, and it is the pane's centre", async () => {
-    // The round-5 rail lit every turn overlapping the viewport with ONE tone,
-    // so a pane showing four short turns brightened four ticks and said nothing
-    // about where the reader was. The visible tier is a separate, dimmer tone
-    // precisely so that cannot come back.
-    const rail = await source("ui/primitives/MessageRail.tsx");
-    expect(rail).toContain("scroller.clientHeight / 2");
-    expect(rail).toMatch(/bestDistance/);
-    const update = rail.slice(rail.indexOf("const update = ()"), rail.indexOf("update();"));
-    // No React state on the scroll path: a `setState` here would make every
-    // scroll event a render of the whole turn list.
-    expect(update).not.toMatch(/\bset[A-Z]\w*\(/);
-    expect(update).toContain("dataset.active");
-    expect(update).toContain("dataset.visible");
-  });
-
-  test("the hover preview costs no render", async () => {
-    // It is always mounted and revealed with `visibility`; the pointer path
-    // writes its text through refs. Summoning a card must not be a mount, or
-    // every tick crossed on the way to the target one remounts it.
-    const rail = await source("ui/primitives/MessageRail.tsx");
-    const show = rail.slice(rail.indexOf("const showPreview"), rail.indexOf("/** Index of the tick"));
-    expect(show).toMatch(/textContent/);
-    expect(show).not.toMatch(/\bset[A-Z]\w*\(/);
-    expect(block(await rules("rail.css"), ".msg-rail-preview")).toMatch(/visibility:\s*hidden/);
-  });
-
-  test("the ticks stay out of the tab order", async () => {
-    // Twenty-four invisible stops ahead of the composer is worse than no
-    // keyboard affordance; the turns are reachable by scrolling and the
-    // transcript is a labelled log region.
-    const rail = await source("ui/primitives/MessageRail.tsx");
-    expect(rail).toContain("tabIndex={-1}");
-  });
-
-  test("the whole rail column is the click target", async () => {
-    // A 2px mark is not a click target. Synara resolves a click anywhere on the
-    // rail to the nearest tick; without that the rail is a hover-only toy.
-    const rail = await source("ui/primitives/MessageRail.tsx");
-    const viewport = rail.slice(rail.indexOf('className="msg-rail-viewport"'), rail.indexOf("msg-rail-ticks"));
-    expect(viewport).toMatch(/onClick/);
-    expect(viewport).toMatch(/nearest\(/);
-  });
-
-  test("continuous width morphing is motion, and respects the preference", async () => {
-    const rail = await source("ui/primitives/MessageRail.tsx");
-    expect(rail).toContain("prefers-reduced-motion");
-    expect(await css("rail.css")).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
 });

@@ -12,7 +12,6 @@ import { AgentsDock } from "./dock/AgentsDock";
 import { EmptyState, ExitedState, NoCliState } from "./empty/EmptyStates";
 import { Header } from "./header/Header";
 import { AlertTriangle, Close } from "./Icons";
-import { MessageRail } from "./primitives/MessageRail";
 import { BinaryDialog } from "./settings/BinaryDialog";
 import { RewindDialog, type RewindTarget } from "./transcript/RewindDialog";
 import { PermissionCard, type PermissionDecision } from "./permission/PermissionCard";
@@ -441,12 +440,6 @@ function AppBody({
         )
       ) : (
         <>
-        {/* The message rail, at the pane's middle-left edge. Mounted HERE
-            rather than inside the transcript so it is positioned against the
-            pane and not against the scroller's own padded inner column — the
-            rail lives in the gutter beside the content, which is the whole
-            point of moving it off the right edge (see styles/rail.css). */}
-        <MessageRail turns={model.turns} scrollRef={scrollRef} />
         <TranscriptList
           turns={model.turns}
           relays={model.relays}

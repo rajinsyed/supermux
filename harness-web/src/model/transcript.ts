@@ -1,5 +1,6 @@
 import type {
   AssistantLine,
+  CommandLifecycleLine,
   ControlRequestLine,
   JsonObject,
   NativeEvent,
@@ -33,6 +34,7 @@ import {
   clearRetryBanners,
   closeOpenTurns,
   createModel,
+  interjectQueuedMessage,
   resetConversation,
   startUserTurn,
   truncateBeforeUserMessage
@@ -171,6 +173,17 @@ export function applyLine(
     }
     case "control_response":
       return applyControlResponse(model, line as { response?: { response?: JsonObject } });
+    case "command_lifecycle": {
+      // The CLI consumes a queued message at the running turn's next STEP, not
+      // at the next turn — "started" while a turn streams means the message
+      // just became part of THAT turn's context and its remaining output is the
+      // answer. The chip moves into the turn as an interjected bubble; left in
+      // `queued`, `ensureTurn` would promote it onto the next output leg and
+      // the transcript would re-ask a question it already shows answered.
+      const lifecycle = line as CommandLifecycleLine;
+      if (lifecycle.state !== "started" || !lifecycle.command_uuid) return model;
+      return interjectQueuedMessage(model, lifecycle.command_uuid, nowMs);
+    }
     default:
       return model;
   }

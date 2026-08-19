@@ -272487,23 +272487,6 @@
         }
       }
     },
-    "supermux.harness.a11y.timeline" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conversation timeline"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "会話のタイムライン"
-          }
-        }
-      }
-    },
     "supermux.harness.a11y.transcript" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -275645,23 +275628,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Claude セッション"
-          }
-        }
-      }
-    },
-    "supermux.harness.turn.turnNumber" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn {seq}"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ターン {seq}"
           }
         }
       }

@@ -30,7 +30,6 @@ async function source(path: string): Promise<string> {
 const SHEETS = [
   "base.css",
   "menu.css",
-  "rail.css",
   "cards.css",
   "content.css",
   "dock.css",
@@ -249,48 +248,20 @@ describe("one menu kit, worn by every floating surface", () => {
   });
 });
 
-describe("the message rail is a map, not a second scrollbar", () => {
-  test("it sits at the LEFT edge, vertically centred, and is capped", async () => {
-    // It ran full-height down the right edge, directly under the scrollbar —
-    // two position indicators a pixel apart, disagreeing about what they
-    // measure, since the rail counts turns and the scrollbar counts pixels.
-    const sheet = await css("rail.css");
-    const rail = /\.msg-rail\s*\{([^}]*)\}/.exec(sheet)![1];
-    expect(rail).toMatch(/left:\s*0/);
-    expect(rail).not.toMatch(/(?:^|\s)right:/);
-    expect(rail).toMatch(/top:\s*50%/);
-    expect(rail).toMatch(/transform:\s*translateY\(-50%\)/);
-    expect(rail).toMatch(/max-height:\s*min\(/);
-  });
-
-  test("the old right-edge rail cannot render alongside it", async () => {
-    // `TranscriptList` still mounts the old `<Timeline>` (it lives in a
-    // directory this change does not own), so both would draw.
-    const sheet = await css("rail.css");
-    expect(/\.timeline\s*\{([^}]*)\}/.exec(sheet)![1]).toMatch(/display:\s*none/);
-  });
-
-  test("exactly one tick is active, and it is the pane's centre", async () => {
-    // The old rail lit every turn overlapping the viewport, so a pane showing
-    // four short turns brightened four ticks and said nothing about where the
-    // reader was.
-    const rail = await source("ui/primitives/MessageRail.tsx");
-    expect(rail).toContain("scroller.clientHeight / 2");
-    expect(rail).toMatch(/bestDistance/);
-    // No React state on the scroll path: the active mark is written straight to
-    // the dataset, so a scroll never re-renders the transcript. A `setState`
-    // here would make every scroll event a render of the whole turn list.
-    const update = rail.slice(rail.indexOf("const update = ()"), rail.indexOf("update();"));
-    expect(update).not.toMatch(/\bset(?:Hover|State)\b|\bsetHover\(/);
-    expect(update).toContain("dataset.active");
-  });
-
-  test("the ticks stay out of the tab order", async () => {
-    // Twenty-four invisible stops ahead of the composer is worse than no
-    // keyboard affordance; the turns are reachable by scrolling and the
-    // transcript is a labelled log region.
-    const rail = await source("ui/primitives/MessageRail.tsx");
-    expect(rail).toContain("tabIndex={-1}");
+describe("the message rail stays retired", () => {
+  test("no component or sheet mounts a turn rail or timeline", async () => {
+    // Round 7.5 shipped the Synara-style trail; round 8 removed it on the
+    // user's verdict ("quite useless. remove it entirely"). Neither the round-5
+    // right-edge `.timeline` nor the round-7 left-edge `.msg-rail` may return.
+    for (const name of SHEETS) {
+      const sheet = await rules(name);
+      expect(sheet).not.toContain(".msg-rail");
+      expect(sheet).not.toContain(".timeline");
+    }
+    const app = await source("ui/App.tsx");
+    expect(app).not.toContain("MessageRail");
+    const list = await source("ui/transcript/TranscriptList.tsx");
+    expect(list).not.toContain("Timeline");
   });
 });
 
