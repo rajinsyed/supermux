@@ -18,24 +18,24 @@ import {
   History,
   More,
   Plus,
-  Resume,
   Scissors,
   Terminal,
   Trash
 } from "../Icons";
 import { displayDirectory, formatCost, formatRelativeTime } from "../format";
+import { MenuEmpty, MenuItem, MenuSection } from "../primitives/MenuList";
+import { Popover } from "../primitives/Popover";
 import { ContextRing } from "./ContextRing";
-import { Menu, MenuItem, MenuSection } from "./Menu";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
 /**
- * The model picker moved INTO the composer pill (the model is a property of the
+ * The model picker lives IN the composer pill (the model is a property of the
  * message you are about to send, not of the session chrome), and its data
- * plumbing moved with it. These two are still re-exported here because they are
- * the header's own vocabulary as much as the picker's — the effort a turn ran at
- * is printed in turn footers, and the menu source is the pane's answer to "what
- * models does this binary have".
+ * plumbing moved with it. These three are still re-exported here because they
+ * are the header's own vocabulary as much as the picker's — the effort a turn
+ * ran at is printed in turn footers, and the menu source is the pane's answer to
+ * "what models does this binary have".
  */
 export { clampEffort, effortLabel, modelMenuSource } from "../composer/ModelMenu";
 
@@ -141,9 +141,10 @@ export function Header(props: HeaderProps) {
           onNewSession={props.onNewSession}
         />
 
-        <Menu
+        <Popover
           label={copy("supermux.harness.header.more")}
           className="menu-more"
+          popClassName="pop-more"
           trigger={() => (
             <span className="icon-pill">
               <More size={12} />
@@ -154,6 +155,7 @@ export function Header(props: HeaderProps) {
             <>
               <MenuSection>
                 <MenuItem
+                  selectable={false}
                   icon={<Plus size={12} />}
                   onClick={() => {
                     props.onNewSession();
@@ -163,6 +165,7 @@ export function Header(props: HeaderProps) {
                   {copy("supermux.harness.header.newSession")}
                 </MenuItem>
                 <MenuItem
+                  selectable={false}
                   icon={<Scissors size={12} />}
                   onClick={() => {
                     props.onCompact();
@@ -174,6 +177,7 @@ export function Header(props: HeaderProps) {
               </MenuSection>
               <MenuSection>
                 <MenuItem
+                  selectable={false}
                   icon={<Download size={12} />}
                   onClick={() => {
                     props.onExport();
@@ -183,6 +187,7 @@ export function Header(props: HeaderProps) {
                   {copy("supermux.harness.header.export")}
                 </MenuItem>
                 <MenuItem
+                  selectable={false}
                   icon={<Terminal size={12} />}
                   onClick={() => {
                     props.onOpenTerminal();
@@ -192,6 +197,7 @@ export function Header(props: HeaderProps) {
                   {copy("supermux.harness.header.openTerminal")}
                 </MenuItem>
                 <MenuItem
+                  selectable={false}
                   icon={<Bolt size={12} />}
                   onClick={() => {
                     // Focus back to the More trigger BEFORE the dialog mounts:
@@ -209,6 +215,7 @@ export function Header(props: HeaderProps) {
               <MenuSection>
                 <MenuItem
                   danger
+                  selectable={false}
                   icon={<Trash size={12} />}
                   onClick={() => {
                     props.onClear();
@@ -220,7 +227,7 @@ export function Header(props: HeaderProps) {
               </MenuSection>
             </>
           )}
-        </Menu>
+        </Popover>
       </div>
     </header>
   );
@@ -245,9 +252,11 @@ function ModeMenu({
 }) {
   const copy = useCopy();
   return (
-    <Menu
+    <Popover
       label={copy("supermux.harness.header.permissionMode")}
       className="menu-modes"
+      popClassName="pop-modes"
+      autoFocus="checked"
       trigger={() => (
         <span className={`mode-pill is-${mode}`}>
           <span className="pill-label">{modeLabel(mode, copy, true)}</span>
@@ -274,7 +283,7 @@ function ModeMenu({
           ))}
         </MenuSection>
       )}
-    </Menu>
+    </Popover>
   );
 }
 
@@ -287,6 +296,11 @@ function ModeMenu({
  * pane are secondary and appear on hover/focus as icon buttons at the trailing
  * edge, which is what makes the list read as a list. New session is pinned to
  * the foot, where it does not scroll away behind twenty-four rows.
+ *
+ * Rebuilt on the kit: the rows are `.ui-menu-item`s in all but name (same 28px
+ * line, same 7px radius, same hover bed), the search field is the kit's input,
+ * and the foot is the kit's `.ui-menu-foot` — so this panel and the ••• menu
+ * beside it are visibly the same object at two widths.
  */
 function SessionsMenu({
   sessions,
@@ -312,9 +326,11 @@ function SessionsMenu({
   );
 
   return (
-    <Menu
+    <Popover
       label={copy("supermux.harness.header.sessions")}
       className="menu-sessions"
+      popClassName="pop-sessions"
+      onOpen={onLoad}
       trigger={() => (
         <span className="icon-pill">
           <History size={12} />
@@ -322,13 +338,13 @@ function SessionsMenu({
       )}
     >
       {(close) => (
-        <div className="sessions-pop" onFocus={onLoad}>
+        <>
           {/* The search earns its row here in a way the model menu's did not:
               a folder accumulates hundreds of sessions and the list is capped
               at 24, so without it the older ones are simply unreachable. */}
           <div className="sessions-head">
             <input
-              className="sessions-search"
+              className="ui-menu-input"
               placeholder={copy("supermux.harness.header.sessionsSearch")}
               aria-label={copy("supermux.harness.header.sessionsSearch")}
               value={query}
@@ -337,7 +353,7 @@ function SessionsMenu({
           </div>
 
           {filtered.length === 0 ? (
-            <div className="menu-empty">{copy("supermux.harness.header.sessionsEmpty")}</div>
+            <MenuEmpty>{copy("supermux.harness.header.sessionsEmpty")}</MenuEmpty>
           ) : (
             <ul className="sessions-list">
               {filtered.slice(0, 24).map((item) => (
@@ -402,7 +418,12 @@ function SessionsMenu({
             </ul>
           )}
 
-          <div className="sessions-foot">
+          {/* The kit's footer, carrying the one action that must not scroll
+              away. The old build printed a "Resume" legend beside it explaining
+              that the row's own click resumes; the row now carries that as its
+              title, and the foot is one action rather than an action plus a
+              caption about a different one. */}
+          <div className="ui-menu-foot">
             <button
               type="button"
               className="sessions-new"
@@ -415,16 +436,9 @@ function SessionsMenu({
               <Plus size={12} />
               {copy("supermux.harness.header.newSession")}
             </button>
-            {/* The row's own click resumes; the trailing glyphs are the other
-                two. Saying so once at the foot is cheaper than a tooltip the
-                user has to hunt for. */}
-            <span className="sessions-legend">
-              <Resume size={11} />
-              {copy("supermux.harness.header.resume")}
-            </span>
           </div>
-        </div>
+        </>
       )}
-    </Menu>
+    </Popover>
   );
 }

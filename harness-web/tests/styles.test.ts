@@ -529,9 +529,13 @@ describe("the header survives a thin split pane", () => {
     // A flex item without `min-width: 0` refuses to shrink below its content
     // and simply overprints its neighbour — which is how the title button came
     // to sit on top of the cost badge below ~440px.
-    for (const selector of [".header-left", ".header-right", ".menu"]) {
+    for (const selector of [".header-left", ".header-right"]) {
       expect(ruleFor(sheet, selector)).toMatch(/min-width:\s*0/);
     }
+    // `.menu` is the shared trigger wrapper and lives in the kit now, so the
+    // promise it carries has to be asserted where it is actually declared —
+    // every menu in the pane depends on it, not only this bar's three.
+    expect(ruleFor(await css("menu.css"), ".menu")).toMatch(/min-width:\s*0/);
     expect(ruleFor(sheet, ".header-left")).toMatch(/flex:\s*1 1 auto/);
     expect(ruleFor(sheet, ".header-right")).toMatch(/flex:\s*0 1 auto/);
   });

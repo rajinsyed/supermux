@@ -83,6 +83,10 @@ extension Workspace {
         }
 
         installSupermuxHarnessPanelSubscription(harnessPanel)
+        scheduleSupermuxHarnessGitMetadataProbe(
+            panelId: harnessPanel.id,
+            reason: "harnessSurfaceCreate"
+        )
 
         return harnessPanel
     }
@@ -150,7 +154,50 @@ extension Workspace {
             focused: true
         )
         installSupermuxHarnessPanelSubscription(harnessPanel)
+        scheduleSupermuxHarnessGitMetadataProbe(
+            panelId: harnessPanel.id,
+            reason: "harnessSplitCreate"
+        )
         return harnessPanel
+    }
+
+    /// Item 9: a harness pane must contribute a branch to the workspace tab.
+    ///
+    /// The sidebar/tab branch chip is derived from `panelGitBranches` (see
+    /// `Workspace+SidebarDirectories.sidebarGitBranchesInDisplayOrder` and the
+    /// fork's `supermuxSidebarBranch`), which upstream only ever populates from
+    /// the sidebar git probe. That probe is scheduled solely from terminal
+    /// surface creation/respawn sites, and `SidebarGitMetadataService` further
+    /// gates its periodic re-watch on `host.hasTerminalPanel(...)`. A workspace
+    /// whose ONLY pane is a harness pane therefore never gets a probe scheduled
+    /// and shows no branch.
+    ///
+    /// The harness pane already knows its project/worktree path (it spawns the
+    /// Claude CLI with that cwd, and the path is mirrored into
+    /// `panelDirectories`, which is exactly what `TabManager.gitProbeDirectory`
+    /// reads). So the fix is to schedule the SAME probe upstream schedules for a
+    /// terminal — no new branch-resolution code, no shelling out. Terminal panes
+    /// keep their existing scheduling untouched.
+    func scheduleSupermuxHarnessGitMetadataProbe(panelId: UUID, reason: String) {
+        guard panels[panelId] is SupermuxHarnessPanel else { return }
+        let manager = owningTabManager ?? AppDelegate.shared?.tabManagerFor(tabId: id)
+        manager?.scheduleInitialWorkspaceGitMetadataRefreshIfPossible(
+            workspaceId: id,
+            panelId: panelId,
+            reason: reason
+        )
+    }
+
+    /// Re-arms the probe for every harness pane in this workspace.
+    ///
+    /// Session restore rebuilds panels before the workspace is attached to its
+    /// `TabManager`, and upstream's post-restore sweep walks only
+    /// `TerminalPanel`s, so a restored harness-only workspace would come back
+    /// branchless until some unrelated event scheduled a probe.
+    func scheduleSupermuxHarnessGitMetadataProbes(reason: String) {
+        for panelId in panels.keys where panels[panelId] is SupermuxHarnessPanel {
+            scheduleSupermuxHarnessGitMetadataProbe(panelId: panelId, reason: reason)
+        }
     }
 
     func installSupermuxHarnessPanelSubscription(_ harnessPanel: SupermuxHarnessPanel) {

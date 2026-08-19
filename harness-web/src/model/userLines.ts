@@ -4,10 +4,16 @@ import {
   applyUserToThread,
   reconcileSupersededAgentAttempts
 } from "./agentThreads";
-import { readTool, writeBlock } from "./blocks";
-import { asNumber, asString, isPlainObject, type TranscriptIndex } from "./helpers";
+import { markTurnAborted, readTool, writeBlock } from "./blocks";
+import { activeTurnIndex, asNumber, asString, isPlainObject, withTurn, type TranscriptIndex } from "./helpers";
+import { classifyLocalUserText } from "./localText";
 import { classifyToolStatus, extractTodos } from "./toolStatus";
-import { startUserTurn } from "./turns";
+import {
+  appendCommandOutput,
+  startCommandTurn,
+  startContinuationTurn,
+  startUserTurn
+} from "./turns";
 import type {
   SubagentInfo,
   SubagentToolStats,
@@ -29,6 +35,7 @@ export function applyUser(
   if (line.isMeta) return model;
   const content = line.message.content;
   const parent = line.parent_tool_use_id ?? null;
+  const atMs = frameTimeMs(line, nowMs);
 
   // One frame, two folds — the agent's own thread and the inline tree. The
   // thread pass runs first so a tool_result settles the thread's copy of the
@@ -37,13 +44,14 @@ export function applyUser(
 
   if (typeof content === "string") {
     if (parent || line.isReplay) return next;
-    return startUserTurn(next, index, content, undefined, nowMs, line.uuid);
+    return applyUserText(next, index, content, line.uuid, atMs);
   }
 
   for (const item of content ?? []) {
     if (item.type === "tool_result") {
       const result = item as { tool_use_id: string; content?: unknown; is_error?: boolean };
-      next = applyToolResult(next, index, result.tool_use_id, result, line.tool_use_result, nowMs);
+      next = applyToolResult(next, index, result.tool_use_id, result, line.tool_use_result, atMs);
+      next = touchActiveTurn(next, atMs);
       continue;
     }
     if (item.type === "text") {
@@ -54,10 +62,73 @@ export function applyUser(
       // one-line row and the conversation is read in the agent view.
       if (parent) continue;
       if (line.isReplay) continue;
-      next = startUserTurn(next, index, text, undefined, nowMs, line.uuid);
+      next = applyUserText(next, index, text, line.uuid, atMs);
     }
   }
   return next;
+}
+
+/**
+ * The record's own clock when it has one. Replayed history arrives seconds or
+ * days after it was written; opening its turns at wall-now gives every replayed
+ * turn a zero-or-negative span and a "just now" start.
+ */
+function frameTimeMs(line: UserLine, nowMs: number): number {
+  const stamp = line.timestamp ? Date.parse(line.timestamp) : Number.NaN;
+  return Number.isFinite(stamp) ? stamp : nowMs;
+}
+
+/**
+ * Record when the open turn last received a frame — the time `closeOpenTurns`
+ * settles it at when no `result` ever arrives (replayed history, a crash).
+ * tool_result frames go through here because they extend the turn's work
+ * without opening or closing anything.
+ */
+function touchActiveTurn(model: TranscriptModel, atMs: number): TranscriptModel {
+  const open = activeTurnIndex(model);
+  if (open < 0) return model;
+  const turn = model.turns[open];
+  if (turn.lastFrameAtMs === atMs) return model;
+  return withTurn(model, open, { ...turn, lastFrameAtMs: atMs });
+}
+
+/**
+ * One user-side text, routed by what it actually is. The transcript files
+ * several MACHINE-AUTHORED records as plain `user` lines — slash-command
+ * invocations, their stdout, caveat scaffolding, task notifications, interrupt
+ * markers, compact-continuation preambles — and rendering those as chat bubbles
+ * of raw XML is the round-5 resume screenshot. Only `plain` opens an ordinary
+ * user turn.
+ */
+function applyUserText(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  text: string,
+  uuid: string | undefined,
+  atMs: number
+): TranscriptModel {
+  const classified = classifyLocalUserText(text);
+  switch (classified.kind) {
+    case "hidden":
+      return model;
+    case "command":
+      return startCommandTurn(model, index, classified.name, classified.args, atMs, uuid);
+    case "commandOutput":
+      return appendCommandOutput(model, classified.text, `cmdout:${uuid ?? model.revision}`, atMs);
+    case "continued":
+      return startContinuationTurn(model, index, atMs, uuid);
+    case "interrupt": {
+      // "[Request interrupted by user]" is the transcript's record of an abort.
+      // The live wire reports the same fact through `result`/`aborted` frames;
+      // this record is what a REPLAY has. The still-open turn is marked aborted
+      // — the boundary the user saw — and no bubble is drawn for the marker.
+      const open = activeTurnIndex(model);
+      if (open < 0) return model;
+      return withTurn(model, open, markTurnAborted(model.turns[open], atMs));
+    }
+    default:
+      return startUserTurn(model, index, text, undefined, atMs, uuid);
+  }
 }
 
 /**

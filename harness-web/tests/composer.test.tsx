@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { fixtures, richSession } from "../src/dev/fixtures";
 import { activeModelFor, emptySession } from "../src/model/helpers";
 import { replayLines } from "../src/model/transcript";
@@ -79,7 +79,7 @@ function type(text: string): void {
  */
 async function popoverRow(label: string): Promise<HTMLElement> {
   const list = await screen.findByRole("listbox");
-  const row = Array.from(list.querySelectorAll<HTMLElement>(".popover-label")).find(
+  const row = Array.from(list.querySelectorAll<HTMLElement>(".ui-cmd-label")).find(
     (node) => node.textContent === label
   );
   if (!row) throw new Error(`no popover row for ${label}`);
@@ -298,7 +298,7 @@ describe("the picker's panel is a list, not a search UI", () => {
     const { container } = mountPicker(realSession());
     openPicker();
     expect(screen.queryByLabelText("Search models")).toBeNull();
-    expect(container.querySelector(".model-search")).toBeNull();
+    expect(container.querySelector(".ui-menu-input")).toBeNull();
   });
 
   test("the CHECKED row takes focus, so ↑↓ start from the live model", () => {
@@ -335,7 +335,7 @@ describe("the picker's panel is a list, not a search UI", () => {
     // ("Opus 5 with a 1M context window") doubled every row's height.
     const { container } = mountPicker(realSession());
     openPicker();
-    expect(container.querySelector(".menu-item-detail")).toBeNull();
+    expect(container.querySelector(".model-row .ui-menu-detail")).toBeNull();
   });
 
   test("picking a row sends the catalog selector, never the resolved id", () => {
@@ -347,44 +347,33 @@ describe("the picker's panel is a list, not a search UI", () => {
   });
 });
 
-/** The row's effort strip: inline, in the same panel, under the row it belongs to. */
-function tuneRow(container: HTMLElement, name: RegExp): HTMLElement {
-  const row = screen.getByRole("menuitemradio", { name });
-  const tune = row.parentElement!.querySelector<HTMLElement>(".model-tune");
-  if (!tune) throw new Error("row has no reasoning control");
-  return tune;
+/**
+ * Reasoning: ONE strip, pinned at the panel's foot, for the ACTIVE model.
+ *
+ * Round 4 opened a strip under whichever row the pointer last touched, so the
+ * panel's height jumped as the reader moved down the list, and it asked "which
+ * model" and "how hard" in two places on one surface. It also left the wheel and
+ * Option+,/. with no stable target to move. Effort belongs to the selection, so
+ * it sits once, under a hairline, always in the same place.
+ */
+function steps(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll(".effort-step")).map(
+    (node) => node.textContent ?? ""
+  );
 }
 
-describe("reasoning opens inline, under the row it belongs to", () => {
-  test("the active model's own strip is already open when the panel appears", () => {
-    // The setting the trigger is advertising is the one thing on screen first;
-    // reaching it used to take a hover onto a floating side panel.
+describe("reasoning is one strip, for the model that is live", () => {
+  test("it is there the moment the panel opens, without hunting for a row", () => {
     const { container } = mountPicker(realSession());
     openPicker();
-    const open = container.querySelectorAll(".model-efforts");
-    expect(open.length).toBe(1);
-    expect(open[0].closest(".model-row-wrap")!.textContent).toContain("Sonnet");
+    expect(container.querySelectorAll(".effort-scale").length).toBe(1);
   });
 
-  test("a model with no effort levels grows no control at all", () => {
-    // haiku advertises none; a Reasoning affordance there promises a setting
-    // the CLI rejects.
+  test("the strip lists every level the LIVE model supports, as labels", () => {
     const { container } = mountPicker(realSession());
     openPicker();
-    const haiku = screen.getByRole("menuitemradio", { name: /^Haiku/ });
-    expect(haiku.parentElement!.querySelector(".model-tune")).toBeNull();
-  });
-
-  test("the strip lists every level the model supports, as labels", () => {
-    const { container } = mountPicker(realSession());
-    openPicker();
-    const wrap = screen
-      .getByRole("menuitemradio", { name: /Sonnet/ })
-      .closest(".model-row-wrap")!;
-    const levels = Array.from(wrap.querySelectorAll(".model-effort")).map(
-      (node) => node.textContent ?? ""
-    );
     // sonnet advertises all five levels in the live initialize response.
+    const levels = steps(container);
     expect(levels.length).toBe(5);
     // `xhigh` is a wire token no user would write.
     expect(levels.some((level) => level.startsWith("Extra high"))).toBe(true);
@@ -392,15 +381,34 @@ describe("reasoning opens inline, under the row it belongs to", () => {
     for (const level of levels) expect(level).toMatch(/^[A-Z]/);
   });
 
-  test("the control toggles its own row's strip and no other", () => {
-    const { container } = mountPicker(realSession());
+  test("a model with no effort levels grows no strip at all", () => {
+    // haiku advertises none; a Reasoning affordance there promises a setting
+    // the CLI rejects.
+    const session = realSession();
+    const { container } = mountPicker({ ...session, model: "haiku" });
     openPicker();
-    // Opus's strip is closed on open (Sonnet is the live model); opening it
-    // closes Sonnet's, so the panel never carries two.
-    fireEvent.click(tuneRow(container, /Opus \(1M context\)/));
-    const open = container.querySelectorAll(".model-efforts");
-    expect(open.length).toBe(1);
-    expect(open[0].closest(".model-row-wrap")!.textContent).toContain("Opus (1M context)");
+    expect(container.querySelector(".effort-scale")).toBeNull();
+  });
+
+  test("the steps are not part of the model radio group", () => {
+    // The panel's arrow keys walk `menuitemradio`. Five effort steps folded into
+    // that list would make ↓ from the last model land on "Low" rather than
+    // wrapping to the first model — the levels are a property of the selection,
+    // not five more things to select between.
+    const session = realSession();
+    const { container } = mountPicker(session);
+    openPicker();
+    expect(container.querySelectorAll('[role="menuitemradio"]').length).toBe(
+      session.models.length
+    );
+  });
+
+  test("the live level is the pressed step", () => {
+    const { container } = mountPicker({ ...realSession(), effort: "xhigh" });
+    openPicker();
+    const active = container.querySelector(".effort-step.is-active")!;
+    expect(active.textContent).toContain("Extra high");
+    expect(active.getAttribute("aria-pressed")).toBe("true");
   });
 
   test("an effort pick sends the catalog selector with the level", () => {
@@ -415,19 +423,15 @@ describe("reasoning opens inline, under the row it belongs to", () => {
     const sent: Array<[string, string | undefined]> = [];
     const session = realSession();
     const sonnet = session.models.find((m) => m.value === "sonnet")!;
-    mountPicker(session, { onSetModel: (model, effort) => sent.push([model, effort]) });
+    // Only offered when the live level is NOT already the default; the fixture's
+    // session carries no effort, so set one that differs.
+    mountPicker(
+      { ...session, effort: sonnet.defaultEffortLevel === "high" ? "low" : "high" },
+      { onSetModel: (model, effort) => sent.push([model, effort]) }
+    );
     openPicker();
     fireEvent.click(screen.getByText("Restore defaults"));
     expect(sent).toEqual([["sonnet", sonnet.defaultEffortLevel]]);
-  });
-
-  test("a tunable row states its live level on the row itself", () => {
-    // The old flyout hid it, so the list could not answer "what reasoning is
-    // this model on" without hovering each row in turn.
-    const { container } = mountPicker({ ...realSession(), effort: "xhigh" });
-    openPicker();
-    const row = screen.getByRole("menuitemradio", { name: /Sonnet/ });
-    expect(row.querySelector(".model-row-effort")!.textContent).toBe("Extra high");
   });
 });
 
@@ -462,7 +466,7 @@ describe("the model menu is never an empty popup", () => {
     // catalog is genuinely still on its way, and saying so is the difference.
     const { container } = mountPicker(emptySession());
     openPicker();
-    const loading = container.querySelector(".menu-loading");
+    const loading = container.querySelector(".ui-menu-empty.is-loading");
     expect(loading).not.toBeNull();
     expect(loading!.textContent).toContain("Loading models…");
     expect(container.querySelector(".spinner")).not.toBeNull();
@@ -473,7 +477,7 @@ describe("the model menu is never an empty popup", () => {
     const { container } = mountPicker(cold, { cachedModels: cached });
     openPicker();
     expect(container.querySelectorAll('[role="menuitemradio"]').length).toBe(cached.length);
-    expect(container.querySelector(".menu-loading")).toBeNull();
+    expect(container.querySelector(".ui-menu-empty.is-loading")).toBeNull();
   });
 
   test("the cached rows resolve the active model the same way the live ones do", () => {
@@ -552,9 +556,13 @@ describe("a pre-start selection reads as a name, not a wire token", () => {
     // against the cached catalog left the setting unreachable entirely.
     const { container } = mountPicker(cold(), { cachedModels: cached });
     openPicker();
-    const open = container.querySelector(".model-efforts");
+    // The strip resolves against the RESOLVED row: a trigger that failed to
+    // resolve against the cached catalog left the setting unreachable entirely.
+    const open = container.querySelector(".effort-scale");
     expect(open).not.toBeNull();
-    expect(open!.closest(".model-row-wrap")!.textContent).toContain("Opus (1M context)");
+    expect(container.querySelector(".composer-model-label")!.textContent).toContain(
+      "Opus (1M context)"
+    );
   });
 
   test("with no catalog at all the selector is still shown rather than nothing", () => {
@@ -562,5 +570,165 @@ describe("a pre-start selection reads as a name, not a wire token", () => {
     // to resolve against; the bug was doing it while a catalog was right there.
     const { container } = mountPicker(cold());
     expect(triggerLabel(container)).toBe("opus[1m]");
+  });
+});
+
+/**
+ * The two gestures that change reasoning WITHOUT opening the panel.
+ *
+ * Both go through the same `onSetModel` the menu rows use — one mutation path,
+ * so the trigger label, the checked step and the CLI can never disagree about
+ * what was sent — and both step along the ACTIVE model's own scale, clamped at
+ * its ends.
+ */
+describe("reasoning has two gestures beside the menu", () => {
+  const stepped = (): { sent: Array<[string, string | undefined]>; session: SessionMeta } => {
+    const session = realSession();
+    return { sent: [], session };
+  };
+
+  test("the wheel over the trigger steps one level per notch", () => {
+    const { sent, session } = stepped();
+    const sonnet = session.models.find((m) => m.value === "sonnet")!;
+    const { container } = mountPicker(
+      { ...session, effort: "medium" },
+      { onSetModel: (model, effort) => sent.push([model, effort]) }
+    );
+    const trigger = container.querySelector<HTMLElement>(".composer-model-trigger")!;
+
+    // Up increases, matching every stepper the OS ships.
+    fireEvent.wheel(trigger, { deltaY: -120 });
+    expect(sent).toEqual([["sonnet", "high"]]);
+    // Down decreases.
+    fireEvent.wheel(trigger, { deltaY: 120 });
+    expect(sent[1]).toEqual(["sonnet", "low"]);
+    // Always the model's own selector, never the resolved id the CLI rejects.
+    for (const [model] of sent) expect(model).toBe(sonnet.value);
+  });
+
+  test("horizontal trackpad noise is not a reasoning change", () => {
+    // A trackpad emits a stream of small deltas in both axes; a sideways swipe
+    // over the chip must not silently downgrade the turn.
+    const { sent, session } = stepped();
+    const { container } = mountPicker(
+      { ...session, effort: "medium" },
+      { onSetModel: (model, effort) => sent.push([model, effort]) }
+    );
+    const trigger = container.querySelector<HTMLElement>(".composer-model-trigger")!;
+    fireEvent.wheel(trigger, { deltaY: 0.4, deltaX: 0 });
+    fireEvent.wheel(trigger, { deltaY: 2, deltaX: 40 });
+    expect(sent).toEqual([]);
+  });
+
+  test("it clamps at both ends rather than wrapping round", () => {
+    // A wheel that rolls `max` back round to `low` is a gesture that can
+    // silently downgrade a turn.
+    const { sent, session } = stepped();
+    const { container } = mountPicker(
+      { ...session, effort: "max" },
+      { onSetModel: (model, effort) => sent.push([model, effort]) }
+    );
+    fireEvent.wheel(container.querySelector<HTMLElement>(".composer-model-trigger")!, {
+      deltaY: -120
+    });
+    expect(sent).toEqual([]);
+  });
+
+  test("a model with no effort scale ignores the wheel entirely", () => {
+    const { sent, session } = stepped();
+    const { container } = mountPicker(
+      { ...session, model: "haiku" },
+      { onSetModel: (model, effort) => sent.push([model, effort]) }
+    );
+    fireEvent.wheel(container.querySelector<HTMLElement>(".composer-model-trigger")!, {
+      deltaY: -120
+    });
+    expect(sent).toEqual([]);
+  });
+
+  test("Option+. and Option+, step it from the composer", () => {
+    const sent: Array<[string, string | undefined]> = [];
+    const session = realSession();
+    mountPicker(
+      { ...session, effort: "medium" },
+      { onSetModel: (model, effort) => sent.push([model, effort]) }
+    );
+    const input = screen.getByRole("textbox");
+
+    fireEvent.keyDown(input, { code: "Period", key: "≥", altKey: true });
+    expect(sent).toEqual([["sonnet", "high"]]);
+    fireEvent.keyDown(input, { code: "Comma", key: "≤", altKey: true });
+    expect(sent[1]).toEqual(["sonnet", "low"]);
+  });
+
+  test("it matches the physical key, not the character macOS produces", () => {
+    // On macOS Option+comma is "≤" and Option+period is "≥", so a handler that
+    // tests `event.key === ","` matches NOTHING on the platform this pane ships
+    // on. Asserted by sending the real macOS pair with a key that is not a
+    // comma: if the implementation ever regresses to `event.key`, this is the
+    // test that catches it.
+    const sent: Array<[string, string | undefined]> = [];
+    mountPicker(
+      { ...realSession(), effort: "medium" },
+      { onSetModel: (model, effort) => sent.push([model, effort]) }
+    );
+    fireEvent.keyDown(screen.getByRole("textbox"), { code: "Period", key: "≥", altKey: true });
+    expect(sent.length).toBe(1);
+  });
+
+  test("the two glyphs never reach the draft", () => {
+    // Without preventDefault the binding types "≥" into the message it was
+    // meant to configure.
+    let draft = "";
+    const session = realSession();
+    render(
+      <CopyProvider dict={undefined}>
+        <Composer
+          disabled={false}
+          running={false}
+          awaitingPermission={false}
+          planPending={false}
+          onPlanImplement={() => {}}
+          onPlanRefine={() => {}}
+          onPlanKeepPlanning={() => {}}
+          queued={[]}
+          commands={[]}
+          permissionMode="default"
+          draft=""
+          onDraftChange={(next) => {
+            draft = next;
+          }}
+          onSend={() => {}}
+          onInterrupt={() => {}}
+          onCancelQueued={() => {}}
+          onCyclePermissionMode={() => {}}
+          fetchFileSuggestions={async () => []}
+          onPickFiles={async () => []}
+          session={{ ...session, effort: "medium" }}
+          onSetModel={() => {}}
+        />
+      </CopyProvider>
+    );
+    const event = createEvent.keyDown(screen.getByRole("textbox"), {
+      code: "Period",
+      key: "≥",
+      altKey: true
+    });
+    fireEvent(screen.getByRole("textbox"), event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(draft).toBe("");
+  });
+
+  test("Option+, without a model to change is inert, not a swallowed key", () => {
+    // The agent-view harness mounts a Composer with no session; claiming the
+    // key there would eat a character the user meant to type.
+    mount();
+    const event = createEvent.keyDown(screen.getByRole("textbox"), {
+      code: "Comma",
+      key: "≤",
+      altKey: true
+    });
+    fireEvent(screen.getByRole("textbox"), event);
+    expect(event.defaultPrevented).toBe(false);
   });
 });

@@ -395,13 +395,26 @@
   flex-direction: column;
 }
 
-/* One optical centreline through the pill. Every child of the row — the +
-   control, the single-line textarea, the model trigger, the send button — is
-   exactly 26px tall, so bottom-aligning them IS centring them, and the text no
-   longer sits high of the two round buttons the way it did when a 6px/1.5
-   textarea box was bottom-aligned against 30px circles. Alignment stays
-   `flex-end` rather than `center` so a GROWN textarea keeps the controls on the
-   last line, where Cursor puts them, instead of floating them to its middle. */
+/* ONE optical centreline through the pill (round-5 item 2).
+ *
+ * The previous build claimed this and did not have it. It bottom-aligned the
+ * row and asserted every child was 26px — but the textarea's box is
+ * `line-height: 18px` plus 4px of padding either side, which is 26px only when
+ * the browser rounds the way the comment assumed. Against a 26px BUTTON, whose
+ * glyph is centred in its own box, the text sat visibly high: `flex-end` aligns
+ * the bottom of a text box, and the bottom of a text box is not where its
+ * baseline is.
+ *
+ * The row is `align-items: center` now, with a `--composer-line: 28px` floor on
+ * every child — the + control, the textarea, the model trigger, and the send
+ * button all declare that height, so centring them is exact rather than
+ * approximate, and the textarea's own line box is centred inside it by equal
+ * padding (28 - 18 = 10, so 5 top and 5 bottom).
+ *
+ * A GROWN textarea is the case `flex-end` existed for, and it is handled where
+ * it belongs: `.composer-shell:has(.composer-input.is-multiline)` switches the
+ * row to `flex-end` so the controls stay on the last line, which is what Cursor
+ * does. Single-line — the state the screenshot caught — is centred. */
 /* NO `--shadow-panel` here, deliberately.
    That token is `inset 0 1px 0 rgba(255,255,255,.06)` — a one-pixel highlight
    along the top edge. On a flat panel it reads as glass catching the light; on
@@ -411,9 +424,10 @@
    one shape in the pane whose whole silhouette is a stroke, so it takes the
    stroke alone: one hairline, even the whole way round. */
 .composer-shell {
+  --composer-line: 28px;
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   gap: 6px;
   padding: 5px 6px 5px 5px;
   border-radius: var(--r-composer);
@@ -422,6 +436,13 @@
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border);
   transition: border-color var(--dur) var(--ease);
+}
+
+/* Multi-line: the controls drop to the last line rather than floating to the
+   middle of a tall box. `:has()` is what lets the SINGLE-line case — the one
+   the round-5 screenshot caught off-centre — stay centred. */
+.composer-shell:has(.composer-input.is-multiline) {
+  align-items: flex-end;
 }
 
 .composer-shell:focus-within {
@@ -444,8 +465,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--composer-line);
+  height: var(--composer-line);
   flex: 0 0 auto;
   border-radius: var(--r-pill);
   background: var(--surface-active);
@@ -462,18 +483,21 @@
   color: var(--text);
 }
 
-/* 26px = 4 + 18 + 4, matching the two round controls exactly, so one line of
-   text is centred against them with no optical drift. Padding is symmetric on
-   purpose: the old 6px/6px against a 1.5 line-height rounded the text box up an
-   odd pixel and hung it high. */
+/* 28px = 5 + 18 + 5. The padding is symmetric AND the sum is exactly the row's
+   declared line, so the single line of text is optically centred against the two
+   round controls and the model trigger rather than sitting a pixel or two high
+   the way the old 4 + 18 + 4 = 26 box did against buttons whose glyphs centre in
+   their own boxes. */
 .composer-input {
   flex: 1;
   min-width: 0;
   resize: none;
   border: none;
   background: transparent;
-  padding: 4px 4px;
-  min-height: 26px;
+  padding: 5px 4px;
+  /* The autosize effect writes an inline `height` on every keystroke, so this
+     is the floor before the first measurement, not the resting height. */
+  min-height: var(--composer-line);
   font-size: 13.5px;
   line-height: 18px;
   color: var(--text);
@@ -503,18 +527,18 @@
   flex: 0 0 auto;
 }
 
-/* The round controls share the input's 26px line box. The shared `.btn-send`
-   and `.btn-stop` are 30px because the cards use them at that size; inside the
-   pill they come down to the composer's own scale so the pill can lose the
-   vertical padding without the buttons setting its floor. */
+/* Every control on the row declares the SAME line, which is what makes
+   `align-items: center` above exact rather than approximate. The shared
+   `.btn-send` and `.btn-stop` are 30px because the cards use them at that size;
+   inside the pill they come down to the composer's own scale. */
 .composer-actions .btn-send,
 .composer-actions .btn-stop {
-  width: 26px;
-  height: 26px;
+  width: var(--composer-line);
+  height: var(--composer-line);
 }
 
 .btn-plan-action {
-  height: 26px;
+  height: var(--composer-line);
   border-radius: var(--r-pill);
 }
 
@@ -536,11 +560,11 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 26px;
+  height: var(--composer-line);
   max-width: 26ch;
   min-width: 0;
-  padding: 0 6px;
-  border-radius: var(--r-sm);
+  padding: 0 7px;
+  border-radius: var(--r-row);
   font-size: 12px;
   color: var(--text-faint);
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
@@ -577,352 +601,154 @@
 
 /* ---------- the model panel ----------
 
-   ONE surface. The pill sits at the bottom of the pane so it opens upward, and
-   it is opaque because it floats over transcript content.
+   The kit's surface at the picker's own width, plus the reasoning strip pinned
+   at its foot. The MATERIAL is menu.css; the rows are the kit's rows.
 
-   The build before this had three positioned layers to change one enum: a
-   search field over a scrolling row list, plus a floating side flyout hinged on
-   whichever row the pointer was over — measured per row, flipped when the
-   popover was against the pane edge, and lifted when its foot ran off the
-   bottom. Reasoning is an INLINE strip now: it opens under its own row, inside
-   the same panel, so there is no second surface, no second z-index, and no
-   geometry left to get wrong. */
+   Round 4 opened a reasoning strip UNDER whichever row the pointer last
+   touched, so the panel's height jumped as the reader moved down the list and
+   there was no stable target for the wheel or Option+,/. to move. Effort
+   belongs to the ACTIVE model and now sits once, at the bottom, under a
+   hairline. */
 
-.model-pop {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  z-index: 45;
-  width: 262px;
-  max-height: min(360px, 56vh);
-  overflow-y: auto;
-  background: var(--popover-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: 4px;
+/* 296px is set by the reasoning strip, not by the model names: five equal
+   segments have to hold "Extra high" without ellipsizing, and at 268px it
+   truncated to "Extra …" — a scale whose steps cannot be read is not a
+   scale. */
+.pop-model {
+  width: 296px;
+  max-height: min(400px, 62vh);
 }
 
 .model-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
-/* The row and its tune button share one bed, so hovering either lights the
-   whole line — they are one row with two targets, not two controls. */
-.model-row-line {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border-radius: var(--r-sm);
-}
+/* ---------- the reasoning strip ----------
 
-.model-row-line:hover,
-.model-row-line:focus-within {
-  background: var(--surface-hover);
-}
+   A segmented ORDERED scale, not five checkable rows: the levels run low → max,
+   and rendering them as a menu of unrelated options hid that. It is also the
+   visible target for the two gestures that move it (wheel over the trigger or
+   the strip, Option+,/. in the composer), which is why it is pinned rather than
+   opened per row. */
 
-.model-row-wrap.is-open .model-row-line {
-  background: var(--surface-hover);
-}
-
-.model-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  padding: 6px 4px 6px 7px;
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
-  color: var(--text-soft);
-}
-
-.model-row:hover,
-.model-row:focus-visible {
-  color: var(--text);
-}
-
-.model-row.is-active {
-  color: var(--text);
-}
-
-/* The check reserves its slot on every row, so switching models does not slide
-   four names sideways under the pointer. */
-.model-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 13px;
+.effort-strip {
   flex: 0 0 auto;
-  color: var(--claude);
+  margin: 4px -4px -4px;
+  padding: 5px 8px 7px;
+  border-top: 1px solid var(--border-faint);
+  background: var(--surface-sunken);
+  border-radius: 0 0 calc(var(--r-pop) - 1px) calc(var(--r-pop) - 1px);
 }
 
-.model-row-name {
-  flex: 1;
+.effort-strip .ui-menu-label {
+  padding: 0 1px 5px;
+}
+
+/* One track, segments inside it: a single object the eye reads as a scale,
+   rather than five pills that happen to be adjacent. */
+.effort-scale {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-row);
+  background: var(--surface-active);
+}
+
+/* `flex: 1 1 auto`, NOT `1 1 0`. Equal thirds look tidier on a diagram and are
+   wrong here: the five labels are 3–10 characters, so equal segments size
+   themselves to the shortest and "Extra high" — the level a reader is most
+   likely to be checking — ellipsised to "Extra hi…". A scale whose steps cannot
+   be read is not a scale. Growing from each label's own width keeps the track
+   full and every step legible. */
+.effort-step {
+  position: relative;
+  flex: 1 1 auto;
   min-width: 0;
+  padding: 4px 5px;
+  border-radius: calc(var(--r-row) - 3px);
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* The reasoning level the row would apply, on the row itself. The old build
-   hid it inside a hover flyout, so the list could not answer "what effort is
-   Sonnet on" at all. */
-.model-row-effort {
-  flex: 0 0 auto;
-  font-size: 10.5px;
-  padding: 1px 6px;
-  border-radius: var(--r-pill);
-  background: var(--surface-active);
-  color: var(--text-faint);
-}
-
-.model-row.is-active .model-row-effort {
-  color: var(--claude);
-  background: var(--claude-faint);
-}
-
-.model-tune {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  margin-right: 3px;
-  border-radius: var(--r-xs);
-  color: var(--text-faint);
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
-.model-tune:hover {
-  background: var(--surface-active);
+.effort-step:hover {
+  background: var(--surface-hover);
   color: var(--text);
 }
 
-.model-tune:focus-visible {
+.effort-step:focus-visible {
   color: var(--text);
 }
 
-.model-tune.is-open {
-  color: var(--claude);
-}
-
-/* The inline effort strip. Segmented rather than a stack of rows: the levels
-   are an ORDERED scale, and five 12px rows under a model name made the panel
-   read as a nested menu of unrelated options. */
-.model-efforts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 3px;
-  /* Indented to the model NAME's own left edge (7px row padding + 13px check
-     slot + 7px gap), so the strip visibly hangs off the row above it rather
-     than starting a new column. */
-  padding: 4px 8px 7px 27px;
-}
-
-.model-effort {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px 8px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border-faint);
-  font-size: 11px;
-  color: var(--text-muted);
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
-    border-color var(--dur) var(--ease);
-}
-
-.model-effort:hover {
-  background: var(--surface-active);
-  color: var(--text);
-  border-color: var(--border);
-}
-
-.model-effort:focus-visible {
-  color: var(--text);
-}
-
-.model-effort.is-active {
+/* The selected segment is a raised tile in the track — macOS's own segmented
+   control, and the one treatment that reads as "this position on the scale"
+   rather than "this option is highlighted". */
+.effort-step.is-active {
   background: var(--claude-soft);
-  border-color: var(--claude-border);
   color: var(--claude);
+  font-weight: 550;
 }
 
-/* Marks the model's OWN default — a fact about the option, not its state, so
-   it is a dot rather than a word competing with the level's name. */
-.model-effort-default {
-  opacity: 0.7;
+/* Marks the model's OWN default: a fact about the option, not its state, so it
+   is a 3px dot under the word rather than a word competing with the level's
+   name. */
+.effort-default-mark {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  opacity: 0.45;
 }
 
-/* Trails the levels on the same wrapped line rather than owning a row of its
-   own: it is an escape hatch on the scale, not a sixth level. */
-.model-restore {
+.effort-restore {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  padding: 3px 7px;
-  border-radius: var(--r-pill);
+  gap: 5px;
+  margin-top: 5px;
+  padding: 2px 3px;
+  border-radius: var(--r-xs);
   font-size: 11px;
   color: var(--text-faint);
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease);
 }
 
-.model-restore:hover {
-  background: var(--surface-active);
-}
-
-.model-restore:hover {
+.effort-restore:hover {
   color: var(--text);
 }
 
-.model-restore:focus-visible {
+.effort-restore:focus-visible {
   color: var(--text);
 }
 
 /* ---------- slash-command / @-mention popover ----------
 
-   One compact panel above the pill, edge to edge with it. The list runs to the
-   panel's own top edge — the uppercase "COMMANDS" heading that used to sit
+   The kit's surface, spanning the composer pill it belongs to. The list runs to
+   the panel's own top edge — the uppercase "COMMANDS" heading that used to sit
    above it named something the sigil the user had just typed already said, and
    pushed the first row (the one ⏎ accepts) two lines down. The kind is stated
-   once in a quiet footer instead, beside the keys that drive the list. */
+   once in the kit's footer instead, beside the keys that drive the list. */
 
-.popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  background: var(--popover-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-}
-
-.popover-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+.pop-complete {
   padding: 4px;
+}
+
+.pop-complete .ui-cmd-list {
   max-height: min(268px, 44vh);
-  overflow-y: auto;
 }
 
-.popover-empty {
-  padding: 11px 12px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-/* The active row keeps a LEADING accent bar rather than only a grey bed: with
-   a keyboard-driven list the selection has to survive the pointer sitting
-   somewhere else, and two identical grey beds cannot say which one ⏎ takes. */
-.popover-item {
-  position: relative;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  padding: 6px 10px 6px 12px;
-  border-radius: var(--r-sm);
+.pop-complete-kind {
+  flex: 1;
   min-width: 0;
-}
-
-.popover-item:hover {
-  background: var(--surface-hover);
-}
-
-.popover-item:focus-visible {
-  background: var(--surface-hover);
-}
-
-.popover-item.is-active {
-  background: var(--claude-faint);
-}
-
-.popover-item.is-active::before {
-  content: "";
-  position: absolute;
-  /* Inside the row's own radius, not on the panel's border: at `left: 0` the
-     bar butted straight into the panel edge and read as a torn hairline. */
-  left: 3px;
-  top: 5px;
-  bottom: 5px;
-  width: 2px;
-  border-radius: var(--r-pill);
-  background: var(--claude);
-}
-
-.popover-label {
-  color: var(--text);
-  font-size: 12px;
-  flex: 0 0 auto;
-}
-
-.popover-item.is-active .popover-label {
-  color: var(--claude);
-}
-
-.popover-hint {
-  color: var(--text-faint);
-  font-size: 11px;
-  flex: 0 0 auto;
-}
-
-.popover-detail {
-  color: var(--text-muted);
-  font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
-}
-
-/* The footer is the panel's only chrome: what this list IS, and the two keys
-   that operate it. Sunken rather than bordered, so it reads as the base of the
-   panel and not as a row you could click. */
-.popover-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border-top: 1px solid var(--border-faint);
-  background: var(--surface-sunken);
-  font-size: 10.5px;
-  color: var(--text-faint);
-}
-
-.popover-kind {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.popover-keys {
-  display: inline-flex;
-  gap: 4px;
-  flex: 0 0 auto;
-}
-
-.popover-keys kbd {
-  font-family: inherit;
-  font-size: 10px;
-  line-height: 14px;
-  min-width: 18px;
-  padding: 0 4px;
-  text-align: center;
-  border-radius: var(--r-xs);
-  border: 1px solid var(--border);
-  color: var(--text-faint);
 }

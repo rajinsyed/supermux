@@ -328,6 +328,29 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(try sandbox.discovery.loadHistory(for: sandbox.workingDirectory, sessionID: "stale-last").events.compactMap { $0.string(forKey: "uuid") } == ["u1", "a1"])
     }
 
+    @Test func historyDoesNotTruncateAtAStaleLastPromptLeafMidChain() throws {
+        // A CLI restart appends records AFTER the newest `last-prompt` pointer,
+        // leaving that leaf a strict ancestor of the real tail. Preferring it
+        // would silently drop everything after the restart (a real resumed
+        // session lost its final 12 records this way).
+        let sandbox = try makeSandbox(named: "stale-mid-chain-leaf")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        try writeSession(id: "restarted", directory: directory, records: [
+            ["type": "user", "uuid": "u1", "isSidechain": false, "message": ["role": "user", "content": "one"]],
+            ["type": "assistant", "uuid": "a1", "parentUuid": "u1", "isSidechain": false, "message": ["role": "assistant", "content": "answer"]],
+            ["type": "last-prompt", "leafUuid": "a1"],
+            ["type": "user", "uuid": "u2", "parentUuid": "a1", "isSidechain": false, "message": ["role": "user", "content": "after restart"]],
+            ["type": "assistant", "uuid": "a2", "parentUuid": "u2", "isSidechain": false, "message": ["role": "assistant", "content": "tail answer"]],
+        ])
+
+        let events = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "restarted"
+        ).events.compactMap { $0.string(forKey: "uuid") }
+        #expect(events == ["u1", "a1", "u2", "a2"])
+    }
+
     @Test func historyReturnsNewestBoundedEventsAndTruncationFlag() throws {
         let sandbox = try makeSandbox(named: "pagination")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }

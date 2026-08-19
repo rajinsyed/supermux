@@ -377,10 +377,13 @@ describe("longform fixture", () => {
 describe("resume fixture", () => {
   test("history replay reconstructs prior turns before the live one", () => {
     const history = replayLines(resumeHistory);
-    expect(history.turns.length).toBe(2);
+    // Two conversation turns plus the /model command chip the fixture now
+    // carries (mirroring the real JSONL's local-command records).
+    expect(history.turns.length).toBe(3);
     expect(history.turns.every((t) => t.state === "complete")).toBe(true);
+    expect(history.turns[2].command).toEqual({ name: "/model", args: "opus[1m]" });
     const full = replayLines(fixtures.resume);
-    expect(full.turns.length).toBe(3);
+    expect(full.turns.length).toBe(4);
   });
 });
 

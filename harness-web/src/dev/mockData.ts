@@ -67,6 +67,14 @@ export function mockSessions(now = Date.now()): SessionSummary[] {
  */
 export function mockModels(): ModelDescriptor[] {
   return [
+    // The live CLI's catalog leads with a "default" row (probe log: values
+    // default | opus[1m] | sonnet | haiku); a pane with no selection names it.
+    {
+      value: "default",
+      resolvedModel: "claude-sonnet-5",
+      displayName: "Default (recommended)",
+      description: "Opus for complex tasks, Sonnet for everyday work."
+    },
     {
       value: "opus",
       resolvedModel: "claude-opus-5",

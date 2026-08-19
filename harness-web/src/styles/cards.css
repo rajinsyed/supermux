@@ -291,40 +291,56 @@
   animation: spin 800ms linear infinite;
 }
 
-@keyframes dot-pulse {
-  0%,
-  80%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.85);
-  }
-  36% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
+/* ---------- the streaming mark ----------
+
+   Was three dots pulsing their opacity in sequence. It said "something is
+   happening" and nothing else, it animated three elements to do it, and the
+   label beside it had to carry the actual news anyway.
+
+   It is a single sweeping sliver now, and — the point of the change — the LABEL
+   beside it shimmers in step (the sibling rule below), so the animation lands on
+   the words that already say what is happening. `.sheen` / `.sheen-bar` are
+   declared once in base.css and honour prefers-reduced-motion there. */
 
 .working-dots {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
   flex: 0 0 auto;
+  height: 12px;
 }
 
 .working-dots i {
-  width: 4px;
-  height: 4px;
-  border-radius: var(--r-pill);
-  background: var(--claude-strong);
-  animation: dot-pulse 1.2s ease-in-out infinite;
+  width: 16px;
+  height: 2px;
 }
 
-.working-dots i:nth-child(2) {
-  animation-delay: 0.18s;
+/* The live row's label sweeps with its mark: "Working for 12s" IS the state, and
+   a shimmer on the words is the whole reason the dots could go. Written here
+   rather than in transcript.css because the mark and its sheen are one object;
+   cards.css is imported after transcript.css, so at equal specificity this
+   wins. */
+.turn-live .working-dots + .turn-live-label {
+  background-image: linear-gradient(
+    100deg,
+    var(--shimmer-base) 32%,
+    var(--shimmer-sheen) 50%,
+    var(--shimmer-base) 68%
+  );
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: sheen-sweep 2.2s linear infinite;
 }
 
-.working-dots i:nth-child(3) {
-  animation-delay: 0.36s;
+@media (prefers-reduced-motion: reduce) {
+  .turn-live .working-dots + .turn-live-label {
+    background-image: none;
+    color: var(--shimmer-sheen);
+    -webkit-text-fill-color: var(--shimmer-sheen);
+  }
 }
 
 /* ---------- shared decision-card shell ---------- */

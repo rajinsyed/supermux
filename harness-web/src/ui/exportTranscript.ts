@@ -36,6 +36,10 @@ function renderBlocks(blocks: Block[], depth: number, out: string[]): void {
         out.push(`${indent}> ${block.text}`);
         out.push("");
         break;
+      case "commandOutput":
+        out.push(`${indent}> ${block.text}`);
+        out.push("");
+        break;
       default:
         break;
     }
@@ -52,7 +56,10 @@ export function exportTranscript(model: TranscriptModel, copy: CopyFn): string {
   out.push("");
 
   for (const turn of model.turns) {
-    if (turn.userText) {
+    if (turn.command) {
+      out.push(`\`${turn.command.name}${turn.command.args ? ` ${turn.command.args}` : ""}\``);
+      out.push("");
+    } else if (turn.userText) {
       out.push(`## ${turn.userText.split("\n")[0].slice(0, 80)}`);
       out.push("");
       out.push(turn.userText);

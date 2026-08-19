@@ -13,7 +13,9 @@ function DividerView({ block }: { block: Extract<Block, { kind: "divider" }> }) 
   const label =
     block.variant === "compact"
       ? copy("supermux.harness.divider.compact")
-      : copy("supermux.harness.divider.reset");
+      : block.variant === "continued"
+        ? copy("supermux.harness.divider.continued")
+        : copy("supermux.harness.divider.reset");
   return (
     <div className="divider" role="separator">
       <span className="divider-line" />
@@ -112,6 +114,10 @@ export const BlockView = memo(function BlockView({
       return <DividerView block={block} />;
     case "notice":
       return <NoticeView block={block} />;
+    case "commandOutput":
+      // A local command's stdout — system news, not speech. One dim line
+      // ("Set model to opus[1m] (claude-opus-5[1m])"), never a bubble.
+      return <div className="command-output">{block.text}</div>;
     case "userText":
       return <ThreadUserMessage block={block} />;
     case "image":

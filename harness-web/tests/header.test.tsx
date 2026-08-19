@@ -170,7 +170,7 @@ describe("the session browser exposes every way to open a session", () => {
     const { container } = mount(realSession(), { sessions });
     fireEvent.click(screen.getByLabelText("Sessions"));
     const button = container.querySelector(".sessions-new")!;
-    expect(button.closest(".sessions-foot")).not.toBeNull();
+    expect(button.closest(".ui-menu-foot")).not.toBeNull();
     expect(button.closest(".sessions-list")).toBeNull();
   });
 });
@@ -205,7 +205,7 @@ describe("single-select menus announce which row is live", () => {
     // consequence, which is the only thing the choice is actually about.
     const { container } = mount(realSession());
     fireEvent.click(screen.getByLabelText("Permissions"));
-    const details = Array.from(container.querySelectorAll(".mode-item .menu-item-detail")).map(
+    const details = Array.from(container.querySelectorAll(".mode-item .ui-menu-detail")).map(
       (node) => node.textContent
     );
     expect(details.length).toBe(4);
@@ -227,29 +227,34 @@ describe("single-select menus announce which row is live", () => {
   test("action-only rows stay plain menu items with no checked state", () => {
     const { container } = mount(realSession());
     fireEvent.click(screen.getByLabelText("More"));
-    const rows = container.querySelectorAll('.menu-pop [role="menuitem"]');
+    const rows = container.querySelectorAll('.ui-pop [role="menuitem"]');
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) expect(row.getAttribute("aria-checked")).toBeNull();
   });
 
-  test("arrow keys move between rows instead of leaving focus behind", () => {
+  test("the live row takes focus on open, and ↑↓ walk from there", () => {
+    // The kit focuses the CHECKED row when a panel opens — the same contract
+    // the model picker keeps — so the first arrow press moves off the mode you
+    // are on rather than announcing whichever row happens to be listed first,
+    // and no keystroke falls through to the composer behind the panel.
     const { container } = mount(realSession());
     fireEvent.click(screen.getByLabelText("Permissions"));
-    const pop = container.querySelector(".menu-pop")!;
+    const pop = container.querySelector(".ui-pop")!;
     const rows = Array.from(pop.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+    const live = rows.findIndex((row) => row.getAttribute("aria-checked") === "true");
+    expect(live).toBeGreaterThanOrEqual(0);
+    expect(document.activeElement).toBe(rows[live]);
 
     fireEvent.keyDown(pop, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(rows[0]);
-    fireEvent.keyDown(pop, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(rows[1]);
+    expect(document.activeElement).toBe(rows[(live + 1) % rows.length]);
     fireEvent.keyDown(pop, { key: "ArrowUp" });
-    expect(document.activeElement).toBe(rows[0]);
+    expect(document.activeElement).toBe(rows[live]);
   });
 
   test("Tab cycles inside the popup rather than walking into the next trigger", () => {
     const { container } = mount(realSession());
     fireEvent.click(screen.getByLabelText("Permissions"));
-    const pop = container.querySelector(".menu-pop")!;
+    const pop = container.querySelector(".ui-pop")!;
     const rows = Array.from(pop.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
     rows[rows.length - 1].focus();
 

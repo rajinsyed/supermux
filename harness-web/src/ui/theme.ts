@@ -100,29 +100,54 @@ function pageRgb(theme: HarnessTheme): [number, number, number] {
 }
 
 /**
- * Popovers and menus float over transcript content and must be fully opaque —
- * a translucent surface lets the text underneath bleed through. Derived from
- * the page background (with a neutral fallback when it is "transparent").
+ * The dark theme's near-black.
+ *
+ * Round-5 finding: every dark surface was a WHITE veil over a near-black page
+ * (`rgba(255,255,255,0.04)` and friends), which is the one operation that turns
+ * black into grey. Stacked three deep — a card inside a panel inside the page —
+ * the pane read as a washed grey slab, and the WKWebView is transparent over the
+ * app's own window, so the native backdrop had nothing to show through.
+ *
+ * Dark surfaces are now this ink at an alpha instead: darker than the page,
+ * translucent, so the native window (or the fallback page in a browser) reads
+ * through them and the chrome sits BELOW the content in tone rather than above
+ * it. Interaction highlights stay white — a black hover on near-black is
+ * invisible — which is the same split shadcn's dark theme makes between
+ * `background` and `accent`.
  */
-function popoverBackground(theme: HarnessTheme): string {
-  const base = pageRgb(theme);
-  const lift = theme.isDark ? 14 : -6;
-  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value + lift)));
-  return `rgb(${clamp(base[0])}, ${clamp(base[1])}, ${clamp(base[2])})`;
+const INK = { r: 8, g: 8, b: 11 };
+
+function shade(alpha: number): string {
+  return `rgba(${INK.r}, ${INK.g}, ${INK.b}, ${alpha})`;
 }
 
 /**
- * The floating glass panels (composer pill, working panel, framed views) keep a
- * page-derived tint at high-but-not-full alpha, so the backdrop blur shows the
- * transcript scrolling underneath while the panel's own text still sits on a
- * predictable bed. When the page is literally "transparent" (Ghostty
- * transparency) the tint falls back to the neutral, since there is nothing to
- * derive from and nothing behind the WKWebView to blur.
+ * Popovers and menus float over transcript content, so they stay near-opaque —
+ * a see-through menu lets the text underneath bleed into its rows. In dark that
+ * is near-black at 0.95 over a backdrop blur (the macOS/shadcn menu material);
+ * in light it is paper at 0.96.
+ */
+function popoverBackground(theme: HarnessTheme): string {
+  if (theme.isDark) return shade(0.95);
+  const base = pageRgb(theme);
+  const lift = 8;
+  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value + lift)));
+  return `rgba(${clamp(base[0])}, ${clamp(base[1])}, ${clamp(base[2])}, 0.96)`;
+}
+
+/**
+ * The floating glass panels (composer pill, working panel, framed views).
+ *
+ * In dark these are the near-black ink at an alpha, so the panel is DARKER than
+ * the transcript scrolling behind it and the native window shows through — the
+ * previous build lifted the page colour by +10 and landed on the washed grey the
+ * user rejected. Light keeps the page-derived paper tint, which is the correct
+ * direction there.
  */
 function glassPanel(theme: HarnessTheme, alpha: number): string {
+  if (theme.isDark) return shade(alpha);
   const base = pageRgb(theme);
-  const lift = theme.isDark ? 10 : 4;
-  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value + lift)));
+  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value + 4)));
   return `rgba(${clamp(base[0])}, ${clamp(base[1])}, ${clamp(base[2])}, ${alpha})`;
 }
 
@@ -133,22 +158,32 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--page-bg": page,
 
     /* Surfaces. `--surface` is the in-flow veil (user bubble, open tool body);
-       `--panel` is the floating glass the dock chrome and framed views wear. */
-    "--surface": theme.surfaceBackground,
-    "--surface-raised": theme.surfaceElevatedBackground,
-    "--surface-hover": overlay(dark, dark ? 0.05 : 0.035),
-    "--surface-active": overlay(dark, dark ? 0.08 : 0.06),
-    "--surface-sunken": overlay(dark, dark ? 0.13 : 0.035),
-    "--panel": glassPanel(theme, dark ? 0.78 : 0.8),
+       `--panel` is the floating glass the dock chrome and framed views wear.
+       In DARK both are near-black ink at an alpha rather than a white veil: a
+       white veil over near-black is exactly the washed grey the round-5 report
+       named, and it left nothing for the transparent WKWebView to show through.
+       Light keeps its ink veil, which darkens paper correctly. */
+    "--surface": dark ? shade(0.34) : theme.surfaceBackground,
+    "--surface-raised": dark ? shade(0.5) : theme.surfaceElevatedBackground,
+    /* Interaction highlights stay WHITE in dark — a black hover on near-black
+       is invisible. Same split shadcn's dark theme makes between `background`
+       (near-black) and `accent` (a lifted neutral). */
+    "--surface-hover": overlay(dark, dark ? 0.06 : 0.035),
+    "--surface-active": overlay(dark, dark ? 0.1 : 0.06),
+    "--surface-sunken": dark ? shade(0.4) : overlay(false, 0.035),
+    "--panel": glassPanel(theme, dark ? 0.72 : 0.8),
     "--panel-solid": popoverBackground(theme),
     "--popover-bg": popoverBackground(theme),
     "--glass-blur": "blur(18px) saturate(1.5)",
-    "--input-bg": theme.inputBackground,
+    "--input-bg": dark ? shade(0.42) : theme.inputBackground,
 
-    /* Hairlines. Glass panels wear the faint line; strong marks interaction. */
-    "--border": theme.border,
-    "--border-strong": theme.borderStrong,
-    "--border-faint": overlay(dark, dark ? 0.05 : 0.05),
+    /* Hairlines. Glass panels wear the faint line; strong marks interaction.
+       Dark borders lift slightly (0.08 → 0.10) because the surfaces under them
+       are darker now and a 0.08 hairline on near-black had nothing to separate
+       from. This is shadcn's 1px-crisp-edge grammar, not a heavier stroke. */
+    "--border": dark ? "rgba(255, 255, 255, 0.10)" : theme.border,
+    "--border-strong": dark ? "rgba(255, 255, 255, 0.18)" : theme.borderStrong,
+    "--border-faint": overlay(dark, dark ? 0.06 : 0.05),
 
     /* Ink tiers, audited against the darkest bed each lands on. */
     "--text": theme.text,
@@ -192,6 +227,17 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--claude-faint": claude(dark ? 0.09 : 0.07),
     "--claude-border": claude(dark ? 0.4 : 0.34),
     "--focus-ring": claude(dark ? 0.5 : 0.4),
+
+    /* The shimmer's two tones (see `.shimmer` in base.css).
+     *
+     * The sweep is a gradient between them, so the DIMMER of the two is what
+     * most of the glyphs wear most of the time — it is the resting tone of the
+     * text, not a highlight, and it is audited at AA in tests/contrast.test.ts
+     * exactly like every other ink tier. `--shimmer-sheen` is the crest: the
+     * accent, so the one animated thing in the pane is unmistakably the brand's
+     * and not a grey pulse. */
+    "--shimmer-base": inkAlpha(theme, dark ? 0.62 : 0.64),
+    "--shimmer-sheen": dark ? "#ff8f75" : "#b8391b",
 
     /* Status families, each with a text tone, a dot tone, and a soft tint. */
     "--danger": dark ? "#ff9d8e" : "#a3221b",
@@ -237,6 +283,16 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
     "--shadow-modal": dark
       ? "0 4px 14px rgba(0, 0, 0, 0.22)"
       : "0 4px 14px rgba(20, 18, 16, 0.10)",
+    /* The SECOND exception, and the reason the round-4 menus read as flat
+       rectangles pasted onto the transcript: a popover is the one surface with
+       nothing behind it but readable text, and a hairline alone cannot say
+       "this is in front". shadcn's layered popover shadow — a tight contact
+       shadow under a wide ambient one — is what gives a menu its lift without
+       the grey halo a single wide blur pooled under the old chrome. It is
+       declared ONCE and worn by every floating surface in the kit. */
+    "--shadow-popover": dark
+      ? "0 1px 2px rgba(0, 0, 0, 0.45), 0 8px 24px -6px rgba(0, 0, 0, 0.65)"
+      : "0 1px 2px rgba(20, 18, 16, 0.07), 0 8px 24px -6px rgba(20, 18, 16, 0.16)",
     "--scrim": dark ? "rgba(0, 0, 0, 0.58)" : "rgba(20, 18, 16, 0.34)",
 
     /* Diff and syntax, audited against the tinted diff beds in

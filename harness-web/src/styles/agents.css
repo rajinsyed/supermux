@@ -178,56 +178,54 @@
   padding-left: 68px;
 }
 
-/* Cursor's working glyph: a 2×2 constellation of dots drifting through a
-   staggered pulse. State lives here and nowhere else on the row. */
+/* The running mark on a row.
+
+   Was a 2×2 constellation of dots drifting through a staggered pulse — four
+   elements, four animation delays, and the same "something is happening" the
+   label beside it already said. It is one sweeping sliver now, matching the
+   transcript's streaming mark exactly, so the dock and the transcript animate as
+   one system. The row's LABEL shimmers with it (rule below), which is where the
+   information actually is. */
 .dock-glyph {
-  position: relative;
+  display: inline-flex;
+  align-items: center;
   width: 11px;
   height: 11px;
   flex: 0 0 auto;
 }
 
 .dock-glyph i {
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: var(--r-pill);
-  background: var(--text-muted);
-  animation: glyph-drift 1.8s ease-in-out infinite;
+  width: 11px;
+  height: 2px;
 }
 
-.dock-glyph i:nth-child(1) {
-  top: 0;
-  left: 0;
+/* The row's name sweeps with its mark. Scoped to rows that HAVE the mark: a
+   settled row keeps its ordinary ink. */
+.dock-glyph + .dock-label,
+.agent-row-glyph + .agent-row-main .agent-row-name,
+.agent-row-glyph + .wf-row-main .wf-row-name {
+  background-image: linear-gradient(
+    100deg,
+    var(--shimmer-base) 32%,
+    var(--shimmer-sheen) 50%,
+    var(--shimmer-base) 68%
+  );
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: sheen-sweep 2.2s linear infinite;
 }
 
-.dock-glyph i:nth-child(2) {
-  top: 0;
-  right: 0;
-  animation-delay: 0.45s;
-}
-
-.dock-glyph i:nth-child(3) {
-  bottom: 0;
-  right: 0;
-  animation-delay: 0.9s;
-}
-
-.dock-glyph i:nth-child(4) {
-  bottom: 0;
-  left: 0;
-  animation-delay: 1.35s;
-}
-
-@keyframes glyph-drift {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.8);
-  }
-  40% {
-    opacity: 1;
-    transform: scale(1);
+@media (prefers-reduced-motion: reduce) {
+  .dock-glyph + .dock-label,
+  .agent-row-glyph + .agent-row-main .agent-row-name,
+  .agent-row-glyph + .wf-row-main .wf-row-name {
+    background-image: none;
+    color: var(--shimmer-sheen);
+    -webkit-text-fill-color: var(--shimmer-sheen);
   }
 }
 
@@ -380,9 +378,23 @@
   background: var(--text-faint);
 }
 
+/* The one running-dot pulse in the pane. It is also what `.wfb-dot.is-running`
+   in workflow.css reaches for — that rule named `dock-pulse`, a keyframe no
+   sheet has ever defined, so the browser's running agents sat perfectly still.
+   One name, defined once, used by both. */
+@keyframes dot-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .agent-dot.is-running {
   background: var(--claude-strong);
-  animation: glyph-drift 1.8s ease-in-out infinite;
+  animation: dot-breathe 1.6s ease-in-out infinite;
 }
 
 .agent-dot.is-done {

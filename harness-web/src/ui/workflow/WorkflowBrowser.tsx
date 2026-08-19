@@ -195,8 +195,11 @@ export function WorkflowBrowser({
           <ArrowLeft size={12} />
         </button>
         <span className="wfb-icon">
-          <MapIcon size={13} />
+          <MapIcon size={12} />
         </span>
+        {/* Name and description on ONE baseline: stacking them made the header
+            two lines tall for a sentence that is usually a restatement of the
+            name a few words longer. */}
         <span className="wfb-identity">
           <span className="wfb-name">
             {subject.name ?? copy("supermux.harness.workflow.untitled")}

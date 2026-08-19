@@ -13,6 +13,7 @@ import { appendPendingRelay, hydrateThread, isThreadRunning } from "./agentThrea
 import { insertBlock, locateTool, markTurnAborted, settleTurn } from "./blocks";
 import {
   activeTurnIndex,
+  adoptSessionModel,
   asString,
   createIndex as makeIndex,
   findTurnIndex,
@@ -558,6 +559,36 @@ export function applyLocalAction(
       return { ...model, cachedModels: action.models, revision: model.revision + 1 };
     case "historyTruncated":
       return { ...model, historyTruncated: true, revision: model.revision + 1 };
+    case "historyReplayed": {
+      // Replayed history carries no `result` frames, so its final turn is still
+      // "streaming" when the drain finishes — and the `runStarted` that follows
+      // a resume would close it as an ERROR ("Failed after …") for the crime of
+      // being history. Closed here as complete instead, at each turn's own last
+      // frame. A turn the transcript recorded as interrupted stays aborted:
+      // closeOpenTurns only touches streaming turns.
+      let next = closeOpenTurns(model, nowMs, "complete");
+      if (next !== model) {
+        next = {
+          ...next,
+          activity: { ...next.activity, sessionState: "idle", status: null, thinkingTokens: 0 }
+        };
+      }
+      // History also carries no init frame (the native mapper forwards only
+      // user/assistant records), so the pane's model selection would otherwise
+      // be whatever it held BEFORE the resume — the previous session's model,
+      // or nothing. The resumed session's own last assistant frame is the one
+      // record of what it was actually running, so the trigger adopts it here,
+      // and startOptions carries it onto the restart so the CLI does not fall
+      // back to the settings default and silently switch the session's model.
+      if (next.lastAssistantModel && next.lastAssistantModel !== next.session.model) {
+        next = {
+          ...(next === model ? { ...next } : next),
+          session: adoptSessionModel(next.session, next.cachedModels, next.lastAssistantModel),
+          revision: next.revision + 1
+        };
+      }
+      return next;
+    }
     case "reset":
       return resetConversation(model, index);
     default:

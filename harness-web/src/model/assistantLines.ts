@@ -37,14 +37,32 @@ export function applyAssistant(
     next = evictUuids(next, new Set(line.supersedes));
   }
   const parent = line.parent_tool_use_id ?? null;
+  // The record's own clock when it has one — replayed frames arrive long after
+  // they were written, and turns stamped at wall-now report nonsense spans.
+  const stamp = line.timestamp ? Date.parse(line.timestamp) : Number.NaN;
+  const atMs = Number.isFinite(stamp) ? stamp : nowMs;
+  // A MAIN-thread frame names the model that actually produced it. This is the
+  // one model signal a replayed session has (history carries no init frame),
+  // and on a live session it tracks /model switches the moment they take
+  // effect. Subagent frames are excluded: an agent's model is not the session's.
+  const wireModel = !parent ? asString(line.message.model) : undefined;
+  if (wireModel && wireModel !== next.lastAssistantModel) {
+    next = { ...next, lastAssistantModel: wireModel };
+  }
   // The SAME frame builds two things: the inline block tree the transcript
   // nests under the launching Task card, and the agent's own thread, which is
   // what the agent view renders. One frame, two folds — never two sources.
   if (parent) next = applyAssistantToThread(next, line, parent, nowMs);
   else next = registerRootSpawns(next, line.message.content, nowMs);
-  const ensured = ensureTurn(next, index, nowMs, parent);
+  const ensured = ensureTurn(next, index, atMs, parent);
   next = ensured.model;
   let turnIndex = ensured.turnIndex;
+  {
+    const turn = next.turns[turnIndex];
+    if (turn && turn.lastFrameAtMs !== atMs) {
+      next = withTurn(next, turnIndex, { ...turn, lastFrameAtMs: atMs });
+    }
+  }
   const messageId = line.message.id ?? `msg:${line.uuid ?? next.revision}`;
 
   if (line.error) {
@@ -56,19 +74,19 @@ export function applyAssistant(
     next = appendNotice(next, "error", text, `err:${line.uuid ?? next.revision}`, turnIndex, kind);
     const turn = next.turns[turnIndex];
     return withTurn(next, turnIndex, {
-      ...settleTurn(turn, nowMs),
+      ...settleTurn(turn, atMs),
       state: "error",
       errorText: text
     });
   }
 
   for (const content of line.message.content ?? []) {
-    next = mergeAssistantBlock(next, index, turnIndex, content, messageId, line, nowMs, parent);
+    next = mergeAssistantBlock(next, index, turnIndex, content, messageId, line, atMs, parent);
     turnIndex = findTurnIndex(next, ensured.turnId);
     if (turnIndex < 0) return next;
   }
   if (line.aborted) {
-    const marked = markTurnAborted(next.turns[turnIndex], nowMs);
+    const marked = markTurnAborted(next.turns[turnIndex], atMs);
     next = withTurn(next, turnIndex, { ...marked, blocks: flagAborted(marked.blocks, line.uuid) });
   }
   return next;

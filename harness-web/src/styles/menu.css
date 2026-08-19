@@ -1,0 +1,374 @@
+/* ---------------------------------------------------------------------------
+   THE MENU KIT — one material for every floating surface in the pane.
+
+   Round 4 shipped five popovers built independently: the header menus, the
+   model panel, the sessions browser, the context breakdown, and the composer's
+   completion list. They agreed on nothing — three radii, three paddings, two
+   z-indexes, one shadow between them, and four hand-written copies of the same
+   row. That, and not any single bad menu, is what "the pickers and menus still
+   look ugly, all of them" named.
+
+   Everything that floats is now built from `primitives/Popover.tsx` and
+   `primitives/MenuList.tsx` and wears exactly what is declared here. A surface
+   may set its own WIDTH and MAX-HEIGHT; nothing re-declares the material.
+
+   The look is shadcn's "New York" preset, expressed through the tokens this
+   pane already audits for contrast: a crisp 1px hairline, one radius per role
+   (--r-pop for the panel, --r-row for rows), the layered popover shadow
+   (--shadow-popover: a tight contact shadow under a wide ambient one), 13px
+   rows on a 28px line, and 11.5px trailing metadata. The vermilion accent marks
+   selection and nothing else.
+--------------------------------------------------------------------------- */
+
+/* ---------- the surface ---------- */
+
+.ui-pop {
+  position: absolute;
+  z-index: 45;
+  min-width: 200px;
+  max-width: min(360px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 4px;
+  border-radius: var(--r-pop);
+  background: var(--popover-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-popover);
+  /* Menus open from a bar at the FOOT of the pane, so they rise into place
+     rather than dropping. 110ms is shadcn's own duration. */
+  animation: ui-pop-in 110ms var(--ease-out);
+  transform-origin: var(--pop-origin, bottom center);
+}
+
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ui-pop.is-top {
+  bottom: calc(100% + 6px);
+  --pop-origin: bottom center;
+}
+
+.ui-pop.is-bottom {
+  top: calc(100% + 6px);
+  --pop-origin: top center;
+}
+
+.ui-pop.is-end {
+  right: 0;
+}
+
+.ui-pop.is-start {
+  left: 0;
+}
+
+/* The completion popover spans the composer it belongs to. */
+.ui-pop.is-stretch {
+  left: 0;
+  right: 0;
+  max-width: none;
+}
+
+/* ---------- rows ---------- */
+
+.ui-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+}
+
+.ui-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Groups are separated by a hairline inset from the panel's own edges, so it
+   reads as a divider and not as a second border cutting the panel in half. */
+.ui-menu-section + .ui-menu-section {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-faint);
+}
+
+/* shadcn's group label: sentence case at the row's own size, dimmed. The
+   uppercase-with-letterspacing treatment the old menus used made a four-row
+   permission list look like a settings screen. */
+.ui-menu-label {
+  padding: 5px 8px 3px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.ui-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-height: 28px;
+  justify-content: center;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: var(--r-row);
+  font-size: 13px;
+  color: var(--text-soft);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.ui-menu-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.ui-menu-item:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.ui-menu-item.is-active {
+  color: var(--text);
+}
+
+.ui-menu-item:disabled {
+  color: var(--text-faint);
+}
+
+.ui-menu-item.is-danger {
+  color: var(--danger);
+}
+
+.ui-menu-item.is-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.ui-menu-item.is-danger:focus-visible {
+  background: var(--danger-soft);
+}
+
+.ui-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ui-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.ui-menu-item:hover .ui-menu-icon,
+.ui-menu-item:focus-visible .ui-menu-icon {
+  color: var(--text-muted);
+}
+
+.ui-menu-item.is-danger .ui-menu-icon {
+  color: var(--danger);
+}
+
+.ui-menu-label-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Trailing metadata is TEXT, not a chip. Round 4 put a filled pill on the right
+   of every model row, which made four rows read as four badges. */
+.ui-menu-meta {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-menu-item.is-active .ui-menu-meta {
+  color: var(--text-muted);
+}
+
+.ui-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  flex: 0 0 auto;
+  color: var(--claude);
+}
+
+.ui-menu-detail {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rows WITH a glyph indent their detail under the label; rows without one start
+   it on the label's own left edge. */
+.ui-menu-item:has(.ui-menu-icon) .ui-menu-detail {
+  padding-left: 22px;
+}
+
+.ui-menu-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 9px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- the panel's base ---------- */
+
+/* Sunken rather than bordered, so it reads as the foot of the panel and not as
+   one more row you could click. Negative margins carry it to the panel's own
+   edges, inside the radius. */
+.ui-menu-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin: 4px -4px -4px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-faint);
+  background: var(--surface-sunken);
+  border-radius: 0 0 calc(var(--r-pop) - 1px) calc(var(--r-pop) - 1px);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.ui-menu-keys {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.ui-menu-keys kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 15px;
+  min-width: 18px;
+  padding: 0 4px;
+  text-align: center;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background: var(--surface-hover);
+  color: var(--text-faint);
+}
+
+/* ---------- command-style list ----------
+
+   Selection here is driven by the KEYBOARD while the caret stays in the
+   textarea, so the active row must read as chosen without holding focus: a
+   tinted bed plus a leading accent bar, which two identical grey beds cannot
+   do. This is the one place the kit draws an accent bar, and it exists because
+   ⏎ acts on the marked row rather than on the hovered one. */
+
+.ui-cmd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ui-cmd-item {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 6px 9px 6px 11px;
+  border-radius: var(--r-row);
+  transition: background var(--dur) var(--ease);
+}
+
+.ui-cmd-item:hover {
+  background: var(--surface-hover);
+}
+
+.ui-cmd-item:focus-visible {
+  background: var(--surface-hover);
+}
+
+.ui-cmd-item.is-active {
+  background: var(--claude-faint);
+}
+
+.ui-cmd-item.is-active::before {
+  content: "";
+  position: absolute;
+  /* Inside the row's own radius: at `left: 0` the bar butted into the panel
+     edge and read as a torn hairline. */
+  left: 3px;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: var(--r-pill);
+  background: var(--claude);
+}
+
+.ui-cmd-label {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.ui-cmd-item.is-active .ui-cmd-label {
+  color: var(--claude);
+}
+
+.ui-cmd-hint {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.ui-cmd-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- triggers ----------
+
+   Every trigger in the pane is the same object: quiet ink, no bed at rest, a
+   bed under the pointer, and the SAME bed while its panel is open so the
+   trigger and the surface it opened read as one thing. */
+
+.menu {
+  position: relative;
+  min-width: 0;
+  display: flex;
+}
+
+.menu-trigger {
+  display: flex;
+  min-width: 0;
+  border-radius: var(--r-row);
+}

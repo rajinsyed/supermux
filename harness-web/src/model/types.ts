@@ -210,9 +210,21 @@ export interface ToolBlock {
 export interface DividerBlock {
   kind: "divider";
   key: string;
-  variant: "compact" | "reset";
+  variant: "compact" | "reset" | "continued";
   trigger?: string;
   preTokens?: number;
+}
+
+/**
+ * The output of a LOCAL slash command — the text inside a
+ * `<local-command-stdout>` transcript record, or a `local_command_output`
+ * system frame. It is neither the user speaking nor Claude answering, so it
+ * renders as a dim one-line result under the command chip, never as a bubble.
+ */
+export interface CommandOutputBlock {
+  kind: "commandOutput";
+  key: string;
+  text: string;
 }
 
 /** Classified model errors the CLI reports, so the view can title them. */
@@ -266,7 +278,8 @@ export type Block =
   | DividerBlock
   | NoticeBlock
   | ImageBlock
-  | UserTextBlock;
+  | UserTextBlock
+  | CommandOutputBlock;
 
 export type TurnState = "queued" | "streaming" | "complete" | "aborted" | "error";
 
@@ -294,8 +307,22 @@ export interface Turn {
   userText?: string;
   userImages?: ImageAttachment[];
   userUuid?: string;
+  /**
+   * This turn is a LOCAL slash command (`/model opus`), reconstructed from the
+   * CLI's `<command-name>/<command-args>` transcript records. It renders as a
+   * quiet command chip rather than a user bubble — the user issued a command,
+   * they did not say these words to Claude.
+   */
+  command?: { name: string; args?: string };
   startedAtMs: number;
   endedAtMs?: number;
+  /**
+   * When the turn last received a frame. Replayed history has no `result`
+   * frames, so its turns are closed at a process boundary long after the fact;
+   * settling them at "now" would report a two-day "Worked for". The last
+   * frame's own time is the honest end.
+   */
+  lastFrameAtMs?: number;
   state: TurnState;
   blocks: Block[];
   result?: TurnResult;
@@ -610,6 +637,15 @@ export interface TranscriptModel {
    * than the first one shown exist on disk but are not in this model.
    */
   historyTruncated?: boolean;
+  /**
+   * The model that produced the most recent MAIN-thread assistant frame, as the
+   * wire reported it (`message.model`, a resolved id). Replayed history carries
+   * no init frame — the native mapper only forwards user/assistant records — so
+   * this is the one honest answer to "which model was this session actually on"
+   * after a resume, and the hook uses it to seed the composer trigger and the
+   * restart params before the new process's init frame arrives.
+   */
+  lastAssistantModel?: string;
   stderrTail: string[];
   revision: number;
 }
@@ -658,4 +694,13 @@ export type LocalAction =
   | { kind: "truncateBeforeUserMessage"; uuid: string }
   | { kind: "cachedModels"; models: ModelDescriptor[] }
   | { kind: "historyTruncated" }
+  /**
+   * A history replay just finished draining. Replayed history has no `result`
+   * frames (the native mapper forwards only user/assistant records), so its
+   * final turn is still "streaming" — and the `runStarted` that follows a
+   * resume would close it as an ERROR, painting "Failed after…" on a turn that
+   * ended fine. This closes every open replayed turn as complete, at the time
+   * of its own last frame rather than at wall-now.
+   */
+  | { kind: "historyReplayed" }
   | { kind: "reset" };

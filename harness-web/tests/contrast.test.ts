@@ -54,6 +54,32 @@ function ratio(a: RGB, b: RGB): number {
 }
 
 /**
+ * What is BEHIND the page.
+ *
+ * Round 5 made the dark surfaces near-black WITH alpha, so the native window
+ * shows through them — which means the page background is no longer the bottom
+ * of the stack and an audit that stops there is auditing a composite that never
+ * renders. The WKWebView is transparent over the app's own chrome, and the
+ * ranges below are the plausible extremes of what can sit under it:
+ *
+ *  - The page's own colour, which is what a BROWSER shows (there is no native
+ *    layer there) and what the embedded pane shows over a matching window.
+ *  - A materially lighter backing, standing in for macOS vibrancy over a light
+ *    desktop, a translucent window over bright content behind the app, or a
+ *    Ghostty background the user has set lighter than the theme's page.
+ *
+ * The lighter backing is the WORSE case for dark-theme text: it raises the
+ * bed's luminance, which lowers the contrast of the light ink sitting on it.
+ * Both are audited, not the friendlier one — the point of the round-5 change is
+ * that the backdrop is genuinely visible, so it is genuinely part of the sum.
+ */
+function backings(isDark: boolean): Record<string, RGB> {
+  return isDark
+    ? { page: [15, 15, 19], vibrant: [64, 64, 70] }
+    : { page: [251, 250, 249], vibrant: [214, 212, 209] };
+}
+
+/**
  * Rebuilds the real stack of composited surfaces a token lands on. The flat code
  * background is NOT the worst case — the diff tints painted over it are — so a
  * palette audit that only checks the flat surface passes while the tinted rows
@@ -344,24 +370,40 @@ async function attenuatedTextRules(): Promise<Array<{ where: string; token: stri
   return found;
 }
 
+/**
+ * Every flat bed chrome text lands on, composited over EVERY plausible backing.
+ *
+ * Before round 5 the dark surfaces were opaque-enough white veils and the page
+ * was the bottom of the stack, so one bed per surface was the whole truth. Now
+ * the surfaces AND the popovers carry alpha, so each of them resolves
+ * differently depending on what the transparent WKWebView is sitting over —
+ * and the audit has to cover the range rather than pick the flattering end of
+ * it. Each bed is therefore emitted once per backing.
+ */
 function flatSurfaces(isDark: boolean): { vars: Record<string, string>; flat: Record<string, RGB> } {
   const { vars } = surfaces(isDark);
-  const page = parse(vars["--page-bg"]);
-  return {
-    vars,
-    flat: {
-      page,
-      card: composite(vars["--surface"], page),
-      raised: composite(vars["--surface-raised"], page),
-      sunken: composite(vars["--surface-sunken"], page),
-      // Menus and modals paint on this opaque panel, not on the page. The
-      // binary dialog's help and note lines and the model menu's loading row
-      // are all --text-faint on exactly this bed.
-      popover: parse(vars["--popover-bg"]),
-      // The dialog's input well, over that panel.
-      popoverInput: composite(vars["--input-bg"], parse(vars["--popover-bg"]))
-    }
-  };
+  const flat: Record<string, RGB> = {};
+  for (const [where, backing] of Object.entries(backings(isDark))) {
+    // The page itself is translucent over the backing only when the theme says
+    // so; the default themes ship an opaque page colour, and `parse` drops the
+    // alpha, so composite it explicitly.
+    const page = composite(vars["--page-bg"], backing);
+    const popover = composite(vars["--popover-bg"], page);
+    flat[`${where}:page`] = page;
+    flat[`${where}:card`] = composite(vars["--surface"], page);
+    flat[`${where}:raised`] = composite(vars["--surface-raised"], page);
+    flat[`${where}:sunken`] = composite(vars["--surface-sunken"], page);
+    // Menus and modals paint on the popover panel, not on the page. The binary
+    // dialog's help and note lines and the model menu's loading row are all
+    // --text-faint on exactly this bed.
+    flat[`${where}:popover`] = popover;
+    // The dialog's input well, over that panel.
+    flat[`${where}:popoverInput`] = composite(vars["--input-bg"], popover);
+    // The menu kit's footer — the sunken strip at the base of every panel,
+    // which is the faintest ink on the second-faintest bed in the pane.
+    flat[`${where}:menuFoot`] = composite(vars["--surface-sunken"], popover);
+  }
+  return { vars, flat };
 }
 
 describe("chrome text contrast", () => {
@@ -427,23 +469,45 @@ describe("dialog status tones contrast", () => {
   for (const isDark of [true, false]) {
     const label = isDark ? "dark" : "light";
     const { vars } = surfaces(isDark);
-    const panel = parse(vars["--popover-bg"]);
+    // The panel carries alpha since round 5, so it resolves against whatever is
+    // behind the transparent WKWebView; both plausible backings are audited
+    // rather than assuming the theme's own page is underneath.
+    const panels = Object.entries(backings(isDark)).map(
+      ([where, backing]) =>
+        [where, composite(vars["--popover-bg"], composite(vars["--page-bg"], backing))] as const
+    );
 
     test(`the binary validation error clears AA on its tint (${label})`, () => {
-      const bed = composite(vars["--danger-soft"], panel);
-      expect(ratio(composite(vars["--danger"], bed), bed)).toBeGreaterThanOrEqual(AA_SMALL);
+      const failures: string[] = [];
+      for (const [where, panel] of panels) {
+        const bed = composite(vars["--danger-soft"], panel);
+        const value = ratio(composite(vars["--danger"], bed), bed);
+        if (value < AA_SMALL) failures.push(`${where}=${value.toFixed(2)}`);
+      }
+      expect(failures).toEqual([]);
     });
 
     test(`the degraded-rewind warning clears AA on the panel (${label})`, () => {
-      expect(ratio(composite(vars["--warning"], panel), panel)).toBeGreaterThanOrEqual(AA_SMALL);
+      const failures: string[] = [];
+      for (const [where, panel] of panels) {
+        const value = ratio(composite(vars["--warning"], panel), panel);
+        if (value < AA_SMALL) failures.push(`${where}=${value.toFixed(2)}`);
+      }
+      expect(failures).toEqual([]);
     });
 
     test(`the quoted message clears AA on its claude tint (${label})`, () => {
-      const bed = composite(vars["--claude-faint"], panel);
-      expect(ratio(composite(vars["--text"], bed), bed)).toBeGreaterThanOrEqual(AA_SMALL);
-      // The file-count stat beside the checkbox is the faintest tier here.
-      const well = composite(vars["--input-bg"], panel);
-      expect(ratio(composite(vars["--text-faint"], well), well)).toBeGreaterThanOrEqual(AA_SMALL);
+      const failures: string[] = [];
+      for (const [where, panel] of panels) {
+        const bed = composite(vars["--claude-faint"], panel);
+        const quoted = ratio(composite(vars["--text"], bed), bed);
+        if (quoted < AA_SMALL) failures.push(`${where} quoted=${quoted.toFixed(2)}`);
+        // The file-count stat beside the checkbox is the faintest tier here.
+        const well = composite(vars["--input-bg"], panel);
+        const stat = ratio(composite(vars["--text-faint"], well), well);
+        if (stat < AA_SMALL) failures.push(`${where} stat=${stat.toFixed(2)}`);
+      }
+      expect(failures).toEqual([]);
     });
   }
 });

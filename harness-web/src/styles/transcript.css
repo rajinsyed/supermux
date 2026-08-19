@@ -394,6 +394,46 @@
   margin-bottom: 2px;
 }
 
+/* ---------- local slash commands ----------
+
+   A `/model opus[1m]` the user ran is a command, not speech: a small quiet
+   chip on the user's side of the column, with the command's stdout as a dim
+   one-line result underneath. Neither may ever render as a chat bubble. */
+
+.command-chip {
+  /* Block-level with fit-content width so `margin-left: auto` pushes it to the
+     user's edge, exactly like .user-msg. */
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px auto;
+  padding: 3px 9px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  max-width: 85%;
+  overflow-wrap: anywhere;
+}
+
+.command-chip-name {
+  color: var(--text);
+}
+
+.command-chip-args {
+  color: var(--text-muted);
+}
+
+.command-output {
+  margin: 2px 0 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
 /* ---------- dividers ---------- */
 
 .divider {

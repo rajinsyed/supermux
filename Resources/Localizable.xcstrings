@@ -267693,6 +267693,23 @@
         }
       }
     },
+    "supermux.harness.divider.continued" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continued from a previous conversation"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の会話から継続"
+          }
+        }
+      }
+    },
     "supermux.harness.dock.a11y" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -267999,6 +268016,23 @@
         }
       }
     },
+    "supermux.harness.model.effortWheelHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scroll or press ⌥, / ⌥. to change reasoning"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクロールまたは ⌥, / ⌥. で推論レベルを変更"
+          }
+        }
+      }
+    },
     "supermux.harness.plan.download" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -268131,6 +268165,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ファイルを保存"
+          }
+        }
+      }
+    },
+    "supermux.harness.turn.commandChip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slash command"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スラッシュコマンド"
           }
         }
       }
@@ -273299,23 +273350,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "権限"
-          }
-        }
-      }
-    },
-    "supermux.harness.header.resume" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Resume"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再開"
           }
         }
       }

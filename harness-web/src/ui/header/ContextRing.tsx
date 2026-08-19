@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ContextUsage } from "../../protocol/types";
 import { useCopy } from "../CopyContext";
 import { formatTokens } from "../format";
+import { PopoverSurface } from "../primitives/Popover";
 
 /* Sized to the strip's one icon scale (12px glyphs), not to itself: at 22px
    with a 2.6 stroke the ring was the heaviest mark on a line of quiet text and
@@ -110,7 +111,7 @@ export function ContextRing({ usage }: { usage?: ContextUsage }) {
         <span className="ctx-value tnum">{percentage}%</span>
       </button>
       {open ? (
-        <div className={`ctx-pop is-${tone}`} role="tooltip">
+        <PopoverSurface className={`pop-ctx is-${tone}`} role="tooltip">
           <div className="ctx-pop-head">
             <span className="ctx-pop-label">{copy("supermux.harness.header.context")}</span>
             <span className="ctx-pop-figure tnum">{percentage}%</span>
@@ -147,7 +148,7 @@ export function ContextRing({ usage }: { usage?: ContextUsage }) {
               })}
             </div>
           ) : null}
-        </div>
+        </PopoverSurface>
       ) : null}
     </div>
   );

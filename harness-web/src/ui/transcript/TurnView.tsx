@@ -30,7 +30,7 @@ function splitBlocks(turn: Turn): { work: Block[]; tail: Block[] } {
       cut = i;
       continue;
     }
-    if (block.kind === "notice" || block.kind === "divider") {
+    if (block.kind === "notice" || block.kind === "divider" || block.kind === "commandOutput") {
       cut = i;
       continue;
     }
@@ -173,6 +173,16 @@ export const TurnView = memo(function TurnView({
     <article className={`turn is-${turn.state}${relay ? " is-relay" : ""}`} data-turn-id={turn.id}>
       {relay ? (
         <RelayChip relay={relay} />
+      ) : turn.command ? (
+        /* A local slash command (`/model opus[1m]`). Not a conversation with
+           Claude, so no bubble: a small quiet chip naming the command, with its
+           stdout rendered as dim result lines in the body below. */
+        <div className="command-chip mono" title={copy("supermux.harness.turn.commandChip")}>
+          <span className="command-chip-name">{turn.command.name}</span>
+          {turn.command.args ? (
+            <span className="command-chip-args">{turn.command.args}</span>
+          ) : null}
+        </div>
       ) : turn.userText !== undefined ? (
         <UserMessage
           text={turn.userText}

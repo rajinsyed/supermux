@@ -3,17 +3,18 @@ import { applyTaskToThread, reconcileSupersededAgentAttempts } from "./agentThre
 import { evictUuids, readTool, writeBlock } from "./blocks";
 import {
   activeTurnIndex,
+  adoptSessionModel,
   asNumber,
   asString,
   blockAtPath,
   isPlainObject,
   permissionModeOf,
-  resolveModel,
   withTurn,
   type TranscriptIndex
 } from "./helpers";
+import { stripAnsi } from "./localText";
 import { hasLiveBackgroundWork, isTaskSettled } from "./tasks";
-import { appendNotice, pushBanner, resetConversation } from "./turns";
+import { appendCommandOutput, appendNotice, pushBanner, resetConversation } from "./turns";
 import { mergeWorkflowProgress } from "./workflow";
 import type {
   Block,
@@ -81,9 +82,12 @@ export function applySystem(
         `denied:${asString(raw.uuid) ?? model.revision}`
       );
     case "local_command_output": {
-      const content = asString(raw.content);
+      // The LIVE twin of the transcript's `<local-command-stdout>` record: one
+      // rendering for both, or a /model run live and the same run replayed
+      // after a resume would paint two different things.
+      const content = stripAnsi(asString(raw.content) ?? "").trim();
       if (!content) return model;
-      return appendNotice(model, "info", content, `local:${asString(raw.uuid) ?? model.revision}`);
+      return appendCommandOutput(model, content, `local:${asString(raw.uuid) ?? model.revision}`, nowMs);
     }
     case "model_refusal_fallback":
       return evictUuids(model, new Set((raw.retracted_message_uuids as string[]) ?? []));
@@ -100,20 +104,15 @@ export function applySystem(
 }
 
 function applyInit(model: TranscriptModel, raw: Record<string, unknown>): TranscriptModel {
-  const session = { ...model.session };
+  let session = { ...model.session };
   session.sessionId = asString(raw.session_id) ?? session.sessionId;
   session.cwd = asString(raw.cwd) ?? session.cwd;
   const initializedModel = asString(raw.model);
   if (initializedModel) {
-    // A carried effort belongs to the model it was selected for. The picker uses
-    // a selector ("sonnet") while init reports its resolved id
-    // ("claude-sonnet-5"), so compare through the catalog before deciding that
-    // a resumed session actually changed models.
-    const selected = resolveModel(session, model.cachedModels);
-    const sameResolvedModel =
-      selected?.value === initializedModel || selected?.resolvedModel === initializedModel;
-    if (initializedModel !== session.model && !sameResolvedModel) session.effort = undefined;
-    session.model = initializedModel;
+    // A carried effort belongs to the model it was selected for; the adoption
+    // compares through the catalog before deciding a resumed session actually
+    // changed models (init reports resolved ids, the picker uses selectors).
+    session = adoptSessionModel(session, model.cachedModels, initializedModel);
   }
   session.permissionMode = permissionModeOf(raw.permissionMode) ?? session.permissionMode;
   session.tools = (raw.tools as string[]) ?? session.tools;

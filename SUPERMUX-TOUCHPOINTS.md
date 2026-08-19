@@ -462,6 +462,10 @@ Rules for adding a touchpoint:
 | 441b | `Sources/TerminalController+ControlSurfaceContext2.swift` | `claude-harness-socket-create-arm`, `claude-harness-socket-split-guard` | `surface.create` arm calling `newSupermuxHarnessSurface` (respects the `focus` param via `v2FocusAllowed`; workspace placement only — the Dock guard's terminal/browser-only check already rejects it) and the `surface.split` guard rejecting the type like agent-session. CLI `new-surface` help strings mention `claude-harness` (unfenced doc-string edits in `CLI/cmux.swift`) |
 | 441c | `Sources/TerminalController+ControlPaneContext.swift` | `claude-harness-socket-split-guard` | `pane.create` (new-pane) guard rejecting `claudeHarness` splits like agent-session |
 | 442 | `web/data/cmux-shortcuts.ts` | `claude-harness-shortcut-doc` | Documents the ⌃⌘A New Claude Pane shortcut in the surfaces section of the keyboard-shortcut registry (en + ja) |
+| 443 | `Sources/TabManager.swift` | `claude-harness-restore-git-probe` | One-line `workspace.scheduleSupermuxHarnessGitMetadataProbes(reason:)` call inside the post-session-restore sweep, right after upstream's `TerminalPanel` probe loop. Without it a restored workspace whose only pane is a harness pane never gets a sidebar git probe scheduled and shows no branch in its workspace tab |
+| 444 | `Sources/TabManager+SidebarGitHosting.swift` | `claude-harness-git-probe-eligible` | `hasTerminalPanel(workspaceId:panelId:)` also returns `true` for a `SupermuxHarnessPanel`. That `SidebarGitHosting` seam has exactly one caller — `SidebarGitMetadataService.restartWorkspaceGitMetadataWatching` — where it gates "may this panel be git-probed", so a harness-only workspace would lose its branch after the sidebar-git watch setting is toggled back on |
+| 445 | `Sources/Panels/PanelContentView.swift` | `claude-harness-panel-render` | (Existing fence, widened.) The `.claudeHarness` arm now also passes `hasUnreadNotification: hasUnreadNotification` into `SupermuxHarnessPanelView`, the same value the terminal arm passes to `TerminalPanelView`. This is what lets a harness pane render an unread indicator at all |
+| 446 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the fork-owned `Sources/Supermux/Harness/SupermuxHarnessUnreadIndicator.swift` into the cmux target with reserved ids `50BE0001…0138` (file reference) / `…0139` (build file); 4 `50BE0001` occurrences (build file, file reference, group membership, sources phase) |
 
 ## How to re-apply
 
@@ -1408,7 +1412,7 @@ The Claude harness process seam (touchpoint #432) adds file reference `50BE0001�
 file `50BE0001…0137` for `SupermuxHarnessProcessSessionProtocol.swift`, wired in the same four
 places so controller orchestration can use a protocol-injected process in app-target tests.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `205`.
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `209`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
@@ -3839,6 +3843,37 @@ The fences are thin switch arms; to re-apply after a merge:
 Copy keys: every `supermux.harness.*` string in `Sources/Supermux/Harness/SupermuxHarnessCopy.swift`
 mirrors `harness-web/src/copyKeys.ts`; regenerate localizations with the loc scripts. Rebuild the
 web shell with `bun run harness-web:build` and commit the artifact.
+
+### 443–445. Claude harness branch chip + unread indicator
+
+Two user-reported gaps, both caused by upstream keying pane behavior on `TerminalPanel`.
+
+**Branch chip (443–444).** The workspace-tab / sidebar branch comes from
+`panelGitBranches`, written only by `SidebarGitMetadataService`'s probe. Every site that
+schedules that probe walks `TerminalPanel`s, and the service's watcher restart gates on
+`host.hasTerminalPanel(...)`. So a workspace whose only pane is a harness pane never got a probe
+and rendered no branch. Fix, entirely by reusing the existing probe (no new branch resolution, no
+shelling out): the fork-owned `Workspace.scheduleSupermuxHarnessGitMetadataProbe(panelId:reason:)`
+in `Sources/Supermux/Harness/Workspace+SupermuxHarness.swift` calls the same
+`scheduleInitialWorkspaceGitMetadataRefreshIfPossible` upstream calls for a terminal, and is
+invoked from both harness creation paths (fork-owned, unfenced). Two upstream hooks remain:
+
+1. `TabManager.swift` (#443): after upstream's restore-sweep `TerminalPanel` loop, add
+   `workspace.scheduleSupermuxHarnessGitMetadataProbes(reason: "harnessSessionRestore")`.
+2. `TabManager+SidebarGitHosting.swift` (#444): in `hasTerminalPanel`, return `true` for a
+   `SupermuxHarnessPanel` too.
+
+Terminal panes are untouched on both paths.
+
+**Unread indicator (445).** Harness panes never showed an unread mark because
+`PanelContentView`'s `.claudeHarness` arm did not forward `hasUnreadNotification` (upstream's
+outline ring is drawn by `GhosttyTerminalView`'s `notificationRingLayer`, which only terminals
+mount). The arm now forwards it, and the pane renders the fork's own treatment —
+`SupermuxHarnessUnreadIndicator` (`Sources/Supermux/Harness/`), a short glowing accent tick on the
+pane's leading edge that breathes slowly — instead of the outline the user called ugly. It honors
+the same `unreadPaneRing` setting and the same `workspaceAttentionColor` the terminal ring uses.
+The upstream ring renderer is deliberately NOT modified: it is on a typing-latency-sensitive path,
+and scoping the new treatment to the harness pane keeps the diff to one argument.
 
 ### 433–442. Claude harness entrypoints — `claude-harness-builtin-action` etc.
 

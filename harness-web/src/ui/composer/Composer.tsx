@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { resolveModel } from "../../model/helpers";
 import type { ImageAttachment, QueuedMessage, SessionMeta } from "../../model/types";
 import type {
   EffortLevel,
@@ -9,7 +10,9 @@ import type {
 import { useCopy } from "../CopyContext";
 import { ArrowUp, Close, Plus, Stop } from "../Icons";
 import { basename } from "../format";
-import { ModelMenu } from "./ModelMenu";
+import { CommandItem, CommandList, MenuEmpty, MenuKeys } from "../primitives/MenuList";
+import { PopoverSurface } from "../primitives/Popover";
+import { ModelMenu, stepEffort } from "./ModelMenu";
 import { useComposerPopover } from "./usePopover";
 
 export interface ComposerProps {
@@ -68,6 +71,13 @@ export interface ComposerProps {
 }
 
 const MAX_HEIGHT = 260;
+/**
+ * One line of the composer's own box: 18px line-height plus 5px of padding
+ * either side, which is `--composer-line` in dock.css. Kept in step with it by
+ * tests/composerAlign.test.ts, which reads the sheet — a drift here would put
+ * the pill into its multi-line alignment for an ordinary one-line draft.
+ */
+const SINGLE_LINE_HEIGHT = 28;
 
 export function Composer(props: ComposerProps) {
   const copy = useCopy();
@@ -83,11 +93,34 @@ export function Composer(props: ComposerProps) {
     props.fetchFileSuggestions
   );
 
+  /**
+   * The live model, resolved the same way the picker's trigger resolves it —
+   * against the live catalog first and the cached one behind it, because before
+   * the first start `session.models` is empty and only the cache can turn a
+   * selector into a descriptor with an effort scale on it. Option+,/. needs the
+   * SCALE, not just the name, so a cheaper `session.model` string would leave
+   * the binding dead on a pane that has not started yet.
+   */
+  const activeModel = props.session ? resolveModel(props.session, props.cachedModels) : undefined;
+
+  /**
+   * Autosize, and the one bit of state the ROW's alignment depends on.
+   *
+   * The pill centres its children on one line while the draft fits on one line,
+   * and drops them to the last line once it does not (see `.composer-shell` and
+   * its `:has(.is-multiline)` rule). Which of those is true is only knowable
+   * after measuring, so it is written as a class here rather than guessed in
+   * CSS. Measured against LINE_HEIGHT plus the box's own padding, so a draft
+   * that is exactly one line long — the ordinary case, and the one the round-5
+   * screenshot caught misaligned — never trips it.
+   */
   useLayoutEffect(() => {
     const node = textarea.current;
     if (!node) return;
     node.style.height = "auto";
-    node.style.height = `${Math.min(MAX_HEIGHT, node.scrollHeight)}px`;
+    const next = Math.min(MAX_HEIGHT, node.scrollHeight);
+    node.style.height = `${next}px`;
+    node.classList.toggle("is-multiline", next > SINGLE_LINE_HEIGHT);
   }, [props.draft]);
 
   const focus = useCallback(() => {
@@ -226,9 +259,37 @@ export function Composer(props: ComposerProps) {
       if (event.key === "Tab" && event.shiftKey) {
         event.preventDefault();
         props.onCyclePermissionMode();
+        return;
+      }
+      /**
+       * Item 12: Option+, and Option+. step the reasoning effort with the caret
+       * still in the composer — the CLI's own pair of bindings, so a user
+       * arriving from the terminal keeps the reflex.
+       *
+       * Matched on `event.code`, NEVER on `event.key`: on macOS Option+comma
+       * produces "≤" and Option+period produces "≥", so a `key === ","` test
+       * matches nothing at all on the platform this pane ships on. `code` names
+       * the physical key and is unaffected by the modifier's remapping.
+       *
+       * `preventDefault` is what keeps those two glyphs out of the draft, and it
+       * runs whether or not the step lands: at the top of the scale the key must
+       * still not type "≥" into the message.
+       *
+       * Same path as the menu and the wheel — `onSetModel` with the active
+       * model's own selector — so all three can never disagree about what was
+       * sent, and the trigger label repaints from the session the moment the
+       * store settles.
+       */
+      if (event.altKey && (event.code === "Comma" || event.code === "Period")) {
+        const model = activeModel;
+        if (!model || !props.onSetModel) return;
+        event.preventDefault();
+        const next = stepEffort(model, props.session?.effort, event.code === "Period" ? 1 : -1);
+        if (!next) return;
+        props.onSetModel(model.value, next);
       }
     },
-    [applyCompletion, escArmed, move, popover, props, reset, submit]
+    [activeModel, applyCompletion, escArmed, move, popover, props, reset, submit]
   );
 
   const onPaste = useCallback((event: React.ClipboardEvent) => {
@@ -282,46 +343,36 @@ export function Composer(props: ComposerProps) {
           first row sits at the top edge where the eye and the arrow keys both
           start, and a two-item list is two items tall instead of four. */}
       {popover.kind ? (
-        <div className={`popover is-${popover.kind}`} role="listbox">
+        <PopoverSurface align="stretch" className={`pop-complete is-${popover.kind}`}>
           {popover.items.length === 0 ? (
-            <div className="popover-empty">
+            <MenuEmpty>
               {popover.kind === "command"
                 ? copy("supermux.harness.composer.commandEmpty")
                 : copy("supermux.harness.composer.mentionEmpty")}
-            </div>
+            </MenuEmpty>
           ) : (
-            <div className="popover-rows">
+            <CommandList>
               {popover.items.map((item, index) => (
-                <button
+                <CommandItem
                   key={item.id}
-                  type="button"
-                  className={`popover-item${index === popover.index ? " is-active" : ""}`}
-                  role="option"
-                  aria-selected={index === popover.index}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    applyCompletion(item.id);
-                  }}
-                >
-                  <span className="popover-label mono">{item.label}</span>
-                  {item.hint ? <span className="popover-hint mono">{item.hint}</span> : null}
-                  {item.detail ? <span className="popover-detail">{item.detail}</span> : null}
-                </button>
+                  label={item.label}
+                  hint={item.hint}
+                  detail={item.detail}
+                  active={index === popover.index}
+                  onPick={() => applyCompletion(item.id)}
+                />
               ))}
-            </div>
+            </CommandList>
           )}
-          <div className="popover-foot">
-            <span className="popover-kind">
+          <div className="ui-menu-foot">
+            <span className="pop-complete-kind">
               {popover.kind === "command"
                 ? copy("supermux.harness.composer.commandTitle")
                 : copy("supermux.harness.composer.mentionTitle")}
             </span>
-            <span className="popover-keys">
-              <kbd>↑↓</kbd>
-              <kbd>⏎</kbd>
-            </span>
+            <MenuKeys keys={["↑↓", "⏎"]} />
           </div>
-        </div>
+        </PopoverSurface>
       ) : null}
 
       <div className="composer-shell" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>

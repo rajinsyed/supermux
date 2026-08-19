@@ -212,19 +212,11 @@
   flex: 0 0 auto;
 }
 
-/* ---------- pills ---------- */
+/* ---------- pills ----------
 
-.menu {
-  position: relative;
-  min-width: 0;
-  display: flex;
-}
-
-.menu-trigger {
-  display: flex;
-  min-width: 0;
-  border-radius: var(--r-pill);
-}
+   `.menu` and `.menu-trigger` are declared in the kit (menu.css) — every
+   trigger in the pane is the same object, and this bar owns only what its own
+   pills look like. */
 
 /* Text-first controls — Cursor's grammar. At rest a pill is quiet ink with
    no bed; the bed appears only under the pointer. Semantic modes tint their
@@ -317,171 +309,21 @@
    rebuild: four identical 7px circles in four different colours said nothing
    about what separates the modes, and the row's leading BAR replaced them. */
 
-/* ---------- menus ----------
+/* ---------- menu geometry ----------
 
-   The bar sits at the BOTTOM of the pane, so popups open upward. Opaque on
-   purpose: they float over transcript content.
+   The MATERIAL (panel, rows, sections, footer, keys) is declared once in
+   menu.css and worn by every floating surface in the pane. What is left here is
+   geometry: how wide each of this bar's three panels is, and the one hue
+   treatment the permission rows carry. Round 4's version of this section was
+   240 lines re-declaring the same panel three times at three radii; that is
+   what made five menus opened from one bar look like five products. */
 
-   One material for all three (modes, sessions, overflow): an opaque panel, a
-   hairline, 4px of padding, and rows that own their own radius so the hover bed
-   sits INSIDE the panel's corners rather than squaring them off. No shadow —
-   the design system separates by edge, and a menu that floats over text is
-   already unmistakable. */
-
-.menu-pop {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  z-index: 40;
-  min-width: 216px;
-  max-width: 320px;
-  background: var(--popover-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: 4px;
-  max-height: min(420px, 60vh);
-  overflow-y: auto;
+.pop-more {
+  min-width: 208px;
 }
 
-.menu-pop.is-end {
-  right: 0;
-}
-
-.menu-pop.is-start {
-  left: 0;
-}
-
-/* Sections are separated by a hairline that stops short of the panel's own
-   edges, so it reads as a divider between groups rather than as a second
-   border cutting the panel in half. */
-.menu-section + .menu-section {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border-faint);
-}
-
-.menu-section-title {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 5px 8px 5px;
-}
-
-.menu-item {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  text-align: left;
-  padding: 6px 8px;
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
-  color: var(--text-soft);
-  gap: 1px;
-}
-
-.menu-item:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.menu-item:focus-visible {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.menu-item.is-active {
-  color: var(--text);
-}
-
-.menu-item.is-danger {
-  color: var(--danger);
-}
-
-.menu-item.is-danger:hover {
-  background: var(--danger-soft);
-}
-
-.menu-item.is-danger:focus-visible {
-  background: var(--danger-soft);
-}
-
-.menu-item-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.menu-item-icon {
-  display: inline-flex;
-  width: 14px;
-  justify-content: center;
-  flex: 0 0 auto;
-  color: var(--text-faint);
-}
-
-.menu-item:hover .menu-item-icon,
-.menu-item:focus-visible .menu-item-icon {
-  color: var(--text-muted);
-}
-
-.menu-item.is-danger .menu-item-icon {
-  color: var(--danger);
-}
-
-.menu-item-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menu-item-badge {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: var(--r-pill);
-  background: var(--surface-active);
-  color: var(--text-muted);
-  flex: 0 0 auto;
-}
-
-/* Reserved on every row, checked or not: without the slot, selecting a mode
-   pulls all four labels left as the check appears on a different one. */
-.menu-item-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  flex: 0 0 auto;
-  color: var(--claude);
-}
-
-.menu-item-detail {
-  font-size: 11px;
-  color: var(--text-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Rows WITH an icon indent their detail under the label; rows without one
-   (the mode menu, whose hue bar is the leading mark) start it on the label's
-   own left edge. The old blanket `padding-left: 22px` indented every detail
-   under a glyph slot that was not there. */
-.menu-item:has(.menu-item-icon) .menu-item-detail {
-  padding-left: 22px;
-}
-
-.menu-loading,
-.menu-empty {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 10px 9px;
-  font-size: 12px;
-  color: var(--text-muted);
+.pop-modes {
+  min-width: 262px;
 }
 
 /* ---------- permission modes ----------
@@ -489,12 +331,8 @@
    Four rows, name over consequence, each carrying its own hue as a LEADING BAR
    rather than a dot. The modes differ in how much they let through — a graded
    left edge says that at a glance, where four identical grey dots said nothing
-   and the tinted text alone (the previous build) put the colour on the word
-   instead of on the choice. */
-
-.menu-modes .menu-pop {
-  min-width: 258px;
-}
+   and the tinted text alone put the colour on the word instead of on the
+   choice. */
 
 .mode-item {
   position: relative;
@@ -534,60 +372,58 @@
 
 /* The live row's own hue on the check, so the strip's coloured pill and the
    checked row in the menu are visibly the same fact. */
-.mode-item.is-acceptEdits .menu-item-check {
+.mode-item.is-acceptEdits .ui-menu-check {
   color: var(--success);
 }
 
-.mode-item.is-plan .menu-item-check {
+.mode-item.is-plan .ui-menu-check {
   color: var(--violet);
 }
 
-.mode-item.is-bypassPermissions .menu-item-check {
+.mode-item.is-bypassPermissions .ui-menu-check {
   color: var(--danger);
 }
 
 /* ---------- sessions browser ----------
 
    A list, not a table of buttons. The ROW is Resume — the primary action on a
-   list of sessions is "open this one" — and Fork / New pane are icon buttons
-   at the trailing edge, revealed on hover or focus. The previous build gave
-   every row three permanent 11px text buttons, so twenty sessions were sixty
-   controls and the titles they belonged to were the smallest thing on screen. */
+   list of sessions is "open this one" — and Fork / New pane are icon buttons at
+   the trailing edge, revealed on hover or focus.
 
-.menu-sessions .menu-pop {
-  min-width: 312px;
-  max-width: 368px;
-  padding: 0;
-  overflow: hidden;
-}
+   The rows are the kit's rows in all but name: same 28px line, same 7px radius,
+   same hover bed. They cannot literally BE `.ui-menu-item`s because each row
+   holds two extra controls beside its label, which the kit's single-action row
+   deliberately does not model. */
 
-.sessions-pop {
-  display: flex;
-  flex-direction: column;
+.pop-sessions {
+  min-width: 320px;
+  max-width: 380px;
   max-height: min(430px, 62vh);
-  min-height: 0;
 }
 
 .sessions-head {
   flex: 0 0 auto;
-  padding: 6px 6px 4px;
+  padding: 2px 2px 5px;
 }
 
-.sessions-search {
+/* The kit's field: one hairline, one radius, the panel's own sunken bed. */
+.ui-menu-input {
   width: 100%;
-  padding: 6px 10px;
+  height: 30px;
+  padding: 0 9px;
   border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-row);
   background: var(--input-bg);
   font-size: 12.5px;
   color: var(--text);
+  transition: border-color var(--dur) var(--ease);
 }
 
-.sessions-search::placeholder {
+.ui-menu-input::placeholder {
   color: var(--text-faint);
 }
 
-.sessions-search:focus-visible {
+.ui-menu-input:focus-visible {
   outline: none;
   box-shadow: none;
   border-color: var(--border-strong);
@@ -596,7 +432,7 @@
 .sessions-list {
   list-style: none;
   margin: 0;
-  padding: 0 6px 6px;
+  padding: 0;
   overflow-y: auto;
   min-height: 0;
   display: flex;
@@ -609,7 +445,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-row);
+  transition: background var(--dur) var(--ease);
 }
 
 .session-row:hover,
@@ -624,12 +461,12 @@
   flex: 1;
   min-width: 0;
   text-align: left;
-  padding: 7px 8px;
-  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  border-radius: var(--r-row);
 }
 
 .session-title {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-soft);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -642,7 +479,7 @@
 }
 
 .session-meta {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -650,13 +487,13 @@
 }
 
 /* Hidden until the row is under the pointer or holds focus, so the list reads
-   as titles. They stay in the tab order throughout — `:focus-within` on the
-   row is what brings them back for a keyboard user. */
+   as titles. They stay in the tab order throughout — `:focus-within` on the row
+   is what brings them back for a keyboard user. */
 .session-actions {
   display: flex;
   gap: 1px;
   flex: 0 0 auto;
-  padding-right: 5px;
+  padding-right: 4px;
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
 }
@@ -686,27 +523,16 @@
   color: var(--text);
 }
 
-/* Pinned, so it does not scroll away behind twenty-four rows — and separated
-   by the same sunken bed the completion popover's footer uses, so "make a new
-   one" is visibly not one of the sessions in the list. */
-.sessions-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding: 5px 8px 5px 6px;
-  border-top: 1px solid var(--border-faint);
-  background: var(--surface-sunken);
-}
-
+/* The footer's one action, filling it: the foot is not a caption row. */
 .sessions-new {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   flex: 1;
   min-width: 0;
-  padding: 5px 7px;
-  border-radius: var(--r-sm);
+  margin: -3px -5px;
+  padding: 5px;
+  border-radius: var(--r-row);
   font-size: 12.5px;
   color: var(--text-soft);
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
@@ -725,15 +551,6 @@
   color: var(--claude);
 }
 
-.sessions-legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  font-size: 10.5px;
-  color: var(--text-faint);
-}
-
 /* ---------- context ring ---------- */
 
 .ctx {
@@ -747,7 +564,7 @@
   align-items: center;
   gap: 4px;
   padding: 3px 5px;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-row);
 }
 
 .ctx-btn:hover {
@@ -776,23 +593,17 @@
   stroke: var(--danger-dot);
 }
 
-/* The breakdown panel.
+/* The breakdown panel: the kit's surface, with its own inner spacing.
 
    One figure, then the accounting behind it. The percentage is set at display
    size because it is the thing being decided on; the token count is its
-   evidence and sits under it. Each category then gets its own share bar, so
-   the line that is actually eating the window is visible without reading five
+   evidence and sits under it. Each category then gets its own share bar, so the
+   line that is actually eating the window is visible without reading five
    numbers and comparing them by hand. */
 
-.ctx-pop {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  z-index: 40;
+.pop-ctx {
   width: 254px;
-  background: var(--popover-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  min-width: 0;
   padding: 12px 12px 11px;
   font-size: 12px;
 }
@@ -806,10 +617,8 @@
 }
 
 .ctx-pop-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--text-faint);
 }
 
@@ -824,11 +633,11 @@
   color: var(--text);
 }
 
-.ctx-pop.is-warn .ctx-pop-figure {
+.pop-ctx.is-warn .ctx-pop-figure {
   color: var(--warning);
 }
 
-.ctx-pop.is-danger .ctx-pop-figure {
+.pop-ctx.is-danger .ctx-pop-figure {
   color: var(--danger);
 }
 

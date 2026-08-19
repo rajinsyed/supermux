@@ -79,6 +79,7 @@ extension SupermuxHarnessWebRendererCoordinator {
                 images: images,
                 uuid: try request.requiredString("uuid")
             )
+            dismissHarnessUnreadOnUserInteraction()
             return ["sent": true]
         case "harness.interrupt":
             try await controller.interrupt(cancelQueued: request.bool("cancelQueued") ?? false)
@@ -303,6 +304,31 @@ extension SupermuxHarnessWebRendererCoordinator {
 
     private func postNotificationIfUnfocused(title: String, body: String) {
         deliverHarnessNotification(title: title, subtitle: "", body: body, category: nil)
+    }
+
+    /// Item 10: the harness equivalent of a terminal keystroke clearing unread.
+    ///
+    /// A terminal pane calls `dismissNotificationOnTerminalInteraction` from
+    /// `GhosttyTerminalView`'s key-down and pointer-down handlers, which is what
+    /// makes typing dismiss a pane's unread mark (including the focused-read
+    /// indicator a turn-complete notification leaves behind when it lands on the
+    /// already-focused pane). The harness pane's keystrokes go to a WKWebView,
+    /// so nothing on that path runs. Submitting a prompt is the harness's
+    /// unambiguous "the user is here and reading this" signal, so it dismisses
+    /// through the SAME shared model — `NotificationDismissalModel`, with the
+    /// `.terminalInteraction` context — rather than poking unread state
+    /// directly. Pointer-down needs no extra call: it already routes through
+    /// `onRequestPanelFocus` → `Workspace.focusPanel`, whose focus broadcast
+    /// reaches `dismissPanelNotificationOnFocus`.
+    func dismissHarnessUnreadOnUserInteraction() {
+        guard let location = AppDelegate.shared?.workspaceContainingPanel(
+            panelId: panelId,
+            preferredWorkspaceId: workspaceId
+        ) else { return }
+        _ = location.tabManager.dismissNotificationOnTerminalInteraction(
+            tabId: location.workspace.id,
+            surfaceId: panelId
+        )
     }
 
     func postTurnCompleteNotificationIfUnfocused(_ frame: SupermuxHarnessResultFrame) {

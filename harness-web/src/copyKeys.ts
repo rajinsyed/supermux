@@ -104,6 +104,8 @@ export const copyDefaults = {
   "supermux.harness.turn.earlierMessages": "{count} earlier messages",
   "supermux.harness.turn.turnNumber": "Turn {seq}",
   "supermux.harness.turn.exportTitle": "Claude session",
+  "supermux.harness.turn.commandChip": "Slash command",
+  "supermux.harness.divider.continued": "Continued from a previous conversation",
 
   "supermux.harness.thinking.label": "Thinking",
   // `thinking.summary` (tokens + duration) retired with the per-step metric
@@ -401,7 +403,10 @@ export const copyDefaults = {
   // Abbreviated because it shares a 11px meta line with a relative time and a
   // branch name; the full word would push the branch out of every row.
   "supermux.harness.header.sessionMessages": "{count} msgs",
-  "supermux.harness.header.resume": "Resume",
+  // `header.resume` retired with the sessions panel's legend row. The foot of
+  // that panel is ONE action (New session) rather than an action plus a caption
+  // explaining a different one; what the row's own click does is on the row, as
+  // its title. Its Swift and xcstrings rows should go with it.
   "supermux.harness.header.resumeHint": "Replaces this pane's session",
   "supermux.harness.header.fork": "Fork",
   "supermux.harness.header.forkHint": "Branch into a copy, leaving this one untouched",
@@ -421,6 +426,11 @@ export const copyDefaults = {
   // list now. Their Swift and xcstrings rows should go with them.
   "supermux.harness.model.reasoning": "Reasoning",
   "supermux.harness.model.restoreDefaults": "Restore defaults",
+  // The two gestures that move reasoning without opening the panel, named on the
+  // trigger's own tooltip: a wheel over a text label is not a discoverable
+  // control unless something says so, and Option+,/. is the CLI's own pair of
+  // bindings, which a user arriving from the terminal will reach for first.
+  "supermux.harness.model.effortWheelHint": "Scroll or press ⌥, / ⌥. to change reasoning",
 
   "supermux.harness.binary.title": "Claude binary",
   "supermux.harness.binary.resolved": "Currently using",

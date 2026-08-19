@@ -62,6 +62,7 @@ export function startUserTurn(
     userImages: images,
     userUuid: uuid,
     startedAtMs: atMs,
+    lastFrameAtMs: atMs,
     state: "streaming",
     blocks: [],
     folded: false,
@@ -69,6 +70,97 @@ export function startUserTurn(
   };
   const session = closed.session.title ? closed.session : { ...closed.session, title: deriveTitle(text) };
   return { ...closed, session, turns: closed.turns.concat(turn), revision: closed.revision + 1 };
+}
+
+/**
+ * A LOCAL slash command (`/model opus[1m]`), reconstructed from the transcript's
+ * `<command-name>/<command-args>` record. It is born COMPLETE: a local command
+ * runs inside the CLI and no `result` frame will ever settle it, so a streaming
+ * command turn would spin "Working…" forever. It also never titles the session —
+ * "/model" is not a topic.
+ */
+export function startCommandTurn(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  name: string,
+  args: string | undefined,
+  atMs: number,
+  uuid?: string
+): TranscriptModel {
+  const closed = closeOpenTurns(model, atMs, "complete");
+  index.nextSeq += 1;
+  const turn: Turn = {
+    id: uuid ?? `turn:${closed.generation}:${index.nextSeq}`,
+    seq: index.nextSeq,
+    command: { name, args },
+    userUuid: uuid,
+    startedAtMs: atMs,
+    lastFrameAtMs: atMs,
+    endedAtMs: atMs,
+    state: "complete",
+    blocks: [],
+    folded: false,
+    revision: 0
+  };
+  return { ...closed, turns: closed.turns.concat(turn), revision: closed.revision + 1 };
+}
+
+/**
+ * The compact-summary continuation preamble ("This session is being continued
+ * from a previous conversation…"). The summary text is machine-written context
+ * for the MODEL, not something the user said — rendering it as a giant user
+ * bubble is the bug. It becomes a quiet divider, and the turn stays streaming
+ * because the assistant's continuation frames follow it and belong to it.
+ */
+export function startContinuationTurn(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  atMs: number,
+  uuid?: string
+): TranscriptModel {
+  const closed = closeOpenTurns(model, atMs, "complete");
+  index.nextSeq += 1;
+  const divider: Block = {
+    kind: "divider",
+    key: `continued:${uuid ?? index.nextSeq}`,
+    variant: "continued"
+  };
+  const turn: Turn = {
+    id: uuid ?? `turn:${closed.generation}:${index.nextSeq}`,
+    seq: index.nextSeq,
+    userUuid: uuid,
+    startedAtMs: atMs,
+    lastFrameAtMs: atMs,
+    state: "streaming",
+    blocks: [divider],
+    folded: false,
+    revision: 0
+  };
+  return { ...closed, turns: closed.turns.concat(turn), revision: closed.revision + 1 };
+}
+
+/**
+ * A local command's output, appended to the turn it belongs to — the command
+ * chip immediately above it. Never opens or reopens a turn: `<local-command-
+ * stdout>` follows its command record, and routing it through `ensureTurn`
+ * would reopen a completed turn and leave it streaming forever.
+ */
+export function appendCommandOutput(
+  model: TranscriptModel,
+  text: string,
+  key: string,
+  atMs: number
+): TranscriptModel {
+  const target = model.turns.length - 1;
+  if (target < 0) return model;
+  const turn = model.turns[target];
+  const block: Block = { kind: "commandOutput", key, text };
+  return withTurn(model, target, {
+    ...turn,
+    blocks: turn.blocks.concat(block),
+    lastFrameAtMs: atMs,
+    revision: turn.revision + 1
+  });
 }
 
 export function ensureTurn(
@@ -104,7 +196,10 @@ export function ensureTurn(
     // reads as a new attempt.
     const lastIndex = model.turns.length - 1;
     const last = model.turns[lastIndex];
-    if (last && last.state === "complete") {
+    // A COMMAND turn never reopens: it is a `/model` chip, born complete, and
+    // assistant output arriving after it belongs to a new turn — filing the
+    // model's next answer under a slash-command chip misattributes both.
+    if (last && last.state === "complete" && !last.command) {
       const reopened: Turn = {
         ...last,
         state: "streaming",
@@ -148,8 +243,14 @@ export function closeOpenTurns(
   const turns = model.turns.map((turn) => {
     if (turn.state !== "streaming") return turn;
     changed = true;
+    // The turn ends when it last PRODUCED something, not when this boundary
+    // happens to run. Replayed history is closed at a process boundary days
+    // after its frames were written, and a live turn closed by a crash stopped
+    // at its last output; either way `atMs` here would report a span the work
+    // never had ("Worked for 2d" on a replayed session was exactly that).
+    const endAt = turn.lastFrameAtMs ?? atMs;
     return {
-      ...settleTurn(turn, atMs),
+      ...settleTurn(turn, endAt),
       state,
       folded: turn.foldOverride !== undefined ? turn.foldOverride : state === "complete"
     };

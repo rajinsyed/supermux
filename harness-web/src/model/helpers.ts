@@ -101,12 +101,46 @@ export function resolveModel(
   session: Pick<SessionMeta, "models" | "model">,
   cachedModels: ModelDescriptor[] | undefined
 ): ModelDescriptor | undefined {
-  return (
+  const active =
     activeModelFor(session) ??
     (cachedModels && cachedModels.length > 0
       ? activeModelFor({ models: cachedModels, model: session.model })
-      : undefined)
-  );
+      : undefined);
+  if (active) return active;
+  // NO selection at all — a pane that has never started a process and carries
+  // no restore. The process this pane spawns will run the catalog's "default"
+  // row (the live CLI's catalog carries one: default | opus[1m] | sonnet |
+  // haiku), so naming that row is the honest answer, where the bare "Model"
+  // placeholder is a blank the trigger shows the user for no reason.
+  if (!session.model) {
+    return (
+      session.models.find((m) => m.value === "default") ??
+      cachedModels?.find((m) => m.value === "default")
+    );
+  }
+  return undefined;
+}
+
+/**
+ * The session, having adopted a model the WIRE reported — `system/init`'s
+ * `model`, or a main-thread assistant frame's `message.model`. A carried effort
+ * belongs to the model it was selected for: the picker uses a selector
+ * ("sonnet") while the wire reports the resolved id ("claude-sonnet-5"), so the
+ * two are compared through the catalog before deciding the session actually
+ * changed models and the effort must be dropped.
+ */
+export function adoptSessionModel(
+  session: SessionMeta,
+  cachedModels: ModelDescriptor[] | undefined,
+  wireModel: string
+): SessionMeta {
+  const selected = resolveModel(session, cachedModels);
+  const sameResolvedModel =
+    selected?.value === wireModel || selected?.resolvedModel === wireModel;
+  if (wireModel === session.model || sameResolvedModel) {
+    return { ...session, model: wireModel };
+  }
+  return { ...session, model: wireModel, effort: undefined };
 }
 
 export function isPlainObject(value: unknown): value is JsonObject {

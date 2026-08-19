@@ -322,13 +322,37 @@ public struct SupermuxHarnessSessionDiscovery {
                 }
             }
             guard !foundRecordedDirectory || foundMatchingDirectory else { continue }
+            // The leaf pointers exist to pick a BRANCH, not to cut the tail: a
+            // `last-prompt` written before a CLI restart can point mid-chain, and
+            // preferring it would silently drop every record after the restart.
+            // A leaf that is an ancestor of the newest main-chain record selects
+            // the same branch that record already terminates, so it loses to it.
+            let preferred = [lastPromptLeaf, summaryLeaf].compactMap { $0 }.filter { leaf in
+                !isAncestor(leaf, ofDescendant: lastMainUUID, in: linksByUUID)
+            }
             return SessionHistoryIndex(
                 fileURL: file,
                 linksByUUID: linksByUUID,
-                preferredLeafUUIDs: [lastPromptLeaf, summaryLeaf, lastMainUUID].compactMap { $0 }
+                preferredLeafUUIDs: preferred + [lastMainUUID].compactMap { $0 }
             )
         }
         return nil
+    }
+
+    /// Whether `leaf` sits strictly above `descendant` on its parent chain.
+    private func isAncestor(
+        _ leaf: String,
+        ofDescendant descendant: String?,
+        in linksByUUID: [String: SessionRecordLink]
+    ) -> Bool {
+        guard let descendant, descendant != leaf else { return false }
+        var cursor = linksByUUID[descendant]?.parentUUID
+        var visited: Set<String> = [descendant]
+        while let uuid = cursor, visited.insert(uuid).inserted {
+            if uuid == leaf { return true }
+            cursor = linksByUUID[uuid]?.parentUUID
+        }
+        return false
     }
 
     private func safeProjectDirectory(_ directory: URL) -> URL? {

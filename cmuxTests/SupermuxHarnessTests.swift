@@ -166,6 +166,95 @@ struct SupermuxHarnessTests {
         #expect(decoded.claudeHarness?.sessionId == "abc")
     }
 
+    // MARK: - Item 9: workspace-tab branch for a harness-only workspace
+
+    /// The workspace-tab / sidebar branch chip reads
+    /// `sidebarGitBranchesInDisplayOrder`, which projects `panelGitBranches`.
+    /// A harness pane must be able to carry a branch there exactly like a
+    /// terminal pane, otherwise a project-nested workspace whose only pane is a
+    /// harness pane shows no branch at all.
+    @MainActor
+    @Test
+    func testHarnessOnlyWorkspaceSurfacesItsBranchInTheTabChip() throws {
+        let workspace = Workspace(workingDirectory: "/Users/alice/project")
+        let paneId = try #require(workspace.bonsplitController.focusedPaneId)
+        let terminalPanelId = try #require(workspace.focusedPanelId)
+        let harnessPanel = try #require(workspace.newSupermuxHarnessSurface(
+            inPane: paneId,
+            workingDirectory: "/Users/alice/project",
+            focus: true
+        ))
+        // Close the seed terminal so the harness pane is the ONLY pane, which is
+        // the exact repro condition from the report.
+        _ = workspace.closePanel(terminalPanelId, force: true)
+        #expect(workspace.panels.count == 1)
+        #expect(workspace.panels[harnessPanel.id] is SupermuxHarnessPanel)
+
+        // The git probe is what would normally write this; drive its projection
+        // directly so the test covers the presentation path without git I/O.
+        workspace.updatePanelGitBranch(panelId: harnessPanel.id, branch: "feature/harness", isDirty: false)
+
+        #expect(workspace.supermuxSidebarBranch == "feature/harness")
+        #expect(workspace.sidebarGitBranchesInDisplayOrder().first?.branch == "feature/harness")
+    }
+
+    /// The actual bug: nothing ever SCHEDULED a git probe for a harness pane,
+    /// because every scheduling site keys on `TerminalPanel`. Assert the fork's
+    /// harness-specific scheduler recognizes the pane (and ignores others), so a
+    /// future refactor that drops the call is caught here.
+    @MainActor
+    @Test
+    func testHarnessGitProbeSchedulingTargetsOnlyHarnessPanes() throws {
+        let workspace = Workspace(workingDirectory: "/Users/alice/project")
+        let paneId = try #require(workspace.bonsplitController.focusedPaneId)
+        let terminalPanelId = try #require(workspace.focusedPanelId)
+        let harnessPanel = try #require(workspace.newSupermuxHarnessSurface(
+            inPane: paneId,
+            workingDirectory: "/Users/alice/project",
+            focus: true
+        ))
+
+        // Detached workspace (no owning TabManager): these must be safe no-ops
+        // rather than traps, since session restore builds panels pre-attach.
+        workspace.scheduleSupermuxHarnessGitMetadataProbe(panelId: harnessPanel.id, reason: "test")
+        workspace.scheduleSupermuxHarnessGitMetadataProbe(panelId: terminalPanelId, reason: "test")
+        workspace.scheduleSupermuxHarnessGitMetadataProbes(reason: "test")
+
+        // The harness pane must expose the project cwd the probe would read.
+        #expect(workspace.panelDirectories[harnessPanel.id] == "/Users/alice/project")
+        #expect(harnessPanel.workingDirectory == "/Users/alice/project")
+    }
+
+    // MARK: - Item 10: harness pane unread indicator
+
+    /// Harness panes must participate in the same per-panel unread state
+    /// terminal panes use, so the pane indicator and the tab badge agree.
+    @MainActor
+    @Test
+    func testHarnessPaneParticipatesInPanelUnreadState() throws {
+        let workspace = Workspace(workingDirectory: "/Users/alice/project")
+        let paneId = try #require(workspace.bonsplitController.focusedPaneId)
+        let harnessPanel = try #require(workspace.newSupermuxHarnessSurface(
+            inPane: paneId,
+            workingDirectory: "/Users/alice/project",
+            focus: false
+        ))
+
+        workspace.markPanelUnread(harnessPanel.id)
+        #expect(workspace.manualUnreadPanelIds.contains(harnessPanel.id))
+        #expect(Workspace.shouldShowUnreadIndicator(
+            hasUnreadNotification: false,
+            hasPanelUnreadIndicator: workspace.manualUnreadPanelIds.contains(harnessPanel.id)
+        ))
+
+        workspace.markPanelRead(harnessPanel.id)
+        #expect(!workspace.manualUnreadPanelIds.contains(harnessPanel.id))
+        #expect(!Workspace.shouldShowUnreadIndicator(
+            hasUnreadNotification: false,
+            hasPanelUnreadIndicator: workspace.manualUnreadPanelIds.contains(harnessPanel.id)
+        ))
+    }
+
     @MainActor
     @Test
     func testRejectedFileRestoreReturnsDegradedReplyAndRestartsConversation() async throws {

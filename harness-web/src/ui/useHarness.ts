@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getBridge, installReceiver, type HarnessBridge, type StartParams } from "../bridge";
+import { resolveModel } from "../model/helpers";
 import { HarnessStore } from "../model/store";
 import type { ImageAttachment, RelayTarget, TranscriptModel } from "../model/types";
 import type {
@@ -104,6 +105,19 @@ export function useHarness(store: HarnessStore): HarnessController {
   /** Whether the pane's initial native permission snapshot has been projected into the store. */
   const permissionModeBootstrapComplete = useRef(false);
   /**
+   * Whether the restore snapshot's MODEL has been projected into the store.
+   *
+   * This is the round-5 "trigger says Model" bug: the last fix made `newSession`
+   * capture `session.model` before reset, but on a restored pane that had not
+   * started a process NOTHING had ever written `session.model` — the restored
+   * model lived only in `context.restore.model`, which `startOptions` read as a
+   * wire fallback while the trigger read the empty store. So the pill showed the
+   * bare placeholder, and New Session carried nothing. The snapshot's model is
+   * projected into the store once, exactly like the permission mode above, and
+   * from then on the store is the single authority every surface already reads.
+   */
+  const modelBootstrapComplete = useRef(false);
+  /**
    * Set only by the shared user mutation path. This is intent, not a second copy
    * of the mode: the authoritative value remains `session.permissionMode`.
    */
@@ -137,6 +151,15 @@ export function useHarness(store: HarnessStore): HarnessController {
           }
           permissionModeBootstrapComplete.current = true;
         }
+        if (!modelBootstrapComplete.current) {
+          const restoredModel = next.restore?.model;
+          // Only while the store has no answer of its own: an init frame or a
+          // picker choice that already landed outranks the serialized snapshot.
+          if (restoredModel && !store.getSnapshot().session.model) {
+            store.dispatch({ kind: "setModel", model: restoredModel });
+          }
+          modelBootstrapComplete.current = true;
+        }
         const sessionId = next.restore?.sessionId;
         if (sessionId && !snapshotRetired.current && restoredSessionId.current !== sessionId) {
           restoredSessionId.current = sessionId;
@@ -150,6 +173,9 @@ export function useHarness(store: HarnessStore): HarnessController {
               if (result.truncated) store.dispatch({ kind: "historyTruncated" });
               store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
               store.flushNow();
+              // Settle the replayed turns (no `result` frames exist on disk)
+              // and adopt the replayed session's own model for the trigger.
+              store.dispatch({ kind: "historyReplayed" });
               if (selectedMode) {
                 store.dispatch({ kind: "setPermissionMode", mode: selectedMode });
               }
@@ -214,14 +240,19 @@ export function useHarness(store: HarnessStore): HarnessController {
 
   const startOptions = useCallback(
     (params: StartParams): StartParams => {
-      const session = store.getSnapshot().session;
+      const snapshot = store.getSnapshot();
+      const session = snapshot.session;
+      // The store is the authoritative selection whether it came from an init
+      // frame, the model picker, or a resumed session's own history. Sent as
+      // the catalog SELECTOR when one resolves — `session.model` often holds a
+      // resolved id ("claude-opus-5") straight off the wire, and the selector
+      // ("opus") is the form every model input takes.
+      const selected = session.model
+        ? resolveModel(session, snapshot.cachedModels)?.value ?? session.model
+        : undefined;
       return {
         ...params,
-        // The store is the authoritative selection whether it came from an init
-        // frame or the model picker. Keeping a second pending-only copy dropped
-        // the CLI-selected model on New Session and let an old explicit choice
-        // override the init frame replayed for a resumed session.
-        model: params.model ?? session.model ?? context?.restore?.model,
+        model: params.model ?? selected ?? context?.restore?.model,
         effort: params.effort ?? session.effort,
         permissionMode:
           params.permissionMode ??
@@ -456,10 +487,15 @@ export function useHarness(store: HarnessStore): HarnessController {
               store.dispatch({ kind: "reset" });
               if (result.truncated) store.dispatch({ kind: "historyTruncated" });
               store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
-              // The target session's init frame is its model authority. Drain the
-              // replay before building restart params so a selection from the old
-              // session cannot be sent back over the session being resumed.
+              // Drain the replay before building restart params so a selection
+              // from the old session cannot be sent back over the session being
+              // resumed. History carries NO init frame — the disk mapper only
+              // forwards user/assistant records — so `historyReplayed` is what
+              // settles the replayed turns and adopts the resumed session's own
+              // last-used model (its last assistant frame) for the trigger and
+              // the restart params.
               store.flushNow();
+              store.dispatch({ kind: "historyReplayed" });
             })
             .catch(() => undefined)
         : Promise.resolve();
