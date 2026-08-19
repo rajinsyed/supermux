@@ -307,8 +307,14 @@ export function installMockBridge(store: HarnessStore): Scenario {
         cachedModels,
         // What the native side reads from the CLI's settings files — the model
         // and effort a flagless start actually runs (item 12/5). The dev pane
-        // mirrors a machine whose ~/.claude/settings.json picks sonnet at high.
-        defaults: { model: "sonnet", effort: "high" }
+        // mirrors a machine whose ~/.claude/settings.json picks sonnet at high
+        // and whose last harness session ran opus at xhigh (item A: lastUsed
+        // outranks the settings value as the fresh-pane default).
+        defaults: {
+          model: "sonnet",
+          effort: "high",
+          lastUsed: { model: "opus", effort: "xhigh" }
+        }
       };
     },
     async listSessions() {

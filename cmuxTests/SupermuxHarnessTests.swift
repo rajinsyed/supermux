@@ -972,6 +972,84 @@ struct SupermuxHarnessTests {
         ) == nil)
     }
 
+    /// Item A (dogfood round 8): the machine-wide LAST-USED model — recorded on
+    /// every model use (a start that carried one, a set_model ack, an init
+    /// frame) into a UserDefaults store shared across panes, and delivered as
+    /// `context.defaults.lastUsed` so a new pane defaults to the last model the
+    /// user actually ran instead of settings.json's stale value. The real CLI
+    /// forgets a plain /model switch on exit ("for this session only"), which
+    /// is exactly why the harness has to remember it.
+    @MainActor
+    @Test
+    func testLastUsedModelIsRecordedOnUseAndSharedAcrossControllers() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(
+            restoreState: nil,
+            defaults: defaults,
+            process: process
+        )
+        defer { controller.close() }
+
+        // Nothing recorded yet: contextDefaults has no lastUsed.
+        #expect(controller.contextDefaults()?["lastUsed"] == nil)
+
+        // A start that carries a model records it.
+        _ = try await controller.start(
+            resumeSessionId: nil,
+            forkSession: false,
+            model: "opus[1m]",
+            permissionMode: nil,
+            effort: "high"
+        )
+        var lastUsed = controller.contextDefaults()?["lastUsed"] as? [String: Any]
+        #expect(lastUsed?["model"] as? String == "opus[1m]")
+        #expect(lastUsed?["effort"] as? String == "high")
+
+        // A live set_model ack updates it.
+        try await controller.setModel(model: "sonnet", effort: "low")
+        lastUsed = controller.contextDefaults()?["lastUsed"] as? [String: Any]
+        #expect(lastUsed?["model"] as? String == "sonnet")
+        #expect(lastUsed?["effort"] as? String == "low")
+
+        // An init frame naming another model (a /model slash command emits a
+        // fresh init and never passes through setModel) updates the model and
+        // PRESERVES the stored effort — init frames carry none.
+        try process.emitLine([
+            "type": "system",
+            "subtype": "init",
+            "session_id": "session-2",
+            "model": "gpt-5.6-sol",
+        ])
+        lastUsed = controller.contextDefaults()?["lastUsed"] as? [String: Any]
+        #expect(lastUsed?["model"] as? String == "gpt-5.6-sol")
+        #expect(lastUsed?["effort"] as? String == "low")
+
+        // A SECOND controller on the same defaults (a new pane) sees it too:
+        // the store is machine-wide, not per-pane.
+        let otherProcess = MockSupermuxHarnessProcessSession()
+        let otherPane = makeController(
+            restoreState: nil,
+            defaults: defaults,
+            process: otherProcess
+        )
+        defer { otherPane.close() }
+        let otherLastUsed = otherPane.contextDefaults()?["lastUsed"] as? [String: Any]
+        #expect(otherLastUsed?["model"] as? String == "gpt-5.6-sol")
+
+        // A flagless start records nothing — no model was named.
+        _ = try await otherPane.start(
+            resumeSessionId: nil,
+            forkSession: false,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+        let unchanged = otherPane.contextDefaults()?["lastUsed"] as? [String: Any]
+        #expect(unchanged?["model"] as? String == "gpt-5.6-sol")
+    }
+
     @MainActor
     private func makeController(
         restoreState: SessionSupermuxHarnessPanelSnapshot?,

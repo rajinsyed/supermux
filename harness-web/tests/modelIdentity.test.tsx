@@ -247,6 +247,8 @@ interface Script {
   setModelCalls: { model: string; effort?: string }[];
   historyEvents: ProtocolLine[];
   restore?: { sessionId: string; model?: string };
+  /** context.defaults.lastUsed — the machine-wide last-used model. */
+  lastUsed?: { model: string; effort?: EffortLevel };
   /**
    * When set, the RESTORED session's history load stalls until
    * `releaseHistory()` runs — the shape of the real bug: the user's restored
@@ -269,7 +271,7 @@ function makeBridge(script: Script): HarnessBridge {
         restore: script.restore,
         cachedModels: CATALOG,
         // The user's ~/.claude/settings.json: model gpt-5.6-sol, effortLevel xhigh.
-        defaults: { model: "gpt-5.6-sol", effort: "xhigh" }
+        defaults: { model: "gpt-5.6-sol", effort: "xhigh", lastUsed: script.lastUsed }
       };
     },
     async listSessions() {
@@ -627,5 +629,92 @@ describe("bug 1 round 2: a late restore replay cannot clobber the user's pick", 
     });
     // snapshotRetired: the stale restore reply is dropped.
     expect(triggerLabel(store)).toBe("Opus (1M context)");
+  });
+});
+
+/* =========================================================================
+   Item A — a new pane defaults to the LAST MODEL USED, not settings.json.
+
+   "when i open a new pane the default model shown as selected is always gpt
+   5.6 sol EH… it should change the default to the last model i used (in any
+   session)". The native side records every model a session actually runs
+   (start-with-model, set_model ack, init frame) into a machine-wide
+   UserDefaults store and delivers it as context.defaults.lastUsed; the web
+   layer ranks it above the settings-file default, below everything
+   session-specific.
+   ========================================================================= */
+
+describe("item A: a fresh pane defaults to the machine-wide last-used model", () => {
+  test("lastUsed outranks the settings default on a fresh pane — display AND start params", async () => {
+    const script: Script = {
+      restartParams: [],
+      startParams: [],
+      setModelCalls: [],
+      historyEvents: [],
+      lastUsed: { model: "opus[1m]", effort: "high" }
+    };
+    const { store, out } = await mount(script);
+
+    // The trigger names the last-used model, not settings.json's gpt-5.6-sol.
+    expect(triggerLabel(store)).toBe("Opus (1M context)");
+    expect(triggerEffort(store)).toBe("high");
+
+    // And a first send RUNS it too: display and reality must not diverge.
+    await act(async () => {
+      out.current!.send("hello", []);
+    });
+    await flush();
+    expect(script.startParams[0]?.model).toBe("opus[1m]");
+    expect(script.startParams[0]?.effort).toBe("high");
+  });
+
+  test("with NO lastUsed recorded, the settings default still answers and rides the start", async () => {
+    const script: Script = { restartParams: [], startParams: [], setModelCalls: [], historyEvents: [] };
+    const { store, out } = await mount(script);
+    expect(triggerLabel(store)).toBe("GPT 5.6 Sol");
+    await act(async () => {
+      out.current!.send("hello", []);
+    });
+    await flush();
+    expect(script.startParams[0]?.model).toBe("gpt-5.6-sol");
+    expect(script.startParams[0]?.effort).toBe("xhigh");
+  });
+
+  test("everything session-specific still outranks lastUsed", async () => {
+    const script: Script = {
+      restartParams: [],
+      startParams: [],
+      setModelCalls: [],
+      historyEvents: [],
+      lastUsed: { model: "opus[1m]" }
+    };
+    const { store, out } = await mount(script);
+
+    // A user pick:
+    act(() => {
+      out.current!.setModel("sonnet", undefined);
+    });
+    expect(triggerLabel(store)).toBe("Sonnet");
+
+    // A live init frame (spelled as a resolved id):
+    act(() => {
+      store.receive([{ kind: "protocol", line: initLine("claude-sonnet-5", "live-a") }]);
+      store.flushNow();
+    });
+    expect(triggerLabel(store)).toBe("Sonnet");
+  });
+
+  test("a restore snapshot's model outranks lastUsed on a restored pane", async () => {
+    const script: Script = {
+      restartParams: [],
+      startParams: [],
+      setModelCalls: [],
+      historyEvents: [diskUser("earlier"), diskAssistant("claude-sonnet-5", "high")],
+      restore: { sessionId: "restored", model: "sonnet" },
+      lastUsed: { model: "opus[1m]" }
+    };
+    const { store } = await mount(script);
+    // The replayed session's own record wins (its history says sonnet).
+    expect(triggerLabel(store)).toBe("Sonnet");
   });
 });

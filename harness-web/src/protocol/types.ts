@@ -523,7 +523,20 @@ export interface HarnessContext {
    * Weakest source — an init frame, a user pick, a restore snapshot, or
    * replayed history all outrank it.
    */
-  defaults?: { model?: string; effort?: EffortLevel };
+  defaults?: {
+    model?: string;
+    effort?: EffortLevel;
+    /**
+     * The model most recently USED by any harness pane on this machine
+     * (recorded natively on every start-with-model, set_model ack, and init
+     * frame; shared across panes through UserDefaults). Ranks ABOVE the
+     * settings-file default — the CLI itself forgets a plain /model switch on
+     * exit, and the user asked new panes to open on the last model used — but
+     * still BELOW everything session-specific: a live init frame, a user
+     * pick, a restore snapshot, and replayed history all outrank it.
+     */
+    lastUsed?: { model: string; effort?: EffortLevel };
+  };
 }
 
 /** Where the harness will look for the Claude binary, and what it found. */

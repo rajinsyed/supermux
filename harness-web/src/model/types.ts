@@ -429,12 +429,14 @@ export interface SessionMeta {
    */
   modelPickPending?: boolean;
   /**
-   * The CLI's own session-default model, read from its settings
-   * (`~/.claude/settings.json` "model", project files first) and delivered in
-   * `harness.context`. This is what a process started with NO --model flag will
-   * actually run, so the trigger names it instead of the catalog's generic
-   * "Default (recommended)" row while nothing stronger (init frame, user pick,
-   * restore snapshot) exists. Weakest source: any of those overwrite it.
+   * The pane-level default model, delivered in `harness.context`: the
+   * machine-wide LAST-USED model when one has been recorded (any harness pane
+   * starting with a model, a set_model ack, an init frame), else the CLI's
+   * settings-file default (`~/.claude/settings.json` "model", project files
+   * first). It is what the trigger names on a fresh pane instead of the
+   * catalog's generic "Default (recommended)" row while nothing stronger (init
+   * frame, user pick, restore snapshot, replayed history) exists. Weakest
+   * source: any of those overwrite it.
    */
   defaultModel?: string;
   /**

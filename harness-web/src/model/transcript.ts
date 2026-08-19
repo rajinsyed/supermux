@@ -28,7 +28,7 @@ import { applyAssistant } from "./assistantLines";
 import { applyStreamEvent } from "./streamEvents";
 import { applyUser } from "./userLines";
 import { applySystem } from "./systemLines";
-import { hasLiveBackgroundWork } from "./tasks";
+import { hasLiveBackgroundWork, isTaskSettled } from "./tasks";
 import {
   clearRetryBanners,
   closeOpenTurns,
@@ -199,11 +199,61 @@ function settleLiveThreads(
     out[id] = {
       ...thread,
       status: "stopped",
-      endedAtMs: thread.endedAtMs ?? nowMs,
+      // The thread ended when it last PRODUCED something, not when this
+      // boundary happens to run — a replayed thread settles days after its
+      // frames were written, and wall-now would report a nonsense span
+      // ("Worked for 2d"). The last tool timestamp is the best record; the
+      // thread's own start is the fallback (near-now for a live crash,
+      // historical for a replay — honest either way).
+      endedAtMs: thread.endedAtMs ?? lastThreadFrameAtMs(thread) ?? thread.startedAtMs,
       revision: thread.revision + 1
     };
   }
   return changed ? out : threads;
+}
+
+/** The latest timestamp any of the thread's own blocks carries. */
+function lastThreadFrameAtMs(thread: AgentThread): number | undefined {
+  let latest: number | undefined;
+  const walk = (blocks: Block[]) => {
+    for (const block of blocks) {
+      if (block.kind === "tool") {
+        const at = block.endedAtMs ?? block.startedAtMs;
+        if (at !== undefined && (latest === undefined || at > latest)) latest = at;
+        walk(block.children);
+      }
+    }
+  };
+  walk(thread.blocks);
+  return latest;
+}
+
+/**
+ * Every unsettled task record, latched terminal — the same boundary as
+ * {@link settleLiveThreads}, for the records that feed the tasks strip and the
+ * workflow rows. `stopped` is the honest verdict: the process that owned them
+ * is gone, and the status latch in systemLines refuses to reopen a terminal
+ * record, so a stale late frame cannot revive one either.
+ */
+function settleLiveTaskRecords(
+  tasksById: TranscriptModel["tasksById"],
+  nowMs: number
+): TranscriptModel["tasksById"] {
+  let changed = false;
+  const out: TranscriptModel["tasksById"] = {};
+  for (const [id, record] of Object.entries(tasksById)) {
+    if (isTaskSettled(record.status)) {
+      out[id] = record;
+      continue;
+    }
+    changed = true;
+    out[id] = {
+      ...record,
+      status: "stopped",
+      endedAtMs: record.endedAtMs ?? nowMs
+    };
+  }
+  return changed ? out : tasksById;
 }
 
 function applyControlResponse(
@@ -619,6 +669,23 @@ export function applyLocalAction(
           activity: { ...next.activity, sessionState: "idle", status: null, thinkingTokens: 0 }
         };
       }
+      // Replayed history is by definition NOT running, and turns are not the
+      // only thing the replay leaves live. Task tool_use records spawn agent
+      // threads born "running", and disk history carries no task frames to
+      // ever settle them — so an auto-restored session put every subagent it
+      // had ever spawned on the dock as "Working" (12 orbit grids animating
+      // for a session where nothing ran). The restore-bootstrap replay never
+      // emits `runStarted` (no process starts), so the boundary that settles
+      // threads there has to be applied here too. Same for task records and
+      // the background strip: an explicit resume's `runStarted` clears them
+      // moments later anyway, but the bootstrap replay has no later boundary.
+      next = {
+        ...next,
+        agentThreads: settleLiveThreads(next.agentThreads, nowMs),
+        tasksById: settleLiveTaskRecords(next.tasksById, nowMs),
+        backgroundTasks: [],
+        revision: next.revision + 1
+      };
       // History also carries no init frame (the native mapper forwards only
       // user/assistant records), so the pane's model selection would otherwise
       // be whatever it held BEFORE the resume — the previous session's model,

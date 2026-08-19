@@ -45,6 +45,7 @@ final class SupermuxHarnessSessionController {
     private let encoder = SupermuxHarnessProtocolEncoder()
     private let binarySetting: SupermuxHarnessBinarySetting
     private let modelCatalogStore: SupermuxHarnessModelCatalogStore
+    private let lastUsedModelStore: SupermuxHarnessLastUsedModelStore
     private let projectsRootURL: URL
     private let taskOutputRootURL: URL
     private let taskOutputCanonicalRootURL: URL
@@ -98,6 +99,7 @@ final class SupermuxHarnessSessionController {
         }
         binarySetting = SupermuxHarnessBinarySetting(defaults: defaults, fileManager: fileManager)
         modelCatalogStore = SupermuxHarnessModelCatalogStore(defaults: defaults)
+        lastUsedModelStore = SupermuxHarnessLastUsedModelStore(defaults: defaults)
         if let modelCatalogProbe {
             self.modelCatalogProbe = modelCatalogProbe
         } else {
@@ -197,6 +199,36 @@ final class SupermuxHarnessSessionController {
             workingDirectoryURL: workingDirectoryURL,
             homeDirectoryURL: fileManager.homeDirectoryForCurrentUser
         )
+    }
+
+    /// The `defaults` payload for `harness.context`: the settings-file values,
+    /// plus the machine-wide LAST-USED model/effort under `lastUsed`.
+    ///
+    /// The real CLI forgets a plain `/model` switch on exit ("Set model to …
+    /// for this session only" — persisting requires the explicit save-default
+    /// gesture, which writes `~/.claude/settings.json` "model"). The user's ask
+    /// is stronger than the CLI's own behavior: a new pane should default to
+    /// the last model used in ANY session. So the harness records every model a
+    /// session actually runs with (init frame, live set_model ack, a start
+    /// that carried one) into `SupermuxHarnessLastUsedModelStore`, shared
+    /// across every pane through UserDefaults, and the web layer ranks it
+    /// above the settings default but below anything session-specific.
+    func contextDefaults() -> [String: Any]? {
+        var defaults = settingsDefaults() ?? [:]
+        if let lastUsed = lastUsedModelStore.snapshot() {
+            var payload: [String: Any] = ["model": lastUsed.model]
+            if let effort = lastUsed.effort { payload["effort"] = effort }
+            defaults["lastUsed"] = payload
+        }
+        return defaults.isEmpty ? nil : defaults
+    }
+
+    /// Records that a session is actually running `model` — the write half of
+    /// `contextDefaults()`'s `lastUsed`. A `nil` effort leaves the stored
+    /// effort untouched (the wire rarely reports one; the explicit paths do).
+    private func recordModelUse(model: String?, effort: String? = nil) {
+        guard let model = Self.normalized(model) else { return }
+        lastUsedModelStore.store(model: model, effort: Self.normalized(effort))
     }
 
     /// The pure half of `settingsDefaults()`, split out so tests can point the
@@ -391,6 +423,9 @@ final class SupermuxHarnessSessionController {
         controlRouter = router
 
         if let model { snapshot.model = model }
+        // A start that carried a model is a model USE: the machine-wide
+        // last-used default follows it, so the next new pane opens on it.
+        recordModelUse(model: model, effort: effort)
         snapshot.permissionMode = resolvedPermissionMode.rawValue
         snapshot.sessionId = forkSession ? nil : resumeSessionId
         if resumeSessionId == nil {
@@ -569,6 +604,9 @@ final class SupermuxHarnessSessionController {
             throw SupermuxHarnessBridgeError.sessionNotRunning
         }
         snapshot.model = model
+        // The CLI acknowledged the switch, so this model is now in USE — the
+        // machine-wide last-used default follows the ack, not the request.
+        recordModelUse(model: model, effort: effort)
     }
 
     func setPermissionMode(_ mode: String) async throws {
@@ -1289,6 +1327,12 @@ final class SupermuxHarnessSessionController {
             }
             if let model = frame.rawObject.string(forKey: "model") {
                 snapshot.model = model
+                // The init frame names the model the process is ACTUALLY
+                // running — including after a /model slash command, which
+                // emits a fresh init frame and never passes through
+                // setModel(). This is the authoritative "model in use" signal,
+                // so the machine-wide last-used default tracks it.
+                recordModelUse(model: model)
             }
             if let mode = frame.rawObject.string(forKey: "permissionMode") {
                 snapshot.permissionMode = mode

@@ -66,8 +66,11 @@ export function applyAssistant(
   // The SAME frame builds two things: the inline block tree the transcript
   // nests under the launching Task card, and the agent's own thread, which is
   // what the agent view renders. One frame, two folds — never two sources.
-  if (parent) next = applyAssistantToThread(next, line, parent, nowMs);
-  else next = registerRootSpawns(next, line.message.content, nowMs);
+  // The thread takes the record's own clock (`atMs`) for the same reason the
+  // turn below does: a replayed spawn stamped at wall-now made a settled
+  // thread report it started (and so "worked") at the moment of the replay.
+  if (parent) next = applyAssistantToThread(next, line, parent, atMs);
+  else next = registerRootSpawns(next, line.message.content, atMs);
   const ensured = ensureTurn(next, index, atMs, parent);
   next = ensured.model;
   let turnIndex = ensured.turnIndex;

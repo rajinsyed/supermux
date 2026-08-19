@@ -150,11 +150,21 @@ export function useHarness(store: HarnessStore): HarnessController {
         // replayed history has answered, so they can never contradict a
         // stronger one, and the init frame overwrites nothing here (it writes
         // session.model, which always outranks these).
+        //
+        // `lastUsed` — the model most recently run by ANY harness pane on
+        // this machine — outranks the settings-file value within this weakest
+        // tier: the user asked new panes to open on the last model they used,
+        // and the CLI itself forgets a plain /model switch on exit, so
+        // settings.json alone kept answering with a stale default. Merged
+        // here rather than as a separate field because the priority is total:
+        // everything session-specific still wins through the ordinary
+        // resolution order.
         if (next.defaults && (next.defaults.model || next.defaults.effort)) {
+          const lastUsed = next.defaults.lastUsed;
           store.dispatch({
             kind: "sessionDefaults",
-            model: next.defaults.model,
-            effort: next.defaults.effort
+            model: lastUsed?.model ?? next.defaults.model,
+            effort: lastUsed?.effort ?? next.defaults.effort
           });
         }
         if (!permissionModeBootstrapComplete.current) {
@@ -286,10 +296,19 @@ export function useHarness(store: HarnessStore): HarnessController {
       const selected = session.model
         ? resolveModel(session, snapshot.cachedModels)?.value ?? session.model
         : undefined;
+      // With NO selection at all, the trigger displays `session.defaultModel`
+      // (the machine-wide last-used model, or the settings default behind it)
+      // — so the start carries the same value, or a fresh pane would SHOW the
+      // last-used model and then silently run whatever the CLI's own settings
+      // name. Resolved to the catalog selector like the selection above.
+      const displayedDefault =
+        !session.model && session.defaultModel
+          ? resolveModel(session, snapshot.cachedModels)?.value ?? session.defaultModel
+          : undefined;
       return {
         ...params,
-        model: params.model ?? selected ?? context?.restore?.model,
-        effort: params.effort ?? session.effort,
+        model: params.model ?? selected ?? context?.restore?.model ?? displayedDefault,
+        effort: params.effort ?? session.effort ?? (selected ? undefined : session.defaultEffort),
         permissionMode:
           params.permissionMode ??
           session.permissionMode ??
