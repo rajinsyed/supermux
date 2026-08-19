@@ -122,12 +122,12 @@ describe("the shimmer is not overridden by another sheet's keyframe", () => {
 describe("the three-dot loaders are gone", () => {
   test("nothing renders a stack of pulsing dots any more", async () => {
     const spinner = await source("ui/primitives/Spinner.tsx");
-    // One element per mark. Three or four bare `<i />` children is the old dot
-    // constellation. Round 6 is down to ONE: the orbit draws its ring and its
-    // travelling dot from pseudo-elements, and the turn's mark draws no glyph at
-    // all — only the breath needs a child to animate.
-    expect(spinner.match(/<i /g)?.length).toBe(1);
-    expect(spinner).toContain("breathe-pip");
+    // No hardcoded dot constellation. The orbit draws its ring and travelling
+    // dot from pseudo-elements; the turn's mark draws no glyph at all; the
+    // delegated grid maps its cells from a delay pattern — a single `<i` in a
+    // map callback, never a literal row of dots.
+    expect(spinner.match(/<i$|<i /gm)?.length).toBe(1);
+    expect(spinner).toContain("pxgrid");
     // The exported names are the contract other files consume.
     for (const name of ["Spinner", "WorkingDots", "WorkingGlyph"]) {
       expect(spinner).toContain(`export function ${name}(`);

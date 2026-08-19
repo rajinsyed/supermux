@@ -185,26 +185,23 @@
    Round 5 gave this the same sweeping dash the turn's "Working for 54s" wore,
    which is what the round-6 review caught: a running Workflow row and the
    turn-level state were the same animation two lines apart, so the pane said
-   "something is loading" three times and "what kind of thing" never. It is a
-   slow BREATH now — a pip swelling and fading over 2.4s. Nothing is being waited
-   on here (that is the orbit's meaning, and the orbit spins); an agent is simply
-   alive somewhere, which is the slowest news on the pane and gets the slowest
-   motion.
+   "something is loading" three times and "what kind of thing" never. It is the
+   reference PIXEL GRID now — a comet lapping the perimeter for subagents, a
+   chevron wavefront driving right for workflows — so a glance at the dock says
+   both that delegated work is alive and which kind it is.
 
-   The pip is centred in a fixed 11px box so a breathing row is exactly as tall
-   as a settled one and the dock cannot twitch as agents finish. */
+   The grid is centred in a fixed 11px box so a working row is exactly as tall
+   as a settled one and the dock cannot twitch as agents finish. Cell/gap land
+   on the reference's 4px/1.5px inside that box. */
 .dock-glyph {
-  display: inline-flex;
-  align-items: center;
+  --px-cell: 3px;
+  --px-gap: 1px;
+  display: inline-grid;
+  align-content: center;
   justify-content: center;
   width: 11px;
   height: 11px;
   flex: 0 0 auto;
-}
-
-.dock-glyph .breathe-pip {
-  width: 7px;
-  height: 7px;
 }
 
 /* The row's name sweeps with its mark. Scoped to rows that HAVE the mark: a

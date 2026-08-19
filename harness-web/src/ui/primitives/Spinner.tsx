@@ -18,10 +18,10 @@
  *     animation lands on the WORDS (the sheen sweep in cards.css, keyed off
  *     this element's presence) with a soft accent tick keeping time after them.
  *
- *   • BREATH (`WorkingGlyph`) — a pip swelling and fading, slowly. Delegated
- *     work: a subagent, a workflow, a background shell. It is long-lived and
- *     nothing is being waited on right now, so it gets the calmest motion in
- *     the pane and the row's name sheens at a slower tempo than the turn's.
+ *   • GRID (`WorkingGlyph`) — a 3×3 pixel grid. Delegated work: a subagent's
+ *     comet laps the grid's perimeter (`orbit`), a workflow's chevron
+ *     wavefront drives right (`drive`), so even the two kinds of delegation
+ *     stay distinct. The row's name sheens at a slower tempo than the turn's.
  *
  * Every one is transform/opacity only and honours prefers-reduced-motion.
  *
@@ -61,14 +61,68 @@ export function WorkingDots({ className }: { className?: string }) {
 }
 
 /**
- * The running mark on a delegated-work row — the agents dock, an inline agent,
- * a workflow. A slow breath, so one glance across the dock and the transcript
- * separates "an agent is alive" from "the pane is waiting on a call".
+ * The delegated-work marks: a 3×3 pixel grid, after the reference loader the
+ * round-6 review supplied. The round-6 first cut gave delegated rows a single
+ * breathing pip — which, one review later, read as the same dot the pane had
+ * just been rid of. The grid is a different SHAPE, not just a different tempo,
+ * and it carries two patterns so the two kinds of delegation stay distinct:
+ *
+ *   • ORBIT — a comet lapping the grid's perimeter, centre cell dark. A
+ *     subagent: one worker off on a closed loop of its own.
+ *
+ *   • DRIVE — a chevron wavefront driving left-to-right; the cycle is shorter
+ *     than the sweep so two fronts are always in flight. A workflow: staged
+ *     work moving through a pipeline.
+ *
+ * The delays are per-cell `animationDelay`s on one shared `pixel-on` keyframe,
+ * exactly as in the reference; only opacity animates.
  */
-export function WorkingGlyph({ className }: { className?: string }) {
+
+/** Chevron wavefront: column + distance-from-centre-row, 90ms per rank. */
+const DRIVE_DELAYS: Array<number | null> = Array.from({ length: 9 }, (_, i) => {
+  const row = Math.floor(i / 3);
+  const column = i % 3;
+  return (column + Math.abs(row - 1)) * 90;
+});
+
+/** The perimeter, clockwise from the top-left; the centre cell never lights. */
+const ORBIT_ORDER = [0, 1, 2, 5, 8, 7, 6, 3];
+const ORBIT_DELAYS: Array<number | null> = Array.from({ length: 9 }, (_, i) => {
+  const step = ORBIT_ORDER.indexOf(i);
+  return step === -1 ? null : step * 110;
+});
+
+export type WorkingGlyphVariant = "orbit" | "drive";
+
+const GLYPH_PATTERNS: Record<WorkingGlyphVariant, { delays: Array<number | null>; duration: number }> = {
+  orbit: { delays: ORBIT_DELAYS, duration: 950 },
+  drive: { delays: DRIVE_DELAYS, duration: 650 }
+};
+
+export function WorkingGlyph({
+  className,
+  variant = "orbit"
+}: {
+  className?: string;
+  variant?: WorkingGlyphVariant;
+}) {
+  const pattern = GLYPH_PATTERNS[variant];
   return (
-    <span className={`dock-glyph${className ? ` ${className}` : ""}`} aria-hidden="true">
-      <i className="breathe-pip" />
+    <span
+      className={`dock-glyph pxgrid is-${variant}${className ? ` ${className}` : ""}`}
+      aria-hidden="true"
+    >
+      {pattern.delays.map((delay, index) => (
+        <i
+          key={index}
+          className={delay === null ? "is-off" : undefined}
+          style={
+            delay === null
+              ? undefined
+              : { animationDuration: `${pattern.duration}ms`, animationDelay: `${delay}ms` }
+          }
+        />
+      ))}
     </span>
   );
 }

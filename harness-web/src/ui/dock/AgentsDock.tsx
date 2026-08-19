@@ -72,7 +72,7 @@ const DockRowView = memo(function DockRowView({
         aria-current={active ? "true" : undefined}
         onClick={() => onOpen(row.view)}
       >
-        <WorkingGlyph />
+        <WorkingGlyph variant={row.kind === "workflow" ? "drive" : "orbit"} />
         <span className="dock-label" title={label}>
           {label}
         </span>

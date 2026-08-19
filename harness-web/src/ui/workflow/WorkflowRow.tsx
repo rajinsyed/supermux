@@ -102,7 +102,7 @@ export const WorkflowRow = memo(function WorkflowRow({ block }: { block: ToolBlo
         onClick={open}
       >
         {running ? (
-          <WorkingGlyph className="agent-row-glyph" />
+          <WorkingGlyph variant="drive" className="agent-row-glyph" />
         ) : (
           <span className={`agent-dot ${dot}`} aria-hidden="true" />
         )}

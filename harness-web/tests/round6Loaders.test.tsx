@@ -100,7 +100,7 @@ describe("each kind of waiting has its own motion", () => {
     const delegated = mount(<WorkingGlyph />);
 
     expect(orbit.container.querySelector(".orbit")).not.toBeNull();
-    expect(delegated.container.querySelector(".dock-glyph .breathe-pip")).not.toBeNull();
+    expect(delegated.container.querySelector(".dock-glyph.pxgrid")).not.toBeNull();
 
     // The turn's mark draws NO glyph: its label carries the animation, which is
     // the whole reason it no longer collides with a tool row's indicator.
@@ -132,7 +132,37 @@ describe("each kind of waiting has its own motion", () => {
       )![1]
     );
     expect(rowTempo).toBeGreaterThan(turnTempo);
-    expect(/\.dock-glyph \.breathe-pip\s*\{([^}]*)\}/.exec(agents)).not.toBeNull();
+    expect(/\.dock-glyph\s*\{([^}]*)\}/.exec(agents)).not.toBeNull();
+  });
+
+  test("delegated work is a pixel grid, split by kind: orbit for agents, drive for workflows", () => {
+    // The round-6 first cut gave every delegated row one breathing pip, which
+    // the next review read as "the same dot again". The reference grid carries
+    // two patterns, and the split is the point: a subagent's comet laps the
+    // perimeter (8 lit cells, dark centre), a workflow's chevron lights all 9.
+    const agent = mount(<WorkingGlyph variant="orbit" />);
+    const workflow = mount(<WorkingGlyph variant="drive" />);
+
+    const agentGrid = agent.container.querySelector(".pxgrid.is-orbit")!;
+    const workflowGrid = workflow.container.querySelector(".pxgrid.is-drive")!;
+    expect(agentGrid.children.length).toBe(9);
+    expect(workflowGrid.children.length).toBe(9);
+    expect(agentGrid.querySelectorAll("i.is-off").length).toBe(1);
+    expect(workflowGrid.querySelectorAll("i.is-off").length).toBe(0);
+
+    // The patterns live in the per-cell delays; the comet's period (8 × 110ms)
+    // and the wavefront's (650ms, shorter than its 360ms-max stagger sweep +
+    // fade so two fronts are always in flight) come from the reference.
+    const orbitDelays = [...agentGrid.querySelectorAll("i:not(.is-off)")].map(
+      (cell) => (cell as HTMLElement).style.animationDelay
+    );
+    expect(new Set(orbitDelays).size).toBe(8);
+    expect((agentGrid.children[0] as HTMLElement).style.animationDuration).toBe("950ms");
+    expect((workflowGrid.children[0] as HTMLElement).style.animationDuration).toBe("650ms");
+
+    // The default is the subagent mark, so AgentRow's bare usage stays honest.
+    const bare = mount(<WorkingGlyph />);
+    expect(bare.container.querySelector(".pxgrid.is-orbit")).not.toBeNull();
   });
 
   test("every mark animates transform or opacity only", async () => {
@@ -140,7 +170,7 @@ describe("each kind of waiting has its own motion", () => {
     // 60fps while a turn streams — the class of bug this pane has already paid
     // for twice.
     const sheet = await css("base.css");
-    for (const name of ["orbit-travel", "breathe-swell"]) {
+    for (const name of ["orbit-travel", "pixel-on"]) {
       const frames = new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(sheet)![1];
       const properties = [...frames.matchAll(/([a-z-]+):\s*[^;]+;/g)].map((m) => m[1]);
       expect(properties.length).toBeGreaterThan(0);
@@ -160,9 +190,10 @@ describe("each kind of waiting has its own motion", () => {
       (match) => sheet.slice(match.index, sheet.indexOf("\n}\n", match.index))
     );
     const declared = blocks.join("\n");
-    // The breath rests half-lit and unscaled, not at an arbitrary frame.
-    expect(declared).toMatch(/\.breathe-pip\s*\{[^}]*opacity:\s*[\d.]+/);
-    expect(declared).toMatch(/\.breathe-pip\s*\{[^}]*transform:\s*none/);
+    // The grid rests half-lit, not at an arbitrary frame — and its dark centre
+    // cell stays dark, so the resting orbit still shows its shape.
+    expect(declared).toMatch(/\.pxgrid i\s*\{[^}]*opacity:\s*[\d.]+/);
+    expect(declared).toMatch(/\.pxgrid i\.is-off\s*\{[^}]*opacity:\s*[\d.]+/);
     // The orbit rests as a dot parked on a full ring — a determinate-looking
     // gauge, which is what a static spinner ought to be.
     expect(declared).toContain(".orbit::before");
