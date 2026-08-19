@@ -25,6 +25,16 @@ async function css(name: string): Promise<string> {
   return Bun.file(new URL(`../src/styles/${name}`, import.meta.url).pathname).text();
 }
 
+/**
+ * The sheet with its comments stripped, so a NEGATIVE assertion cannot be
+ * tripped by the retirement note that names the thing it retired. Every one of
+ * these sheets documents why a rule went away, and "the sheet no longer
+ * mentions `turn-tick`" would forbid exactly that documentation.
+ */
+async function rules(name: string): Promise<string> {
+  return (await css(name)).replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 async function source(path: string): Promise<string> {
   return Bun.file(new URL(`../src/${path}`, import.meta.url).pathname).text();
 }
@@ -108,14 +118,23 @@ describe("each kind of waiting has its own motion", () => {
     expect(anchor.children.length).toBe(0);
   });
 
-  test("the turn-level mark is the label, and it still has a live tick", async () => {
-    const sheet = await css("transcript.css");
+  test("the turn-level mark is the label, and ONLY the label", async () => {
+    // Round 7's item 5. Round 6 trailed the sweeping sentence with a small
+    // accent tick; with the words already sweeping, that is two animations
+    // saying one thing, and at 4px beside 12px type it read as a stray bullet
+    // rather than as a caret. The sweep IS the mark — which is the whole claim
+    // of the round-6 split, and the tick was the last part of it still drawing
+    // a glyph.
+    const sheet = await rules("transcript.css");
     // The sweep is declared in cards.css (which this change does not own); what
-    // transcript.css owns is the anchor collapsing and the tick after the words.
+    // transcript.css owns is the anchor collapsing to nothing.
     expect(/\.turn-live\s\.working-dots\s*\{([^}]*)\}/.exec(sheet)![1]).toMatch(/width:\s*0/);
-    const tick = /\.turn-live-label::after\s*\{([^}]*)\}/.exec(sheet)![1];
-    expect(tick).toContain("animation: turn-tick");
-    expect(sheet).toMatch(/@keyframes turn-tick/);
+    // No glyph after the words, and no dead keyframe left behind driving one.
+    expect(sheet).not.toMatch(/\.turn-live-label::(?:after|before)\s*\{/);
+    expect(sheet).not.toMatch(/@keyframes turn-tick/);
+    expect(sheet).not.toContain("animation: turn-tick");
+    // The label itself is still the plain ink the sweep paints over.
+    expect(/\n\.turn-live-label\s*\{([^}]*)\}/.exec(sheet)![1]).toMatch(/color:\s*var\(--text/);
   });
 
   test("delegated rows breathe, and their names sweep SLOWER than the turn's", async () => {
@@ -235,25 +254,48 @@ describe("the turn accordion is a sentence, not a control strip", () => {
     expect(sheet).toContain(".fold-head:focus-visible .fold-toggle");
   });
 
-  test("it looks like something you can press when it appears", async () => {
-    // An affordance that shows up unannounced has to read as pressable at a
-    // glance; a bare chevron does not.
+  test("it is a BARE glyph — no bed, no border, nothing but the chevron", async () => {
+    // Round 7's item 3b. Round 6 gave it a ghost button's bed on the argument
+    // that an affordance appearing unannounced must read as pressable; the
+    // dogfood verdict was that a bordered tile beside a sentence is a second
+    // OBJECT on a line whose whole job is to be one sentence. The chevron
+    // alone, in full ink at hover, is the affordance.
     const sheet = await css("transcript.css");
     const toggle = /\.fold-toggle\s*\{([^}]*)\}/.exec(sheet)![1];
-    expect(toggle).toMatch(/background:/);
-    expect(toggle).toMatch(/border:/);
-    expect(toggle).toMatch(/border-radius:/);
+    expect(toggle).not.toMatch(/(?:^|\s)background:/);
+    expect(toggle).not.toMatch(/(?:^|\s)border(?:-radius)?:/);
+    // It still reserves its own footprint, so revealing it never nudges the
+    // label — that is what the hidden state costs and it must not be dropped.
+    expect(toggle).toMatch(/width:\s*\d+px/);
+    expect(toggle).toMatch(/height:\s*\d+px/);
+    expect(toggle).toMatch(/flex:\s*0 0 auto/);
   });
 
-  test("a folded turn keeps the way in visible, since nothing else says so", async () => {
-    // The count that used to announce hidden content is gone, so the one state
-    // that is not self-evident from the transcript always shows its control.
+  test("the row itself grows no bed under the pointer either", async () => {
+    // Round 7's item 3c. "Worked for 2m 30s" is prose; prose that lights up a
+    // grey slab under the cursor reads as a menu item. The INK still lifts, so
+    // the row is visibly live, and `.work-overflow` — a real control with a
+    // count on it — keeps its bed.
     const sheet = await css("transcript.css");
-    expect(/\.fold-head\.is-folded \.fold-toggle\s*\{([^}]*)\}/.exec(sheet)![1]).toMatch(
-      /opacity:\s*1/
+    const head = /\.fold-head:hover,\n\.fold-head:focus-visible\s*\{([^}]*)\}/.exec(sheet)![1];
+    expect(head).toMatch(/color:\s*var\(--text\)/);
+    expect(head).not.toMatch(/background/);
+    expect(/\.work-overflow:hover\s*\{([^}]*)\}/.exec(sheet)![1]).toMatch(
+      /background:\s*var\(--surface-hover\)/
     );
+  });
+
+  test("a FOLDED turn hides it too — a scrolled-back transcript is all folds", async () => {
+    // Round 7's item 3a, undoing round 6's one exception. The pin was argued
+    // as "nothing else says there is hidden content", but every turn a reader
+    // scrolls back through is folded, so it put the column of permanent
+    // controls straight back — the thing the reveal existed to remove.
+    const sheet = await rules("transcript.css");
+    expect(sheet).not.toMatch(/\.fold-head\.is-folded \.fold-toggle\s*\{/);
+    // `is-folded` stays on the row: the chevron's DIRECTION is keyed off it.
     const { container } = mount(<TurnView turn={settledTurn()} isLast={false} />);
     expect(container.querySelector(".fold-head")!.classList.contains("is-folded")).toBe(true);
+    expect(container.querySelector(".fold-toggle")).not.toBeNull();
   });
 
   test("the whole row still toggles, from the pointer and from the keyboard", () => {

@@ -95,11 +95,61 @@ function AppBody({
     [model.relays, view]
   );
 
-  const { ref: scrollRef, contentRef, showPill, scrollToBottom } = useScrollFollow([
-    model.revision,
-    model.turns.length,
-    model.pending.length
-  ]);
+  const {
+    ref: scrollRef,
+    contentRef,
+    showPill,
+    scrollToBottom,
+    isFollowing
+  } = useScrollFollow([model.revision, model.turns.length, model.pending.length]);
+
+  /**
+   * The dock FLOATS over the transcript rather than sitting beside it in the
+   * flex column, so the transcript has to reserve the dock's footprint itself.
+   *
+   * Round-7 item 6, from the dogfood note "the prompt bar eats background
+   * space": the composer used to be a flex sibling of the scroller, so the
+   * scroller's viewport ended at the composer's top edge and the page below it
+   * was a band of nothing that content could never reach. Now the scroller runs
+   * the full height of the pane, content scrolls BEHIND the dock, and the last
+   * message still comes to rest above the composer because the content column
+   * carries `--dock-reserve` worth of bottom padding.
+   *
+   * The height is MEASURED rather than guessed: the dock is banners plus the
+   * working panel plus the todo strip plus a composer that grows to ten lines
+   * plus the bottom bar, and every one of those comes and goes. Written straight
+   * onto the app element as a custom property — no React state — because this
+   * fires on every autosize of the textarea and a re-render of the whole
+   * transcript per typed line is not a price worth paying for a padding value.
+   *
+   * The re-pin is the load-bearing half. The reserve is PADDING on the content
+   * column, so growing it moves the scroller's bottom out from under a reader
+   * who is following: without this, opening a banner or typing a third line
+   * slides the newest message behind the composer, which is the exact defect the
+   * float would otherwise introduce. A reader who has scrolled away is left
+   * alone — `isFollowing` is the same intent flag the hook's own pin honours.
+   */
+  const appRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const dock = dockRef.current;
+    const app = appRef.current;
+    if (!dock || !app || typeof ResizeObserver === "undefined") return;
+    let last = -1;
+    const measure = () => {
+      const height = dock.offsetHeight;
+      if (height === last) return;
+      last = height;
+      app.style.setProperty("--dock-height", `${height}px`);
+      // Reading `scrollHeight` inside `scrollToBottom` flushes the layout this
+      // property change just invalidated, so the pin lands on the NEW bottom.
+      if (isFollowing.current) scrollToBottom();
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [isFollowing, scrollToBottom]);
 
   // Turn-complete and permission notifications are posted by the NATIVE side
   // from protocol frames, through the same policy gate and unread-badge store
@@ -355,7 +405,7 @@ function AppBody({
 
   return (
     <OpenViewContext.Provider value={router.open}>
-    <div className="app">
+    <div className="app" ref={appRef}>
       {cliUnavailable ? (
         <div className="harness-scroll transcript">
           <div className="transcript-inner">
@@ -448,7 +498,13 @@ function AppBody({
         </>
       )}
 
-      <div className="dock">
+      {/* The floating dock. It is positioned OVER the transcript (dock.css),
+          and its measured height is what the transcript reserves as bottom
+          padding — the composer, the status strip, the working panel and the
+          bottom bar all float together as one group, with the page's own
+          content visible through the gaps between the islands and a
+          progressive blur behind them keeping the words underneath legible. */}
+      <div className="dock" ref={dockRef}>
         <BannerStack
           banners={model.banners}
           onDismiss={(id) => store.dispatch({ kind: "dismissBanner", id })}

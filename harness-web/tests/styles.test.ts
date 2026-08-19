@@ -432,7 +432,101 @@ describe("the jump pill floats over the transcript", () => {
     expect(sheet).not.toContain(".transcript-wrap.has-pill");
     const pill = ruleFor(sheet, ".jump-pill");
     expect(pill).toMatch(/position:\s*absolute/);
-    expect(pill).toMatch(/bottom:\s*\d+px/);
+    expect(pill).toMatch(/bottom:/);
+  });
+
+  test("it clears the FLOATING dock rather than parking behind the composer", async () => {
+    // Round-7 item 6 moved the dock out of the flex column and over the
+    // scroller, so the pill's wrapper now runs the pane's full height. A flat
+    // `bottom: 12px` would put the one control that exists for a lost reader
+    // underneath the composer, which is the worst possible place for it.
+    const sheet = await css("transcript.css");
+    const pill = ruleFor(sheet, ".jump-pill");
+    expect(pill).toMatch(/bottom:\s*calc\(var\(--dock-height/);
+    // With a measured height there must be a resting fallback, or the very
+    // first frame — before the ResizeObserver has run — puts it at zero.
+    expect(pill).toMatch(/var\(--dock-height,\s*\d+px\)/);
+    // Inside a framed sub-view the FRAME clears the dock, so the pill sits on
+    // its own scroller's last line instead of floating a composer-height up.
+    expect(ruleFor(sheet, ".view-frame .jump-pill")).toMatch(/bottom:\s*\d+px/);
+  });
+});
+
+describe("the composer floats over the transcript instead of consuming it", () => {
+  test("the dock is positioned over the scroller, not a band beside it", async () => {
+    // The dogfood report: "the prompt bar eats background space". The dock
+    // LOOKED floating — glass, gaps, shadows — while occupying a solid strip of
+    // the flex column that content could never enter, so the glass had nothing
+    // behind it to be glass about.
+    const sheet = await css("dock.css");
+    const dock = ruleFor(sheet, ".dock");
+    expect(dock).toMatch(/position:\s*absolute/);
+    expect(dock).toMatch(/bottom:\s*0/);
+    expect(dock).not.toMatch(/flex:\s*0 0 auto/);
+    // The gaps BETWEEN the islands must pass the pointer through to the
+    // transcript, or the float replaces a dead band with an invisible one.
+    expect(dock).toMatch(/pointer-events:\s*none/);
+    expect(ruleFor(sheet, ".dock > *")).toMatch(/pointer-events:\s*auto/);
+  });
+
+  test("the transcript reserves the dock's MEASURED height as bottom padding", async () => {
+    // Content scrolls behind the glass, and the last message still has to come
+    // to rest above it. A hardcoded pad would be wrong by a whole composer the
+    // moment the draft grows to three lines or a banner opens.
+    const sheet = await css("transcript.css");
+    const inner = ruleFor(sheet, ".transcript-inner");
+    expect(inner).toMatch(/--dock-reserve:\s*calc\(var\(--dock-height,\s*\d+px\)/);
+    expect(inner).toMatch(/padding:[^;]*var\(--dock-reserve\)/);
+    // A framed sub-view's own frame clears the dock, so its column must not
+    // reserve the height a second time.
+    expect(ruleFor(sheet, ".view-frame .transcript-inner")).toMatch(/padding-bottom:\s*\d+px/);
+    expect(ruleFor(await css("layout.css"), ".view-frame")).toMatch(
+      /margin:[^;]*var\(--dock-height/
+    );
+  });
+
+  test("the veil behind it is a progressive blur, faded by a mask", async () => {
+    // A flat translucent bar is the old band drawn differently: text would hit
+    // a hard edge and vanish. The blur and its tint fade out TOGETHER under one
+    // mask ramp, so the effect reads as depth.
+    const sheet = await css("dock.css");
+    const veil = ruleFor(sheet, ".dock::before");
+    expect(veil).toMatch(/backdrop-filter:\s*blur\(/);
+    expect(veil).toMatch(/-webkit-mask-image:\s*linear-gradient\(\s*to top/);
+    expect(veil).toMatch(/\n\s+mask-image:\s*linear-gradient\(\s*to top/);
+    // Fully applied at the bottom, fully clear at the top: a transcript
+    // scrolled to the top carries no veil at all.
+    expect(veil).toMatch(/rgba\(0, 0, 0, 1\) 0%/);
+    expect(veil).toMatch(/rgba\(0, 0, 0, 0\) 100%/);
+    // It never eats the pointer — the text behind it stays selectable.
+    expect(veil).toMatch(/pointer-events:\s*none/);
+  });
+
+  test("the veil is tinted with the PAGE, so it is invisible over empty space", async () => {
+    // The first cut tinted it `--panel`, the composer's own glass. In light
+    // that token is paper LIGHTER than the page — correct for an island that
+    // must read as lifted, wrong for a full-bleed layer: it painted a brighter
+    // rectangle across the bottom third of the pane, and the mask's ramp
+    // quantised into three flat 1/255 steps, drawing three hairline bands
+    // straight across a window with no content there to hide. Page-tinted, the
+    // veil cannot band (it fades page into page) and shows only where there is
+    // something behind it.
+    const sheet = await css("dock.css");
+    const veil = ruleFor(sheet, ".dock::before");
+    expect(veil).toMatch(/background:\s*var\(--page-bg\)/);
+    expect(veil).not.toContain("var(--panel)");
+    // Themed token, never a literal colour.
+    expect(veil).not.toMatch(/background:[^;]*(?:#[0-9a-f]{3}|rgba?\()/i);
+  });
+
+  test("it spans the pane, not the dock's own content-capped column", async () => {
+    // The dock is capped at the content column and centred. Inset to it, the
+    // veil drew a lit rectangle with two visible vertical edges down the middle
+    // of the pane — the transcript shares that cap but the page and the
+    // scrollbar gutter do not.
+    const veil = ruleFor(await css("dock.css"), ".dock::before");
+    expect(veil).toMatch(/width:\s*100vw/);
+    expect(veil).toMatch(/margin-left:\s*-50vw/);
   });
 });
 

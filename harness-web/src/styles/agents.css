@@ -139,8 +139,8 @@
   border-radius: var(--r-md);
 }
 
-.dock-row.is-active .dock-row-open {
-  background: var(--surface-hover);
+.dock-row.is-active .dock-label {
+  color: var(--text);
 }
 
 .dock-row-open {
@@ -156,12 +156,21 @@
   transition: background var(--dur) var(--ease);
 }
 
-.dock-row-open:hover {
-  background: var(--surface-hover);
+/* Same no-bed policy as the transcript's delegated rows: the pointer lifts the
+   ink, the keyboard gets a ring, and nothing paints a slab under the name. */
+.dock-row-open:hover .dock-label,
+.dock-row-open:focus-visible .dock-label {
+  color: var(--text);
+}
+
+.dock-row-open:hover .dock-detail,
+.dock-row-open:focus-visible .dock-detail {
+  color: var(--text-muted);
 }
 
 .dock-row-open:focus-visible {
-  background: var(--surface-hover);
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
 }
 
 /* The tree: nested agents step in under their parent. The indent alone
@@ -271,7 +280,10 @@
   flex: 0 0 auto;
 }
 
-/* Stop is a hover-reveal glyph, not a labelled red button on every line. */
+/* Stop is ALWAYS visible on a stoppable row — the round-7 review found the
+   hover-reveal cut (a 9px faint glyph, invisible until the pointer was already
+   on the row) unreadable. A quiet ringed glyph at rest, so the row plainly says
+   it can be stopped, warming to danger under the pointer. */
 .dock-stop {
   display: inline-flex;
   align-items: center;
@@ -280,25 +292,20 @@
   height: 22px;
   margin-right: 2px;
   border-radius: var(--r-sm);
-  color: var(--text-faint);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   flex: 0 0 auto;
-  opacity: 0;
-  transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease);
-}
-
-.dock-row:hover .dock-stop,
-.dock-row:focus-within .dock-stop {
-  opacity: 1;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
 .dock-stop:hover:not(:disabled) {
   color: var(--danger);
-  background: var(--surface-hover);
+  border-color: var(--danger);
 }
 
 .dock-stop:focus-visible {
   color: var(--danger);
-  opacity: 1;
+  border-color: var(--danger);
 }
 
 .dock-error {
@@ -372,14 +379,29 @@
   margin-top: 5px;
 }
 
-.agent-row:hover {
-  background: var(--surface-hover);
+/* No hover bed (round-7 review: a lit slab under every delegated row read as
+   clutter). The affordance is the ink lift on the row's name plus the chevron
+   reveal below; keyboard focus keeps a visible ring instead of a wash. */
+.agent-row:hover .agent-row-name,
+.agent-row:focus-visible .agent-row-name {
+  color: var(--text);
 }
 
 .agent-row:focus-visible {
-  background: var(--surface-hover);
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
 }
 
+/* The SETTLED mark on an inline row. A running row never draws one — it draws
+   the pixel grid above — so there is deliberately no `.is-running` rule here.
+ *
+ * `@keyframes dot-breathe` stood here through round 6, driving this sheet's
+ * `.agent-dot.is-running` and workflow.css's `.wfb-dot.is-running`. Both are
+ * gone in round 7: the inline rows had already moved to the grid (leaving the
+ * rule unreachable — `AgentRow` renders the dot only in its settled branch),
+ * and the workflow browser's agent list moved with them, which is the review's
+ * item 4. A pulsing dot is the round-5 mark the whole loading family exists to
+ * be rid of; nothing in the pane may reintroduce one. */
 .agent-dot {
   width: 7px;
   height: 7px;
@@ -387,25 +409,6 @@
   border-radius: var(--r-pill);
   flex: 0 0 auto;
   background: var(--text-faint);
-}
-
-/* The one running-dot pulse in the pane. It is also what `.wfb-dot.is-running`
-   in workflow.css reaches for — that rule named `dock-pulse`, a keyframe no
-   sheet has ever defined, so the browser's running agents sat perfectly still.
-   One name, defined once, used by both. */
-@keyframes dot-breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-.agent-dot.is-running {
-  background: var(--claude-strong);
-  animation: dot-breathe 1.6s ease-in-out infinite;
 }
 
 .agent-dot.is-done {

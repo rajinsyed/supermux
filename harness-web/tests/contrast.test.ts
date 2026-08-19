@@ -512,6 +512,73 @@ describe("dialog status tones contrast", () => {
   }
 });
 
+/**
+ * The inline-code chip (round-7 item 5).
+ *
+ * The chip lost its border in that pass — a 1px outline is what made a tinted
+ * run of text read as a button sitting in a sentence — so its BED is now the
+ * only thing separating it from the prose around it, and its ink is the accent
+ * rather than the body's. That is two colours on one small object, and the
+ * chip's bed is not the flat surface it looks like: it composites over the
+ * transcript page in an answer, over a card in tool output, and over the raised
+ * veil inside a plan card or an agent thread's prompt, each of which is itself
+ * translucent over whatever the WKWebView sits on.
+ *
+ * `--claude` was previously audited only on the page and on the card, i.e. on
+ * beds it happened to land on rather than on the one this chip introduces. Both
+ * the chip's ink AND the body ink that can appear on it (a chip inside a bold
+ * lead-in inherits `--text`) are checked here, on every bed × backing.
+ */
+describe("the inline-code chip clears AA on its own bed", () => {
+  for (const isDark of [true, false]) {
+    const label = isDark ? "dark" : "light";
+    test(`chip ink on every surface the chip lands on (${label})`, () => {
+      const { vars } = surfaces(isDark);
+      const failures: string[] = [];
+      for (const [where, backing] of Object.entries(backings(isDark))) {
+        const page = composite(vars["--page-bg"], backing);
+        // Every surface an `.md` body is mounted on: the bare transcript, a
+        // tool card, the raised veil (plan card, agent-thread prompt), and the
+        // popover panel a plan can be read on.
+        const hosts: Record<string, RGB> = {
+          page,
+          card: composite(vars["--surface"], page),
+          raised: composite(vars["--surface-raised"], page),
+          popover: composite(vars["--popover-bg"], page)
+        };
+        for (const [hostName, host] of Object.entries(hosts)) {
+          const bed = composite(vars["--inline-code-bg"], host);
+          for (const token of ["--claude", "--text"]) {
+            const value = ratio(composite(vars[token], bed), bed);
+            if (value < AA_SMALL) {
+              failures.push(`${where}:${hostName} ${token}=${value.toFixed(2)}`);
+            }
+          }
+        }
+      }
+      expect(failures).toEqual([]);
+    });
+
+    test(`the chip's bed is actually visible against its host (${label})`, () => {
+      // The bug this replaces: the chip reused `--code-bg`, black at 30% in
+      // dark, which over a near-black transcript is not a tint — it is nothing.
+      // A bed that cannot be distinguished from the surface under it is not a
+      // bed, and with the border gone there was no chip left. 1.04 is a
+      // deliberately low floor: this asserts the tint EXISTS, it is not a
+      // legibility threshold (those are the ratios above).
+      const { vars } = surfaces(isDark);
+      const failures: string[] = [];
+      for (const [where, backing] of Object.entries(backings(isDark))) {
+        const page = composite(vars["--page-bg"], backing);
+        const bed = composite(vars["--inline-code-bg"], page);
+        const value = ratio(bed, page);
+        if (value < 1.04) failures.push(`${where}=${value.toFixed(3)}`);
+      }
+      expect(failures).toEqual([]);
+    });
+  }
+});
+
 describe("terminal chrome contrast", () => {
   for (const isDark of [true, false]) {
     const label = isDark ? "dark" : "light";

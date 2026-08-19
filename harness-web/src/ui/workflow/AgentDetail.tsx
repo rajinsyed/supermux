@@ -14,7 +14,7 @@ import {
 import { formatCompactDuration, formatTokens } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
-import { Spinner } from "../primitives/Spinner";
+import { Spinner, WorkingGlyph } from "../primitives/Spinner";
 import { SubagentTranscriptView } from "../tools/SubagentTranscript";
 import { displayState, type DisplayState } from "./browserModel";
 import { STATE_LABELS } from "./state";
@@ -92,12 +92,26 @@ function TextSection({
   );
 }
 
+/**
+ * The state chip's leading mark.
+ *
+ * RUNNING is the one that changed in round 7: it was the orbit, which the
+ * loading family reserves for "one request is in flight and the pane is waiting
+ * on its answer". A workflow agent is none of those — it is delegated work off
+ * doing its own thing — so it takes the delegated mark, the same comet the
+ * transcript's agent rows, the dock rows and the agent list beside this pane
+ * already wear. Every settled state keeps its own glyph.
+ *
+ * The chip is sized once at its widest state (`.wfb-state`, asserted in
+ * tests/styles.test.ts), and the grid is the same 11px box the orbit was, so
+ * the swap costs the chip nothing.
+ */
 function StateMark({ state }: { state: DisplayState }) {
-  if (state === "running") return <Spinner size={11} />;
+  if (state === "running") return <WorkingGlyph variant="orbit" className="wfb-mark" />;
   if (state === "error") return <AlertTriangle size={12} className="mark-warn" />;
   if (state === "stopped") return <Stop size={10} />;
   if (state === "done" || state === "cached") return <CheckCircle size={12} className="mark-ok" />;
-  return <span className={`wfb-dot is-${state}`} aria-hidden="true" />;
+  return <span className={`wfb-mark wfb-dot is-${state}`} aria-hidden="true" />;
 }
 
 /**

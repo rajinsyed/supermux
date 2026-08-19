@@ -24,12 +24,16 @@
   border-radius: var(--r-md);
 }
 
-.wf-row:hover {
-  background: var(--surface-hover);
+/* No hover bed — same round-7 call as .agent-row: the ink lift and the chevron
+   reveal carry the affordance, keyboard focus gets a ring. */
+.wf-row:hover .wf-row-name,
+.wf-row:focus-visible .wf-row-name {
+  color: var(--text);
 }
 
 .wf-row:focus-visible {
-  background: var(--surface-hover);
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
 }
 
 .wf-row-main {
@@ -463,18 +467,46 @@
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
+/* No hover bed — the round-7 no-slab policy for every delegated-work row. */
 .wfb-agent-row:hover {
-  background: var(--surface-hover);
   color: var(--text);
 }
 
 .wfb-agent-row:focus-visible {
-  background: var(--surface-hover);
   color: var(--text);
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+
+/* Every mark in the agent list and in the detail chip occupies the SAME 11px
+   of horizontal space, whichever it is: the running grid is an 11px box
+   (`.dock-glyph` in agents.css), and this is the settled dot's half of that
+   contract — 7px of dot centred in 11px of footprint. Without it a row
+   advancing running → done would slide its own label 4px left, thirty times
+   over a run, while the reader is reading it.
+
+   It rides on the DOT only (7 + 2 + 2 = 11), as a margin rather than a wrapper
+   box, so `.wfb-dot`'s own 7px geometry — one shape for every settled state,
+   asserted in tests/styles.test.ts — is untouched. */
+.wfb-mark {
+  margin: 0 2px;
 }
 
 /* One shape for every state: a column of thirty agents reads as a column of
-   colour only if the mark never changes size. */
+   colour only if the mark never changes size.
+
+   What changed in round 7 is which states get DRAWN as a dot at all. A RUNNING
+   agent is delegated work, and now wears the delegated pixel grid — the same
+   comet the transcript's agent rows and the dock wear — rather than a breathing
+   dot: the browser was the last surface still animating the round-5 pulse, so
+   the same fact ("this agent is working") had two different marks two views
+   apart. `@keyframes dot-breathe` is gone with it; nothing drove it once both
+   call sites moved to the grid.
+
+   `.is-running` keeps its COLOUR here, without the animation. It is the state
+   palette this sheet declares for `DisplayState`, and a static claude dot is
+   the honest fallback if any surface ever renders the class without the grid.
+   It must never grow an animation back: that is the round-5 pulse returning. */
 .wfb-dot {
   width: 7px;
   height: 7px;
@@ -489,9 +521,6 @@
 
 .wfb-dot.is-running {
   background: var(--claude-strong);
-  /* `dock-pulse` was named here and defined nowhere, so the browser's running
-     agents were static. The shared keyframe lives in agents.css. */
-  animation: dot-breathe 1.6s ease-in-out infinite;
 }
 
 .wfb-dot.is-done {

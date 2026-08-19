@@ -433,6 +433,36 @@ export function useHarness(store: HarnessStore): HarnessController {
     flushStranded();
   }, [flushStranded, model.runPhase, model.stranded]);
 
+  /**
+   * A pick the wire has not confirmed yet, re-pushed once a run is up.
+   *
+   * `setModel` skips `bridge.setModel` when no process is running, and a
+   * restart already in flight built its start params BEFORE the pick landed —
+   * either way the process comes up on the wrong model while the menu shows
+   * the pick. The reducer keeps `modelPickPending` until a wire frame reports
+   * the picked model, so this effect is exactly the reconciliation pass: push
+   * the choice at the live process, and let the next confirming frame clear
+   * the latch. Idempotent when the start params already carried the pick —
+   * `set_model` to the model already running is a no-op on the CLI side.
+   */
+  const lastPushedPick = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const session = model.session;
+    if (!session.modelPickPending || !session.model) {
+      lastPushedPick.current = undefined;
+      return;
+    }
+    if (model.runPhase !== "running") return;
+    const selector =
+      resolveModel(session, model.cachedModels)?.value ?? session.model;
+    // Once per (run, selector, effort): the session object's identity changes
+    // on unrelated actions, and each re-render must not re-send the same frame.
+    const key = `${model.runId ?? ""}|${selector}|${session.effort ?? ""}`;
+    if (lastPushedPick.current === key) return;
+    lastPushedPick.current = key;
+    bridge.setModel({ model: selector, effort: session.effort }).catch(() => undefined);
+  }, [bridge, model.cachedModels, model.runId, model.runPhase, model.session]);
+
   const interrupt = useCallback(
     (cancelQueued: boolean) => {
       // The CLI drops the queue when asked to; the chips have to go with it, or
@@ -589,11 +619,21 @@ export function useHarness(store: HarnessStore): HarnessController {
     (next: string, effort?: EffortLevel) => {
       // One authoritative copy. startOptions reads this same session state when a
       // process does not exist yet or a later restart needs to resend the choice.
-      store.dispatch({ kind: "setModel", model: next, effort });
+      // `pick` marks this as a USER choice: until a wire frame reports the same
+      // model, frames naming a DIFFERENT one (the in-flight turn's
+      // message_start, a mid-restart init) are ignored instead of snapping the
+      // menu back to whatever the process launched with.
+      store.dispatch({ kind: "setModel", model: next, effort, pick: true });
       // `set_model` needs a live process to receive it. Pushing it at a pane
       // that has none is not merely useless — the rejection surfaces as a
-      // failure for a choice the menu already shows as taken.
-      if (store.getSnapshot().runPhase !== "running") return;
+      // failure for a choice the menu already shows as taken. The pick is not
+      // lost: the pending-pick effect above re-pushes it when a run comes up,
+      // and startOptions carries it onto the next start either way.
+      const snapshot = store.getSnapshot();
+      if (snapshot.runPhase !== "running") return;
+      // Mark this push so the pending-pick effect does not immediately send
+      // the identical frame a second time.
+      lastPushedPick.current = `${snapshot.runId ?? ""}|${next}|${effort ?? ""}`;
       bridge.setModel({ model: next, effort }).catch(() => undefined);
     },
     [bridge, store]

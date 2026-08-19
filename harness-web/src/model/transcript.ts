@@ -530,7 +530,16 @@ export function applyLocalAction(
     case "setModel":
       return {
         ...model,
-        session: { ...model.session, model: action.model, effort: action.effort },
+        session: {
+          ...model.session,
+          model: action.model,
+          effort: action.effort,
+          // A user PICK latches until the wire confirms it, so a frame from
+          // the model the process is still on cannot revert the menu (see
+          // SessionMeta.modelPickPending). A bootstrap projection does not: a
+          // restore snapshot is a memory, and the live wire outranks it.
+          modelPickPending: action.pick ? true : model.session.modelPickPending
+        },
         revision: model.revision + 1
       };
     case "setPermissionMode":

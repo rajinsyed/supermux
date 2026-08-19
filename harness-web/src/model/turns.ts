@@ -273,7 +273,17 @@ export function resetConversation(model: TranscriptModel, index: TranscriptIndex
     // A cleared pane is on NO session. Carrying the old id forward is what made
     // "New session" resume the very conversation it had just discarded: the id
     // is the pane's session identity, and every resume path reads it.
-    session: { ...model.session, title: undefined, sessionId: undefined },
+    // The pending-pick latch clears with it: every reset precedes either a
+    // restart whose params carry the pick (New Session — the init frame then
+    // confirms it) or a deliberate move onto another session whose own model
+    // must win (an explicit resume). A latch surviving into a resume would
+    // make historyReplayed ignore the resumed session's recorded model.
+    session: {
+      ...model.session,
+      title: undefined,
+      sessionId: undefined,
+      modelPickPending: undefined
+    },
     runPhase: model.runPhase,
     runId: model.runId,
     // A property of the BINARY, not of the conversation: clearing it here would

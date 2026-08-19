@@ -6,7 +6,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, Cpu, Map as MapIcon, Stop } from 
 import { formatCompactDuration, formatTokens } from "../format";
 import { Disclosure } from "../primitives/Disclosure";
 import { Elapsed } from "../primitives/Elapsed";
-import { Spinner } from "../primitives/Spinner";
+import { WorkingGlyph } from "../primitives/Spinner";
 import { AgentDetail } from "./AgentDetail";
 import {
   agentAt,
@@ -216,7 +216,12 @@ export function WorkflowBrowser({
             {subject.startedAtMs ? (
               <Elapsed className="wfb-elapsed tnum" startedAtMs={subject.startedAtMs} />
             ) : null}
-            <Spinner size={12} />
+            {/* The run itself is DELEGATED work at the summary level, so it
+                takes the pixel grid's workflow pattern — the same mark the
+                transcript row and the dock row wear for this run. An orbit here
+                said "one request is in flight", which a thirty-agent workflow
+                is not. */}
+            <WorkingGlyph variant="drive" />
           </>
         ) : stopped ? (
           <span className="wf-stopped-chip">
@@ -393,7 +398,18 @@ function AgentList({
         return (
           <li key={agent.index}>
             <button type="button" className="wfb-agent-row" onClick={() => onSelect(agent.index)}>
-              <span className={`wfb-dot is-${state}`} aria-hidden="true" />
+              {/* A RUNNING agent is delegated work, and wears the delegated
+                  mark — the subagent comet, matching the transcript's agent
+                  rows and the dock. Settled states stay dots: one shape for
+                  every settled state is what lets thirty rows read as a column
+                  of colour. Both marks are centred in the same 11px box
+                  (`.wfb-mark`), so a row advancing running → done never changes
+                  height and the labels beside them never shift. */}
+              {state === "running" ? (
+                <WorkingGlyph variant="orbit" />
+              ) : (
+                <span className={`wfb-mark wfb-dot is-${state}`} aria-hidden="true" />
+              )}
               <span className="wfb-agent-label" title={agent.promptPreview}>
                 {agent.label}
               </span>

@@ -6,10 +6,27 @@
    strip, the status line, the composer pill, and the bottom bar — with the
    page visible in the gaps. The composer is the hero: a large rounded glass
    pill with the round send control at its trailing edge.
+
+   Round 7 makes "underneath" literal (item 6). The dock used to be a flex
+   SIBLING of the scroller: it floated in appearance — glass, gaps, shadows —
+   while occupying a solid band of the flex column that content could never
+   enter. The dogfood note was "the prompt bar eats background space", and it
+   was right: the scroller's viewport ended at the composer's top edge, so the
+   whole bottom of the pane was a strip the transcript could not use, and the
+   glass had nothing behind it to be glass ABOUT.
+
+   It is absolutely positioned over the scroller now. The transcript runs the
+   pane's full height, its content column reserves the dock's MEASURED height as
+   bottom padding (`--dock-reserve` in transcript.css, written by App.tsx's
+   ResizeObserver), and the last message therefore still comes to rest above the
+   composer — but everything before it passes behind the glass on the way up.
 --------------------------------------------------------------------------- */
 
 .dock {
-  flex: 0 0 auto;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -17,8 +34,99 @@
   max-width: calc(var(--content-max) + 2 * var(--gutter));
   width: 100%;
   margin: 0 auto;
-  position: relative;
   z-index: 20;
+  /* The islands take the pointer; the gaps between them do not. Text scrolling
+     through a gap stays selectable, and a click that lands between the status
+     strip and the composer reaches the transcript rather than a dead band. */
+  pointer-events: none;
+}
+
+.dock > * {
+  pointer-events: auto;
+}
+
+/* ---------- the veil behind the dock ----------
+
+   Content passing behind the glass has to stay legible without the dock
+   becoming an opaque bar again — which would be the flex band back, just drawn
+   differently. The answer is a PROGRESSIVE veil: one layer spanning the dock's
+   own height plus a fade zone above it, blurred and tinted, with a `mask-image`
+   ramp taking it from fully applied at the bottom to nothing at the top. A line
+   of text does not hit a hard edge and vanish; it softens as it travels under
+   the composer and has faded out by the time it reaches the pill.
+
+   The TINT is `--page-bg`: the veil is made of the PAGE, not of the glass. The
+   first cut used `--panel` — the composer's own material, on the reasoning that
+   the veil and the islands should be one substance — and it was visibly wrong
+   in light. `--panel` is paper LIGHTER than the page (correct for an island
+   that has to read as lifted), so full-bleed it painted a brighter rectangle
+   across the bottom third of the pane, with the mask's ramp quantising into
+   three flat 1/255 steps: three hairline bands straight across the window over
+   a transcript that had nothing there to hide. Tinted with the page's own
+   colour the veil is INVISIBLE wherever there is no content — which is most of
+   the time — and still fully hides a line of text that scrolls into it. It also
+   cannot band, because at the top of the ramp it is fading page colour into
+   page colour.
+
+   The blur is what does the work in the middle of the ramp, and it is why this
+   reads as depth rather than as a wipe: a half-covered line is softened before
+   it is covered. Where the theme's page is `transparent` (Ghostty
+   transparency), the tint contributes nothing and the blur is the whole effect
+   — which is the right answer there, since the point of that setting is that
+   the native window shows through.
+
+   ONE ramp does both jobs: masking the layer fades the blur AND the tint
+   together, so there is no second gradient that can drift out of step with the
+   first. The stops are deliberately not linear — a straight alpha ramp on a
+   blur shows an edge about a third of the way up, because the eye tracks where
+   the blur STARTS, not where its alpha is. The extra stops ease that onset
+   away, and the top stop is fully transparent so a transcript scrolled to the
+   top carries no veil at all.
+
+   `-1` z-index inside the dock's own stacking context: behind every island,
+   above the transcript. It never takes the pointer — it is a pane of glass, and
+   selecting the text behind it must keep working. */
+.dock::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  /* FULL-BLEED, not the dock's own width. The dock is capped at the content
+     column and centred, so a veil inset to it drew a lit rectangle with two
+     visible vertical edges down the middle of the pane — the transcript is
+     capped at the same column but the PAGE is not, and neither is the scrollbar
+     gutter. `100vw` off the dock's own centre spans the pane whatever the
+     column is doing. */
+  left: 50%;
+  width: 100vw;
+  margin-left: -50vw;
+  /* The dock's own height plus a fade zone — 48px of ramp, trimmed from the
+     first cut's 76px after review: the taller veil hazed a whole extra line of
+     transcript above the composer. Still tall enough that the ramp reads as
+     depth rather than as an edge. */
+  top: -48px;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--page-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  -webkit-mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 44%,
+    rgba(0, 0, 0, 0.82) 60%,
+    rgba(0, 0, 0, 0.46) 76%,
+    rgba(0, 0, 0, 0.16) 90%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 44%,
+    rgba(0, 0, 0, 0.82) 60%,
+    rgba(0, 0, 0, 0.46) 76%,
+    rgba(0, 0, 0, 0.16) 90%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
 
 /* ---------- status strip ----------
@@ -591,24 +699,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  font-weight: 590;
 }
 
-/* Item 6: the effort is the label's QUALIFIER, not more of its name — "GPT 5.6
-   Sol Extra high" read as one run-on model name. One size down, one ink tier
-   down, behind a hairline interpunct: still one label to the eye, but the two
-   words now parse as name · setting. The interpunct is drawn here rather than
-   in markup so the accessible name stays clean. No `opacity` — the pane's
+/* The effort is the label's QUALIFIER, not more of its name — "GPT 5.6 Sol
+   Extra high" read as one run-on model name. The split is carried by WEIGHT
+   and INK alone (round-7 review: the interpunct read as clutter): the name a
+   step bolder, the effort a size and a tier down. No `opacity` — the pane's
    contrast tests composite real color tiers, and a second dim on top of a tier
    is the class of rule they exist to reject. */
 .composer-model-effort {
   flex: 0 0 auto;
   font-size: 11px;
-  color: var(--text-faint);
-}
-
-.composer-model-effort::before {
-  content: "·";
-  margin-right: 4px;
   color: var(--text-faint);
 }
 

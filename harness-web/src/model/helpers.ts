@@ -69,21 +69,60 @@ export function emptyUsage(): UsageTotals {
 }
 
 /**
+ * A model id with its bracketed variant suffix removed ("claude-opus-5[1m]" →
+ * "claude-opus-5").
+ *
+ * The catalog and the wire spell the SAME model three ways: the selector can
+ * carry the suffix ("opus[1m]"), the catalog's resolved id can carry it
+ * ("claude-opus-5[1m]"), and the assistant frames' `message.model` stamps the
+ * bare API id ("claude-opus-5") — the live probe against the user's binary
+ * shows all three at once (`--model 'opus[1m]'` → init "claude-opus-5[1m]" →
+ * assistant "claude-opus-5"). Any comparison that decides "same model or not"
+ * has to strip the suffix from BOTH sides or a send renames the picker to a
+ * raw slug.
+ */
+export function baseModelId(id: string): string {
+  return id.replace(/\[[^\]]*\]$/, "");
+}
+
+/** Whether two wire/catalog model ids denote the same model. */
+export function sameModelId(a: string, b: string): boolean {
+  return a === b || baseModelId(a) === baseModelId(b);
+}
+
+/**
  * `system/init` reports the RESOLVED model id ("claude-sonnet-5"), while the
  * catalog from `initialize` is keyed by short selector ("sonnet"). The two
  * namespaces never overlap on a real session, so matching only on `value` leaves
  * the pill printing a raw id, no menu row checked, and the effort submenu — which
  * is gated on the active model — unreachable. Both identifiers resolve here so
  * the header and the empty state cannot drift apart.
+ *
+ * Matching runs in falling strictness: exact value, exact resolved id, then the
+ * same two with the `[1m]`-style suffix stripped from both sides — the wire
+ * stamps "claude-opus-5" for a session the catalog only knows as
+ * "opus[1m]" / "claude-opus-5[1m]", and strict equality left that session
+ * displaying the raw id. Within the resolved-id passes a CONCRETE row outranks
+ * the "default" alias row: both resolve to the same model, but "Opus (1M
+ * context)" names it and "Default (recommended)" does not — the alias row
+ * listing first must not rename a resolvable model.
  */
 export function activeModelFor(
   session: Pick<SessionMeta, "models" | "model">
 ): ModelDescriptor | undefined {
   const id = session.model;
   if (!id) return undefined;
+  const models = session.models;
+  const preferConcrete = (
+    pred: (m: ModelDescriptor) => boolean
+  ): ModelDescriptor | undefined =>
+    models.find((m) => m.value !== "default" && pred(m)) ?? models.find(pred);
+  const bare = baseModelId(id);
   return (
-    session.models.find((m) => m.value === id) ??
-    session.models.find((m) => m.resolvedModel === id)
+    models.find((m) => m.value === id) ??
+    preferConcrete((m) => m.resolvedModel === id) ??
+    preferConcrete((m) => baseModelId(m.value) === bare) ??
+    preferConcrete((m) => m.resolvedModel !== undefined && baseModelId(m.resolvedModel) === bare)
   );
 }
 
@@ -137,13 +176,47 @@ export function adoptSessionModel(
   cachedModels: ModelDescriptor[] | undefined,
   wireModel: string
 ): SessionMeta {
-  const selected = resolveModel(session, cachedModels);
-  const sameResolvedModel =
-    selected?.value === wireModel || selected?.resolvedModel === wireModel;
-  if (wireModel === session.model || sameResolvedModel) {
-    return { ...session, model: wireModel };
+  const confirmsSelection = wireMatchesSelection(session, cachedModels, wireModel);
+  // A pick the wire has not yet honored outranks a wire frame naming a
+  // DIFFERENT model: that frame describes the state the pick is about to
+  // change — the in-flight turn's message_start, or the init of a restart
+  // whose start params were built before the pick landed — and adopting it
+  // snapped the picker back to the model the process launched with the moment
+  // the user chose something else. The pick is not merely display: it rides
+  // `set_model` on a live process and `startOptions` onto the next start, so
+  // the wire converges on it and the next confirming frame clears the latch.
+  // Every deliberate move onto ANOTHER session's model (resume, New Session)
+  // resets the conversation first, which clears the latch, so a resumed
+  // session's own recorded model still wins.
+  if (session.modelPickPending && !confirmsSelection) return session;
+  if (confirmsSelection) {
+    return { ...session, model: wireModel, modelPickPending: undefined };
   }
-  return { ...session, model: wireModel, effort: undefined };
+  return { ...session, model: wireModel, effort: undefined, modelPickPending: undefined };
+}
+
+/**
+ * Whether a model id the WIRE reported denotes the same model the session has
+ * selected. The wire may spell it without the catalog's variant suffix
+ * ("claude-opus-5" for a session running "opus[1m]" / "claude-opus-5[1m]"), so
+ * the pick's catalog row is compared against the wire id with the suffix
+ * stripped from both sides. Also the guard `applyInit` uses to decide whether
+ * an init frame CONFIRMS a pending pick or describes the launch state a
+ * mid-restart pick is about to override.
+ */
+export function wireMatchesSelection(
+  session: Pick<SessionMeta, "models" | "model"> & { defaultModel?: string },
+  cachedModels: ModelDescriptor[] | undefined,
+  wireModel: string
+): boolean {
+  if (session.model !== undefined && sameModelId(session.model, wireModel)) return true;
+  if (!session.model) return false;
+  const selected = resolveModel(session, cachedModels);
+  if (!selected) return false;
+  return (
+    sameModelId(selected.value, wireModel) ||
+    (selected.resolvedModel !== undefined && sameModelId(selected.resolvedModel, wireModel))
+  );
 }
 
 /**

@@ -32,13 +32,19 @@
  * frame is the same width as the transcript underneath it, and the page shows
  * as a margin on all four sides. `min()` keeps the 18px inset on a pane too
  * narrow for the cap to matter. */
+/* The bottom margin clears the FLOATING dock (round-7 item 6). The dock is
+   absolutely positioned over the pane now, so a frame that simply filled the
+   flex column would run under the composer — and unlike the transcript, a frame
+   is a card with a border and a background: content does not pass behind glass
+   here, it is hidden behind an opaque edge. `--dock-height` is measured onto
+   `.app` by App.tsx; the fallback is a plausible resting dock. */
 .view-frame {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   width: min(100% - 36px, calc(var(--content-max) + 2 * var(--gutter)));
-  margin: 16px auto 6px;
+  margin: 16px auto calc(var(--dock-height, 96px) + 6px);
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
   background: var(--surface);

@@ -10,50 +10,91 @@
   margin-bottom: 0;
 }
 
+/* ---------- reading rhythm (round-7 item 5) ----------
+
+   The dogfood note was "it doesn't look good and readable — can't exactly tell
+   why it looks worse" against another Claude client. Measured against the real
+   render, the answer was not one thing, it was that every vertical measure in
+   this sheet was set for CHROME and the markdown body is PROSE:
+
+     • paragraphs closed with 8px on a 21.6px line — 0.37em, about a third of
+       the gap prose wants. Consecutive paragraphs read as one wrapped block.
+     • list items sat 1px apart, which is not a gap at all: a five-item list
+       rendered as a solid slab of text with bullets in it, and a bold lead-in
+       ("Component organization:") had nothing under it to separate the label
+       from the items it introduces.
+     • headings opened 14px above and closed 6px below, so a heading sat nearer
+       the paragraph ABOVE it than the section it titles — backwards.
+
+   The sizes were the other half, and they live on the type ramp in
+   transcript.css. Here the measures are re-cut in ems of the body they wrap,
+   so they hold at every size the `.md` body is mounted at (assistant answer,
+   thinking trace, tool output, plan card). */
+
 .md p {
-  margin: 0 0 8px;
-  line-height: 1.6;
+  margin: 0 0 0.8em;
+  line-height: 1.65;
 }
 
+/* A heading belongs to what FOLLOWS it: the space above is now a real section
+   break and the space below is a single line's breath. */
 .md h1,
 .md h2,
 .md h3,
 .md h4 {
-  margin: 14px 0 6px;
+  margin: 1.5em 0 0.5em;
   font-weight: 600;
   letter-spacing: -0.015em;
-  line-height: 1.3;
+  line-height: 1.35;
   color: var(--text);
 }
 
-.md h1 {
-  font-size: 17px;
+.md > h1:first-child,
+.md > h2:first-child,
+.md > h3:first-child,
+.md > h4:first-child {
+  margin-top: 0;
 }
 
+.md h1 {
+  font-size: 1.2em;
+}
+
+/* No rule under it. A hairline across the column cuts one answer into filed
+   sections — it is the heaviest mark in a body whose whole job is to read as
+   somebody talking, and at three headings deep the reply looked like a form.
+   The section break above the heading already separates the sections. */
 .md h2 {
-  font-size: 15px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--border-faint);
+  font-size: 1.1em;
 }
 
 .md h3 {
-  font-size: 13.5px;
+  font-size: 1.02em;
 }
 
 .md h4 {
-  font-size: 13px;
+  font-size: 1em;
   color: var(--text-soft);
 }
 
 .md ul,
 .md ol {
-  margin: 0 0 8px;
-  padding-left: 20px;
+  margin: 0 0 0.8em;
+  padding-left: 1.5em;
 }
 
+/* Items are separated, and the first one is pushed off the sentence that
+   introduces it — the bold lead-in crowding its own list was the single most
+   visible symptom in the dogfood screenshot. */
 .md li {
-  margin: 1px 0;
-  line-height: 1.55;
+  margin: 0.3em 0;
+  line-height: 1.6;
+  padding-left: 0.15em;
+}
+
+.md ul > li:first-child,
+.md ol > li:first-child {
+  margin-top: 0.15em;
 }
 
 .md li::marker {
@@ -61,7 +102,17 @@
 }
 
 .md li > p {
-  margin: 0 0 2px;
+  margin: 0 0 0.3em;
+}
+
+.md li > p:last-child {
+  margin-bottom: 0;
+}
+
+/* A nested list is part of its parent item, not a new block after it. */
+.md li > ul,
+.md li > ol {
+  margin: 0.3em 0 0;
 }
 
 .md ul.contains-task-list {
@@ -82,8 +133,8 @@
 }
 
 .md blockquote {
-  margin: 0 0 8px;
-  padding: 2px 0 2px 12px;
+  margin: 0 0 0.8em;
+  padding: 0.15em 0 0.15em 0.9em;
   border-left: 2px solid var(--claude-border);
   color: var(--text-muted);
 }
@@ -93,13 +144,20 @@
 }
 
 .md hr {
-  margin: 12px 0;
+  margin: 1.4em 0;
   border: none;
   border-top: 1px solid var(--border);
 }
 
+/* 600 against a 400 body is a two-step jump, and this body is full of bold
+   lead-ins ("Component organization:") that open a line and then hand off to
+   ordinary prose. At 600 the lead-in was heavier than the H3 above it and the
+   eye stopped there instead of reading through. 590 keeps the emphasis
+   unmistakable while letting the sentence continue — with the SF/system stack
+   this lands between the semibold and medium masters rather than snapping to
+   the heavier one. */
 .md strong {
-  font-weight: 600;
+  font-weight: 590;
   color: var(--text);
 }
 
@@ -111,23 +169,59 @@
   color: var(--text-faint);
 }
 
+/* ---------- the inline-code chip ----------
+
+   Measured on the real render, the chip painted 19px tall inside a 21.6px line
+   box: it filled 88% of the line it sat in, so a sentence with two chips in it
+   read as a row of buttons rather than as a sentence. Three things did that,
+   and all three are geometry rather than colour:
+
+     • a 1px BORDER, which is the mark that turns a tinted run of text into an
+       object. A bed and a border are two ways of saying the same thing; the
+       bed alone is the quieter one, and it is the one the reference uses.
+     • vertical padding in PX (1.5px), which does not scale with the body and
+       therefore ate a fixed share of a line box that does.
+     • 0.88em, which on a mono face — larger x-height, wider glyphs than the
+       body's — is not the optical match for 1em of the surrounding text that
+       the ratio suggests. It read as a size change mid-sentence.
+
+   Now: no border, ems throughout, and a slightly larger ratio that lands
+   OPTICALLY level with the body rather than numerically below it. Padding is
+   asymmetric — generous sideways, minimal vertically — because horizontal
+   padding is what separates the chip from the words beside it, while vertical
+   padding only inflates it inside its line.
+
+   `vertical-align` nudges the bed back onto the text's own baseline: a mono
+   face sits slightly low against the body's, and at chip sizes that offset is
+   visible as the chip riding under the line. */
 .inline-code {
-  padding: 1.5px 5px;
-  border-radius: var(--r-xs);
-  background: var(--code-bg);
-  border: 1px solid var(--border-faint);
+  padding: 0.08em 0.36em;
+  border-radius: 4px;
+  background: var(--inline-code-bg);
   font-family: var(--mono);
-  font-size: 0.88em;
+  font-size: 0.92em;
+  line-height: inherit;
+  vertical-align: 0.02em;
   color: var(--claude);
   word-break: break-word;
 }
 
+/* Inside a heading the chip inherits the heading's weight, so it does not
+   collapse to a light mono run in the middle of bold type. */
+.md h1 .inline-code,
+.md h2 .inline-code,
+.md h3 .inline-code,
+.md h4 .inline-code,
+.md strong .inline-code {
+  font-weight: 600;
+}
+
 .md .code-block {
-  margin: 0 0 8px;
+  margin: 0.7em 0 0.9em;
 }
 
 .md-table-wrap {
-  margin: 0 0 8px;
+  margin: 0.7em 0 0.9em;
   overflow-x: auto;
   border-radius: var(--r-md);
   border: 1px solid var(--border-faint);

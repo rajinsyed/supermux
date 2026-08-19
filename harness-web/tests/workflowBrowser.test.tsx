@@ -350,14 +350,45 @@ describe("the browser's panes", () => {
     expect(container.querySelector(".wfb-agent-tokens")!.textContent).toBe("17k");
   });
 
-  test("each agent row carries a state dot", () => {
+  test("a settled agent row carries a state dot; a RUNNING one carries the delegated mark", () => {
+    // Round 7's item 4: the browser was the last surface still drawing a
+    // breathing dot for running work, so "this agent is working" wore one mark
+    // here and a different one in the transcript and the dock two views away. A
+    // running agent takes the pixel-grid comet — the same `WorkingGlyph`
+    // variant="orbit" the inline agent rows and the dock use — and every
+    // SETTLED state keeps its dot.
     const { container } = openBrowser(replayThrough(FLOW, 39));
     fireEvent.click(container.querySelectorAll<HTMLElement>(".wfb-phase-row")[0]);
-    const dots = Array.from(container.querySelectorAll(".wfb-agent-row .wfb-dot")).map((node) =>
-      node.className
-    );
-    expect(dots[0]).toContain("is-done");
-    expect(dots[1]).toContain("is-running");
+    const rows = Array.from(container.querySelectorAll<HTMLElement>(".wfb-agent-row"));
+
+    const done = rows[0].querySelector(".wfb-dot")!;
+    expect(done.className).toContain("is-done");
+    expect(rows[0].querySelector(".pxgrid")).toBeNull();
+
+    // The running row draws the grid and NO dot — one mark per row, always.
+    expect(rows[1].querySelector(".wfb-dot")).toBeNull();
+    expect(rows[1].querySelector(".pxgrid.is-orbit")).not.toBeNull();
+  });
+
+  test("no surface in the browser animates the retired pulsing dot", async () => {
+    // The keyframe both `.wfb-dot.is-running` and `.agent-dot.is-running` drove
+    // is gone, and the state colour that stayed behind must never grow an
+    // animation back — that is the round-5 mark the loading family exists to be
+    // rid of.
+    // Comments stripped: both sheets DOCUMENT the retirement, and an assertion
+    // that forbids the name outright would forbid saying why it went.
+    const strip = async (name: string) =>
+      (await Bun.file(new URL(`../src/styles/${name}`, import.meta.url).pathname).text()).replace(
+        /\/\*[\s\S]*?\*\//g,
+        ""
+      );
+    const sheet = await strip("workflow.css");
+    const agents = await strip("agents.css");
+    expect(sheet).not.toContain("dot-breathe");
+    expect(agents).not.toContain("dot-breathe");
+    expect(/\.wfb-dot\.is-running\s*\{([^}]*)\}/.exec(sheet)![1]).not.toMatch(/animation/);
+    // The inline rows never draw a running dot at all.
+    expect(agents).not.toMatch(/\.agent-dot\.is-running\s*\{/);
   });
 
   test("selecting an agent swaps the pane for its detail", () => {

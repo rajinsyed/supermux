@@ -216,6 +216,13 @@ export const TurnView = memo(function TurnView({
                * so the whole line is the target and keyboard reach is
                * unchanged. `aria-expanded` lives here, on the thing that
                * actually toggles.
+               *
+               * Round 7: the reveal is hover/focus in EVERY state. Round 6
+               * pinned the glyph on a folded turn "because nothing else says
+               * there is hidden content" — but a scrolled-back transcript is
+               * all folded turns, so the pin put the column of controls
+               * straight back. `is-folded` stays on the class list because the
+               * chevron's DIRECTION is keyed off it; nothing pins it visible.
                */
               <button
                 type="button"
@@ -225,9 +232,9 @@ export const TurnView = memo(function TurnView({
               >
                 <span className="fold-label">{foldLabel}</span>
                 {/* Not a nested button — a button inside a button is invalid and
-                    unfocusable. It is the row's own trailing glyph, styled as a
-                    ghost control so that when it appears it obviously does
-                    something. */}
+                    unfocusable. It is the row's own trailing glyph: bare, with
+                    no bed of its own, because the row it sits on is a sentence
+                    rather than a toolbar. */}
                 <span className="fold-toggle" aria-hidden="true">
                   {folded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
                 </span>

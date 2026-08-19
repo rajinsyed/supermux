@@ -195,6 +195,23 @@ export function themeVariables(theme: HarnessTheme): Record<string, string> {
        themes; the QUIET terminal (background-task tails in light chrome)
        follows the page instead. */
     "--code-bg": dark ? "rgba(0, 0, 0, 0.30)" : "rgba(20, 18, 16, 0.045)",
+
+    /* The INLINE chip's bed, split from the code BLOCK's (round-7 item 5).
+     *
+     * The chip reused `--code-bg`, which in dark is black at 30% — a bed
+     * designed to sink a code block inside a card that already has a surface
+     * under it. An inline chip has no such surface: it sits on the bare
+     * transcript, which is near-black, so a darker-than-black veil rendered as
+     * no bed at all and the chip was carried entirely by its border. Taking the
+     * border off (the thing that made it read as a button in a sentence) left
+     * nothing, which is why this needs its own token rather than a tweak.
+     *
+     * In DARK it is therefore a white veil — the one direction that separates
+     * from near-black — kept low enough to stay a tint rather than a slab. In
+     * LIGHT the ink veil is already the correct direction and only lifts
+     * slightly, since it now carries the chip alone. Both are audited under the
+     * chip's own ink (`--claude`) in tests/contrast.test.ts. */
+    "--inline-code-bg": dark ? "rgba(255, 255, 255, 0.075)" : "rgba(20, 18, 16, 0.055)",
     "--code-header-bg": dark ? "rgba(0, 0, 0, 0.20)" : "rgba(20, 18, 16, 0.028)",
     "--terminal-bg": dark ? "rgba(0, 0, 0, 0.38)" : "rgba(24, 22, 20, 0.94)",
     "--terminal-fg": "rgba(248, 246, 244, 0.94)",

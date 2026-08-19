@@ -418,6 +418,17 @@ export interface SessionMeta {
    */
   effort?: EffortLevel;
   /**
+   * A user pick the WIRE has not yet confirmed. Set when the picker (not a
+   * snapshot bootstrap) writes `model`; cleared when a wire frame (init,
+   * message_start) reports the same model, or when the conversation resets.
+   * While set, a wire frame reporting a DIFFERENT model is ignored for
+   * `session.model`: it describes the state the pick is about to change — the
+   * in-flight turn's message_start, or the init of a restart whose params were
+   * built before the pick — and adopting it silently reverted the picker to
+   * the settings default ("stays on GPT 5.6 Sol no matter what I pick").
+   */
+  modelPickPending?: boolean;
+  /**
    * The CLI's own session-default model, read from its settings
    * (`~/.claude/settings.json` "model", project files first) and delivered in
    * `harness.context`. This is what a process started with NO --model flag will
@@ -712,7 +723,13 @@ export type LocalAction =
     }
   | { kind: "contextUsage"; usage: ContextUsage }
   | { kind: "setTitle"; title: string }
-  | { kind: "setModel"; model: string; effort?: EffortLevel }
+  /**
+   * `pick` marks a USER's choice from the model menu (or effort dial), as
+   * opposed to a bootstrap projection of a restore snapshot. Only a pick sets
+   * `session.modelPickPending`, the latch that stops in-flight wire frames
+   * from reverting the menu to the model the process was launched with.
+   */
+  | { kind: "setModel"; model: string; effort?: EffortLevel; pick?: boolean }
   | { kind: "setPermissionMode"; mode: PermissionMode }
   | { kind: "startFailed"; error?: string }
   | { kind: "dismissBanner"; id: string }

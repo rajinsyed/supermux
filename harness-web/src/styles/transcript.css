@@ -21,10 +21,37 @@
   min-height: 0;
 }
 
+/* The bottom padding is the DOCK's footprint (round-7 item 6).
+ *
+ * The dock floats over this scroller rather than sitting beside it in the flex
+ * column, so the scroller's viewport runs the full height of the pane and
+ * content passes behind the composer on its way up. What keeps the last message
+ * from coming to rest UNDER the pill is this padding: the content column ends
+ * `--dock-reserve` above the scroller's own bottom, so "scrolled to the bottom"
+ * lands the newest line just above the glass.
+ *
+ * `--dock-height` is measured and written onto `.app` by App.tsx (a
+ * ResizeObserver on the dock), because the dock's height is banners plus the
+ * working panel plus the todo strip plus a composer that grows to ten lines
+ * plus the bottom bar, and every one of those comes and goes. The fallback is a
+ * plausible resting dock, so the column is never wrong by a whole composer on
+ * the first frame before the observer has run.
+ *
+ * The extra 10px is BREATHING ROOM, not slack: without it the last line sits
+ * exactly on the veil's fully-opaque stop, which is legible but reads as
+ * clipped. */
 .transcript-inner {
+  --dock-reserve: calc(var(--dock-height, 96px) + 10px);
   max-width: var(--content-max);
   margin: 0 auto;
-  padding: 14px var(--gutter) 6px;
+  padding: 14px var(--gutter) var(--dock-reserve);
+}
+
+/* A framed sub-view ends ABOVE the dock — the frame's own bottom margin clears
+   it — so its scroller must not reserve the dock's height a second time. It
+   keeps the ordinary resting pad. */
+.view-frame .transcript-inner {
+  padding-bottom: 6px;
 }
 
 .transcript-pad {
@@ -91,8 +118,13 @@
   border-bottom-right-radius: 7px;
   background: var(--surface-raised);
   border: 1px solid var(--border);
-  font-size: 13px;
-  line-height: 1.55;
+  /* Tracks the answer's reading size (see `.assistant-text`), a touch below it
+     — the user's own words are the shorter half of the exchange and sit in a
+     bubble, so they do not need the full measure's leading, but leaving them at
+     the old 13px while the answer moved to 14.5px made the prompt read as a
+     caption on its own reply. */
+  font-size: 14px;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -216,10 +248,30 @@
   position: relative;
 }
 
+/* The reading size (round-7 item 5).
+ *
+ * 13.5px/1.6 is a CHROME size — it is what the tool cards, the dock and the
+ * fold rows are set at — and the assistant's answer was set at it too, so the
+ * one thing on the page a reader actually reads was typographically
+ * indistinguishable from the labels around it. The reference client sets its
+ * body around 15–16px; 14.5px is the same move at this pane's scale and keeps
+ * the column near 80 characters at --content-max (760px), which is the measure
+ * prose wants. Below that the chrome sizes stay put, so the answer now sits a
+ * full step ABOVE its own furniture and the hierarchy reads without any
+ * colour or weight change.
+ *
+ * 1.68 rather than 1.6 because the leading has to grow with the measure, not
+ * just with the size: a longer line needs more space under it for the eye to
+ * find the start of the next one. The paragraph gap in content.css is set in
+ * ems of this, so the two stay in proportion.
+ *
+ * `text-wrap: pretty` is the last piece — it costs nothing and it stops the
+ * short widowed final word that made dense replies look ragged. */
 .assistant-text {
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: 14.5px;
+  line-height: 1.68;
   margin: 6px 0;
+  text-wrap: pretty;
 }
 
 .assistant-text:first-child {
@@ -291,7 +343,26 @@
 
    The whole row stays the button — keyboard reach and hit target are unchanged
    — and `:focus-visible` reveals the glyph exactly as hover does, so a keyboard
-   reader is never shown less than a pointer reader. */
+   reader is never shown less than a pointer reader.
+
+   Round 7 takes three more things off this row, all from the same dogfood note
+   ("the arrow and its box are always there and the row lights up under the
+   pointer"):
+
+     • the toggle is hidden at rest in EVERY state, folded included. Pinning it
+       on a folded turn meant a scrolled-back transcript — where every turn is
+       folded — was again a column of controls, which is the exact thing the
+       reveal was for. Folded-ness is legible from the transcript itself: the
+       work tree under the sentence is either there or it is not.
+     • the toggle has no bed and no border. A ghost button beside a sentence is
+       a second object on a line whose whole job is to be one sentence; the
+       chevron alone, in full ink, is the affordance.
+     • the row itself takes no hover BACKGROUND. "Worked for 2m 30s" is prose,
+       and prose that grows a grey slab under the pointer reads as a menu item.
+       The ink still lifts, so the row is still visibly live.
+
+   `.work-overflow` keeps both — it is a genuine control with a count on it, and
+   its hidden rows are the point. */
 
 .fold-head,
 .work-overflow {
@@ -307,19 +378,23 @@
 
 /* The settled row reserves its trailing affordance's footprint at rest, so
    revealing the glyph never nudges the label. Padding rather than a gap: the
-   ghost button is 20px and sits inside it. */
+   bare chevron is 16px and sits inside it. */
 .fold-head {
-  gap: 8px;
+  gap: 6px;
   padding: 3px 4px 3px 2px;
 }
 
+/* Ink only. The bed belongs to controls, and this row is a sentence. */
 .fold-head:hover,
+.fold-head:focus-visible {
+  color: var(--text);
+}
+
 .work-overflow:hover {
   color: var(--text);
   background: var(--surface-hover);
 }
 
-.fold-head:focus-visible,
 .work-overflow:focus-visible {
   color: var(--text);
 }
@@ -328,10 +403,8 @@
   font-weight: 500;
 }
 
-/* The trailing affordance: a small ghost button. It carries a bed and a border
-   of its own precisely BECAUSE it only appears on hover — an affordance that
-   shows up unannounced has to look, at a glance, like something that can be
-   pressed, and a bare 12px chevron does not.
+/* The trailing affordance: a BARE glyph, no bed and no border. It reserves its
+   own footprint at rest so revealing it never nudges the label.
 
    `visibility` alongside opacity, so the hidden state is not a transparent
    click target sitting over the row's own trailing edge. */
@@ -339,37 +412,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
-  border-radius: var(--r-xs);
-  border: 1px solid var(--border);
-  background: var(--surface-raised);
-  color: var(--text-muted);
+  color: var(--text-faint);
   opacity: 0;
   visibility: hidden;
   transform: translateX(-3px);
   transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease),
-    visibility var(--dur) var(--ease), color var(--dur) var(--ease),
-    border-color var(--dur) var(--ease);
+    visibility var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
+/* Hover and focus-visible only — in every state, folded included. */
 .fold-head:hover .fold-toggle,
 .fold-head:focus-visible .fold-toggle {
   opacity: 1;
   visibility: visible;
   transform: none;
   color: var(--text);
-  border-color: var(--border-strong);
-}
-
-/* A FOLDED turn keeps its affordance visible. There is hidden content and no
-   other sign of it — the count that used to say so is gone — so the one row
-   whose state is not self-evident from the transcript always shows the way in. */
-.fold-head.is-folded .fold-toggle {
-  opacity: 1;
-  visibility: visible;
-  transform: none;
 }
 
 /* ---------- thinking ----------
@@ -468,8 +528,15 @@
    states unreadable from each other. The dash is gone: this row's label is
    already the most specific thing on it (it names the state AND counts the
    seconds), so the animation lands on the words — the sheen sweep declared in
-   cards.css, keyed off the `.working-dots` anchor — and a small accent tick
-   trails the sentence, the way a caret trails a line still being written.
+   cards.css, keyed off the `.working-dots` anchor.
+
+   Round 6 also trailed the sentence with a small accent tick, and round 7's
+   dogfood took it back off: with the label ALREADY sweeping, a second mark
+   beating beside it is two animations saying one thing, and at 4px beside 12px
+   type it read as a stray bullet rather than as a caret. THE SWEEPING LABEL IS
+   THE MARK — that is the whole point of the round-6 split, and the tick was the
+   one piece of it still drawing a glyph. (`@keyframes turn-tick` went with it;
+   nothing else drove it.)
 
    `.working-dots` renders no glyph now. It stays as the anchor that sibling
    selector needs, collapsed to zero width, and `gap: 0` on the row keeps the
@@ -491,39 +558,6 @@
 .turn-live-label {
   font-size: 12px;
   color: var(--text-muted);
-}
-
-/* The tick: one accent dot keeping the turn's time. Deliberately NOT a spinner
-   — the orbit means "one request is in flight", and a streaming turn is not one
-   request — and deliberately not a bar, which is the mark this pass removes. */
-.turn-live-label::after {
-  content: "";
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  margin-left: 6px;
-  vertical-align: 1px;
-  border-radius: var(--r-pill);
-  background: var(--claude-strong);
-  animation: turn-tick 2.2s ease-in-out infinite;
-}
-
-/* Same 2.2s period as the label's sweep, so the tick brightens as the crest
-   crosses the words rather than beating against them. */
-@keyframes turn-tick {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .turn-live-label::after {
-    opacity: 0.85;
-  }
 }
 
 .turn-interrupted {
@@ -723,8 +757,10 @@
   border-radius: var(--r-lg);
   background: var(--surface-raised);
   border: 1px solid var(--border-faint);
-  font-size: 13px;
-  line-height: 1.55;
+  /* Same reading size as the main transcript's user bubble — an agent thread is
+     the same conversation in a frame, not a smaller class of one. */
+  font-size: 14px;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -755,11 +791,17 @@
 /* ---------- jump pill ----------
 
    Floats OVER the transcript's last lines rather than reserving a blank band
-   under them; the drop shadow is what separates it from the content below. */
+   under them; the drop shadow is what separates it from the content below.
+
+   Round 7: its wrapper now runs the pane's FULL height (the dock floats over
+   it), so a flat `bottom: 12px` would park the pill behind the composer — the
+   one control whose entire job is to be reachable when the reader is lost. It
+   rides on the same measured dock height everything else in this pass keys off,
+   and the fallback is the resting dock. */
 
 .jump-pill {
   position: absolute;
-  bottom: 12px;
+  bottom: calc(var(--dock-height, 96px) + 12px);
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
@@ -774,6 +816,13 @@
   color: var(--text-soft);
   z-index: 15;
   white-space: nowrap;
+}
+
+/* Inside a framed sub-view the FRAME already clears the dock, so the pill goes
+   back to sitting just above its own scroller's last line. Keying off the dock
+   height twice would float it most of a composer up the card. */
+.view-frame .jump-pill {
+  bottom: 12px;
 }
 
 .jump-pill:hover {

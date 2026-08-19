@@ -1,6 +1,7 @@
 import type { JsonObject, StreamEventLine } from "../protocol/types";
 import { insertBlock, locateByKey, makeTextBlock, makeThinkingBlock, makeToolBlock, writeBlock } from "./blocks";
 import {
+  adoptSessionModel,
   asString,
   blockAtPath,
   isTaskTool,
@@ -32,9 +33,24 @@ export function applyStreamEvent(
       index.streamMessageIds.set(scope, messageId);
       const ensured = ensureTurn(model, index, nowMs, parent);
       const turn = ensured.model.turns[ensured.turnIndex];
+      // Through the SAME adoption path as init and historyReplayed, never a
+      // raw overwrite. `message_start` stamps the bare API id ("claude-opus-5"
+      // for a session running "opus[1m]"), and writing it directly is what
+      // renamed the picker to a slug on the first send: the raw id then only
+      // resolved against the catalog by strict equality, which failed. The
+      // adoption compares through the catalog with the variant suffix
+      // stripped, keeps the carried effort when it is the same model, and
+      // defers to a user pick the wire has not confirmed yet.
       const model2 =
         event.message?.model && event.message.model !== model.session.model && !parent
-          ? { ...ensured.model, session: { ...ensured.model.session, model: event.message.model } }
+          ? {
+              ...ensured.model,
+              session: adoptSessionModel(
+                ensured.model.session,
+                ensured.model.cachedModels,
+                event.message.model
+              )
+            }
           : ensured.model;
       return withTurn(model2, ensured.turnIndex, { ...turn, state: "streaming" });
     }

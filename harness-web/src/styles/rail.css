@@ -1,16 +1,32 @@
 /* ---------------------------------------------------------------------------
-   The message rail (round-5 item 5).
+   The message rail.
 
-   Cursor's timeline: a short vertical rail of ticks at the pane's LEFT edge,
-   VERTICALLY CENTRED, one tick per message, the on-screen one wider and
-   brighter, a preview on hover, a jump on click.
-
-   The previous rail ran full-height down the RIGHT edge, directly under the
-   scrollbar. It read as a second scrollbar — two position indicators a pixel
-   apart, disagreeing about what they measure, since the rail counts TURNS and
-   the scrollbar counts pixels — and it sat on the far side from the content it
+   ROUND 5 established the position, and it stands: a short rail of ticks at the
+   pane's LEFT edge, VERTICALLY CENTRED, one tick per turn, a preview on hover,
+   a jump on click. The rail it replaced ran full-height down the RIGHT edge
+   directly under the scrollbar — two position indicators a pixel apart,
+   disagreeing about what they measure, since the rail counts TURNS and the
+   scrollbar counts pixels — and it sat on the far side from the content it
    indexes. Being short and centred is what turns it back into a map: it does
    not track the viewport, it lists the conversation.
+
+   ROUND 7 restyles the ticks themselves after Synara's `MessageTrail`
+   (apps/web/src/components/chat/MessageTrail.tsx). Their numbers, kept exactly:
+
+     tick        2px tall, 6px at rest, 30px magnified, fully rounded
+     pitch       10px centre-to-centre (a deliberately TIGHT stack)
+     inset       14px from the rail's left edge
+     rail box    56px wide, capped at 80% of the pane's height
+     transition  90ms ease-out on width and opacity
+     tones       rest 0.20 · visible 0.52 · anchor 0.90 · under-pointer 1.00
+
+   The division of labour between this sheet and the component is the load-
+   bearing part. WIDTH is continuous — a Gaussian magnification following the
+   pointer — so it is written imperatively from a single rAF in MessageRail.tsx.
+   OPACITY is discrete and lives here, keyed off `data-` attributes, because
+   Synara is explicit that tone must never follow the cursor as a gradient: size
+   says where the POINTER is, tone says where the READER is, and blurring the
+   two is what makes a rail read as a glow instead of as an instrument.
 
    The old `.timeline*` rules are retired in transcript.css's own section (they
    are dead selectors now — nothing renders that markup).
@@ -24,10 +40,13 @@
      pane's full height and becoming a scrollbar again. */
   top: 50%;
   transform: translateY(-50%);
+  /* Synara's fixed 56px rail box. The ticks are inset 14px and grow rightward
+     to 30px inside it (14 + 30 = 44), so the magnified tick always has room and
+     the box never resizes as it grows. */
+  width: 56px;
   max-height: min(46vh, 340px);
   z-index: 10;
   display: none;
-  padding: 8px 10px 8px 6px;
 }
 
 /* Pointer-only. Every tick is `tabIndex={-1}`; without a fine pointer there is
@@ -38,60 +57,110 @@
   }
 }
 
+/* The scrolling tick viewport, capped below the rail so a long conversation
+   scrolls inside it (Synara's `RAIL_MAX_HEIGHT_RATIO`). Its own scrollbar is
+   hidden — a scrollbar on a 56px rail is wider than the marks it would measure
+   — and the mask fades the ticks out at both ends instead, which is what says
+   "there is more above/below" without drawing a second control. */
+.msg-rail-viewport {
+  max-height: 80%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  contain: layout;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
+}
+
+.msg-rail-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+/* 12px of padding top and bottom is Synara's `paddingPx` — the rail's content
+   starts inset from its own ends so the first and last tick are not flush
+   against the mask that fades them. */
 .msg-rail-ticks {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  max-height: 100%;
-  overflow: hidden;
+  /* 10px centre-to-centre on a 2px tick = an 8px gap. */
+  gap: 8px;
+  padding: 12px 0;
 }
 
-/* Subtle until hovered: at rest the rail is a faint column at the edge of
-   vision, and the whole rail brightens together under the pointer — hovering
-   one tick is how you start reading the map, not how you isolate one mark. */
+/* One mark. Width is written from the rAF; everything here is the resting
+   state, the tone tiers, and the transition both properties ride.
+
+   `will-change` is declared because width is animated on every tick on every
+   pointer move — this is the one place in the pane where that hint is earned
+   rather than sprayed. */
 .msg-rail-tick {
-  width: 10px;
+  width: 6px;
   height: 2px;
+  margin-left: 14px;
   flex: 0 0 auto;
   border-radius: var(--r-pill);
-  background: var(--text-faint);
-  opacity: 0.32;
-  transition: opacity var(--dur) var(--ease), width var(--dur) var(--ease),
-    background var(--dur) var(--ease);
+  background: var(--text);
+  opacity: 0.2;
+  will-change: width, opacity;
+  transition: width 90ms var(--ease-out), opacity 90ms var(--ease-out);
 }
 
-.msg-rail:hover .msg-rail-tick {
-  opacity: 0.5;
+/* Tier 2 — the turn is on screen right now. */
+.msg-rail-tick[data-visible="true"] {
+  opacity: 0.52;
 }
 
-/* The turn that owns the viewport's CENTRE: wider and brighter, exactly one at
-   a time. The old rail lit every overlapping turn, so a pane showing four short
-   turns brightened four ticks and said nothing about where the reader was. */
+/* Tier 3 — the READING ANCHOR: the turn owning the viewport's centre, exactly
+   one at a time. The round-5 rail lit every overlapping turn with a single
+   tone, so a pane showing four short turns brightened four ticks and said
+   nothing about where the reader was; the anchor is a distinct tier above the
+   visible one precisely so that cannot happen again. */
 .msg-rail-tick[data-active="true"] {
-  width: 16px;
-  opacity: 1;
-  background: var(--text-muted);
+  opacity: 0.9;
 }
 
-.msg-rail-tick:hover {
-  width: 16px;
+/* Tier 4 — the tick under the pointer, and only it. Its neighbours grow in
+   SIZE (the Gaussian) but never darken: one mark is the focus at a time. */
+.msg-rail-tick[data-focus="true"] {
   opacity: 1;
-  background: var(--claude);
 }
 
+/* A failed turn keeps its own hue through every tier — the tone tells you where
+   you are, the colour tells you what is there. */
 .msg-rail-tick.is-error {
   background: var(--danger-dot);
-  opacity: 0.7;
 }
 
-/* The preview rides beside the rail, vertically centred on it, and never
-   catches the pointer — moving toward it would mean leaving the tick that
-   summoned it. It wears the menu kit's material, so a hover card and a menu are
-   visibly the same object. */
+@media (prefers-reduced-motion: reduce) {
+  .msg-rail-tick {
+    transition: none;
+  }
+}
+
+/* The preview rides beside the FOCUSED tick — the component writes its `top` —
+   and never catches the pointer, since moving toward it would mean leaving the
+   tick that summoned it. It wears the menu kit's material, so a hover card and
+   a menu are visibly the same object.
+
+   `visibility` rather than a mount: the hover path writes text through refs, so
+   the card is always in the tree and summoning it costs no render. */
 .msg-rail-preview {
   position: absolute;
-  left: calc(100% + 2px);
-  top: 50%;
+  /* Rail box (56) + Synara's 8px offset. */
+  left: 64px;
+  top: 0;
   transform: translateY(-50%);
   width: 250px;
   padding: 9px 11px;
@@ -101,14 +170,18 @@
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-popover);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.5;
   pointer-events: none;
+  visibility: hidden;
   z-index: 30;
 }
 
+/* Two lines of the prompt, then three of the reply — Synara's clamps, and the
+   same two-tier structure the session cards use, so a preview of a turn looks
+   like every other summary of a turn in the pane. */
 .msg-rail-preview-user {
-  font-weight: 600;
+  font-weight: 590;
   color: var(--text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -140,8 +213,10 @@
 
 /* On a narrow split the rail would sit on top of the text column: the content
    is capped at --content-max and centred, so below roughly that width plus the
-   rail's own footprint there is no gutter left for it to live in. */
-@media (max-width: 820px) {
+   rail's own footprint there is no gutter left for it to live in. Synara draws
+   the same line at 864px off the measured pane; this is the static equivalent
+   for a pane that is always the full window. */
+@media (max-width: 880px) {
   .msg-rail {
     display: none;
   }
