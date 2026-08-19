@@ -18,7 +18,13 @@ beforeEach(() => {
 
 const noop = async () => {};
 
-function makeBridge(reply: RewindResult): HarnessBridge {
+function makeBridge(
+  reply: RewindResult,
+  options: {
+    truncated?: boolean;
+    onRewind?: (params: Parameters<HarnessBridge["rewind"]>[0]) => void;
+  } = {}
+): HarnessBridge {
   return {
     async context() {
       return {
@@ -33,7 +39,7 @@ function makeBridge(reply: RewindResult): HarnessBridge {
       return { sessions: [] };
     },
     async loadSessionHistory() {
-      return { events: rewindHistory, truncated: false };
+      return { events: rewindHistory, truncated: options.truncated === true };
     },
     async start() {
       return { runId: "run-1" };
@@ -77,7 +83,8 @@ function makeBridge(reply: RewindResult): HarnessBridge {
     async rewindPreview() {
       return { canRewind: true, filesChanged: ["/a/one.swift"], insertions: 3, deletions: 1 };
     },
-    async rewind() {
+    async rewind(params) {
+      options.onRewind?.(params);
       return reply;
     },
     ...taskBridgeStub
@@ -111,6 +118,25 @@ async function rewindThirdMessage(restoreFiles: boolean) {
   await flush();
   return store;
 }
+
+describe("rewind predecessor safety for truncated history", () => {
+  test("the first visible message cannot rewind as a fresh session when its predecessor is off-page", async () => {
+    const calls: Array<Parameters<HarnessBridge["rewind"]>[0]> = [];
+    window.supermuxHarnessMock = makeBridge(
+      { runId: "run-3", filesRestored: false },
+      { truncated: true, onRewind: (params) => calls.push(params) }
+    );
+    const store = new HarnessStore();
+    render(<App store={store} />);
+    await flush();
+
+    const bubbles = document.querySelectorAll(".user-msg");
+    expect(bubbles.length).toBeGreaterThan(1);
+    expect(bubbles[0].querySelector(".user-msg-rewind")).toBeNull();
+    expect(bubbles[1].querySelector(".user-msg-rewind")).not.toBeNull();
+    expect(calls).toEqual([]);
+  });
+});
 
 /**
  * A rewind has two halves that fail independently: the conversation restart,

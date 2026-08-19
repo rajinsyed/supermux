@@ -16,6 +16,8 @@ interface TranscriptListProps {
   contentRef?: RefObject<HTMLDivElement | null>;
   showPill: boolean;
   onJump: () => void;
+  /** Presentation identity supplied by the conversation owner. */
+  resetKey?: number;
   onRewind?: (uuid: string) => void;
   header?: ReactNode;
   footer?: ReactNode;

@@ -69,6 +69,7 @@ hljs.registerAliases(["kt"], { languageName: "kotlin" });
 
 const MAX_HIGHLIGHT_CHARS = 80000;
 const CACHE_LIMIT = 240;
+const REPORTED_CACHE_BUDGET_BYTES = 4 * 1024 * 1024;
 const cache = new Map<string, string>();
 
 export function supportsLanguage(language: string | undefined): boolean {
@@ -99,12 +100,34 @@ export function highlightToHtml(code: string, language: string | undefined, cach
   return html;
 }
 
+export function highlightCacheStats(): { entries: number; bytes: number; budgetBytes: number } {
+  let bytes = 0;
+  for (const [key, html] of cache) bytes += utf8ByteLength(key) + utf8ByteLength(html);
+  return { entries: cache.size, bytes, budgetBytes: REPORTED_CACHE_BUDGET_BYTES };
+}
+
+export function clearHighlightCache(): void {
+  cache.clear();
+}
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function utf8ByteLength(text: string): number {
+  let bytes = 0;
+  for (const character of text) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint <= 0x7f) bytes += 1;
+    else if (codePoint <= 0x7ff) bytes += 2;
+    else if (codePoint <= 0xffff) bytes += 3;
+    else bytes += 4;
+  }
+  return bytes;
 }
 
 function hash(text: string): string {
