@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **449**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **450**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -448,7 +448,7 @@ Rules for adding a touchpoint:
 | 429 | `Sources/Workspace+SidebarDirectories.swift` | `claude-harness-legacy-remote-directory` | Treats a legacy remote snapshot carrying a harness pane like an agent-session one for directory-provenance restore |
 | 430 | `Sources/cmuxApp.swift` | `claude-harness-debug-menu` | Mounts `SupermuxHarnessDebugMenuButtons()` in the DEBUG-only Debug menu |
 | 431 | `cmuxTests/SupermuxHarnessTests.swift` | `unfenced` | **Fork-owned new test file.** Trusted-shell-URL checks, harness snapshot round-trip/empty decode, `PanelType` claudeHarness decode, and `SessionPanelSnapshot` field carriage. pbxproj ids `50BE0001…012E`/`…012F` |
-| 432 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Claude harness into the app target: 19 app files under `Sources/Supermux/Harness/` (ids `50BE0001…0112`–`…012B`, `…0130`/`…0131` for `SupermuxHarnessWebRendererCoordinator+Bridge.swift`, `…0132`/`…0133` for `SupermuxHarnessCommandPaletteIntegration.swift`, `…0134`/`…0135` for `SupermuxHarnessBinarySetting.swift`, `…0136`/`…0137` for `SupermuxHarnessProcessSessionProtocol.swift`, `…013A`/`…013B` for `SupermuxHarnessNativeEventTransport.swift`, and `…013C`/`…013D` for `SupermuxHarnessWebHostOwnership.swift`, 4 entries each; the two `+` paths quoted), the `Resources/supermux-harness` folder reference (ids `…012C`/`…012D`, `lastKnownFileType = folder`), and `cmuxTests/SupermuxHarnessTests.swift` (ids `…012E`/`…012F`). Eighty-four `50BE0001` occurrences total |
+| 432 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Claude harness into the app target: 19 app files under `Sources/Supermux/Harness/` (ids `50BE0001…0112`–`…012B`, `…0130`/`…0131` for `SupermuxHarnessWebRendererCoordinator+Bridge.swift`, `…0132`/`…0133` for `SupermuxHarnessCommandPaletteIntegration.swift`, `…0134`/`…0135` for `SupermuxHarnessBinarySetting.swift`, `…0136`/`…0137` for `SupermuxHarnessProcessSessionProtocol.swift`, `…013A`/`…013B` for `SupermuxHarnessNativeEventTransport.swift`, and `…013C`/`…013D` for `SupermuxHarnessWebHostOwnership.swift`, 4 entries each; the two `+` paths quoted), the `Resources/supermux-harness` folder reference (ids `…012C`/`…012D`, `lastKnownFileType = folder`), and `cmuxTests/SupermuxHarnessTests.swift` (ids `…012E`/`…012F`) plus `cmuxTests/SupermuxHarnessNativeEventTransportTests.swift` (ids `…013E`/`…013F`). Eighty-eight `50BE0001` occurrences total |
 | 433 | `Sources/CmuxSurfaceTabBarBuiltInAction.swift` | `claude-harness-builtin-action` | Adds `case newClaudeHarness = "cmux.newClaudeHarness"` (config aliases `claude-harness`, `claudeharness`, `claude`, `harness`), palette metadata (`supermux.harness.command.newPane.title`), `sparkles` icon, and the nil `bonsplitAction` grouping — the shared action id every entrypoint (palette, File menu, shortcut, plus-button, tab bar) routes through |
 | 434 | `Sources/Workspace.swift` | `claude-harness-executor-arm` | Surface-tab-bar built-in button executor arm: `.newClaudeHarness` calls `newSupermuxHarnessSurface(inPane:focus: true)` beside the Simulator arm |
 | 435 | `Sources/AppDelegate.swift` | `claude-harness-configured-action`, `claude-harness-shortcut-dispatch` | `executeConfiguredCmuxAction` arm delegating to `performConfiguredNewClaudeHarnessAction` (fork-owned, in `SupermuxHarnessCommandPaletteIntegration.swift`), and the ⌃⌘A keyboard dispatch (`supermuxNewClaudeHarness`, non-repeat, beeps on failure) |
@@ -469,6 +469,7 @@ Rules for adding a touchpoint:
 | 447 | `.github/workflows/ci.yml` | `harness-web-ci` | Adds the `harness_web` route output and pinned-Bun Linux `harness-web` job (frozen install, typecheck, full Bun suite, production bundle build, committed-resource freshness check), then makes that job a direct dependency of `linux-preflight`, the stable `tests` aggregate, and `ci-status` |
 | 448 | `scripts/ci/detect_ci_change_areas.py` | `harness-web-ci` | Adds the independent `harness_web` change area for `harness-web/**`, the committed `Resources/supermux-harness/**` bundle, its build script, and the root package script registry without widening the broad website area or changing existing macOS classification |
 | 449 | `tests/test_ci_change_areas.py` | `harness-web-ci` | Executable routing and aggregate-gate coverage for harness sources/package metadata, the bundled resource, workflow-dispatch fail-open output, stale routed-job handling in Linux preflight, the stable `tests` gate, pinned Bun/build commands, and website-only exclusions |
+| 450 | `cmuxTests/SupermuxHarnessNativeEventTransportTests.swift` | `unfenced` | **Fork-owned new test file.** Executable transport contract coverage for acknowledgement retention, identical retry, stale-ack safety, navigation re-sequencing, count/byte batching, bounded backlog, and stale host generations. pbxproj ids `50BE0001…013E`/`…013F` |
 
 ## How to re-apply
 
@@ -1419,7 +1420,11 @@ The native event transport seams under the same touchpoint add file references
 `SupermuxHarnessNativeEventTransport.swift` and `SupermuxHarnessWebHostOwnership.swift`, also wired
 in the same four places each.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `217`.
+The focused native transport tests (touchpoint #450) add file reference `50BE0001…013E` and build
+file `50BE0001…013F` for `SupermuxHarnessNativeEventTransportTests.swift`, wired into the
+`cmuxTests` target in the same four places as the existing harness test file.
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `221`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
@@ -3952,3 +3957,13 @@ existing extraction helpers. Keep the positive cases separate from website-only 
 the behavior checks that a routed harness skip fails Linux preflight and a failed harness job fails
 the stable aggregate. Do not replace those with source grep assertions; only the established
 workflow-shape helper is used to pin the action version and exact validation commands.
+
+### 450. Harness transport contract tests
+
+`cmuxTests/SupermuxHarnessNativeEventTransportTests.swift` is a fork-owned Swift Testing suite.
+Keep its `50BE0001…013E` file reference and `…013F` sources-build entry in the four normal pbxproj
+locations. The suite pins the native half of the retained-WKWebView contract: events remain
+backlogged through one in-flight batch until the exact epoch/sequence acknowledgement arrives,
+failed evaluations retry identically, navigation re-sequences every unacknowledged event in order,
+batches obey both count and encoded-byte caps, backlog accounting remains bounded, and stale host
+generations can neither attach nor release the retained view.

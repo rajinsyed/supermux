@@ -2148,6 +2148,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		50BE00010000000000000125 /* SupermuxHarnessCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000124 /* SupermuxHarnessCopy.swift */; };
 		50BE0001000000000000012B /* SupermuxHarnessDebugMenuButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0001000000000000012A /* SupermuxHarnessDebugMenuButtons.swift */; };
 		50BE0001000000000000013B /* SupermuxHarnessNativeEventTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0001000000000000013A /* SupermuxHarnessNativeEventTransport.swift */; };
+		50BE0001000000000000013F /* SupermuxHarnessNativeEventTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0001000000000000013E /* SupermuxHarnessNativeEventTransportTests.swift */; };
 		50BE00010000000000000115 /* SupermuxHarnessPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000114 /* SupermuxHarnessPanel.swift */; };
 		50BE00010000000000000117 /* SupermuxHarnessPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000116 /* SupermuxHarnessPanelView.swift */; };
 		50BE00010000000000000137 /* SupermuxHarnessProcessSessionProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000136 /* SupermuxHarnessProcessSessionProtocol.swift */; };
@@ -4877,6 +4878,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 		50BE00010000000000000124 /* SupermuxHarnessCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harness/SupermuxHarnessCopy.swift; sourceTree = "<group>"; };
 		50BE0001000000000000012A /* SupermuxHarnessDebugMenuButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harness/SupermuxHarnessDebugMenuButtons.swift; sourceTree = "<group>"; };
 		50BE0001000000000000013A /* SupermuxHarnessNativeEventTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harness/SupermuxHarnessNativeEventTransport.swift; sourceTree = "<group>"; };
+		50BE0001000000000000013E /* SupermuxHarnessNativeEventTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxHarnessNativeEventTransportTests.swift; sourceTree = "<group>"; };
 		50BE00010000000000000114 /* SupermuxHarnessPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harness/SupermuxHarnessPanel.swift; sourceTree = "<group>"; };
 		50BE00010000000000000116 /* SupermuxHarnessPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harness/SupermuxHarnessPanelView.swift; sourceTree = "<group>"; };
 		50BE00010000000000000136 /* SupermuxHarnessProcessSessionProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harness/SupermuxHarnessProcessSessionProtocol.swift; sourceTree = "<group>"; };
@@ -7772,6 +7774,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				C51A760000000000000000D2 /* SimulatorPanelThemeTests.swift */,
 				A9E050000000000000000001 /* AgentSessionWebRendererTests.swift */,
 				50BE0001000000000000012E /* SupermuxHarnessTests.swift */,
+				50BE0001000000000000013E /* SupermuxHarnessNativeEventTransportTests.swift */,
 				A9E040000000000000000001 /* CodexAppServerSessionTests.swift */,
 				8740D0018740D0018740D001 /* AgentHibernationEvaluationSchedulingTests.swift */,
 				F65760010000000000000002 /* AgentHibernationPlannerSwiftTests.swift */,
@@ -11424,6 +11427,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				873200000000000000000002 /* SSHRemoteCommandChainingTests.swift in Sources */,
 				EF70B7123200D1FB6F03DB26 /* SSHStartupManualReconnectTests.swift in Sources */,
 				F6355600A1B2C3D4E5F60718 /* SSHStartupSignalLifecycleTests.swift in Sources */,
+				50BE0001000000000000013F /* SupermuxHarnessNativeEventTransportTests.swift in Sources */,
 				50BE0001000000000000012F /* SupermuxHarnessTests.swift in Sources */,
 				50BE000200000000000000C1 /* SupermuxMobileAuthorizationTests.swift in Sources */,
 				50BE000200000000000000D2 /* SupermuxMobileChangesWatchRegistryTests.swift in Sources */,
