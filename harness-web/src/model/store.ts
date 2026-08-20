@@ -1,4 +1,9 @@
-import type { NativeEvent } from "../protocol/types";
+import type {
+  NativeEvent,
+  NativeEventAcknowledgement,
+  NativeEventEnvelope,
+  PresentationVisibilityControl
+} from "../protocol/types";
 import { applyEvents, applyLocalAction, createIndex, createModel } from "./transcript";
 import type { LocalAction, RelayRecord, TranscriptModel, Turn } from "./types";
 
@@ -16,7 +21,11 @@ export class HarnessStore {
   private queue: NativeEvent[] = [];
   private scheduled: ScheduledDrain | undefined;
   private rootListeners = new Set<Listener>();
+  private presentationListeners = new Set<Listener>();
   private turnListeners = new Map<string, Set<Listener>>();
+  private presentationVisible = true;
+  private documentEpoch: string | undefined;
+  private appliedSequence = 0;
   private lastTurnRevisions = new Map<string, number>();
   private lastRelaysByTurn = new Map<string, RelayRecord | undefined>();
   private lastTurnIds: string[] = [];
@@ -31,6 +40,15 @@ export class HarnessStore {
       this.rootListeners.delete(listener);
     };
   };
+
+  subscribePresentation = (listener: Listener): (() => void) => {
+    this.presentationListeners.add(listener);
+    return () => {
+      this.presentationListeners.delete(listener);
+    };
+  };
+
+  getPresentationVisible = (): boolean => this.presentationVisible;
 
   subscribeTurn = (turnId: string, listener: Listener): (() => void) => {
     let set = this.turnListeners.get(turnId);
@@ -53,6 +71,28 @@ export class HarnessStore {
 
   getTurnSnapshot = (turnId: string): TurnSnapshot | undefined =>
     this.turnSnapshots.get(turnId);
+
+  /**
+   * Test seam for the versioned transport. Production keeps using `receiveBatch`
+   * until the behavior implementation commit wires this method into the bridge.
+   */
+  receiveEnvelope = (envelope: NativeEventEnvelope): NativeEventAcknowledgement | undefined => {
+    this.documentEpoch = envelope.documentEpoch;
+    this.appliedSequence = envelope.highestSequence;
+    this.receive(envelope.events);
+    this.flushNow();
+    return {
+      version: 1,
+      documentEpoch: envelope.documentEpoch,
+      highestSequence: envelope.highestSequence
+    };
+  };
+
+  setPresentationVisibility = (control: PresentationVisibilityControl): void => {
+    this.documentEpoch = control.documentEpoch;
+    this.presentationVisible = control.visible;
+    for (const listener of this.presentationListeners) listener();
+  };
 
   receive = (events: NativeEvent[]): void => {
     if (events.length === 0) return;

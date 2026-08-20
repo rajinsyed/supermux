@@ -663,3 +663,26 @@ export type NativeEvent =
   // The CLI's auto-generated topic title, read from the session file after a
   // turn — the same title the terminal shows in its tab. A user rename wins.
   | { kind: "sessionTitle"; title: string };
+
+/** Versioned native-to-document delivery contract. Sequences are contiguous. */
+export interface NativeEventEnvelope {
+  version: 1;
+  documentEpoch: string;
+  firstSequence: number;
+  highestSequence: number;
+  events: NativeEvent[];
+}
+
+/** Positive acknowledgement returned only after `highestSequence` is reduced. */
+export interface NativeEventAcknowledgement {
+  version: 1;
+  documentEpoch: string;
+  highestSequence: number;
+}
+
+/** Presentation visibility is independent from execution/document liveness. */
+export interface PresentationVisibilityControl {
+  documentEpoch: string;
+  visible: boolean;
+  targetSequence: number;
+}

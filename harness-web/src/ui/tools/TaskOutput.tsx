@@ -23,6 +23,8 @@ interface TaskOutputViewProps {
   className?: string;
   /** False while an animating disclosure is mounted but no longer visible. */
   presented?: boolean;
+  /** Focused-test seam; production retains the documented 1.2 second cadence. */
+  pollIntervalMs?: number;
 }
 
 /**
@@ -38,7 +40,8 @@ function TaskOutputPoller({
   taskId,
   running,
   className,
-  presented = true
+  presented = true,
+  pollIntervalMs = POLL_MS
 }: TaskOutputViewProps) {
   const copy = useCopy();
   const [phase, setPhase] = useState<Phase>("loading");
@@ -54,7 +57,7 @@ function TaskOutputPoller({
 
     const schedule = () => {
       if (running && !cancelled && alive.current) {
-        timer = window.setTimeout(read, POLL_MS);
+        timer = window.setTimeout(read, pollIntervalMs);
       }
     };
     const read = () => {
@@ -86,7 +89,7 @@ function TaskOutputPoller({
       alive.current = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [presented, running, taskId]);
+  }, [pollIntervalMs, presented, running, taskId]);
 
   return (
     <div className={className ?? "task-output"}>
