@@ -64,6 +64,20 @@ import Testing
         }
     }
 
+    @Test func attachmentValidationExposesStablePickerRejectionCodes() {
+        let policy = SupermuxHarnessAttachmentPolicy()
+        do {
+            try policy.validate([
+                SupermuxHarnessImage(mediaType: "image/heic", dataBase64: "AA=="),
+            ])
+            Issue.record("Expected unsupported image rejection")
+        } catch let error as SupermuxHarnessAttachmentPolicy.ValidationError {
+            #expect(error.rejectionCode == .unsupportedMediaType)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test func encoderRejectsPerImageAggregateAndCountLimitViolations() {
         let policy = SupermuxHarnessAttachmentPolicy.self
         let oversized = Data(repeating: 0x61, count: policy.maximumImageBytes + 1)

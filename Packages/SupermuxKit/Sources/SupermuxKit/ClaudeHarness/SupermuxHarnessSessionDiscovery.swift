@@ -140,6 +140,9 @@ public struct SupermuxHarnessSessionDiscovery {
     /// Loads one session by walking its UUID parent chain and mapping records to live wire shapes.
     ///
     /// The file is scanned in bounded chunks; malformed and overlong records are omitted.
+    /// Record and byte limits are applied in that order and retain one newest contiguous suffix.
+    /// The byte budget is the sum of each retained event's compact JSON representation; it excludes
+    /// the caller's response envelope. Either limit sets `truncated`, including when no event fits.
     ///
     /// - Parameters:
     ///   - workingDirectoryURL: The working directory whose project folders should be probed.
@@ -154,7 +157,6 @@ public struct SupermuxHarnessSessionDiscovery {
         recordLimit: Int? = nil,
         maximumEventBytes: Int? = nil
     ) throws -> SupermuxHarnessHistoryPage {
-        _ = maximumEventBytes
         guard isValidSessionID(sessionID) else {
             throw SupermuxHarnessSessionDiscoveryError.invalidSessionID
         }
@@ -177,7 +179,7 @@ public struct SupermuxHarnessSessionDiscovery {
         }
         chainUUIDs.reverse()
 
-        let truncated: Bool
+        var truncated: Bool
         if let recordLimit {
             let boundedLimit = max(0, recordLimit)
             truncated = chainUUIDs.count > boundedLimit
@@ -199,8 +201,10 @@ public struct SupermuxHarnessSessionDiscovery {
             }
             eventsByUUID[uuid] = event
         }
-        let events = chainUUIDs.compactMap { eventsByUUID[$0] }
-        return SupermuxHarnessHistoryPage(events: events, truncated: truncated)
+        return try SupermuxHarnessHistoryPage(
+            events: chainUUIDs.compactMap { eventsByUUID[$0] },
+            truncated: truncated
+        ).limitingSerializedEventBytes(maximumEventBytes)
     }
 
     /// Returns the on-disk file for one persisted session, or nil when no

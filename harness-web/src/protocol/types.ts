@@ -656,6 +656,12 @@ export type NativeEvent =
   | { kind: "runStarted"; runId: string; resumedSessionId?: string }
   | { kind: "runExited"; runId: string; status: number; error?: string }
   | { kind: "stderr"; text: string }
+  | {
+      kind: "outputOverflow";
+      stream: "stdout" | "stderr";
+      discardedByteCount: number;
+      userMessage: string;
+    }
   | { kind: "theme"; theme: HarnessTheme }
   // Pushed when a background catalog probe finishes, so a pane that opened with
   // no cached catalog fills its model menu without waiting for a first send.

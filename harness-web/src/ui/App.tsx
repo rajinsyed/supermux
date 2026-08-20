@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isThreadRunning } from "../model/agentThreads";
+import type { PickedImageAttachments } from "../model/attachments";
 import { dockRows } from "../model/dock";
 import { resolveModel } from "../model/helpers";
 import { runningForegroundBash } from "../model/tasks";
@@ -228,9 +229,12 @@ function AppBody({
     [harness.bridge]
   );
 
-  const pickFiles = useCallback(async (): Promise<ImageAttachment[]> => {
+  const pickFiles = useCallback(async (): Promise<PickedImageAttachments> => {
     const result = await harness.bridge.pickFiles().catch(() => undefined);
-    return result?.images ?? [];
+    return {
+      images: result?.images ?? [],
+      ...(result?.attachmentError ? { error: result.attachmentError } : {})
+    };
   }, [harness.bridge]);
 
   const running =
@@ -599,6 +603,7 @@ function AppBody({
           onSetModel={harness.setModel}
           draft={harness.draft}
           onDraftChange={harness.setDraft}
+          attachmentIdentity={model.session.sessionId ?? model.runId}
           // In an agent view the composer addresses THAT agent, through the
           // relay. A reachable agent takes the message; a finished one cannot,
           // so the send falls back to Claude and the placeholder says so rather

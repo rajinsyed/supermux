@@ -236,6 +236,19 @@ export function applyEvent(
     }
     case "stderr":
       return { ...model, stderrTail: model.stderrTail.concat(event.text).slice(-40) };
+    case "outputOverflow":
+      return {
+        ...model,
+        banners: model.banners
+          .concat({
+            id: `output-overflow:${event.stream}:${nowMs}:${model.revision}`,
+            severity: "warning",
+            title: event.userMessage,
+            createdAtMs: nowMs
+          })
+          .slice(-5),
+        revision: model.revision + 1
+      };
     case "modelCatalog":
       return { ...model, cachedModels: event.models, revision: model.revision + 1 };
     case "sessionTitle":

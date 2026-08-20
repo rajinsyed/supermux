@@ -81,12 +81,18 @@ final class SupermuxHarnessSessionController {
         processSessionFactory: @MainActor (
             @escaping SupermuxHarnessProtocolLineSink,
             @escaping SupermuxHarnessStderrSink,
-            @escaping SupermuxHarnessLifecycleSink
-        ) -> any SupermuxHarnessProcessSessionProtocol = { protocolLineSink, stderrSink, lifecycleSink in
+            @escaping SupermuxHarnessLifecycleSink,
+            @escaping SupermuxHarnessOutputDiagnosticSink
+        ) -> any SupermuxHarnessProcessSessionProtocol = {
+            protocolLineSink,
+            stderrSink,
+            lifecycleSink,
+            outputDiagnosticSink in
             SupermuxHarnessProcessSession(
                 protocolLineSink: protocolLineSink,
                 stderrSink: stderrSink,
-                lifecycleSink: lifecycleSink
+                lifecycleSink: lifecycleSink,
+                outputDiagnosticSink: outputDiagnosticSink
             )
         }
     ) {
@@ -137,6 +143,14 @@ final class SupermuxHarnessSessionController {
             },
             { [weak self] event in
                 self?.consumeLifecycleEvent(event)
+            },
+            { [weak self] diagnostic in
+                await self?.eventSink?([
+                    "kind": "outputOverflow",
+                    "stream": diagnostic.stream.rawValue,
+                    "discardedByteCount": diagnostic.discardedByteCount,
+                    "userMessage": Self.outputOverflowMessage,
+                ])
             }
         )
         Self.liveControllers[ObjectIdentifier(self)] = WeakController(self)
@@ -767,7 +781,8 @@ final class SupermuxHarnessSessionController {
         let page = try await sessionRepository.loadHistory(
             for: directoryURL,
             sessionID: sessionId,
-            recordLimit: Self.historyRecordLimit
+            recordLimit: Self.historyRecordLimit,
+            maximumEventBytes: Self.historyEventBytesLimit
         )
         guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
         return [
@@ -1494,6 +1509,15 @@ final class SupermuxHarnessSessionController {
     }
 
     private nonisolated static var historyRecordLimit: Int { 400 }
+    /// Leaves one KiB for the bridge envelope, array separators, and truncation metadata.
+    private nonisolated static var historyEventBytesLimit: Int { 2 * 1024 * 1024 - 1024 }
+
+    private nonisolated static var outputOverflowMessage: String {
+        String(
+            localized: "supermux.harness.output.overflow",
+            defaultValue: "Claude emitted an oversized output line. That line was skipped and the stream recovered."
+        )
+    }
 
     private nonisolated static var rewindFilesUnavailableMessage: String {
         String(

@@ -345,7 +345,7 @@ describe("escape navigation", () => {
           onCancelQueued={() => undefined}
           onCyclePermissionMode={() => undefined}
           fetchFileSuggestions={async () => []}
-          onPickFiles={async () => []}
+          onPickFiles={async () => ({ images: [] })}
         />
       </CopyProvider>
     );
@@ -382,7 +382,7 @@ describe("escape navigation", () => {
           onCancelQueued={() => undefined}
           onCyclePermissionMode={() => undefined}
           fetchFileSuggestions={async () => []}
-          onPickFiles={async () => []}
+          onPickFiles={async () => ({ images: [] })}
         />
       </CopyProvider>
     );

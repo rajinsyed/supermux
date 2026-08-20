@@ -1,5 +1,6 @@
 import { getBridge } from "../../bridge";
 import type { JsonObject, StructuredPatchHunk } from "../../protocol/types";
+import { canonicalToolResultText } from "../../model/toolResultPayload";
 import type { ToolBlock } from "../../model/types";
 import { plural, useCopy, type CopyFn } from "../CopyContext";
 import { languageForPath, shortenPath } from "../format";
@@ -76,8 +77,8 @@ function ErrorText({ block }: { block: ToolBlock }) {
 export function BashBody({ block }: { block: ToolBlock }) {
   const copy = useCopy();
   const command = str(block.input.command);
-  const stdout = str(block.structured?.stdout);
-  const stderr = str(block.structured?.stderr);
+  const stdout = canonicalToolResultText(block, "stdout");
+  const stderr = canonicalToolResultText(block, "stderr");
   const output = block.resultText ?? "";
   const body = stdout ?? (stderr ? "" : output);
   return (
@@ -197,7 +198,7 @@ export function WriteBody({ block }: { block: ToolBlock }) {
       </div>
     );
   }
-  const content = str(block.input.content) ?? str(block.structured?.content);
+  const content = str(block.input.content) ?? canonicalToolResultText(block, "content");
   if (!content) return <ResultFallback block={block} />;
   return (
     <div className="tool-body">
@@ -217,7 +218,7 @@ export function WriteBody({ block }: { block: ToolBlock }) {
 export function ReadBody({ block }: { block: ToolBlock }) {
   const file = block.structured?.file as JsonObject | undefined;
   const path = str(block.input.file_path) ?? str(file?.filePath);
-  const content = str(file?.content);
+  const content = canonicalToolResultText(block, "fileContent");
   if (!content) return <ResultFallback block={block} />;
   return (
     <div className="tool-body">

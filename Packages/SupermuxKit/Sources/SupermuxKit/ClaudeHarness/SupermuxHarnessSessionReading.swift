@@ -24,12 +24,14 @@ public protocol SupermuxHarnessSessionReading: Sendable {
     ///   - workingDirectoryURL: The working directory whose Claude project aliases are probed.
     ///   - sessionID: The persisted session filename without `.jsonl`.
     ///   - recordLimit: Optional maximum number of newest visible records to return.
+    ///   - maximumEventBytes: Optional serialized-byte budget for the newest contiguous event suffix.
     /// - Returns: Root-to-leaf protocol-shaped events and a truncation flag.
     /// - Throws: ``SupermuxHarnessSessionDiscoveryError`` or a file-reading error.
     func loadHistory(
         for workingDirectoryURL: URL,
         sessionID: String,
-        recordLimit: Int?
+        recordLimit: Int?,
+        maximumEventBytes: Int?
     ) async throws -> SupermuxHarnessHistoryPage
 
     /// Returns the current persisted title for one session.

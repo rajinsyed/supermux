@@ -272555,6 +272555,23 @@
         }
       }
     },
+    "supermux.harness.bridge.error.invalidAttachment" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One or more image attachments are invalid."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1つ以上の画像添付が無効です。"
+          }
+        }
+      }
+    },
     "supermux.harness.bridge.error.invalidRequest" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -272704,6 +272721,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ファイルを添付"
+          }
+        }
+      }
+    },
+    "supermux.harness.composer.attachmentInvalid" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not read this image."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を読み込めませんでした。"
+          }
+        }
+      }
+    },
+    "supermux.harness.composer.attachmentName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "image"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像"
+          }
+        }
+      }
+    },
+    "supermux.harness.composer.attachmentTooLarge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each image must be 512 KiB or smaller."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像1枚あたり512 KiB以下にしてください。"
+          }
+        }
+      }
+    },
+    "supermux.harness.composer.attachmentTooMany" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can attach up to 8 images."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像は最大8枚まで添付できます。"
+          }
+        }
+      }
+    },
+    "supermux.harness.composer.attachmentTotalTooLarge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attachments must total 2 MiB or less."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添付画像の合計サイズは2 MiB以下にしてください。"
+          }
+        }
+      }
+    },
+    "supermux.harness.composer.attachmentUnsupported" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported image format. Use PNG, JPEG, GIF, or WebP."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "対応していない画像形式です。PNG、JPEG、GIF、またはWebPを使用してください。"
           }
         }
       }
@@ -273911,6 +274030,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Claude"
+          }
+        }
+      }
+    },
+    "supermux.harness.output.overflow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude emitted an oversized output line. That line was skipped and the stream recovered."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude が上限を超える出力行を生成しました。その行をスキップし、ストリームを復旧しました。"
           }
         }
       }

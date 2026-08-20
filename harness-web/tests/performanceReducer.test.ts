@@ -105,6 +105,35 @@ function startedPartialTool() {
   return { index, model };
 }
 
+describe("bounded output diagnostics stay typed across the bridge", () => {
+  test("an overflow becomes one warning without fabricated protocol content", () => {
+    const index = createIndex();
+    const model = applyEvents(
+      createModel(),
+      index,
+      [
+        {
+          kind: "outputOverflow",
+          stream: "stdout",
+          discardedByteCount: 1_048_585,
+          userMessage: "Oversized output skipped."
+        }
+      ],
+      42
+    );
+
+    expect(model.turns).toEqual([]);
+    expect(model.banners).toEqual([
+      {
+        id: "output-overflow:stdout:42:0",
+        severity: "warning",
+        title: "Oversized output skipped.",
+        createdAtMs: 42
+      }
+    ]);
+  });
+});
+
 describe("turn revisions are the row invalidation contract", () => {
   test("a local fold toggle notifies only after its turn revision advances", () => {
     const store = new HarnessStore();

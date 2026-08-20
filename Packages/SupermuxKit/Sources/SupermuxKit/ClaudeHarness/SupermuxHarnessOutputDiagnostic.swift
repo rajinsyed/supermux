@@ -2,7 +2,7 @@
 public struct SupermuxHarnessOutputDiagnostic: Equatable, Sendable {
     /// The process stream whose physical line overflowed.
     public let stream: Stream
-    /// The number of bytes discarded from that physical line.
+    /// The number of bytes discarded from that physical line, saturated at `Int.max`.
     public let discardedByteCount: Int
 
     /// Creates an output-overflow diagnostic.

@@ -2,6 +2,7 @@ import type { AssistantLine, ContentBlock, JsonObject, UserLine } from "../proto
 import { mergeTextBlock, mergeThinkingBlock, mergeToolUseBlock } from "./blocks";
 import { asNumber, asString, isPlainObject, isTaskTool } from "./helpers";
 import { classifyToolStatus } from "./toolStatus";
+import { normalizeToolResultPayload } from "./toolResultPayload";
 import type {
   AgentThread,
   Block,
@@ -424,14 +425,17 @@ function settleThreadTool(
   if (at < 0) return thread;
   const block = thread.blocks[at] as ToolBlock;
   const text = stringifyResult(result.content);
+  const status = classifyToolStatus(block.name, result.is_error === true, text, structured);
+  const payload = normalizeToolResultPayload(text, structured);
   const next: ToolBlock = {
     ...block,
-    status: classifyToolStatus(block.name, result.is_error === true, text, structured),
+    status,
     streaming: false,
     inputComplete: true,
     resultText: text,
     resultIsError: result.is_error === true,
-    structured,
+    resultTextSources: payload.resultTextSources,
+    structured: payload.structured,
     endedAtMs: nowMs
   };
   return putBlock(thread, at, next);

@@ -13,13 +13,14 @@ public struct SupermuxHarnessProtocolEncoder: Sendable {
     ///   - uuid: The client-stamped UUID used for queue cancellation and receipts.
     ///   - sessionID: An optional explicit session identifier.
     /// - Returns: A newline-terminated encoded frame.
-    /// - Throws: A JSON serialization error.
+    /// - Throws: ``SupermuxHarnessAttachmentPolicy/ValidationError`` or a JSON serialization error.
     public func userMessage(
         text: String,
         images: [SupermuxHarnessImage] = [],
         uuid: String,
         sessionID: String? = nil
     ) throws -> SupermuxHarnessEncodedFrame {
+        try SupermuxHarnessAttachmentPolicy().validate(images)
         let content: Any
         if images.isEmpty {
             content = text

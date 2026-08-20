@@ -1,4 +1,14 @@
 {
+  "harnessAttachments": {
+    "attachmentName": "画像",
+    "unsupported": "対応していない画像形式です。PNG、JPEG、GIF、またはWebPを使用してください。",
+    "invalid": "この画像を読み込めませんでした。",
+    "tooLarge": "画像1枚あたり512 KiB以下にしてください。",
+    "totalTooLarge": "添付画像の合計サイズは2 MiB以下にしてください。",
+    "tooMany": "画像は最大8枚まで添付できます。",
+    "invalidBridgeAttachments": "1つ以上の画像添付が無効です。",
+    "outputOverflow": "Claude が上限を超える出力行を生成しました。その行をスキップし、ストリームを復旧しました。"
+  },
   "ios": {
     "metaTitle": "cmux iOS — iPhone と iPad でターミナルを",
     "metaDescription": "cmux iOS アプリは、Mac のターミナルを自分の Tailscale やローカルネットワーク経由で iPhone・iPad にリアルタイムでミラーリング。どこからでもコーディングエージェントを操作できます。",

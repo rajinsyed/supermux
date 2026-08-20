@@ -46,9 +46,15 @@ public struct SupermuxHarnessAttachmentPolicy: Sendable {
             // Bound the encoded representation before asking Foundation to allocate
             // decoded storage for an untrusted bridge string.
             let maximumEncodedBytes = ((Self.maximumImageBytes + 2) / 3) * 4
-            guard image.dataBase64.utf8.count <= maximumEncodedBytes,
-                  let decoded = Data(base64Encoded: image.dataBase64),
-                  !decoded.isEmpty else {
+            let encodedByteCount = image.dataBase64.utf8.count
+            guard encodedByteCount <= maximumEncodedBytes else {
+                throw ValidationError.imageTooLarge(
+                    index: index,
+                    maximumBytes: Self.maximumImageBytes,
+                    actualBytes: Self.maximumImageBytes + 1
+                )
+            }
+            guard let decoded = Data(base64Encoded: image.dataBase64), !decoded.isEmpty else {
                 throw ValidationError.invalidBase64(index: index)
             }
             guard decoded.count <= Self.maximumImageBytes else {
@@ -69,6 +75,20 @@ public struct SupermuxHarnessAttachmentPolicy: Sendable {
         }
     }
 
+    /// Stable rejection codes shared with attachment-picker bridge responses.
+    public enum RejectionCode: String, Equatable, Sendable {
+        /// The declared MIME type is not supported by the protocol.
+        case unsupportedMediaType
+        /// The image is empty, unreadable, or not strict base64.
+        case invalidImage
+        /// One decoded image exceeds the per-image byte limit.
+        case imageTooLarge
+        /// The message's decoded images exceed the aggregate byte limit.
+        case totalTooLarge
+        /// The message exceeds the attachment-strip image count.
+        case tooManyImages
+    }
+
     /// A typed reason an attachment message violates the shared policy.
     public enum ValidationError: Error, Equatable, Sendable {
         /// The message carries more images than the composer can own safely.
@@ -81,5 +101,21 @@ public struct SupermuxHarnessAttachmentPolicy: Sendable {
         case imageTooLarge(index: Int, maximumBytes: Int, actualBytes: Int)
         /// The decoded images collectively exceed their byte budget.
         case totalTooLarge(maximumBytes: Int, actualBytes: Int)
+
+        /// The stable bridge code for this rejection.
+        public var rejectionCode: RejectionCode {
+            switch self {
+            case .tooManyImages:
+                return .tooManyImages
+            case .unsupportedMediaType:
+                return .unsupportedMediaType
+            case .invalidBase64:
+                return .invalidImage
+            case .imageTooLarge:
+                return .imageTooLarge
+            case .totalTooLarge:
+                return .totalTooLarge
+            }
+        }
     }
 }

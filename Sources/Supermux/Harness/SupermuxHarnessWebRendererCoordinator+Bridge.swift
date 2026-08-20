@@ -73,12 +73,25 @@ extension SupermuxHarnessWebRendererCoordinator {
             )
             return [:] as [String: Any]
         case "harness.send":
-            let images = (request.objects("images") ?? []).compactMap { entry -> SupermuxHarnessImage? in
-                guard let mediaType = entry["mediaType"] as? String,
-                      let dataBase64 = entry["dataBase64"] as? String else {
-                    return nil
+            let images: [SupermuxHarnessImage]
+            if request.params["images"] == nil {
+                images = []
+            } else {
+                guard let entries = request.objects("images") else {
+                    throw SupermuxHarnessBridgeError.invalidAttachment
                 }
-                return SupermuxHarnessImage(mediaType: mediaType, dataBase64: dataBase64)
+                images = try entries.map { entry in
+                    guard let mediaType = entry["mediaType"] as? String,
+                          let dataBase64 = entry["dataBase64"] as? String else {
+                        throw SupermuxHarnessBridgeError.invalidAttachment
+                    }
+                    return SupermuxHarnessImage(mediaType: mediaType, dataBase64: dataBase64)
+                }
+                do {
+                    try SupermuxHarnessAttachmentPolicy().validate(images)
+                } catch is SupermuxHarnessAttachmentPolicy.ValidationError {
+                    throw SupermuxHarnessBridgeError.invalidAttachment
+                }
             }
             try await controller.send(
                 text: try request.requiredRawString("text"),
@@ -258,26 +271,50 @@ extension SupermuxHarnessWebRendererCoordinator {
         return await Task.detached(priority: .userInitiated) {
             var images: [[String: Any]] = []
             var paths: [String] = []
-            var remainingBytes = Self.imagePreviewTotalMaxBytes
+            var attachmentError: SupermuxHarnessAttachmentPolicy.RejectionCode?
+            var remainingBytes = SupermuxHarnessAttachmentPolicy.maximumTotalImageBytes
             for url in urls {
                 let type = UTType(filenameExtension: url.pathExtension)
-                if type?.conforms(to: .image) == true,
-                   let byteCount = Self.regularFileByteCount(url),
-                   byteCount <= Self.imagePreviewMaxBytes,
-                   byteCount <= remainingBytes,
-                   let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-                   data.count <= byteCount {
-                    remainingBytes -= data.count
-                    images.append([
-                        "mediaType": type?.preferredMIMEType ?? "image/png",
-                        "dataBase64": data.base64EncodedString(),
-                        "name": url.lastPathComponent,
-                    ])
+                guard type?.conforms(to: .image) == true else {
+                    paths.append(url.path)
                     continue
                 }
-                paths.append(url.path)
+                guard images.count < SupermuxHarnessAttachmentPolicy.maximumImageCount else {
+                    attachmentError = .tooManyImages
+                    continue
+                }
+                guard let mediaType = type?.preferredMIMEType,
+                      SupermuxHarnessAttachmentPolicy.supportedMediaTypes.contains(mediaType) else {
+                    attachmentError = .unsupportedMediaType
+                    continue
+                }
+                guard let byteCount = Self.regularFileByteCount(url), byteCount > 0 else {
+                    attachmentError = .invalidImage
+                    continue
+                }
+                guard byteCount <= SupermuxHarnessAttachmentPolicy.maximumImageBytes else {
+                    attachmentError = .imageTooLarge
+                    continue
+                }
+                guard byteCount <= remainingBytes else {
+                    attachmentError = .totalTooLarge
+                    continue
+                }
+                guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+                      data.count == byteCount else {
+                    attachmentError = .invalidImage
+                    continue
+                }
+                remainingBytes -= data.count
+                images.append([
+                    "mediaType": mediaType,
+                    "dataBase64": data.base64EncodedString(),
+                    "name": url.lastPathComponent,
+                ])
             }
-            return ["images": images, "paths": paths]
+            var result: [String: Any] = ["images": images, "paths": paths]
+            if let attachmentError { result["attachmentError"] = attachmentError.rawValue }
+            return result
         }.value
     }
 

@@ -18,6 +18,13 @@ import type {
   TaskOutput
 } from "./protocol/types";
 
+export type AttachmentErrorCode =
+  | "unsupportedMediaType"
+  | "invalidImage"
+  | "imageTooLarge"
+  | "totalTooLarge"
+  | "tooManyImages";
+
 export interface ImagePayload {
   mediaType: string;
   dataBase64: string;
@@ -67,7 +74,11 @@ export interface HarnessBridge {
   renameSession(params: { title: string }): Promise<void>;
   getContextUsage(): Promise<ContextUsage>;
   fileSuggestions(params: { query: string }): Promise<{ paths: string[] }>;
-  pickFiles(): Promise<{ images: ImagePayload[]; paths: string[] }>;
+  pickFiles(): Promise<{
+    images: ImagePayload[];
+    paths: string[];
+    attachmentError?: AttachmentErrorCode;
+  }>;
   openFile(params: { path: string; line?: number }): Promise<void>;
   copyText(params: { text: string }): Promise<void>;
   saveFile(params: { suggestedName: string; text: string }): Promise<{ saved: boolean }>;

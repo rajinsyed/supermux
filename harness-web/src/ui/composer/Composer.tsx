@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { AttachmentErrorCode, PickedImageAttachments } from "../../model/attachments";
 import { effectiveEffort, resolveModel } from "../../model/helpers";
 import type { ImageAttachment, QueuedMessage, SessionMeta } from "../../model/types";
 import type {
@@ -7,12 +8,13 @@ import type {
   PermissionMode,
   SlashCommandDescriptor
 } from "../../protocol/types";
-import { useCopy } from "../CopyContext";
+import { useCopy, type CopyFn } from "../CopyContext";
 import { ArrowUp, Close, Plus, Stop } from "../Icons";
 import { basename } from "../format";
 import { CommandItem, CommandList, MenuEmpty, MenuKeys } from "../primitives/MenuList";
 import { PopoverSurface } from "../primitives/Popover";
 import { ModelMenu, stepEffort } from "./ModelMenu";
+import { useImageAttachments } from "./useImageAttachments";
 import { useComposerPopover } from "./usePopover";
 
 export interface ComposerProps {
@@ -61,7 +63,9 @@ export interface ComposerProps {
   onCancelQueued(uuid: string): void;
   onCyclePermissionMode(): void;
   fetchFileSuggestions(query: string): Promise<string[]>;
-  onPickFiles(): Promise<ImageAttachment[]>;
+  onPickFiles(): Promise<PickedImageAttachments>;
+  /** Changing conversation ownership releases any staged image blobs. */
+  attachmentIdentity?: string;
   /**
    * Hands the parent a way to put the caret here. A rewind refills the composer
    * with the message being edited, and text that appears without focus reads as
@@ -83,8 +87,16 @@ export function Composer(props: ComposerProps) {
   const copy = useCopy();
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
-  const [images, setImages] = useState<ImageAttachment[]>([]);
   const [escArmed, setEscArmed] = useState(false);
+  const {
+    images,
+    error: attachmentError,
+    addFiles,
+    pickFiles,
+    remove: removeImage,
+    releaseAll: releaseAllImages,
+    consumeForSend
+  } = useImageAttachments(props.attachmentIdentity);
 
   const { state: popover, move, reset } = useComposerPopover(
     props.draft,
@@ -183,26 +195,36 @@ export function Composer(props: ComposerProps) {
     [caret, popover.kind, popover.start, props, reset]
   );
 
-  const submit = useCallback(() => {
+  const submit = useCallback(async () => {
     const text = props.draft.trim();
     // One mutation path for the plan decision: Enter and the primary button must
     // not disagree about whether typed text refines the plan or approves it.
     if (props.planPending) {
       if (text) props.onPlanRefine(text);
       else props.onPlanImplement();
-      setImages([]);
+      releaseAllImages();
       reset();
       return;
     }
     if (!text && images.length === 0) return;
-    props.onSend(text, images);
-    setImages([]);
+    if (images.length === 0) {
+      props.onSend(text, []);
+      reset();
+      requestAnimationFrame(() => {
+        const node = textarea.current;
+        if (node) node.style.height = "auto";
+      });
+      return;
+    }
+
     reset();
+    const payloads = await consumeForSend();
+    if (payloads) props.onSend(text, payloads);
     requestAnimationFrame(() => {
       const node = textarea.current;
       if (node) node.style.height = "auto";
     });
-  }, [images, props, reset]);
+  }, [consumeForSend, images.length, props, releaseAllImages, reset]);
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -299,23 +321,29 @@ export function Composer(props: ComposerProps) {
     [activeModel, applyCompletion, escArmed, move, popover, props, reset, submit]
   );
 
-  const onPaste = useCallback((event: React.ClipboardEvent) => {
-    const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
-      file.type.startsWith("image/")
-    );
-    if (files.length === 0) return;
-    event.preventDefault();
-    for (const file of files) readImage(file, (attachment) => setImages((prev) => prev.concat(attachment)));
-  }, []);
+  const onPaste = useCallback(
+    (event: React.ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+        file.type.startsWith("image/")
+      );
+      if (files.length === 0) return;
+      event.preventDefault();
+      addFiles(files);
+    },
+    [addFiles]
+  );
 
-  const onDrop = useCallback((event: React.DragEvent) => {
-    const files = Array.from(event.dataTransfer?.files ?? []).filter((file) =>
-      file.type.startsWith("image/")
-    );
-    if (files.length === 0) return;
-    event.preventDefault();
-    for (const file of files) readImage(file, (attachment) => setImages((prev) => prev.concat(attachment)));
-  }, []);
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      const files = Array.from(event.dataTransfer?.files ?? []).filter((file) =>
+        file.type.startsWith("image/")
+      );
+      if (files.length === 0) return;
+      event.preventDefault();
+      addFiles(files);
+    },
+    [addFiles]
+  );
 
   // A restart is temporary and a missing CLI is not, so the restart reads first:
   // the pane can be mid-restart with the CLI perfectly present.
@@ -419,14 +447,18 @@ export function Composer(props: ComposerProps) {
 
         {images.length > 0 ? (
           <div className="attach-strip">
-            {images.map((image, i) => (
-              <span key={i} className="attach-chip">
-                <img src={`data:${image.mediaType};base64,${image.dataBase64}`} alt="" />
-                <span className="attach-name">{image.name ? basename(image.name) : "image"}</span>
+            {images.map((image) => (
+              <span key={image.id} className="attach-chip">
+                <img src={image.previewURL} alt="" />
+                <span className="attach-name">
+                  {image.name
+                    ? basename(image.name)
+                    : copy("supermux.harness.composer.attachmentName")}
+                </span>
                 <button
                   type="button"
                   className="queue-chip-x"
-                  onClick={() => setImages((prev) => prev.filter((_, index) => index !== i))}
+                  onClick={() => removeImage(image.id)}
                   aria-label={copy("supermux.harness.composer.removeAttachment")}
                 >
                   <Close size={10} />
@@ -436,12 +468,16 @@ export function Composer(props: ComposerProps) {
           </div>
         ) : null}
 
+        {attachmentError ? (
+          <div className="attachment-error" role="alert">
+            {attachmentErrorMessage(copy, attachmentError)}
+          </div>
+        ) : null}
+
         <button
           type="button"
           className="composer-attach"
-          onClick={() => {
-            props.onPickFiles().then((picked) => setImages((prev) => prev.concat(picked)));
-          }}
+          onClick={() => pickFiles(props.onPickFiles)}
           title={copy("supermux.harness.composer.attach")}
           aria-label={copy("supermux.harness.composer.attach")}
         >
@@ -479,7 +515,7 @@ export function Composer(props: ComposerProps) {
             <button
               type="button"
               className="btn btn-primary btn-plan-action"
-              onClick={() => (canSend ? props.onPlanRefine(props.draft.trim()) : props.onPlanImplement())}
+              onClick={() => void submit()}
             >
               {canSend
                 ? copy("supermux.harness.plan.refine")
@@ -522,13 +558,21 @@ export function Composer(props: ComposerProps) {
   );
 }
 
-function readImage(file: File, done: (attachment: ImageAttachment) => void): void {
-  const reader = new FileReader();
-  reader.onload = () => {
-    const result = typeof reader.result === "string" ? reader.result : "";
-    const comma = result.indexOf(",");
-    if (comma === -1) return;
-    done({ mediaType: file.type, dataBase64: result.slice(comma + 1), name: file.name });
-  };
-  reader.readAsDataURL(file);
+function attachmentErrorMessage(copy: CopyFn, code: AttachmentErrorCode): string {
+  switch (code) {
+    case "unsupportedMediaType":
+      return copy("supermux.harness.composer.attachmentUnsupported");
+    case "invalidImage":
+      return copy("supermux.harness.composer.attachmentInvalid");
+    case "imageTooLarge":
+      return copy("supermux.harness.composer.attachmentTooLarge");
+    case "totalTooLarge":
+      return copy("supermux.harness.composer.attachmentTotalTooLarge");
+    case "tooManyImages":
+      return copy("supermux.harness.composer.attachmentTooMany");
+    default: {
+      const exhaustive: never = code;
+      return exhaustive;
+    }
+  }
 }

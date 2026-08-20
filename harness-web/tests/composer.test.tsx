@@ -3,6 +3,7 @@ import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from "@
 import { fixtures, richSession } from "../src/dev/fixtures";
 import { activeModelFor, emptySession } from "../src/model/helpers";
 import { replayLines } from "../src/model/transcript";
+import type { PickedImageAttachments } from "../src/model/attachments";
 import type { ImageAttachment, SessionMeta } from "../src/model/types";
 import type { EffortLevel, SlashCommandDescriptor } from "../src/protocol/types";
 import { CopyProvider } from "../src/ui/CopyContext";
@@ -50,7 +51,7 @@ function mount(options: { disabled?: boolean; restarting?: boolean } = {}): Harn
         onCancelQueued={() => {}}
         onCyclePermissionMode={() => {}}
         fetchFileSuggestions={async () => ["src/ui/App.tsx"]}
-        onPickFiles={async () => []}
+        onPickFiles={async () => ({ images: [] })}
       />
     </CopyProvider>
   );
@@ -215,7 +216,7 @@ function mountPicker(
         onCancelQueued={() => {}}
         onCyclePermissionMode={() => {}}
         fetchFileSuggestions={async () => []}
-        onPickFiles={async () => []}
+        onPickFiles={async () => ({ images: [] })}
         session={session}
         cachedModels={extra.cachedModels}
         onSetModel={extra.onSetModel ?? (() => {})}
@@ -722,7 +723,7 @@ describe("reasoning has two gestures beside the menu", () => {
           onCancelQueued={() => {}}
           onCyclePermissionMode={() => {}}
           fetchFileSuggestions={async () => []}
-          onPickFiles={async () => []}
+          onPickFiles={async () => ({ images: [] })}
           session={{ ...session, effort: "medium" }}
           onSetModel={() => {}}
         />
@@ -754,7 +755,9 @@ describe("reasoning has two gestures beside the menu", () => {
 
 function mountAttachmentComposer(options: {
   picked?: ImageAttachment[];
+  pickFiles?(): Promise<PickedImageAttachments>;
   onSend?(text: string, images: ImageAttachment[]): void;
+  identity?: string;
 } = {}) {
   if (typeof URL.createObjectURL !== "function") {
     Object.defineProperty(URL, "createObjectURL", {
@@ -765,7 +768,8 @@ function mountAttachmentComposer(options: {
   if (typeof URL.revokeObjectURL !== "function") {
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: () => {} });
   }
-  return render(
+  let identity = options.identity;
+  const view = () => (
     <CopyProvider dict={undefined}>
       <Composer
         disabled={false}
@@ -785,10 +789,21 @@ function mountAttachmentComposer(options: {
         onCancelQueued={() => {}}
         onCyclePermissionMode={() => {}}
         fetchFileSuggestions={async () => []}
-        onPickFiles={async () => options.picked ?? []}
+        onPickFiles={
+          options.pickFiles ?? (async () => ({ images: options.picked ?? [] }))
+        }
+        attachmentIdentity={identity}
       />
     </CopyProvider>
   );
+  const rendered = render(view());
+  return {
+    ...rendered,
+    setIdentity(next: string) {
+      identity = next;
+      rendered.rerender(view());
+    }
+  };
 }
 
 function pasteFiles(files: File[]): void {
@@ -890,6 +905,23 @@ describe("composer attachment contract", () => {
     expect(screen.queryByRole("alert")?.textContent).toContain("Could not read this image.");
   });
 
+  test("native picker reports rejected selections while preserving valid images", async () => {
+    mountAttachmentComposer({
+      pickFiles: async () => ({
+        images: [{ mediaType: "image/png", dataBase64: "cG5n", name: "valid.png" }],
+        error: "imageTooLarge"
+      })
+    });
+    fireEvent.click(screen.getByLabelText("Attach files"));
+    await settleAttachments();
+
+    expect(document.querySelectorAll(".attach-chip").length).toBe(1);
+    expect(screen.getByText("valid.png")).toBeDefined();
+    expect(screen.queryByRole("alert")?.textContent).toContain(
+      "Each image must be 512 KiB or smaller."
+    );
+  });
+
   test("removing an attachment releases its object URL", async () => {
     const urls = installObjectURLRecorder();
     mountAttachmentComposer();
@@ -920,6 +952,42 @@ describe("composer attachment contract", () => {
       expect(urls.revoked).toEqual(["blob:attachment-0"]);
       expect(document.querySelectorAll(".attach-chip").length).toBe(0);
     });
+  });
+
+  test("conversation identity reset releases staged attachments", async () => {
+    const urls = installObjectURLRecorder();
+    const rendered = mountAttachmentComposer({ identity: "session-one" });
+    pasteFiles([new File(["one"], "identity.png", { type: "image/png" })]);
+    await screen.findByText("identity.png");
+
+    rendered.setIdentity("session-two");
+
+    expect(document.querySelectorAll(".attach-chip").length).toBe(0);
+    expect(urls.revoked).toEqual(["blob:attachment-0"]);
+  });
+
+  test("a picker result from the previous identity is discarded", async () => {
+    const urls = installObjectURLRecorder();
+    let resolvePick: (result: PickedImageAttachments) => void = () => {};
+    const pendingPick = new Promise<PickedImageAttachments>((resolve) => {
+      resolvePick = resolve;
+    });
+    const rendered = mountAttachmentComposer({
+      identity: "session-one",
+      pickFiles: () => pendingPick
+    });
+    fireEvent.click(screen.getByLabelText("Attach files"));
+    rendered.setIdentity("session-two");
+
+    await act(async () => {
+      resolvePick({
+        images: [{ mediaType: "image/png", dataBase64: "cG5n", name: "stale.png" }]
+      });
+      await pendingPick;
+    });
+
+    expect(document.querySelectorAll(".attach-chip").length).toBe(0);
+    expect(urls.created).toEqual([]);
   });
 
   test("unmount releases every remaining attachment", async () => {

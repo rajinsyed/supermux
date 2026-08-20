@@ -7,6 +7,7 @@ import {
 import { markTurnAborted, readTool, writeBlock } from "./blocks";
 import { activeTurnIndex, asNumber, asString, isPlainObject, withTurn, type TranscriptIndex } from "./helpers";
 import { classifyLocalUserText } from "./localText";
+import { normalizeToolResultPayload } from "./toolResultPayload";
 import { classifyToolStatus, extractTodos } from "./toolStatus";
 import {
   appendCommandOutput,
@@ -304,6 +305,7 @@ function applyToolResult(
   const text = stringifyToolResultContent(result.content);
   const status = classifyToolStatus(found.block.name, result.is_error === true, text, structured);
   const subagent = subagentFromResult(found.block.subagent, structured, status);
+  const payload = normalizeToolResultPayload(text, structured);
   const nextBlock: ToolBlock = {
     ...found.block,
     partialInput: undefined,
@@ -312,7 +314,8 @@ function applyToolResult(
     inputComplete: true,
     resultText: text,
     resultIsError: result.is_error === true,
-    structured,
+    resultTextSources: payload.resultTextSources,
+    structured: payload.structured,
     subagent,
     endedAtMs: nowMs
   };

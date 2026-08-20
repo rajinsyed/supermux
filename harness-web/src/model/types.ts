@@ -183,6 +183,8 @@ export interface WorkflowProgress {
   totals: WorkflowTotals;
 }
 
+export type ToolResultTextSource = "stdout" | "stderr" | "content" | "fileContent";
+
 export interface ToolBlock {
   kind: "tool";
   key: string;
@@ -197,6 +199,8 @@ export interface ToolBlock {
   streaming: boolean;
   resultText?: string;
   resultIsError?: boolean;
+  /** Structured string fields removed because `resultText` is their exact canonical copy. */
+  resultTextSources?: ToolResultTextSource[];
   structured?: JsonObject;
   startedAtMs: number;
   endedAtMs?: number;

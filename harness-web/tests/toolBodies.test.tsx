@@ -117,3 +117,40 @@ describe("a failed tool card never renders an empty body", () => {
     expect(container.querySelector(".terminal")).toBeNull();
   });
 });
+
+describe("deduplicated tool output keeps each family renderer", () => {
+  test("Bash renders canonical stdout after the structured duplicate is removed", () => {
+    const output = "exact stdout\n終端😀";
+    const block = {
+      ...failedBlock("Bash", { command: "printf output" }),
+      status: "success",
+      resultIsError: false,
+      resultText: output,
+      resultTextSources: ["stdout"],
+      structured: { exitCode: 0, interrupted: false }
+    } satisfies ToolBlock;
+    const { container } = mount(block);
+    fireEvent.click(container.querySelector(".tool-head")!);
+
+    expect(container.querySelector(".terminal-body")?.textContent).toContain("exact stdout");
+    expect(container.textContent).toContain("終端😀");
+  });
+
+  test("Read keeps syntax rendering and Open while content has one canonical owner", () => {
+    const content = "let exact = \"界😀\"\n";
+    const block = {
+      ...failedBlock("Read", { file_path: "/tmp/exact.swift" }),
+      status: "success",
+      resultIsError: false,
+      resultText: content,
+      resultTextSources: ["fileContent"],
+      structured: { file: { filePath: "/tmp/exact.swift", lineCount: 1 } }
+    } satisfies ToolBlock;
+    const { container } = mount(block);
+    fireEvent.click(container.querySelector(".tool-head")!);
+
+    expect(container.querySelector(".code-block")).not.toBeNull();
+    expect(container.textContent).toContain("let exact");
+    expect(container.textContent).toContain("Open");
+  });
+});

@@ -692,6 +692,29 @@ struct SupermuxHarnessTests {
 
     @MainActor
     @Test
+    func testOutputOverflowSurfacesOneTypedBoundedEvent() throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(restoreState: nil, defaults: defaults, process: process)
+        defer { controller.close() }
+        var received: [[String: Any]] = []
+        controller.eventSink = { received.append($0) }
+
+        process.emitOutputDiagnostic(SupermuxHarnessOutputDiagnostic(
+            stream: .stdout,
+            discardedByteCount: 1_048_585
+        ))
+
+        let event = try #require(received.last)
+        #expect(event["kind"] as? String == "outputOverflow")
+        #expect(event["stream"] as? String == "stdout")
+        #expect(event["discardedByteCount"] as? Int == 1_048_585)
+        #expect((event["userMessage"] as? String)?.contains("skipped") == true)
+    }
+
+    @MainActor
+    @Test
     func testRunningIndicatorFollowsTurnsNotProcessLifetime() async throws {
         let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
         let process = MockSupermuxHarnessProcessSession()
@@ -1284,11 +1307,12 @@ struct SupermuxHarnessTests {
             projectsRootURL: projectsRootURL,
             taskOutputRootURL: taskOutputRootURL,
             modelCatalogProbe: modelCatalogProbe,
-            processSessionFactory: { protocolLineSink, stderrSink, lifecycleSink in
+            processSessionFactory: { protocolLineSink, stderrSink, lifecycleSink, outputDiagnosticSink in
                 process.configure(
                     protocolLineSink: protocolLineSink,
                     stderrSink: stderrSink,
-                    lifecycleSink: lifecycleSink
+                    lifecycleSink: lifecycleSink,
+                    outputDiagnosticSink: outputDiagnosticSink
                 )
                 return process
             }
@@ -1360,11 +1384,13 @@ private actor DelayedSupermuxHarnessSessionRepository: SupermuxHarnessSessionRea
     func loadHistory(
         for workingDirectoryURL: URL,
         sessionID: String,
-        recordLimit: Int?
+        recordLimit: Int?,
+        maximumEventBytes: Int?
     ) async throws -> SupermuxHarnessHistoryPage {
         _ = workingDirectoryURL
         _ = sessionID
         _ = recordLimit
+        _ = maximumEventBytes
         return SupermuxHarnessHistoryPage(events: [], truncated: false)
     }
 
@@ -1492,17 +1518,24 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
     private var protocolLineSink: SupermuxHarnessProtocolLineSink?
     private var stderrSink: SupermuxHarnessStderrSink?
     private var lifecycleSink: SupermuxHarnessLifecycleSink?
+    private var outputDiagnosticSink: SupermuxHarnessOutputDiagnosticSink?
     private let decoder = SupermuxHarnessProtocolDecoder()
     private var nextRunNumber = 1
 
     func configure(
         protocolLineSink: @escaping SupermuxHarnessProtocolLineSink,
         stderrSink: @escaping SupermuxHarnessStderrSink,
-        lifecycleSink: @escaping SupermuxHarnessLifecycleSink
+        lifecycleSink: @escaping SupermuxHarnessLifecycleSink,
+        outputDiagnosticSink: @escaping SupermuxHarnessOutputDiagnosticSink
     ) {
         self.protocolLineSink = protocolLineSink
         self.stderrSink = stderrSink
         self.lifecycleSink = lifecycleSink
+        self.outputDiagnosticSink = outputDiagnosticSink
+    }
+
+    func emitOutputDiagnostic(_ diagnostic: SupermuxHarnessOutputDiagnostic) {
+        outputDiagnosticSink?(diagnostic)
     }
 
     func start(plan: SupermuxHarnessLaunchPlan) throws -> SupermuxHarnessStartedProcess {

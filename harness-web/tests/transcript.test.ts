@@ -5,6 +5,7 @@ import { questionResolution } from "../src/dev/fixtures/question";
 import { planApproval } from "../src/dev/fixtures/plan";
 import { resumeHistory } from "../src/dev/fixtures/resume";
 import { applyLine, applyLocalAction, createIndex, createModel, replayLines } from "../src/model/transcript";
+import { canonicalToolResultText } from "../src/model/toolResultPayload";
 import type { Block, ToolBlock, TranscriptModel } from "../src/model/types";
 import type { ProtocolLine } from "../src/protocol/types";
 
@@ -169,7 +170,9 @@ describe("permission fixture", () => {
     const all = tools(model);
     const bash = all.find((t) => t.name === "Bash");
     expect(bash?.status).toBe("success");
-    expect(bash?.structured?.stdout).toContain("migrations complete");
+    expect(bash ? canonicalToolResultText(bash, "stdout") : undefined).toContain(
+      "migrations complete"
+    );
     const edit = all.find((t) => t.name === "Edit");
     expect(edit?.status).toBe("success");
     expect((edit?.structured?.structuredPatch as unknown[]).length).toBe(2);
