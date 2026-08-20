@@ -131,17 +131,12 @@ describe("item B: a replayed session's subagents are settled, not Working", () =
       if (status !== undefined) expect(isTaskSettled(status)).toBe(true);
     }
 
-    const view = render(
-      createElement(
-        CopyProvider,
-        { dict: undefined },
-        createElement(
-          "div",
-          null,
-          blocks.map((block) => createElement(AgentRow, { key: block.key, block }))
-        )
-      )
+    const rows = createElement(
+      "div",
+      null,
+      blocks.map((block) => createElement(AgentRow, { key: block.key, block }))
     );
+    const view = render(createElement(CopyProvider, { dict: undefined, children: rows }));
     expect(view.container.querySelector(".agent-row-glyph")).toBeNull();
     expect(view.container.textContent).not.toContain("Waiting to start");
   });
