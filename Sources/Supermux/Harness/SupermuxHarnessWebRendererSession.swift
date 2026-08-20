@@ -5,8 +5,12 @@ import SupermuxKit
 final class SupermuxHarnessWebRendererSession {
     private let ownedCoordinator: SupermuxHarnessWebRendererCoordinator
 
-    init(transcriptService: any SupermuxHarnessSubagentTranscriptLoading) {
+    init(
+        sessionRepository: any SupermuxHarnessSessionReading,
+        transcriptService: any SupermuxHarnessSubagentTranscriptLoading
+    ) {
         ownedCoordinator = SupermuxHarnessWebRendererCoordinator(
+            sessionRepository: sessionRepository,
             transcriptService: transcriptService
         )
     }

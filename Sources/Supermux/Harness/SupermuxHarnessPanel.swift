@@ -44,13 +44,15 @@ final class SupermuxHarnessPanel: Panel {
         workspaceId: UUID,
         workingDirectory: String? = nil,
         restoreState: SessionSupermuxHarnessPanelSnapshot? = nil,
+        sessionRepository: any SupermuxHarnessSessionReading,
         transcriptService: any SupermuxHarnessSubagentTranscriptLoading
     ) {
         self.id = UUID()
         self.workspaceId = workspaceId
         self.workingDirectory = workingDirectory
         self.restoreState = restoreState
-        self.rendererSession = SupermuxHarnessWebRendererSession(
+        rendererSession = SupermuxHarnessWebRendererSession(
+            sessionRepository: sessionRepository,
             transcriptService: transcriptService
         )
         let restoredTitle = restoreState?.title?.trimmingCharacters(in: .whitespacesAndNewlines)

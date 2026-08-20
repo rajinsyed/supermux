@@ -46,6 +46,7 @@ final class SupermuxHarnessSessionController {
     private let binarySetting: SupermuxHarnessBinarySetting
     private let modelCatalogStore: SupermuxHarnessModelCatalogStore
     private let lastUsedModelStore: SupermuxHarnessLastUsedModelStore
+    private let sessionRepository: any SupermuxHarnessSessionReading
     private let projectsRootURL: URL
     private let taskOutputRootURL: URL
     private let taskOutputCanonicalRootURL: URL
@@ -67,6 +68,7 @@ final class SupermuxHarnessSessionController {
     init(
         workingDirectory: String?,
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
+        sessionRepository: any SupermuxHarnessSessionReading,
         transcriptService: any SupermuxHarnessSubagentTranscriptLoading,
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
@@ -86,6 +88,7 @@ final class SupermuxHarnessSessionController {
         }
     ) {
         self.fileManager = fileManager
+        self.sessionRepository = sessionRepository
         self.transcriptService = transcriptService
         self.projectsRootURL = projectsRootURL ?? Self.claudeProjectsRootURL
         if let taskOutputRootURL {
@@ -714,14 +717,10 @@ final class SupermuxHarnessSessionController {
 
     func listSessions(limit: Int?) async throws -> [[String: Any]] {
         guard let directoryURL = workingDirectoryURL else { return [] }
-        let projectsRootURL = self.projectsRootURL
-        let sessions = try await Task.detached(priority: .userInitiated) {
-            let discovery = SupermuxHarnessSessionDiscovery(
-                projectsRootURL: projectsRootURL,
-                fileManager: .default
-            )
-            return try discovery.listSessions(for: directoryURL, limit: limit)
-        }.value
+        let sessions = try await sessionRepository.listSessions(
+            for: directoryURL,
+            limit: limit
+        )
         guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
         return sessions.map { session in
             var entry: [String: Any] = [
@@ -740,18 +739,11 @@ final class SupermuxHarnessSessionController {
         guard let directoryURL = workingDirectoryURL else {
             throw SupermuxHarnessBridgeError.workingDirectoryUnavailable
         }
-        let projectsRootURL = self.projectsRootURL
-        let page = try await Task.detached(priority: .userInitiated) {
-            let discovery = SupermuxHarnessSessionDiscovery(
-                projectsRootURL: projectsRootURL,
-                fileManager: .default
-            )
-            return try discovery.loadHistory(
-                for: directoryURL,
-                sessionID: sessionId,
-                recordLimit: Self.historyRecordLimit
-            )
-        }.value
+        let page = try await sessionRepository.loadHistory(
+            for: directoryURL,
+            sessionID: sessionId,
+            recordLimit: Self.historyRecordLimit
+        )
         guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
         return [
             "events": page.events.map(\.rawValue),
@@ -1300,17 +1292,19 @@ final class SupermuxHarnessSessionController {
               let sessionID = snapshot.sessionId, !sessionID.isEmpty else {
             return
         }
-        let projectsRootURL = self.projectsRootURL
-        let fileManager = self.fileManager
-        Task.detached(priority: .utility) { [weak self] in
-            let discovery = SupermuxHarnessSessionDiscovery(
-                projectsRootURL: projectsRootURL,
-                fileManager: fileManager
-            )
-            guard let title = discovery.sessionTitle(for: directoryURL, sessionID: sessionID) else {
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let title = await self.sessionRepository.sessionTitle(
+                      for: directoryURL,
+                      sessionID: sessionID
+                  ),
+                  !self.isClosed,
+                  self.snapshot.titleIsCustom != true,
+                  self.snapshot.sessionId == sessionID,
+                  self.snapshot.title != title else {
                 return
             }
-            await self?.applyDiscoveredTitle(title, sessionID: sessionID)
+            await self.applyDiscoveredTitle(title, sessionID: sessionID)
         }
     }
 

@@ -31,6 +31,7 @@ extension Workspace {
             workspaceId: id,
             workingDirectory: directory,
             restoreState: restoreState,
+            sessionRepository: SupermuxComposition.harnessSessionRepository,
             transcriptService: SupermuxComposition.harnessSubagentTranscriptService
         )
         panels[harnessPanel.id] = harnessPanel
@@ -105,6 +106,7 @@ extension Workspace {
             workspaceId: id,
             workingDirectory: directory,
             restoreState: restoreState,
+            sessionRepository: SupermuxComposition.harnessSessionRepository,
             transcriptService: SupermuxComposition.harnessSubagentTranscriptService
         )
         panels[harnessPanel.id] = harnessPanel

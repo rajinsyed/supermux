@@ -439,6 +439,7 @@ struct SupermuxHarnessTests {
             workspaceId: UUID(),
             workingDirectory: "/tmp",
             restoreState: restored,
+            sessionRepository: makeSessionRepository(),
             transcriptService: SupermuxHarnessSubagentTranscriptService(
                 projectsRootURL: SupermuxHarnessSessionController.claudeProjectsRootURL,
                 fileManager: .default
@@ -732,6 +733,7 @@ struct SupermuxHarnessTests {
         try "cached output".write(to: outputURL, atomically: true, encoding: .utf8)
 
         let coordinator = SupermuxHarnessWebRendererCoordinator(
+            sessionRepository: makeSessionRepository(),
             transcriptService: SupermuxHarnessSubagentTranscriptService(
                 projectsRootURL: projects,
                 fileManager: .default
@@ -874,6 +876,7 @@ struct SupermuxHarnessTests {
         try metadata.write(to: transcriptDirectory.appendingPathComponent("agent-agent-1.meta.json"))
 
         let coordinator = SupermuxHarnessWebRendererCoordinator(
+            sessionRepository: makeSessionRepository(),
             transcriptService: SupermuxHarnessSubagentTranscriptService(
                 projectsRootURL: projects,
                 fileManager: .default
@@ -1081,6 +1084,7 @@ struct SupermuxHarnessTests {
         return SupermuxHarnessSessionController(
             workingDirectory: workingDirectory,
             restoreState: restoreState,
+            sessionRepository: makeSessionRepository(projectsRootURL: projectsRootURL),
             transcriptService: transcriptService,
             defaults: defaults,
             projectsRootURL: projectsRootURL,
@@ -1094,6 +1098,15 @@ struct SupermuxHarnessTests {
                 )
                 return process
             }
+        )
+    }
+
+    private func makeSessionRepository(
+        projectsRootURL: URL? = nil
+    ) -> SupermuxHarnessSessionRepository {
+        SupermuxHarnessSessionRepository(
+            projectsRootURL: projectsRootURL ?? SupermuxHarnessSessionController.claudeProjectsRootURL,
+            fileManager: .default
         )
     }
 

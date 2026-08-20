@@ -5,6 +5,7 @@ import WebKit
 
 @MainActor
 final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandlerWithReply {
+    private let sessionRepository: any SupermuxHarnessSessionReading
     private let transcriptService: any SupermuxHarnessSubagentTranscriptLoading
     var webView: SupermuxHarnessWebView?
     private(set) var panelId = UUID()
@@ -43,7 +44,11 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     var onPendingUserInputChanged: ((Bool) -> Void)?
     var onRestoreStateRetired: (() -> Void)?
 
-    init(transcriptService: any SupermuxHarnessSubagentTranscriptLoading) {
+    init(
+        sessionRepository: any SupermuxHarnessSessionReading,
+        transcriptService: any SupermuxHarnessSubagentTranscriptLoading
+    ) {
+        self.sessionRepository = sessionRepository
         self.transcriptService = transcriptService
         super.init()
     }
@@ -78,6 +83,7 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         let controller = SupermuxHarnessSessionController(
             workingDirectory: workingDirectory,
             restoreState: restoreState,
+            sessionRepository: sessionRepository,
             transcriptService: transcriptService
         )
         controller.eventSink = { [weak self] event in

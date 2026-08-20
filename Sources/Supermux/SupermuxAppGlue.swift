@@ -52,6 +52,18 @@ enum SupermuxComposition {
     /// Maps app-target terminal notifications onto the package-owned APNs service.
     static let directPhonePush = SupermuxDirectPhonePush(service: phonePushService)
 
+    /// App-wide main-session JSONL repository shared by every Claude harness pane.
+    ///
+    /// Controllers receive this actor through their constructor chain. The actor
+    /// exposes no singleton accessor, so tests can inject repositories rooted at
+    /// isolated temporary directories.
+    static let harnessSessionRepository = SupermuxHarnessSessionRepository(
+        projectsRootURL: FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude", isDirectory: true)
+            .appendingPathComponent("projects", isDirectory: true),
+        fileManager: .default
+    )
+
     /// App-wide projects model, shared by every window's sidebar.
     static let projectsModel: SupermuxProjectsModel = {
         let store = SupermuxProjectStore(fileURL: SupermuxPaths.defaultProjectsFileURL)
