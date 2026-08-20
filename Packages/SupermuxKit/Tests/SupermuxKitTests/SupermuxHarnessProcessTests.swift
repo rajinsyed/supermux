@@ -7,17 +7,21 @@ import Testing
 struct SupermuxHarnessOutputLineBufferTests {
     @Test func splitsCompleteLinesAcrossArbitraryChunksAndFlushesTrailingText() {
         var buffer = SupermuxHarnessOutputLineBuffer()
-        #expect(buffer.append(Data("one\ntw".utf8)) == ["one\n"])
+        #expect(buffer.append(Data("one\ntw".utf8)) == [.line("one\n")])
         #expect(buffer.bufferedByteCount == 2)
-        #expect(buffer.append(Data("o\nthree".utf8)) == ["two\n"])
-        #expect(buffer.flush() == ["three"])
+        #expect(buffer.append(Data("o\nthree".utf8)) == [.line("two\n")])
+        #expect(buffer.flush() == [.line("three")])
         #expect(buffer.flush().isEmpty)
         #expect(buffer.bufferedByteCount == 0)
     }
 
     @Test func preservesCRLFAndEmptyLines() {
         var buffer = SupermuxHarnessOutputLineBuffer()
-        #expect(buffer.append(Data("one\r\n\ntwo\n".utf8)) == ["one\r\n", "\n", "two\n"])
+        #expect(buffer.append(Data("one\r\n\ntwo\n".utf8)) == [
+            .line("one\r\n"),
+            .line("\n"),
+            .line("two\n"),
+        ])
         #expect(buffer.flush().isEmpty)
     }
 
@@ -25,9 +29,9 @@ struct SupermuxHarnessOutputLineBufferTests {
         var buffer = SupermuxHarnessOutputLineBuffer()
         let data = Data(repeating: 0x61, count: SupermuxHarnessOutputLineBuffer.maximumBufferedBytes)
         let output = buffer.append(data)
-        #expect(output.count == 1)
-        #expect(output[0].utf8.count == SupermuxHarnessOutputLineBuffer.maximumBufferedBytes + 1)
-        #expect(output[0].last == "\n")
+        #expect(output == [
+            .line(String(repeating: "a", count: SupermuxHarnessOutputLineBuffer.maximumBufferedBytes) + "\n"),
+        ])
         #expect(buffer.bufferedByteCount == 0)
     }
 
@@ -35,22 +39,24 @@ struct SupermuxHarnessOutputLineBufferTests {
         var buffer = SupermuxHarnessOutputLineBuffer()
         let maximum = SupermuxHarnessOutputLineBuffer.maximumBufferedBytes
         let output = buffer.append(Data(repeating: 0x62, count: maximum * 2 + 3))
-        #expect(output.count == 2)
-        #expect(output.allSatisfy { $0.utf8.count == maximum + 1 })
+        #expect(output == [
+            .line(String(repeating: "b", count: maximum) + "\n"),
+            .line(String(repeating: "b", count: maximum) + "\n"),
+        ])
         #expect(buffer.bufferedByteCount == 3)
-        #expect(buffer.flush() == ["bbb"])
+        #expect(buffer.flush() == [.line("bbb")])
     }
 
     @Test func preservesMultibyteUTF8SplitAcrossChunks() {
         var buffer = SupermuxHarnessOutputLineBuffer()
         let bytes = Array("😀".utf8)
         #expect(buffer.append(Data(bytes.prefix(2))).isEmpty)
-        #expect(buffer.append(Data(bytes.dropFirst(2)) + Data([0x0A])) == ["😀\n"])
+        #expect(buffer.append(Data(bytes.dropFirst(2)) + Data([0x0A])) == [.line("😀\n")])
     }
 
     @Test func invalidUTF8UsesReplacementDecodingInsteadOfDroppingBytes() {
         var buffer = SupermuxHarnessOutputLineBuffer()
-        #expect(buffer.append(Data([0xFF, 0x0A])) == ["�\n"])
+        #expect(buffer.append(Data([0xFF, 0x0A])) == [.line("�\n")])
     }
 }
 

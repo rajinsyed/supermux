@@ -145,13 +145,16 @@ public struct SupermuxHarnessSessionDiscovery {
     ///   - workingDirectoryURL: The working directory whose project folders should be probed.
     ///   - sessionID: The persisted session filename without `.jsonl`.
     ///   - recordLimit: Optional maximum number of newest visible records to return.
+    ///   - maximumEventBytes: Optional serialized-byte budget for returned protocol events.
     /// - Returns: Root-to-leaf protocol-shaped events and a truncation flag.
     /// - Throws: ``SupermuxHarnessSessionDiscoveryError`` or a file-reading error.
     public func loadHistory(
         for workingDirectoryURL: URL,
         sessionID: String,
-        recordLimit: Int? = nil
+        recordLimit: Int? = nil,
+        maximumEventBytes: Int? = nil
     ) throws -> SupermuxHarnessHistoryPage {
+        _ = maximumEventBytes
         guard isValidSessionID(sessionID) else {
             throw SupermuxHarnessSessionDiscoveryError.invalidSessionID
         }

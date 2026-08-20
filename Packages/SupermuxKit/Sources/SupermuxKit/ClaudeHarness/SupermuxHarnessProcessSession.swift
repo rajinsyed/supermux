@@ -18,6 +18,7 @@ public final class SupermuxHarnessProcessSession {
     private let protocolLineSink: SupermuxHarnessProtocolLineSink
     private let stderrSink: SupermuxHarnessStderrSink
     private let lifecycleSink: SupermuxHarnessLifecycleSink
+    private let outputDiagnosticSink: SupermuxHarnessOutputDiagnosticSink
     private let terminationEscalationNanoseconds: Int
     private var runningProcess: SupermuxHarnessRunningProcess?
     private var completedExit: (runID: String, status: Int32)?
@@ -33,17 +34,20 @@ public final class SupermuxHarnessProcessSession {
     ///   - protocolLineSink: Receives every valid stdout JSON line, including unknown frame types.
     ///   - stderrSink: Receives stderr text.
     ///   - lifecycleSink: Receives start and fully-drained exit events.
+    ///   - outputDiagnosticSink: Receives bounded physical-line overflow diagnostics.
     public init(
         decoder: SupermuxHarnessProtocolDecoder = SupermuxHarnessProtocolDecoder(),
         terminationEscalationInterval: TimeInterval = 3,
         protocolLineSink: @escaping SupermuxHarnessProtocolLineSink,
         stderrSink: @escaping SupermuxHarnessStderrSink,
-        lifecycleSink: @escaping SupermuxHarnessLifecycleSink
+        lifecycleSink: @escaping SupermuxHarnessLifecycleSink,
+        outputDiagnosticSink: @escaping SupermuxHarnessOutputDiagnosticSink = { _ in }
     ) {
         self.decoder = decoder
         self.protocolLineSink = protocolLineSink
         self.stderrSink = stderrSink
         self.lifecycleSink = lifecycleSink
+        self.outputDiagnosticSink = outputDiagnosticSink
         terminationEscalationNanoseconds = max(1, Int(terminationEscalationInterval * 1_000_000_000))
     }
 
@@ -310,25 +314,36 @@ public final class SupermuxHarnessProcessSession {
     ) async {
         guard let session = runningProcess, session.runID == runID else { return }
         if data.isEmpty {
-            for line in session.flush(stream: stream) {
-                await emit(line, stream: stream)
+            for event in session.flush(stream: stream) {
+                await emit(event, stream: stream)
             }
             session.drainedStreams.insert(stream)
             finishIfExitedAndDrained(session)
             return
         }
-        for line in session.append(data, stream: stream) {
-            await emit(line, stream: stream)
+        for event in session.append(data, stream: stream) {
+            await emit(event, stream: stream)
         }
     }
 
-    private func emit(_ text: String, stream: SupermuxHarnessProcessStream) async {
-        switch stream {
-        case .stdout:
-            guard let decoded = try? decoder.decodeLine(text) else { return }
-            await protocolLineSink(decoded)
-        case .stderr:
-            await stderrSink(text)
+    private func emit(
+        _ event: SupermuxHarnessOutputLineBufferEvent,
+        stream: SupermuxHarnessProcessStream
+    ) async {
+        switch event {
+        case .line(let text):
+            switch stream {
+            case .stdout:
+                guard let decoded = try? decoder.decodeLine(text) else { return }
+                await protocolLineSink(decoded)
+            case .stderr:
+                await stderrSink(text)
+            }
+        case .overflow(let discardedByteCount):
+            await outputDiagnosticSink(SupermuxHarnessOutputDiagnostic(
+                stream: stream == .stdout ? .stdout : .stderr,
+                discardedByteCount: discardedByteCount
+            ))
         }
     }
 

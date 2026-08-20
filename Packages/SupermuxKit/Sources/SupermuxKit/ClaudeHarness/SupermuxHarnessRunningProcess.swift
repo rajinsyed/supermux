@@ -34,7 +34,7 @@ final class SupermuxHarnessRunningProcess {
         self.inputWriter = inputWriter
     }
 
-    func append(_ data: Data, stream: SupermuxHarnessProcessStream) -> [String] {
+    func append(_ data: Data, stream: SupermuxHarnessProcessStream) -> [SupermuxHarnessOutputLineBufferEvent] {
         switch stream {
         case .stdout:
             stdoutBuffer.append(data)
@@ -43,7 +43,7 @@ final class SupermuxHarnessRunningProcess {
         }
     }
 
-    func flush(stream: SupermuxHarnessProcessStream) -> [String] {
+    func flush(stream: SupermuxHarnessProcessStream) -> [SupermuxHarnessOutputLineBufferEvent] {
         switch stream {
         case .stdout:
             stdoutBuffer.flush()

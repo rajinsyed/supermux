@@ -6,3 +6,6 @@ public typealias SupermuxHarnessProtocolLineSink = @MainActor @Sendable (Supermu
 public typealias SupermuxHarnessStderrSink = @MainActor @Sendable (String) async -> Void
 /// Receives process start and fully-drained exit events.
 public typealias SupermuxHarnessLifecycleSink = @MainActor @Sendable (SupermuxHarnessProcessLifecycleEvent) -> Void
+/// Receives bounded diagnostics for process output that cannot be forwarded as a line.
+/// The process reader awaits completion before it drains subsequent output.
+public typealias SupermuxHarnessOutputDiagnosticSink = @MainActor @Sendable (SupermuxHarnessOutputDiagnostic) async -> Void
