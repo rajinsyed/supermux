@@ -85,9 +85,9 @@ struct SupermuxHarnessSessionRepositoryCacheTests {
         #expect(title == "Second title")
         #expect(metrics.scanCount == 2)
         #expect(metrics.readOffsets == [0, UInt64(originalSize)])
-        #expect(metrics.indexBytesRead == UInt64(
-            try #require((try fileURL.resourceValues(forKeys: [.fileSizeKey])).fileSize)
-        ))
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let currentSize = try #require(attributes[.size] as? NSNumber).uint64Value
+        #expect(metrics.indexBytesRead == currentSize)
     }
 
     @Test func unterminatedAndOverlongTailsStayProvisionalAcrossAppends() async throws {

@@ -63,6 +63,9 @@ final class SupermuxHarnessSessionController {
     private var sessionFileWatcher: SupermuxHarnessSessionFileWatcher?
     private var lifecycleEventDeliveryTask: Task<Void, Never>?
     private var watchedSessionID: String?
+    private var titleRefreshTask: Task<Void, Never>?
+    private var titleRefreshGeneration: UInt64 = 0
+    private var pendingRenameID: UUID?
     private var isTurnActive = false
 
     init(
@@ -394,6 +397,8 @@ final class SupermuxHarnessSessionController {
         await lifecycleEventDeliveryTask?.value
         lifecycleEventDeliveryTask = nil
         guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
+        invalidateSessionTitleRefresh()
+        pendingRenameID = nil
         taskRecordsByID.removeAll()
         cancelModelCatalogProbe()
         let resolvedPlan = try await resolveClaudeLaunchPlan()
@@ -665,23 +670,43 @@ final class SupermuxHarnessSessionController {
     }
 
     func renameSession(title: String) async throws {
+        let renameID = UUID()
+        invalidateSessionTitleRefresh()
+        pendingRenameID = renameID
         guard let router = controlRouter else {
-            guard !isClosed else { throw SupermuxHarnessBridgeError.sessionNotRunning }
-            snapshot.title = title
-            snapshot.titleIsCustom = true
-            sessionFileWatcher?.cancel()
-            sessionFileWatcher = nil
-            titleSink?(title)
+            guard !isClosed else {
+                pendingRenameID = nil
+                throw SupermuxHarnessBridgeError.sessionNotRunning
+            }
+            guard pendingRenameID == renameID else { return }
+            pendingRenameID = nil
+            adoptCustomSessionTitle(title)
             return
         }
-        _ = try await router.issue(.renameSession(title: title))
+        do {
+            _ = try await router.issue(.renameSession(title: title))
+        } catch {
+            if pendingRenameID == renameID {
+                pendingRenameID = nil
+                refreshSessionTitleFromDisk()
+            }
+            throw error
+        }
         guard !isClosed, controlRouter === router else {
+            if pendingRenameID == renameID { pendingRenameID = nil }
             throw SupermuxHarnessBridgeError.sessionNotRunning
         }
+        guard pendingRenameID == renameID else { return }
+        pendingRenameID = nil
+        adoptCustomSessionTitle(title)
+    }
+
+    private func adoptCustomSessionTitle(_ title: String) {
         snapshot.title = title
         snapshot.titleIsCustom = true
         sessionFileWatcher?.cancel()
         sessionFileWatcher = nil
+        watchedSessionID = nil
         titleSink?(title)
     }
 
@@ -859,6 +884,8 @@ final class SupermuxHarnessSessionController {
     func close() {
         guard !isClosed else { return }
         isClosed = true
+        pendingRenameID = nil
+        invalidateSessionTitleRefresh()
         Self.liveControllers.removeValue(forKey: ObjectIdentifier(self))
         cancelModelCatalogProbe()
         sessionFileWatcher?.cancel()
@@ -1288,20 +1315,31 @@ final class SupermuxHarnessSessionController {
 
     private func refreshSessionTitleFromDisk() {
         guard snapshot.titleIsCustom != true,
+              pendingRenameID == nil,
               let directoryURL = workingDirectoryURL,
               let sessionID = snapshot.sessionId, !sessionID.isEmpty else {
             return
         }
-        Task { @MainActor [weak self] in
-            guard let self,
-                  let title = await self.sessionRepository.sessionTitle(
-                      for: directoryURL,
-                      sessionID: sessionID
-                  ),
-                  !self.isClosed,
-                  self.snapshot.titleIsCustom != true,
-                  self.snapshot.sessionId == sessionID,
-                  self.snapshot.title != title else {
+        invalidateSessionTitleRefresh()
+        let generation = titleRefreshGeneration
+        titleRefreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.titleRefreshGeneration == generation {
+                    self.titleRefreshTask = nil
+                }
+            }
+            guard let title = await self.sessionRepository.sessionTitle(
+                for: directoryURL,
+                sessionID: sessionID
+            ),
+            !Task.isCancelled,
+            !self.isClosed,
+            self.titleRefreshGeneration == generation,
+            self.pendingRenameID == nil,
+            self.snapshot.titleIsCustom != true,
+            self.snapshot.sessionId == sessionID,
+            self.snapshot.title != title else {
                 return
             }
             await self.applyDiscoveredTitle(title, sessionID: sessionID)
@@ -1320,11 +1358,21 @@ final class SupermuxHarnessSessionController {
         await eventSink?(["kind": "sessionTitle", "title": title])
     }
 
+    private func invalidateSessionTitleRefresh() {
+        titleRefreshGeneration &+= 1
+        titleRefreshTask?.cancel()
+        titleRefreshTask = nil
+    }
+
     private func consumeSystemFrame(_ frame: SupermuxHarnessSystemFrame) {
         consumeTaskRecordFromSystemFrame(frame)
         switch frame.subtype {
         case .initialize:
             if let sessionID = frame.sessionID {
+                if snapshot.sessionId != sessionID {
+                    pendingRenameID = nil
+                    invalidateSessionTitleRefresh()
+                }
                 snapshot.sessionId = sessionID
                 // A fresh session's id first appears here; the watcher retries
                 // until the CLI's first write creates the file.

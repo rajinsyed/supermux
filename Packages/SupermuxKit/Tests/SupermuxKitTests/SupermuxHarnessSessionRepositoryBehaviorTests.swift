@@ -106,6 +106,74 @@ struct SupermuxHarnessSessionRepositoryBehaviorTests {
         #expect(actualHistory.truncated)
     }
 
+    @Test func sessionTitlePreservesTheFirstSafeCandidateWithoutCwdFiltering() async throws {
+        let sandbox = try SupermuxHarnessSessionRepositorySandbox(name: "title-cwd-semantics")
+        defer { sandbox.remove() }
+        let foreignDirectory = sandbox.rootURL.appendingPathComponent("foreign", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: foreignDirectory,
+            withIntermediateDirectories: true
+        )
+        _ = try sandbox.writeSession(id: "session", records: [
+            [
+                "type": "user",
+                "uuid": "foreign-user",
+                "cwd": foreignDirectory.path,
+                "message": ["role": "user", "content": "foreign"],
+            ],
+            ["type": "ai-title", "aiTitle": "Foreign title"],
+        ])
+
+        #expect(await sandbox.repository.sessionTitle(
+            for: sandbox.workingDirectoryURL,
+            sessionID: "session"
+        ) == "Foreign title")
+        #expect(try await sandbox.repository.listSessions(
+            for: sandbox.workingDirectoryURL,
+            limit: nil
+        ).isEmpty)
+        await #expect(throws: SupermuxHarnessSessionDiscoveryError.sessionNotFound("session")) {
+            _ = try await sandbox.repository.loadHistory(
+                for: sandbox.workingDirectoryURL,
+                sessionID: "session",
+                recordLimit: nil
+            )
+        }
+    }
+
+    @Test func repositoryRejectsSymlinkedSessionFiles() async throws {
+        let sandbox = try SupermuxHarnessSessionRepositorySandbox(name: "symlink-safety")
+        defer { sandbox.remove() }
+        let directory = try sandbox.firstProjectDirectory()
+        let outsideURL = sandbox.rootURL.appendingPathComponent("outside.jsonl")
+        try SupermuxHarnessSessionRepositorySandbox.jsonlData(records: [[
+            "type": "user",
+            "uuid": "outside-user",
+            "message": ["role": "user", "content": "outside"],
+        ]]).write(to: outsideURL)
+        let linkedURL = directory.appendingPathComponent("linked.jsonl")
+        try FileManager.default.createSymbolicLink(
+            at: linkedURL,
+            withDestinationURL: outsideURL
+        )
+
+        #expect(try await sandbox.repository.listSessions(
+            for: sandbox.workingDirectoryURL,
+            limit: nil
+        ).isEmpty)
+        #expect(await sandbox.repository.sessionTitle(
+            for: sandbox.workingDirectoryURL,
+            sessionID: "linked"
+        ) == nil)
+        await #expect(throws: SupermuxHarnessSessionDiscoveryError.sessionNotFound("linked")) {
+            _ = try await sandbox.repository.loadHistory(
+                for: sandbox.workingDirectoryURL,
+                sessionID: "linked",
+                recordLimit: nil
+            )
+        }
+    }
+
     @Test func newestLimitFallsThroughFromMismatchedDuplicateToOlderMatch() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -191,6 +259,43 @@ struct SupermuxHarnessSessionRepositoryBehaviorTests {
         #expect(await repository.debugMetrics(for: beyondLimitURL).scanCount == 0)
     }
 
+    @Test func newestLimitPreservesSessionIDOrderingAcrossTimestampTies() async throws {
+        let sandbox = try SupermuxHarnessSessionRepositorySandbox(name: "limit-ties")
+        defer { sandbox.remove() }
+        let directory = try sandbox.firstProjectDirectory()
+        let tiedDate = Date(timeIntervalSince1970: 1_800_000_000)
+        for sessionID in ["zeta", "alpha", "beta"] {
+            _ = try sandbox.writeSession(
+                id: sessionID,
+                records: [[
+                    "type": "user",
+                    "uuid": "\(sessionID)-user",
+                    "message": ["role": "user", "content": sessionID],
+                ]],
+                modificationDate: tiedDate,
+                directory: directory
+            )
+        }
+        let olderURL = try sandbox.writeSession(
+            id: "older",
+            records: [[
+                "type": "user",
+                "uuid": "older-user",
+                "message": ["role": "user", "content": "older"],
+            ]],
+            modificationDate: tiedDate.addingTimeInterval(-1),
+            directory: directory
+        )
+
+        let sessions = try await sandbox.repository.listSessions(
+            for: sandbox.workingDirectoryURL,
+            limit: 2
+        )
+
+        #expect(sessions.map(\.sessionID) == ["alpha", "beta"])
+        #expect(await sandbox.repository.debugMetrics(for: olderURL).scanCount == 0)
+    }
+
     @Test func historyIndexesOnceThenReadsOnlySelectedRecordRanges() async throws {
         let sandbox = try SupermuxHarnessSessionRepositorySandbox(name: "history-one-pass")
         defer { sandbox.remove() }
@@ -227,6 +332,50 @@ struct SupermuxHarnessSessionRepositoryBehaviorTests {
         #expect(afterSecond.indexedRecordCount == 7)
         #expect(afterSecond.selectedRecordReadCount == 6)
         #expect(afterSecond.indexBytesRead == afterFirst.indexBytesRead)
+    }
+
+    @Test func historyKeepsTheLastReplayableRangeForDuplicateUUIDs() async throws {
+        let sandbox = try SupermuxHarnessSessionRepositorySandbox(name: "history-duplicate-uuid")
+        defer { sandbox.remove() }
+        _ = try sandbox.writeSession(id: "session", records: [
+            [
+                "type": "user",
+                "uuid": "duplicate",
+                "message": ["role": "user", "content": "kept"],
+            ],
+            [
+                "type": "assistant",
+                "uuid": "tail",
+                "parentUuid": "duplicate",
+                "message": ["role": "assistant", "content": "tail"],
+            ],
+            [
+                "type": "attachment",
+                "uuid": "duplicate",
+                "parentUuid": NSNull(),
+                "attachment": [
+                    "type": "queued_command",
+                    "commandMode": "prompt",
+                    "prompt": "",
+                ],
+            ],
+        ])
+
+        let expected = try sandbox.discovery().loadHistory(
+            for: sandbox.workingDirectoryURL,
+            sessionID: "session",
+            recordLimit: nil
+        )
+        let actual = try await sandbox.repository.loadHistory(
+            for: sandbox.workingDirectoryURL,
+            sessionID: "session",
+            recordLimit: nil
+        )
+
+        #expect(actual == expected)
+        #expect(actual.events.compactMap { $0.string(forKey: "uuid") } == [
+            "duplicate", "tail",
+        ])
     }
 
     @Test func historyPreservesVisibleRecordLimitAndSafetyErrors() async throws {
