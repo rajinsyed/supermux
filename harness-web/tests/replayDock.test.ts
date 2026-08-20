@@ -1,10 +1,16 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { cleanup, render } from "@testing-library/react";
+import { createElement } from "react";
 import { isThreadRunning } from "../src/model/agentThreads";
 import { dockRows } from "../src/model/dock";
 import { applyEvents, applyLine, applyLocalAction, createIndex, createModel } from "../src/model/transcript";
 import { isTaskSettled } from "../src/model/tasks";
-import type { TranscriptModel } from "../src/model/types";
+import type { Block, ToolBlock, TranscriptModel } from "../src/model/types";
 import type { ProtocolLine } from "../src/protocol/types";
+import { CopyProvider } from "../src/ui/CopyContext";
+import { AgentRow } from "../src/ui/tools/AgentRow";
+
+afterEach(cleanup);
 
 /**
  * Item B — auto-resumed sessions must not revive dead subagents as "Working".
@@ -92,11 +98,52 @@ function replayedModel(agentCount: number): { model: TranscriptModel } {
   return { model };
 }
 
+function inlineAgentBlocks(model: TranscriptModel): ToolBlock[] {
+  const agents: ToolBlock[] = [];
+  const visit = (blocks: Block[]) => {
+    for (const block of blocks) {
+      if (block.kind !== "tool") continue;
+      if (block.name === "Task" || block.name === "Agent") agents.push(block);
+      visit(block.children);
+    }
+  };
+
+  for (const turn of model.turns) visit(turn.blocks);
+  return agents;
+}
+
 describe("item B: a replayed session's subagents are settled, not Working", () => {
   test("historyReplayed settles every replayed agent thread", () => {
     const { model } = replayedModel(12);
     expect(Object.keys(model.agentThreads).length).toBe(12);
     expect(Object.values(model.agentThreads).filter(isThreadRunning).length).toBe(0);
+  });
+
+  test("restored inline agent rows are terminal instead of loading forever", () => {
+    const { model } = replayedModel(3);
+    const blocks = inlineAgentBlocks(model);
+    expect(blocks.length).toBe(3);
+
+    for (const block of blocks) {
+      expect(block.status === "pending" || block.status === "running").toBe(false);
+      const status = block.subagent?.status;
+      expect(status).toBeDefined();
+      if (status !== undefined) expect(isTaskSettled(status)).toBe(true);
+    }
+
+    const view = render(
+      createElement(
+        CopyProvider,
+        { dict: undefined },
+        createElement(
+          "div",
+          null,
+          blocks.map((block) => createElement(AgentRow, { key: block.key, block }))
+        )
+      )
+    );
+    expect(view.container.querySelector(".agent-row-glyph")).toBeNull();
+    expect(view.container.textContent).not.toContain("Waiting to start");
   });
 
   test("the dock shows ZERO working rows after the replay — the '12 Working' screenshot", () => {
