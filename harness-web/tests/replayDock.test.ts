@@ -138,6 +138,7 @@ describe("item B: a replayed session's subagents are settled, not Working", () =
     );
     const view = render(createElement(CopyProvider, { dict: undefined, children: rows }));
     expect(view.container.querySelector(".agent-row-glyph")).toBeNull();
+    expect(view.container.querySelectorAll(".agent-dot.is-stopped").length).toBe(3);
     expect(view.container.textContent).not.toContain("Waiting to start");
   });
 

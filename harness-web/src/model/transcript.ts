@@ -206,10 +206,11 @@ export function applyEvent(
         tasksById: {},
         // Threads SURVIVE a restart — a resumed session's agents are still worth
         // reading — but none of them is still running: the process that was
-        // producing their frames is gone. Left "running" they would spin a
-        // status dot and a live elapsed timer forever, on a dock row for work
-        // that ended when the run did.
-        agentThreads: settleLiveThreads(settled.agentThreads, nowMs),
+        // producing their frames is gone. The inline block is a separate
+        // projection of the same task, so it must cross the boundary too or its
+        // loading glyph survives after the dock row has correctly disappeared.
+        turns: settleLiveTurnBlocks(settled.turns, nowMs),
+        agentThreads: settleLiveThreads(settled.agentThreads),
         revision: settled.revision + 1
       };
     }
@@ -308,39 +309,88 @@ export function applyLine(
 }
 
 /**
- * Every still-running thread, marked finished at `nowMs`.
+ * Every still-running thread, marked finished at the process boundary.
  *
- * Used at the process boundary only. A thread's status normally comes off the
- * wire; a run that dies stops sending, so nothing would ever move these — and a
- * dock row with a spinning dot and an elapsed counter climbing past the process
- * that owned it is the same lie the tasks strip already refuses to tell.
+ * The thread status feeds the dock, while its block tree feeds the drill-in.
+ * Both projections must settle together: changing only the thread removes the
+ * dock row but leaves historical inline child agents and tools animating.
  */
-function settleLiveThreads(
-  threads: Record<string, AgentThread>,
-  nowMs: number
-): Record<string, AgentThread> {
+function settleLiveThreads(threads: Record<string, AgentThread>): Record<string, AgentThread> {
   let changed = false;
   const out: Record<string, AgentThread> = {};
   for (const [id, thread] of Object.entries(threads)) {
-    if (!isThreadRunning(thread)) {
+    const running = isThreadRunning(thread);
+    // The thread ended when it last PRODUCED something, not when this boundary
+    // happens to run — a replayed thread settles days after its frames were
+    // written, and wall-now would report a nonsense span ("Worked for 2d").
+    const endedAtMs = thread.endedAtMs ?? lastThreadFrameAtMs(thread) ?? thread.startedAtMs;
+    const blocks = settleLiveBlockTree(thread.blocks, endedAtMs);
+    if (!running && blocks === thread.blocks) {
       out[id] = thread;
       continue;
     }
+
     changed = true;
     out[id] = {
       ...thread,
-      status: "stopped",
-      // The thread ended when it last PRODUCED something, not when this
-      // boundary happens to run — a replayed thread settles days after its
-      // frames were written, and wall-now would report a nonsense span
-      // ("Worked for 2d"). The last tool timestamp is the best record; the
-      // thread's own start is the fallback (near-now for a live crash,
-      // historical for a replay — honest either way).
-      endedAtMs: thread.endedAtMs ?? lastThreadFrameAtMs(thread) ?? thread.startedAtMs,
+      blocks,
+      status: running ? "stopped" : thread.status,
+      endedAtMs: running ? endedAtMs : thread.endedAtMs,
       revision: thread.revision + 1
     };
   }
   return changed ? out : threads;
+}
+
+/**
+ * Stop every unfinished tool/task in one historical block tree.
+ *
+ * A task has two independent status projections: `ToolBlock.status` describes
+ * the launch call, while `subagent.status` describes the work that call spawned.
+ * An async launch can therefore be `success` while its subagent is still
+ * `running`; both fields must be considered rather than treating either as the
+ * whole truth.
+ */
+function settleLiveBlockTree(blocks: Block[], endedAtMs: number): Block[] {
+  let changed = false;
+  const next = blocks.map((block) => {
+    if (block.kind !== "tool") return block;
+
+    const children = settleLiveBlockTree(block.children, endedAtMs);
+    const toolRunning = block.status === "pending" || block.status === "running";
+    const ownsTask =
+      block.subagent !== undefined || block.name === "Task" || block.name === "Agent";
+    const taskRunning = ownsTask && !isTaskSettled(block.subagent?.status);
+    if (children === block.children && !toolRunning && !taskRunning) return block;
+
+    changed = true;
+    return {
+      ...block,
+      children,
+      partialInput: toolRunning ? undefined : block.partialInput,
+      inputComplete: toolRunning ? true : block.inputComplete,
+      status: toolRunning ? "aborted" : block.status,
+      streaming: toolRunning ? false : block.streaming,
+      endedAtMs: toolRunning ? block.endedAtMs ?? endedAtMs : block.endedAtMs,
+      subagent: taskRunning
+        ? { ...(block.subagent ?? {}), status: "stopped" }
+        : block.subagent
+    };
+  });
+  return changed ? next : blocks;
+}
+
+/** Settle the inline block projection carried by every main transcript turn. */
+function settleLiveTurnBlocks(turns: Turn[], nowMs: number): Turn[] {
+  let changed = false;
+  const next = turns.map((turn) => {
+    const endedAtMs = turn.endedAtMs ?? turn.lastFrameAtMs ?? nowMs;
+    const blocks = settleLiveBlockTree(turn.blocks, endedAtMs);
+    if (blocks === turn.blocks) return turn;
+    changed = true;
+    return { ...turn, blocks, revision: turn.revision + 1 };
+  });
+  return changed ? next : turns;
 }
 
 /** The latest timestamp any of the thread's own blocks carries. */
@@ -801,18 +851,19 @@ export function applyLocalAction(
         };
       }
       // Replayed history is by definition NOT running, and turns are not the
-      // only thing the replay leaves live. Task tool_use records spawn agent
-      // threads born "running", and disk history carries no task frames to
-      // ever settle them — so an auto-restored session put every subagent it
-      // had ever spawned on the dock as "Working" (12 orbit grids animating
-      // for a session where nothing ran). The restore-bootstrap replay never
-      // emits `runStarted` (no process starts), so the boundary that settles
-      // threads there has to be applied here too. Same for task records and
-      // the background strip: an explicit resume's `runStarted` clears them
-      // moments later anyway, but the bootstrap replay has no later boundary.
+      // only thing the replay leaves live. Task tool_use records spawn both an
+      // agent thread and an inline block whose subagent status is born
+      // "running"; disk history carries no task frames to settle either one.
+      // Settling only the thread removes the dock row but leaves the inline row
+      // animating "Waiting to start…" forever. The restore-bootstrap replay
+      // never emits `runStarted` (no process starts), so every projection is
+      // reconciled here. Same for task records and the background strip: an
+      // explicit resume's `runStarted` clears them moments later anyway, but
+      // the bootstrap replay has no later boundary.
       next = {
         ...next,
-        agentThreads: settleLiveThreads(next.agentThreads, nowMs),
+        turns: settleLiveTurnBlocks(next.turns, nowMs),
+        agentThreads: settleLiveThreads(next.agentThreads),
         tasksById: settleLiveTaskRecords(next.tasksById, nowMs),
         backgroundTasks: [],
         revision: next.revision + 1
