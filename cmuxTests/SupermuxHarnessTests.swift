@@ -628,14 +628,21 @@ struct SupermuxHarnessTests {
     @MainActor
     @Test
     func testForgedHarnessSendRejectsMalformedAttachmentsBeforeProcessSend() async throws {
-        let coordinator = SupermuxHarnessWebRendererCoordinator()
+        let coordinator = SupermuxHarnessWebRendererCoordinator(
+            sessionRepository: makeSessionRepository(),
+            transcriptService: SupermuxHarnessSubagentTranscriptService(
+                projectsRootURL: SupermuxHarnessSessionController.claudeProjectsRootURL,
+                fileManager: .default
+            )
+        )
         coordinator.bind(
             panelId: UUID(),
             workspaceId: UUID(),
             workingDirectory: "/tmp",
             restoreState: nil,
             theme: coordinator.theme,
-            isFocused: true
+            isFocused: true,
+            isPresentationVisible: true
         )
         defer { coordinator.close() }
         let request = try SupermuxHarnessBridgeRequest(body: [
@@ -662,14 +669,21 @@ struct SupermuxHarnessTests {
     @MainActor
     @Test
     func testForgedHarnessSendRejectsMalformedImageObjectsRatherThanDroppingThem() async throws {
-        let coordinator = SupermuxHarnessWebRendererCoordinator()
+        let coordinator = SupermuxHarnessWebRendererCoordinator(
+            sessionRepository: makeSessionRepository(),
+            transcriptService: SupermuxHarnessSubagentTranscriptService(
+                projectsRootURL: SupermuxHarnessSessionController.claudeProjectsRootURL,
+                fileManager: .default
+            )
+        )
         coordinator.bind(
             panelId: UUID(),
             workspaceId: UUID(),
             workingDirectory: "/tmp",
             restoreState: nil,
             theme: coordinator.theme,
-            isFocused: true
+            isFocused: true,
+            isPresentationVisible: true
         )
         defer { coordinator.close() }
         let request = try SupermuxHarnessBridgeRequest(body: [
@@ -692,7 +706,7 @@ struct SupermuxHarnessTests {
 
     @MainActor
     @Test
-    func testOutputOverflowSurfacesOneTypedBoundedEvent() throws {
+    func testOutputOverflowSurfacesOneTypedBoundedEvent() async throws {
         let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
         defer { clearHarnessDefaults(defaults) }
         let process = MockSupermuxHarnessProcessSession()
@@ -701,7 +715,7 @@ struct SupermuxHarnessTests {
         var received: [[String: Any]] = []
         controller.eventSink = { received.append($0) }
 
-        process.emitOutputDiagnostic(SupermuxHarnessOutputDiagnostic(
+        await process.emitOutputDiagnostic(SupermuxHarnessOutputDiagnostic(
             stream: .stdout,
             discardedByteCount: 1_048_585
         ))
@@ -1534,8 +1548,8 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
         self.outputDiagnosticSink = outputDiagnosticSink
     }
 
-    func emitOutputDiagnostic(_ diagnostic: SupermuxHarnessOutputDiagnostic) {
-        outputDiagnosticSink?(diagnostic)
+    func emitOutputDiagnostic(_ diagnostic: SupermuxHarnessOutputDiagnostic) async {
+        await outputDiagnosticSink?(diagnostic)
     }
 
     func start(plan: SupermuxHarnessLaunchPlan) throws -> SupermuxHarnessStartedProcess {
