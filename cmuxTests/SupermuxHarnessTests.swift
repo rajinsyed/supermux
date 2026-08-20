@@ -1,7 +1,8 @@
 import CmuxCore
 import Foundation
-import SupermuxKit
 import Testing
+
+@testable import SupermuxKit
 
 #if canImport(cmux_DEV)
     @testable import cmux_DEV
@@ -1068,6 +1069,131 @@ struct SupermuxHarnessTests {
     }
 
     @MainActor
+    @Test
+    func testTwoControllersShareOneInjectedRepositoryScan() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "supermux-harness-shared-repository-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        let workingDirectory = root.appendingPathComponent("working", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projects,
+            fileManager: .default
+        )
+        let projectDirectory = try #require(
+            discovery.projectDirectoryURLs(for: workingDirectory).first
+        )
+        try FileManager.default.createDirectory(
+            at: projectDirectory,
+            withIntermediateDirectories: true
+        )
+        let fileURL = projectDirectory.appendingPathComponent("shared.jsonl")
+        let data = try JSONSerialization.data(withJSONObject: [
+            "type": "ai-title",
+            "aiTitle": "Shared",
+        ], options: [.sortedKeys])
+        try (data + Data("\n".utf8)).write(to: fileURL)
+
+        let gate = SupermuxHarnessControllerRepositoryScanGate()
+        let repository = SupermuxHarnessSessionRepository(
+            projectsRootURL: projects,
+            fileManager: .default,
+            configuration: .production,
+            scanObserver: { _ in await gate.arriveAndWait() }
+        )
+        let first = makeController(
+            restoreState: nil,
+            defaults: defaults,
+            process: MockSupermuxHarnessProcessSession(),
+            workingDirectory: workingDirectory.path,
+            projectsRootURL: projects,
+            sessionRepository: repository
+        )
+        let second = makeController(
+            restoreState: nil,
+            defaults: defaults,
+            process: MockSupermuxHarnessProcessSession(),
+            workingDirectory: workingDirectory.path,
+            projectsRootURL: projects,
+            sessionRepository: repository
+        )
+        defer {
+            first.close()
+            second.close()
+        }
+
+        async let firstList = first.listSessions(limit: nil)
+        await gate.waitForArrivals(1)
+        async let secondList = second.listSessions(limit: nil)
+        let didCoalesce = await SupermuxHarnessControllerTestWait().until {
+            await repository.debugMetrics(for: fileURL).coalescedRequestCount == 1
+        }
+        await gate.release()
+
+        #expect(didCoalesce)
+        #expect(try await firstList.first?["title"] as? String == "Shared")
+        #expect(try await secondList.first?["title"] as? String == "Shared")
+        #expect(await repository.debugMetrics(for: fileURL).scanCount == 1)
+    }
+
+    @MainActor
+    @Test
+    func testPendingRenameRejectsOlderDiskTitleCompletion() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        var restored = SessionSupermuxHarnessPanelSnapshot()
+        restored.sessionId = "session"
+        let repository = DelayedSupermuxHarnessSessionRepository()
+        let process = MockSupermuxHarnessProcessSession()
+        process.heldControlSubtypes = ["rename_session"]
+        let controller = makeController(
+            restoreState: restored,
+            defaults: defaults,
+            process: process,
+            sessionRepository: repository
+        )
+        defer { controller.close() }
+        var titles: [String] = []
+        controller.titleSink = { title in
+            if let title { titles.append(title) }
+        }
+        _ = try await controller.start(
+            resumeSessionId: "session",
+            forkSession: false,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+        await repository.waitForTitleRequests(1)
+
+        let rename = Task { @MainActor in
+            try await controller.renameSession(title: "Custom title")
+        }
+        let renameReachedProcess = await SupermuxHarnessControllerTestWait().until {
+            await MainActor.run {
+                process.operations.contains(.control(subtype: "rename_session"))
+            }
+        }
+        #expect(renameReachedProcess)
+        await repository.releaseTitles("Older disk title")
+        _ = await SupermuxHarnessControllerTestWait().until {
+            await MainActor.run { !titles.isEmpty }
+        }
+        #expect(!titles.contains("Older disk title"))
+
+        process.releaseHeldControl(subtype: "rename_session")
+        try await rename.value
+        #expect(titles.last == "Custom title")
+    }
+
+    @MainActor
     private func makeController(
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
         defaults: UserDefaults,
@@ -1075,7 +1201,8 @@ struct SupermuxHarnessTests {
         workingDirectory: String? = "/tmp",
         projectsRootURL: URL? = nil,
         taskOutputRootURL: URL? = nil,
-        modelCatalogProbe: (@MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog)? = nil
+        modelCatalogProbe: (@MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog)? = nil,
+        sessionRepository: (any SupermuxHarnessSessionReading)? = nil
     ) -> SupermuxHarnessSessionController {
         let transcriptService = SupermuxHarnessSubagentTranscriptService(
             projectsRootURL: projectsRootURL ?? SupermuxHarnessSessionController.claudeProjectsRootURL,
@@ -1084,7 +1211,9 @@ struct SupermuxHarnessTests {
         return SupermuxHarnessSessionController(
             workingDirectory: workingDirectory,
             restoreState: restoreState,
-            sessionRepository: makeSessionRepository(projectsRootURL: projectsRootURL),
+            sessionRepository: sessionRepository ?? makeSessionRepository(
+                projectsRootURL: projectsRootURL
+            ),
             transcriptService: transcriptService,
             defaults: defaults,
             projectsRootURL: projectsRootURL,
@@ -1146,6 +1275,121 @@ struct SupermuxHarnessTests {
     }
 }
 
+private actor DelayedSupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
+    private var titleRequests = 0
+    private var requestWaiters: [(
+        count: Int,
+        continuation: CheckedContinuation<Void, Never>
+    )] = []
+    private var titleContinuations: [CheckedContinuation<String?, Never>] = []
+
+    func listSessions(
+        for workingDirectoryURL: URL,
+        limit: Int?
+    ) async throws -> [SupermuxHarnessDiscoveredSession] {
+        _ = workingDirectoryURL
+        _ = limit
+        return []
+    }
+
+    func loadHistory(
+        for workingDirectoryURL: URL,
+        sessionID: String,
+        recordLimit: Int?
+    ) async throws -> SupermuxHarnessHistoryPage {
+        _ = workingDirectoryURL
+        _ = sessionID
+        _ = recordLimit
+        return SupermuxHarnessHistoryPage(events: [], truncated: false)
+    }
+
+    func sessionTitle(
+        for workingDirectoryURL: URL,
+        sessionID: String
+    ) async -> String? {
+        _ = workingDirectoryURL
+        _ = sessionID
+        titleRequests += 1
+        let ready = requestWaiters.filter { titleRequests >= $0.count }
+        requestWaiters.removeAll { titleRequests >= $0.count }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
+        return await withCheckedContinuation { continuation in
+            titleContinuations.append(continuation)
+        }
+    }
+
+    func waitForTitleRequests(_ count: Int) async {
+        guard titleRequests < count else { return }
+        await withCheckedContinuation { continuation in
+            requestWaiters.append((count, continuation))
+        }
+    }
+
+    func releaseTitles(_ title: String?) {
+        let continuations = titleContinuations
+        titleContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume(returning: title)
+        }
+    }
+}
+
+private actor SupermuxHarnessControllerRepositoryScanGate {
+    private var arrivals = 0
+    private var arrivalWaiters: [(
+        count: Int,
+        continuation: CheckedContinuation<Void, Never>
+    )] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var isReleased = false
+
+    func arriveAndWait() async {
+        arrivals += 1
+        let ready = arrivalWaiters.filter { arrivals >= $0.count }
+        arrivalWaiters.removeAll { arrivals >= $0.count }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitForArrivals(_ count: Int) async {
+        guard arrivals < count else { return }
+        await withCheckedContinuation { continuation in
+            arrivalWaiters.append((count, continuation))
+        }
+    }
+
+    func release() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+}
+
+private struct SupermuxHarnessControllerTestWait {
+    func until(
+        timeout: Duration = .seconds(5),
+        condition: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !(await condition()) {
+            guard clock.now < deadline else { return false }
+            await Task.yield()
+        }
+        return true
+    }
+}
+
 @MainActor
 private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSessionProtocol {
     nonisolated static let defaultsSuiteMarkerKey = "SupermuxHarnessTests.defaultsSuiteName"
@@ -1176,8 +1420,10 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
     private(set) var isRunning = false
     private(set) var activeRunID: String?
     var responses: [String: Response] = [:]
+    var heldControlSubtypes: Set<String> = []
     private(set) var operations: [Operation] = []
 
+    private var heldControlContinuations: [String: CheckedContinuation<Void, Never>] = [:]
     private var protocolLineSink: SupermuxHarnessProtocolLineSink?
     private var stderrSink: SupermuxHarnessStderrSink?
     private var lifecycleSink: SupermuxHarnessLifecycleSink?
@@ -1271,6 +1517,11 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
             return
         }
         operations.append(.control(subtype: subtype))
+        if heldControlSubtypes.contains(subtype) {
+            await withCheckedContinuation { continuation in
+                heldControlContinuations[subtype] = continuation
+            }
+        }
         switch responses[subtype] ?? .success([:]) {
         case .success(let payload):
             try await emit([
@@ -1291,6 +1542,11 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
                 ],
             ])
         }
+    }
+
+    func releaseHeldControl(subtype: String) {
+        heldControlSubtypes.remove(subtype)
+        heldControlContinuations.removeValue(forKey: subtype)?.resume()
     }
 
     func emitLine(_ object: [String: Any]) async throws {
