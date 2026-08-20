@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { fixtures, richSession } from "../src/dev/fixtures";
 import { activeModelFor, emptySession } from "../src/model/helpers";
 import { replayLines } from "../src/model/transcript";
-import type { SessionMeta } from "../src/model/types";
+import type { ImageAttachment, SessionMeta } from "../src/model/types";
 import type { EffortLevel, SlashCommandDescriptor } from "../src/protocol/types";
 import { CopyProvider } from "../src/ui/CopyContext";
 import { Composer } from "../src/ui/composer/Composer";
@@ -749,5 +749,191 @@ describe("reasoning has two gestures beside the menu", () => {
     });
     fireEvent(screen.getByRole("textbox"), event);
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+function mountAttachmentComposer(options: {
+  picked?: ImageAttachment[];
+  onSend?(text: string, images: ImageAttachment[]): void;
+} = {}) {
+  if (typeof URL.createObjectURL !== "function") {
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: () => "blob:test-attachment"
+    });
+  }
+  if (typeof URL.revokeObjectURL !== "function") {
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: () => {} });
+  }
+  return render(
+    <CopyProvider dict={undefined}>
+      <Composer
+        disabled={false}
+        running={false}
+        awaitingPermission={false}
+        planPending={false}
+        onPlanImplement={() => {}}
+        onPlanRefine={() => {}}
+        onPlanKeepPlanning={() => {}}
+        queued={[]}
+        commands={[]}
+        permissionMode="default"
+        draft=""
+        onDraftChange={() => {}}
+        onSend={options.onSend ?? (() => {})}
+        onInterrupt={() => {}}
+        onCancelQueued={() => {}}
+        onCyclePermissionMode={() => {}}
+        fetchFileSuggestions={async () => []}
+        onPickFiles={async () => options.picked ?? []}
+      />
+    </CopyProvider>
+  );
+}
+
+function pasteFiles(files: File[]): void {
+  fireEvent.paste(screen.getByRole("textbox"), { clipboardData: { files } });
+}
+
+async function settleAttachments(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+}
+
+function fileReportingSize(name: string, size: number): File {
+  const file = new File(["x"], name, { type: "image/png" });
+  Object.defineProperty(file, "size", { configurable: true, value: size });
+  return file;
+}
+
+function installObjectURLRecorder(): { created: string[]; revoked: string[] } {
+  const created: string[] = [];
+  const revoked: string[] = [];
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: () => {
+      const value = `blob:attachment-${created.length}`;
+      created.push(value);
+      return value;
+    }
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: (value: string) => revoked.push(value)
+  });
+  return { created, revoked };
+}
+
+describe("composer attachment contract", () => {
+  test("paste rejects image MIME types the protocol cannot send", async () => {
+    mountAttachmentComposer();
+    pasteFiles([new File(["heic"], "photo.heic", { type: "image/heic" })]);
+
+    await settleAttachments();
+    expect(document.querySelectorAll(".attach-chip").length).toBe(0);
+    expect(screen.queryByRole("alert")?.textContent).toContain(
+      "Unsupported image format. Use PNG, JPEG, GIF, or WebP."
+    );
+  });
+
+  test("drop rejects one image over 512 KiB", async () => {
+    const { container } = mountAttachmentComposer();
+    const oversized = fileReportingSize("large.png", 512 * 1024 + 1);
+    fireEvent.drop(container.querySelector(".composer-shell")!, {
+      dataTransfer: { files: [oversized] }
+    });
+
+    await settleAttachments();
+    expect(document.querySelectorAll(".attach-chip").length).toBe(0);
+    expect(screen.queryByRole("alert")?.textContent).toContain(
+      "Each image must be 512 KiB or smaller."
+    );
+  });
+
+  test("paste enforces the 2 MiB aggregate decoded-byte limit", async () => {
+    mountAttachmentComposer();
+    const files = Array.from({ length: 5 }, (_, index) =>
+      fileReportingSize(`image-${index}.png`, 512 * 1024)
+    );
+    pasteFiles(files);
+
+    await settleAttachments();
+    expect(document.querySelectorAll(".attach-chip").length).toBe(4);
+    expect(screen.queryByRole("alert")?.textContent).toContain(
+      "Attachments must total 2 MiB or less."
+    );
+  });
+
+  test("paste accepts at most eight images in the attachment strip", async () => {
+    mountAttachmentComposer();
+    const files = Array.from({ length: 9 }, (_, index) =>
+      new File([String(index)], `image-${index}.png`, { type: "image/png" })
+    );
+    pasteFiles(files);
+
+    await settleAttachments();
+    expect(document.querySelectorAll(".attach-chip").length).toBe(8);
+    expect(screen.queryByRole("alert")?.textContent).toContain(
+      "You can attach up to 8 images."
+    );
+  });
+
+  test("native picker payloads are revalidated rather than trusted", async () => {
+    mountAttachmentComposer({
+      picked: [{ mediaType: "image/png", dataBase64: "not base64", name: "forged.png" }]
+    });
+    fireEvent.click(screen.getByLabelText("Attach files"));
+
+    await settleAttachments();
+    expect(document.querySelectorAll(".attach-chip").length).toBe(0);
+    expect(screen.queryByRole("alert")?.textContent).toContain("Could not read this image.");
+  });
+
+  test("removing an attachment releases its object URL", async () => {
+    const urls = installObjectURLRecorder();
+    mountAttachmentComposer();
+    pasteFiles([new File(["png"], "remove.png", { type: "image/png" })]);
+    await screen.findByText("remove.png");
+
+    fireEvent.click(screen.getByLabelText("Remove attachment"));
+
+    expect(urls.created).toEqual(["blob:attachment-0"]);
+    expect(urls.revoked).toEqual(["blob:attachment-0"]);
+  });
+
+  test("send preserves exact bytes and releases attachment ownership", async () => {
+    const urls = installObjectURLRecorder();
+    const sent: ImageAttachment[][] = [];
+    mountAttachmentComposer({ onSend: (_text, images) => sent.push(images) });
+    pasteFiles([
+      new File([new Uint8Array([0, 1, 2, 255])], "exact.png", { type: "image/png" })
+    ]);
+    await screen.findByText("exact.png");
+
+    fireEvent.click(document.querySelector(".btn-send")!);
+
+    await waitFor(() => {
+      expect(sent).toEqual([
+        [{ mediaType: "image/png", dataBase64: "AAEC/w==", name: "exact.png" }]
+      ]);
+      expect(urls.revoked).toEqual(["blob:attachment-0"]);
+      expect(document.querySelectorAll(".attach-chip").length).toBe(0);
+    });
+  });
+
+  test("unmount releases every remaining attachment", async () => {
+    const urls = installObjectURLRecorder();
+    const rendered = mountAttachmentComposer();
+    pasteFiles([
+      new File(["one"], "one.png", { type: "image/png" }),
+      new File(["two"], "two.png", { type: "image/png" })
+    ]);
+    await screen.findByText("two.png");
+
+    rendered.unmount();
+
+    expect(urls.created).toEqual(["blob:attachment-0", "blob:attachment-1"]);
+    expect(urls.revoked).toEqual(["blob:attachment-0", "blob:attachment-1"]);
   });
 });

@@ -414,6 +414,65 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(zero.events.isEmpty)
     }
 
+    @Test func historyByteBudgetReturnsANewestContiguousSuffixAndMarksItTruncated() throws {
+        let sandbox = try makeSandbox(named: "byte-pagination")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        try writeSession(id: "bytes", directory: directory, records: [
+            ["type": "user", "uuid": "1", "isSidechain": false, "message": ["role": "user", "content": String(repeating: "é", count: 180)]],
+            ["type": "assistant", "uuid": "2", "parentUuid": "1", "isSidechain": false, "message": ["role": "assistant", "content": String(repeating: "界", count: 180)]],
+            ["type": "user", "uuid": "3", "parentUuid": "2", "isSidechain": false, "message": ["role": "user", "content": "newest"]],
+        ])
+        let all = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "bytes"
+        )
+        let newest = try #require(all.events.last)
+        let newestBytes = try JSONSerialization.data(withJSONObject: newest.rawValue).count
+        let previous = try #require(all.events.dropLast().last)
+        let previousBytes = try JSONSerialization.data(withJSONObject: previous.rawValue).count
+        let budget = newestBytes + 1
+        #expect(previousBytes + newestBytes > budget)
+
+        let page = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "bytes",
+            recordLimit: 100,
+            maximumEventBytes: budget
+        )
+
+        #expect(page.truncated)
+        #expect(page.events.compactMap { $0.string(forKey: "uuid") } == ["3"])
+        let returnedBytes = try page.events.reduce(into: 0) { total, event in
+            total += try JSONSerialization.data(withJSONObject: event.rawValue).count
+        }
+        #expect(returnedBytes <= budget)
+    }
+
+    @Test func historyByteBudgetDoesNotSplitOrCorruptUTF8Events() throws {
+        let sandbox = try makeSandbox(named: "utf8-byte-pagination")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        try writeSession(id: "utf8", directory: directory, records: [
+            ["type": "user", "uuid": "1", "isSidechain": false, "message": ["role": "user", "content": String(repeating: "😀", count: 200)]],
+            ["type": "assistant", "uuid": "2", "parentUuid": "1", "isSidechain": false, "message": ["role": "assistant", "content": "終端😀"]],
+        ])
+        let all = try sandbox.discovery.loadHistory(for: sandbox.workingDirectory, sessionID: "utf8")
+        let last = try #require(all.events.last)
+        let exactLastBytes = try JSONSerialization.data(withJSONObject: last.rawValue).count
+
+        let page = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "utf8",
+            maximumEventBytes: exactLastBytes
+        )
+
+        #expect(page.truncated)
+        #expect(page.events.count == 1)
+        let message = page.events.first?.object(forKey: "message")
+        #expect(message?.string(forKey: "content") == "終端😀")
+    }
+
     @Test func cwdMungingCollisionsDoNotExposeAnotherDirectorysSessions() throws {
         let root = try makeTemporaryDirectory(named: "cwd-collision")
         defer { try? FileManager.default.removeItem(at: root) }

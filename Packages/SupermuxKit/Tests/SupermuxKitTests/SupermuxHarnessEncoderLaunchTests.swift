@@ -47,6 +47,58 @@ import Testing
         #expect(object.rawValue["session_id"] == nil)
     }
 
+    @Test func encoderRejectsMalformedOrUnsupportedForgedImages() {
+        #expect(throws: SupermuxHarnessAttachmentPolicy.ValidationError.self) {
+            _ = try encoder.userMessage(
+                text: "inspect",
+                images: [SupermuxHarnessImage(mediaType: "image/png", dataBase64: "not base64")],
+                uuid: "malformed"
+            )
+        }
+        #expect(throws: SupermuxHarnessAttachmentPolicy.ValidationError.self) {
+            _ = try encoder.userMessage(
+                text: "inspect",
+                images: [SupermuxHarnessImage(mediaType: "image/heic", dataBase64: "AA==")],
+                uuid: "unsupported"
+            )
+        }
+    }
+
+    @Test func encoderRejectsPerImageAggregateAndCountLimitViolations() {
+        let policy = SupermuxHarnessAttachmentPolicy.self
+        let oversized = Data(repeating: 0x61, count: policy.maximumImageBytes + 1)
+            .base64EncodedString()
+        #expect(throws: SupermuxHarnessAttachmentPolicy.ValidationError.self) {
+            _ = try encoder.userMessage(
+                text: "inspect",
+                images: [SupermuxHarnessImage(mediaType: "image/png", dataBase64: oversized)],
+                uuid: "oversized"
+            )
+        }
+
+        let maximumImage = Data(repeating: 0x62, count: policy.maximumImageBytes)
+            .base64EncodedString()
+        #expect(throws: SupermuxHarnessAttachmentPolicy.ValidationError.self) {
+            _ = try encoder.userMessage(
+                text: "inspect",
+                images: (0..<5).map { _ in
+                    SupermuxHarnessImage(mediaType: "image/png", dataBase64: maximumImage)
+                },
+                uuid: "aggregate"
+            )
+        }
+
+        #expect(throws: SupermuxHarnessAttachmentPolicy.ValidationError.self) {
+            _ = try encoder.userMessage(
+                text: "inspect",
+                images: (0...policy.maximumImageCount).map { _ in
+                    SupermuxHarnessImage(mediaType: "image/png", dataBase64: "AA==")
+                },
+                uuid: "count"
+            )
+        }
+    }
+
     @Test func imageOnlyMessageOmitsEmptyTextBlock() throws {
         let frame = try encoder.userMessage(
             text: "",

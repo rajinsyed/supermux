@@ -380,6 +380,132 @@ describe("partial tool JSON is reduced once per native batch and block", () => {
   });
 });
 
+describe("tool results retain one canonical copy of large textual output", () => {
+  test("main Bash output is not duplicated inside structured metadata", () => {
+    const index = createIndex();
+    let model = createModel();
+    const output = `${"界😀".repeat(2_000)}\nexact tail`;
+    model = applyLine(model, index, user("dedupe-user", "run it"), 1);
+    model = applyLine(
+      model,
+      index,
+      assistantTool("dedupe-tool", "dedupe-message", "dedupe-bash", "Bash", {
+        command: "generate"
+      }),
+      2
+    );
+    model = applyLine(
+      model,
+      index,
+      {
+        type: "user",
+        uuid: "dedupe-result",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "dedupe-bash", content: output }]
+        },
+        tool_use_result: { stdout: output, exitCode: 0, interrupted: false }
+      } as ProtocolLine,
+      3
+    );
+
+    const block = toolBlocks(model)[0];
+    expect(block.resultText).toBe(output);
+    expect(Object.hasOwn(block.structured ?? {}, "stdout")).toBe(false);
+    expect(block.structured?.exitCode).toBe(0);
+    expect(block.structured?.interrupted).toBe(false);
+  });
+
+  test("nested Read content is deduplicated without dropping file metadata", () => {
+    const index = createIndex();
+    let model = createModel();
+    const content = `${"é".repeat(4_000)}\nEOF`;
+    model = applyLine(model, index, user("read-user", "read it"), 1);
+    model = applyLine(
+      model,
+      index,
+      assistantTool("read-tool", "read-message", "dedupe-read", "Read", {
+        file_path: "/tmp/exact.txt"
+      }),
+      2
+    );
+    model = applyLine(
+      model,
+      index,
+      {
+        type: "user",
+        uuid: "read-result",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "dedupe-read", content }]
+        },
+        tool_use_result: {
+          file: { filePath: "/tmp/exact.txt", content, lineCount: 1 },
+          type: "text"
+        }
+      } as ProtocolLine,
+      3
+    );
+
+    const block = toolBlocks(model)[0];
+    expect(block.resultText).toBe(content);
+    const file = block.structured?.file as Record<string, unknown> | undefined;
+    expect(Object.hasOwn(file ?? {}, "content")).toBe(false);
+    expect(file?.filePath).toBe("/tmp/exact.txt");
+    expect(file?.lineCount).toBe(1);
+  });
+
+  test("forwarded agent tools use the same deduplication path", () => {
+    const index = createIndex();
+    let model = createModel();
+    const output = `${"agent output ".repeat(1_000)}done`;
+    model = applyLine(model, index, user("agent-user", "delegate"), 1);
+    model = applyLine(
+      model,
+      index,
+      assistantTool("agent-launch", "agent-message", "agent-root", "Agent", {
+        description: "Worker",
+        prompt: "run"
+      }),
+      2
+    );
+    model = applyLine(
+      model,
+      index,
+      {
+        ...assistantTool("agent-bash-frame", "agent-bash-message", "agent-bash", "Bash", {
+          command: "generate"
+        }),
+        parent_tool_use_id: "agent-root"
+      } as ProtocolLine,
+      3
+    );
+    model = applyLine(
+      model,
+      index,
+      {
+        type: "user",
+        uuid: "agent-bash-result",
+        parent_tool_use_id: "agent-root",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "agent-bash", content: output }]
+        },
+        tool_use_result: { stdout: output, exitCode: 0 }
+      } as ProtocolLine,
+      4
+    );
+
+    const thread = model.agentThreads["agent-root"];
+    const block = thread.blocks.find(
+      (candidate): candidate is ToolBlock => candidate.kind === "tool" && candidate.toolUseId === "agent-bash"
+    );
+    expect(block?.resultText).toBe(output);
+    expect(block?.structured?.stdout).toBeUndefined();
+    expect(block?.structured?.exitCode).toBe(0);
+  });
+});
+
 describe("explicit fold intent survives a continuation reopen", () => {
   test("a reader-folded completed turn remains folded while it streams again", () => {
     const index = createIndex();

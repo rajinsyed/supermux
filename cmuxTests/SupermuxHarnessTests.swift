@@ -627,6 +627,71 @@ struct SupermuxHarnessTests {
 
     @MainActor
     @Test
+    func testForgedHarnessSendRejectsMalformedAttachmentsBeforeProcessSend() async throws {
+        let coordinator = SupermuxHarnessWebRendererCoordinator()
+        coordinator.bind(
+            panelId: UUID(),
+            workspaceId: UUID(),
+            workingDirectory: "/tmp",
+            restoreState: nil,
+            theme: coordinator.theme,
+            isFocused: true
+        )
+        defer { coordinator.close() }
+        let request = try SupermuxHarnessBridgeRequest(body: [
+            "id": "forged-send",
+            "method": "harness.send",
+            "params": [
+                "text": "inspect",
+                "uuid": UUID().uuidString,
+                "images": [[
+                    "mediaType": "image/png",
+                    "dataBase64": "not base64",
+                ]],
+            ],
+        ])
+
+        do {
+            _ = try await coordinator.handle(request)
+            Issue.record("Expected forged attachment rejection")
+        } catch let error as SupermuxHarnessBridgeError {
+            #expect(error.code == "invalidAttachment")
+        }
+    }
+
+    @MainActor
+    @Test
+    func testForgedHarnessSendRejectsMalformedImageObjectsRatherThanDroppingThem() async throws {
+        let coordinator = SupermuxHarnessWebRendererCoordinator()
+        coordinator.bind(
+            panelId: UUID(),
+            workspaceId: UUID(),
+            workingDirectory: "/tmp",
+            restoreState: nil,
+            theme: coordinator.theme,
+            isFocused: true
+        )
+        defer { coordinator.close() }
+        let request = try SupermuxHarnessBridgeRequest(body: [
+            "id": "forged-shape",
+            "method": "harness.send",
+            "params": [
+                "text": "inspect",
+                "uuid": UUID().uuidString,
+                "images": [["mediaType": "image/png"]],
+            ],
+        ])
+
+        do {
+            _ = try await coordinator.handle(request)
+            Issue.record("Expected malformed image object rejection")
+        } catch let error as SupermuxHarnessBridgeError {
+            #expect(error.code == "invalidAttachment")
+        }
+    }
+
+    @MainActor
+    @Test
     func testRunningIndicatorFollowsTurnsNotProcessLifetime() async throws {
         let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
         let process = MockSupermuxHarnessProcessSession()

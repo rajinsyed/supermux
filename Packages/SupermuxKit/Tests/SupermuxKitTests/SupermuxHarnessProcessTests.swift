@@ -25,26 +25,30 @@ struct SupermuxHarnessOutputLineBufferTests {
         #expect(buffer.flush().isEmpty)
     }
 
-    @Test func forceFlushesOneMegabyteWithoutWaitingForNewline() {
+    @Test func oversizedPhysicalLineIsDiscardedUntilItsRealDelimiterThenRecovers() {
         var buffer = SupermuxHarnessOutputLineBuffer()
-        let data = Data(repeating: 0x61, count: SupermuxHarnessOutputLineBuffer.maximumBufferedBytes)
-        let output = buffer.append(data)
-        #expect(output == [
-            .line(String(repeating: "a", count: SupermuxHarnessOutputLineBuffer.maximumBufferedBytes) + "\n"),
+        let maximum = SupermuxHarnessOutputLineBuffer.maximumBufferedBytes
+        let valid = #"{"type":"keep_alive","recovered":true}"# + "\n"
+
+        #expect(buffer.append(Data(repeating: 0x61, count: maximum)).isEmpty)
+        #expect(buffer.bufferedByteCount <= maximum)
+        #expect(buffer.append(Data(repeating: 0x62, count: 7)).isEmpty)
+        #expect(buffer.bufferedByteCount <= maximum)
+        #expect(buffer.append(Data(("\n" + valid).utf8)) == [
+            .overflow(discardedByteCount: maximum + 7),
+            .line(valid),
         ])
         #expect(buffer.bufferedByteCount == 0)
     }
 
-    @Test func oversizedInputIsEmittedInBoundedSegments() {
+    @Test func endOfFileReportsOneOverflowWithoutInventingAPartialLine() {
         var buffer = SupermuxHarnessOutputLineBuffer()
         let maximum = SupermuxHarnessOutputLineBuffer.maximumBufferedBytes
-        let output = buffer.append(Data(repeating: 0x62, count: maximum * 2 + 3))
-        #expect(output == [
-            .line(String(repeating: "b", count: maximum) + "\n"),
-            .line(String(repeating: "b", count: maximum) + "\n"),
-        ])
-        #expect(buffer.bufferedByteCount == 3)
-        #expect(buffer.flush() == [.line("bbb")])
+
+        #expect(buffer.append(Data(repeating: 0x62, count: maximum + 3)).isEmpty)
+        #expect(buffer.bufferedByteCount <= maximum)
+        #expect(buffer.flush() == [.overflow(discardedByteCount: maximum + 3)])
+        #expect(buffer.flush().isEmpty)
     }
 
     @Test func preservesMultibyteUTF8SplitAcrossChunks() {
@@ -126,6 +130,7 @@ struct SupermuxHarnessProcessSessionTests {
     private final class Recorder {
         var protocolLines: [SupermuxHarnessDecodedLine] = []
         var stderrLines: [String] = []
+        var outputDiagnostics: [SupermuxHarnessOutputDiagnostic] = []
         var lifecycleEvents: [SupermuxHarnessProcessLifecycleEvent] = []
         var timeline: [String] = []
         private var protocolQueue: [SupermuxHarnessDecodedLine] = []
@@ -146,6 +151,11 @@ struct SupermuxHarnessProcessSessionTests {
         func receiveStderr(_ line: String) {
             stderrLines.append(line)
             timeline.append("stderr")
+        }
+
+        func receiveOutputDiagnostic(_ diagnostic: SupermuxHarnessOutputDiagnostic) {
+            outputDiagnostics.append(diagnostic)
+            timeline.append("overflow")
         }
 
         func receiveLifecycle(_ event: SupermuxHarnessProcessLifecycleEvent) {
@@ -295,6 +305,29 @@ struct SupermuxHarnessProcessSessionTests {
         #expect(!recorder.protocolLines[1].rawLine.hasSuffix("\n"))
         #expect(recorder.stderrLines == ["stderr-tail"])
         #expect(recorder.lifecycleEvents.last == .exited(runID: started.runID, status: 0))
+    }
+
+    @Test func oversizedStdoutNeverReachesDecoderAndNextPhysicalLineStillDecodes() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder)
+        let maximum = SupermuxHarnessOutputLineBuffer.maximumBufferedBytes
+        let script = #"""
+        dd if=/dev/zero bs=1048576 count=1 2>/dev/null
+        printf '123456789\n'
+        printf '{"type":"keep_alive","recovered":true}\n'
+        """#
+
+        let started = try session.start(plan: shellPlan(script))
+        let recovered = await recorder.nextProtocolLine()
+        let exit = await recorder.nextExit()
+
+        #expect(recovered.object.bool(forKey: "recovered") == true)
+        #expect(recorder.protocolLines.count == 1)
+        #expect(recorder.outputDiagnostics == [
+            SupermuxHarnessOutputDiagnostic(stream: .stdout, discardedByteCount: maximum + 9),
+        ])
+        #expect(recorder.timeline.last == "exited")
+        #expect(exit == .exited(runID: started.runID, status: 0))
     }
 
     @Test func closeInputGracefullyEndsProcessAndRetainsSessionUntilExit() async throws {
@@ -566,7 +599,8 @@ struct SupermuxHarnessProcessSessionTests {
             terminationEscalationInterval: escalationInterval,
             protocolLineSink: { recorder.receiveProtocol($0) },
             stderrSink: { recorder.receiveStderr($0) },
-            lifecycleSink: { recorder.receiveLifecycle($0) }
+            lifecycleSink: { recorder.receiveLifecycle($0) },
+            outputDiagnosticSink: { recorder.receiveOutputDiagnostic($0) }
         )
     }
 
