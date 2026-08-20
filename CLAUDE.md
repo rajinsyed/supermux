@@ -229,3 +229,50 @@ This checkout is **supermux**, a fork of cmux. Before making any change, read `S
 modified upstream files). Supermux code lives in `Packages/SupermuxKit/` and `Sources/Supermux/`;
 keep edits to upstream files inside `SUPERMUX:begin/end` fences and registered in the manifest.
 <!-- SUPERMUX:end claude-md-pointer -->
+
+## Cursor Cloud specific instructions
+
+Cursor Cloud agents run on a **Linux x86_64 VM**. The primary product — the `cmux`/`supermux`
+macOS + iOS app — is an Xcode 26 build (`.xcode-version`) and **cannot be built or run here**;
+none of `scripts/reload*.sh`, `xcodebuild`, GhosttyKit/Zig, or the iOS flows work on this VM.
+Ignore those for cloud work. The in-scope surface is the **TypeScript/Bun** code: the `web/`
+Next.js 16 app (website + Cloud VM backend), plus `webviews/`, the root Bun tooling, and the other
+Bun/npm packages (`agent-chat/`, `workers/presence/`, `cmux-tui/*`).
+
+Toolchain provided by the VM snapshot (do not reinstall in the update script): **Bun** at
+`~/.bun/bin` (on `PATH`; web tooling needs Bun ≥ 1.3.14) and a native **PostgreSQL 16** cluster.
+The startup update script only runs `bun install` in the root, `web/`, and `webviews/`.
+
+Package manager is **Bun** with a per-package `bun.lock` (there is no unified workspace); run
+`bun install` inside each package you touch. Typechecking uses `tsgo` (`bun run typecheck`), not
+stock `tsc`.
+
+Running the web app on this VM (the documented `bun dev` does NOT work here — it hard-requires
+Docker and a `~/.secrets/cmuxterm-dev.env` file that is absent — see `web/README.md` for the
+normal macOS flow). Instead drive Next.js directly against the native Postgres:
+
+```bash
+sudo pg_ctlcluster 16 main start                 # start Postgres if not already running
+export DATABASE_URL="postgres://cmux:cmux@localhost:5432/cmux"
+export DIRECT_DATABASE_URL="$DATABASE_URL"
+cd web
+bunx drizzle-kit migrate --config drizzle.config.ts   # apply migrations
+SKIP_ENV_VALIDATION=1 bunx next dev --port 3777        # serves http://localhost:3777
+```
+
+`SKIP_ENV_VALIDATION=1` is required to boot without real Stack Auth / Resend / Stripe secrets
+(`web/app/env.ts` otherwise rejects startup). Routes that need those secrets (auth, billing, Cloud
+VM providers) return "not configured" rather than crashing; the website, docs, and secret-free API
+routes (e.g. `/api/agent-models`, `/api/openapi.json`, `/api/waitlist`) work.
+
+Tests / checks (run from the relevant package):
+
+- `web/`: `bun run typecheck`; `bun run test` (unit suite, ~1200 tests, uses `tests/test-preload.ts`
+  which sets `SKIP_ENV_VALIDATION=1`); DB-backed tests via
+  `DATABASE_URL=... bun run test:db:behavior` (needs the Postgres above; these are the
+  `CMUX_DB_TEST`-gated tests that are skipped in the plain run).
+- `webviews/`: `bun run typecheck`, `bun run test`, `bun run lint:ci`.
+- Root: `bun run agent-session-web:test`.
+- `bun run biome:check` runs but currently reports many **pre-existing** diagnostics; per
+  `CONTRIBUTING.md` Biome is intentionally not wired into required CI, so a non-zero exit here is
+  expected and not caused by your change.
