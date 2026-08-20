@@ -37,18 +37,20 @@ extension SupermuxProjectsSectionModel {
     /// the requesting project so its affordance can show a spinner. Failures
     /// surface on ``newWorktreeErrorMessage`` (UI-03: visible, never silent).
     /// - Parameter projectID: The project's UUID string.
-    public func requestNewWorktree(_ projectID: String) {
-        guard preparingNewWorktreeProjectID == nil, newWorktreePresentation == nil else { return }
-        guard let row = snapshot.rows.first(where: { $0.id == projectID }) else { return }
+    /// - Returns: The preparation task, or `nil` when the request cannot start.
+    @discardableResult
+    public func requestNewWorktree(_ projectID: String) -> Task<Void, Never>? {
+        guard preparingNewWorktreeProjectID == nil, newWorktreePresentation == nil else { return nil }
+        guard let row = snapshot.rows.first(where: { $0.id == projectID }) else { return nil }
         // The expanded project's section-owned store when present (its event
         // loop already follows this project), else a minted one — `nil` means
         // no session or no `supermux.worktrees.v1`, and every entry point to
         // this flow is already hidden in that case.
         guard let store = worktreeSessions[projectID]?.store
-            ?? makeWorktreesStore(forProjectID: projectID) else { return }
+            ?? makeWorktreesStore(forProjectID: projectID) else { return nil }
         preparingNewWorktreeProjectID = projectID
         let generation = sessionGeneration
-        Task {
+        return Task {
             defer {
                 // Generation-guarded: after a session replacement has already
                 // reset the flow, a NEWER request for the same project owns

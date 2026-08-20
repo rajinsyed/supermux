@@ -8,12 +8,19 @@ public import Foundation
 /// until the CLI's first write creates it.
 @MainActor
 public final class SupermuxHarnessSessionFileWatcher {
+    /// Schedules one debounced callback and returns its cancellation action.
+    typealias DebounceScheduler = (
+        DispatchTimeInterval,
+        @escaping @MainActor () -> Void
+    ) -> (@Sendable () -> Void)
+
     private let fileURL: URL
     private let debounce: DispatchTimeInterval
+    private let debounceScheduler: DebounceScheduler
     private let onChange: @MainActor () -> Void
     private var source: (any DispatchSourceFileSystemObject)?
     private var retryTimer: (any DispatchSourceTimer)?
-    private var debounceTimer: (any DispatchSourceTimer)?
+    private var cancelScheduledChange: (@Sendable () -> Void)?
     private var isCancelled = false
 
     /// Creates and starts a watcher for one session file.
@@ -23,13 +30,29 @@ public final class SupermuxHarnessSessionFileWatcher {
     ///   - debounce: Quiet window after a write burst before `onChange` fires.
     ///   - onChange: Invoked on the main actor after each debounced burst, and
     ///     once when a previously missing file first appears.
-    public init(
+    public convenience init(
         fileURL: URL,
         debounce: DispatchTimeInterval = .milliseconds(300),
         onChange: @escaping @MainActor () -> Void
     ) {
+        self.init(
+            fileURL: fileURL,
+            debounce: debounce,
+            debounceScheduler: Self.scheduleDebounceOnMainQueue,
+            onChange: onChange
+        )
+    }
+
+    /// Test seam for driving a pending debounce callback without wall-clock time.
+    init(
+        fileURL: URL,
+        debounce: DispatchTimeInterval,
+        debounceScheduler: @escaping DebounceScheduler,
+        onChange: @escaping @MainActor () -> Void
+    ) {
         self.fileURL = fileURL
         self.debounce = debounce
+        self.debounceScheduler = debounceScheduler
         self.onChange = onChange
         attachOrRetry()
     }
@@ -41,14 +64,14 @@ public final class SupermuxHarnessSessionFileWatcher {
         source = nil
         retryTimer?.cancel()
         retryTimer = nil
-        debounceTimer?.cancel()
-        debounceTimer = nil
+        cancelScheduledChange?()
+        cancelScheduledChange = nil
     }
 
     deinit {
         source?.cancel()
         retryTimer?.cancel()
-        debounceTimer?.cancel()
+        cancelScheduledChange?()
     }
 
     private func attachOrRetry() {
@@ -102,16 +125,27 @@ public final class SupermuxHarnessSessionFileWatcher {
 
     private func scheduleChange() {
         guard !isCancelled else { return }
-        debounceTimer?.cancel()
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + debounce)
-        timer.setEventHandler { [weak self] in
+        cancelScheduledChange?()
+        cancelScheduledChange = debounceScheduler(debounce) { [weak self] in
             guard let self, !self.isCancelled else { return }
-            self.debounceTimer?.cancel()
-            self.debounceTimer = nil
+            self.cancelScheduledChange?()
+            self.cancelScheduledChange = nil
             self.onChange()
         }
-        debounceTimer = timer
+    }
+
+    private static func scheduleDebounceOnMainQueue(
+        _ debounce: DispatchTimeInterval,
+        action: @escaping @MainActor () -> Void
+    ) -> (@Sendable () -> Void) {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + debounce)
+        timer.setEventHandler {
+            action()
+        }
         timer.resume()
+        return {
+            timer.cancel()
+        }
     }
 }

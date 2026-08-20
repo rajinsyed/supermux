@@ -475,9 +475,9 @@ struct SupermuxHarnessProcessSessionTests {
         session?.close()
         session = nil
 
-        try await ContinuousClock().sleep(for: .milliseconds(450))
+        let exit = await recorder.nextExit()
+        #expect(exit == .exited(runID: started.runID, status: 9))
         #expect(!FileManager.default.fileExists(atPath: marker.path))
-        #expect(recorder.lifecycleEvents.contains(.exited(runID: started.runID, status: 9)))
         #expect(releasedSession == nil)
     }
 

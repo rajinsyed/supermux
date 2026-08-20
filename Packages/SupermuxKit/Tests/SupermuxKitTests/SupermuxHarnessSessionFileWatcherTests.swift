@@ -34,7 +34,7 @@ struct SupermuxHarnessSessionFileWatcherTests {
         try await waitUntil { changes > observed }
     }
 
-    @Test func cancelStopsFurtherReports() async throws {
+    @Test func cancelSuppressesAnAlreadyScheduledReport() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("harness-watcher-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -43,21 +43,24 @@ struct SupermuxHarnessSessionFileWatcherTests {
         try "seed\n".write(to: file, atomically: false, encoding: .utf8)
 
         var changes = 0
+        var scheduledReport: (@MainActor () -> Void)?
         let watcher = SupermuxHarnessSessionFileWatcher(
             fileURL: file,
-            debounce: .milliseconds(20)
+            debounce: .milliseconds(20),
+            debounceScheduler: { _, report in
+                scheduledReport = report
+                return {}
+            }
         ) {
             changes += 1
         }
-        try await waitUntil { changes >= 1 }
+        let report = try #require(scheduledReport)
+
         watcher.cancel()
-        let observed = changes
-        let handle = try FileHandle(forWritingTo: file)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        try handle.write(contentsOf: Data("more\n".utf8))
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(changes == observed)
+        // A dispatch callback already queued before cancellation can still be
+        // invoked by its executor; the watcher's cancellation guard must drop it.
+        report()
+        #expect(changes == 0)
     }
 
     private func waitUntil(

@@ -15,13 +15,15 @@ import Testing
     private func makeStore(
         client: FakeSupermuxMacClient,
         capabilities: [String] = [usageCapability],
-        pollInterval: Duration = .milliseconds(5)
+        pollInterval: Duration = .milliseconds(5),
+        didJoinInFlight: @escaping @MainActor () -> Void = {}
     ) -> SupermuxMobileUsageStore {
         SupermuxMobileUsageStore(
             client: client,
             capabilities: SupermuxMobileCapabilities(hostCapabilities: capabilities),
             pollInterval: pollInterval,
-            idleSleep: { try? await Task.sleep(for: $0) }
+            idleSleep: { try? await Task.sleep(for: $0) },
+            didJoinInFlight: didJoinInFlight
         )
     }
 
@@ -166,7 +168,12 @@ import Testing
         client.usageStateResponse = readyState()
         let gate = RPCHoldGate()
         client.usageStateHold = gate
-        let store = makeStore(client: client)
+        let (joins, joinContinuation) = AsyncStream<Void>.makeStream()
+        var joinIterator = joins.makeAsyncIterator()
+        let store = makeStore(
+            client: client,
+            didJoinInFlight: { joinContinuation.yield(()) }
+        )
 
         let first = Task { await store.refresh() }
         try await wait.until { gate.hasParked }
@@ -178,11 +185,12 @@ import Testing
             await store.refresh()
             secondReturned = true
         }
-        // The joiner must still be waiting on the shared request, not have
-        // returned early against stale (here: absent) data.
-        try await Task.sleep(for: .milliseconds(50))
+        // Await the store's join branch itself, so the assertion cannot race the
+        // second task's scheduling or the shared request's completion.
+        _ = await joinIterator.next()
         #expect(secondReturned == false)
         #expect(store.usage == nil)
+        #expect(client.usageStateCallCount == 1)
 
         gate.release()
         _ = await first.value
