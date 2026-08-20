@@ -10,11 +10,13 @@ struct SupermuxHarnessWebHostGeometryState: Equatable {
 
 @MainActor
 final class SupermuxHarnessWebHostView: NSView {
+    let ownershipGeneration: UInt64
     var onDidMoveToWindow: (() -> Void)?
     var onGeometryChanged: (() -> Void)?
     private(set) var geometryRevision: UInt64 = 0
     private var lastReportedGeometryState: SupermuxHarnessWebHostGeometryState?
     private var hasPendingGeometryNotification = false
+    private var isCompositorPresentationVisible = false
     private weak var hostedWebView: WKWebView?
     private var sessionContentWidthPresentation = SessionContentWidthPresentation.disabled
     private var pendingScrollDelta = CGPoint.zero
@@ -23,7 +25,22 @@ final class SupermuxHarnessWebHostView: NSView {
     private var scrollGeneration: UInt64 = 0
     private static let maximumPendingScrollDelta: CGFloat = 2400
 
+    init(ownershipGeneration: UInt64) {
+        self.ownershipGeneration = ownershipGeneration
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
     override var isOpaque: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isCompositorPresentationVisible else { return nil }
+        return super.hitTest(point)
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -184,6 +201,12 @@ final class SupermuxHarnessWebHostView: NSView {
         onGeometryChanged?()
     }
 
+    func setCompositorPresentationVisible(_ visible: Bool) {
+        isCompositorPresentationVisible = visible
+        wantsLayer = true
+        layer?.opacity = visible ? 1 : 0
+    }
+
     func attachWebView(_ webView: WKWebView) {
         if hostedWebView !== webView {
             resetPendingScroll()
@@ -207,15 +230,18 @@ final class SupermuxHarnessWebHostView: NSView {
         layoutSubtreeIfNeeded()
     }
 
+    func relinquishHostedWebView(_ webView: WKWebView?) {
+        guard let webView, hostedWebView === webView else { return }
+        resetPendingScroll()
+        hostedWebView = nil
+    }
+
     func detachHostedWebViewIfOwned(_ webView: WKWebView?) {
         guard let webView,
               webView.superview === self else {
             return
         }
         webView.removeFromSuperview()
-        if hostedWebView === webView {
-            resetPendingScroll()
-            hostedWebView = nil
-        }
+        relinquishHostedWebView(webView)
     }
 }

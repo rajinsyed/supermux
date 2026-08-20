@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import type { HarnessBridge } from "../src/bridge";
+import { installReceiver, type HarnessBridge } from "../src/bridge";
 import { HarnessStore } from "../src/model/store";
-import type { NativeEvent, NativeEventEnvelope, ProtocolLine } from "../src/protocol/types";
+import type {
+  HarnessTheme,
+  NativeEvent,
+  NativeEventEnvelope,
+  ProtocolLine
+} from "../src/protocol/types";
 import { CopyProvider } from "../src/ui/CopyContext";
 import { Elapsed } from "../src/ui/primitives/Elapsed";
 import { PresentationVisibilityProvider } from "../src/ui/presentationVisibility";
@@ -10,6 +15,7 @@ import { TaskOutputView } from "../src/ui/tools/TaskOutput";
 
 afterEach(() => {
   cleanup();
+  delete window.supermuxHarness;
   delete window.supermuxHarnessMock;
   delete document.documentElement.dataset.supermuxPresentation;
 });
@@ -39,6 +45,23 @@ function envelope(
   };
 }
 
+const theme: HarnessTheme = {
+  isDark: true,
+  pageBackground: "#000000",
+  surfaceBackground: "#111111",
+  surfaceElevatedBackground: "#222222",
+  inputBackground: "#333333",
+  border: "#444444",
+  borderStrong: "#555555",
+  text: "#ffffff",
+  mutedText: "#bbbbbb",
+  softText: "#999999",
+  accent: "#cc8844",
+  accentSoft: "#664422",
+  danger: "#ff4444",
+  shadow: "#00000088"
+};
+
 function visibility(
   store: HarnessStore,
   documentEpoch: string,
@@ -53,8 +76,12 @@ describe("versioned native event reduction", () => {
     const store = new HarnessStore();
     visibility(store, "document-one", false, 0);
     let rootNotifications = 0;
+    let executionNotifications = 0;
     store.subscribe(() => {
       rootNotifications += 1;
+    });
+    store.subscribeExecution(() => {
+      executionNotifications += 1;
     });
 
     const acknowledgement = store.receiveEnvelope(
@@ -69,6 +96,40 @@ describe("versioned native event reduction", () => {
     expect(store.getSnapshot().turns).toHaveLength(1);
     expect(store.getTurnIds()).toEqual(["hidden-turn"]);
     expect(rootNotifications).toBe(0);
+    expect(executionNotifications).toBe(1);
+  });
+
+  test("the document receiver acknowledges only reduced envelopes and deduplicates theme replay", () => {
+    const store = new HarnessStore();
+    let themePublications = 0;
+    installReceiver({
+      onBatch: store.receive,
+      onEnvelope: store.receiveEnvelope,
+      onPresentationVisibility: store.setPresentationVisibility,
+      onTheme: () => {
+        themePublications += 1;
+      }
+    });
+    const receiver = window.supermuxHarness;
+    expect(receiver).toBeDefined();
+    const batch = envelope("document-one", 1, [{ kind: "theme", theme }]);
+
+    expect(receiver?.receiveEnvelope(batch)).toEqual({
+      version: 1,
+      documentEpoch: "document-one",
+      highestSequence: 1
+    });
+    expect(receiver?.receiveEnvelope(batch)?.highestSequence).toBe(1);
+    expect(themePublications).toBe(1);
+    expect(
+      receiver?.receiveEnvelope({
+        version: 1,
+        documentEpoch: "document-one",
+        firstSequence: 3,
+        highestSequence: 3,
+        events: [{ kind: "stderr", text: "gap" }]
+      })
+    ).toBeUndefined();
   });
 
   test("deduplicates an identical retry after it was reduced", () => {
@@ -108,13 +169,26 @@ describe("versioned native event reduction", () => {
       presentationNotifications += 1;
     });
 
-    visibility(store, "document-one", true, 2);
+    expect(
+      store.setPresentationVisibility({
+        documentEpoch: "document-one",
+        visible: true,
+        targetSequence: 2
+      })
+    ).toBe(false);
     expect(store.getPresentationVisible()).toBe(false);
     expect(rootNotifications).toBe(0);
     expect(presentationNotifications).toBe(0);
 
     store.receiveEnvelope(envelope("document-one", 2, [userEvent("second")]));
     expect(store.getPresentationVisible()).toBe(true);
+    expect(
+      store.setPresentationVisibility({
+        documentEpoch: "document-one",
+        visible: true,
+        targetSequence: 2
+      })
+    ).toBe(true);
     expect(store.getTurnIds()).toEqual(["first", "second"]);
     expect(rootNotifications).toBe(1);
     expect(presentationNotifications).toBe(1);

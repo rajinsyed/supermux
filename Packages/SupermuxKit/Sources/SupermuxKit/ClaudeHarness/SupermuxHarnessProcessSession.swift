@@ -307,28 +307,28 @@ public final class SupermuxHarnessProcessSession {
         _ data: Data,
         runID: String,
         stream: SupermuxHarnessProcessStream
-    ) {
+    ) async {
         guard let session = runningProcess, session.runID == runID else { return }
         if data.isEmpty {
             for line in session.flush(stream: stream) {
-                emit(line, stream: stream)
+                await emit(line, stream: stream)
             }
             session.drainedStreams.insert(stream)
             finishIfExitedAndDrained(session)
             return
         }
         for line in session.append(data, stream: stream) {
-            emit(line, stream: stream)
+            await emit(line, stream: stream)
         }
     }
 
-    private func emit(_ text: String, stream: SupermuxHarnessProcessStream) {
+    private func emit(_ text: String, stream: SupermuxHarnessProcessStream) async {
         switch stream {
         case .stdout:
             guard let decoded = try? decoder.decodeLine(text) else { return }
-            protocolLineSink(decoded)
+            await protocolLineSink(decoded)
         case .stderr:
-            stderrSink(text)
+            await stderrSink(text)
         }
     }
 

@@ -5,7 +5,10 @@ import type {
   HarnessContext,
   HarnessTheme,
   NativeEvent,
+  NativeEventAcknowledgement,
+  NativeEventEnvelope,
   PermissionMode,
+  PresentationVisibilityControl,
   PermissionSuggestion,
   ProtocolLine,
   RewindPreview,
@@ -137,6 +140,8 @@ interface WebkitHandler {
 
 interface HarnessGlobal {
   receiveBatch(events: NativeEvent[]): void;
+  receiveEnvelope(envelope: unknown): NativeEventAcknowledgement | undefined;
+  setPresentationVisibility(control: unknown): boolean;
   applyTheme(theme: HarnessTheme): void;
 }
 
@@ -215,10 +220,121 @@ export function getBridge(): HarnessBridge {
   });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isHarnessTheme(value: unknown): value is HarnessTheme {
+  if (!isRecord(value) || typeof value.isDark !== "boolean") return false;
+  const colorKeys = [
+    "pageBackground",
+    "surfaceBackground",
+    "surfaceElevatedBackground",
+    "inputBackground",
+    "border",
+    "borderStrong",
+    "text",
+    "mutedText",
+    "softText",
+    "accent",
+    "accentSoft",
+    "danger",
+    "shadow"
+  ];
+  return colorKeys.every((key) => typeof value[key] === "string");
+}
+
+function isNativeEvent(value: unknown): value is NativeEvent {
+  if (!isRecord(value) || typeof value.kind !== "string") return false;
+  switch (value.kind) {
+    case "protocol":
+      return isRecord(value.line);
+    case "runStarted":
+      return typeof value.runId === "string";
+    case "runExited":
+      return (
+        typeof value.runId === "string" &&
+        typeof value.status === "number" &&
+        Number.isFinite(value.status)
+      );
+    case "stderr":
+      return typeof value.text === "string";
+    case "theme":
+      return isHarnessTheme(value.theme);
+    case "modelCatalog":
+      return (
+        Array.isArray(value.models) &&
+        value.models.every(
+          (model) =>
+            isRecord(model) &&
+            typeof model.value === "string" &&
+            typeof model.displayName === "string"
+        )
+      );
+    case "sessionTitle":
+      return typeof value.title === "string";
+    default:
+      return false;
+  }
+}
+
+function parseNativeEventEnvelope(value: unknown): NativeEventEnvelope | undefined {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    typeof value.documentEpoch !== "string" ||
+    value.documentEpoch.length === 0 ||
+    typeof value.firstSequence !== "number" ||
+    typeof value.highestSequence !== "number" ||
+    !Number.isSafeInteger(value.firstSequence) ||
+    !Number.isSafeInteger(value.highestSequence) ||
+    value.firstSequence < 1 ||
+    value.highestSequence < value.firstSequence ||
+    !Array.isArray(value.events) ||
+    value.events.length === 0 ||
+    !value.events.every(isNativeEvent) ||
+    value.highestSequence - value.firstSequence + 1 !== value.events.length
+  ) {
+    return undefined;
+  }
+  return {
+    version: 1,
+    documentEpoch: value.documentEpoch,
+    firstSequence: value.firstSequence,
+    highestSequence: value.highestSequence,
+    events: value.events
+  };
+}
+
+function parsePresentationVisibility(
+  value: unknown
+): PresentationVisibilityControl | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.documentEpoch !== "string" ||
+    value.documentEpoch.length === 0 ||
+    typeof value.visible !== "boolean" ||
+    typeof value.targetSequence !== "number" ||
+    !Number.isSafeInteger(value.targetSequence) ||
+    value.targetSequence < 0
+  ) {
+    return undefined;
+  }
+  return {
+    documentEpoch: value.documentEpoch,
+    visible: value.visible,
+    targetSequence: value.targetSequence
+  };
+}
+
 export function installReceiver(handlers: {
   onBatch(events: NativeEvent[]): void;
+  onEnvelope(envelope: NativeEventEnvelope): NativeEventAcknowledgement | undefined;
+  onPresentationVisibility(control: PresentationVisibilityControl): boolean;
   onTheme(theme: HarnessTheme): void;
 }): void {
+  let themeDocumentEpoch: string | undefined;
+  let themeHighestSequence = 0;
   window.supermuxHarness = {
     receiveBatch: (events) => {
       if (!Array.isArray(events)) return;
@@ -226,6 +342,36 @@ export function installReceiver(handlers: {
       for (const event of events) {
         if (event && event.kind === "theme") handlers.onTheme(event.theme);
       }
+    },
+    receiveEnvelope: (value) => {
+      const envelope = parseNativeEventEnvelope(value);
+      if (!envelope) return undefined;
+      const acknowledgement = handlers.onEnvelope(envelope);
+      if (
+        !acknowledgement ||
+        acknowledgement.version !== 1 ||
+        acknowledgement.documentEpoch !== envelope.documentEpoch ||
+        acknowledgement.highestSequence !== envelope.highestSequence
+      ) {
+        return undefined;
+      }
+      const newlyApplied =
+        themeDocumentEpoch !== envelope.documentEpoch ||
+        themeHighestSequence < envelope.highestSequence;
+      if (newlyApplied) {
+        for (const event of envelope.events) {
+          if (event.kind === "theme") handlers.onTheme(event.theme);
+        }
+        themeDocumentEpoch = envelope.documentEpoch;
+        themeHighestSequence = envelope.highestSequence;
+      }
+      return acknowledgement;
+    },
+    setPresentationVisibility: (value) => {
+      const control = parsePresentationVisibility(value);
+      if (!control || !handlers.onPresentationVisibility(control)) return false;
+      const expected = control.visible ? "visible" : "hidden";
+      return document.documentElement.dataset.supermuxPresentation === expected;
     },
     applyTheme: (theme) => handlers.onTheme(theme)
   };

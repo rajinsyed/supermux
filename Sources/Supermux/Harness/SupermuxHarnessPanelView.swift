@@ -26,30 +26,27 @@ struct SupermuxHarnessPanelView: View {
         // and the unread light reads its `isDark` so the two never disagree
         // about whether this pane is a dark surface.
         let webTheme = AgentSessionWebTheme.resolve(appearance: appearance)
-        Group {
-            if isVisibleInUI {
-                SupermuxHarnessWebRenderer(
-                    panel: panel,
-                    isFocused: isFocused,
-                    backgroundColor: appearance.contentBackgroundColor,
-                    theme: webTheme,
-                    sessionContentWidthPresentation: sessionContentWidthPresentation,
-                    onRequestPanelFocus: onRequestPanelFocus
-                )
-                .id(panel.id)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .zIndex(Double(portalPriority))
-            } else {
-                Color.clear
-            }
-        }
+        SupermuxHarnessWebRenderer(
+            panel: panel,
+            isFocused: isFocused,
+            isPresentationVisible: isVisibleInUI,
+            backgroundColor: appearance.contentBackgroundColor,
+            theme: webTheme,
+            sessionContentWidthPresentation: sessionContentWidthPresentation,
+            onRequestPanelFocus: onRequestPanelFocus
+        )
+        .id(panel.id)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(isVisibleInUI)
+        .accessibilityHidden(!isVisibleInUI)
+        .zIndex(Double(portalPriority))
         .background(Color(nsColor: appearance.contentBackgroundColor))
         .overlay {
             // Mounted above the WKWebView, hit-testing disabled. Honors the
             // same `unreadPaneRing` setting the terminal ring honors, so one
             // toggle still turns every pane indicator off.
             SupermuxHarnessUnreadIndicator(
-                isUnread: hasUnreadNotification && notificationPaneRingEnabled,
+                isUnread: isVisibleInUI && hasUnreadNotification && notificationPaneRingEnabled,
                 attentionColor: Color(nsColor: workspaceAttentionColor.nsColor),
                 appearance: SupermuxHarnessUnreadAppearance(isDark: webTheme.isDark)
             )

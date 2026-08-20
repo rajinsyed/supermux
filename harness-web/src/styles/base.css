@@ -22,6 +22,12 @@ body,
   padding: 0;
 }
 
+html[data-supermux-presentation="hidden"] *,
+html[data-supermux-presentation="hidden"] *::before,
+html[data-supermux-presentation="hidden"] *::after {
+  animation-play-state: paused !important;
+}
+
 body {
   background: var(--page-bg, #0f0f13);
   color: var(--text);

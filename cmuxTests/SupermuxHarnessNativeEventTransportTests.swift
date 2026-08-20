@@ -104,7 +104,7 @@ struct SupermuxHarnessNativeEventTransportTests {
     func batchRespectsCountAndEncodedByteLimits() throws {
         let epoch = "document-one"
         let firstEvent = event(id: "first", payload: String(repeating: "a", count: 80))
-        let secondEvent = event(id: "second", payload: String(repeating: "b", count: 80))
+        let secondEvent = event(id: "other", payload: String(repeating: "b", count: 80))
         let singleEventBytes = try #require(
             SupermuxHarnessNativeEventEnvelope(
                 documentEpoch: epoch,
@@ -165,7 +165,49 @@ struct SupermuxHarnessNativeEventTransportTests {
         #expect(ownership.owner === newestHost)
         #expect(ownership.release(newestHost, generation: newestGeneration))
         #expect(ownership.owner == nil)
+
+        let churnOwnership = SupermuxHarnessWebHostOwnership()
+        let attachedHost = Host()
+        let attachedGeneration = churnOwnership.issueGeneration()
+        #expect(churnOwnership.claim(attachedHost, generation: attachedGeneration))
+        _ = churnOwnership.issueGeneration()
+        #expect(!churnOwnership.release(attachedHost, generation: attachedGeneration))
+        #expect(churnOwnership.owner === attachedHost)
     }
+
+#if canImport(cmux_DEV) || canImport(cmux)
+    @Test
+    func retainedShellAllowsFragmentsButRejectsDocumentReplacementAfterFinish() throws {
+        let shell = URL(fileURLWithPath: "/tmp/supermux-harness/index.html")
+        let fragment = try #require(URL(string: "\(shell.absoluteString)#turn-1"))
+        let external = try #require(URL(string: "https://example.com"))
+
+        #expect(SupermuxHarnessWebRendererCoordinator.shouldAllowShellNavigation(
+            fragment,
+            currentURL: shell,
+            expected: shell,
+            hasFinishedNavigation: true
+        ) == true)
+        #expect(SupermuxHarnessWebRendererCoordinator.shouldAllowShellNavigation(
+            shell,
+            currentURL: shell,
+            expected: shell,
+            hasFinishedNavigation: true
+        ) == false)
+        #expect(SupermuxHarnessWebRendererCoordinator.shouldAllowShellNavigation(
+            shell,
+            currentURL: nil,
+            expected: shell,
+            hasFinishedNavigation: false
+        ) == true)
+        #expect(SupermuxHarnessWebRendererCoordinator.shouldAllowShellNavigation(
+            external,
+            currentURL: shell,
+            expected: shell,
+            hasFinishedNavigation: true
+        ) == nil)
+    }
+#endif
 
     private func makeTransport(
         maximumEventCountPerBatch: Int = 64

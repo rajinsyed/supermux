@@ -490,7 +490,7 @@ struct SupermuxHarnessTests {
             permissionMode: nil,
             effort: nil
         )
-        try process.emitPermissionRequest(requestID: "permission-1")
+        try await process.emitPermissionRequest(requestID: "permission-1")
         _ = try await controller.restart(
             resumeSessionId: nil,
             forkSession: false,
@@ -648,7 +648,7 @@ struct SupermuxHarnessTests {
 
         // The real CLI never emits session_state_changed; the result frame is
         // the end-of-turn boundary and must clear the indicator.
-        try process.emitLine([
+        try await process.emitLine([
             "type": "result",
             "subtype": "success",
             "is_error": false,
@@ -659,14 +659,14 @@ struct SupermuxHarnessTests {
 
         // A queued message drains into a new turn with no send() on this side;
         // the pre-request status frame is its start signal.
-        try process.emitLine([
+        try await process.emitLine([
             "type": "system",
             "subtype": "status",
             "status": "requesting",
             "uuid": UUID().uuidString,
         ])
         #expect(runningStates == [true, false, true])
-        try process.emitLine([
+        try await process.emitLine([
             "type": "result",
             "subtype": "error_during_execution",
             "is_error": true,
@@ -698,12 +698,12 @@ struct SupermuxHarnessTests {
             taskOutputRootURL: taskRoot
         )
         defer { controller.close() }
-        try process.emitLine([
+        try await process.emitLine([
             "type": "system",
             "subtype": "init",
             "session_id": "session-1",
         ])
-        try process.emitLine([
+        try await process.emitLine([
             "type": "system",
             "subtype": "task_started",
             "task_id": "task-1",
@@ -786,7 +786,7 @@ struct SupermuxHarnessTests {
             taskOutputRootURL: taskRoot
         )
         defer { controller.close() }
-        try process.emitLine([
+        try await process.emitLine([
             "type": "system",
             "subtype": "task_started",
             "task_id": "shell-1",
@@ -794,7 +794,7 @@ struct SupermuxHarnessTests {
             "task_type": "local_bash",
             "session_id": "session",
         ])
-        try process.emitLine([
+        try await process.emitLine([
             "type": "user",
             "session_id": "session",
             "message": [
@@ -1030,7 +1030,7 @@ struct SupermuxHarnessTests {
         // An init frame naming another model (a /model slash command emits a
         // fresh init and never passes through setModel) updates the model and
         // PRESERVES the stored effort — init frames carry none.
-        try process.emitLine([
+        try await process.emitLine([
             "type": "system",
             "subtype": "init",
             "session_id": "session-2",
@@ -1226,8 +1226,8 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
         finish(runID: runID)
     }
 
-    func emitPermissionRequest(requestID: String) throws {
-        try emit([
+    func emitPermissionRequest(requestID: String) async throws {
+        try await emit([
             "type": "control_request",
             "request_id": requestID,
             "request": [
@@ -1260,7 +1260,7 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
         operations.append(.control(subtype: subtype))
         switch responses[subtype] ?? .success([:]) {
         case .success(let payload):
-            try emit([
+            try await emit([
                 "type": "control_response",
                 "response": [
                     "subtype": "success",
@@ -1269,7 +1269,7 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
                 ],
             ])
         case .failure(let message):
-            try emit([
+            try await emit([
                 "type": "control_response",
                 "response": [
                     "subtype": "error",
@@ -1280,14 +1280,14 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
         }
     }
 
-    func emitLine(_ object: [String: Any]) throws {
-        try emit(object)
+    func emitLine(_ object: [String: Any]) async throws {
+        try await emit(object)
     }
 
-    private func emit(_ object: [String: Any]) throws {
+    private func emit(_ object: [String: Any]) async throws {
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         let line = try #require(String(data: data, encoding: .utf8))
-        protocolLineSink?(try decoder.decodeLine(line))
+        await protocolLineSink?(try decoder.decodeLine(line))
     }
 
     private func finish(runID: String) {

@@ -28,7 +28,7 @@ final class SupermuxHarnessSessionController {
     private static var liveControllers: [ObjectIdentifier: WeakController] = [:]
     private static var modelCatalogProbesByBinaryPath: [String: SharedModelCatalogProbe] = [:]
 
-    var eventSink: (([String: Any]) -> Void)?
+    var eventSink: (([String: Any]) async -> Void)?
     var runningStateSink: ((Bool) -> Void)?
     var titleSink: ((String?) -> Void)?
     var pendingUserInputSink: ((Bool) -> Void)?
@@ -60,6 +60,7 @@ final class SupermuxHarnessSessionController {
     private var cachedCLIStatus: [String: Any]?
     private var taskRecordsByID: [String: TaskRecord] = [:]
     private var sessionFileWatcher: SupermuxHarnessSessionFileWatcher?
+    private var lifecycleEventDeliveryTask: Task<Void, Never>?
     private var watchedSessionID: String?
     private var isTurnActive = false
 
@@ -123,10 +124,10 @@ final class SupermuxHarnessSessionController {
         }
         processSession = processSessionFactory(
             { [weak self] line in
-                self?.consumeProtocolLine(line)
+                await self?.consumeProtocolLine(line)
             },
             { [weak self] text in
-                self?.eventSink?(["kind": "stderr", "text": text])
+                await self?.eventSink?(["kind": "stderr", "text": text])
             },
             { [weak self] event in
                 self?.consumeLifecycleEvent(event)
@@ -285,7 +286,7 @@ final class SupermuxHarnessSessionController {
 
     func setBinaryPath(_ path: String?) async throws -> [String: Any] {
         try binarySetting.setPath(path)
-        Self.broadcastBinarySettingInvalidation()
+        await Self.broadcastBinarySettingInvalidation()
         return await binarySettingState()
     }
 
@@ -387,6 +388,9 @@ final class SupermuxHarnessSessionController {
               !directoryPath.isEmpty else {
             throw SupermuxHarnessBridgeError.workingDirectoryUnavailable
         }
+        await lifecycleEventDeliveryTask?.value
+        lifecycleEventDeliveryTask = nil
+        guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
         taskRecordsByID.removeAll()
         cancelModelCatalogProbe()
         let resolvedPlan = try await resolveClaudeLaunchPlan()
@@ -448,7 +452,7 @@ final class SupermuxHarnessSessionController {
         }
         var event: [String: Any] = ["kind": "runStarted", "runId": started.runID]
         if let resumeSessionId { event["resumedSessionId"] = resumeSessionId }
-        eventSink?(event)
+        await eventSink?(event)
         if resumeSessionId != nil {
             // A resumed session already has a topic title on disk; adopt it now
             // rather than waiting for a write to wake the watcher.
@@ -466,7 +470,7 @@ final class SupermuxHarnessSessionController {
                       self.binarySettingRevision == binaryRevision else {
                     return
                 }
-                self.consumeInitializeCatalog(payload, binaryPath: binaryPath)
+                await self.consumeInitializeCatalog(payload, binaryPath: binaryPath)
             } catch {
                 // The live protocol line is still forwarded; catalog persistence is best-effort.
             }
@@ -577,7 +581,7 @@ final class SupermuxHarnessSessionController {
                 restoreFailureReason = Self.rewindFailureReason(from: error)
             }
             if let restoreFailureReason {
-                eventSink?(["kind": "stderr", "text": restoreFailureReason])
+                await eventSink?(["kind": "stderr", "text": restoreFailureReason])
             }
         }
 
@@ -935,7 +939,7 @@ final class SupermuxHarnessSessionController {
                       self.binarySettingRevision == binaryRevision else {
                     return
                 }
-                self.consumeInitializeCatalog(catalog, binaryPath: expectedBinaryPath)
+                await self.consumeInitializeCatalog(catalog, binaryPath: expectedBinaryPath)
             } catch {
                 // Context remains usable without a catalog; the next pane load can probe again.
             }
@@ -945,8 +949,8 @@ final class SupermuxHarnessSessionController {
     private func consumeInitializeCatalog(
         _ payload: SupermuxHarnessJSONObject,
         binaryPath: String
-    ) {
-        consumeInitializeCatalog(
+    ) async {
+        await consumeInitializeCatalog(
             SupermuxHarnessInitializeCatalog(response: payload),
             binaryPath: binaryPath
         )
@@ -955,10 +959,10 @@ final class SupermuxHarnessSessionController {
     private func consumeInitializeCatalog(
         _ catalog: SupermuxHarnessInitializeCatalog,
         binaryPath: String
-    ) {
+    ) async {
         try? modelCatalogStore.store(catalog.models, forBinaryPath: binaryPath)
         guard !catalog.models.isEmpty else { return }
-        eventSink?([
+        await eventSink?([
             "kind": "modelCatalog",
             "models": catalog.models.map(\.rawValue),
         ])
@@ -990,7 +994,7 @@ final class SupermuxHarnessSessionController {
         return task
     }
 
-    private static func broadcastBinarySettingInvalidation() {
+    private static func broadcastBinarySettingInvalidation() async {
         for probe in modelCatalogProbesByBinaryPath.values {
             probe.task.cancel()
         }
@@ -999,14 +1003,14 @@ final class SupermuxHarnessSessionController {
         let live = liveControllers.compactMapValues(\.value)
         liveControllers = live.mapValues(WeakController.init)
         for controller in live.values {
-            controller.handleBinarySettingInvalidation()
+            await controller.handleBinarySettingInvalidation()
         }
     }
 
-    private func handleBinarySettingInvalidation() {
+    private func handleBinarySettingInvalidation() async {
         binarySettingRevision &+= 1
         invalidateBinaryCaches()
-        eventSink?(["kind": "modelCatalog", "models": []])
+        await eventSink?(["kind": "modelCatalog", "models": []])
     }
 
     private func invalidateBinaryCaches() {
@@ -1202,7 +1206,7 @@ final class SupermuxHarnessSessionController {
         }
     }
 
-    private func consumeProtocolLine(_ line: SupermuxHarnessDecodedLine) {
+    private func consumeProtocolLine(_ line: SupermuxHarnessDecodedLine) async {
         controlRouter?.consume(line)
         consumeTaskRecordFromProtocolLine(line)
         if case .system(let frame)? = line.frame {
@@ -1215,8 +1219,8 @@ final class SupermuxHarnessSessionController {
             setTurnActive(false)
             turnCompletedSink?(frame)
         }
-        eventSink?(["kind": "protocol", "line": line.object.rawValue])
         emitPendingUserInputStateIfChanged()
+        await eventSink?(["kind": "protocol", "line": line.object.rawValue])
     }
 
     /// Mirrors the terminal hooks' lifecycle: UserPromptSubmit → running,
@@ -1306,18 +1310,20 @@ final class SupermuxHarnessSessionController {
             guard let title = discovery.sessionTitle(for: directoryURL, sessionID: sessionID) else {
                 return
             }
-            await MainActor.run { [weak self] in
-                guard let self, !self.isClosed,
-                      self.snapshot.titleIsCustom != true,
-                      self.snapshot.sessionId == sessionID,
-                      self.snapshot.title != title else {
-                    return
-                }
-                self.snapshot.title = title
-                self.titleSink?(title)
-                self.eventSink?(["kind": "sessionTitle", "title": title])
-            }
+            await self?.applyDiscoveredTitle(title, sessionID: sessionID)
         }
+    }
+
+    private func applyDiscoveredTitle(_ title: String, sessionID: String) async {
+        guard !isClosed,
+              snapshot.titleIsCustom != true,
+              snapshot.sessionId == sessionID,
+              snapshot.title != title else {
+            return
+        }
+        snapshot.title = title
+        titleSink?(title)
+        await eventSink?(["kind": "sessionTitle", "title": title])
     }
 
     private func consumeSystemFrame(_ frame: SupermuxHarnessSystemFrame) {
@@ -1374,7 +1380,11 @@ final class SupermuxHarnessSessionController {
             }
             setTurnActive(false)
             emitPendingUserInputStateIfChanged()
-            eventSink?(["kind": "runExited", "runId": runID, "status": Int(status)])
+            let previousDelivery = lifecycleEventDeliveryTask
+            lifecycleEventDeliveryTask = Task { @MainActor [weak self] in
+                await previousDelivery?.value
+                await self?.eventSink?(["kind": "runExited", "runId": runID, "status": Int(status)])
+            }
         }
     }
 

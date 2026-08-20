@@ -172,6 +172,39 @@ struct SupermuxHarnessProcessSessionTests {
         }
     }
 
+    @MainActor
+    private final class ProtocolSinkGate {
+        private(set) var receivedCount = 0
+        private var firstWasReceived = false
+        private var firstReceivedWaiters: [CheckedContinuation<Void, Never>] = []
+        private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+        func receive(_ line: SupermuxHarnessDecodedLine) async {
+            _ = line
+            receivedCount += 1
+            guard receivedCount == 1 else { return }
+            firstWasReceived = true
+            let waiters = firstReceivedWaiters
+            firstReceivedWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+            await withCheckedContinuation { continuation in
+                releaseContinuation = continuation
+            }
+        }
+
+        func waitUntilFirstReceived() async {
+            if firstWasReceived { return }
+            await withCheckedContinuation { continuation in
+                firstReceivedWaiters.append(continuation)
+            }
+        }
+
+        func releaseFirst() {
+            releaseContinuation?.resume()
+            releaseContinuation = nil
+        }
+    }
+
     @Test func oneProcessHandlesMultipleTurnsAndExitsOnlyAfterBothStreamsDrain() async throws {
         let recorder = Recorder()
         let session = makeSession(recorder: recorder)
@@ -205,6 +238,31 @@ struct SupermuxHarnessProcessSessionTests {
         #expect(recorder.timeline.last == "exited")
         #expect(!session.isRunning)
         #expect(session.activeRunID == nil)
+    }
+
+    @Test func protocolReadingWaitsForTheAsyncSinkBeforeDeliveringTheNextLine() async throws {
+        let recorder = Recorder()
+        let gate = ProtocolSinkGate()
+        let session = SupermuxHarnessProcessSession(
+            protocolLineSink: { line in await gate.receive(line) },
+            stderrSink: { recorder.receiveStderr($0) },
+            lifecycleSink: { recorder.receiveLifecycle($0) }
+        )
+        let script = #"""
+        printf '{"type":"keep_alive","value":1}\n'
+        printf '{"type":"keep_alive","value":2}\n'
+        """#
+        _ = try session.start(plan: shellPlan(script))
+        defer { session.close() }
+
+        await gate.waitUntilFirstReceived()
+        #expect(gate.receivedCount == 1)
+        #expect(session.isRunning)
+
+        gate.releaseFirst()
+        _ = await recorder.nextExit()
+        #expect(gate.receivedCount == 2)
+        #expect(!session.isRunning)
     }
 
     @Test func stdoutForwardsUnknownValidJSONDropsMalformedLinesAndFlushesTrailingJSON() async throws {

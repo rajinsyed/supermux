@@ -41,7 +41,8 @@ final class SupermuxHarnessWebRendererSession {
         workingDirectory: String?,
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
         theme: AgentSessionWebTheme,
-        isFocused: Bool
+        isFocused: Bool,
+        isPresentationVisible: Bool
     ) -> SupermuxHarnessWebRendererCoordinator {
         ownedCoordinator.bind(
             panelId: panelId,
@@ -49,7 +50,8 @@ final class SupermuxHarnessWebRendererSession {
             workingDirectory: workingDirectory,
             restoreState: restoreState,
             theme: theme,
-            isFocused: isFocused
+            isFocused: isFocused,
+            isPresentationVisible: isPresentationVisible
         )
         return ownedCoordinator
     }

@@ -17,12 +17,24 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     private var hasFinishedNavigation = false
     private var hasCompletedVisiblePaintFlush = false
     private(set) var isPanelFocused = false
+    private var isPresentationVisible = true
     private var isClosed = false
     private(set) var sessionController: SupermuxHarnessSessionController?
-    private var pendingEvents: [[String: Any]] = []
+    private let eventTransport = SupermuxHarnessNativeEventTransport()
+    private let hostOwnership = SupermuxHarnessWebHostOwnership()
     private var eventFlushTask: Task<Void, Never>?
-    nonisolated private static let eventFlushIntervalNanoseconds: UInt64 = 33_000_000
-    nonisolated private static let eventFlushMaxBatch = 64
+    private var activeEventDeliveryID: UUID?
+    private var nextEventIngressTicket: UInt64 = 1
+    private var servingEventIngressTicket: UInt64 = 1
+    private var eventIngressWaiters: [UInt64: CheckedContinuation<Void, Never>] = [:]
+    private var completedEventIngressTickets = Set<UInt64>()
+    private var backlogSpaceWaiters: [CheckedContinuation<Void, Never>] = []
+    private var backpressuredEventCount = 0
+    private var presentationDeliveryTask: Task<Void, Never>?
+    private var activePresentationDeliveryID: UUID?
+    private var presentationRevision: UInt64 = 1
+    private var deliveredPresentationRevision: UInt64 = 0
+    nonisolated private static let deliveryRetryIntervalNanoseconds: UInt64 = 33_000_000
     nonisolated static let imagePreviewMaxBytes = 512 * 1024
     nonisolated static let imagePreviewTotalMaxBytes = 2 * 1024 * 1024
 
@@ -40,21 +52,27 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         sessionController?.snapshot ?? SessionSupermuxHarnessPanelSnapshot()
     }
 
+    private var isPresentationCommitted: Bool {
+        isPresentationVisible && deliveredPresentationRevision == presentationRevision
+    }
+
     func bind(
         panelId: UUID,
         workspaceId: UUID,
         workingDirectory: String?,
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
         theme: AgentSessionWebTheme,
-        isFocused: Bool
+        isFocused: Bool,
+        isPresentationVisible: Bool
     ) {
         self.panelId = panelId
         self.workspaceId = workspaceId
-        isPanelFocused = isFocused
+        isPanelFocused = isFocused && isPresentationVisible
+        setPresentationVisible(isPresentationVisible)
         let themeChanged = self.theme != theme
         self.theme = theme
         if themeChanged {
-            enqueueEvent(["kind": "theme", "theme": theme.dictionary])
+            enqueueEventSoon(["kind": "theme", "theme": theme.dictionary])
         }
         guard sessionController == nil else { return }
         let controller = SupermuxHarnessSessionController(
@@ -63,7 +81,7 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
             transcriptService: transcriptService
         )
         controller.eventSink = { [weak self] event in
-            self?.enqueueEvent(event)
+            await self?.enqueueEvent(event)
         }
         controller.runningStateSink = { [weak self] isRunning in
             self?.onSessionStateChanged?(isRunning)
@@ -84,6 +102,49 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
             self?.onRestoreStateRetired?()
         }
         sessionController = controller
+    }
+
+    func issueHostGeneration() -> UInt64 {
+        hostOwnership.issueGeneration()
+    }
+
+    func claimHost(_ host: SupermuxHarnessWebHostView) -> Bool {
+        let previousHost = hostOwnership.owner as? SupermuxHarnessWebHostView
+        guard hostOwnership.claim(host, generation: host.ownershipGeneration) else {
+            return false
+        }
+        if previousHost !== host {
+            previousHost?.relinquishHostedWebView(webView)
+        }
+        host.setCompositorPresentationVisible(isPresentationCommitted)
+        return true
+    }
+
+    func attachWebView(_ webView: WKWebView, to host: SupermuxHarnessWebHostView) {
+        guard hostOwnership.owns(host, generation: host.ownershipGeneration) else { return }
+        host.attachWebView(webView)
+    }
+
+    func releaseHost(_ host: SupermuxHarnessWebHostView) {
+        guard hostOwnership.release(host, generation: host.ownershipGeneration) else { return }
+        host.detachHostedWebViewIfOwned(webView)
+    }
+
+    func hostDidMoveToWindow(_ host: SupermuxHarnessWebHostView?) {
+        guard let host,
+              hostOwnership.owns(host, generation: host.ownershipGeneration) else {
+            return
+        }
+        loadShellIfNeeded()
+        flushVisiblePaintIfReady()
+    }
+
+    func hostGeometryDidChange(_ host: SupermuxHarnessWebHostView?) {
+        guard let host,
+              hostOwnership.owns(host, generation: host.ownershipGeneration) else {
+            return
+        }
+        flushVisiblePaintIfReady()
     }
 
     func ensureWebView(onPointerDown: @escaping () -> Void) -> SupermuxHarnessWebView {
@@ -131,7 +192,7 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     }
 
     func focus() {
-        guard let webView else { return }
+        guard isPresentationCommitted, let webView else { return }
         _ = webView.window?.makeFirstResponder(webView)
     }
 
@@ -148,8 +209,18 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         isClosed = true
         eventFlushTask?.cancel()
         eventFlushTask = nil
-        pendingEvents.removeAll()
+        presentationDeliveryTask?.cancel()
+        presentationDeliveryTask = nil
+        activeEventDeliveryID = nil
+        activePresentationDeliveryID = nil
+        eventTransport.discardAll()
+        resumeEventIngressWaiters()
+        resumeBacklogSpaceWaiters()
         sessionController?.close()
+        if let owner = hostOwnership.owner as? SupermuxHarnessWebHostView {
+            owner.relinquishHostedWebView(webView)
+        }
+        hostOwnership.reset()
         if let webView {
             webView.removeFromSuperview()
             webView.stopLoading()
@@ -198,13 +269,37 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         }
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
+        hasFinishedNavigation = false
+        hasCompletedVisiblePaintFlush = false
+        eventFlushTask?.cancel()
+        eventFlushTask = nil
+        activeEventDeliveryID = nil
+        activePresentationDeliveryID = nil
+        presentationDeliveryTask?.cancel()
+        presentationDeliveryTask = nil
+        _ = eventTransport.beginDocumentNavigation()
+        presentationRevision &+= 1
+        deliveredPresentationRevision = 0
+        setHostCompositorPresentationVisible(false)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
         hasFinishedNavigation = true
-        enqueueEvent(["kind": "theme", "theme": theme.dictionary])
+        scheduleEventFlush()
+        if !isPresentationVisible {
+            schedulePresentationDelivery()
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.enqueueEvent(["kind": "theme", "theme": self.theme.dictionary])
+            self.schedulePresentationDelivery()
+        }
         if isPanelFocused {
             focus()
         }
-        flushInitialPaint(for: webView)
     }
 
     func webView(
@@ -223,13 +318,13 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
             return
         }
 
-        if Self.isTrustedShellURL(url, expected: trustedShellURL) {
-            decisionHandler(.allow)
-            return
-        }
-
-        if isInPageFragment(url, currentURL: webView.url) {
-            decisionHandler(.allow)
+        if let shouldAllow = Self.shouldAllowShellNavigation(
+            url,
+            currentURL: webView.url,
+            expected: trustedShellURL,
+            hasFinishedNavigation: hasFinishedNavigation
+        ) {
+            decisionHandler(shouldAllow ? .allow : .cancel)
             return
         }
 
@@ -252,7 +347,8 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     }
 
     func flushVisiblePaintIfReady() {
-        guard hasFinishedNavigation,
+        guard isPresentationCommitted,
+              hasFinishedNavigation,
               !hasCompletedVisiblePaintFlush,
               let webView,
               webView.window != nil,
@@ -260,7 +356,12 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
             return
         }
         flushInitialPaint(for: webView) { [weak self] in
-            self?.hasCompletedVisiblePaintFlush = true
+            guard let self, self.isPresentationCommitted else { return }
+            self.hasCompletedVisiblePaintFlush = true
+            self.setHostCompositorPresentationVisible(true)
+            if self.isPanelFocused {
+                self.focus()
+            }
         }
     }
 
@@ -283,16 +384,80 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         }
     }
 
-    private func enqueueEvent(_ event: [String: Any]) {
+    private func enqueueEventSoon(_ event: [String: Any]) {
+        Task { @MainActor [weak self] in
+            await self?.enqueueEvent(event)
+        }
+    }
+
+    private func enqueueEvent(_ event: [String: Any]) async {
+        let ticket = nextEventIngressTicket
+        nextEventIngressTicket &+= 1
+        if ticket != servingEventIngressTicket {
+            await withCheckedContinuation { continuation in
+                eventIngressWaiters[ticket] = continuation
+            }
+        }
+        defer { finishEventIngress(ticket: ticket) }
         guard !isClosed else { return }
-        pendingEvents.append(event)
-        if pendingEvents.count >= Self.eventFlushMaxBatch {
-            flushPendingEvents()
+        await enqueueEventInOrder(event)
+    }
+
+    private func enqueueEventInOrder(_ event: [String: Any]) async {
+        var isBackpressured = false
+        defer {
+            if isBackpressured {
+                backpressuredEventCount -= 1
+                if backpressuredEventCount == 0 {
+                    schedulePresentationDelivery()
+                }
+            }
+        }
+
+        while !isClosed {
+            if eventTransport.enqueue(event) == .accepted {
+                scheduleEventFlush()
+                return
+            }
+            if !isBackpressured {
+                isBackpressured = true
+                backpressuredEventCount += 1
+            }
+            await withCheckedContinuation { continuation in
+                backlogSpaceWaiters.append(continuation)
+            }
+        }
+    }
+
+    private func finishEventIngress(ticket: UInt64) {
+        if ticket == servingEventIngressTicket {
+            servingEventIngressTicket &+= 1
+            while completedEventIngressTickets.remove(servingEventIngressTicket) != nil {
+                servingEventIngressTicket &+= 1
+            }
+            eventIngressWaiters.removeValue(forKey: servingEventIngressTicket)?.resume()
+        } else {
+            completedEventIngressTickets.insert(ticket)
+        }
+    }
+
+    private func resumeEventIngressWaiters() {
+        let waiters = Array(eventIngressWaiters.values)
+        eventIngressWaiters.removeAll(keepingCapacity: true)
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    private func scheduleEventFlush() {
+        guard !isClosed,
+              eventFlushTask == nil,
+              activeEventDeliveryID == nil,
+              eventTransport.pendingEventCount > 0 else {
             return
         }
-        guard eventFlushTask == nil else { return }
         eventFlushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.eventFlushIntervalNanoseconds)
+            try? await Task.sleep(nanoseconds: Self.deliveryRetryIntervalNanoseconds)
             guard !Task.isCancelled, let self else { return }
             self.eventFlushTask = nil
             self.flushPendingEvents()
@@ -302,17 +467,155 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     private func flushPendingEvents() {
         eventFlushTask?.cancel()
         eventFlushTask = nil
-        guard !pendingEvents.isEmpty,
+        guard activeEventDeliveryID == nil,
               let webView,
               hasFinishedNavigation,
-              let data = try? JSONSerialization.data(withJSONObject: pendingEvents),
+              isPresentationVisible || deliveredPresentationRevision == presentationRevision,
+              let envelope = eventTransport.nextEnvelope(),
+              let data = envelope.encodedData,
               let json = String(data: data, encoding: .utf8) else {
             return
         }
-        pendingEvents.removeAll()
-        webView.evaluateJavaScript("window.supermuxHarness?.receiveBatch(\(json));") { _, error in
-            _ = error
+
+        let deliveryID = UUID()
+        activeEventDeliveryID = deliveryID
+        let script = "window.supermuxHarness?.receiveEnvelope(\(json));"
+        webView.evaluateJavaScript(script) { [weak self] result, error in
+            Task { @MainActor in
+                self?.completeEventDelivery(
+                    deliveryID: deliveryID,
+                    result: result,
+                    error: error
+                )
+            }
         }
+    }
+
+    private func completeEventDelivery(deliveryID: UUID, result: Any?, error: (any Error)?) {
+        guard activeEventDeliveryID == deliveryID else { return }
+        activeEventDeliveryID = nil
+        guard error == nil,
+              let acknowledgement = SupermuxHarnessNativeEventAcknowledgement(body: result),
+              eventTransport.acknowledge(acknowledgement) else {
+            eventTransport.deliveryFailed()
+            scheduleEventFlush()
+            return
+        }
+
+        resumeBacklogSpaceWaiters()
+        scheduleEventFlush()
+        schedulePresentationDelivery()
+    }
+
+    private func resumeBacklogSpaceWaiters() {
+        let waiters = backlogSpaceWaiters
+        backlogSpaceWaiters.removeAll(keepingCapacity: true)
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    private func setPresentationVisible(_ visible: Bool) {
+        guard isPresentationVisible != visible else {
+            if !visible {
+                setHostCompositorPresentationVisible(false)
+            }
+            schedulePresentationDelivery()
+            return
+        }
+        isPresentationVisible = visible
+        presentationRevision &+= 1
+        hasCompletedVisiblePaintFlush = false
+        setHostCompositorPresentationVisible(false)
+        if !visible {
+            unfocus()
+        }
+        schedulePresentationDelivery()
+    }
+
+    private func setHostCompositorPresentationVisible(_ visible: Bool) {
+        guard let host = hostOwnership.owner as? SupermuxHarnessWebHostView,
+              hostOwnership.owns(host, generation: host.ownershipGeneration) else {
+            return
+        }
+        host.setCompositorPresentationVisible(visible)
+    }
+
+    private func schedulePresentationDelivery() {
+        guard !isClosed,
+              deliveredPresentationRevision != presentationRevision,
+              presentationDeliveryTask == nil,
+              activePresentationDeliveryID == nil else {
+            return
+        }
+        presentationDeliveryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.deliveryRetryIntervalNanoseconds)
+            guard !Task.isCancelled, let self else { return }
+            self.presentationDeliveryTask = nil
+            self.flushPresentationDelivery()
+        }
+    }
+
+    private func flushPresentationDelivery() {
+        presentationDeliveryTask?.cancel()
+        presentationDeliveryTask = nil
+        guard activePresentationDeliveryID == nil,
+              let webView,
+              hasFinishedNavigation,
+              !isPresentationVisible || backpressuredEventCount == 0 else {
+            return
+        }
+
+        let revision = presentationRevision
+        let epoch = eventTransport.documentEpoch
+        let control: [String: Any] = [
+            "documentEpoch": epoch,
+            "visible": isPresentationVisible,
+            "targetSequence": eventTransport.highestEnqueuedSequence,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: control, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+
+        let deliveryID = UUID()
+        activePresentationDeliveryID = deliveryID
+        let script = "window.supermuxHarness?.setPresentationVisibility(\(json));"
+        webView.evaluateJavaScript(script) { [weak self] result, error in
+            Task { @MainActor in
+                self?.completePresentationDelivery(
+                    deliveryID: deliveryID,
+                    revision: revision,
+                    epoch: epoch,
+                    accepted: result as? Bool,
+                    error: error
+                )
+            }
+        }
+    }
+
+    private func completePresentationDelivery(
+        deliveryID: UUID,
+        revision: UInt64,
+        epoch: String,
+        accepted: Bool?,
+        error: (any Error)?
+    ) {
+        guard activePresentationDeliveryID == deliveryID else { return }
+        activePresentationDeliveryID = nil
+        if error == nil,
+           accepted == true,
+           revision == presentationRevision,
+           epoch == eventTransport.documentEpoch {
+            deliveredPresentationRevision = revision
+            if isPresentationVisible {
+                flushVisiblePaintIfReady()
+            } else {
+                setHostCompositorPresentationVisible(false)
+            }
+            scheduleEventFlush()
+        }
+        schedulePresentationDelivery()
     }
 
     private func isTrustedBridgeFrame(_ frameInfo: WKFrameInfo) -> Bool {
@@ -334,6 +637,21 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
             return false
         }
         return candidate == expected
+    }
+
+    nonisolated static func shouldAllowShellNavigation(
+        _ candidate: URL,
+        currentURL: URL?,
+        expected: URL?,
+        hasFinishedNavigation: Bool
+    ) -> Bool? {
+        if isInPageFragment(candidate, currentURL: currentURL) {
+            return true
+        }
+        guard isTrustedShellURL(candidate, expected: expected) else { return nil }
+        // The retained document is the reducer checkpoint. Replacing it after a
+        // successful load would discard acknowledged state outside the bounded backlog.
+        return !hasFinishedNavigation
     }
 
     nonisolated static func normalizedTrustedFileURL(_ url: URL?) -> URL? {
@@ -371,7 +689,7 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         )
     }
 
-    private func isInPageFragment(_ url: URL, currentURL: URL?) -> Bool {
+    nonisolated private static func isInPageFragment(_ url: URL, currentURL: URL?) -> Bool {
         guard url.fragment != nil else { return false }
         if (url.scheme == nil || url.scheme == "about"), (url.host ?? "").isEmpty {
             return true

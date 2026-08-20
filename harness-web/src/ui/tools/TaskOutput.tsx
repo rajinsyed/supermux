@@ -3,6 +3,7 @@ import { getBridge } from "../../bridge";
 import { useCopy } from "../CopyContext";
 import { AnsiOutput } from "../primitives/AnsiOutput";
 import { Spinner } from "../primitives/Spinner";
+import { usePresentationVisible } from "../presentationVisibility";
 
 /**
  * How often an open output view re-reads the file while the task still runs.
@@ -44,13 +45,14 @@ function TaskOutputPoller({
   pollIntervalMs = POLL_MS
 }: TaskOutputViewProps) {
   const copy = useCopy();
+  const presentationVisible = usePresentationVisible();
   const [phase, setPhase] = useState<Phase>("loading");
   const [text, setText] = useState("");
   const [truncated, setTruncated] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
-    if (!presented) return;
+    if (!presented || !presentationVisible) return;
     alive.current = true;
     let timer = 0;
     let cancelled = false;
@@ -89,7 +91,7 @@ function TaskOutputPoller({
       alive.current = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [pollIntervalMs, presented, running, taskId]);
+  }, [pollIntervalMs, presentationVisible, presented, running, taskId]);
 
   return (
     <div className={className ?? "task-output"}>

@@ -97,6 +97,8 @@ export function useHarness(store: HarnessStore): HarnessController {
   useEffect(() => {
     installReceiver({
       onBatch: (events) => store.receive(events),
+      onEnvelope: store.receiveEnvelope,
+      onPresentationVisibility: store.setPresentationVisibility,
       onTheme: (next) => setTheme(next)
     });
   }, [store]);
@@ -252,13 +254,17 @@ export function useHarness(store: HarnessStore): HarnessController {
   }, [reloadContext, refreshSessions]);
 
   const lastTurnCount = useRef(0);
+  const refreshSettledContext = useCallback(() => {
+    const settled = store
+      .getSnapshot()
+      .turns.filter((turn) => turn.state !== "streaming").length;
+    if (settled === lastTurnCount.current) return;
+    lastTurnCount.current = settled;
+    if (settled > 0) refreshContext();
+  }, [refreshContext, store]);
   useEffect(() => {
-    const settled = model.turns.filter((turn) => turn.state !== "streaming").length;
-    if (settled !== lastTurnCount.current) {
-      lastTurnCount.current = settled;
-      if (settled > 0) refreshContext();
-    }
-  }, [model.turns, refreshContext]);
+    refreshSettledContext();
+  }, [model.turns, refreshSettledContext]);
 
   const setDraft = useCallback(
     (text: string) => {
@@ -469,11 +475,14 @@ export function useHarness(store: HarnessStore): HarnessController {
    * with nobody having typed since. The CLI-side queue died with the process, so
    * re-sending is the only way these are ever answered.
    */
-  useEffect(() => {
-    if (model.stranded.length === 0) return;
-    if (model.runPhase !== "running") return;
+  const reconcileStrandedMessages = useCallback(() => {
+    const snapshot = store.getSnapshot();
+    if (snapshot.stranded.length === 0 || snapshot.runPhase !== "running") return;
     flushStranded();
-  }, [flushStranded, model.runPhase, model.stranded]);
+  }, [flushStranded, store]);
+  useEffect(() => {
+    reconcileStrandedMessages();
+  }, [model.runPhase, model.stranded, reconcileStrandedMessages]);
 
   /**
    * A pick the wire has not confirmed yet, re-pushed once a run is up.
@@ -488,22 +497,58 @@ export function useHarness(store: HarnessStore): HarnessController {
    * `set_model` to the model already running is a no-op on the CLI side.
    */
   const lastPushedPick = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    const session = model.session;
+  const reconcilePendingModelPick = useCallback(() => {
+    const snapshot = store.getSnapshot();
+    const session = snapshot.session;
     if (!session.modelPickPending || !session.model) {
       lastPushedPick.current = undefined;
       return;
     }
-    if (model.runPhase !== "running") return;
+    if (snapshot.runPhase !== "running") return;
     const selector =
-      resolveModel(session, model.cachedModels)?.value ?? session.model;
+      resolveModel(session, snapshot.cachedModels)?.value ?? session.model;
     // Once per (run, selector, effort): the session object's identity changes
     // on unrelated actions, and each re-render must not re-send the same frame.
-    const key = `${model.runId ?? ""}|${selector}|${session.effort ?? ""}`;
+    const key = `${snapshot.runId ?? ""}|${selector}|${session.effort ?? ""}`;
     if (lastPushedPick.current === key) return;
     lastPushedPick.current = key;
     bridge.setModel({ model: selector, effort: session.effort }).catch(() => undefined);
-  }, [bridge, model.cachedModels, model.runId, model.runPhase, model.session]);
+  }, [bridge, store]);
+  useEffect(() => {
+    reconcilePendingModelPick();
+  }, [
+    model.cachedModels,
+    model.runId,
+    model.runPhase,
+    model.session,
+    reconcilePendingModelPick
+  ]);
+
+  useEffect(() => {
+    let scheduled = false;
+    let cancelled = false;
+    const runHiddenLifecycle = () => {
+      scheduled = false;
+      if (cancelled || store.getPresentationVisible()) return;
+      refreshSettledContext();
+      reconcileStrandedMessages();
+      reconcilePendingModelPick();
+    };
+    const unsubscribe = store.subscribeExecution(() => {
+      if (store.getPresentationVisible() || scheduled) return;
+      scheduled = true;
+      queueMicrotask(runHiddenLifecycle);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [
+    reconcilePendingModelPick,
+    reconcileStrandedMessages,
+    refreshSettledContext,
+    store
+  ]);
 
   const interrupt = useCallback(
     (cancelQueued: boolean) => {

@@ -21,11 +21,15 @@ export class HarnessStore {
   private queue: NativeEvent[] = [];
   private scheduled: ScheduledDrain | undefined;
   private rootListeners = new Set<Listener>();
+  private executionListeners = new Set<Listener>();
   private presentationListeners = new Set<Listener>();
   private turnListeners = new Map<string, Set<Listener>>();
   private presentationVisible = true;
   private documentEpoch: string | undefined;
   private appliedSequence = 0;
+  private pendingRevealTarget: number | undefined;
+  private deferredRootNotification = false;
+  private deferredTurnNotifications = new Set<string>();
   private lastTurnRevisions = new Map<string, number>();
   private lastRelaysByTurn = new Map<string, RelayRecord | undefined>();
   private lastTurnIds: string[] = [];
@@ -38,6 +42,14 @@ export class HarnessStore {
     this.rootListeners.add(listener);
     return () => {
       this.rootListeners.delete(listener);
+    };
+  };
+
+  /** Non-presentation lifecycle work stays live while React publication is deferred. */
+  subscribeExecution = (listener: Listener): (() => void) => {
+    this.executionListeners.add(listener);
+    return () => {
+      this.executionListeners.delete(listener);
     };
   };
 
@@ -73,25 +85,58 @@ export class HarnessStore {
     this.turnSnapshots.get(turnId);
 
   /**
-   * Test seam for the versioned transport. Production keeps using `receiveBatch`
-   * until the behavior implementation commit wires this method into the bridge.
+   * Reduce one native contract synchronously. Returning means every event through
+   * `highestSequence` is already reflected by the reducer and stable snapshots.
    */
   receiveEnvelope = (envelope: NativeEventEnvelope): NativeEventAcknowledgement | undefined => {
-    this.documentEpoch = envelope.documentEpoch;
-    this.appliedSequence = envelope.highestSequence;
-    this.receive(envelope.events);
+    if (!this.isValidEnvelope(envelope)) return undefined;
+    if (this.documentEpoch === undefined) {
+      this.documentEpoch = envelope.documentEpoch;
+    } else if (this.documentEpoch !== envelope.documentEpoch) {
+      return undefined;
+    }
+
+    if (envelope.highestSequence <= this.appliedSequence) {
+      return this.acknowledgement(envelope.documentEpoch, envelope.highestSequence);
+    }
+    if (envelope.firstSequence !== this.appliedSequence + 1) return undefined;
+
+    for (const event of envelope.events) this.queue.push(event);
     this.flushNow();
-    return {
-      version: 1,
-      documentEpoch: envelope.documentEpoch,
-      highestSequence: envelope.highestSequence
-    };
+    this.appliedSequence = envelope.highestSequence;
+    this.completePendingRevealIfReady();
+    return this.acknowledgement(envelope.documentEpoch, envelope.highestSequence);
   };
 
-  setPresentationVisibility = (control: PresentationVisibilityControl): void => {
-    this.documentEpoch = control.documentEpoch;
-    this.presentationVisible = control.visible;
-    for (const listener of this.presentationListeners) listener();
+  setPresentationVisibility = (control: PresentationVisibilityControl): boolean => {
+    if (
+      control.documentEpoch.length === 0 ||
+      !Number.isSafeInteger(control.targetSequence) ||
+      control.targetSequence < 0
+    ) {
+      return false;
+    }
+    if (this.documentEpoch === undefined) {
+      this.documentEpoch = control.documentEpoch;
+    } else if (this.documentEpoch !== control.documentEpoch) {
+      return false;
+    }
+
+    if (!control.visible) {
+      this.pendingRevealTarget = undefined;
+      this.setEffectivePresentationVisibility(false);
+      return true;
+    }
+
+    if (this.appliedSequence < control.targetSequence) {
+      this.pendingRevealTarget = control.targetSequence;
+      this.setEffectivePresentationVisibility(false);
+      return false;
+    }
+
+    this.pendingRevealTarget = undefined;
+    this.revealAndPublishDeferredChanges();
+    return true;
   };
 
   receive = (events: NativeEvent[]): void => {
@@ -115,6 +160,28 @@ export class HarnessStore {
     }
     this.drain();
   };
+
+  private isValidEnvelope(envelope: NativeEventEnvelope): boolean {
+    if (
+      envelope.version !== 1 ||
+      envelope.documentEpoch.length === 0 ||
+      envelope.events.length === 0 ||
+      !Number.isSafeInteger(envelope.firstSequence) ||
+      !Number.isSafeInteger(envelope.highestSequence) ||
+      envelope.firstSequence < 1 ||
+      envelope.highestSequence < envelope.firstSequence
+    ) {
+      return false;
+    }
+    return envelope.highestSequence - envelope.firstSequence + 1 === envelope.events.length;
+  }
+
+  private acknowledgement(
+    documentEpoch: string,
+    highestSequence: number
+  ): NativeEventAcknowledgement {
+    return { version: 1, documentEpoch, highestSequence };
+  }
 
   private schedule(): void {
     if (this.scheduled) return;
@@ -167,14 +234,10 @@ export class HarnessStore {
       if (revisionChanged || relayChanged) changedIds.push(turn.id);
     }
 
-    // Publish snapshots before listeners run: useSyncExternalStore reads them
-    // synchronously from inside the notification.
+    // Publish snapshots before every listener: both execution subscribers and
+    // useSyncExternalStore read them synchronously from their notification.
     this.turnsById = nextTurnsById;
     this.turnSnapshots = nextSnapshots;
-    for (const id of changedIds) {
-      for (const listener of this.turnListeners.get(id) ?? []) listener();
-    }
-
     if (structureChanged) {
       this.lastTurnIds = ids;
       const live = new Set(ids);
@@ -184,6 +247,40 @@ export class HarnessStore {
         this.lastRelaysByTurn.delete(id);
       }
     }
+
+    if (this.presentationVisible) {
+      for (const id of changedIds) this.notifyTurn(id);
+      for (const listener of this.rootListeners) listener();
+    } else {
+      for (const id of changedIds) this.deferredTurnNotifications.add(id);
+      this.deferredRootNotification = true;
+    }
+    for (const listener of this.executionListeners) listener();
+  }
+
+  private notifyTurn(turnId: string): void {
+    for (const listener of this.turnListeners.get(turnId) ?? []) listener();
+  }
+
+  private setEffectivePresentationVisibility(visible: boolean): void {
+    if (this.presentationVisible === visible) return;
+    this.presentationVisible = visible;
+    for (const listener of this.presentationListeners) listener();
+  }
+
+  private completePendingRevealIfReady(): void {
+    const target = this.pendingRevealTarget;
+    if (target === undefined || this.appliedSequence < target) return;
+    this.pendingRevealTarget = undefined;
+    this.revealAndPublishDeferredChanges();
+  }
+
+  private revealAndPublishDeferredChanges(): void {
+    this.setEffectivePresentationVisibility(true);
+    for (const id of this.deferredTurnNotifications) this.notifyTurn(id);
+    this.deferredTurnNotifications.clear();
+    if (!this.deferredRootNotification) return;
+    this.deferredRootNotification = false;
     for (const listener of this.rootListeners) listener();
   }
 }

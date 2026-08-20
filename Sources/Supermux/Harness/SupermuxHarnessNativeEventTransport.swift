@@ -1,9 +1,20 @@
+import CoreFoundation
 import Foundation
 
 struct SupermuxHarnessNativeEventTransportConfiguration {
-    var maximumEventCountPerBatch = 64
-    var maximumEncodedBatchBytes = 256 * 1024
-    var maximumBacklogBytes = 8 * 1024 * 1024
+    var maximumEventCountPerBatch: Int
+    var maximumEncodedBatchBytes: Int
+    var maximumBacklogBytes: Int
+
+    init(
+        maximumEventCountPerBatch: Int = 64,
+        maximumEncodedBatchBytes: Int = 8 * 1024 * 1024,
+        maximumBacklogBytes: Int = 32 * 1024 * 1024
+    ) {
+        self.maximumEventCountPerBatch = max(1, maximumEventCountPerBatch)
+        self.maximumEncodedBatchBytes = max(1, maximumEncodedBatchBytes)
+        self.maximumBacklogBytes = max(1, maximumBacklogBytes)
+    }
 }
 
 enum SupermuxHarnessNativeEventEnqueueResult: Equatable {
@@ -35,6 +46,8 @@ struct SupermuxHarnessNativeEventEnvelope {
 }
 
 struct SupermuxHarnessNativeEventAcknowledgement {
+    private static let maximumJavaScriptInteger = 9_007_199_254_740_991.0
+
     let version: Int
     let documentEpoch: String
     let highestSequence: UInt64
@@ -43,6 +56,7 @@ struct SupermuxHarnessNativeEventAcknowledgement {
         guard let body = body as? [String: Any],
               let version = Self.integer(body["version"]),
               let documentEpoch = body["documentEpoch"] as? String,
+              !documentEpoch.isEmpty,
               let highestSequence = Self.uint64(body["highestSequence"]) else {
             return nil
         }
@@ -52,32 +66,48 @@ struct SupermuxHarnessNativeEventAcknowledgement {
     }
 
     private static func integer(_ value: Any?) -> Int? {
+        guard let number = number(value) else { return nil }
+        let double = number.doubleValue
+        guard double.isFinite,
+              double.rounded(.towardZero) == double,
+              double >= Double(Int.min),
+              double <= Double(Int.max) else {
+            return nil
+        }
+        return Int(double)
+    }
+
+    private static func uint64(_ value: Any?) -> UInt64? {
+        guard let number = number(value) else { return nil }
+        let double = number.doubleValue
+        guard double.isFinite,
+              double.rounded(.towardZero) == double,
+              double >= 0,
+              double <= maximumJavaScriptInteger else {
+            return nil
+        }
+        return UInt64(double)
+    }
+
+    private static func number(_ value: Any?) -> NSNumber? {
         guard let number = value as? NSNumber,
               CFGetTypeID(number) != CFBooleanGetTypeID() else {
             return nil
         }
-        return number.intValue
-    }
-
-    private static func uint64(_ value: Any?) -> UInt64? {
-        guard let number = value as? NSNumber,
-              CFGetTypeID(number) != CFBooleanGetTypeID(),
-              number.int64Value >= 0 else {
-            return nil
-        }
-        return number.uint64Value
+        return number
     }
 }
 
-/// Testable state seam for the native-to-document event queue.
+/// One-document, one-in-flight native event queue.
 ///
-/// This type is intentionally not wired into the renderer yet. The transport
-/// behavior lands in the follow-up implementation commit after its executable
-/// regression contract is committed separately.
+/// The queue retains every event until JavaScript returns the exact epoch and
+/// highest sequence for the current envelope. `recoveryRequired` is flow
+/// control: the producer waits for an acknowledgement and retries the enqueue,
+/// so the byte budget never turns into event loss.
 @MainActor
 final class SupermuxHarnessNativeEventTransport {
     private struct PendingEvent {
-        let sequence: UInt64
+        var sequence: UInt64
         let event: [String: Any]
         let encodedByteCount: Int
     }
@@ -86,8 +116,11 @@ final class SupermuxHarnessNativeEventTransport {
     private let epochGenerator: () -> String
     private(set) var documentEpoch: String
     private(set) var nextSequence: UInt64 = 1
-    private var pending: [PendingEvent] = []
+    private var pending: [PendingEvent?] = []
+    private var pendingStartIndex = 0
+    private var pendingEncodedByteCount = 0
     private var inFlightEnvelope: SupermuxHarnessNativeEventEnvelope?
+    private var inFlightEventCount = 0
 
     init(
         configuration: SupermuxHarnessNativeEventTransportConfiguration = .init(),
@@ -98,68 +131,141 @@ final class SupermuxHarnessNativeEventTransport {
         documentEpoch = epochGenerator()
     }
 
-    var pendingEventCount: Int { pending.count }
+    var pendingEventCount: Int { pending.count - pendingStartIndex }
     var hasInFlightEnvelope: Bool { inFlightEnvelope != nil }
-    var backlogByteCount: Int { pending.reduce(0) { $0 + $1.encodedByteCount } }
+    var backlogByteCount: Int { pendingEncodedByteCount }
     var highestEnqueuedSequence: UInt64 { nextSequence &- 1 }
 
     @discardableResult
     func beginDocumentNavigation() -> String {
+        let liveEvents = pending[pendingStartIndex...].compactMap { $0 }
         documentEpoch = epochGenerator()
-        nextSequence = 1
-        inFlightEnvelope = nil
-        pending = pending.enumerated().map { index, item in
+        pending = liveEvents.enumerated().map { index, item in
             PendingEvent(
                 sequence: UInt64(index + 1),
                 event: item.event,
                 encodedByteCount: item.encodedByteCount
             )
         }
+        pendingStartIndex = 0
         nextSequence = UInt64(pending.count + 1)
+        inFlightEnvelope = nil
+        inFlightEventCount = 0
         return documentEpoch
     }
 
     func enqueue(_ event: [String: Any]) -> SupermuxHarnessNativeEventEnqueueResult {
-        guard let encoded = try? JSONSerialization.data(withJSONObject: event, options: [.sortedKeys]) else {
+        guard nextSequence < UInt64.max,
+              let encoded = try? JSONSerialization.data(withJSONObject: event, options: [.sortedKeys]),
+              encoded.count <= configuration.maximumBacklogBytes,
+              pendingEncodedByteCount <= configuration.maximumBacklogBytes - encoded.count else {
             return .recoveryRequired
         }
+        let singleEnvelope = SupermuxHarnessNativeEventEnvelope(
+            documentEpoch: documentEpoch,
+            firstSequence: nextSequence,
+            highestSequence: nextSequence,
+            events: [event]
+        )
+        guard let singleEnvelopeBytes = singleEnvelope.encodedData?.count,
+              singleEnvelopeBytes <= configuration.maximumEncodedBatchBytes else {
+            return .recoveryRequired
+        }
+
         pending.append(PendingEvent(
             sequence: nextSequence,
             event: event,
             encodedByteCount: encoded.count
         ))
+        pendingEncodedByteCount += encoded.count
         nextSequence &+= 1
         return .accepted
     }
 
     func nextEnvelope() -> SupermuxHarnessNativeEventEnvelope? {
         if let inFlightEnvelope { return inFlightEnvelope }
-        guard !pending.isEmpty else { return nil }
-        let count = min(configuration.maximumEventCountPerBatch, pending.count)
-        let batch = Array(pending.prefix(count))
-        pending.removeFirst(count)
-        let envelope = SupermuxHarnessNativeEventEnvelope(
-            documentEpoch: documentEpoch,
-            firstSequence: batch[0].sequence,
-            highestSequence: batch[batch.count - 1].sequence,
-            events: batch.map(\.event)
-        )
-        inFlightEnvelope = envelope
-        return envelope
+        guard pendingEventCount > 0 else { return nil }
+
+        let maximumCount = min(configuration.maximumEventCountPerBatch, pendingEventCount)
+        let candidates = pending[pendingStartIndex..<(pendingStartIndex + maximumCount)].compactMap { $0 }
+        guard let first = candidates.first else { return nil }
+
+        var lowerBound = 1
+        var upperBound = candidates.count
+        var selectedCount = 0
+        var selectedEnvelope: SupermuxHarnessNativeEventEnvelope?
+        while lowerBound <= upperBound {
+            let candidateCount = lowerBound + (upperBound - lowerBound) / 2
+            let batch = candidates.prefix(candidateCount)
+            guard let last = batch.last else { return nil }
+            let envelope = SupermuxHarnessNativeEventEnvelope(
+                documentEpoch: documentEpoch,
+                firstSequence: first.sequence,
+                highestSequence: last.sequence,
+                events: batch.map(\.event)
+            )
+            guard let byteCount = envelope.encodedData?.count else { return nil }
+            if byteCount <= configuration.maximumEncodedBatchBytes {
+                selectedCount = candidateCount
+                selectedEnvelope = envelope
+                lowerBound = candidateCount + 1
+            } else {
+                upperBound = candidateCount - 1
+            }
+        }
+
+        guard let selectedEnvelope, selectedCount > 0 else { return nil }
+        inFlightEnvelope = selectedEnvelope
+        inFlightEventCount = selectedCount
+        return selectedEnvelope
     }
 
     @discardableResult
-    func acknowledge(_ acknowledgement: SupermuxHarnessNativeEventAcknowledgement) -> Bool {
+    func acknowledge(
+        _ acknowledgement: SupermuxHarnessNativeEventAcknowledgement
+    ) -> Bool {
         guard acknowledgement.version == SupermuxHarnessNativeEventEnvelope.currentVersion,
               acknowledgement.documentEpoch == documentEpoch,
-              acknowledgement.highestSequence == inFlightEnvelope?.highestSequence else {
+              let inFlightEnvelope,
+              acknowledgement.highestSequence == inFlightEnvelope.highestSequence,
+              inFlightEventCount > 0 else {
             return false
         }
-        inFlightEnvelope = nil
+
+        let acknowledgedEndIndex = pendingStartIndex + inFlightEventCount
+        for index in pendingStartIndex..<acknowledgedEndIndex {
+            guard let item = pending[index] else { continue }
+            pendingEncodedByteCount -= item.encodedByteCount
+            pending[index] = nil
+        }
+        pendingStartIndex = acknowledgedEndIndex
+        self.inFlightEnvelope = nil
+        inFlightEventCount = 0
+        compactPendingStorageIfNeeded()
         return true
     }
 
-    func deliveryFailed() {
+    func discardAll() {
+        pending.removeAll(keepingCapacity: false)
+        pendingStartIndex = 0
+        pendingEncodedByteCount = 0
         inFlightEnvelope = nil
+        inFlightEventCount = 0
+        nextSequence = 1
+    }
+
+    /// A failed evaluation changes no queue state; `nextEnvelope()` returns the
+    /// same epoch, range, and events for an at-least-once retry.
+    func deliveryFailed() {}
+
+    private func compactPendingStorageIfNeeded() {
+        if pendingStartIndex == pending.count {
+            pending.removeAll(keepingCapacity: true)
+            pendingStartIndex = 0
+            return
+        }
+        guard pendingStartIndex >= 1_024 else { return }
+        pending.removeFirst(pendingStartIndex)
+        pendingStartIndex = 0
     }
 }

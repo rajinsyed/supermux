@@ -5,6 +5,7 @@ import WebKit
 struct SupermuxHarnessWebRenderer: NSViewRepresentable {
     let panel: SupermuxHarnessPanel
     let isFocused: Bool
+    let isPresentationVisible: Bool
     let backgroundColor: NSColor
     let theme: AgentSessionWebTheme
     let sessionContentWidthPresentation: SessionContentWidthPresentation
@@ -17,26 +18,34 @@ struct SupermuxHarnessWebRenderer: NSViewRepresentable {
             workingDirectory: panel.workingDirectory,
             restoreState: panel.restoreState,
             theme: theme,
-            isFocused: isFocused
+            isFocused: isFocused,
+            isPresentationVisible: isPresentationVisible
         )
     }
 
     func makeNSView(context: Context) -> NSView {
-        let host = SupermuxHarnessWebHostView()
+        let host = SupermuxHarnessWebHostView(
+            ownershipGeneration: context.coordinator.issueHostGeneration()
+        )
         host.wantsLayer = true
         applyBackground(to: host)
+        host.setCompositorPresentationVisible(false)
         return host
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard let host = nsView as? SupermuxHarnessWebHostView else { return }
+        guard let host = nsView as? SupermuxHarnessWebHostView,
+              context.coordinator.claimHost(host) else {
+            return
+        }
         context.coordinator.bind(
             panelId: panel.id,
             workspaceId: panel.workspaceId,
             workingDirectory: panel.workingDirectory,
             restoreState: panel.restoreState,
             theme: theme,
-            isFocused: isFocused
+            isFocused: isFocused,
+            isPresentationVisible: isPresentationVisible
         )
         let webView = context.coordinator.ensureWebView(onPointerDown: onRequestPanelFocus)
         webView.onPointerDown = onRequestPanelFocus
@@ -46,24 +55,23 @@ struct SupermuxHarnessWebRenderer: NSViewRepresentable {
         applyBackground(to: webView)
         applyAppearance(to: webView)
         host.setSessionContentWidthPresentation(sessionContentWidthPresentation)
-        host.attachWebView(webView)
-        host.onDidMoveToWindow = { [weak coordinator = context.coordinator] in
-            coordinator?.loadShellIfNeeded()
-            coordinator?.flushVisiblePaintIfReady()
+        context.coordinator.attachWebView(webView, to: host)
+        host.onDidMoveToWindow = { [weak coordinator = context.coordinator, weak host] in
+            coordinator?.hostDidMoveToWindow(host)
         }
-        host.onGeometryChanged = { [weak coordinator = context.coordinator] in
-            coordinator?.flushVisiblePaintIfReady()
+        host.onGeometryChanged = { [weak coordinator = context.coordinator, weak host] in
+            coordinator?.hostGeometryDidChange(host)
         }
         context.coordinator.loadShellIfNeeded()
         context.coordinator.flushVisiblePaintIfReady()
-        if isFocused {
+        if isFocused && isPresentationVisible {
             context.coordinator.focus()
         }
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: SupermuxHarnessWebRendererCoordinator) {
         if let host = nsView as? SupermuxHarnessWebHostView {
-            host.detachHostedWebViewIfOwned(coordinator.webView)
+            coordinator.releaseHost(host)
             host.onDidMoveToWindow = nil
             host.onGeometryChanged = nil
         }

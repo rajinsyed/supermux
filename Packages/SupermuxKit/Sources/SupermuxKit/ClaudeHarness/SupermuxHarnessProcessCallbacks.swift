@@ -1,6 +1,8 @@
 /// Receives every valid JSON object parsed from Claude Code stdout.
-public typealias SupermuxHarnessProtocolLineSink = @MainActor @Sendable (SupermuxHarnessDecodedLine) -> Void
+/// The process reader awaits completion before it drains the next line.
+public typealias SupermuxHarnessProtocolLineSink = @MainActor @Sendable (SupermuxHarnessDecodedLine) async -> Void
 /// Receives stderr text exactly as it is drained from the process line buffer.
-public typealias SupermuxHarnessStderrSink = @MainActor @Sendable (String) -> Void
+/// The process reader awaits completion before it drains the next line.
+public typealias SupermuxHarnessStderrSink = @MainActor @Sendable (String) async -> Void
 /// Receives process start and fully-drained exit events.
 public typealias SupermuxHarnessLifecycleSink = @MainActor @Sendable (SupermuxHarnessProcessLifecycleEvent) -> Void

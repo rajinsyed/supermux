@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useCopy } from "../CopyContext";
 import { formatDuration } from "../format";
+import { usePresentationVisible } from "../presentationVisibility";
 
 /**
  * One shared ticker drives every elapsed label via direct textContent writes —
@@ -41,8 +42,10 @@ export function Elapsed({
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const copy = useCopy();
+  const presentationVisible = usePresentationVisible();
 
   useEffect(() => {
+    if (!presentationVisible) return;
     let last = "";
     const write = () => {
       const node = ref.current;
@@ -60,7 +63,7 @@ export function Elapsed({
       subscribers.delete(write);
       releaseTicker();
     };
-  }, [copy, startedAtMs, prefix, suffix]);
+  }, [copy, presentationVisible, prefix, startedAtMs, suffix]);
 
   return <span ref={ref} className={className} />;
 }
