@@ -63,6 +63,40 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
         #expect(eventIDs(freshConsumer) == ["event-1", "event-2"])
     }
 
+    @Test func laggingConsumersReceiveAReconciliableDeltaOrReplacement() async throws {
+        let sandbox = try makeSandbox(named: "consumer-reconciliation")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        try sandbox.createTranscriptDirectory()
+        try sandbox.write([assistantLine(uuid: "event-1", text: "one")])
+        let first = try await sandbox.service.loadTranscript(at: sandbox.address, afterRevision: nil)
+
+        try sandbox.append([assistantLine(uuid: "event-2", text: "two")])
+        let second = try await sandbox.service.loadTranscript(
+            at: sandbox.address,
+            afterRevision: first.revision
+        )
+        let secondConsumer = try await sandbox.service.loadTranscript(
+            at: sandbox.address,
+            afterRevision: first.revision
+        )
+        #expect(!secondConsumer.replace)
+        #expect(secondConsumer.revision == second.revision)
+        #expect(eventIDs(secondConsumer) == ["event-2"])
+
+        try sandbox.append([assistantLine(uuid: "event-3", text: "three")])
+        let third = try await sandbox.service.loadTranscript(
+            at: sandbox.address,
+            afterRevision: second.revision
+        )
+        let staleConsumer = try await sandbox.service.loadTranscript(
+            at: sandbox.address,
+            afterRevision: first.revision
+        )
+        #expect(staleConsumer.replace)
+        #expect(staleConsumer.revision == third.revision)
+        #expect(eventIDs(staleConsumer) == ["event-1", "event-2", "event-3"])
+    }
+
     @Test func rewriteTruncateReplacementAndDeletionNeverMasqueradeAsAppend() async throws {
         let sandbox = try makeSandbox(named: "replacement")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
@@ -264,7 +298,10 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
         let scanGate = ScanGate()
         let sandbox = try makeSandbox(
             named: "single-flight",
-            instrumentation: .init(willStartScan: { await scanGate.scanWillStart() })
+            instrumentation: .init(
+                didBeginRequest: { await scanGate.requestDidBegin() },
+                willStartScan: { await scanGate.scanWillStart() }
+            )
         )
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
         try sandbox.createTranscriptDirectory()
@@ -286,13 +323,90 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
             return try await sandbox.service.loadTranscript(at: sandbox.address, afterRevision: nil)
         }
         await followersReady.waitUntilReady()
-        for _ in 0..<8 { await Task.yield() }
+        await scanGate.waitUntilRequestCount(3)
         await scanGate.releaseFirstScan()
 
         let updates = try await [first.value, second.value, third.value]
-        #expect(await scanGate.startedScanCount() == 2)
+        let scanCount = await scanGate.startedScanCount()
+        #expect(scanCount == 2)
         #expect(updates.allSatisfy { eventIDs($0) == ["event-1", "event-2"] })
         #expect(Set(updates.map(\.revision)).count == 1)
+    }
+
+    @Test func rewriteDuringAnAppendScanForcesTheDirtyRerunToStartFull() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-transcript-behavior-mid-scan-rewrite-\(UUID().uuidString)")
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        let working = root.appendingPathComponent("working", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: working, withIntermediateDirectories: true)
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projects,
+            fileManager: .default
+        )
+        let projectName = try #require(discovery.mungedProjectDirectoryNames(for: working).first)
+        let transcriptDirectory = projects
+            .appendingPathComponent(projectName, isDirectory: true)
+            .appendingPathComponent("session", isDirectory: true)
+            .appendingPathComponent("subagents", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: transcriptDirectory,
+            withIntermediateDirectories: true
+        )
+        let transcriptURL = transcriptDirectory.appendingPathComponent("agent-task.jsonl")
+        let oldLines = (0..<300).map { index in
+            assistantLine(uuid: "old-\(index)", text: String(repeating: "o", count: 64))
+        }
+        try (oldLines.joined(separator: "\n") + "\n")
+            .write(to: transcriptURL, atomically: false, encoding: .utf8)
+        let replacementLines = (0..<3_000).map { index in
+            assistantLine(uuid: "new-\(index)", text: String(repeating: "n", count: 96))
+        }
+        let tracker = TranscriptMutationTracker(
+            transcriptURL: transcriptURL,
+            replacementData: Data((replacementLines.joined(separator: "\n") + "\n").utf8)
+        )
+        let service = SupermuxHarnessSubagentTranscriptService(
+            projectsRootURL: projects,
+            fileManager: .default,
+            scanInstrumentation: .init(
+                willStartScan: { tracker.recordScanStart() },
+                willProcessChunk: { tracker.mutateWhenArmed() }
+            )
+        )
+        let address = SupermuxHarnessSubagentTranscriptAddress.localAgent(
+            workingDirectoryURL: working,
+            sessionID: "session",
+            taskID: "task"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let initial = try await service.loadTranscript(at: address, afterRevision: nil)
+        let before = try FileManager.default.attributesOfItem(atPath: transcriptURL.path)
+        let inode = (before[.systemFileNumber] as? NSNumber)?.uint64Value
+        let appendHandle = try FileHandle(forWritingTo: transcriptURL)
+        try appendHandle.seekToEnd()
+        let appendedLines = (0..<2_000).map { index in
+            assistantLine(uuid: "append-\(index)", text: String(repeating: "a", count: 64))
+        }
+        try appendHandle.write(contentsOf: Data((appendedLines.joined(separator: "\n") + "\n").utf8))
+        try appendHandle.close()
+        let grown = try FileManager.default.attributesOfItem(atPath: transcriptURL.path)
+        let grownByteCount = try #require((grown[.size] as? NSNumber)?.uint64Value)
+        tracker.arm()
+
+        let update = try await service.loadTranscript(
+            at: address,
+            afterRevision: initial.revision
+        )
+        let after = try FileManager.default.attributesOfItem(atPath: transcriptURL.path)
+        #expect((after[.systemFileNumber] as? NSNumber)?.uint64Value == inode)
+        #expect((after[.size] as? NSNumber)?.uint64Value ?? 0 > grownByteCount)
+        #expect(tracker.scanStartCount == 3)
+        #expect(update.replace)
+        #expect(update.events.first?.string(forKey: "uuid") == "new-0")
+        #expect(update.events.last?.string(forKey: "uuid") == "new-2999")
+        #expect(!eventIDs(update).contains("old-0"))
     }
 
     @Test func scansUseBoundedChunksAndDrainEveryChunkPool() async throws {
@@ -314,6 +428,127 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
         let snapshot = tracker.snapshot()
         #expect(snapshot.processed > 1)
         #expect(snapshot.drained == snapshot.processed)
+    }
+
+    @Test func workflowAddressesUseTheirRunDirectoryAndPreservePathSafety() async throws {
+        let sandbox = try makeSandbox(named: "workflow-path")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let workflowDirectory = sandbox.transcriptDirectory
+            .appendingPathComponent("workflows", isDirectory: true)
+            .appendingPathComponent("wf-run", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workflowDirectory,
+            withIntermediateDirectories: true
+        )
+        let workflowURL = workflowDirectory.appendingPathComponent("agent-worker.jsonl")
+        try sandbox.write(
+            [assistantLine(uuid: "workflow-event", text: "answer")],
+            to: workflowURL
+        )
+        let workflowAddress = SupermuxHarnessSubagentTranscriptAddress.workflowAgent(
+            workingDirectoryURL: sandbox.working,
+            sessionID: "session",
+            workflowRunID: "wf-run",
+            agentID: "worker"
+        )
+
+        let workflow = try await sandbox.service.loadTranscript(
+            at: workflowAddress,
+            afterRevision: nil
+        )
+        #expect(eventIDs(workflow) == ["workflow-event"])
+
+        await #expect(throws: SupermuxHarnessSubagentTranscriptReaderError.invalidIdentifier) {
+            try await sandbox.service.loadTranscript(
+                at: .localAgent(
+                    workingDirectoryURL: sandbox.working,
+                    sessionID: "session",
+                    taskID: "../escape"
+                ),
+                afterRevision: nil
+            )
+        }
+
+        try sandbox.createTranscriptDirectory()
+        let foreignDirectory = sandbox.root.appendingPathComponent("foreign", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: foreignDirectory,
+            withIntermediateDirectories: true
+        )
+        let foreignLine = "{\"type\":\"assistant\",\"uuid\":\"foreign\",\"cwd\":\"\(foreignDirectory.path)\",\"message\":{\"role\":\"assistant\",\"content\":\"private\"}}"
+        try sandbox.write([foreignLine])
+        await #expect(throws: SupermuxHarnessSubagentTranscriptReaderError.unsafeTranscriptPath) {
+            try await sandbox.service.loadTranscript(at: sandbox.address, afterRevision: nil)
+        }
+    }
+
+    @Test func overlongRecordsStayBoundedAndDoNotHideFollowingJSON() async throws {
+        let sandbox = try makeSandbox(named: "overlong")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        try sandbox.createTranscriptDirectory()
+        let overlong = String(repeating: "x", count: SupermuxLineReader.maximumLineBytes + 1)
+        try sandbox.write([
+            overlong,
+            assistantLine(uuid: "after-overlong", text: "visible"),
+        ])
+
+        let update = try await sandbox.service.loadTranscript(at: sandbox.address, afterRevision: nil)
+        #expect(eventIDs(update) == ["after-overlong"])
+    }
+
+    @Test func metadataMutationDuringAChunkTriggersOneStableRerun() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-transcript-behavior-meta-dirty-\(UUID().uuidString)")
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        let working = root.appendingPathComponent("working", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: working, withIntermediateDirectories: true)
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projects,
+            fileManager: .default
+        )
+        let projectName = try #require(discovery.mungedProjectDirectoryNames(for: working).first)
+        let transcriptDirectory = projects
+            .appendingPathComponent(projectName, isDirectory: true)
+            .appendingPathComponent("session", isDirectory: true)
+            .appendingPathComponent("subagents", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: transcriptDirectory,
+            withIntermediateDirectories: true
+        )
+        let transcriptURL = transcriptDirectory.appendingPathComponent("agent-task.jsonl")
+        let metadataURL = transcriptDirectory.appendingPathComponent("agent-task.meta.json")
+        try (0..<2_000).map { index in
+            assistantLine(uuid: "event-\(index)", text: String(repeating: "x", count: 48))
+        }.joined(separator: "\n").appending("\n")
+            .write(to: transcriptURL, atomically: false, encoding: .utf8)
+        try JSONSerialization.data(withJSONObject: ["description": "Before"])
+            .write(to: metadataURL)
+        let tracker = MetadataMutationTracker(metadataURL: metadataURL)
+        let service = SupermuxHarnessSubagentTranscriptService(
+            projectsRootURL: projects,
+            fileManager: .default,
+            scanInstrumentation: .init(
+                willStartScan: { tracker.recordScanStart() },
+                willProcessChunk: { tracker.mutateOnce() }
+            )
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let update = try await service.loadTranscript(
+            at: .localAgent(
+                workingDirectoryURL: working,
+                sessionID: "session",
+                taskID: "task"
+            ),
+            afterRevision: nil
+        )
+        #expect(tracker.scanStartCount == 2)
+        #expect(update.metadata == .value(SupermuxHarnessSubagentTranscriptMetadata(
+            agentType: nil,
+            description: "After",
+            spawnDepth: nil
+        )))
     }
 
     @Test func cacheEvictsByEntryCountAndByteCount() async throws {
@@ -338,6 +573,36 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
         #expect(entrySnapshot.entryCount == 2)
         #expect(entrySnapshot.retainedByteCount > 0)
         #expect(entrySnapshot.retainedByteCount <= 1 << 20)
+
+        let revisionAfterEviction = try makeSandbox(
+            named: "lru-revision",
+            maximumCachedEntries: 1,
+            maximumCachedBytes: 1 << 20
+        )
+        defer { try? FileManager.default.removeItem(at: revisionAfterEviction.root) }
+        try revisionAfterEviction.createTranscriptDirectory()
+        try revisionAfterEviction.write(
+            [assistantLine(uuid: "one", text: "value")],
+            to: revisionAfterEviction.transcriptURL(taskID: "one")
+        )
+        try revisionAfterEviction.write(
+            [assistantLine(uuid: "two", text: "value")],
+            to: revisionAfterEviction.transcriptURL(taskID: "two")
+        )
+        let beforeEviction = try await revisionAfterEviction.service.loadTranscript(
+            at: revisionAfterEviction.address(taskID: "one"),
+            afterRevision: nil
+        )
+        _ = try await revisionAfterEviction.service.loadTranscript(
+            at: revisionAfterEviction.address(taskID: "two"),
+            afterRevision: nil
+        )
+        let afterEviction = try await revisionAfterEviction.service.loadTranscript(
+            at: revisionAfterEviction.address(taskID: "one"),
+            afterRevision: beforeEviction.revision
+        )
+        #expect(afterEviction.replace)
+        #expect(afterEviction.revision > beforeEviction.revision)
 
         let byBytes = try makeSandbox(
             named: "lru-bytes",
@@ -407,6 +672,59 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
         let drained: Int
     }
 
+    /// One target has one scanner, so these hooks are serial; the suite reads only after awaiting it.
+    private final class TranscriptMutationTracker: @unchecked Sendable {
+        private let transcriptURL: URL
+        private let replacementData: Data
+        private var isArmed = false
+        private var didMutate = false
+        private(set) var scanStartCount = 0
+
+        init(transcriptURL: URL, replacementData: Data) {
+            self.transcriptURL = transcriptURL
+            self.replacementData = replacementData
+        }
+
+        func recordScanStart() {
+            scanStartCount += 1
+        }
+
+        func arm() {
+            isArmed = true
+        }
+
+        func mutateWhenArmed() {
+            guard isArmed, !didMutate else { return }
+            didMutate = true
+            let handle = try? FileHandle(forWritingTo: transcriptURL)
+            try? handle?.truncate(atOffset: 0)
+            try? handle?.write(contentsOf: replacementData)
+            try? handle?.close()
+        }
+    }
+
+    /// One target has one scanner, so these hooks are serial; the suite reads only after awaiting it.
+    private final class MetadataMutationTracker: @unchecked Sendable {
+        private let metadataURL: URL
+        private var didMutate = false
+        private(set) var scanStartCount = 0
+
+        init(metadataURL: URL) {
+            self.metadataURL = metadataURL
+        }
+
+        func recordScanStart() {
+            scanStartCount += 1
+        }
+
+        func mutateOnce() {
+            guard !didMutate else { return }
+            didMutate = true
+            let data = try? JSONSerialization.data(withJSONObject: ["description": "After"])
+            try? data?.write(to: metadataURL)
+        }
+    }
+
     /// The service invokes chunk hooks serially; the serialized suite reads only after awaiting the scan.
     private final class ChunkTracker: @unchecked Sendable {
         private var processed = 0
@@ -418,10 +736,26 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
     }
 
     private actor ScanGate {
+        private var requests = 0
         private var starts = 0
+        private var requestCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
         private var firstStartedWaiters: [CheckedContinuation<Void, Never>] = []
         private var firstReleaseWaiters: [CheckedContinuation<Void, Never>] = []
         private var firstReleased = false
+
+        func requestDidBegin() {
+            requests += 1
+            let ready = requestCountWaiters.filter { requests >= $0.0 }
+            requestCountWaiters.removeAll { requests >= $0.0 }
+            for (_, waiter) in ready { waiter.resume() }
+        }
+
+        func waitUntilRequestCount(_ expected: Int) async {
+            if requests >= expected { return }
+            await withCheckedContinuation { continuation in
+                requestCountWaiters.append((expected, continuation))
+            }
+        }
 
         func scanWillStart() async {
             starts += 1

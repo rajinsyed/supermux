@@ -1,18 +1,12 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from "react";
-import { getBridge } from "../../bridge";
-import { replayLines } from "../../model/transcript";
+import { createContext, useContext, useMemo } from "react";
 import type { Block, TranscriptModel } from "../../model/types";
 import { useCopy } from "../CopyContext";
 import { ChevronRight, Refresh } from "../Icons";
 import { Spinner } from "../primitives/Spinner";
+import {
+  useSubagentTranscriptResource,
+  type SubagentTranscriptTarget
+} from "../subagentTranscriptResource";
 import { BlockView } from "../transcript/BlockView";
 
 /**
@@ -25,146 +19,28 @@ import { BlockView } from "../transcript/BlockView";
  */
 const DrillTrail = createContext<string[]>([]);
 
-export interface SubagentTranscriptKey {
-  taskId?: string;
-  workflowRunId?: string;
-  agentId?: string;
-}
+export type SubagentTranscriptKey = SubagentTranscriptTarget;
 
-type Phase = "loading" | "ready" | "missing" | "failed";
-
-interface State {
+type State = {
   identity: string;
-  phase: Phase;
+  phase: "loading" | "ready" | "missing" | "failed";
   model?: TranscriptModel;
   sourceGeneration: number;
   truncated: boolean;
   meta?: { agentType?: string; description?: string; spawnDepth?: number };
-}
-
-function keyOf(key: SubagentTranscriptKey): string {
-  return `${key.taskId ?? ""}|${key.workflowRunId ?? ""}|${key.agentId ?? ""}`;
-}
-
-function loadingState(identity: string, sourceGeneration: number): State {
-  return {
-    identity,
-    phase: "loading",
-    sourceGeneration,
-    truncated: false
-  };
-}
+};
 
 /**
- * The agent's own transcript, replayed through an ISOLATED reducer instance.
- *
- * `replayLines` builds a private model and a private index, so nothing here can
- * reach the pane's transcript: the agent's frames carry the same `tool_use_id`s
- * and turn uuids as the main session's, and folding them into the live model
- * would attach a subagent's Bash card to the parent turn that spawned it.
- *
- * While the agent runs the view re-fetches on `tick` — the progress counter the
- * reducer bumps on every task frame for this id, which the CLI emits every few
- * seconds. That is deliberately web-driven: it costs one bridge call per tick
- * only while a drill-in is actually open, and needs no native file watcher.
+ * The agent's own transcript, replayed through the pane's shared isolated
+ * transcript resource. Every consumer of this target observes the same reducer,
+ * revision cursor, and in-flight native request.
  */
 export function useSubagentTranscript(
   key: SubagentTranscriptKey,
   open: boolean,
   tick: number | undefined
 ): State & { reload(): void } {
-  const identity = keyOf(key);
-  const [state, setState] = useState<State>(() => loadingState(identity, 0));
-  const [manual, setManual] = useState(0);
-  const live = useRef(true);
-  const latestRequest = useRef(0);
-
-  useEffect(() => {
-    live.current = true;
-    return () => {
-      live.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const requestId = latestRequest.current + 1;
-    latestRequest.current = requestId;
-    const transitionIdentity = (previous: State): State =>
-      previous.identity === identity
-        ? previous
-        : loadingState(identity, previous.sourceGeneration + 1);
-
-    if (!key.taskId && !(key.workflowRunId && key.agentId)) {
-      setState((previous) => {
-        const current = transitionIdentity(previous);
-        return {
-          identity,
-          phase: "missing",
-          sourceGeneration: current.sourceGeneration,
-          truncated: false
-        };
-      });
-      return;
-    }
-
-    // A different target clears synchronously through the derived return value
-    // below and is committed here. A same-target tick keeps the ready snapshot
-    // visible while its refresh is pending.
-    setState(transitionIdentity);
-    let cancelled = false;
-    getBridge()
-      .loadSubagentTranscript({
-        taskId: key.taskId,
-        workflowRunId: key.workflowRunId,
-        agentId: key.agentId
-      })
-      .then((result) => {
-        if (cancelled || !live.current || latestRequest.current !== requestId) return;
-        setState((previous) => {
-          if (previous.identity !== identity) return previous;
-          if (result.missing) {
-            return {
-              identity,
-              phase: "missing",
-              sourceGeneration: previous.sourceGeneration,
-              truncated: false,
-              meta: result.meta ?? undefined
-            };
-          }
-          return {
-            identity,
-            phase: "ready",
-            model: replayLines(result.events ?? []),
-            sourceGeneration: previous.sourceGeneration + 1,
-            truncated: result.truncated === true,
-            meta: result.meta ?? undefined
-          };
-        });
-      })
-      .catch(() => {
-        if (cancelled || !live.current || latestRequest.current !== requestId) return;
-        setState((previous) => {
-          if (previous.identity !== identity || previous.phase === "ready") return previous;
-          return {
-            identity,
-            phase: "failed",
-            sourceGeneration: previous.sourceGeneration,
-            truncated: false
-          };
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [identity, key.agentId, key.taskId, key.workflowRunId, manual, open, tick]);
-
-  const reload = useCallback(() => setManual((value) => value + 1), []);
-  const visible =
-    state.identity === identity
-      ? state
-      : loadingState(identity, state.sourceGeneration + 1);
-  return { ...visible, reload };
+  return useSubagentTranscriptResource(key, open, tick);
 }
 
 function blocksOf(model: TranscriptModel): Block[] {

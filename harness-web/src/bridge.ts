@@ -100,8 +100,8 @@ export interface HarnessBridge {
    */
   backgroundTask(params: { toolUseId?: string }): Promise<{ backgrounded: boolean }>;
   /**
-   * A subagent's full transcript from disk. `taskId` addresses a `local_agent`;
-   * `workflowRunId` + `agentId` address one agent of a workflow run.
+   * A revisioned subagent transcript replacement or delta from disk. `taskId`
+   * addresses a `local_agent`; `workflowRunId` + `agentId` addresses one workflow agent.
    */
   loadSubagentTranscript(params: {
     taskId?: string;

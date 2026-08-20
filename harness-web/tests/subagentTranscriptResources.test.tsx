@@ -7,6 +7,7 @@ import { replayLines } from "../src/model/transcript";
 import type { TranscriptModel } from "../src/model/types";
 import type { ProtocolLine, SubagentTranscript } from "../src/protocol/types";
 import { CopyProvider } from "../src/ui/CopyContext";
+import { SubagentTranscriptResourceProvider } from "../src/ui/subagentTranscriptResource";
 import { useSubagentTranscript } from "../src/ui/tools/SubagentTranscript";
 import { AgentChatView } from "../src/ui/views/AgentChatView";
 import { useAgentDocument } from "../src/ui/workflow/useAgentDocument";
@@ -143,7 +144,13 @@ function TranscriptProbe({
 }
 
 function Root({ children }: { children: React.ReactNode }) {
-  return <CopyProvider dict={undefined}>{children}</CopyProvider>;
+  return (
+    <CopyProvider dict={undefined}>
+      <SubagentTranscriptResourceProvider generation={0}>
+        {children}
+      </SubagentTranscriptResourceProvider>
+    </CopyProvider>
+  );
 }
 
 describe("shared incremental subagent transcript resources", () => {
@@ -479,6 +486,50 @@ describe("shared incremental subagent transcript resources", () => {
 
     second.resolve(response(1, { replace: true, events: [assistant("assistant-b", "agent B")] }));
     await waitFor(() => expect(view.getByTestId("resource").textContent).toContain("agent B"));
+  });
+
+  test("conversation generation resets reused target identities atomically", async () => {
+    const nextConversation = deferred<SubagentTranscript>();
+    let calls = 0;
+    installBridge(() => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve(response(1, {
+            replace: true,
+            events: [assistant("old", "old conversation")],
+            truncated: true,
+            meta: { description: "Old agent", spawnDepth: 2 }
+          }))
+        : nextConversation.promise;
+    });
+    let current: TranscriptResource | undefined;
+    function Conversation({ generation }: { generation: number }) {
+      return (
+        <CopyProvider dict={undefined}>
+          <SubagentTranscriptResourceProvider generation={generation}>
+            <TranscriptProbe
+              target={{ taskId: "reused-task" }}
+              capture={(value) => (current = value)}
+            />
+          </SubagentTranscriptResourceProvider>
+        </CopyProvider>
+      );
+    }
+
+    const view = render(<Conversation generation={0} />);
+    await waitFor(() => expect(view.getByTestId("resource").textContent).toContain("old conversation"));
+    view.rerender(<Conversation generation={1} />);
+    expect(current?.phase).toBe("loading");
+    expect(current?.model).toBeUndefined();
+    expect(current?.meta).toBeUndefined();
+    expect(current?.truncated).toBe(false);
+    expect(view.getByTestId("resource").textContent).not.toContain("old conversation");
+    await waitFor(() => expect(calls).toBe(2));
+
+    nextConversation.resolve(
+      response(2, { replace: true, events: [assistant("new", "new conversation")] })
+    );
+    await waitFor(() => expect(view.getByTestId("resource").textContent).toContain("new conversation"));
   });
 
   test("live frames arriving during a disk read prevent fallback hydration", async () => {

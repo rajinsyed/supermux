@@ -4,10 +4,8 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   type RefObject
 } from "react";
-import { getBridge } from "../../bridge";
 import { isThreadRunning, threadBlocks } from "../../model/agentThreads";
 import type { AgentThread, Block, RelayRecord } from "../../model/types";
 import type { ProtocolLine } from "../../protocol/types";
@@ -16,6 +14,7 @@ import { ArrowDown, Cpu, Layers } from "../Icons";
 import { formatCompactDuration, formatTokens } from "../format";
 import { Elapsed } from "../primitives/Elapsed";
 import { Spinner } from "../primitives/Spinner";
+import { useSubagentTranscriptResource } from "../subagentTranscriptResource";
 import { toolStatsSummary } from "../tools/toolStats";
 import { BlockView } from "../transcript/BlockView";
 import { OpenViewContext } from "./OpenViewContext";
@@ -49,9 +48,7 @@ function useDiskFallback(
   thread: AgentThread | undefined,
   onHydrate: (toolUseId: string, events: ProtocolLine[]) => void
 ): { phase: DiskPhase; retry(): void } {
-  const [phase, setPhase] = useState<DiskPhase>("idle");
-  const [attempt, setAttempt] = useState(0);
-  const requested = useRef<string | undefined>(undefined);
+  const hydratedGeneration = useRef<string | undefined>(undefined);
   const toolUseId = thread?.toolUseId;
   const empty = thread !== undefined && thread.blocks.length === 0 && !thread.hasLiveFrames;
   const target = thread?.taskId ?? thread?.agentId;
@@ -60,44 +57,31 @@ function useDiskFallback(
    * its file is mid-write, the reply is a stale prefix of what the wire is
    * already delivering, and hydrating it makes the thread grow twice. The
    * fallback exists for the thread that will never receive live frames — a
-   * resumed session, a forwarding gap — which is what a settled thread with
-   * nothing in it is.
+   * resumed session or a forwarding gap.
    */
   const live = thread !== undefined && isThreadRunning(thread) && thread.hasLiveFrames === true;
+  const wanted = toolUseId !== undefined && empty && !live && target !== undefined;
+  const resource = useSubagentTranscriptResource({ taskId: target }, wanted, undefined);
 
   useEffect(() => {
-    if (!toolUseId || !empty || live) return;
-    if (!target) {
-      // Nothing to address the file by yet: the agent was announced but its
-      // task frames have not landed. Not a failure — it resolves on its own.
-      setPhase("idle");
+    if (!wanted || !toolUseId || resource.phase !== "ready" || resource.events.length === 0) {
       return;
     }
-    if (requested.current === `${toolUseId}|${attempt}`) return;
-    requested.current = `${toolUseId}|${attempt}`;
-    setPhase("loading");
-    let cancelled = false;
-    getBridge()
-      .loadSubagentTranscript({ taskId: target })
-      .then((result) => {
-        if (cancelled) return;
-        if (result.missing || (result.events ?? []).length === 0) {
-          setPhase("missing");
-          return;
-        }
-        setPhase("idle");
-        onHydrate(toolUseId, result.events);
-      })
-      .catch(() => {
-        if (!cancelled) setPhase("failed");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [attempt, empty, live, onHydrate, target, toolUseId]);
+    const generation = `${resource.identity}:${resource.sourceGeneration}`;
+    if (hydratedGeneration.current === generation) return;
+    hydratedGeneration.current = generation;
+    onHydrate(toolUseId, [...resource.events]);
+  }, [onHydrate, resource, toolUseId, wanted]);
 
-  const retry = useCallback(() => setAttempt((value) => value + 1), []);
-  return { phase, retry };
+  let phase: DiskPhase = "idle";
+  if (wanted) {
+    if (resource.phase === "ready") {
+      phase = resource.events.length === 0 ? "missing" : "idle";
+    } else {
+      phase = resource.phase;
+    }
+  }
+  return { phase, retry: resource.reload };
 }
 
 function RelayStatus({ relays }: { relays: RelayRecord[] }) {

@@ -22,6 +22,7 @@ import { QuestionCard } from "./permission/QuestionCard";
 import { BannerStack } from "./status/BannerStack";
 import { StatusStrip } from "./status/StatusStrip";
 import { TodoStrip } from "./status/TodoStrip";
+import { SubagentTranscriptResourceProvider } from "./subagentTranscriptResource";
 import { applyThemeVariables } from "./theme";
 import { TranscriptList } from "./transcript/TranscriptList";
 import { useScrollFollow } from "./transcript/useScrollFollow";
@@ -55,7 +56,9 @@ export function App({ store }: { store: HarnessStore }) {
   return (
     <CopyProvider dict={harness.context?.copy}>
       <PresentationStateProvider generation={harness.model.generation}>
-        <AppBody store={store} harness={harness} />
+        <SubagentTranscriptResourceProvider generation={harness.model.generation}>
+          <AppBody store={store} harness={harness} />
+        </SubagentTranscriptResourceProvider>
       </PresentationStateProvider>
     </CopyProvider>
   );
