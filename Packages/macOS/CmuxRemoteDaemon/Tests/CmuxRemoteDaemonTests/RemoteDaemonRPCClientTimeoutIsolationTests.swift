@@ -16,6 +16,9 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
         }
 
         let existingPTYEvent = DispatchSemaphore(value: 0)
+        let existingPTYEventQueue = DispatchQueue(
+            label: "com.cmux.tests.remote-daemon.timeout-isolation.existing-pty-event"
+        )
         let unexpectedTermination = DispatchSemaphore(value: 0)
         let client = RemoteDaemonRPCClient(
             configuration: configuration(),
@@ -38,7 +41,7 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
             rows: 24,
             command: nil,
             requireExisting: true,
-            queue: .global()
+            queue: existingPTYEventQueue
         ) { event in
             if case .data(let data) = event, data == Data("still-alive".utf8) {
                 existingPTYEvent.signal()
@@ -79,6 +82,9 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
         }
 
         let stalledAttachRead = DispatchSemaphore(value: 0)
+        let stalledAttachEventQueue = DispatchQueue(
+            label: "com.cmux.tests.remote-daemon.timeout-isolation.stalled-attach-event"
+        )
         let unexpectedTermination = DispatchSemaphore(value: 0)
         let client = RemoteDaemonRPCClient(
             configuration: configuration(),
@@ -101,7 +107,7 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
             rows: 24,
             command: nil,
             requireExisting: true,
-            queue: .global()
+            queue: stalledAttachEventQueue
         ) { event in
             if case .data(let data) = event, data == Data("attach-read".utf8) {
                 stalledAttachRead.signal()
