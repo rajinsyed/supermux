@@ -438,7 +438,11 @@ struct SupermuxHarnessTests {
         let panel = SupermuxHarnessPanel(
             workspaceId: UUID(),
             workingDirectory: "/tmp",
-            restoreState: restored
+            restoreState: restored,
+            transcriptService: SupermuxHarnessSubagentTranscriptService(
+                projectsRootURL: SupermuxHarnessSessionController.claudeProjectsRootURL,
+                fileManager: .default
+            )
         )
         let process = MockSupermuxHarnessProcessSession()
         let controller = makeController(
@@ -727,7 +731,12 @@ struct SupermuxHarnessTests {
         )
         try "cached output".write(to: outputURL, atomically: true, encoding: .utf8)
 
-        let coordinator = SupermuxHarnessWebRendererCoordinator()
+        let coordinator = SupermuxHarnessWebRendererCoordinator(
+            transcriptService: SupermuxHarnessSubagentTranscriptService(
+                projectsRootURL: projects,
+                fileManager: .default
+            )
+        )
         let request = try SupermuxHarnessBridgeRequest(body: [
             "id": "read-output",
             "method": "harness.readTaskOutput",
@@ -864,7 +873,12 @@ struct SupermuxHarnessTests {
         ])
         try metadata.write(to: transcriptDirectory.appendingPathComponent("agent-agent-1.meta.json"))
 
-        let coordinator = SupermuxHarnessWebRendererCoordinator()
+        let coordinator = SupermuxHarnessWebRendererCoordinator(
+            transcriptService: SupermuxHarnessSubagentTranscriptService(
+                projectsRootURL: projects,
+                fileManager: .default
+            )
+        )
         let stopRequest = try SupermuxHarnessBridgeRequest(body: [
             "id": "stop",
             "method": "harness.stopTask",
@@ -1060,9 +1074,14 @@ struct SupermuxHarnessTests {
         taskOutputRootURL: URL? = nil,
         modelCatalogProbe: (@MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog)? = nil
     ) -> SupermuxHarnessSessionController {
-        SupermuxHarnessSessionController(
+        let transcriptService = SupermuxHarnessSubagentTranscriptService(
+            projectsRootURL: projectsRootURL ?? SupermuxHarnessSessionController.claudeProjectsRootURL,
+            fileManager: .default
+        )
+        return SupermuxHarnessSessionController(
             workingDirectory: workingDirectory,
             restoreState: restoreState,
+            transcriptService: transcriptService,
             defaults: defaults,
             projectsRootURL: projectsRootURL,
             taskOutputRootURL: taskOutputRootURL,

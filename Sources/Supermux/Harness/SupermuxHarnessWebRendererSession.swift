@@ -1,8 +1,15 @@
 import Foundation
+import SupermuxKit
 
 @MainActor
 final class SupermuxHarnessWebRendererSession {
-    private let ownedCoordinator = SupermuxHarnessWebRendererCoordinator()
+    private let ownedCoordinator: SupermuxHarnessWebRendererCoordinator
+
+    init(transcriptService: any SupermuxHarnessSubagentTranscriptLoading) {
+        ownedCoordinator = SupermuxHarnessWebRendererCoordinator(
+            transcriptService: transcriptService
+        )
+    }
     var onSessionStateChanged: ((Bool) -> Void)? {
         didSet {
             ownedCoordinator.onSessionStateChanged = onSessionStateChanged

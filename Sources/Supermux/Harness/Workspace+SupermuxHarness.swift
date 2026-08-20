@@ -30,7 +30,8 @@ extension Workspace {
         let harnessPanel = SupermuxHarnessPanel(
             workspaceId: id,
             workingDirectory: directory,
-            restoreState: restoreState
+            restoreState: restoreState,
+            transcriptService: SupermuxComposition.harnessSubagentTranscriptService
         )
         panels[harnessPanel.id] = harnessPanel
         panelTitles[harnessPanel.id] = harnessPanel.displayTitle
@@ -103,7 +104,8 @@ extension Workspace {
         let harnessPanel = SupermuxHarnessPanel(
             workspaceId: id,
             workingDirectory: directory,
-            restoreState: restoreState
+            restoreState: restoreState,
+            transcriptService: SupermuxComposition.harnessSubagentTranscriptService
         )
         panels[harnessPanel.id] = harnessPanel
         panelTitles[harnessPanel.id] = harnessPanel.displayTitle

@@ -129,7 +129,7 @@ export function useSubagentTranscript(
               phase: "missing",
               sourceGeneration: previous.sourceGeneration,
               truncated: false,
-              meta: result.meta
+              meta: result.meta ?? undefined
             };
           }
           return {
@@ -138,7 +138,7 @@ export function useSubagentTranscript(
             model: replayLines(result.events ?? []),
             sourceGeneration: previous.sourceGeneration + 1,
             truncated: result.truncated === true,
-            meta: result.meta
+            meta: result.meta ?? undefined
           };
         });
       })

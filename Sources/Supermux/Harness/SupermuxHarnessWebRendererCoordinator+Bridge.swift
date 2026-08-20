@@ -183,7 +183,8 @@ extension SupermuxHarnessWebRendererCoordinator {
             return try await controller.loadSubagentTranscript(
                 taskId: request.string("taskId"),
                 workflowRunId: request.string("workflowRunId"),
-                agentId: request.string("agentId")
+                agentId: request.string("agentId"),
+                afterRevision: request.integer("afterRevision")
             )
         case "harness.readTaskOutput":
             return try await controller.readTaskOutput(

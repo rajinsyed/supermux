@@ -50,6 +50,7 @@ final class SupermuxHarnessSessionController {
     private let taskOutputRootURL: URL
     private let taskOutputCanonicalRootURL: URL
     private let fileManager: FileManager
+    private let transcriptService: any SupermuxHarnessSubagentTranscriptLoading
     private let modelCatalogProbe: @MainActor (SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog
     private var modelCatalogProbeTask: Task<Void, Never>?
     private var modelCatalogProbeID: UUID?
@@ -65,6 +66,7 @@ final class SupermuxHarnessSessionController {
     init(
         workingDirectory: String?,
         restoreState: SessionSupermuxHarnessPanelSnapshot?,
+        transcriptService: any SupermuxHarnessSubagentTranscriptLoading,
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
         projectsRootURL: URL? = nil,
@@ -83,6 +85,7 @@ final class SupermuxHarnessSessionController {
         }
     ) {
         self.fileManager = fileManager
+        self.transcriptService = transcriptService
         self.projectsRootURL = projectsRootURL ?? Self.claudeProjectsRootURL
         if let taskOutputRootURL {
             self.taskOutputRootURL = taskOutputRootURL
@@ -755,7 +758,8 @@ final class SupermuxHarnessSessionController {
     func loadSubagentTranscript(
         taskId: String?,
         workflowRunId: String?,
-        agentId: String?
+        agentId: String?,
+        afterRevision: Int?
     ) async throws -> [String: Any] {
         guard let directoryURL = workingDirectoryURL else {
             throw SupermuxHarnessBridgeError.workingDirectoryUnavailable
@@ -766,47 +770,48 @@ final class SupermuxHarnessSessionController {
         let localTaskID = Self.normalized(taskId)
         let runID = Self.normalized(workflowRunId)
         let workflowAgentID = Self.normalized(agentId)
-        let isLocalRequest = localTaskID != nil && runID == nil && workflowAgentID == nil
-        let isWorkflowRequest = localTaskID == nil && runID != nil && workflowAgentID != nil
-        guard isLocalRequest || isWorkflowRequest else {
+        let address: SupermuxHarnessSubagentTranscriptAddress
+        if let localTaskID, runID == nil, workflowAgentID == nil {
+            address = .localAgent(
+                workingDirectoryURL: directoryURL,
+                sessionID: sessionID,
+                taskID: localTaskID
+            )
+        } else if localTaskID == nil, let runID, let workflowAgentID {
+            address = .workflowAgent(
+                workingDirectoryURL: directoryURL,
+                sessionID: sessionID,
+                workflowRunID: runID,
+                agentID: workflowAgentID
+            )
+        } else {
             throw SupermuxHarnessBridgeError.invalidRequest
         }
 
-        let projectsRootURL = self.projectsRootURL
-        let fileManager = self.fileManager
-        let page: SupermuxHarnessSubagentTranscriptPage
+        let update: SupermuxHarnessSubagentTranscriptUpdate
         do {
-            page = try await Task.detached(priority: .userInitiated) {
-                let reader = SupermuxHarnessSubagentTranscriptReader(
-                    projectsRootURL: projectsRootURL,
-                    fileManager: fileManager
-                )
-                if let localTaskID {
-                    return try reader.loadLocalAgentTranscript(
-                        for: directoryURL,
-                        sessionID: sessionID,
-                        taskID: localTaskID
-                    )
-                }
-                return try reader.loadWorkflowAgentTranscript(
-                    for: directoryURL,
-                    sessionID: sessionID,
-                    workflowRunID: runID ?? "",
-                    agentID: workflowAgentID ?? ""
-                )
-            }.value
+            update = try await transcriptService.loadTranscript(
+                at: address,
+                afterRevision: afterRevision
+            )
         } catch is SupermuxHarnessSubagentTranscriptReaderError {
             throw SupermuxHarnessBridgeError.invalidRequest
         }
         guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
         var result: [String: Any] = [
-            "events": page.events.map(\.rawValue),
-            "truncated": page.truncated,
+            "revision": update.revision,
+            "replace": update.replace,
+            "droppedEventCount": update.droppedEventCount,
+            "events": update.events.map(\.rawValue),
+            "truncated": update.truncated,
+            "missing": update.missing,
         ]
-        if page.missing {
-            result["missing"] = true
-        }
-        if let metadata = page.metadata {
+        switch update.metadata {
+        case .unchanged:
+            break
+        case .deleted:
+            result["meta"] = NSNull()
+        case .value(let metadata):
             var meta: [String: Any] = [:]
             if let agentType = metadata.agentType { meta["agentType"] = agentType }
             if let description = metadata.description { meta["description"] = description }

@@ -107,6 +107,7 @@ export interface HarnessBridge {
     taskId?: string;
     workflowRunId?: string;
     agentId?: string;
+    afterRevision?: number;
   }): Promise<SubagentTranscript>;
   /**
    * Tail of a background shell's output file (~last 64KB). The payload carries

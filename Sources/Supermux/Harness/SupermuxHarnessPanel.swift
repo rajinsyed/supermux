@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SupermuxKit
 
 @MainActor
 final class SupermuxHarnessPanel: Panel {
@@ -9,7 +10,7 @@ final class SupermuxHarnessPanel: Panel {
     private(set) var workspaceId: UUID
     private(set) var workingDirectory: String?
     private(set) var restoreState: SessionSupermuxHarnessPanelSnapshot?
-    let rendererSession = SupermuxHarnessWebRendererSession()
+    let rendererSession: SupermuxHarnessWebRendererSession
 
     private(set) var displayTitle: String
     private(set) var isDirty: Bool = false
@@ -42,12 +43,16 @@ final class SupermuxHarnessPanel: Panel {
     init(
         workspaceId: UUID,
         workingDirectory: String? = nil,
-        restoreState: SessionSupermuxHarnessPanelSnapshot? = nil
+        restoreState: SessionSupermuxHarnessPanelSnapshot? = nil,
+        transcriptService: any SupermuxHarnessSubagentTranscriptLoading
     ) {
         self.id = UUID()
         self.workspaceId = workspaceId
         self.workingDirectory = workingDirectory
         self.restoreState = restoreState
+        self.rendererSession = SupermuxHarnessWebRendererSession(
+            transcriptService: transcriptService
+        )
         let restoredTitle = restoreState?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.displayTitle = (restoredTitle?.isEmpty == false ? restoredTitle : nil) ?? Self.defaultTitle
         self.rendererSession.onSessionStateChanged = { [weak self] isRunning in

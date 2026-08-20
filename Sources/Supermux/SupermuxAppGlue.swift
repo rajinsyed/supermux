@@ -87,6 +87,15 @@ enum SupermuxComposition {
         probe: AppDelegate.shared.map { SupermuxPullRequestProbe(service: $0.pullRequestProbeService) }
             ?? SupermuxPullRequestProbe()
     )
+
+    /// App-wide subagent transcript service shared by every harness pane and web consumer.
+    static let harnessSubagentTranscriptService: any SupermuxHarnessSubagentTranscriptLoading =
+        SupermuxHarnessSubagentTranscriptService(
+            projectsRootURL: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".claude", isDirectory: true)
+                .appendingPathComponent("projects", isDirectory: true),
+            fileManager: .default
+        )
 }
 
 /// The view mounted inside the cmux sidebar (see the `sidebar-projects-section`

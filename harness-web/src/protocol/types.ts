@@ -615,10 +615,17 @@ export interface RewindResult {
  * agent that has only just been spawned has no file, and that is not an error.
  */
 export interface SubagentTranscript {
+  /** Logical source revision. Older mocks may omit it and are treated as replacements. */
+  revision?: number;
+  /** Whether retained consumer events must be replaced before applying this response. */
+  replace?: boolean;
+  /** Retained prefix events to discard before appending `events`. */
+  droppedEventCount?: number;
   events: ProtocolLine[];
   truncated: boolean;
   missing?: boolean;
-  meta?: { agentType?: string; description?: string; spawnDepth?: number };
+  /** Omitted means unchanged; `null` means deleted. */
+  meta?: { agentType?: string; description?: string; spawnDepth?: number } | null;
 }
 
 /** Tail of a background shell's output file. */
