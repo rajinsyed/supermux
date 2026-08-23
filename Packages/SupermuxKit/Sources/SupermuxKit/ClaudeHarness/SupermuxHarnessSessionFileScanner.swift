@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -9,6 +10,11 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
     }
 
     private let recordMapper = SupermuxHarnessSessionRecordMapper()
+    private let projectsRootURL: URL
+
+    init(projectsRootURL: URL) {
+        self.projectsRootURL = projectsRootURL.resolvingSymlinksInPath().standardizedFileURL
+    }
 
     func observe(_ fileURL: URL) async throws -> SupermuxHarnessSessionFileObservation {
         try await Task.detached(priority: .utility) {
@@ -28,8 +34,9 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
         plan: SupermuxHarnessSessionScanPlan,
         observer: (@Sendable (URL) async -> Void)?
     ) async throws -> SupermuxHarnessSessionScanResult {
+        let projectsRootURL = self.projectsRootURL
         let prepared = try await Task.detached(priority: .utility) {
-            try Self.prepareScan(fileURL)
+            try Self.prepareScan(fileURL, projectsRootURL: projectsRootURL)
         }.value
         if let observer {
             await observer(fileURL)
@@ -52,9 +59,11 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
         chunkSize: Int
     ) async throws -> SupermuxHarnessSessionSelectedRead {
         let recordMapper = self.recordMapper
+        let projectsRootURL = self.projectsRootURL
         return try await Task.detached(priority: .utility) {
             try Self.readSelectedRecordsSynchronously(
                 fileURL,
+                projectsRootURL: projectsRootURL,
                 expected: expected,
                 expectedFingerprint: expectedFingerprint,
                 selections: selections,
@@ -65,10 +74,14 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
         }.value
     }
 
-    private static func prepareScan(_ fileURL: URL) throws -> PreparedScan {
+    private static func prepareScan(
+        _ fileURL: URL,
+        projectsRootURL: URL
+    ) throws -> PreparedScan {
         let descriptor = Darwin.open(fileURL.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
         guard descriptor >= 0 else { throw CocoaError(.fileReadNoSuchFile) }
         do {
+            try validateDescriptor(descriptor, beneath: projectsRootURL)
             let observation = try observation(fileURL: fileURL, descriptor: descriptor)
             return PreparedScan(descriptor: descriptor, observation: observation)
         } catch {
@@ -193,7 +206,6 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
         let fingerprint = try makeFingerprint(
             handle: handle,
             size: before.size,
-            byteBudget: max(1, plan.continuityValidationBytes),
             chunkSize: chunkSize,
             maximumReadChunkBytes: &maximumReadChunkBytes
         )
@@ -222,6 +234,7 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
 
     private static func readSelectedRecordsSynchronously(
         _ fileURL: URL,
+        projectsRootURL: URL,
         expected: SupermuxHarnessSessionFileObservation,
         expectedFingerprint: SupermuxHarnessSessionContinuityFingerprint,
         selections: [SupermuxHarnessSessionRecordSelection],
@@ -232,6 +245,7 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
         let descriptor = Darwin.open(fileURL.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
         guard descriptor >= 0 else { throw CocoaError(.fileReadNoSuchFile) }
         defer { Darwin.close(descriptor) }
+        try validateDescriptor(descriptor, beneath: projectsRootURL)
         let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
         let before = try observation(fileURL: fileURL, descriptor: descriptor)
         var maximumReadChunkBytes = 0
@@ -325,82 +339,40 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
         guard let fingerprint,
               let expectedObservation,
               fingerprint.observedSize == expectedObservation.size,
-              before.size >= fingerprint.observedSize else {
+              before.size >= fingerprint.observedSize,
+              let current = try? makeFingerprint(
+                handle: handle,
+                size: fingerprint.observedSize,
+                chunkSize: chunkSize,
+                maximumReadChunkBytes: &maximumReadChunkBytes
+              ) else {
             return false
         }
-        for sample in fingerprint.samples {
-            guard sample.offset + UInt64(sample.bytes.count) <= before.size else {
-                return false
-            }
-            do {
-                try handle.seek(toOffset: sample.offset)
-                let bytes = try readExactly(
-                    handle,
-                    count: UInt64(sample.bytes.count),
-                    chunkSize: chunkSize,
-                    maximumReadChunkBytes: &maximumReadChunkBytes
-                )
-                guard bytes == sample.bytes else { return false }
-            } catch {
-                return false
-            }
-        }
-        return true
+        return current.digest == fingerprint.digest
     }
 
     private static func makeFingerprint(
         handle: FileHandle,
         size: UInt64,
-        byteBudget: Int,
         chunkSize: Int,
         maximumReadChunkBytes: inout Int
     ) throws -> SupermuxHarnessSessionContinuityFingerprint {
-        guard size > 0 else {
-            return SupermuxHarnessSessionContinuityFingerprint(
-                observedSize: 0,
-                samples: []
-            )
-        }
-        let budget = UInt64(max(1, byteBudget))
-        let sampleRanges: [(offset: UInt64, count: UInt64)]
-        if size <= budget {
-            sampleRanges = [(0, size)]
-        } else if budget < 4 {
-            sampleRanges = [(0, budget)]
-        } else {
-            let window = budget / 4
-            let lastOffset = size - window
-            let offsets = [
-                UInt64(0),
-                min(lastOffset, size / 3),
-                min(lastOffset, (size / 3) * 2),
-                lastOffset,
-            ]
-            var uniqueOffsets: [UInt64] = []
-            for offset in offsets where !uniqueOffsets.contains(offset) {
-                uniqueOffsets.append(offset)
+        var hasher = SHA256()
+        var remaining = size
+        try handle.seek(toOffset: 0)
+        while remaining > 0 {
+            let requestCount = Int(min(UInt64(max(1, chunkSize)), remaining))
+            let chunk: Data = try autoreleasepool {
+                try handle.read(upToCount: requestCount) ?? Data()
             }
-            sampleRanges = uniqueOffsets.map { offset in
-                (offset, min(window, size - offset))
-            }
-        }
-        var samples: [SupermuxHarnessSessionContinuityFingerprint.Sample] = []
-        for range in sampleRanges {
-            try handle.seek(toOffset: range.offset)
-            let bytes = try readExactly(
-                handle,
-                count: range.count,
-                chunkSize: chunkSize,
-                maximumReadChunkBytes: &maximumReadChunkBytes
-            )
-            guard UInt64(bytes.count) == range.count else {
-                throw CocoaError(.fileReadUnknown)
-            }
-            samples.append(.init(offset: range.offset, bytes: bytes))
+            guard !chunk.isEmpty else { throw CocoaError(.fileReadUnknown) }
+            maximumReadChunkBytes = max(maximumReadChunkBytes, chunk.count)
+            hasher.update(data: chunk)
+            remaining -= UInt64(chunk.count)
         }
         return SupermuxHarnessSessionContinuityFingerprint(
             observedSize: size,
-            samples: samples
+            digest: Data(hasher.finalize())
         )
     }
 
@@ -425,6 +397,30 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
             remaining -= UInt64(chunk.count)
         }
         return result
+    }
+
+    private static func validateDescriptor(
+        _ descriptor: Int32,
+        beneath rootURL: URL
+    ) throws {
+        var path = [CChar](repeating: 0, count: Int(PATH_MAX))
+        guard Darwin.fcntl(descriptor, F_GETPATH, &path) >= 0 else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        let pathString = String(
+            decoding: path.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
+            as: UTF8.self
+        )
+        let fileURL = URL(fileURLWithPath: pathString, isDirectory: false)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let root = rootURL.resolvingSymlinksInPath().standardizedFileURL
+        let rootComponents = root.pathComponents
+        let fileComponents = fileURL.pathComponents
+        guard fileComponents.count > rootComponents.count,
+              fileComponents.prefix(rootComponents.count).elementsEqual(rootComponents) else {
+            throw CocoaError(.fileReadInvalidFileName)
+        }
     }
 
     private static func pathObservation(

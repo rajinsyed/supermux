@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -161,6 +162,26 @@ struct SupermuxHarnessTaskOutputReaderTests {
                 taskID: "task",
                 observedTaskIDs: ["task"],
                 outputFilePath: outputURL.path
+            )
+        }
+    }
+
+    @Test func fifoOutputIsRejectedWithoutWaitingForAWriter() throws {
+        let sandbox = try makeSandbox(named: "fifo")
+        defer { try? FileManager.default.removeItem(at: sandbox.container) }
+        let tasks = sandbox.root
+            .appendingPathComponent("munged", isDirectory: true)
+            .appendingPathComponent("session", isDirectory: true)
+            .appendingPathComponent("tasks", isDirectory: true)
+        try FileManager.default.createDirectory(at: tasks, withIntermediateDirectories: true)
+        let fifo = tasks.appendingPathComponent("task.output")
+        #expect(Darwin.mkfifo(fifo.path, 0o600) == 0)
+
+        #expect(throws: SupermuxHarnessTaskOutputReaderError.outputIsNotRegularFile) {
+            _ = try sandbox.reader.read(
+                taskID: "task",
+                observedTaskIDs: ["task"],
+                outputFilePath: fifo.path
             )
         }
     }

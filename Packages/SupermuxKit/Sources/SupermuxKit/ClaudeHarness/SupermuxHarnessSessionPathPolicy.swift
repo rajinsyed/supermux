@@ -39,7 +39,7 @@ struct SupermuxHarnessSessionPathPolicy: Sendable {
         let resolvedRoot = projectsRootURL.resolvingSymlinksInPath().standardizedFileURL
         let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
         guard Self.isDescendant(resolvedDirectory, of: resolvedRoot) else { return nil }
-        return directory
+        return resolvedDirectory
     }
 
     func safeSessionFile(_ file: URL, in directory: URL) -> Bool {

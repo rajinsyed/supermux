@@ -13,6 +13,7 @@ final class SupermuxHarnessRunningProcess {
     /// A repeating deadline source is required because pipe descendants may outlive the killed process.
     var terminationEscalationTimer: (any DispatchSourceTimer)?
     var pendingExitStatus: Int32?
+    var forcedDrainDeadline: ContinuousClock.Instant?
     var isTerminating = false
     var drainedStreams: Set<SupermuxHarnessProcessStream> = []
     private var stdoutBuffer = SupermuxHarnessOutputLineBuffer()

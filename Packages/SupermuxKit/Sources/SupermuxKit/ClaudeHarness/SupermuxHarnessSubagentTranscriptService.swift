@@ -43,6 +43,7 @@ public actor SupermuxHarnessSubagentTranscriptService: SupermuxHarnessSubagentTr
     private struct Flight: Sendable {
         let token: UInt64
         let coveredRequestToken: UInt64
+        let address: SupermuxHarnessSubagentTranscriptAddress
         let task: Task<SupermuxHarnessSubagentTranscriptScanner.Result, any Error>
         var dirty: Bool
     }
@@ -118,18 +119,19 @@ public actor SupermuxHarnessSubagentTranscriptService: SupermuxHarnessSubagentTr
         if let afterRevision, afterRevision < 0 {
             throw SupermuxHarnessSubagentTranscriptReaderError.invalidRevision
         }
-        beginLease(for: address)
-        defer { endLease(for: address) }
+        let key = canonicalAddress(address)
+        beginLease(for: key)
+        defer { endLease(for: key) }
         await scanInstrumentation?.didBeginRequest?()
         nextRequestToken &+= 1
         let requestToken = nextRequestToken
 
-        try await refresh(address, requestToken: requestToken)
-        guard var entry = entries[address] else {
+        try await refresh(address, key: key, requestToken: requestToken)
+        guard var entry = entries[key] else {
             throw CocoaError(.fileReadUnknown)
         }
         touch(&entry)
-        entries[address] = entry
+        entries[key] = entry
         return update(for: entry, afterRevision: afterRevision)
     }
 
@@ -140,57 +142,82 @@ public actor SupermuxHarnessSubagentTranscriptService: SupermuxHarnessSubagentTr
         )
     }
 
+    private func canonicalAddress(
+        _ address: SupermuxHarnessSubagentTranscriptAddress
+    ) -> SupermuxHarnessSubagentTranscriptAddress {
+        let workingDirectoryURL = address.workingDirectoryURL
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        switch address {
+        case .localAgent(_, let sessionID, let taskID):
+            return .localAgent(
+                workingDirectoryURL: workingDirectoryURL,
+                sessionID: sessionID,
+                taskID: taskID
+            )
+        case .workflowAgent(_, let sessionID, let workflowRunID, let agentID):
+            return .workflowAgent(
+                workingDirectoryURL: workingDirectoryURL,
+                sessionID: sessionID,
+                workflowRunID: workflowRunID,
+                agentID: agentID
+            )
+        }
+    }
+
     private func refresh(
         _ address: SupermuxHarnessSubagentTranscriptAddress,
+        key: SupermuxHarnessSubagentTranscriptAddress,
         requestToken: UInt64
     ) async throws {
         while true {
-            if flights[address] == nil {
-                if let completedRequestToken = entries[address]?.completedRequestToken,
+            if flights[key] == nil {
+                if let completedRequestToken = entries[key]?.completedRequestToken,
                    completedRequestToken >= requestToken {
                     return
                 }
-                startFlight(for: address)
-            } else if let flight = flights[address],
+                startFlight(for: key, scanning: address)
+            } else if let flight = flights[key],
                       requestToken > flight.coveredRequestToken {
-                flights[address]?.dirty = true
+                flights[key]?.dirty = true
             }
-            guard let flight = flights[address] else { continue }
+            guard let flight = flights[key] else { continue }
 
             let result: SupermuxHarnessSubagentTranscriptScanner.Result
             do {
                 result = try await flight.task.value
             } catch {
-                if flights[address]?.token == flight.token {
-                    flights.removeValue(forKey: address)
+                if flights[key]?.token == flight.token {
+                    flights.removeValue(forKey: key)
                     enforceCacheLimits()
                 }
                 throw error
             }
-            guard let currentFlight = flights[address],
+            guard let currentFlight = flights[key],
                   currentFlight.token == flight.token else {
                 continue
             }
 
-            apply(result, to: address)
+            apply(result, to: key)
             let reruns = currentFlight.dirty || result.requiresRerun
-            flights.removeValue(forKey: address)
+            flights.removeValue(forKey: key)
             if reruns {
-                startFlight(for: address)
+                startFlight(for: key, scanning: currentFlight.address)
                 continue
             }
-            entries[address]?.completedRequestToken = currentFlight.coveredRequestToken
+            entries[key]?.completedRequestToken = currentFlight.coveredRequestToken
             enforceCacheLimits()
             return
         }
     }
 
     private func startFlight(
-        for address: SupermuxHarnessSubagentTranscriptAddress
+        for key: SupermuxHarnessSubagentTranscriptAddress,
+        scanning address: SupermuxHarnessSubagentTranscriptAddress
     ) {
         nextFlightToken &+= 1
         let token = nextFlightToken
-        let baseline = entries[address]?.state
+        let baseline = entries[key]?.state
         let scanner = SupermuxHarnessSubagentTranscriptScanner(
             projectsRootURL: projectsRootURL,
             fileManager: fileManager,
@@ -200,9 +227,10 @@ public actor SupermuxHarnessSubagentTranscriptService: SupermuxHarnessSubagentTr
         let task = Task.detached(priority: .utility) {
             try await scanner.scan(address: address, baseline: baseline)
         }
-        flights[address] = Flight(
+        flights[key] = Flight(
             token: token,
             coveredRequestToken: nextRequestToken,
+            address: address,
             task: task,
             dirty: false
         )

@@ -39,7 +39,7 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
     private let scanObserver: (@Sendable (URL) async -> Void)?
     private let collectsMetrics: Bool
     private let pathPolicy: SupermuxHarnessSessionPathPolicy
-    private let scanner = SupermuxHarnessSessionFileScanner()
+    private let scanner: SupermuxHarnessSessionFileScanner
     private var metadataCache: SupermuxHarnessLRUCache<
         String,
         SupermuxHarnessSessionMetadataCacheEntry
@@ -67,6 +67,7 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
         pathPolicy = SupermuxHarnessSessionPathPolicy(
             projectsRootURL: projectsRootURL
         )
+        scanner = SupermuxHarnessSessionFileScanner(projectsRootURL: projectsRootURL)
         metadataCache = SupermuxHarnessLRUCache(
             maximumEntries: configuration.metadataMaximumEntries,
             maximumBytes: configuration.metadataMaximumBytes
@@ -91,6 +92,7 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
         pathPolicy = SupermuxHarnessSessionPathPolicy(
             projectsRootURL: projectsRootURL
         )
+        scanner = SupermuxHarnessSessionFileScanner(projectsRootURL: projectsRootURL)
         metadataCache = SupermuxHarnessLRUCache(
             maximumEntries: configuration.metadataMaximumEntries,
             maximumBytes: configuration.metadataMaximumBytes
@@ -210,7 +212,9 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
                     chunkSize: configuration.readChunkBytes
                 )
                 recordSelectedRead(selectedRead, path: path)
-                guard selectedRead.preservesPrefix(metadata.observation) else {
+                guard selectedRead.preservesPrefix(metadata.observation),
+                      selectedRead.after == metadata.observation,
+                      selectedRead.pathAfter == selectedRead.after else {
                     invalidate(path: path)
                     continue
                 }
@@ -234,15 +238,24 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
         sessionID: String
     ) async -> String? {
         guard pathPolicy.isValidSessionID(sessionID) else { return nil }
+        let expectedPaths = SupermuxHarnessSessionPathPolicy.canonicalPaths(
+            for: workingDirectoryURL
+        )
         for candidateDirectory in pathPolicy.projectDirectoryURLs(for: workingDirectoryURL) {
             guard let directory = pathPolicy.safeProjectDirectory(candidateDirectory) else {
                 continue
             }
             let fileURL = directory.appendingPathComponent(sessionID)
                 .appendingPathExtension("jsonl")
-            guard pathPolicy.safeSessionFile(fileURL, in: directory) else { continue }
-            return try? await ensureIndexed(fileURL, includesHistory: false)
-                .metadata.effectiveIndex.title
+            guard pathPolicy.safeSessionFile(fileURL, in: directory),
+                  let state = try? await ensureIndexed(fileURL, includesHistory: false),
+                  belongsToWorkingDirectory(
+                    state.metadata.effectiveIndex,
+                    expectedPaths: expectedPaths
+                  ) else {
+                continue
+            }
+            return state.metadata.effectiveIndex.title
         }
         return nil
     }

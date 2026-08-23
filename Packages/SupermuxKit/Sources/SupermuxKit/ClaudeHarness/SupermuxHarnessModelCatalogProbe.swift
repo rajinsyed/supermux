@@ -30,7 +30,7 @@ public final class SupermuxHarnessModelCatalogProbe {
     public func probe(plan: SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog {
         let streamPair = AsyncStream.makeStream(
             of: ProbeEvent.self,
-            bufferingPolicy: .bufferingNewest(64)
+            bufferingPolicy: .unbounded
         )
         let session = SupermuxHarnessProcessSession(
             protocolLineSink: { line in

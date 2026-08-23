@@ -222,7 +222,15 @@ public struct SupermuxHarnessSessionDiscovery {
         for candidateDirectory in projectDirectoryURLs(for: workingDirectoryURL) {
             guard let directory = safeProjectDirectory(candidateDirectory) else { continue }
             let file = directory.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
-            if safeSessionFile(file, in: directory) { return file }
+            guard safeSessionFile(file, in: directory),
+                  let summary = try? sessionSummary(
+                    from: file,
+                    workingDirectoryURL: workingDirectoryURL
+                  ),
+                  summary.belongsToWorkingDirectory else {
+                continue
+            }
+            return file
         }
         return nil
     }
@@ -245,15 +253,18 @@ public struct SupermuxHarnessSessionDiscovery {
         for candidateDirectory in projectDirectoryURLs(for: workingDirectoryURL) {
             guard let directory = safeProjectDirectory(candidateDirectory) else { continue }
             let file = directory.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
-            guard safeSessionFile(file, in: directory) else { continue }
-            var metadata = SessionMetadata()
-            try? forEachRecord(in: file) { record in
-                updateMetadata(&metadata, with: record)
+            guard safeSessionFile(file, in: directory),
+                  let summary = try? sessionSummary(
+                    from: file,
+                    workingDirectoryURL: workingDirectoryURL
+                  ),
+                  summary.belongsToWorkingDirectory else {
+                continue
             }
-            return metadata.customTitle
-                ?? metadata.aiTitle
-                ?? metadata.summary
-                ?? metadata.firstPrompt
+            return summary.metadata.customTitle
+                ?? summary.metadata.aiTitle
+                ?? summary.metadata.summary
+                ?? summary.metadata.firstPrompt
         }
         return nil
     }
@@ -326,14 +337,20 @@ public struct SupermuxHarnessSessionDiscovery {
                 let isQueuedPrompt = type == "attachment" &&
                     attachment?["type"] as? String == "queued_command" &&
                     attachment?["commandMode"] as? String == "prompt"
-                linksByUUID[uuid] = SessionRecordLink(
-                    parentUUID: nonemptyString(record["parentUuid"]),
-                    isVisible: (isConversation &&
-                        record["isMeta"] as? Bool != true &&
-                        !isSidechain &&
-                        record["message"] is [String: Any]) ||
-                        (isQueuedPrompt && !isSidechain)
-                )
+                let queuedPrompt = attachment?["prompt"]
+                let hasQueuedPromptContent = nonemptyString(queuedPrompt) != nil ||
+                    (queuedPrompt as? [[String: Any]])?.isEmpty == false
+                let isVisible = (isConversation &&
+                    record["isMeta"] as? Bool != true &&
+                    !isSidechain &&
+                    record["message"] is [String: Any]) ||
+                    (isQueuedPrompt && hasQueuedPromptContent && !isSidechain)
+                if linksByUUID[uuid] == nil || isVisible {
+                    linksByUUID[uuid] = SessionRecordLink(
+                        parentUUID: nonemptyString(record["parentUuid"]),
+                        isVisible: isVisible
+                    )
+                }
                 if isConversation, !isSidechain {
                     lastMainUUID = uuid
                 }

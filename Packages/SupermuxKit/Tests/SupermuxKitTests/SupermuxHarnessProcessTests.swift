@@ -467,7 +467,7 @@ struct SupermuxHarnessProcessSessionTests {
         let session = makeSession(recorder: recorder, escalationInterval: 0.05)
         let script = #"""
         trap '' TERM
-        sleep 1 &
+        sleep 2 &
         printf '{"type":"keep_alive","ready":true}\n'
         wait
         """#
@@ -477,6 +477,7 @@ struct SupermuxHarnessProcessSessionTests {
         let exit = await recorder.nextExit()
         #expect(exit == .exited(runID: started.runID, status: 9))
         #expect(recorder.timeline.last == "exited")
+        #expect(recorder.outputDiagnostics.map(\.kind) == [.truncated, .truncated])
     }
 
     @Test func closeRetainsEscalationUntilAnIgnoringProcessIsKilled() async throws {
@@ -513,13 +514,14 @@ struct SupermuxHarnessProcessSessionTests {
         let session = makeSession(recorder: recorder, escalationInterval: 0.02)
         let script = #"""
         (
+          trap '' HUP TERM
           sleep 0.15
           printf '{"type":"keep_alive","late":true}\n'
           printf 'late-err' >&2
         ) &
         trap 'exit 0' TERM
         printf '{"type":"keep_alive","ready":true}\n'
-        while :; do sleep 1; done
+        while :; do sleep 0.005; done
         """#
         let started = try session.start(plan: shellPlan(script))
         _ = await recorder.nextProtocolLine()
@@ -530,7 +532,7 @@ struct SupermuxHarnessProcessSessionTests {
         #expect(recorder.protocolLines.last?.object.bool(forKey: "late") == true)
         #expect(recorder.stderrLines.last == "late-err")
         #expect(recorder.timeline.last == "exited")
-        #expect(exit == .exited(runID: started.runID, status: 9))
+        #expect(exit == .exited(runID: started.runID, status: 0))
     }
 
     @Test func terminateAndWaitReturnsOnlyAfterExitedLifecycleAndBothStreamsDrain() async throws {

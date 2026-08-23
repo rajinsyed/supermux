@@ -148,7 +148,11 @@ public struct SupermuxHarnessTaskOutputReader {
             parentDescriptor = nextDescriptor
         }
         let descriptor = fileName.withCString {
-            Darwin.openat(parentDescriptor, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+            Darwin.openat(
+                parentDescriptor,
+                $0,
+                O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+            )
         }
         guard descriptor >= 0 else {
             let code = errno

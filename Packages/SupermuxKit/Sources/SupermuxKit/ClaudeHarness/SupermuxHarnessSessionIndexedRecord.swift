@@ -77,7 +77,7 @@ struct SupermuxHarnessSessionIndexedRecord: Sendable {
             isVisible: (hasConversationMessage &&
                 record["isMeta"] as? Bool != true &&
                 !isSidechain) ||
-                (isQueuedPrompt && !isSidechain)
+                (isQueuedPrompt && hasQueuedPromptContent && !isSidechain)
         )
     }
 

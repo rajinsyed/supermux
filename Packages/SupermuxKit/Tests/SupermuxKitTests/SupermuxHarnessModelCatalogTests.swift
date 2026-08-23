@@ -44,11 +44,14 @@ struct SupermuxHarnessModelCatalogTests {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set("keep", forKey: "unrelated")
-        let store = SupermuxHarnessModelCatalogStore(defaults: defaults)
         let firstModels = [try model(value: "claude-sonnet-5")]
         let secondModels = [try model(value: "claude-opus-5")]
         let firstDate = Date(timeIntervalSince1970: 1_700_000_000)
         let secondDate = firstDate.addingTimeInterval(60)
+        let store = SupermuxHarnessModelCatalogStore(
+            defaults: defaults,
+            now: { secondDate.addingTimeInterval(1) }
+        )
 
         try store.store(firstModels, forBinaryPath: "/opt/claude-a", storedAt: firstDate)
         try store.store(secondModels, forBinaryPath: "/opt/claude-b", storedAt: secondDate)

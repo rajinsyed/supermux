@@ -107,6 +107,7 @@ public struct SupermuxHarnessProtocolDecoder: Sendable {
         return .user(SupermuxHarnessUserFrame(
             message: message,
             toolUseResult: object.object(forKey: "tool_use_result"),
+            toolUseResultString: object.string(forKey: "tool_use_result"),
             sessionID: object.string(forKey: "session_id"),
             parentToolUseID: object.string(forKey: "parent_tool_use_id"),
             uuid: object.string(forKey: "uuid"),

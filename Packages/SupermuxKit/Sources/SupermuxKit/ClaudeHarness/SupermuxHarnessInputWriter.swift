@@ -1,17 +1,32 @@
+import Darwin
 import Foundation
 
 actor SupermuxHarnessInputWriter {
     /// Covers the largest policy-valid 2 MiB image payload after base64 and JSON framing.
     private static let maximumQueuedBytes = 4 * 1024 * 1024
 
+    private struct QueuedWrite {
+        let id: UInt64
+        let data: Data
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private struct ActiveWrite {
+        let id: UInt64
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
     private let fileHandle: FileHandle
-    private var queuedWrites: [(data: Data, continuation: CheckedContinuation<Void, any Error>)] = []
+    private let descriptor: Int32
+    private var queuedWrites: [QueuedWrite] = []
     private var queuedByteCount = 0
+    private var activeWrite: ActiveWrite?
     private var isClosed = false
-    private var isDraining = false
+    private var nextWriteID: UInt64 = 0
 
     init(fileHandle: FileHandle) {
         self.fileHandle = fileHandle
+        self.descriptor = fileHandle.fileDescriptor
     }
 
     func write(_ data: Data) async throws {
@@ -24,9 +39,12 @@ actor SupermuxHarnessInputWriter {
     func close() {
         guard !isClosed else { return }
         isClosed = true
+        let active = activeWrite
+        activeWrite = nil
         let writes = queuedWrites
         queuedWrites.removeAll()
         queuedByteCount = 0
+        active?.continuation.resume(throwing: SupermuxHarnessProcessError.inputClosed)
         for write in writes {
             write.continuation.resume(throwing: SupermuxHarnessProcessError.inputClosed)
         }
@@ -46,29 +64,42 @@ actor SupermuxHarnessInputWriter {
             return
         }
 
-        queuedWrites.append((data, continuation))
+        nextWriteID &+= 1
+        queuedWrites.append(QueuedWrite(
+            id: nextWriteID,
+            data: data,
+            continuation: continuation
+        ))
         queuedByteCount += data.count
-        guard !isDraining else { return }
-        isDraining = true
-        Task(priority: .utility) {
-            drain()
+        startNextWriteIfNeeded()
+    }
+
+    private func startNextWriteIfNeeded() {
+        guard !isClosed, activeWrite == nil, !queuedWrites.isEmpty else { return }
+        let write = queuedWrites.removeFirst()
+        queuedByteCount -= write.data.count
+        activeWrite = ActiveWrite(id: write.id, continuation: write.continuation)
+        let descriptor = self.descriptor
+        let id = write.id
+        let data = write.data
+        Task.detached(priority: .utility) { [weak self] in
+            let result = Result { try Self.writeSynchronously(data, to: descriptor) }
+            await self?.finishWrite(id: id, result: result)
         }
     }
 
-    private func drain() {
-        while let write = queuedWrites.first {
-            queuedWrites.removeFirst()
-            queuedByteCount -= write.data.count
-            do {
-                try fileHandle.write(contentsOf: write.data)
-                write.continuation.resume()
-            } catch {
-                write.continuation.resume(throwing: error)
-                closeAfterWriteFailure(error)
-                return
-            }
+    private func finishWrite(id: UInt64, result: Result<Void, any Error>) {
+        guard let activeWrite, activeWrite.id == id else { return }
+        self.activeWrite = nil
+        guard !isClosed else { return }
+        switch result {
+        case .success:
+            activeWrite.continuation.resume()
+            startNextWriteIfNeeded()
+        case .failure(let error):
+            activeWrite.continuation.resume(throwing: error)
+            closeAfterWriteFailure(error)
         }
-        isDraining = false
     }
 
     private func closeAfterWriteFailure(_ error: any Error) {
@@ -80,5 +111,28 @@ actor SupermuxHarnessInputWriter {
             write.continuation.resume(throwing: error)
         }
         try? fileHandle.close()
+    }
+
+    private nonisolated static func writeSynchronously(
+        _ data: Data,
+        to descriptor: Int32
+    ) throws {
+        try data.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            var offset = 0
+            while offset < bytes.count {
+                let count = Darwin.write(
+                    descriptor,
+                    baseAddress.advanced(by: offset),
+                    bytes.count - offset
+                )
+                if count > 0 {
+                    offset += count
+                    continue
+                }
+                if count < 0, errno == EINTR { continue }
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+        }
     }
 }

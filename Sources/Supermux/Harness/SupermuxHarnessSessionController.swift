@@ -149,9 +149,12 @@ final class SupermuxHarnessSessionController {
             { [weak self] diagnostic in
                 await self?.eventSink?([
                     "kind": "outputOverflow",
+                    "diagnosticKind": diagnostic.kind.rawValue,
                     "stream": diagnostic.stream.rawValue,
                     "discardedByteCount": diagnostic.discardedByteCount,
-                    "userMessage": Self.outputOverflowMessage,
+                    "userMessage": diagnostic.kind == .truncated
+                        ? Self.outputTruncatedMessage
+                        : Self.outputOverflowMessage,
                 ])
             }
         )
@@ -208,9 +211,7 @@ final class SupermuxHarnessSessionController {
         }
         let cachedModels = modelCatalogStore.snapshot(forBinaryPath: binaryPath)?.models
             .map(\.rawValue)
-        if cachedModels?.isEmpty != false {
-            startModelCatalogProbeIfNeeded(expectedBinaryPath: binaryPath)
-        }
+        startModelCatalogProbeIfNeeded(expectedBinaryPath: binaryPath)
         return (status, cachedModels?.isEmpty == false ? cachedModels : nil)
     }
 
@@ -1035,14 +1036,12 @@ final class SupermuxHarnessSessionController {
         }
         let probeID = UUID()
         let task = Task { @MainActor in
-            do {
-                return try await operation(plan)
-            } catch {
+            defer {
                 if modelCatalogProbesByBinaryPath[binaryPath]?.id == probeID {
                     modelCatalogProbesByBinaryPath.removeValue(forKey: binaryPath)
                 }
-                throw error
             }
+            return try await operation(plan)
         }
         modelCatalogProbesByBinaryPath[binaryPath] = SharedModelCatalogProbe(
             id: probeID,
@@ -1555,6 +1554,13 @@ final class SupermuxHarnessSessionController {
         String(
             localized: "supermux.harness.output.overflow",
             defaultValue: "Claude emitted an oversized output line. That line was skipped and the stream recovered."
+        )
+    }
+
+    private nonisolated static var outputTruncatedMessage: String {
+        String(
+            localized: "supermux.harness.output.truncated",
+            defaultValue: "Claude exited while another process kept its output pipe open. Remaining output may be incomplete."
         )
     }
 

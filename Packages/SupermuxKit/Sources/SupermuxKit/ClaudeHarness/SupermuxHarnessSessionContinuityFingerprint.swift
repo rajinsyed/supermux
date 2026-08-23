@@ -1,16 +1,11 @@
 import Foundation
 
-/// Exact bounded samples from the previously indexed prefix.
+/// A digest covering every byte of the previously indexed prefix.
 struct SupermuxHarnessSessionContinuityFingerprint: Sendable {
-    struct Sample: Sendable {
-        let offset: UInt64
-        let bytes: Data
-    }
-
     let observedSize: UInt64
-    let samples: [Sample]
+    let digest: Data
 
     var byteCost: Int {
-        32 + samples.reduce(0) { $0 + $1.bytes.count + 24 }
+        32 + digest.count
     }
 }

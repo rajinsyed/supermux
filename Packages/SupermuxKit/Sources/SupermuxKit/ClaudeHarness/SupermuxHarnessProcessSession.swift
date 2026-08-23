@@ -393,21 +393,35 @@ public final class SupermuxHarnessProcessSession {
         // Explicit sendability prevents main-actor inheritance on the timer's global dispatch queue.
         timer.setEventHandler { @Sendable [weak self] in
             Task { @MainActor in
-                self?.handleTerminationEscalation(runID: runID)
+                await self?.handleTerminationEscalation(runID: runID)
             }
         }
         session.terminationEscalationTimer = timer
         timer.resume()
     }
 
-    private func handleTerminationEscalation(runID: String) {
+    private func handleTerminationEscalation(runID: String) async {
         guard let session = runningProcess, session.runID == runID else { return }
         if session.process.isRunning {
             hardKill(runID: runID)
             return
         }
         guard session.pendingExitStatus != nil else { return }
-        session.drainedStreams.formUnion([.stdout, .stderr])
+        let clock = ContinuousClock()
+        if session.forcedDrainDeadline == nil {
+            session.forcedDrainDeadline = clock.now.advanced(by: .seconds(1))
+            return
+        }
+        guard let deadline = session.forcedDrainDeadline, clock.now >= deadline else { return }
+        for stream in [SupermuxHarnessProcessStream.stdout, .stderr]
+            where !session.drainedStreams.contains(stream) {
+            await outputDiagnosticSink(SupermuxHarnessOutputDiagnostic(
+                stream: stream == .stdout ? .stdout : .stderr,
+                discardedByteCount: 0,
+                kind: .truncated
+            ))
+            session.drainedStreams.insert(stream)
+        }
         finishIfExitedAndDrained(session)
     }
 

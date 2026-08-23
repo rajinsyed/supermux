@@ -4,6 +4,8 @@ public struct SupermuxHarnessUserFrame: Sendable {
     public let message: SupermuxHarnessJSONObject
     /// Structured tool output, preferred over rendered string content when present.
     public let toolUseResult: SupermuxHarnessJSONObject?
+    /// Scalar tool output when the CLI emits `tool_use_result` as a string.
+    public let toolUseResultString: String?
     /// The session identifier when supplied by the CLI.
     public let sessionID: String?
     /// The parent tool-use identifier for subagent attribution.
@@ -18,6 +20,7 @@ public struct SupermuxHarnessUserFrame: Sendable {
     /// - Parameters:
     ///   - message: The nested user message.
     ///   - toolUseResult: Optional structured tool output.
+    ///   - toolUseResultString: Optional scalar tool output.
     ///   - sessionID: The optional session identifier.
     ///   - parentToolUseID: The optional parent tool-use identifier.
     ///   - uuid: The optional wrapper UUID.
@@ -25,6 +28,7 @@ public struct SupermuxHarnessUserFrame: Sendable {
     public init(
         message: SupermuxHarnessJSONObject,
         toolUseResult: SupermuxHarnessJSONObject?,
+        toolUseResultString: String? = nil,
         sessionID: String?,
         parentToolUseID: String?,
         uuid: String?,
@@ -32,6 +36,7 @@ public struct SupermuxHarnessUserFrame: Sendable {
     ) {
         self.message = message
         self.toolUseResult = toolUseResult
+        self.toolUseResultString = toolUseResultString
         self.sessionID = sessionID
         self.parentToolUseID = parentToolUseID
         self.uuid = uuid

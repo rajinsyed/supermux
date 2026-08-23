@@ -29,7 +29,9 @@ struct SupermuxHarnessSessionHistoryIndex: Sendable {
 
     mutating func apply(_ record: SupermuxHarnessSessionIndexedRecord) {
         if let uuid = record.uuid, let link = record.link {
-            linksByUUID[uuid] = link
+            if record.eventRange != nil || linksByUUID[uuid] == nil {
+                linksByUUID[uuid] = link
+            }
             if let eventRange = record.eventRange {
                 eventRangesByUUID[uuid] = eventRange
             }

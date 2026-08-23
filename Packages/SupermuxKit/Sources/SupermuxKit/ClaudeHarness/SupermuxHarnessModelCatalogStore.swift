@@ -10,12 +10,23 @@ public struct SupermuxHarnessModelCatalogStore: Sendable {
 
     // UserDefaults is documented thread-safe and the reference is immutable.
     private nonisolated(unsafe) let defaults: UserDefaults
+    private let maximumAge: TimeInterval
+    private let now: @Sendable () -> Date
 
     /// Creates a model catalog store for the supplied defaults suite.
     ///
-    /// - Parameter defaults: The defaults suite in which model catalogs should be persisted.
-    public init(defaults: UserDefaults) {
+    /// - Parameters:
+    ///   - defaults: The defaults suite in which model catalogs should be persisted.
+    ///   - maximumAge: The longest a cached account-dependent catalog remains usable.
+    ///   - now: The clock used to enforce freshness.
+    public init(
+        defaults: UserDefaults,
+        maximumAge: TimeInterval = 24 * 60 * 60,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.defaults = defaults
+        self.maximumAge = max(0, maximumAge)
+        self.now = now
     }
 
     /// Loads the cached model catalog for a resolved Claude executable.
@@ -33,9 +44,11 @@ public struct SupermuxHarnessModelCatalogStore: Sendable {
         }
         let models = values.compactMap { try? SupermuxHarnessJSONObject(rawValue: $0) }
         guard models.count == values.count else { return nil }
+        let storedDate = Date(timeIntervalSince1970: storedAt.doubleValue)
+        guard now().timeIntervalSince(storedDate) <= maximumAge else { return nil }
         return SupermuxHarnessModelCatalogSnapshot(
             models: models,
-            storedAt: Date(timeIntervalSince1970: storedAt.doubleValue)
+            storedAt: storedDate
         )
     }
 

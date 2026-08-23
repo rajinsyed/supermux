@@ -125,6 +125,19 @@ import Testing
         #expect(userFrame.toolUseResult?.bool(forKey: "interrupted") == false)
     }
 
+    @Test func preservesStringToolUseResultWithoutReparsingRawObject() throws {
+        let decoded = try decoder.decodeLine(
+            #"{"type":"user","message":{"role":"user","content":"done"},"tool_use_result":"plain output"}"#
+        )
+        guard case .user(let frame) = decoded.frame else {
+            Issue.record("Expected user frame")
+            return
+        }
+
+        #expect(frame.toolUseResult == nil)
+        #expect(frame.toolUseResultString == "plain output")
+    }
+
     @Test(arguments: SupermuxHarnessResultSubtype.allCases)
     func decodesEverySupportedResultSubtype(_ subtype: SupermuxHarnessResultSubtype) throws {
         let line = #"{"type":"result","subtype":"\#(subtype.rawValue)","is_error":true,"result":"final","session_id":"s","terminal_reason":"reason","usage":{"input_tokens":3}}"#

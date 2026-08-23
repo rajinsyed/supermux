@@ -30,9 +30,12 @@ struct SupermuxHarnessSubagentTranscriptLocator: Sendable {
             projectsRootURL: projectsRootURL,
             fileManager: fileManager
         )
-        for projectDirectory in discovery.projectDirectoryURLs(
+        let projectDirectories = discovery.projectDirectoryURLs(
             for: address.workingDirectoryURL
-        ) {
+        )
+        // Prefer the lexical path the pane addressed. Claude may have storage for
+        // both a symlink alias and its resolved target, and the alias is the user's session.
+        for projectDirectory in projectDirectories.reversed() {
             guard fileManager.fileExists(atPath: projectDirectory.path) else { continue }
             guard safeDirectory(projectDirectory, beneath: projectsRootURL) else {
                 throw SupermuxHarnessSubagentTranscriptReaderError.unsafeTranscriptPath

@@ -274102,6 +274102,23 @@
         }
       }
     },
+    "supermux.harness.output.truncated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude exited while another process kept its output pipe open. Remaining output may be incomplete."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のプロセスが出力パイプを開いたまま Claude が終了しました。残りの出力は不完全な可能性があります。"
+          }
+        }
+      }
+    },
     "supermux.harness.permission.allowAlways" : {
       "extractionState" : "manual",
       "localizations" : {
