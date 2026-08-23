@@ -121,4 +121,20 @@ describe("the strip still speaks for the states with no other surface", () => {
     const { container } = mount(model);
     expect(container.querySelector(".status-text")!.textContent).toBe("spawn ENOENT");
   });
+
+  test("the transcript footer exclusively owns exits once a turn exists", () => {
+    const model = {
+      ...createModel(),
+      runPhase: "exited" as const,
+      turns: [{ id: "turn-1" }] as unknown as TranscriptModel["turns"]
+    };
+    const { container } = mount(model);
+    expect(container.querySelector(".status-strip")).toBeNull();
+  });
+
+  test("a startup failure uses the startup-specific fallback", () => {
+    const model = { ...createModel(), runPhase: "exited" as const, startFailed: true };
+    const { container } = mount(model);
+    expect(container.querySelector(".status-text")!.textContent).toBe("Could not start Claude");
+  });
 });

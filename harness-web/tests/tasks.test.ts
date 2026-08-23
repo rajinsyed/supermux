@@ -13,7 +13,7 @@ import {
   createModel,
   replayLines
 } from "../src/model/transcript";
-import { runningForegroundBash, workStartedAtMs } from "../src/model/tasks";
+import { hasLiveBackgroundWork, runningForegroundBash, workStartedAtMs } from "../src/model/tasks";
 import { mergeWorkflowProgress, groupByPhase } from "../src/model/workflow";
 import type { Block, ToolBlock, TranscriptModel } from "../src/model/types";
 import type { ProtocolLine } from "../src/protocol/types";
@@ -211,6 +211,26 @@ describe("task frames after the result never reopen the turn", () => {
     );
     for (const line of workflowFixture.slice(47)) model = applyLine(model, index, line, Date.now());
     expect(model.turns[0].folded).toBe(false);
+  });
+
+  test("an async-launched agent is live before its task frame arrives", () => {
+    const turn = {
+      blocks: [
+        {
+          kind: "tool",
+          key: "agent",
+          toolUseId: "toolu_agent",
+          name: "Agent",
+          input: { description: "Review the parser" },
+          structured: { status: "async_launched", agentId: "agent-1" },
+          status: "success",
+          children: [],
+          startedAtMs: 1
+        }
+      ]
+    } as unknown as TranscriptModel["turns"][number];
+
+    expect(hasLiveBackgroundWork(turn)).toBe(true);
   });
 
   test("an ordinary turn with no background work still folds on its result", () => {

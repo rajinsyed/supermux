@@ -245,6 +245,7 @@ interface Script {
   restartParams: StartParams[];
   startParams: StartParams[];
   setModelCalls: { model: string; effort?: string }[];
+  setModelImpl?(params: { model: string; effort?: string }): Promise<void>;
   historyEvents: ProtocolLine[];
   restore?: { sessionId: string; model?: string };
   /** context.defaults.lastUsed — the machine-wide last-used model. */
@@ -308,6 +309,7 @@ function makeBridge(script: Script): HarnessBridge {
     stop: noop,
     setModel: async (p) => {
       script.setModelCalls.push(p);
+      await script.setModelImpl?.(p);
     },
     setPermissionMode: noop,
     respondPermission: noop,
@@ -425,6 +427,34 @@ describe("bug 1: the picker does not stay on the settings default", () => {
     expect(triggerLabel(store)).toBe("Sonnet");
     // …and the hook reconciles by pushing set_model at the live process.
     expect(script.setModelCalls.map((c) => c.model)).toContain("sonnet");
+  });
+
+  test("a failed reconciliation keeps the selection pending for a later run", async () => {
+    const script: Script = {
+      restartParams: [],
+      startParams: [],
+      setModelCalls: [],
+      setModelImpl: async () => {
+        throw new Error("set_model failed");
+      },
+      historyEvents: []
+    };
+    const { store, out } = await mount(script);
+    act(() => out.current!.setModel("sonnet", undefined));
+    expect(store.getSnapshot().session.modelPickPending).toBe(true);
+
+    act(() => {
+      store.receive([
+        { kind: "runStarted", runId: "raced-run" } as never,
+        { kind: "protocol", line: initLine("gpt-5.6-sol", "raced") }
+      ]);
+      store.flushNow();
+    });
+    await flush();
+
+    expect(script.setModelCalls.map((call) => call.model)).toContain("sonnet");
+    expect(store.getSnapshot().session.model).toBe("sonnet");
+    expect(store.getSnapshot().session.modelPickPending).toBe(true);
   });
 
   test("a message_start from the old model's in-flight turn cannot revert a live pick either", async () => {

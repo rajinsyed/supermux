@@ -159,6 +159,31 @@ describe("item B: a replayed session's subagents are settled, not Working", () =
     }
   });
 
+  test("malformed Agent fallback fields never crash the row", () => {
+    const block = {
+      kind: "tool",
+      key: "toolu_malformed",
+      toolUseId: "toolu_malformed",
+      name: "Agent",
+      input: {
+        description: { unexpected: true },
+        subagent_type: { unexpected: true }
+      },
+      status: "success",
+      children: [],
+      startedAtMs: 1
+    } as unknown as ToolBlock;
+
+    const view = render(
+      createElement(CopyProvider, {
+        dict: undefined,
+        children: createElement(AgentRow, { block })
+      })
+    );
+    expect(view.container.querySelector(".agent-row-name")?.textContent).toBe("Agent");
+    expect(view.container.querySelector(".agent-row-type")).toBeNull();
+  });
+
   test("task records are latched terminal too, so the strip and stop-all see nothing live", () => {
     const index = createIndex();
     let model = createModel();

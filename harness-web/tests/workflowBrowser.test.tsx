@@ -532,6 +532,48 @@ describe("the agent detail", () => {
     expect(badges).toContain("Cached");
   });
 
+  test("WorkflowView routes by workflow run and agent id together", () => {
+    const opened: HarnessView[] = [];
+    const base = replayLines(FLOW);
+    const record = Object.values(base.tasksById).find((task) => task.workflow);
+    if (!record?.workflow?.runId) throw new Error("fixture produced no workflow run");
+    const agent = record.workflow.agents.find((candidate) => candidate.agentId);
+    if (!agent?.agentId) throw new Error("fixture produced no workflow agent id");
+    const model = {
+      ...base,
+      agentThreads: {
+        wrong: {
+          toolUseId: "toolu_wrong_run",
+          agentId: agent.agentId,
+          workflowRunId: "wf_other",
+          childIds: [],
+          blocks: [],
+          startedAtMs: 1,
+          revision: 0
+        },
+        right: {
+          toolUseId: "toolu_right_run",
+          agentId: agent.agentId,
+          workflowRunId: record.workflow.runId,
+          childIds: [],
+          blocks: [],
+          startedAtMs: 1,
+          revision: 0
+        }
+      }
+    } as unknown as TranscriptModel;
+
+    const { container, getByText } = mount(
+      <OpenViewContext.Provider value={(view) => opened.push(view)}>
+        <WorkflowView model={model} taskId={record.taskId} onBack={() => undefined} />
+      </OpenViewContext.Provider>
+    );
+    fireEvent.click(container.querySelector<HTMLElement>(".wfb-agent-row")!);
+    fireEvent.click(getByText("Open full transcript"));
+
+    expect(opened).toEqual([{ kind: "agent", toolUseId: "toolu_right_run" }]);
+  });
+
   test("Open full transcript routes to the agent chat when there is one", () => {
     const opened: unknown[] = [];
     const model = replayLines(FLOW);

@@ -7,6 +7,7 @@ import { CopyProvider } from "../src/ui/CopyContext";
 import { PlanCard } from "../src/ui/permission/PlanCard";
 import { QuestionCard } from "../src/ui/permission/QuestionCard";
 import { PermissionCard, type PermissionDecision } from "../src/ui/permission/PermissionCard";
+import { TodoStrip } from "../src/ui/status/TodoStrip";
 
 afterEach(cleanup);
 
@@ -253,6 +254,35 @@ describe("approval cards are named for a screen reader", () => {
     expect(container.querySelector(`#${CSS.escape(describedby)}`)!.textContent).toBe(
       "Claude needs permission to continue"
     );
+  });
+});
+
+describe("TodoStrip expansion", () => {
+  test("scrolls the active step after Disclosure mounts its list", async () => {
+    const calls: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      calls.push(this);
+    };
+    try {
+      mount(
+        <TodoStrip
+          todos={[
+            { content: "First", activeForm: "First", status: "completed" },
+            { content: "Current", activeForm: "Working", status: "in_progress" },
+            { content: "Last", activeForm: "Last", status: "pending" }
+          ]}
+        />
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Show all steps" }));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      });
+
+      expect(calls.at(-1)?.textContent).toContain("Current");
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 });
 

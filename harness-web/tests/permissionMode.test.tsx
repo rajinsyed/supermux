@@ -11,6 +11,7 @@ interface Script {
   startParams: StartParams[];
   permissionModes: PermissionMode[];
   restorePermissionMode?: PermissionMode;
+  setPermissionMode?(mode: PermissionMode): Promise<void>;
 }
 
 function makeBridge(script: Script): HarnessBridge {
@@ -53,6 +54,7 @@ function makeBridge(script: Script): HarnessBridge {
     setModel: noop,
     async setPermissionMode({ mode }) {
       script.permissionModes.push(mode);
+      await script.setPermissionMode?.(mode);
     },
     respondPermission: noop,
     renameSession: noop,
@@ -145,6 +147,31 @@ describe("permission mode state", () => {
 
     expect(store.getSnapshot().session.permissionMode).toBe("bypassPermissions");
     expect(script.permissionModes).toEqual(["plan", "bypassPermissions"]);
+  });
+
+  test("a rejection from the previous run cannot roll back the replacement run", async () => {
+    const { out, script, store } = await mount();
+    act(() => out.current!.send("start", []));
+    await flush();
+    expect(store.getSnapshot().runId).toBe("run-1");
+
+    let rejectOldMutation: (reason?: unknown) => void = () => undefined;
+    script.setPermissionMode = () =>
+      new Promise<void>((_resolve, reject) => {
+        rejectOldMutation = reject;
+      });
+    act(() => out.current!.setPermissionMode("acceptEdits"));
+    act(() => out.current!.restart());
+    await flush();
+    expect(store.getSnapshot().runId).toBe("run-2");
+
+    await act(async () => {
+      rejectOldMutation(new Error("old process exited"));
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(store.getSnapshot().session.permissionMode).toBe("acceptEdits");
   });
 
   test("the started mode echoed by init frames does not clobber the user pick", async () => {

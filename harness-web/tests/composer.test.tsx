@@ -974,6 +974,50 @@ describe("composer attachment contract", () => {
     });
   });
 
+  test("an image encoding failure restores the submitted text for retry", async () => {
+    const image = new File([new Uint8Array([1])], "broken.png", { type: "image/png" });
+    Object.defineProperty(image, "arrayBuffer", {
+      configurable: true,
+      value: () => Promise.reject(new Error("decode failed"))
+    });
+    const rendered = mountAttachmentComposer();
+    pasteFiles([image]);
+    await screen.findByText("broken.png");
+    rendered.setDraft("keep this message");
+
+    fireEvent.click(document.querySelector(".btn-send")!);
+
+    await waitFor(() => {
+      expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("keep this message");
+      expect(screen.queryByRole("alert")?.textContent).toContain("Could not read this image.");
+    });
+  });
+
+  test("a failed older image send never overwrites newer draft text", async () => {
+    let rejectBytes: (reason?: unknown) => void = () => undefined;
+    const bytes = new Promise<ArrayBuffer>((_resolve, reject) => {
+      rejectBytes = reject;
+    });
+    const image = new File([new Uint8Array([1])], "slow-broken.png", { type: "image/png" });
+    Object.defineProperty(image, "arrayBuffer", {
+      configurable: true,
+      value: () => bytes
+    });
+    const rendered = mountAttachmentComposer();
+    pasteFiles([image]);
+    await screen.findByText("slow-broken.png");
+    rendered.setDraft("submitted text");
+    fireEvent.click(document.querySelector(".btn-send")!);
+    rendered.setDraft("newer draft");
+
+    await act(async () => {
+      rejectBytes(new Error("decode failed"));
+      await bytes.catch(() => undefined);
+    });
+
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("newer draft");
+  });
+
   test("an image send keeps its submit order while bytes are loading", async () => {
     let releaseBytes: (value: ArrayBuffer) => void = () => undefined;
     const bytes = new Promise<ArrayBuffer>((resolve) => {
