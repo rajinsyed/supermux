@@ -353,7 +353,13 @@ extension ControlCommandCoordinator {
                 data: .object(["placement": .string(rawValue)])
             )
         case .agentSessionRejected(let typeRawValue):
-            return .err(code: "invalid_params", message: "agent-session is only supported by surface.create", data: .object(["type": .string(typeRawValue)]))
+            // SUPERMUX:begin claude-harness-socket-split-error
+            return .err(
+                code: "invalid_params",
+                message: "\(typeRawValue) is only supported by surface.create",
+                data: .object(["type": .string(typeRawValue)])
+            )
+            // SUPERMUX:end claude-harness-socket-split-error
         case .dockUnsupportedType(let typeRawValue, let message):
             return .err(code: "invalid_params", message: message, data: .object(["type": .string(typeRawValue)]))
         case .dockUnavailable(let message): return .err(code: "invalid_params", message: message, data: .object(["placement": .string("dock")]))

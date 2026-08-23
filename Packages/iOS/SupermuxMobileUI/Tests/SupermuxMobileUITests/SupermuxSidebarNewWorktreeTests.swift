@@ -201,7 +201,7 @@ import Testing
         let (model, session) = try await runningModel(client: client)
         defer { session.cancel() }
 
-        model.requestNewWorktree(project.id)
+        let stalePreparation = try #require(model.requestNewWorktree(project.id))
         try await wait.until { model.preparingNewWorktreeProjectID == project.id }
 
         // Replacement session: resets the flow and bumps the generation while
@@ -219,20 +219,22 @@ import Testing
         }
 
         // The newer request against the fresh session takes the marker…
-        model.requestNewWorktree(project.id)
+        let freshPreparation = try #require(model.requestNewWorktree(project.id))
         #expect(model.preparingNewWorktreeProjectID == project.id)
 
         // …and the stale fetch finishing (FIFO: it parked first) must not
-        // steal its spinner.
+        // steal its spinner. Await its actual preparation task, not a timing
+        // guess about when the resumed continuation reaches the generation guard.
         client.resumeWorktreesList()
-        try await Task.sleep(for: .milliseconds(50))
+        _ = await stalePreparation.value
         #expect(model.preparingNewWorktreeProjectID == project.id)
         #expect(model.newWorktreePresentation == nil)
 
         // Let the still-parked newer fetch finish: it presents normally.
         client.worktreesListShouldHoldBranchFetches = false
         client.resumeAllWorktreesList()
-        try await wait.until { model.newWorktreePresentation != nil }
+        _ = await freshPreparation.value
+        #expect(model.newWorktreePresentation != nil)
         #expect(model.preparingNewWorktreeProjectID == nil)
     }
 }

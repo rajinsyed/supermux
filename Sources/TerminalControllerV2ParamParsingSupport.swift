@@ -202,6 +202,10 @@ extension TerminalController {
             return .simulator
         case "agentsession":
             return .agentSession
+        // SUPERMUX:begin claude-harness-socket-token
+        case "claudeharness":
+            return .claudeHarness
+        // SUPERMUX:end claude-harness-socket-token
         default:
             return nil
         }

@@ -14845,6 +14845,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         // SUPERMUX:end run-toggle-shortcut-dispatch
+        // SUPERMUX:begin claude-harness-shortcut-dispatch
+        if matchConfiguredShortcut(event: event, action: .supermuxNewClaudeHarness) {
+            guard !event.isARepeat else { return true }
+            if !performNewClaudeHarnessShortcutAction(event: event) {
+                NSSound.beep()
+            }
+            return true
+        }
+        // SUPERMUX:end claude-harness-shortcut-dispatch
         if matchConfiguredShortcut(event: event, action: .findNext) {
             guard !shouldLetFocusedBrowserOwnFindShortcut(event) else {
                 return false
@@ -16260,6 +16269,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 if workspace != nil { onExecuted?() }
                 return workspace != nil
             case .newSimulator: return performConfiguredNewSimulatorAction(context: context, onExecuted: onExecuted)
+            // SUPERMUX:begin claude-harness-configured-action
+            case .newClaudeHarness: return performConfiguredNewClaudeHarnessAction(context: context, onExecuted: onExecuted)
+            // SUPERMUX:end claude-harness-configured-action
             case .newTerminal:
                 context.tabManager.newSurface()
                 onExecuted?()

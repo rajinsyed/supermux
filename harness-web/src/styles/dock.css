@@ -1,0 +1,887 @@
+/* ---------------------------------------------------------------------------
+   The dock: everything floating at the bottom of the pane.
+
+   Cursor's glass grammar. The transcript scrolls underneath; the dock is a
+   stack of separate floating islands — banners, the working panel, the plan
+   strip, the status line, the composer pill, and the bottom bar — with the
+   page visible in the gaps. The composer is the hero: a large rounded glass
+   pill with the round send control at its trailing edge.
+
+   Round 7 makes "underneath" literal (item 6). The dock used to be a flex
+   SIBLING of the scroller: it floated in appearance — glass, gaps, shadows —
+   while occupying a solid band of the flex column that content could never
+   enter. The dogfood note was "the prompt bar eats background space", and it
+   was right: the scroller's viewport ended at the composer's top edge, so the
+   whole bottom of the pane was a strip the transcript could not use, and the
+   glass had nothing behind it to be glass ABOUT.
+
+   It is absolutely positioned over the scroller now. The transcript runs the
+   pane's full height, its content column reserves the dock's MEASURED height as
+   bottom padding (`--dock-reserve` in transcript.css, written by App.tsx's
+   ResizeObserver), and the last message therefore still comes to rest above the
+   composer — but everything before it passes behind the glass on the way up.
+--------------------------------------------------------------------------- */
+
+.dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px var(--gutter) 6px;
+  max-width: calc(var(--content-max) + 2 * var(--gutter));
+  width: 100%;
+  margin: 0 auto;
+  z-index: 20;
+  /* The islands take the pointer; the gaps between them do not. Text scrolling
+     through a gap stays selectable, and a click that lands between the status
+     strip and the composer reaches the transcript rather than a dead band. */
+  pointer-events: none;
+}
+
+.dock > * {
+  pointer-events: auto;
+}
+
+/* ---------- the veil behind the dock ----------
+
+   Content passing behind the glass has to stay legible without the dock
+   becoming an opaque bar again — which would be the flex band back, just drawn
+   differently. The answer is a PROGRESSIVE veil: one layer spanning the dock's
+   own height plus a fade zone above it, blurred and tinted, with a `mask-image`
+   ramp taking it from fully applied at the bottom to nothing at the top. A line
+   of text does not hit a hard edge and vanish; it softens as it travels under
+   the composer and has faded out by the time it reaches the pill.
+
+   The TINT is `--page-bg`: the veil is made of the PAGE, not of the glass. The
+   first cut used `--panel` — the composer's own material, on the reasoning that
+   the veil and the islands should be one substance — and it was visibly wrong
+   in light. `--panel` is paper LIGHTER than the page (correct for an island
+   that has to read as lifted), so full-bleed it painted a brighter rectangle
+   across the bottom third of the pane, with the mask's ramp quantising into
+   three flat 1/255 steps: three hairline bands straight across the window over
+   a transcript that had nothing there to hide. Tinted with the page's own
+   colour the veil is INVISIBLE wherever there is no content — which is most of
+   the time — and still fully hides a line of text that scrolls into it. It also
+   cannot band, because at the top of the ramp it is fading page colour into
+   page colour.
+
+   The blur is what does the work in the middle of the ramp, and it is why this
+   reads as depth rather than as a wipe: a half-covered line is softened before
+   it is covered. Where the theme's page is `transparent` (Ghostty
+   transparency), the tint contributes nothing and the blur is the whole effect
+   — which is the right answer there, since the point of that setting is that
+   the native window shows through.
+
+   ONE ramp does both jobs: masking the layer fades the blur AND the tint
+   together, so there is no second gradient that can drift out of step with the
+   first. The stops are deliberately not linear — a straight alpha ramp on a
+   blur shows an edge about a third of the way up, because the eye tracks where
+   the blur STARTS, not where its alpha is. The extra stops ease that onset
+   away, and the top stop is fully transparent so a transcript scrolled to the
+   top carries no veil at all.
+
+   `-1` z-index inside the dock's own stacking context: behind every island,
+   above the transcript. It never takes the pointer — it is a pane of glass, and
+   selecting the text behind it must keep working. */
+.dock::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  /* FULL-BLEED, not the dock's own width. The dock is capped at the content
+     column and centred, so a veil inset to it drew a lit rectangle with two
+     visible vertical edges down the middle of the pane — the transcript is
+     capped at the same column but the PAGE is not, and neither is the scrollbar
+     gutter. `100vw` off the dock's own centre spans the pane whatever the
+     column is doing. */
+  left: 50%;
+  width: 100vw;
+  margin-left: -50vw;
+  /* The dock's own height plus a fade zone — 48px of ramp, trimmed from the
+     first cut's 76px after review: the taller veil hazed a whole extra line of
+     transcript above the composer. Still tall enough that the ramp reads as
+     depth rather than as an edge. */
+  top: -48px;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--page-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  -webkit-mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 44%,
+    rgba(0, 0, 0, 0.82) 60%,
+    rgba(0, 0, 0, 0.46) 76%,
+    rgba(0, 0, 0, 0.16) 90%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 44%,
+    rgba(0, 0, 0, 0.82) 60%,
+    rgba(0, 0, 0, 0.46) 76%,
+    rgba(0, 0, 0, 0.16) 90%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+/* ---------- status strip ----------
+
+   The EXCEPTION line. It renders only when the pane cannot run (no CLI), when
+   its process died, or while it restarts — three states with no other surface.
+   The busy narration it used to carry ("Claude is thinking…", "Running Bash",
+   "2 messages queued") is gone: the composer's Stop button, the permission
+   card, and the queue chips each already said it, and a row that appears and
+   vanishes under the composer moved the whole dock every time a turn advanced.
+
+   Because it is rare, it is allowed to look like something: a tinted pill
+   rather than a bare line of grey text. It starts on the composer's own left
+   edge, and its 12px glyph is centred on the dock's one text origin — the same
+   x the composer's + control sits on — so the pill hangs under the input rather
+   than floating beside it. */
+
+.status-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  /* 12px + half a 12px glyph = the 18px centreline the + control keeps. */
+  padding: 5px 12px 5px calc(var(--dock-indent) - 12px);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.status-glyph {
+  flex: 0 0 auto;
+}
+
+.status-glyph.is-spinning {
+  animation: spin 900ms linear infinite;
+}
+
+.status-strip.is-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+}
+
+.status-strip.is-busy {
+  color: var(--claude);
+  background: var(--claude-faint);
+  border-color: var(--claude-border);
+}
+
+.status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The one control that lives on the strip: Restart, after an exit. It wears
+   the strip's own hue rather than the generic tiny-button grey, so the row
+   reads as one object with an action instead of a message plus a widget. */
+.status-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  margin: -3px -5px -3px 2px;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: inherit;
+  background: var(--surface-hover);
+  transition: background var(--dur) var(--ease);
+}
+
+.status-action:hover {
+  background: var(--surface-active);
+}
+
+.status-action:focus-visible {
+  background: var(--surface-active);
+}
+
+.status-elapsed {
+  color: var(--text-faint);
+}
+
+/* ---------- banners ---------- */
+
+.banner-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 12px;
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lifted);
+  font-size: 12px;
+}
+
+.banner.is-warning {
+  border-color: var(--warning-dot);
+}
+
+.banner.is-error {
+  border-color: var(--danger-border);
+}
+
+.banner-icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--text-muted);
+}
+
+.banner.is-warning .banner-icon {
+  color: var(--warning);
+}
+
+.banner.is-error .banner-icon {
+  color: var(--danger);
+}
+
+.banner-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.banner-title {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.banner-detail {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.banner-peek {
+  height: 3px;
+  margin: 0 10px;
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  background: var(--surface-active);
+}
+
+/* ---------- rewind failure note ---------- */
+
+.rewind-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--r-lg);
+  font-size: 12px;
+}
+
+.rewind-note.is-degraded {
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-dot);
+  color: var(--warning);
+}
+
+.rewind-note-x {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: inherit;
+}
+
+.rewind-note-x:hover {
+  background: var(--surface-hover);
+}
+
+.rewind-note-x:focus-visible {
+  background: var(--surface-hover);
+}
+
+/* ---------- todo strip ---------- */
+
+.todo-strip {
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lifted);
+  overflow: hidden;
+}
+
+.todo-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.todo-strip-head:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.todo-strip-head:focus-visible {
+  color: var(--text);
+}
+
+.todo-segments {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.todo-seg {
+  width: 9px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-active);
+}
+
+.todo-seg.is-completed {
+  background: var(--success-dot);
+}
+
+.todo-seg.is-in_progress {
+  background: var(--claude-strong);
+}
+
+.todo-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.todo-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.todo-strip-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 12px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: min(180px, 26vh);
+  overflow-y: auto;
+}
+
+@media (max-height: 560px) {
+  .todo-strip-list {
+    max-height: min(110px, 22vh);
+  }
+}
+
+/* ---------- queue + attachment chips (rendered inside the composer) ---------- */
+
+.queue-strip,
+.attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 9px 12px 0;
+}
+
+.queue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 6px 3px 9px;
+  border-radius: var(--r-pill);
+  background: var(--surface-active);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-soft);
+  min-width: 0;
+}
+
+.queue-chip-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.queue-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.queue-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.queue-chip-x:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.queue-chip-x:focus-visible {
+  color: var(--text);
+}
+
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 3px;
+  border-radius: var(--r-md);
+  background: var(--surface-active);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+}
+
+.attach-chip img {
+  width: 26px;
+  height: 26px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+}
+
+.attach-name {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* ---------- composer ----------
+
+   The hero: one large glass pill. The + attach control leads, the textarea
+   fills, the round send/stop control trails — Cursor's exact grammar. */
+
+.composer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ONE optical centreline through the pill (round-5 item 2).
+ *
+ * The previous build claimed this and did not have it. It bottom-aligned the
+ * row and asserted every child was 26px — but the textarea's box is
+ * `line-height: 18px` plus 4px of padding either side, which is 26px only when
+ * the browser rounds the way the comment assumed. Against a 26px BUTTON, whose
+ * glyph is centred in its own box, the text sat visibly high: `flex-end` aligns
+ * the bottom of a text box, and the bottom of a text box is not where its
+ * baseline is.
+ *
+ * The row is `align-items: center` now, with a `--composer-line: 28px` floor on
+ * every child — the + control, the textarea, the model trigger, and the send
+ * button all declare that height, so centring them is exact rather than
+ * approximate, and the textarea's own line box is centred inside it by equal
+ * padding (28 - 18 = 10, so 5 top and 5 bottom).
+ *
+ * A GROWN textarea is the case `flex-end` existed for, and it is handled where
+ * it belongs: `.composer-shell:has(.composer-input.is-multiline)` switches the
+ * row to `flex-end` so the controls stay on the last line, which is what Cursor
+ * does. Single-line — the state the screenshot caught — is centred. */
+/* NO `--shadow-panel` here, deliberately.
+   That token is `inset 0 1px 0 rgba(255,255,255,.06)` — a one-pixel highlight
+   along the top edge. On a flat panel it reads as glass catching the light; on
+   THIS panel it lands directly inside the 1px border and composites with it,
+   so the top stroke rendered visibly heavier and brighter than the other three
+   and the pill looked lit from above rather than outlined. The composer is the
+   one shape in the pane whose whole silhouette is a stroke, so it takes the
+   stroke alone: one hairline, even the whole way round. */
+.composer-shell {
+  --composer-line: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 5px;
+  border-radius: var(--r-composer);
+  background: var(--panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  transition: border-color var(--dur) var(--ease);
+}
+
+/* Multi-line: the controls drop to the last line rather than floating to the
+   middle of a tall box. `:has()` is what lets the SINGLE-line case — the one
+   the round-5 screenshot caught off-centre — stay centred. */
+.composer-shell:has(.composer-input.is-multiline) {
+  align-items: flex-end;
+}
+
+.composer-shell:focus-within {
+  border-color: var(--border-strong);
+}
+
+.composer.is-waiting .composer-shell {
+  border-color: var(--warning-dot);
+}
+
+/* Chips strips render INSIDE the pill, as a full-width row above the input. */
+.composer .queue-strip,
+.composer .attach-strip {
+  order: -1;
+  width: 100%;
+  padding: 2px 4px 0;
+}
+
+.attachment-error {
+  order: -1;
+  width: 100%;
+  padding: 1px 6px 2px;
+  color: var(--danger);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.composer-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--composer-line);
+  height: var(--composer-line);
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  background: var(--surface-active);
+  color: var(--text-muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.composer-attach:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.composer-attach:focus-visible {
+  color: var(--text);
+}
+
+/* 28px = 5 + 18 + 5. The padding is symmetric AND the sum is exactly the row's
+   declared line, so the single line of text is optically centred against the two
+   round controls and the model trigger rather than sitting a pixel or two high
+   the way the old 4 + 18 + 4 = 26 box did against buttons whose glyphs centre in
+   their own boxes. */
+.composer-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: none;
+  background: transparent;
+  padding: 5px 4px;
+  /* The autosize effect writes an inline `height` on every keystroke, so this
+     is the floor before the first measurement, not the resting height. */
+  min-height: var(--composer-line);
+  font-size: 13.5px;
+  line-height: 18px;
+  color: var(--text);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.composer-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* The pill's own focus-within border is the focus affordance for the input; a
+   second ring drawn on the textarea inside it reads as a broken outline. */
+.composer-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.composer-input:disabled {
+  opacity: 0.6;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+/* Every control on the row declares the SAME line, which is what makes
+   `align-items: center` above exact rather than approximate. The shared
+   `.btn-send` and `.btn-stop` are 30px because the cards use them at that size;
+   inside the pill they come down to the composer's own scale. */
+.composer-actions .btn-send,
+.composer-actions .btn-stop {
+  width: var(--composer-line);
+  height: var(--composer-line);
+}
+
+.btn-plan-action {
+  height: var(--composer-line);
+  border-radius: var(--r-pill);
+}
+
+/* ---------- model picker, inside the pill ----------
+
+   Cursor's quiet trigger: dim text, no bed at rest, no icon but the small
+   chevron, sitting on the input's centreline just left of send. The effort
+   level is part of the LABEL ("Claude Opus 5 Extra High"), not a chip — it is
+   one setting with one name, and a second bed beside the model name was the
+   thing that made the old bottom-bar pill read as two controls. */
+
+.composer-model {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.composer-model-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--composer-line);
+  max-width: 26ch;
+  min-width: 0;
+  padding: 0 7px;
+  border-radius: var(--r-row);
+  font-size: 12px;
+  color: var(--text-faint);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.composer-model-trigger:hover,
+.composer-model-trigger.is-open {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.composer-model-trigger:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.composer-model-trigger svg {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.composer-model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-weight: 590;
+}
+
+/* The effort is the label's QUALIFIER, not more of its name — "GPT 5.6 Sol
+   Extra high" read as one run-on model name. The split is carried by WEIGHT
+   and INK alone (round-7 review: the interpunct read as clutter): the name a
+   step bolder, the effort a size and a tier down. No `opacity` — the pane's
+   contrast tests composite real color tiers, and a second dim on top of a tier
+   is the class of rule they exist to reject. */
+.composer-model-effort {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* The hover/open state brightens the trigger to full ink; the effort rises one
+   tier with it but stays a step behind, so the hierarchy survives the hover
+   instead of flattening back into a run-on. */
+.composer-model-trigger:hover .composer-model-effort,
+.composer-model-trigger.is-open .composer-model-effort,
+.composer-model-trigger:focus-visible .composer-model-effort {
+  color: var(--text-muted);
+}
+
+/* ---------- the model panel ----------
+
+   The kit's surface at the picker's own width, plus the reasoning strip pinned
+   at its foot. The MATERIAL is menu.css; the rows are the kit's rows.
+
+   Round 4 opened a reasoning strip UNDER whichever row the pointer last
+   touched, so the panel's height jumped as the reader moved down the list and
+   there was no stable target for the wheel or Option+,/. to move. Effort
+   belongs to the ACTIVE model and now sits once, at the bottom, under a
+   hairline. */
+
+/* 296px is set by the reasoning strip, not by the model names: five equal
+   segments have to hold "Extra high" without ellipsizing, and at 268px it
+   truncated to "Extra …" — a scale whose steps cannot be read is not a
+   scale. */
+.pop-model {
+  width: 296px;
+  max-height: min(400px, 62vh);
+}
+
+.model-rows {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ---------- the reasoning strip ----------
+
+   A segmented ORDERED scale, not five checkable rows: the levels run low → max,
+   and rendering them as a menu of unrelated options hid that. It is also the
+   visible target for the two gestures that move it (wheel over the trigger or
+   the strip, Option+,/. in the composer), which is why it is pinned rather than
+   opened per row. */
+
+.effort-strip {
+  flex: 0 0 auto;
+  margin: 4px -4px -4px;
+  padding: 5px 8px 7px;
+  border-top: 1px solid var(--border-faint);
+  background: var(--surface-sunken);
+  border-radius: 0 0 calc(var(--r-pop) - 1px) calc(var(--r-pop) - 1px);
+}
+
+.effort-strip .ui-menu-label {
+  padding: 0 1px 5px;
+}
+
+/* One track, segments inside it: a single object the eye reads as a scale,
+   rather than five pills that happen to be adjacent. */
+.effort-scale {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-row);
+  background: var(--surface-active);
+}
+
+/* `flex: 1 1 auto`, NOT `1 1 0`. Equal thirds look tidier on a diagram and are
+   wrong here: the five labels are 3–10 characters, so equal segments size
+   themselves to the shortest and "Extra high" — the level a reader is most
+   likely to be checking — ellipsised to "Extra hi…". A scale whose steps cannot
+   be read is not a scale. Growing from each label's own width keeps the track
+   full and every step legible. */
+.effort-step {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 5px;
+  border-radius: calc(var(--r-row) - 3px);
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.effort-step:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.effort-step:focus-visible {
+  color: var(--text);
+}
+
+/* The selected segment is a raised tile in the track — macOS's own segmented
+   control, and the one treatment that reads as "this position on the scale"
+   rather than "this option is highlighted". */
+.effort-step.is-active {
+  background: var(--claude-soft);
+  color: var(--claude);
+  font-weight: 550;
+}
+
+/* Marks the model's OWN default: a fact about the option, not its state, so it
+   is a 3px dot under the word rather than a word competing with the level's
+   name. */
+.effort-default-mark {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  opacity: 0.45;
+}
+
+.effort-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 2px 3px;
+  border-radius: var(--r-xs);
+  font-size: 11px;
+  color: var(--text-faint);
+  transition: color var(--dur) var(--ease);
+}
+
+.effort-restore:hover {
+  color: var(--text);
+}
+
+.effort-restore:focus-visible {
+  color: var(--text);
+}
+
+/* ---------- slash-command / @-mention popover ----------
+
+   The kit's surface, spanning the composer pill it belongs to. The list runs to
+   the panel's own top edge — the uppercase "COMMANDS" heading that used to sit
+   above it named something the sigil the user had just typed already said, and
+   pushed the first row (the one ⏎ accepts) two lines down. The kind is stated
+   once in the kit's footer instead, beside the keys that drive the list. */
+
+.pop-complete {
+  padding: 4px;
+}
+
+.pop-complete .ui-cmd-list {
+  max-height: min(268px, 44vh);
+}
+
+.pop-complete-kind {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

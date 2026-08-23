@@ -213,17 +213,37 @@ struct PanelContentView: View {
                     onRequestPanelFocus: onRequestPanelFocus
                 )
             }
+        // SUPERMUX:begin claude-harness-panel-render
+        case .claudeHarness:
+            if let harnessPanel = panel as? SupermuxHarnessPanel {
+                SupermuxHarnessPanelView(
+                    panel: harnessPanel,
+                    isFocused: isFocused,
+                    isVisibleInUI: isVisibleInUI,
+                    allowsPointerInput: allowsPointerInput,
+                    portalPriority: portalPriority,
+                    appearance: appearance,
+                    hasUnreadNotification: hasUnreadNotification,
+                    onRequestPanelFocus: onRequestPanelFocus
+                )
+            }
+        // SUPERMUX:end claude-harness-panel-render
         }
     }
 
     @ViewBuilder
     private var paneDropTargetOverlay: some View {
         if shouldInstallPaneDropTarget {
-            PaneDropTargetRepresentable(dropContext: PaneDropContext(
-                workspaceId: workspaceId,
-                panelId: panel.id,
-                paneId: paneId
-            ))
+            PaneDropTargetRepresentable(
+                dropContext: PaneDropContext(
+                    workspaceId: workspaceId,
+                    panelId: panel.id,
+                    paneId: paneId
+                ),
+                // SUPERMUX:begin claude-harness-drop-target
+                capturesFileDrops: panel.panelType != .claudeHarness
+                // SUPERMUX:end claude-harness-drop-target
+            )
         }
     }
 
@@ -232,6 +252,10 @@ struct PanelContentView: View {
         switch panel.panelType {
         case .markdown, .filePreview, .rightSidebarTool, .customSidebar, .simulator, .agentSession, .project, .extensionBrowser, .workspaceTodo, .notifications, .cloudVMLoading, .mobilePairing, .accountSignIn:
             return true
+        // SUPERMUX:begin claude-harness-drop-target
+        case .claudeHarness:
+            return true
+        // SUPERMUX:end claude-harness-drop-target
         case .terminal, .browser:
             return false
         }

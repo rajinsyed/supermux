@@ -187,6 +187,9 @@ enum KeyboardShortcutSettings {
         // SUPERMUX:begin run-toggle-shortcut-case
         case supermuxToggleRun
         // SUPERMUX:end run-toggle-shortcut-case
+        // SUPERMUX:begin claude-harness-shortcut-case
+        case supermuxNewClaudeHarness
+        // SUPERMUX:end claude-harness-shortcut-case
         // SUPERMUX:begin workspace-switcher-shortcut-case
         case supermuxWorkspaceSwitcherNext
         case supermuxWorkspaceSwitcherPrevious
@@ -357,6 +360,9 @@ enum KeyboardShortcutSettings {
             // SUPERMUX:begin run-toggle-shortcut-label
             case .supermuxToggleRun: return String(localized: "supermux.shortcut.toggleRun.label", defaultValue: "Run / Stop Project Command")
             // SUPERMUX:end run-toggle-shortcut-label
+            // SUPERMUX:begin claude-harness-shortcut-label
+            case .supermuxNewClaudeHarness: return String(localized: "supermux.harness.shortcut.newPane.label", defaultValue: "New Claude Pane")
+            // SUPERMUX:end claude-harness-shortcut-label
             // SUPERMUX:begin workspace-switcher-shortcut-label
             case .supermuxWorkspaceSwitcherNext: return String(localized: "supermux.shortcut.workspaceSwitcherNext.label", defaultValue: "Workspace Switcher")
             case .supermuxWorkspaceSwitcherPrevious: return String(localized: "supermux.shortcut.workspaceSwitcherPrevious.label", defaultValue: "Workspace Switcher (Reverse)")
@@ -653,6 +659,10 @@ enum KeyboardShortcutSettings {
             case .supermuxToggleRun:
                 return StoredShortcut(key: "g", command: true, shift: false, option: false, control: false)
             // SUPERMUX:end run-toggle-shortcut-default
+            // SUPERMUX:begin claude-harness-shortcut-default
+            case .supermuxNewClaudeHarness:
+                return StoredShortcut(key: "a", command: true, shift: false, option: false, control: true)
+            // SUPERMUX:end claude-harness-shortcut-default
             // SUPERMUX:begin workspace-switcher-shortcut-default
             // App-switcher-style workspace switcher: hold ⌘ and tap ` to cycle
             // (⇧ to reverse), release ⌘ to commit. Overrides macOS's in-app

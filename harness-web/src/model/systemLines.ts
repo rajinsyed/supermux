@@ -1,0 +1,584 @@
+import type { SystemLine } from "../protocol/types";
+import { applyTaskToThread, reconcileSupersededAgentAttempts } from "./agentThreads";
+import { evictUuids, readTool, writeBlock } from "./blocks";
+import {
+  activeTurnIndex,
+  adoptSessionModel,
+  asNumber,
+  asString,
+  blockAtPath,
+  isPlainObject,
+  permissionModeOf,
+  withTurn,
+  type TranscriptIndex
+} from "./helpers";
+import { stripAnsi } from "./localText";
+import { hasLiveBackgroundWork, isTaskSettled } from "./tasks";
+import { appendCommandOutput, appendNotice, pushBanner, resetConversation } from "./turns";
+import { mergeWorkflowProgress } from "./workflow";
+import type {
+  Block,
+  BackgroundTask,
+  SubagentInfo,
+  TaskRecord,
+  ThinkingBlock,
+  ToolBlock,
+  TranscriptModel,
+  Turn
+} from "./types";
+
+export function applySystem(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  line: SystemLine,
+  nowMs: number
+): TranscriptModel {
+  const raw = line as unknown as Record<string, unknown>;
+  switch (asString(raw.subtype)) {
+    case "init":
+      return applyInit(model, raw);
+    case "status":
+      return applyStatus(model, raw, nowMs);
+    case "session_state_changed": {
+      const state = raw.state;
+      if (state !== "idle" && state !== "running" && state !== "requires_action") return model;
+      return { ...model, activity: { ...model.activity, sessionState: state }, revision: model.revision + 1 };
+    }
+    case "compact_boundary":
+      return applyCompactBoundary(model, raw);
+    case "conversation_reset":
+      return resetConversation(model, index);
+    case "thinking_tokens":
+      return applyThinkingTokens(model, raw);
+    case "api_retry":
+      return applyApiRetry(model, raw, nowMs);
+    /**
+     * Informational frames are TRANSCRIPT content, not floating chips.
+     *
+     * These used to open a dismissable banner over the composer for anything
+     * the CLI felt like saying — "Interrupted by user", a hook's note, a
+     * background task's news — and the user had to close each one by hand. The
+     * content still matters; where it belongs is inline, in the turn it
+     * describes, alongside the permission-denied and local-command notices that
+     * already land there.
+     *
+     * A level-`error` frame is the exception, and the only one: a hard failure
+     * the user has to know about survives as a banner because the transcript
+     * may be scrolled far away from where it landed.
+     */
+    case "informational":
+    case "notification": {
+      const content = asString(raw.content) ?? asString(raw.message);
+      if (!content) return model;
+      const key = `info:${asString(raw.uuid) ?? model.revision}`;
+      if (raw.level === "error") return pushBanner(model, "error", content, undefined, nowMs);
+      return appendNotice(model, raw.level === "warning" ? "warning" : "info", content, key);
+    }
+    case "permission_denied":
+      return appendNotice(
+        model,
+        "warning",
+        asString(raw.content) ?? asString(raw.message) ?? "Permission denied",
+        `denied:${asString(raw.uuid) ?? model.revision}`
+      );
+    case "local_command_output": {
+      // The LIVE twin of the transcript's `<local-command-stdout>` record: one
+      // rendering for both, or a /model run live and the same run replayed
+      // after a resume would paint two different things.
+      const content = stripAnsi(asString(raw.content) ?? "").trim();
+      if (!content) return model;
+      return appendCommandOutput(model, content, `local:${asString(raw.uuid) ?? model.revision}`, nowMs);
+    }
+    case "model_refusal_fallback":
+      return evictUuids(model, new Set((raw.retracted_message_uuids as string[]) ?? []));
+    case "task_started":
+    case "task_progress":
+    case "task_updated":
+    case "task_notification":
+      return applyTaskLine(model, index, raw, nowMs);
+    case "background_tasks_changed":
+      return applyBackgroundTasks(model, raw, nowMs);
+    default:
+      return model;
+  }
+}
+
+function applyInit(model: TranscriptModel, raw: Record<string, unknown>): TranscriptModel {
+  let session = { ...model.session };
+  session.sessionId = asString(raw.session_id) ?? session.sessionId;
+  session.cwd = asString(raw.cwd) ?? session.cwd;
+  const initializedModel = asString(raw.model);
+  if (initializedModel) {
+    // A carried effort belongs to the model it was selected for; the adoption
+    // compares through the catalog before deciding a resumed session actually
+    // changed models (init reports resolved ids, the picker uses selectors).
+    session = adoptSessionModel(session, model.cachedModels, initializedModel);
+  }
+  session.permissionMode = permissionModeOf(raw.permissionMode) ?? session.permissionMode;
+  session.tools = (raw.tools as string[]) ?? session.tools;
+  session.slashCommands = (raw.slash_commands as string[]) ?? session.slashCommands;
+  session.mcpServers = (raw.mcp_servers as never) ?? session.mcpServers;
+  session.agents = (raw.agents as string[]) ?? session.agents;
+  session.skills = (raw.skills as string[]) ?? session.skills;
+  session.cliVersion = asString(raw.claude_code_version) ?? session.cliVersion;
+  session.capabilities = (raw.capabilities as string[]) ?? session.capabilities;
+  session.outputStyle = asString(raw.output_style) ?? session.outputStyle;
+  return { ...model, session, revision: model.revision + 1 };
+}
+
+function applyStatus(
+  model: TranscriptModel,
+  raw: Record<string, unknown>,
+  nowMs: number
+): TranscriptModel {
+  const status = raw.status === "requesting" || raw.status === "compacting" ? raw.status : null;
+  const mode = permissionModeOf(raw.permissionMode);
+  let next: TranscriptModel = {
+    ...model,
+    activity: { ...model.activity, status },
+    session: mode ? { ...model.session, permissionMode: mode } : model.session,
+    revision: model.revision + 1
+  };
+  const compactError = asString(raw.compact_error);
+  if (compactError) next = pushBanner(next, "warning", compactError, undefined, nowMs);
+  return next;
+}
+
+function applyCompactBoundary(model: TranscriptModel, raw: Record<string, unknown>): TranscriptModel {
+  const meta = isPlainObject(raw.compact_metadata) ? raw.compact_metadata : undefined;
+  const divider: Block = {
+    kind: "divider",
+    key: `compact:${asString(raw.uuid) ?? model.revision}`,
+    variant: "compact",
+    trigger: asString(meta?.trigger),
+    preTokens: asNumber(meta?.pre_tokens)
+  };
+  const target = model.turns.length - 1;
+  if (target < 0) return model;
+  const turn = model.turns[target];
+  return withTurn(model, target, {
+    ...turn,
+    blocks: turn.blocks.concat(divider),
+    revision: turn.revision + 1
+  });
+}
+
+function applyThinkingTokens(model: TranscriptModel, raw: Record<string, unknown>): TranscriptModel {
+  const tokens = asNumber(raw.estimated_tokens) ?? 0;
+  const next: TranscriptModel = {
+    ...model,
+    activity: { ...model.activity, thinkingTokens: tokens },
+    revision: model.revision + 1
+  };
+  const turnIndex = activeTurnIndex(next);
+  if (turnIndex < 0) return next;
+  const turn = next.turns[turnIndex];
+  const path = findStreamingThinking(turn);
+  if (!path) return next;
+  const block = blockAtPath(turn, path) as ThinkingBlock | undefined;
+  if (!block) return next;
+  return writeBlock(next, { turnIndex, path }, { ...block, tokens });
+}
+
+function applyApiRetry(
+  model: TranscriptModel,
+  raw: Record<string, unknown>,
+  nowMs: number
+): TranscriptModel {
+  const attempt = asNumber(raw.attempt) ?? 1;
+  const banner = {
+    id: `retry:${attempt}:${asString(raw.uuid) ?? model.revision}`,
+    severity: "warning" as const,
+    title: asString(raw.error) ?? "Request failed — retrying",
+    createdAtMs: nowMs,
+    retry: {
+      attempt,
+      maxRetries: asNumber(raw.max_retries),
+      retryDelayMs: asNumber(raw.retry_delay_ms)
+    }
+  };
+  return { ...model, banners: model.banners.concat(banner).slice(-5), revision: model.revision + 1 };
+}
+
+/**
+ * REPLACE, per the SDK: this frame carries the WHOLE background set every time,
+ * and an empty array means nothing is left. Membership therefore comes from here
+ * and nowhere else — `task_started` fires for foreground Bash too, so a strip
+ * fed from task frames would list every command the session has ever run.
+ *
+ * Detail comes from `tasksById`, so a row keeps its status, activity and metrics
+ * even when the frame itself carries nothing but an id and a description.
+ */
+function applyBackgroundTasks(
+  model: TranscriptModel,
+  raw: Record<string, unknown>,
+  nowMs: number
+): TranscriptModel {
+  const tasks = Array.isArray(raw.tasks) ? raw.tasks : [];
+  const rows: BackgroundTask[] = [];
+  for (const task of tasks) {
+    if (!isPlainObject(task)) continue;
+    const t = task as Record<string, unknown>;
+    const taskId = asString(t.task_id);
+    if (!taskId) continue;
+    const usage = isPlainObject(t.usage) ? t.usage : undefined;
+    const record = model.tasksById[taskId];
+    rows.push({
+      taskId,
+      taskType: asString(t.task_type) ?? record?.taskType,
+      description: asString(t.description) ?? record?.description,
+      subagentType: asString(t.subagent_type) ?? record?.subagentType,
+      status: asString(t.status) ?? record?.status,
+      totalTokens: asNumber(usage?.total_tokens) ?? record?.totalTokens,
+      toolUses: asNumber(usage?.tool_uses) ?? record?.toolUses,
+      durationMs: asNumber(usage?.duration_ms) ?? record?.durationMs
+    });
+  }
+  // Membership in the strip is what makes a task "backgrounded", so the record
+  // learns it here — a Bash card only earns its badge once the CLI says the
+  // command is in the background set. This frame RACES `task_started`: on both
+  // the shells and the workflow probe it arrives first, so a row with no record
+  // yet seeds one rather than losing the flag.
+  let tasksById = model.tasksById;
+  for (const row of rows) {
+    const record = tasksById[row.taskId];
+    if (record?.isBackgrounded) continue;
+    if (tasksById === model.tasksById) tasksById = { ...tasksById };
+    tasksById[row.taskId] = record
+      ? { ...record, isBackgrounded: true }
+      : {
+          taskId: row.taskId,
+          taskType: row.taskType,
+          description: row.description,
+          subagentType: row.subagentType,
+          status: row.status,
+          totalTokens: row.totalTokens,
+          toolUses: row.toolUses,
+          durationMs: row.durationMs,
+          isBackgrounded: true,
+          startedAtMs: nowMs,
+          progressTick: 0
+        };
+  }
+  return { ...model, backgroundTasks: rows, tasksById, revision: model.revision + 1 };
+}
+
+const TERMINAL_STATUSES = new Set(["completed", "failed", "killed", "stopped"]);
+
+/** The two faces of one user act: the kill patch and its stop notification. */
+const INTERRUPTED_STATUSES = new Set(["killed", "stopped"]);
+
+/**
+ * A terminal status is a LATCH. `stop_task` answers with `killed` while
+ * `task_progress` frames for the same task are already in flight, so progress
+ * arriving after the kill would otherwise walk the record back to `running` —
+ * and a late `completed` notification would then announce the workflow the user
+ * just stopped as a success. Later frames may still enrich metrics; they may
+ * never reopen the status or overwrite the terminal verdict the user caused.
+ *
+ * The one sanctioned terminal→terminal move is killed→stopped (and back): the
+ * CLI's own kill sequence is a `killed` patch followed by a `stopped`
+ * notification, two frames describing the same interruption.
+ */
+function taskStatusFrom(
+  subtype: string | undefined,
+  raw: Record<string, unknown>,
+  patch: Record<string, unknown> | undefined,
+  previous: string | undefined
+): string | undefined {
+  const incoming =
+    asString(raw.status) ??
+    asString(patch?.status) ??
+    (subtype === "task_started" ? "running" : previous);
+  if (previous !== undefined && TERMINAL_STATUSES.has(previous)) {
+    if (
+      incoming !== undefined &&
+      INTERRUPTED_STATUSES.has(previous) &&
+      INTERRUPTED_STATUSES.has(incoming)
+    ) {
+      return incoming;
+    }
+    return previous;
+  }
+  return incoming;
+}
+
+/**
+ * `task_updated` sends a MERGE patch: only the keys that changed. Every absent
+ * key therefore has to keep its previous value, which is why this walks the
+ * patch rather than reconstructing the record from the frame.
+ */
+function mergeTaskRecord(
+  previous: TaskRecord | undefined,
+  taskId: string,
+  subtype: string | undefined,
+  raw: Record<string, unknown>,
+  nowMs: number
+): TaskRecord {
+  const usage = isPlainObject(raw.usage) ? raw.usage : undefined;
+  const patch = isPlainObject(raw.patch) ? raw.patch : undefined;
+  const status = taskStatusFrom(subtype, raw, patch, previous?.status);
+  const description =
+    // A `task_progress` description is the CURRENT ACTIVITY ("Gather: agent-beta"),
+    // not the task's name — overwriting the description with it renames the row
+    // in the strip several times a second.
+    subtype === "task_progress"
+      ? previous?.description ?? asString(raw.summary)
+      : asString(raw.description) ?? asString(patch?.description) ?? previous?.description;
+  // A workflow the user STOPPED keeps the snapshot it had when the kill landed.
+  // Progress frames already in flight (and any the CLI replays after) would
+  // otherwise walk its agents on to DONE, so a run the user killed at "1 of 3"
+  // quietly finishes itself on screen. The frozen partial totals are the honest
+  // record of an interrupted run.
+  const interrupted =
+    previous?.status !== undefined && INTERRUPTED_STATUSES.has(previous.status);
+  const workflow = interrupted
+    ? previous?.workflow
+    : mergeWorkflowProgress(previous?.workflow, raw.workflow_progress, {
+        name: asString(raw.workflow_name) ?? previous?.workflowName,
+        runId: previous?.workflowRunId,
+        status
+      });
+  /**
+   * This frame is a LATE ECHO: the record was already terminal and this frame is
+   * not moving it anywhere new.
+   *
+   * `usage.duration_ms` keeps climbing on `task_progress` frames the CLI had
+   * already dispatched when the kill landed — and on any it replays afterwards —
+   * so a header reading "Stopped after 2s" silently rewrote itself to 3s, then
+   * 5s, seconds after the user pressed Stop. How long the work ran is settled by
+   * the moment it stopped, so the tallies latch alongside the status.
+   *
+   * Keyed on the status STAYING put rather than merely being terminal, because
+   * the CLI's kill sequence is two frames: a `killed` patch and then the
+   * `stopped` notification that carries the run's final usage. That second frame
+   * is the authority on what the run cost, not an echo of it — and the status
+   * latch already refuses every transition except that one, so reusing its
+   * verdict here needs no second policy.
+   */
+  const settled =
+    previous?.status !== undefined &&
+    TERMINAL_STATUSES.has(previous.status) &&
+    status === previous.status;
+  const usageOf = (incoming: number | undefined, before: number | undefined) =>
+    settled ? before ?? incoming : incoming ?? before;
+  const ended = settled
+    ? previous?.endedAtMs
+    : asNumber(patch?.end_time) ??
+      (status !== undefined && TERMINAL_STATUSES.has(status)
+        ? previous?.endedAtMs ?? nowMs
+        : previous?.endedAtMs);
+  return {
+    taskId,
+    taskType: asString(raw.task_type) ?? previous?.taskType,
+    toolUseId: asString(raw.tool_use_id) ?? previous?.toolUseId,
+    description,
+    status,
+    workflowName: asString(raw.workflow_name) ?? previous?.workflowName,
+    workflowRunId: previous?.workflowRunId,
+    subagentType: asString(raw.subagent_type) ?? previous?.subagentType,
+    activity: subtype === "task_progress" ? asString(raw.description) : previous?.activity,
+    lastToolName: asString(raw.last_tool_name) ?? previous?.lastToolName,
+    summary: asString(raw.summary) ?? previous?.summary,
+    // Only `task_started` carries it, and it never changes afterwards.
+    prompt: previous?.prompt ?? asString(raw.prompt),
+    error: asString(raw.error) ?? asString(patch?.error) ?? previous?.error,
+    outputFile: asString(raw.output_file) ?? previous?.outputFile,
+    totalTokens: usageOf(asNumber(usage?.total_tokens), previous?.totalTokens),
+    toolUses: usageOf(asNumber(usage?.tool_uses), previous?.toolUses),
+    durationMs: usageOf(asNumber(usage?.duration_ms), previous?.durationMs),
+    isBackgrounded:
+      patch?.is_backgrounded === true ? true : patch?.is_backgrounded === false ? false : previous?.isBackgrounded,
+    startedAtMs: previous?.startedAtMs ?? nowMs,
+    endedAtMs: ended,
+    progressTick: (previous?.progressTick ?? 0) + 1,
+    workflow
+  };
+}
+
+function subagentFrom(previous: SubagentInfo | undefined, record: TaskRecord): SubagentInfo {
+  return {
+    ...previous,
+    taskId: record.taskId,
+    taskType: record.taskType ?? previous?.taskType,
+    subagentType: record.subagentType ?? previous?.subagentType,
+    description: record.description ?? previous?.description,
+    status: record.status ?? previous?.status,
+    lastToolName: record.lastToolName ?? previous?.lastToolName,
+    activity: record.activity ?? previous?.activity,
+    summary: record.summary ?? previous?.summary,
+    outputFile: record.outputFile ?? previous?.outputFile,
+    totalTokens: record.totalTokens ?? previous?.totalTokens,
+    toolUses: record.toolUses ?? previous?.toolUses,
+    durationMs: record.durationMs ?? previous?.durationMs,
+    workflowName: record.workflowName ?? previous?.workflowName,
+    workflowRunId: record.workflowRunId ?? previous?.workflowRunId,
+    background: record.isBackgrounded ?? previous?.background,
+    progressTick: record.progressTick,
+    // ONE clock for one command. The card used to count from `block.startedAtMs`
+    // — when the tool_use block was built — while the strip row counted from the
+    // record's, and the two elapsed labels for the same shell disagreed by
+    // however long the CLI took to announce the task.
+    startedAtMs: record.startedAtMs ?? previous?.startedAtMs
+  };
+}
+
+/**
+ * Task frames write `tasksById` and — when the launching tool call is on screen
+ * — the ToolBlock they belong to. They never open, reopen, or settle a TURN, and
+ * they never touch `sessionState`.
+ *
+ * That is load-bearing rather than incidental. A workflow's `result` arrives the
+ * instant it is launched and its task frames keep coming for another ten
+ * seconds; the same is true of every background shell. If those frames reopened
+ * the turn, the pane would claim Claude was still working long after it had
+ * answered, the Stop button would stay up, and every send would queue behind
+ * activity that ends nowhere. Post-result task activity is reported by the tasks
+ * strip, which is exactly what it is for.
+ */
+function applyTaskLine(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  raw: Record<string, unknown>,
+  nowMs: number
+): TranscriptModel {
+  const subtype = asString(raw.subtype);
+  const taskId = asString(raw.task_id);
+  let toolUseId = asString(raw.tool_use_id);
+  if (taskId && toolUseId) index.taskToTool.set(taskId, toolUseId);
+  if (!toolUseId && taskId) toolUseId = index.taskToTool.get(taskId);
+  if (!taskId) return applyTaskToBlock(model, index, toolUseId, raw, subtype, undefined, nowMs);
+
+  const previous = model.tasksById[taskId];
+  const record = mergeTaskRecord(
+    previous ? { ...previous, toolUseId: previous.toolUseId ?? toolUseId } : undefined,
+    taskId,
+    subtype,
+    { ...raw, tool_use_id: toolUseId },
+    nowMs
+  );
+  let next: TranscriptModel = {
+    ...model,
+    tasksById: { ...model.tasksById, [taskId]: record },
+    revision: model.revision + 1
+  };
+  // The strip's own row detail is refreshed from the record, so a task that is
+  // in the background set shows live status without waiting for the CLI to
+  // resend the whole set.
+  if (next.backgroundTasks.some((task) => task.taskId === taskId)) {
+    next = {
+      ...next,
+      backgroundTasks: next.backgroundTasks.map((task) =>
+        task.taskId === taskId
+          ? {
+              ...task,
+              taskType: record.taskType ?? task.taskType,
+              description: record.description ?? task.description,
+              status: record.status ?? task.status,
+              totalTokens: record.totalTokens ?? task.totalTokens,
+              toolUses: record.toolUses ?? task.toolUses,
+              durationMs: record.durationMs ?? task.durationMs
+            }
+          : task
+      )
+    };
+  }
+  // Task frames enrich the AGENT THREAD's meta too — status, activity, tallies
+  // — keyed on the same tool_use_id. They never create one: `task_started`
+  // fires for foreground Bash as well, and a dock built from task frames would
+  // list every shell in the session as an agent.
+  next = applyTaskToThread(next, toolUseId, record, nowMs);
+  next = applyTaskToBlock(next, index, toolUseId, raw, subtype, record, nowMs);
+  if (isTaskSettled(record.status)) next = applyDeferredFolds(next);
+  next = reconcileSupersededAgentAttempts(next);
+  /**
+   * A `task_notification` raises NOTHING on its own.
+   *
+   * Round 3 turned each one into the CLI's "background task finished" toast: a
+   * dismissable banner over the composer per shell, per agent, per workflow.
+   * Dogfood verdict — "its very annoying to close them everytime … remove it
+   * entirely". The outcome is not lost by dropping the toast: the launching
+   * card settles with its status and result right where the work was started,
+   * and the dock row disappears, which is the same news told by the surfaces
+   * the user is already looking at.
+   */
+  return next;
+}
+
+/**
+ * Honour a fold that a `result` had to postpone.
+ *
+ * A turn that launched a workflow completes while its agents keep running, so
+ * folding it on the result frame would hide the live card mid-flight. The intent
+ * is recorded instead and applied here, once nothing the turn owns is running.
+ */
+function applyDeferredFolds(model: TranscriptModel): TranscriptModel {
+  let changed = false;
+  const turns = model.turns.map((turn) => {
+    if (!turn.foldWhenTasksSettle || hasLiveBackgroundWork(turn)) return turn;
+    changed = true;
+    return { ...turn, folded: true, foldWhenTasksSettle: undefined, revision: turn.revision + 1 };
+  });
+  return changed ? { ...model, turns, revision: model.revision + 1 } : model;
+}
+
+function applyTaskToBlock(
+  model: TranscriptModel,
+  index: TranscriptIndex,
+  toolUseId: string | undefined,
+  raw: Record<string, unknown>,
+  subtype: string | undefined,
+  record: TaskRecord | undefined,
+  nowMs: number
+): TranscriptModel {
+  if (!toolUseId) return model;
+  const found = readTool(model, index, toolUseId);
+  if (!found) return model;
+  const prev = found.block.subagent;
+  const subagent = record
+    ? subagentFrom(prev, record)
+    : subagentFrom(prev, mergeTaskRecord(undefined, "", subtype, raw, nowMs));
+  const status = subagent.status;
+  const workflow =
+    record?.workflow ??
+    mergeWorkflowProgress(found.block.workflow, raw.workflow_progress, {
+      name: asString(raw.workflow_name) ?? found.block.workflow?.name,
+      runId: found.block.workflow?.runId,
+      status
+    });
+  // A subagent card settles on the task's terminal edge because its own
+  // tool_result may never arrive (an async agent answers `async_launched` and
+  // then runs on). Every terminal status settles it — the CLI's kill sequence
+  // ends in `stopped`, and a block that only settles on completed/failed spins
+  // forever on a task the user just killed. A workflow does NOT settle its card
+  // here: its tool_result already landed, and the card is a live progress
+  // surface after that (the `running` guard is what keeps it out).
+  const finished = isTaskSettled(status);
+  const running = found.block.status === "running" || found.block.status === "pending";
+  const settledStatus =
+    status === "failed" ? "error" : status === "completed" ? "success" : "aborted";
+  const nextBlock: ToolBlock = {
+    ...found.block,
+    subagent,
+    workflow,
+    status: finished && running ? settledStatus : found.block.status,
+    endedAtMs: finished && running ? found.block.endedAtMs ?? nowMs : found.block.endedAtMs
+  };
+  return writeBlock(model, found.location, nextBlock);
+}
+
+function findStreamingThinking(turn: Turn): number[] | undefined {
+  const walk = (blocks: Block[], prefix: number[]): number[] | undefined => {
+    for (let i = blocks.length - 1; i >= 0; i -= 1) {
+      const block = blocks[i];
+      const path = prefix.concat(i);
+      if (block.kind === "tool") {
+        const nested = walk(block.children, path);
+        if (nested) return nested;
+      }
+      if (block.kind === "thinking" && block.streaming) return path;
+    }
+    return undefined;
+  };
+  return walk(turn.blocks, []);
+}

@@ -6445,6 +6445,12 @@ extension TabManager {
                     panelId: terminalPanel.id
                 )
             }
+            // SUPERMUX:begin claude-harness-restore-git-probe
+            // A restored workspace whose only pane is a harness pane has no
+            // TerminalPanel above, so upstream's sweep would leave it without a
+            // sidebar/tab branch. Same probe, harness panes only.
+            workspace.scheduleSupermuxHarnessGitMetadataProbes(reason: "harnessSessionRestore")
+            // SUPERMUX:end claude-harness-restore-git-probe
         }
         if remapClosedPanelHistory {
             remapClosedPanelHistoryAfterSessionRestore(

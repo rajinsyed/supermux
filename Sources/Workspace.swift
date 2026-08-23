@@ -467,6 +467,9 @@ extension Workspace {
         let agentSessionSnapshot: SessionAgentSessionPanelSnapshot?
         let projectSnapshot: SessionProjectPanelSnapshot?; var workspaceTodoSnapshot: SessionWorkspaceTodoPanelSnapshot? = nil
         var notificationsPanelSnapshot: SessionNotificationsPanelSnapshot? = nil
+        // SUPERMUX:begin claude-harness-snapshot
+        var claudeHarnessSnapshot: SessionSupermuxHarnessPanelSnapshot? = nil
+        // SUPERMUX:end claude-harness-snapshot
         switch panel.panelType {
         case .terminal:
             guard let terminalPanel = panel as? TerminalPanel else { return nil }
@@ -718,6 +721,13 @@ extension Workspace {
             return nil
         case .accountSignIn:
             return nil
+        // SUPERMUX:begin claude-harness-snapshot-arm
+        case .claudeHarness:
+            guard let snapshot = supermuxHarnessSessionSnapshot(for: panel) else { return nil }
+            terminalSnapshot = nil; browserSnapshot = nil; markdownSnapshot = nil; filePreviewSnapshot = nil
+            rightSidebarToolSnapshot = nil; agentSessionSnapshot = nil; projectSnapshot = nil
+            claudeHarnessSnapshot = snapshot
+        // SUPERMUX:end claude-harness-snapshot-arm
         }
         return SessionPanelSnapshot(
             id: panelId,
@@ -747,7 +757,10 @@ extension Workspace {
             agentSession: agentSessionSnapshot,
             project: projectSnapshot,
             workspaceTodo: workspaceTodoSnapshot,
-            notificationsPanel: notificationsPanelSnapshot
+            notificationsPanel: notificationsPanelSnapshot,
+            // SUPERMUX:begin claude-harness-snapshot-field
+            claudeHarness: claudeHarnessSnapshot
+            // SUPERMUX:end claude-harness-snapshot-field
         )
     }
     private func closedPanelHistoryEntry(panelId: UUID, tabId: TabID, pane: PaneID) -> ClosedPanelHistoryEntry? {
@@ -1855,6 +1868,14 @@ extension Workspace {
             return nil
         case .accountSignIn:
             return nil
+        // SUPERMUX:begin claude-harness-restore-arm
+        case .claudeHarness:
+            return restoreSupermuxHarnessPanel(
+                from: snapshot,
+                inPane: paneId,
+                restoresSavedDirectory: !restoresUntrustedSavedDirectory
+            )
+        // SUPERMUX:end claude-harness-restore-arm
         }
     }
 
@@ -9812,6 +9833,11 @@ final class Workspace: Identifiable, ObservableObject {
                 agentPanel.onDisplayStateChanged = nil
                 agentSessionPanelCallbackIds.remove(detached.panelId)
             }
+            // SUPERMUX:begin claude-harness-attach-rollback
+            if let harnessPanel = detached.panel as? SupermuxHarnessPanel {
+                harnessPanel.onDisplayStateChanged = nil
+            }
+            // SUPERMUX:end claude-harness-attach-rollback
 #if DEBUG
             cmuxDebugLog(
                 "split.attach.fail ws=\(id.uuidString.prefix(5)) panel=\(detached.panelId.uuidString.prefix(5)) " +
@@ -9897,9 +9923,23 @@ final class Workspace: Identifiable, ObservableObject {
                 installAgentSessionPanelSubscription(agentPanel)
             }
         }
+        // SUPERMUX:begin claude-harness-transfer-in
+        if let harnessPanel = detached.panel as? SupermuxHarnessPanel {
+            harnessPanel.updateWorkspaceId(id)
+            installSupermuxHarnessPanelSubscription(harnessPanel)
+        }
+        // SUPERMUX:end claude-harness-transfer-in
         if detached.directoryIsTrustedRemoteReport {
             remoteDirectoryReportPanelIds.insert(detached.panelId); remoteDirectoryTrustRequiredPanelIds.insert(detached.panelId)
         }
+        // SUPERMUX:begin claude-harness-transfer-in
+        if detached.panel is SupermuxHarnessPanel {
+            scheduleSupermuxHarnessGitMetadataProbe(
+                panelId: detached.panelId,
+                reason: "harnessSurfaceTransfer"
+            )
+        }
+        // SUPERMUX:end claude-harness-transfer-in
         let didAdoptWorkspaceRemoteTracking = shouldAdoptDetachedWorkspaceRemoteTracking(detached)
         if didAdoptWorkspaceRemoteTracking,
            let remotePTYSessionID = normalizedRemotePTYSessionID(detached.remotePTYSessionID) {
@@ -13173,6 +13213,10 @@ extension Workspace: BonsplitDelegate {
                 )
             case .newSimulator:
                 _ = newSimulatorSurface(inPane: pane, focus: true)
+            // SUPERMUX:begin claude-harness-executor-arm
+            case .newClaudeHarness:
+                _ = newSupermuxHarnessSurface(inPane: pane, focus: true)
+            // SUPERMUX:end claude-harness-executor-arm
             case .newTerminal, .newBrowser, .splitRight, .splitDown:
                 break
             }

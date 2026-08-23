@@ -1,0 +1,883 @@
+/* ---------------------------------------------------------------------------
+   Buttons, small primitives, and the three decision cards (permission, plan,
+   question). The decision cards are the Beautiful-UI "approval card" pattern:
+   they render at the transcript tail as focused glass panels — the one moment
+   the interface interrupts, so they get the strongest chrome in the pane.
+--------------------------------------------------------------------------- */
+
+/* ---------- buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.btn kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--on-claude-chip);
+  color: inherit;
+  opacity: 0.9;
+}
+
+.btn-primary {
+  background: var(--claude-btn);
+  color: var(--on-claude);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--claude-btn-hover);
+}
+
+.btn-primary:focus-visible {
+  background: var(--claude-btn-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+}
+
+.btn-secondary {
+  background: var(--surface-active);
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.btn-secondary:focus-visible {
+  color: var(--text);
+}
+
+.btn-secondary kbd,
+.btn-ghost kbd {
+  background: var(--surface-active);
+  color: var(--text-faint);
+}
+
+.btn-ghost {
+  color: var(--text-muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-ghost:focus-visible {
+  color: var(--text);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.5;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+.btn-danger:focus-visible {
+  background: var(--danger-hover);
+}
+
+.btn-danger kbd {
+  background: var(--on-danger-chip);
+}
+
+.btn-tiny {
+  padding: 2px 9px;
+  font-size: 11px;
+  border-radius: var(--r-sm);
+  background: var(--surface-active);
+  color: var(--text-soft);
+}
+
+.btn-tiny:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-tiny:focus-visible {
+  color: var(--text);
+}
+
+.btn-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.btn-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-sub {
+  font-size: 10.5px;
+  font-weight: 400;
+  opacity: 0.85;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.btn-icon-only {
+  padding: 5px;
+}
+
+/* The composer's round send control — Cursor's grammar: a filled circle at the
+   trailing edge of the input pill. */
+.btn-send {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--claude-btn);
+  color: var(--on-claude);
+  flex: 0 0 auto;
+}
+
+.btn-send:hover:not(:disabled) {
+  background: var(--claude-btn-hover);
+}
+
+.btn-send:focus-visible {
+  background: var(--claude-btn-hover);
+}
+
+.btn-send:disabled {
+  background: var(--surface-active);
+  color: var(--text-faint);
+}
+
+/* Stop.
+ *
+ * It shipped as an empty white circle. The glyph was painted in
+ * `var(--page-bg)` against a `var(--text)` bed — which is a legible pairing in
+ * dark, and invisible the moment the page is TRANSPARENT (Ghostty
+ * transparency sets `--page-bg: transparent`, so the square rendered with no
+ * colour at all) and near-invisible in light, where near-white ink on the
+ * light theme's near-black `--text` was the only thing holding it up.
+ *
+ * It is the brand mark instead, which is both unambiguous and the same object
+ * as the send button it replaces: same circle, same size, same accent — the
+ * ONE control at the trailing edge of the pill, in whichever state the turn is
+ * in. `--on-claude` is audited against `--claude-btn` in both themes, and
+ * neither depends on the page being opaque. */
+.btn-stop {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--claude-btn);
+  color: var(--on-claude);
+  flex: 0 0 auto;
+}
+
+.btn-stop:hover:not(:disabled) {
+  background: var(--claude-btn-hover);
+}
+
+.btn-stop:focus-visible {
+  background: var(--claude-btn-hover);
+}
+
+/* The square is the whole glyph, so it is drawn at a size that reads as one:
+   an 11px rect inside a 26px circle was a speck. */
+.btn-stop svg {
+  width: 12px;
+  height: 12px;
+}
+
+.btn-kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  background: transparent;
+}
+
+/* ---------- icon buttons ---------- */
+
+.icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.icon-btn:focus-visible {
+  color: var(--text);
+}
+
+.icon-btn.is-on {
+  color: var(--claude);
+  background: var(--claude-faint);
+}
+
+.copy-btn.is-copied {
+  color: var(--success);
+}
+
+.copy-btn.is-failed {
+  color: var(--danger);
+}
+
+/* Opens DOWNWARD: every ancestor a copy button lives in (code block, tool
+   card) clips overflow, and a toast above the button paints outside them. */
+.copy-toast {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lifted);
+  font-size: 10.5px;
+  color: var(--text-soft);
+  white-space: nowrap;
+  z-index: 5;
+}
+
+/* ---------- spinner / working dots ---------- */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--claude-strong);
+  animation: spin 800ms linear infinite;
+}
+
+/* ---------- the streaming mark ----------
+
+   The status words are the indicator. There is no dot constellation and no
+   animated text gradient: a quiet opacity/transform pulse stays on the
+   compositor while the readable label continues to name the state and elapsed
+   time directly. */
+
+.working-dots {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 12px;
+}
+
+.working-status-slot {
+  display: inline-block;
+  width: 0;
+  height: 0;
+}
+
+.turn-live .working-dots > .turn-live-label {
+  display: inline-block;
+  color: var(--text-muted);
+  transform-origin: left center;
+  animation: status-breathe 2.2s var(--ease) infinite;
+}
+
+@keyframes status-breathe {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-0.5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-live .working-dots > .turn-live-label {
+    animation-name: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- shared decision-card shell ----------
+
+   The three cards are one object with three headers. Round 6 tightens the
+   shared shell rather than restyling each: the same hairline (the strong border
+   made three stacked cards read as three boxes), the same glass highlight the
+   menu kit and the modals draw, the same 22px icon, and the same arrival — the
+   card interrupts, so it should land rather than blink into existence. */
+
+.permission-card,
+.plan-card,
+.question-card {
+  position: relative;
+  margin: 12px 0 4px;
+  border-radius: var(--r-xl);
+  background: var(--panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-popover);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: card-in 200ms var(--ease-out);
+}
+
+/* Same one-pixel highlight every floating surface in the pane catches. */
+.permission-card::before,
+.plan-card::before,
+.question-card::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 0;
+  height: 1px;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: var(--pop-sheen);
+  pointer-events: none;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .permission-card,
+  .plan-card,
+  .question-card {
+    animation-name: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.permission-head,
+.plan-head,
+.question-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.permission-icon,
+.plan-icon,
+.question-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: var(--r-xs);
+  flex: 0 0 auto;
+}
+
+.permission-icon {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.plan-icon {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+.question-icon {
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
+.permission-title,
+.plan-title,
+.question-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.permission-badge,
+.plan-badge,
+.question-badge {
+  display: block;
+  font-size: var(--menu-title-size);
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 1px;
+}
+
+.permission-title h3,
+.plan-title h3,
+.question-title h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.012em;
+  overflow-wrap: anywhere;
+}
+
+.permission-reason {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.permission-queue {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.permission-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.permission-file {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.permission-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.permission-path {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.permission-path-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.permission-actions,
+.plan-actions,
+.question-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.permission-spacer {
+  flex: 1;
+}
+
+.permission-deny-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.permission-reason-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--input-bg);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.permission-reason-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* ---------- plan card ---------- */
+
+.plan-body {
+  max-height: 1200px;
+  overflow: hidden;
+  transition: max-height 200ms var(--ease);
+  font-size: 13px;
+}
+
+.plan-body.is-clipped {
+  max-height: 300px;
+  -webkit-mask-image: linear-gradient(to bottom, black 78%, transparent 98%);
+  mask-image: linear-gradient(to bottom, black 78%, transparent 98%);
+}
+
+.plan-expand {
+  align-self: flex-start;
+}
+
+/* ---------- question card ----------
+
+   Beautiful UI's approval-card pattern, adapted into these tokens: a minimal
+   bordered card, a tight header, a clean option list whose selected state is
+   subtle until it is chosen, and a small footer.
+
+   What went, and why:
+
+   · The per-question SECTION. Round 5 drew every question at once, each with a
+     bordered wrapper, an orange all-caps kicker, a prompt button, and — for the
+     ones not yet reached — a "Not answered yet" line holding a block of card
+     open to say nothing. A three-question card was mostly dead space. One
+     question shows at a time; the rest are a 20px stepper in the header.
+   · The option BOX. `border: 1px solid var(--border)` on every row made four
+     options read as four cards; the numbers sat in bordered squares, so a
+     three-option question drew seven boxes. Rows are now borderless at rest and
+     take a border only when SELECTED, which is what a border is for here.
+   · The `.question-answer` / `.answer-chip` / `.question-prompt` /
+     `.question-header` / `.question-text` / `.question-list` / `.question-hint`
+     / `.question-progress` / `.option-check` rules stood here and are retired
+     with the markup they styled. */
+
+.q-steps {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.q-step-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--text-muted);
+  transition: background 90ms linear, color 90ms linear;
+}
+
+/* One chevron asset, mirrored: an icon file this component does not own is not
+   worth a round trip for the same glyph pointing the other way. */
+.q-step-arrow:first-child svg {
+  transform: rotate(180deg);
+}
+
+.q-step-arrow:hover:not(:disabled),
+.q-step-arrow:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* Quieter by TONE, never by opacity: `--text-faint × 0.4` composites to 2.0:1,
+   which is the exact failure tests/contrast.test.ts exists to catch (see the
+   `.divider-sub` / `.banner-detail` note there). One tier down is the whole
+   distinction a dead arrow needs. */
+.q-step-arrow:disabled {
+  color: var(--text-faint);
+}
+
+.q-step-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 3px;
+}
+
+/* One mark per question: a hairline ring for unanswered, filled for answered,
+   and a wider pill for the one being asked. Three questions is 26px of chrome
+   rather than two empty sections. */
+.q-step-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--border-strong);
+  transition: width 140ms var(--ease-out), background 90ms linear;
+}
+
+.q-step-dot.is-done {
+  background: var(--claude);
+  opacity: 0.55;
+}
+
+.q-step-dot.is-active {
+  width: 14px;
+  background: var(--claude);
+  opacity: 1;
+}
+
+.q-step-dot:hover,
+.q-step-dot:focus-visible {
+  background: var(--claude);
+}
+
+/* The live question. No wrapper border and no bed: it is the only question on
+   screen, so a box around it separates it from nothing. */
+.question-item {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.q-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* One caption line above the question: position · topic · multi-select hint.
+   They are the same tier of information, and stacking them put three lines of
+   grey above every question. Separated by dots drawn in CSS so a missing piece
+   never leaves a dangling separator. */
+.q-caption {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--menu-meta-size);
+  color: var(--text-faint);
+}
+
+.q-caption > * + *::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--text-faint);
+}
+
+.q-position {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The kicker: a caption, not a headline. It was 10px uppercase in the ACCENT,
+   which made the section label the loudest thing in a card whose subject is the
+   question under it. */
+.q-kicker {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.q-question {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.008em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.q-hint {
+  color: var(--text-faint);
+}
+
+.question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The option row. Quiet at rest — no border, no bed, the affordance a hairline
+   ring — so a list of four reads as a list rather than as four cards. */
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  transition: border-color 90ms linear, background 90ms linear, transform 90ms var(--ease-out);
+}
+
+.option:hover,
+.option:focus-visible {
+  background: var(--surface-hover);
+}
+
+.option:active {
+  transform: scale(0.995);
+}
+
+/* Chosen: the pane's one selection grammar — accent border, faint accent bed,
+   a filled mark. The same thing a checked menu row and an armed rewind
+   checkbox wear. */
+.option.is-on {
+  border-color: var(--claude-border);
+  background: var(--claude-faint);
+}
+
+.option.is-on:hover,
+.option.is-on:focus-visible {
+  background: var(--claude-soft);
+}
+
+/* The affordance. A ring for single-select, a rounded square for multi — which
+   says "more than one is allowed" without a sentence — filling with the accent
+   when chosen. */
+.option-mark {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong);
+  color: var(--on-claude);
+  transition: background 90ms linear, border-color 90ms linear;
+}
+
+.option-mark.is-multi {
+  border-radius: 4px;
+}
+
+.option:hover .option-mark {
+  border-color: var(--claude-border);
+}
+
+.option.is-on .option-mark {
+  border-color: var(--claude-btn);
+  background: var(--claude-btn);
+}
+
+.option-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.option-label {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.option-desc {
+  font-size: var(--menu-detail-size);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The number key. A bare tabular glyph at the trailing edge — the boxed version
+   was a bordered square per row, so a three-option question drew seven boxes.
+
+   Quiet by TONE, not by opacity: `--text-faint × 0.75` composites to 4.2:1,
+   under the AA floor tests/contrast.test.ts holds every dimmed text rule to. It
+   steps UP a tier under the pointer instead, which is the same amount of
+   "quiet until you look at it" without an unreadable resting state. */
+.option-key {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  font-size: var(--menu-meta-size);
+  color: var(--text-faint);
+  transition: color 90ms linear;
+}
+
+.option:hover .option-key,
+.option:focus-visible .option-key {
+  color: var(--text-muted);
+}
+
+.option.is-on .option-key {
+  color: var(--claude);
+}
+
+/* "Something else…" — the row that opens the free-text field. Its mark is an
+   empty ring, so it lines up with the real options without pretending to be
+   one that can be selected. */
+.option.is-other .option-label {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.option.is-other:hover .option-label,
+.option.is-other:focus-visible .option-label {
+  color: var(--text);
+}
+
+.option.is-other .option-mark {
+  border-style: dashed;
+}
+
+.question-other {
+  margin-top: 2px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--input-bg);
+  font-size: 12.5px;
+  color: var(--text);
+  transition: border-color 90ms linear;
+}
+
+.question-other:focus-visible {
+  border-color: var(--claude-border);
+}
+
+.question-other::placeholder {
+  color: var(--text-faint);
+}
+
+.question-merged {
+  padding: 2px 10px 0;
+  font-size: var(--menu-detail-size);
+  color: var(--text-muted);
+}

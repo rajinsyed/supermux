@@ -9,9 +9,30 @@ Tagged builds isolate app name, bundle ID, debug socket, and DerivedData path so
 
 After a successful build `reload.sh` terminates any running app with the same tag, so opening the printed app path launches the fresh binary.
 
-## App path links
+<!-- SUPERMUX:begin dogfood-direct-launch-link-skill -->
+## Direct launch links
 
-`reload.sh` prints an `App path:` line with the absolute path to the built `.app`. Use it to confirm the tag built, but link the build in chat as `http://127.0.0.1:17320/<tag>` through the local Tag Opener. Never put a `file://` URL, a raw `.app` or DerivedData path, or a `/tmp/cmux-<tag>/...` link in chat output.
+`reload.sh` prints an `App path:` line with the absolute path to the built `.app`. Use it for local
+verification only. Tagged Debug builds register `cmux-dev-<tag>://`; hand off a build with a direct
+Markdown link:
+
+```markdown
+[Open <tag>](cmux-dev-<tag>://launch)
+```
+
+This launches the app through macOS LaunchServices without opening a browser. If the build was made
+without `--launch`, first register the printed app path without launching it:
+
+```bash
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "<App path printed by reload.sh>"
+```
+
+Use the normalized tag slug printed by `reload.sh`. The `launch` host is intentionally inert;
+`auth-callback` is reserved for sign-in. Do not use the old `http://127.0.0.1:17320/<tag>` Tag
+Opener link, which depends on a local server and opens the embedded browser when that server is
+absent. Never put a `file://` URL, raw `.app` or DerivedData path, or `/tmp/cmux-<tag>/...` in chat
+output.
+<!-- SUPERMUX:end dogfood-direct-launch-link-skill -->
 
 ## Tagged CLI and socket
 

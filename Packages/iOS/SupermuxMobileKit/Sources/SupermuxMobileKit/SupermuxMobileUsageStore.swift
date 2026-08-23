@@ -45,6 +45,8 @@ public final class SupermuxMobileUsageStore {
     @ObservationIgnored private let pollInterval: Duration
     /// Cancellable poll sleep; injectable for deterministic tests.
     @ObservationIgnored private let idleSleep: (Duration) async -> Void
+    /// Test observer fired synchronously when a caller joins the shared pass.
+    @ObservationIgnored private let didJoinInFlight: @MainActor () -> Void
     /// The fetch currently on the wire, so concurrent callers join it instead
     /// of being dropped or stacking a second request.
     @ObservationIgnored private var inFlight: Task<Void, Never>?
@@ -68,16 +70,34 @@ public final class SupermuxMobileUsageStore {
     ///     model's own 120 s poll — asking faster would only re-serve the
     ///     same cached snapshot.
     ///   - idleSleep: Poll sleep seam; defaults to `Task.sleep`.
-    public init(
+    public convenience init(
         client: any SupermuxMacCalling,
         capabilities: SupermuxMobileCapabilities,
         pollInterval: Duration = .seconds(120),
         idleSleep: @escaping (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     ) {
+        self.init(
+            client: client,
+            capabilities: capabilities,
+            pollInterval: pollInterval,
+            idleSleep: idleSleep,
+            didJoinInFlight: {}
+        )
+    }
+
+    /// Test seam for awaiting the exact moment a caller joins an in-flight pass.
+    init(
+        client: any SupermuxMacCalling,
+        capabilities: SupermuxMobileCapabilities,
+        pollInterval: Duration,
+        idleSleep: @escaping (Duration) async -> Void,
+        didJoinInFlight: @escaping @MainActor () -> Void
+    ) {
         self.client = client
         self.capabilities = capabilities
         self.pollInterval = pollInterval
         self.idleSleep = idleSleep
+        self.didJoinInFlight = didJoinInFlight
     }
 
     /// Refetches on the poll cadence until cancelled. A no-op without
@@ -109,6 +129,7 @@ public final class SupermuxMobileUsageStore {
     public func refresh() async {
         guard capabilities.supportsUsage else { return }
         if let inFlight {
+            didJoinInFlight()
             await inFlight.value
             return
         }

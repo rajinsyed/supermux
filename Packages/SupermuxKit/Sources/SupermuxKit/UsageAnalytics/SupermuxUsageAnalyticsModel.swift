@@ -38,6 +38,8 @@ public final class SupermuxUsageAnalyticsModel {
         @escaping @Sendable (SupermuxUsageAnalyticsSnapshot) -> Void
     ) async -> SupermuxUsageAnalyticsSnapshot
     @ObservationIgnored private let minimumRefreshInterval: TimeInterval
+    /// Optional observer used by tests to await an attempted partial application.
+    @ObservationIgnored private let didAttemptApply: @MainActor (SupermuxUsageAnalyticsSnapshot) -> Void
     @ObservationIgnored private var lastScanStartedAt: Date?
     @ObservationIgnored private var hasScannedOnce = false
     /// Incremented per scan. Partial results carry the generation they came
@@ -60,6 +62,7 @@ public final class SupermuxUsageAnalyticsModel {
         minimumRefreshInterval: TimeInterval = 30
     ) {
         self.minimumRefreshInterval = minimumRefreshInterval
+        self.didAttemptApply = { _ in }
         self.scan = { previousEntries, publish in
             await SupermuxUsageAnalyticsScanCoordinator.scan(
                 claudeScanner: claudeScanner,
@@ -76,10 +79,12 @@ public final class SupermuxUsageAnalyticsModel {
             [SupermuxUsageAnalyticsEntry],
             @escaping @Sendable (SupermuxUsageAnalyticsSnapshot) -> Void
         ) async -> SupermuxUsageAnalyticsSnapshot,
-        minimumRefreshInterval: TimeInterval = 30
+        minimumRefreshInterval: TimeInterval = 30,
+        didAttemptApply: @escaping @MainActor (SupermuxUsageAnalyticsSnapshot) -> Void = { _ in }
     ) {
         self.scan = scan
         self.minimumRefreshInterval = minimumRefreshInterval
+        self.didAttemptApply = didAttemptApply
     }
 
     /// Scans if enough time has passed since the last pass. The first call
@@ -114,6 +119,7 @@ public final class SupermuxUsageAnalyticsModel {
     }
 
     private func apply(_ snapshot: SupermuxUsageAnalyticsSnapshot, generation: Int) {
+        didAttemptApply(snapshot)
         // Never regress: a straggling partial from this or an earlier scan
         // must not replace data a later pass already completed, and a partial
         // never overwrites the complete result of the same pass.

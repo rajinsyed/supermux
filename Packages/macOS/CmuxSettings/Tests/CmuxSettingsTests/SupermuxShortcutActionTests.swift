@@ -2,7 +2,7 @@ import Testing
 
 @testable import CmuxSettings
 
-/// SUPERMUX — pins the five supermux shortcut actions in the package enum
+/// SUPERMUX — pins the six supermux shortcut actions in the package enum
 /// that drives the Settings UI (`ShortcutAction.settingsVisibleActions` and
 /// `detectConflict` both iterate this enum, not the app-target one).
 ///
@@ -19,6 +19,7 @@ struct SupermuxShortcutActionTests {
         .supermuxWorkspaceSwitcherPrevious: ShortcutStroke(key: "`", command: true, shift: true),
         .supermuxCommit: ShortcutStroke(key: "\r", command: true),
         .supermuxCommitAccelerator: ShortcutStroke(key: "\r", command: true, shift: true),
+        .supermuxNewClaudeHarness: ShortcutStroke(key: "a", command: true, control: true),
     ]
 
     @Test func rawValuesMatchAppTargetActionIdentifiers() {
@@ -29,6 +30,7 @@ struct SupermuxShortcutActionTests {
         #expect(ShortcutAction.supermuxWorkspaceSwitcherPrevious.rawValue == "supermuxWorkspaceSwitcherPrevious")
         #expect(ShortcutAction.supermuxCommit.rawValue == "supermuxCommit")
         #expect(ShortcutAction.supermuxCommitAccelerator.rawValue == "supermuxCommitAccelerator")
+        #expect(ShortcutAction.supermuxNewClaudeHarness.rawValue == "supermuxNewClaudeHarness")
     }
 
     @Test func defaultStrokesMirrorAppTargetDefaults() {

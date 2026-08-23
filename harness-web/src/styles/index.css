@@ -1,0 +1,24 @@
+@import "./base.css";
+/* Right after the foundation: the menu kit is the material EVERY floating
+   surface wears, and the sheets below only ever add geometry on top of it
+   (a panel's width, a row's leading hue). At equal specificity the later sheet
+   wins, which is exactly the layering wanted here. */
+@import "./menu.css";
+@import "./content.css";
+@import "./layout.css";
+@import "./transcript.css";
+@import "./tools.css";
+@import "./cards.css";
+/* After cards.css: .btn-quiet refines .btn, and at equal specificity the later
+   rule has to win (same ordering reason .icon-btn documents in styles.test.ts). */
+@import "./tasks.css";
+/* After tasks.css: the browser reuses the strip's `.btn-quiet` and `.tool-badge`
+   refinements, and the shared agent-state chips it inherited from the workflow
+   card it replaces have to win at equal specificity. */
+@import "./workflow.css";
+@import "./dock.css";
+/* After dock.css: the agents dock lives INSIDE `.dock` and its rows refine the
+   generic `.btn-quiet`/`.dock > *` rules there, which at equal specificity only
+   the later sheet can win. */
+@import "./agents.css";
+@import "./modal.css";

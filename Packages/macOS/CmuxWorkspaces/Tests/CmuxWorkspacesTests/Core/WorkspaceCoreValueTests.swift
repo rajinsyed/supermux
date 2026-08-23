@@ -16,6 +16,9 @@ import Testing
         #expect(SurfaceKind.project.rawValue == "project")
         #expect(SurfaceKind.extensionBrowser.rawValue == "extensionBrowser")
         #expect(SurfaceKind.cloudVMLoading.rawValue == "cloudVMLoading")
+        // SUPERMUX:begin claude-harness-surface-kind
+        #expect(SurfaceKind.claudeHarness.rawValue == "claudeHarness")
+        // SUPERMUX:end claude-harness-surface-kind
     }
 }
 

@@ -1,0 +1,979 @@
+/* ---------------------------------------------------------------------------
+   App shell.
+
+   One deep page. The transcript scrolls full-bleed; the dock at the bottom is
+   a stack of floating glass islands (working panel, composer, bottom bar) with
+   the page showing through the gaps between them. Sub-views (an agent's chat,
+   a workflow, a shell tail) render inside a rounded FRAME inset from the pane
+   edges, the way Cursor frames a subagent's conversation.
+--------------------------------------------------------------------------- */
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ---------- framed sub-views ---------- */
+
+/* A floating card over the page, not a full-bleed replacement for it: the page
+   shows as a margin on all four sides, and the frame ends above the composer
+   rather than running into it.
+
+   The frame tracks the CONTENT COLUMN, not the pane.
+ *
+ * It used to be `margin: 16px 18px` — 18px from each pane edge, whatever the
+ * pane's width. On a wide window that made a 1400px card holding a 760px
+ * column of text, so the frame's own border sat 300px away from anything it
+ * contained on both sides and the whole thing read as dead space with a
+ * hairline round it. Capping at the column's width plus the two gutters it
+ * needs, and centring, puts the border where the reader's eye already is: the
+ * frame is the same width as the transcript underneath it, and the page shows
+ * as a margin on all four sides. `min()` keeps the 18px inset on a pane too
+ * narrow for the cap to matter. */
+/* The bottom margin clears the FLOATING dock (round-7 item 6). The dock is
+   absolutely positioned over the pane now, so a frame that simply filled the
+   flex column would run under the composer — and unlike the transcript, a frame
+   is a card with a border and a background: content does not pass behind glass
+   here, it is hidden behind an opaque edge. `--dock-height` is measured onto
+   `.app` by App.tsx; the fallback is a plausible resting dock. */
+.view-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(100% - 36px, calc(var(--content-max) + 2 * var(--gutter)));
+  margin: 16px auto calc(var(--dock-height, 96px) + 6px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* The frame is already inset, so its content column inherits that inset rather
+   than adding the transcript's full gutter on top of it — otherwise a 760px
+   window leaves the text in a channel barely wider than the breadcrumb. The
+   column still centres and still stops at --content-max on a wide pane. */
+.view-frame .transcript-inner {
+  padding-left: max(12px, calc(var(--gutter) - 8px));
+  padding-right: max(12px, calc(var(--gutter) - 8px));
+}
+
+.view-frame > .transcript-wrap,
+.view-frame > .harness-scroll,
+.view-frame > .view-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.view-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The frame's own header row: back arrow, breadcrumb trail, close. */
+.view-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px 8px 8px;
+  border-bottom: 1px solid var(--border-faint);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.view-back {
+  flex: 0 0 auto;
+}
+
+.view-crumb-trail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+}
+
+.view-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.view-crumb .link-btn {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22ch;
+}
+
+.view-crumb .link-btn:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.view-crumb .link-btn:focus-visible {
+  color: var(--text);
+}
+
+.view-crumb-sep {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.view-crumb-current {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-crumbs-spacer {
+  flex: 1;
+}
+
+.view-close {
+  flex: 0 0 auto;
+}
+
+/* ---------- the bottom bar (Header component) ----------
+
+   Cursor's grammar: session identity on the left, controls on the right, one
+   quiet line under the composer. No bed, no border — the pills themselves are
+   the only marks. */
+
+/* Calm, not crowded. Cursor's strip is a row of items at ONE weight — a small
+   folder glyph, a small ring, "Auto-edit ⌄" as plain text, a history glyph, a
+   "…" — separated by real air. The generous gap is what does most of the work:
+   at 4px the six controls read as a dense toolbar, and the eye has nowhere to
+   rest between them. */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  padding: 0 2px;
+}
+
+/* The left group is the pane's ADDRESS and the right group is its CONTROLS:
+   the address gives way first, ellipsizing its path, and the controls only
+   start shrinking when it is already at its floor.
+
+   The session title used to live on the left as an editable button, with
+   `.title-btn` / `.title-text` / `.title-input` rules here. All three are gone
+   with it: it was the widest thing on the strip, it named something the CLI
+   invented rather than something the user chose, and clicking it opened an
+   inline text field in a bar whose every other control opens a menu. */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-shrink: 0.2;
+}
+
+.dir-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-faint);
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dir-chip svg {
+  flex: 0 0 auto;
+}
+
+.dir-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 24ch;
+}
+
+/* No inner padding: the strip's own gap is the spacing, and a badge that keeps
+   its own reads as a chip with an invisible bed. */
+.cost-badge {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+/* ---------- pills ----------
+
+   `.menu` and `.menu-trigger` are declared in the kit (menu.css) — every
+   trigger in the pane is the same object, and this bar owns only what its own
+   pills look like. */
+
+/* Text-first controls — Cursor's grammar. At rest a pill is quiet ink with
+   no bed; the bed appears only under the pointer. Semantic modes tint their
+   TEXT, never a filled chip, so the bar stays one calm line. The ink is
+   `--text-faint`, the same tier as the folder chip and the cost, so nothing on
+   the strip is louder than anything else at rest. */
+.mode-pill,
+.model-pill,
+.icon-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-faint);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.icon-pill {
+  padding: 4px;
+}
+
+.pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.mode-pill svg,
+.model-pill svg,
+.icon-pill svg {
+  color: var(--text-faint);
+}
+
+.menu-trigger:hover .model-pill,
+.menu-trigger:hover .icon-pill,
+.menu-trigger:hover .mode-pill.is-default,
+.menu-trigger.is-open .model-pill,
+.menu-trigger.is-open .icon-pill,
+.menu-trigger.is-open .mode-pill.is-default {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* A toned pill gets the same hover BED but keeps its own hue: the label
+   colour is what names the mode, and it never moves under the pointer. */
+.menu-trigger:hover .mode-pill:not(.is-default),
+.menu-trigger.is-open .mode-pill:not(.is-default) {
+  background: var(--surface-hover);
+}
+
+.menu-trigger:focus-visible .model-pill,
+.menu-trigger:focus-visible .icon-pill,
+.menu-trigger:focus-visible .mode-pill {
+  background: var(--surface-hover);
+}
+
+/* Semantic tints on the text alone; hover deepens the surface, not the hue,
+   so the label colour — which names the mode — never moves. */
+.mode-pill.is-acceptEdits {
+  color: var(--success);
+}
+
+.mode-pill.is-acceptEdits svg {
+  color: var(--success-dot);
+}
+
+.mode-pill.is-plan {
+  color: var(--violet);
+}
+
+.mode-pill.is-plan svg {
+  color: var(--violet-dot);
+}
+
+.mode-pill.is-bypassPermissions {
+  color: var(--danger);
+}
+
+.mode-pill.is-bypassPermissions svg {
+  color: var(--danger-dot);
+}
+
+/* `.effort-tag` and the four `.mode-dot` rules stood here. The effort chip went
+   with the bottom bar's model pill (effort is folded into the composer
+   trigger's own label), and the mode dots went with the permission menu's
+   rebuild: four identical 7px circles in four different colours said nothing
+   about what separates the modes, and the row's leading BAR replaced them. */
+
+/* ---------- menu geometry ----------
+
+   The MATERIAL (panel, rows, sections, footer, keys) is declared once in
+   menu.css and worn by every floating surface in the pane. What is left here is
+   geometry: how wide each of this bar's three panels is, and the one hue
+   treatment the permission rows carry. Round 4's version of this section was
+   240 lines re-declaring the same panel three times at three radii; that is
+   what made five menus opened from one bar look like five products. */
+
+.pop-more {
+  min-width: 208px;
+}
+
+.pop-modes {
+  min-width: 262px;
+}
+
+/* ---------- permission modes ----------
+
+   Four rows, name over consequence, each carrying its own hue as a LEADING BAR
+   rather than a dot. The modes differ in how much they let through — a graded
+   left edge says that at a glance, where four identical grey dots said nothing
+   and the tinted text alone put the colour on the word instead of on the
+   choice. */
+
+.mode-item {
+  position: relative;
+  padding-left: 14px;
+}
+
+.mode-item::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: var(--r-pill);
+  background: var(--text-faint);
+  opacity: 0.5;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.mode-item:hover::before,
+.mode-item:focus-visible::before,
+.mode-item.is-active::before {
+  opacity: 1;
+}
+
+.mode-item.is-acceptEdits::before {
+  background: var(--success-dot);
+}
+
+.mode-item.is-plan::before {
+  background: var(--violet-dot);
+}
+
+.mode-item.is-bypassPermissions::before {
+  background: var(--danger-dot);
+}
+
+/* The live row's own hue on the check, so the strip's coloured pill and the
+   checked row in the menu are visibly the same fact. */
+.mode-item.is-acceptEdits .ui-menu-check {
+  color: var(--success);
+}
+
+.mode-item.is-plan .ui-menu-check {
+  color: var(--violet);
+}
+
+.mode-item.is-bypassPermissions .ui-menu-check {
+  color: var(--danger);
+}
+
+/* ---------- sessions browser ----------
+
+   A list, not a table of buttons. The ROW is Resume — the primary action on a
+   list of sessions is "open this one" — and Fork / New pane are icon buttons at
+   the trailing edge, revealed on hover or focus.
+
+   The rows are the kit's rows in all but name: same 28px line, same 7px radius,
+   same hover bed. They cannot literally BE `.ui-menu-item`s because each row
+   holds two extra controls beside its label, which the kit's single-action row
+   deliberately does not model. */
+
+.pop-sessions {
+  min-width: 320px;
+  max-width: 380px;
+  max-height: min(430px, 62vh);
+}
+
+.sessions-head {
+  flex: 0 0 auto;
+  padding: 2px 2px 5px;
+}
+
+/* The kit's field: one hairline, one radius, the panel's own sunken bed. */
+.ui-menu-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-row);
+  background: var(--input-bg);
+  font-size: 12.5px;
+  color: var(--text);
+  transition: border-color var(--dur) var(--ease);
+}
+
+.ui-menu-input::placeholder {
+  color: var(--text-faint);
+}
+
+.ui-menu-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-color: var(--border-strong);
+}
+
+.sessions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.session-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--r-row);
+  transition: background var(--dur) var(--ease);
+}
+
+.session-row:hover,
+.session-row:focus-within {
+  background: var(--surface-hover);
+}
+
+.session-open {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: var(--r-row);
+}
+
+.session-title {
+  font-size: 13px;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-row:hover .session-title,
+.session-row:focus-within .session-title {
+  color: var(--text);
+}
+
+.session-meta {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hidden until the row is under the pointer or holds focus, so the list reads
+   as titles. They stay in the tab order throughout — `:focus-within` on the row
+   is what brings them back for a keyboard user. */
+.session-actions {
+  display: flex;
+  gap: 1px;
+  flex: 0 0 auto;
+  padding-right: 4px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.session-row:hover .session-actions,
+.session-row:focus-within .session-actions {
+  opacity: 1;
+}
+
+.session-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-xs);
+  color: var(--text-faint);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.session-action:hover {
+  background: var(--surface-active);
+  color: var(--text);
+}
+
+.session-action:focus-visible {
+  color: var(--text);
+}
+
+/* The footer's one action, filling it: the foot is not a caption row. */
+.sessions-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  margin: -3px -5px;
+  padding: 5px;
+  border-radius: var(--r-row);
+  font-size: 12.5px;
+  color: var(--text-soft);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.sessions-new:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.sessions-new:focus-visible {
+  color: var(--text);
+}
+
+.sessions-new svg {
+  color: var(--claude);
+}
+
+/* ---------- context ring ---------- */
+
+.ctx {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.ctx-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px;
+  border-radius: var(--r-row);
+}
+
+.ctx-btn:hover {
+  background: var(--surface-hover);
+}
+
+.ctx-btn:focus-visible {
+  background: var(--surface-hover);
+}
+
+.ctx-value {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.ctx-arc {
+  stroke: var(--success-dot);
+  transition: stroke-dashoffset 400ms var(--ease);
+}
+
+.ctx-btn.is-warn .ctx-arc {
+  stroke: var(--warning-dot);
+}
+
+.ctx-btn.is-danger .ctx-arc {
+  stroke: var(--danger-dot);
+}
+
+/* The breakdown panel: the kit's surface, with its own inner spacing.
+
+   One figure, then the accounting behind it. The percentage is set at display
+   size because it is the thing being decided on; the token count is its
+   evidence and sits under it. Each category then gets its own share bar, so the
+   line that is actually eating the window is visible without reading five
+   numbers and comparing them by hand. */
+
+.pop-ctx {
+  width: 254px;
+  min-width: 0;
+  padding: 12px 12px 11px;
+  font-size: 12px;
+}
+
+.ctx-pop-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  column-gap: 8px;
+  margin-bottom: 9px;
+}
+
+.ctx-pop-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.ctx-pop-figure {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.pop-ctx.is-warn .ctx-pop-figure {
+  color: var(--warning);
+}
+
+.pop-ctx.is-danger .ctx-pop-figure {
+  color: var(--danger);
+}
+
+.ctx-pop-sub {
+  grid-column: 1;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ctx-bar {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--surface-active);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.ctx-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--success-dot);
+  transition: width 400ms var(--ease);
+}
+
+.ctx-bar-fill.is-warn {
+  background: var(--warning-dot);
+}
+
+.ctx-bar-fill.is-danger {
+  background: var(--danger-dot);
+}
+
+.ctx-cats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Name, share, figure — three columns on one 16px line, so five categories are
+   five lines and the bars form a column the eye can compare down. */
+.ctx-cat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px auto;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+}
+
+.ctx-cat-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ctx-cat-track {
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-active);
+  overflow: hidden;
+}
+
+.ctx-cat-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--text-faint);
+}
+
+.ctx-cat-value {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.ctx-note {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-faint);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* ---------- empty states ---------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 12vh var(--gutter) 40px;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.claude-mark {
+  display: inline-flex;
+  margin-bottom: 18px;
+  opacity: 0.9;
+}
+
+.empty-icon-warn {
+  display: inline-flex;
+  color: var(--warning);
+  margin-bottom: 14px;
+}
+
+.empty-headline {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.empty-sub {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.empty-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.empty-model {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+}
+
+.empty-model.is-pending {
+  color: var(--text-faint);
+}
+
+.empty-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.empty-suggestions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin-bottom: 26px;
+}
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  font-size: 12.5px;
+  color: var(--text-soft);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.suggestion:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.suggestion:focus-visible {
+  border-color: var(--claude-border);
+}
+
+.suggestion-arrow {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.suggestion:hover .suggestion-arrow,
+.suggestion:focus-visible .suggestion-arrow {
+  opacity: 1;
+}
+
+.empty-sessions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.recent-session {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+}
+
+.recent-session:hover {
+  background: var(--surface-hover);
+}
+
+.recent-session:focus-visible {
+  background: var(--surface-hover);
+}
+
+.recent-title {
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-meta {
+  color: var(--text-faint);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+/* no-CLI state */
+.install-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.install-cmd {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--code-bg);
+  border: 1px solid var(--border-faint);
+  font-size: 12px;
+}
+
+.empty-error {
+  margin: 0 0 8px;
+  color: var(--danger);
+  font-size: 11.5px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.empty-note {
+  margin: 0 0 16px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* exited state, in the transcript footer */
+.exited-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--r-lg);
+  background: var(--danger-soft);
+}
+
+.exited-icon {
+  color: var(--danger);
+  display: inline-flex;
+  margin-top: 1px;
+}
+
+.exited-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.exited-title {
+  font-weight: 600;
+  font-size: 12.5px;
+  margin-bottom: 2px;
+}
+
+.exited-body {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.exited-stderr {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+@media (max-width: 460px) {
+  .cost-badge {
+    display: none;
+  }
+}

@@ -262,6 +262,9 @@ export const shortcutCategories: ShortcutCategory[] = [
     blurbKey: "surfacesBlurb",
     shortcuts: [
       { id: "newSurface", combos: [["⌘", "T"]], description: { en: "New surface", ja: "新規サーフェス" } },
+      // SUPERMUX:begin claude-harness-shortcut-doc
+      { id: "supermuxNewClaudeHarness", combos: [["⌃", "⌘", "A"]], description: { en: "New Claude pane", ja: "新規Claudeペイン" } },
+      // SUPERMUX:end claude-harness-shortcut-doc
       { id: "nextSurface", combos: [["⌘", "⇧", "]"]], description: { en: "Next surface", ja: "次のサーフェス" } },
       { id: "prevSurface", combos: [["⌘", "⇧", "["]], description: { en: "Previous surface", ja: "前のサーフェス" } },
       { id: "moveSurfaceLeft", combos: [["⌥", "⌘", "⇧", "["]], description: { en: "Reorder surface left", ja: "サーフェスを左へ並べ替え" } },

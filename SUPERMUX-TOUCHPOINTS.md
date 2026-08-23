@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **412**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **464**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -29,7 +29,7 @@ Rules for adding a touchpoint:
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 244 | `CLAUDE.md` | `ios-dogfood-release-build` | Overrides upstream's "iOS builds open on the iPhone by default" section for this fork: `reload.sh --tag` ships a tagged DEV build the user cannot sign in to, so physical-phone dogfood uses a Release build with `CMUX_DEV_TAG=` empty and `CMUX_IOS_AUTH_ENV=production`. Records the exact invocation — the FIXED dogfood bundle id `com.supermux.ios.dogfood` (one persistent identity so sign-in/pairing survive across tags; per-tag `dev.cmux.ios.<tag>` is retired, and keychain-group sharing with the main install is forbidden — Iroh stores would mutually wipe), `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"`, the sanctioned per-build naming knob (#238/#239) — and the two overrides never to pass on it (`PRODUCT_DISPLAY_NAME`, `ASSETCATALOG_COMPILER_APPICON_NAME`) |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges (`selectWorkspaceRow`) and the actions-bundle Close Other/Below/Above closures exclude project-hidden workspaces (via a fenced parent-level `supermuxProjectHiddenWorkspaceIds()` helper — since upstream's 0.65 snapshot-boundary refactor moved row actions from `TabItemView` to the sidebar owner, the fenced logic lives in those parent functions; Move Up/Down stepping lives in the SHARED entrypoint, #131, so `moveWorkspaceRow` is back to the upstream one-liner), the actions bundle gets a fenced `supermuxMenuVisibility` provider (keyed by workspace id; consumed by #114, declared in #129, move enablement via the #131 stepped-plan check) so the four Move/Close menu items disable on real reachability instead of raw full-list indices, a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`, the row-input construction computes fenced `supermuxVisibleIndex`/`supermuxVisibleCount` (#132/#133) and `TabItemView.accessibilityTitle` announces "workspace N of M" against the visible list; renders the agent-activity indicator on flat-list workspace rows (indicator overlay in `TabItemView`; snapshot resolution moved to #128); gives the flat-list selection the faint accent tint used by nested project rows in `backgroundColor(for:)` (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06 via `isPointerHovering`); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
-| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, and `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
+| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`, and `SupermuxFocusedPaneNotificationPolicy.swift`, ids `…0142`/`…0143`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` + `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width), with a third fallback putting the icon-only row in a horizontal `ScrollView` so mode buttons scroll instead of clipping at extreme narrowness; `right-sidebar-changes-mode-focushost` mounts `SupermuxChangesFocusHostBridge`/`SupermuxChangesFocusHostView` as the changes panel's background, registering a geometry-based focus host with the window's `MainWindowFocusController` |
 | 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
@@ -40,7 +40,7 @@ Rules for adding a touchpoint:
 | 11 | `Sources/KeyboardShortcutSettings.swift` | `run-toggle-shortcut-*` | `supermuxToggleRun` action (case/label/default ⌘G, shared with Find Next) |
 | 12 | `Sources/AppDelegate.swift` | `run-toggle-shortcut-*` | ⌘G dispatch: Find Next while find overlay is open, run toggle otherwise; auto-repeat key events are excluded from the run toggle |
 | 13 | `.github/workflows/ci.yml` | `ci-package-tests` | Adds `SupermuxKit`, `Packages/Shared/SupermuxMobileCore`, and `Packages/iOS/SupermuxMobileKit` to the SPM package-test allowlist so their tests gate CI |
-| 14 | `web/data/cmux.schema.json` | `unfenced` | Adds all five supermux ids — `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, `supermuxWorkspaceSwitcherPrevious`, `supermuxCommit`, and `supermuxCommitAccelerator` — to the shortcut-action enum so cmux.json validation accepts rebinding them; also rewrites the `workspaceInheritWorkingDirectory` description for the #80 fork behavior (off = always home directory) and gives it a `descriptionKey` (`schemaDescriptions.app.workspaceInheritWorkingDirectory`, messages under #86/#87) so the docs page localizes it |
+| 14 | `web/data/cmux.schema.json` | `unfenced` | Adds all six supermux ids — `supermuxToggleRun`, `supermuxWorkspaceSwitcherNext`, `supermuxWorkspaceSwitcherPrevious`, `supermuxCommit`, `supermuxCommitAccelerator`, and `supermuxNewClaudeHarness` — to the shortcut-action enum so cmux.json validation accepts rebinding them; also rewrites the `workspaceInheritWorkingDirectory` description for the #80 fork behavior (off = always home directory) and gives it a `descriptionKey` (`schemaDescriptions.app.workspaceInheritWorkingDirectory`, messages under #86/#87) so the docs page localizes it |
 | 15 | `web/data/cmux-shortcuts.ts` | `run-toggle-shortcut-doc` | Documents the `supermuxToggleRun` ⌘G shortcut in the keyboard-shortcut registry |
 | 16 | `Sources/WorkspaceContentView.swift` | `presets-bar` | Renders `SupermuxPresetsBarMount(workspace:)` above the splits inside a single `VStack` wrapper that keeps upstream's `WorkspaceContentMinimalModeSafeAreaModifier` — one structural identity. The minimal-mode hide moved INTO the supermux-owned mount (v0.64.19 merge): upstream's `WorkspaceContentViewVisibilityTests` asserts mode toggles re-evaluate neither `ContentView` nor `WorkspaceContentView` bodies, so the fence must not read the presentation mode |
 | 17 | `AppIcon.icon` | `unfenced` | App-icon rebrand (representative path; full family in the #17 re-apply note): supermux Icon Composer "Liquid Glass" `.icon` for Release + byte-identical `AppIcon-Debug.icon` + `AppIcon-Nightly.icon` (no DEV/NIGHTLY bands — all three channels share one mark); old PNG appiconsets deleted; `AppIcon{Light,Dark}` imagesets re-sourced from the rendered icon. macOS wiring lives in touchpoint #3; iOS renders from the same bundles via #241, and `AppIcon-Demo.icon` (iOS demo lane only) is a fourth sibling. |
@@ -87,13 +87,13 @@ Rules for adding a touchpoint:
 | 59 | `Sources/TerminalController.swift` | `keep-window-on-last-close` | The socket `close_workspace` command routes through `closeWorkspace(tab, allowEmptyingWindow: true)` and replies OK only when the workspace actually left `tabs` (upstream `closeTab` silently no-ops on a window's last workspace while replying OK) |
 | 60 | `Sources/RemoteTmuxController.swift` | `keep-window-on-last-close` | BOTH arms of upstream 0.65's teardown-reason switch are fenced: `.sessionEnded` (dead mirror) drops upstream's add-a-replacement-workspace workaround and closes with `allowEmptyingWindow: true`; `.explicitDetach` (deliberate detach, remote session kept alive) replaces upstream's `closeWorkspaceNonInteractively(allowPinned: true)` — which closes the whole window (and on the last window quits the app) when the mirror is the window's last workspace — with the same `closeWorkspace(allowEmptyingWindow: true)`, leaving the empty home. Pre-0.65 both cases shared one teardown path and one fence |
 | 61 | `Sources/AppleScriptSupport.swift` | `keep-window-on-last-close` | AppleScript `close tab` (`ScriptTab.handleCloseTab`) and terminal `close` last-panel path (`ScriptTerminal.handleClose`) call `closeWorkspace(workspace, allowEmptyingWindow: true)` instead of the `tabs.count > 1` fork + `window.performClose(nil)`, so scripted last-workspace closes leave the empty home like ⌘W |
-| 62 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction.swift` | `run-toggle-shortcut-case`, `workspace-switcher-shortcut-case`, `supermux-commit-shortcut-case` | Adds the five supermux cases (`supermuxToggleRun`, the two workspace-switcher actions, the two commit actions) to the settings-package enum that drives the Settings UI and its conflict detection (reuses the app-target fence ids). Upstream (0.65) extracted `group` and `displayName` out of this file, so the two other fences moved to #62b/#62c |
-| 62b | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Group.swift` | `supermux-shortcut-groups` | Places the five supermux actions in the Settings groups (`supermuxToggleRun`/`supermuxCommit`/`supermuxCommitAccelerator` → `.workspace`; the two workspace-switcher actions → `.navigation`). Upstream extracted `ShortcutAction.group` out of `ShortcutAction.swift` into this file; the fence moved with it |
-| 62c | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+DisplayName.swift` | `supermux-shortcut-display-names` | The five `String(localized: "supermux.shortcut.*.label", …)` display names shown in the Settings shortcut list. Upstream extracted `ShortcutAction.displayName` out of `ShortcutAction.swift` into this file; the fence moved with it. The package resolves `String(localized:)` against `Bundle.main`, so the app catalog (`Resources/Localizable.xcstrings`, #4b) serves these keys in en + ja |
-| 63 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Defaults.swift` | `supermux-shortcut-defaults` | Package mirror of the five supermux default strokes (⌘G, ⌘\`, ⇧⌘\`, ⌘↩, ⇧⌘↩) from `Sources/KeyboardShortcutSettings.swift`; both tables must agree |
+| 62 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction.swift` | `run-toggle-shortcut-case`, `workspace-switcher-shortcut-case`, `supermux-commit-shortcut-case` | Adds the supermux cases (`supermuxToggleRun`, the two workspace-switcher actions, the two commit actions; `supermuxNewClaudeHarness` under #440) to the settings-package enum that drives the Settings UI and its conflict detection (reuses the app-target fence ids). Upstream (0.65) extracted `group` and `displayName` out of this file, so the two other fences moved to #62b/#62c |
+| 62b | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Group.swift` | `supermux-shortcut-groups` | Places the supermux actions in the Settings groups (`supermuxToggleRun`/`supermuxCommit`/`supermuxCommitAccelerator` → `.workspace`; the two workspace-switcher actions and `supermuxNewClaudeHarness` → `.navigation`). Upstream extracted `ShortcutAction.group` out of `ShortcutAction.swift` into this file; the fence moved with it |
+| 62c | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+DisplayName.swift` | `supermux-shortcut-display-names` | The `String(localized: "supermux.*.label", …)` display names (five `supermux.shortcut.*` plus `supermux.harness.shortcut.newPane.label`) shown in the Settings shortcut list. Upstream extracted `ShortcutAction.displayName` out of `ShortcutAction.swift` into this file; the fence moved with it. The package resolves `String(localized:)` against `Bundle.main`, so the app catalog (`Resources/Localizable.xcstrings`, #4b) serves these keys in en + ja |
+| 63 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction+Defaults.swift` | `supermux-shortcut-defaults` | Package mirror of the six supermux default strokes (⌘G, ⌘\`, ⇧⌘\`, ⌘↩, ⇧⌘↩, ⌃⌘A) from `Sources/KeyboardShortcutSettings.swift`; both tables must agree |
 | 64 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Stores/SecretFileStore.swift` | `secret-file-0600-write` | Temp-file-at-0600 + `rename(2)` write path removing the chmod-after-write exposure window for the AI gateway key |
 | 65 | `Packages/macOS/CmuxSettings/Tests/CmuxSettingsTests/SecretFileStoreTests.swift` | `secret-file-0600-write` | Regression test for the 0600 write path (same fence id as #64) |
-| 66 | `cmuxTests/KeyboardShortcutContextTests.swift` | `settings-package-shortcut-action-drift` | Drift test that fails on app-target shortcut actions unmapped in the settings-package enum, plus an alignment test for the five supermux actions |
+| 66 | `cmuxTests/KeyboardShortcutContextTests.swift` | `settings-package-shortcut-action-drift` | Drift test that fails on app-target shortcut actions unmapped in the settings-package enum, plus an alignment test for the six supermux actions |
 | 67 | `web/data/cmux-shortcuts.ts` | `supermux-commit-shortcut-doc` | Documents the two Changes-panel commit chords (⌘↩ / ⇧⌘↩) in the diff-viewer section of the keyboard-shortcut registry |
 | 68 | `Packages/macOS/CmuxSettings/Tests/CmuxSettingsTests/SupermuxShortcutActionTests.swift` | `unfenced` | Whole-file supermux-owned test inside the upstream `CmuxSettings` package test target (SupermuxAISettingsCard precedent, #18); registered so the check guards its existence |
 | 69 | `Packages/macOS/CmuxSettingsUI/Tests/CmuxSettingsUITests/SupermuxAISettingsCardContractTests.swift` | `unfenced` | Whole-file supermux-owned contract test inside the upstream `CmuxSettingsUI` package test target (SupermuxAISettingsCard precedent, #18) |
@@ -233,7 +233,7 @@ Rules for adding a touchpoint:
 | 209 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `ios-terminal-alt-scroll-quantize` | Adds `terminalAlternateScrollQuantizersBySurfaceID` (declared with the other scroll state, initialized empty, cleared on reconnect reset, removed on surface teardown) |
 | 210 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+TerminalScrollDelivery.swift` | `ios-terminal-alt-scroll-quantize` | After the budget admits alt-screen lines, runs them through the per-surface quantizer and forwards only the whole-line portion (fractions carry). Registered separately from the same file's #191 budget and #206 activity stamp |
 | 211 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/TerminalAlternateScrollLineQuantizerTests.swift` | `unfenced` | Whole new regression for #208: fractions accumulate before any emit, whole lines pass with carry, reversal unwinds signed carry, non-finite ignored, and 1× vs 0.25× delivery now differs ~4× per identical finger travel |
-| 212 | `Sources/AppDelegate+DockShortcutRouting.swift` | `run-shortcut-dock-routing` | Adds all five fork shortcut actions (`supermuxToggleRun`, `supermuxWorkspaceSwitcherNext/Previous`, `supermuxCommit`, `supermuxCommitAccelerator`) as one `.mainContainer` case to upstream's deliberately-exhaustive Dock-routing switch. Upstream added this file with no `default:` so every action must be classified; all fork actions target app/workspace/project state, never a surface tree, so none reroute into the Dock. Re-apply: add the fenced five-case `case ...: .mainContainer` before the closing brace of `dockShortcutRoutingDisposition` |
+| 212 | `Sources/AppDelegate+DockShortcutRouting.swift` | `run-shortcut-dock-routing` | Adds all fork shortcut actions (`supermuxToggleRun`, `supermuxWorkspaceSwitcherNext/Previous`, `supermuxCommit`, `supermuxCommitAccelerator`, `supermuxNewClaudeHarness`) as one `.mainContainer` case to upstream's deliberately-exhaustive Dock-routing switch. Upstream added this file with no `default:` so every action must be classified; all fork actions target app/workspace/project state, never a surface tree, so none reroute into the Dock. Re-apply: add the fenced `case ...: .mainContainer` group before the closing brace of `dockShortcutRoutingDisposition` |
 | 213 | `Packages/iOS/CmuxMobileTerminal/Sources/CmuxMobileTerminal/GhosttySurfaceView.swift` | `ios-terminal-host-keyboard-sync` | **Fixes "keyboard covers the terminal" (upstream regression in `ba47b1dc0d`).** Upstream moved the keyboard layout guide onto `GhosttySurfaceHostView` and made it the ONLY keyboard-geometry source — but on a physical iPhone 17 Pro (iOS 26) the host's `UIKeyboardLayoutGuide.layoutFrame` **never arms**: KBDIAG traced it staying a zero-size rect (or bare safe-area) for the entire keyboard-up period, so guide-derived `keyboardHeight` stayed 0 and the grid kept full height under the keyboard; the dock rode the same dead guide. SIX fenced blocks: (1)+(2) `advanceBottomDockTransition` re-samples `synchronizeKeyboardGeometryFromLayoutGuide()` every display-link frame and ORs `keyboardGeometryChanged` into the early-out guard; (3) `handleKeyboardWillChangeFrame` records `keyboardNotificationOverlap` from the notification end frame and calls `updateDockKeyboardFallbackConstant(transition:)` (animated on the keyboard's own curve); (4) the `keyboardNotificationOverlap` property + `updateDockKeyboardFallbackConstant` — the dock-to-guide constraint constant is derived as `-(overlap − guideGap)` so it SELF-NEUTRALIZES to 0 whenever the guide actually tracks (a healthy guide keeps sole authority); (5) `keyboardOverlapFromLayoutGuide` falls back to the notification overlap when the guide frame is zero-size / unseated / safe-area-only; (6) a convergence call in `synchronizeKeyboardGeometryFromLayoutGuide`. Offer upstream — stock cmux iOS has the dead-guide failure too. Re-apply: notification overlap as fallback authority everywhere the guide yields nothing, constraint compensation that subtracts the guide's own gap |
 | 214 | `ios/cmuxUITests/cmuxUITests.swift` | `ios-terminal-host-keyboard-sync` | Regression teeth for #213 on the REAL keyboard path (`assertTerminalDockPinnedToSoftwareKeyboard`): upstream's assertions only proved the dock chrome tracked the guide — `renderMaxY`/`viewportHeight` derive from the same stale `keyboardHeight`, so they agreed even when both were wrong. The fenced block additionally asserts `keyboardHeight ≈ boundsHeight − keyboardGuideTop` (renderer model tracks the host guide) and `viewportHeight < boundsHeight − 120` (keyboard-up grid actually shrinks), with no synthetic keyboard-height override involved |
 | 215 | `Packages/macOS/CmuxAppKitSupportUI/Sources/CmuxAppKitSupportUI/Popover/ArrowlessPopoverAnchor.swift` | `popover-dynamic-height-reanchor` | Defers initial show, dismissal, and hosted-root layout until after `NSViewRepresentable.updateNSView` returns, preventing AppKit child-window ordering from re-entering SwiftUI/Observation mid-update. When an already-visible arrowless popover's content changes size, updates `contentSize` and re-shows the same popover against its original synthetic anchor so the edge stays fixed. Deferred work coalesces and rapid open→close cancels the pending show. Fixes the Usage Limits and Token Usage popover crash/drift paths |
@@ -354,7 +354,7 @@ Rules for adding a touchpoint:
 | 329 | `Sources/Panels/BrowserPanel+MobileBrowserStreaming.swift` | `mac-browser-stream-teardown-grace` | Three fences: the last stream handler removal parks the offscreen render host behind a short cancellable grace instead of tearing it down synchronously; a restart inside the grace cancels the pending teardown and reuses the parked host with zero window/reparent churn; explicit `clearMobileStreamViewport` tears down immediately, while a web-view replacement during grace restores the captured desktop viewport before abandoning the dead web view's render host |
 | 330 | `cmuxTests/MobileBrowserStreamTeardownGraceTests.swift` | `mac-browser-stream-teardown-grace` | **Whole-file fork test.** Behavior coverage: a stopped stream parks the render host and a rapid restart reuses it with the teardown cancelled; grace expiry with no restart fully tears down; web-view replacement restores the desktop viewport; panel close during the grace skips the wait |
 | 331 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobilePushCoordinator.swift` | `ios-direct-apns-token` | Mirrors each successful APNs device token into fork-owned `SupermuxMobilePushRegistrationStore` before upstream's cloud registration runs. The store persists a stable installation id plus the current and last Mac-acknowledged tokens, drains changes made during an in-flight registration, and registers/removes the device when `supermux.phone_push.v1` is advertised. The fixed bundle guard keeps upstream/tagged identities on their original cloud-only path. The settings bridge also preserves whether Time Sensitive Notifications are unsupported versus user-disabled so the personal-team build does not advertise an impossible repair |
-| 332 | `Sources/TerminalNotificationStore.swift` | `direct-phone-push` | Adds the topic-restricted personal APNs provider at the two existing notification chokepoints. Visible sends deliberately IGNORE upstream's Mac focus suppression: a phone remote-controlling this Mac keeps the app frontmost on the phone's workspace while nobody is at the Mac, so any Mac-side presence guess loses notifications. The Mac always sends while phone forwarding is enabled; the phone owns presentation (its foreground delegate suppresses the banner when it is showing the exact target terminal, so an always-send Mac cannot double-notify). Dismiss/badge synchronization runs beside the existing cold lane under the same forwarding preference; hide-content is inherited. Transport stays in fork-owned `SupermuxDirectPhonePush`/`SupermuxPhonePushService` |
+| 332 | `Sources/TerminalNotificationStore.swift` | `direct-phone-push` | Adds the topic-restricted personal APNs provider at the two existing notification chokepoints. Visible sends share the exact-pane focus decision from #453: the already-focused target is retained as read history with no phone push, while a non-focused target still forwards whenever phone forwarding is enabled, regardless of broad Mac activity/presence guesses. The phone's foreground delegate remains a final duplicate-presentation guard. Dismiss/badge synchronization runs beside the existing cold lane under the same forwarding preference; hide-content is inherited. Transport stays in fork-owned `SupermuxDirectPhonePush`/`SupermuxPhonePushService` |
 | 333 | `ios/Config/supermux.entitlements` | `unfenced` | **Fork-owned build-stage signing entitlement** (`aps-environment = development`, used only by the xcodebuild pass with the Apple Development profile — workspace-wide distribution settings leak into SwiftPM targets, which cannot take profiles). `scripts/supermux-ios-release.sh` then RE-SIGNS the built app with `Apple Distribution` + the `Supermux iPhone Ad Hoc` profile, using the entitlements extracted from that profile (`aps-environment = production`), and rejects a profile or final signature that is not production. The Ad Hoc profile must also carry `com.apple.developer.usernotifications.time-sensitive` (the App ID's Time Sensitive Notifications capability — a free checkbox on a paid team, unlike Critical Alerts), because the payload sends `"interruption-level": "time-sensitive"` and iOS silently downgrades it to active when the entitlement is absent; the script verifies it in the profile and the final signature. Sign in with Apple is deliberately NOT required: nothing in the iOS sources uses it, production auth runs through the web flow, so this lane must not inherit upstream's paid-team requirement for it. Sandbox APNs accepted every send with 200 but silently dropped delivery to the backgrounded app |
 | 334 | `Sources/Mobile/MobileHostIrohRuntime.swift` | `profileless-release-iroh-storage` | Extends the existing DEBUG file-backed secure-store composition to `SUPERMUX_LOCAL_RELEASE`. The local Developer ID-signed Mac app has no provisioning profile/application-identifier entitlement, so the data-protection Keychain returns `errSecMissingEntitlement` and the entire mobile host remains offline; the release script's explicit condition uses the already hardened `0600` per-bundle file stores for identity and relay credentials without changing upstream production Release builds |
 | 335 | `Sources/Mobile/MobileHostIrohRuntime+Lifecycle.swift` | `profileless-release-iroh-storage` | Compiles the matching bundle-scoped `developmentStoreDirectory(service:)` helper for `SUPERMUX_LOCAL_RELEASE`, keeping every local-release identity/credential family under `Application Support/cmux/iroh-debug/com.supermux.app/`. Must use the same compilation condition as #334 or the Release build fails at compile time |
@@ -429,6 +429,70 @@ Rules for adding a touchpoint:
 | 413 | `Sources/ContentView.swift` | `pull-request-glyph-arrowhead` | Gives `PullRequestOpenIcon` its left-pointing arrowhead: upstream drew two branches joined by a bare connector, which is the `git-branch` glyph rather than `git-pull-request`. Rounds the 45° chamfer into an arc and detaches the two branch strokes, matching GitHub's octicon and SupermuxKit's `SupermuxPullRequestGlyph` |
 | 413b | `Sources/Sidebar/AppKitList/Cells/SidebarWorkspaceRowSlotViews.swift` | `pull-request-glyph-arrowhead` | The AppKit twin of #413 in `SidebarRowPullRequestIconView.draw`, so the AppKit sidebar list draws the same corrected glyph as the SwiftUI one (`NSBezierPath.appendArc(from:to:radius:)`; the view is `isFlipped`, so the y-down geometry ports unchanged) |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
+| 413 | `Sources/Panels/Panel.swift` | `claude-harness-panel-case`, `claude-harness-panel-decode` | Adds `case claudeHarness` to `PanelType` plus the case-insensitive decode fallback so old/foreign-cased snapshots restore the Claude harness pane |
+| 414 | `Packages/macOS/CmuxWorkspaces/Sources/CmuxWorkspaces/Core/Values/SurfaceKind.swift` | `claude-harness-surface-kind` | Additive `SurfaceKind.claudeHarness` static with the frozen wire string `claudeHarness` |
+| 415 | `Packages/macOS/CmuxWorkspaces/Tests/CmuxWorkspacesTests/Core/WorkspaceCoreValueTests.swift` | `claude-harness-surface-kind` | Pins the `claudeHarness` raw value in the frozen-wire-string test |
+| 416 | `Sources/Panels/PanelContentView.swift` | `claude-harness-panel-render`, `claude-harness-drop-target` | Renders `SupermuxHarnessPanelView` for `.claudeHarness`, threads the pane-level pointer-input gate into its WKWebView, and installs the pane drop overlay for tab transfers while allowing file-only drags to reach the harness composer |
+| 417 | `Sources/Canvas/WorkspaceCanvasHostView.swift` | `claude-harness-canvas-icon` | Default canvas icon (`sparkles`) for the harness pane |
+| 418 | `Sources/ContentView+SidebarSurfaceKind.swift` | `claude-harness-sidebar-kind` | Maps `.claudeHarness` to `.unknown` for the sidebar-extension surface kind |
+| 419 | `Sources/ContentView+CommandPaletteSurfaceMetadata.swift` | `claude-harness-palette-label`, `claude-harness-palette-keywords` | Command-palette label ("Claude", localized `supermux.harness.palette.kind`) and search keywords for the harness pane |
+| 420 | `Sources/ClosedItemHistory+PanelTitle.swift` | `claude-harness-closed-title` | Recently-closed fallback title for the harness pane |
+| 421 | `Sources/CmuxLifecycleEventPublishing.swift` | `claude-harness-lifecycle-kind` | Publishes surface kind `claude_harness` in cmux lifecycle events |
+| 422 | `Sources/Workspace+SurfaceNavigation.swift` | `claude-harness-surface-navigation` | Maps `.claudeHarness` to `SurfaceKind.claudeHarness.rawValue` in workspace state snapshots |
+| 423 | `Sources/PaneDropTargetView+FileDropTextDestination.swift` | `claude-harness-file-drop` | Adds `.claudeHarness` to the `return nil` group (no file-drop text destination) |
+| 424 | `Sources/Search/GlobalSearchDocuments.swift` | `claude-harness-global-search` | Indexes harness panes with `kind = .title` in global search |
+| 425 | `Sources/Workspace+LayoutCapture.swift` | `claude-harness-layout-capture` | Counts the harness pane as an unsupported surface in declarative layout capture (placeholder terminal) |
+| 426 | `Sources/Workspace.swift` | `claude-harness-snapshot`, `claude-harness-snapshot-arm`, `claude-harness-snapshot-field`, `claude-harness-restore-arm`, `claude-harness-transfer-in`, `claude-harness-attach-rollback` | Session snapshot local + arm + `SessionPanelSnapshot` field wiring, restore arm delegating to `restoreSupermuxHarnessPanel` while suppressing untrusted saved remote cwd values, cross-workspace transfer re-install of the display-state subscription plus a destination-workspace Git metadata reprobe after remote-directory trust is restored, and rollback detach on failed attach. The factory/subscription bodies live in the supermux-owned `Sources/Supermux/Harness/Workspace+SupermuxHarness.swift` |
+| 427 | `Sources/Workspace+PanelLifecycle.swift` | `claude-harness-discard-subscription` | One-line `discardSupermuxHarnessPanelSubscription` call on panel discard |
+| 428 | `Sources/SessionPersistence.swift` | `claude-harness-persistence-field` | Optional `claudeHarness: SessionSupermuxHarnessPanelSnapshot?` field on `SessionPanelSnapshot` |
+| 429 | `Sources/Workspace+SidebarDirectories.swift` | `claude-harness-legacy-remote-directory` | Treats a legacy remote snapshot carrying a harness pane like an agent-session one for directory-provenance restore |
+| 430 | `Sources/cmuxApp.swift` | `claude-harness-debug-menu` | Mounts `SupermuxHarnessDebugMenuButtons()` in the DEBUG-only Debug menu |
+| 431 | `cmuxTests/SupermuxHarnessTests.swift` | `unfenced` | **Fork-owned new test file.** Trusted-shell-URL checks, harness snapshot round-trip/empty decode, `PanelType` claudeHarness decode, and `SessionPanelSnapshot` field carriage. pbxproj ids `50BE0001…012E`/`…012F` |
+| 432 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Claude harness into the app target: 19 app files under `Sources/Supermux/Harness/` (ids `50BE0001…0112`–`…012B`, `…0130`/`…0131` for `SupermuxHarnessWebRendererCoordinator+Bridge.swift`, `…0132`/`…0133` for `SupermuxHarnessCommandPaletteIntegration.swift`, `…0134`/`…0135` for `SupermuxHarnessBinarySetting.swift`, `…0136`/`…0137` for `SupermuxHarnessProcessSessionProtocol.swift`, `…013A`/`…013B` for `SupermuxHarnessNativeEventTransport.swift`, and `…013C`/`…013D` for `SupermuxHarnessWebHostOwnership.swift`, 4 entries each; the two `+` paths quoted), the `Resources/supermux-harness` folder reference (ids `…012C`/`…012D`, `lastKnownFileType = folder`), and `cmuxTests/SupermuxHarnessTests.swift` (ids `…012E`/`…012F`) plus `cmuxTests/SupermuxHarnessNativeEventTransportTests.swift` (ids `…013E`/`…013F`). Eighty-eight `50BE0001` occurrences total |
+| 433 | `Sources/CmuxSurfaceTabBarBuiltInAction.swift` | `claude-harness-builtin-action` | Adds `case newClaudeHarness = "cmux.newClaudeHarness"` (specific config aliases `claude-harness` and `claudeharness`; generic `claude`/`harness` remain available to extensions), palette metadata (`supermux.harness.command.newPane.title`), `sparkles` icon, and the nil `bonsplitAction` grouping — the shared action id every entrypoint (palette, File menu, shortcut, plus-button, tab bar) routes through |
+| 434 | `Sources/Workspace.swift` | `claude-harness-executor-arm` | Surface-tab-bar built-in button executor arm: `.newClaudeHarness` calls `newSupermuxHarnessSurface(inPane:focus: true)` beside the Simulator arm |
+| 435 | `Sources/AppDelegate.swift` | `claude-harness-configured-action`, `claude-harness-shortcut-dispatch` | `executeConfiguredCmuxAction` arm delegating to `performConfiguredNewClaudeHarnessAction` (fork-owned, in `SupermuxHarnessCommandPaletteIntegration.swift`), and the ⌃⌘A keyboard dispatch (`supermuxNewClaudeHarness`, non-repeat, beeps on failure) |
+| 436 | `Sources/ContentView.swift` | `claude-harness-palette-contribution` | Registers the `palette.newClaudeHarnessPane` command (contribution beside the Simulator one + handler registration; always available, no feature flag) |
+| 436b | `Sources/ContentView+AgentChatCommandPalette.swift` | `claude-harness-palette-id-map` | Maps `palette.newClaudeHarnessPane` to the `cmux.newClaudeHarness` config action id in `commandPaletteConfigActionID(for:)` |
+| 437 | `Sources/cmuxApp.swift` | `claude-harness-file-menu` | File menu "New Claude Pane" item (`supermux.harness.menu.file.newPane`) with the live `supermuxNewClaudeHarness` shortcut, calling `performNewClaudeHarnessPaneFromMenu()` |
+| 438 | `Sources/CmuxConfig.swift` | `claude-harness-config-action` | `CmuxSurfaceTabBarButton.newClaudeHarness` action reference so `cmux.json` surface-tab-bar/plus-button configs can reference the built-in by id |
+| 439 | `Sources/KeyboardShortcutSettings.swift` | `claude-harness-shortcut-case`, `claude-harness-shortcut-label`, `claude-harness-shortcut-default` | App-target `supermuxNewClaudeHarness` action: case, label (`supermux.harness.shortcut.newPane.label`), default ⌃⌘A (unclaimed; verified against both default tables) |
+| 440 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/Values/ShortcutAction.swift` | `claude-harness-shortcut-case` | Package mirror `case supermuxNewClaudeHarness` (defaults/display-name/group arms live inside the existing `supermux-shortcut-defaults`/`-display-names`/`-groups` fences of #62b/#62c/#63) |
+| 441 | `Sources/TerminalControllerV2ParamParsingSupport.swift` | `claude-harness-socket-token` | Socket v2 panel-type token `claudeharness` (the normalizer folds `claude-harness`/`claude_harness`/`ClaudeHarness` into it), so `cmux new-surface --type claude-harness` resolves to `.claudeHarness` |
+| 441b | `Sources/TerminalController+ControlSurfaceContext2.swift` | `claude-harness-socket-create-arm`, `claude-harness-socket-split-guard` | `surface.create` arm calling `newSupermuxHarnessSurface` (respects the `focus` param via `v2FocusAllowed`; workspace placement only — the Dock guard's terminal/browser-only check already rejects it) and the `surface.split` guard rejecting the type like agent-session. CLI `new-surface` help strings mention `claude-harness` (unfenced doc-string edits in `CLI/cmux.swift`) |
+| 441c | `Sources/TerminalController+ControlPaneContext.swift` | `claude-harness-socket-split-guard` | `pane.create` (new-pane) guard rejecting `claudeHarness` splits like agent-session |
+| 442 | `web/data/cmux-shortcuts.ts` | `claude-harness-shortcut-doc` | Documents the ⌃⌘A New Claude Pane shortcut in the surfaces section of the keyboard-shortcut registry (en + ja) |
+| 443 | `Sources/TabManager.swift` | `claude-harness-restore-git-probe` | One-line `workspace.scheduleSupermuxHarnessGitMetadataProbes(reason:)` call inside the post-session-restore sweep, right after upstream's `TerminalPanel` probe loop. Without it a restored workspace whose only pane is a harness pane never gets a sidebar git probe scheduled and shows no branch in its workspace tab |
+| 444 | `Sources/TabManager+SidebarGitHosting.swift` | `claude-harness-git-probe-eligible` | `hasTerminalPanel(workspaceId:panelId:)` also returns `true` for a `SupermuxHarnessPanel`. That `SidebarGitHosting` seam has exactly one caller — `SidebarGitMetadataService.restartWorkspaceGitMetadataWatching` — where it gates "may this panel be git-probed", so a harness-only workspace would lose its branch after the sidebar-git watch setting is toggled back on |
+| 445 | `Sources/Panels/PanelContentView.swift` | `claude-harness-panel-render` | (Existing fence, widened.) The `.claudeHarness` arm passes both unread state and `allowsPointerInput` into `SupermuxHarnessPanelView`, matching the shared pane visibility/input gates while retaining the harness-specific top-edge unread treatment |
+| 446 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the fork-owned `Sources/Supermux/Harness/SupermuxHarnessUnreadIndicator.swift` into the cmux target with reserved ids `50BE0001…0138` (file reference) / `…0139` (build file); 4 `50BE0001` occurrences (build file, file reference, group membership, sources phase) |
+| 447 | `.github/workflows/ci.yml` | `harness-web-ci` | Adds the `harness_web` route output and pinned-Bun Linux `harness-web` job (frozen install, typecheck, full Bun suite, production bundle build, committed-resource freshness check), then makes that job a direct dependency of `linux-preflight`, the stable `tests` aggregate, and `ci-status` |
+| 448 | `scripts/ci/detect_ci_change_areas.py` | `harness-web-ci` | Adds the independent `harness_web` change area for `harness-web/**`, the committed `Resources/supermux-harness/**` bundle, its build script, and the root package script registry without widening the broad website area or changing existing macOS classification |
+| 449 | `tests/test_ci_change_areas.py` | `harness-web-ci` | Executable routing and aggregate-gate coverage for harness sources/package metadata, the bundled resource, workflow-dispatch fail-open output, stale routed-job handling in Linux preflight, the stable `tests` gate, pinned Bun/build commands, and website-only exclusions |
+| 450 | `cmuxTests/SupermuxHarnessNativeEventTransportTests.swift` | `unfenced` | **Fork-owned new test file.** Executable transport contract coverage for acknowledgement retention, identical retry, stale-ack safety, navigation re-sequencing, count/byte batching, bounded backlog, and stale host generations. pbxproj ids `50BE0001…013E`/`…013F` |
+| 451 | `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` | `unfenced` | **Fork-owned new test file.** Exact regression coverage that a notification targeting the already-focused pane is retained only as read history: no unread count, badge state, pane indicator/flash, delivered alert, or sound; explicit custom-command automation remains enabled. pbxproj ids `50BE0001…0140`/`…0141` |
+| 452 | `Sources/Supermux/SupermuxFocusedPaneNotificationPolicy.swift` | `unfenced` | **Fork-owned new app-target policy.** Defines the one exact-target decision (`surfaceID != nil` plus the existing live focus-delivery gate) and resolves presentation effects: preserve record/custom-command automation, suppress unread/reorder/desktop/sound/pane-flash |
+| 453 | `Sources/TerminalNotificationStore.swift` | `focused-pane-notification-suppression` | Applies #452 once at final live-owner admission, after async notification hooks and retargeting, so the already-focused exact pane is recorded read and every unread/badge/ring/flash/desktop/sound/reorder surface inherits one decision. The existing #332 direct APNs fence consumes the same policy before forwarding |
+| 454 | `cmuxTests/NotificationAndMenuBarTests.swift` | `focused-pane-notification-suppression-feedback-test`, `focused-pane-notification-suppression-indicator-test` | Updates the old focused-alert contract to require read/no-sound presentation while preserving custom-command automation, and seeds the legacy focused-read-indicator lifecycle explicitly rather than relying on a newly focused notification to create it |
+| 455 | `cmuxTests/TerminalAndGhosttyTests.swift` | `focused-pane-notification-suppression-interaction-fixtures` | Keeps mouse/key direct-interaction dismissal coverage meaningful by seeding unread while app focus is false, then restoring active focus before the actual interaction; a notification created while already focused no longer supplies that fixture |
+| 456 | `cmuxTests/WorkspaceUnitTests.swift` | `focused-pane-notification-suppression-navigation-fixture` | Keeps the competing-unread navigation-flash test valid by modeling attention that arrived while the app was not focused, then restoring active focus before pane navigation |
+| 457 | `cmuxTests/AgentNotificationMoveRaceTests.swift` | `focused-pane-notification-suppression-move-test` | Updates the immediate source-confined relay assertion: a focused target is stored read with no focused-read indicator before the panel moves, while the test still proves it never rebinds across the authorized workspace boundary |
+| 458 | `docs/notifications.md` | `focused-pane-notification-suppression-doc` | Documents the exact focused-pane behavior and its boundary: read history remains, user-facing alert surfaces and mobile push are suppressed, explicit command automation remains, and targetless workspace notifications keep existing behavior |
+| 459 | `CLAUDE.md` | `dogfood-direct-launch-link` | Replaces the localhost Tag Opener handoff with the tagged app's native `cmux-dev-<tag>://launch` Markdown link. Build-only handoffs register the printed app path through `lsregister -f`; `--launch` already registers it. The link launches directly through LaunchServices without a browser/server and reserves `auth-callback` for sign-in |
+| 460 | `skills/cmux-dev-workflow/references/tagged-builds.md` | `dogfood-direct-launch-link-skill` | Mirrors #459 in the contributor workflow reference: direct custom-scheme handoff, build-only LaunchServices registration, normalized tag slug, inert `launch` host, and the same ban on raw app/DerivedData paths in chat |
+| 461 | `Sources/AppDelegate+DockSurfaceMove.swift` | `claude-harness-dock-admission` | Rejects workspace→Dock and Dock→Dock moves for Claude harness panels because Dock does not own their controller subscription, bridge routing, or persistence lifecycle |
+| 462 | `tests/test_ios_appstore_lane_identity.py` | `ios-appstore-lane-identity` | Extends the release-lane fake tools and assertions for Supermux bundle-ID stamping, including beta, App Store, embedded-framework inspection, and retired-id exclusion |
+| 463 | `Packages/macOS/CmuxRemoteDaemon/Tests/CmuxRemoteDaemonTests/RemoteDaemonRPCClientTimeoutIsolationTests.swift` | `remote-daemon-timeout-isolation-event-queues` | Gives timeout-isolation PTY callbacks dedicated serial queues so unrelated global-queue contention cannot starve the test's synchronization path |
+| 464 | `package.json` | `unfenced` | Registers the root `harness-web:build` command that invokes `scripts/supermux-build-harness-web.sh` for local and CI bundle freshness checks |
+| 465 | `Sources/TerminalPaneDropTargetView.swift` | `claude-harness-file-drop-passthrough` | Adds a per-overlay file-drop capture policy: harness panes keep tab-transfer hit testing but pass file-only drags through to their WKWebView composer; existing terminal and preview overlays retain file-drop capture by default |
+| 466 | `Packages/macOS/CmuxControlSocket/Sources/CmuxControlSocket/Coordinator/Pane/ControlCommandCoordinator+Pane.swift` | `claude-harness-socket-split-error` | Formats the rejected pane type into the `pane.create` error instead of always claiming the request was for `agent-session`, so a rejected `claudeHarness` split reports its actual type |
+| 467 | `Packages/macOS/CmuxControlSocket/Sources/CmuxControlSocket/Coordinator/Surface/ControlCommandCoordinator+Surface.swift` | `claude-harness-socket-split-error` | Formats the rejected surface type into the `surface.split` error instead of always claiming the request was for `agent-session`, so a rejected `claudeHarness` split reports its actual type |
+| 468 | `Packages/macOS/CmuxControlSocket/Sources/CmuxControlSocket/Coordinator/Pane/ControlPaneCreateResolution.swift` | `claude-harness-socket-split-error` | Broadens the rejection-case API documentation from agent-session-only wording to every surface kind that `pane.create` routes exclusively through `surface.create` |
+| 469 | `Packages/macOS/CmuxControlSocket/Sources/CmuxControlSocket/Coordinator/Surface/ControlSurfaceSplitResolution.swift` | `claude-harness-socket-split-error` | Broadens the rejection-case API documentation from agent-session-only wording to every surface kind that `surface.split` routes exclusively through `surface.create` |
+| 470 | `Packages/macOS/CmuxControlSocket/Tests/CmuxControlSocketTests/FakeSurfaceControlCommandContext.swift` | `claude-harness-socket-split-error-test` | Adds an injectable surface-split resolution to the package test context so harness split rejection can be exercised through the real coordinator response path |
+| 471 | `Packages/macOS/CmuxControlSocket/Tests/CmuxControlSocketTests/ControlCommandCoordinatorSurfaceTests.swift` | `claude-harness-socket-split-error-test` | Verifies both `pane.create` and `surface.split` errors name `claudeHarness` rather than incorrectly reporting `agent-session` |
+| 472 | `Sources/FileDropOverlayViewHitTesting.swift` | `claude-harness-file-drop-passthrough` | Makes the window-level Finder drag overlay honor `PaneDropTargetView.capturesFileDrops`, so a harness overlay that passes file drags through cannot be rediscovered and invoked out-of-band while tab-transfer routing remains intact |
+
 ## How to re-apply
 
 ### 379. `CLAUDE.md` — `no-handoff-notify`
@@ -598,7 +662,7 @@ Verification: `swift test` in `Packages/SupermuxKit` (`SupermuxNotificationProje
 
 ### 386–396. iOS pane unread acknowledgment — `ios-pane-unread-acknowledgment`
 
-Keep the Mac semantics unchanged: a notification delivered for the pane already under focus remains unread, keeps the persistent blue pane ring, and clears only after a direct interaction. The phone must not auto-clear merely because the pane is visible. `Workspace.supermuxMobileUnreadPanelIDs(notificationStore:)` is the Mac-authoritative projection and must continue to call the same `Workspace.shouldShowUnreadIndicator(...)` predicate as `WorkspaceContentView`: visible notification/focused-read state, manual/restored panel state, and the representative pane for workspace-manual unread. Both mobile transports send `supermux_unread_panel_ids` for every workspace; `[]` means a supporting host with no indicated pane, while absence means an older/upstream host.
+A notification delivered while its exact target pane is already focused is admitted as read history by #453, so it creates no Mac or phone pane ring. Existing unread state that arrived before the pane was focused still clears only after the normal focus/direct-interaction acknowledgment path; the phone must not auto-clear that pre-existing state merely because the pane is visible. `Workspace.supermuxMobileUnreadPanelIDs(notificationStore:)` is the Mac-authoritative projection and must continue to call the same `Workspace.shouldShowUnreadIndicator(...)` predicate as `WorkspaceContentView`: visible notification/focused-read state, manual/restored panel state, and the representative pane for workspace-manual unread. Both mobile transports send `supermux_unread_panel_ids` for every workspace; `[]` means a supporting host with no indicated pane, while absence means an older/upstream host.
 
 The mobile ring copies the Mac renderer's current geometry and presentation values exactly: 2pt inset, 6pt corner radius, 2.5pt system-blue stroke, 0.35 glow opacity, and 3pt glow radius. It is a visual-only overlay with hit testing disabled. `SupermuxMobilePaneUnreadPresentation` only tests whether the active remote panel id is in the transported array; it never reads the notification feed and never mutates unread state.
 
@@ -626,15 +690,16 @@ when `scheduledDeliveryEnabled` is true and `timeSensitiveEnabled` is false, act
 pushes can still be delayed and the readiness screen must report that real limitation. Keep #337's
 behavior test together with this mapping.
 
-In `TerminalNotificationStore`, preserve both `direct-phone-push` fences. Visible forwarding runs
-OUTSIDE the `shouldAttemptPhone` branch on purpose — the direct lane must ignore Mac focus
-suppression (a phone remote-controlling the Mac keeps it frontmost on the phone's workspace, so a
-focus-gated lane never fires while working from the phone) and is gated only on the forwarding
-preference. The phone owns presentation: its foreground delegate suppresses the banner when it is
-already showing the exact target terminal. Dismiss forwarding stays beside
-`PhonePushClient.forwardDismissed` under the same preference. Do not reintroduce a Mac-side
-presence/away heuristic — one was tried (`SupermuxMacAwayPolicy`) and removed because any Mac-side
-guess loses notifications for the remote-control workflow.
+In `TerminalNotificationStore`, preserve both `direct-phone-push` fences. Visible forwarding stays
+outside the upstream `shouldAttemptPhone` branch because a non-focused target must still use the
+direct lane whenever phone forwarding is enabled, regardless of broad Mac activity/presence guesses.
+It now shares #453's narrower exact-pane rule: if the notification has a pane id and that exact pane is
+already focused in the active app, retain read history but send no phone push. The phone's foreground
+delegate remains a final duplicate-presentation guard for any delivery that races phone-side
+navigation. Dismiss forwarding stays beside `PhonePushClient.forwardDismissed` under the same
+preference. Do not reintroduce a Mac-side presence/away heuristic — one was tried
+(`SupermuxMacAwayPolicy`) and removed because broad guesses lose notifications for the
+remote-control workflow.
 
 Signing is two-stage. xcodebuild signs with the `Supermux iPhone Development` profile and the
 development entitlement in `ios/Config/supermux.entitlements` (workspace-wide distribution build
@@ -1370,8 +1435,29 @@ file `50BE0001…0111` for `SupermuxNotificationRowBody.swift`, wired in the sam
 package-owned line-composition counterpart (#381) is discovered automatically by SwiftPM and needs
 no pbxproj entry.
 
+The Claude harness process seam (touchpoint #432) adds file reference `50BE0001…0136` and build
+file `50BE0001…0137` for `SupermuxHarnessProcessSessionProtocol.swift`, wired in the same four
+places so controller orchestration can use a protocol-injected process in app-target tests.
+The native event transport seams under the same touchpoint add file references
+`50BE0001…013A`/`…013C` and build files `50BE0001…013B`/`…013D` for
+`SupermuxHarnessNativeEventTransport.swift` and `SupermuxHarnessWebHostOwnership.swift`, also wired
+in the same four places each.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `129`.
+The focused native transport tests (touchpoint #450) add file reference `50BE0001…013E` and build
+file `50BE0001…013F` for `SupermuxHarnessNativeEventTransportTests.swift`, wired into the
+`cmuxTests` target in the same four places as the existing harness test file.
+
+The focused-pane notification regression test (touchpoint #451) adds file reference
+`50BE0001…0140` and build file `50BE0001…0141` for
+`SupermuxFocusedPaneNotificationTests.swift`, wired into the `cmuxTests` target in the same four
+places as the other fork-owned app-target tests.
+
+The focused-pane notification policy (touchpoint #452) adds file reference `50BE0001…0142` and
+build file `50BE0001…0143` for `SupermuxFocusedPaneNotificationPolicy.swift`, wired into the
+`Supermux` group and the `cmux` target's Sources phase. The path may stay bare because the final
+filename contains no OpenStep-special `+` character.
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `229`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
@@ -3717,6 +3803,271 @@ swift test --package-path Packages/iOS/CmuxMobileShell \
 
 Then verify on a real phone: open Simulator, switch to a terminal or another workspace, return, and
 confirm the same pane resumes without either the phone stream or Mac Simulator connection failing.
+
+### 413–432. Claude harness pane — `claude-harness-*`
+
+The dedicated Claude Code harness pane (`PanelType.claudeHarness`): a WKWebView-hosted chat surface
+driving the Claude CLI over stream-json stdio. All logic lives in fork-owned files — the
+SupermuxKit engine under `Packages/SupermuxKit/Sources/SupermuxKit/ClaudeHarness/`, the app glue
+under `Sources/Supermux/Harness/`, the web app in `harness-web/` (built by
+`scripts/supermux-build-harness-web.sh` into the committed `Resources/supermux-harness/index.html`).
+The fences are thin switch arms; to re-apply after a merge:
+
+1. `Panel.swift`: add `case claudeHarness` at the end of `PanelType` plus a lowercase decode
+   fallback block before the `DecodingError` throw (#413).
+2. `SurfaceKind.swift`: additive `public static let claudeHarness = SurfaceKind(rawValue:
+   "claudeHarness")` — the raw string is frozen; the package test pins it (#414–#415).
+3. Every exhaustive `switch panel.panelType` / `switch snapshot.type` gains a `.claudeHarness` arm:
+   render `SupermuxHarnessPanelView` + drop-target `true` (#416), canvas icon `sparkles` (#417),
+   sidebar kind `.unknown` (#418), palette label/keywords (#419), closed-history title (#420),
+   lifecycle kind `claude_harness` (#421), surface-navigation raw value (#422), file-drop `nil`
+   (#423), global-search `.title` (#424), layout-capture unsupported (#425).
+4. `Workspace.swift` (#426): declare `var claudeHarnessSnapshot: SessionSupermuxHarnessPanelSnapshot?
+   = nil` beside the other per-kind locals; snapshot arm calls
+   `supermuxHarnessSessionSnapshot(for:)` and nils the other locals; pass
+   `claudeHarness: claudeHarnessSnapshot` in the `SessionPanelSnapshot` init; restore arm passes
+   `!restoresUntrustedSavedDirectory` to `restoreSupermuxHarnessPanel` so saved remote paths never
+   become local Claude cwd values; in `attachDetachedSurface` re-install the
+   subscription via `installSupermuxHarnessPanelSubscription` after `updateWorkspaceId`, and in the
+   createTab-failure rollback clear `onDisplayStateChanged`.
+5. `Workspace+PanelLifecycle.swift` (#427): one `discardSupermuxHarnessPanelSubscription` call next
+   to the agent-session discard.
+6. `SessionPersistence.swift` (#428): optional `var claudeHarness:
+   SessionSupermuxHarnessPanelSnapshot? = nil` on `SessionPanelSnapshot`.
+7. `Workspace+SidebarDirectories.swift` (#429): in
+   `restoresLegacyRemoteDirectoryWithoutProvenance`, return `true` when `snapshot.claudeHarness`
+   is non-nil (before the agent-session fallback).
+8. `cmuxApp.swift` (#430): mount `SupermuxHarnessDebugMenuButtons()` inside the `#if DEBUG`
+   `CommandMenu("Debug")`, after the Iroh/AgentSession buttons.
+9. pbxproj (#431–#432): 4 entries per file with the reserved ids listed in the rows; re-run
+   `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj`, `./scripts/check-pbxproj.sh`,
+   and `./scripts/lint-pbxproj-test-wiring.sh`.
+
+Copy keys: every `supermux.harness.*` string in `Sources/Supermux/Harness/SupermuxHarnessCopy.swift`
+mirrors `harness-web/src/copyKeys.ts`; regenerate localizations with the loc scripts. Rebuild the
+web shell with `bun run harness-web:build` and commit the artifact.
+
+### 443–445. Claude harness branch chip + unread indicator
+
+Two user-reported gaps, both caused by upstream keying pane behavior on `TerminalPanel`.
+
+**Branch chip (443–444).** The workspace-tab / sidebar branch comes from
+`panelGitBranches`, written only by `SidebarGitMetadataService`'s probe. Every site that
+schedules that probe walks `TerminalPanel`s, and the service's watcher restart gates on
+`host.hasTerminalPanel(...)`. So a workspace whose only pane is a harness pane never got a probe
+and rendered no branch. Fix, entirely by reusing the existing probe (no new branch resolution, no
+shelling out): the fork-owned `Workspace.scheduleSupermuxHarnessGitMetadataProbe(panelId:reason:)`
+in `Sources/Supermux/Harness/Workspace+SupermuxHarness.swift` calls the same
+`scheduleInitialWorkspaceGitMetadataRefreshIfPossible` upstream calls for a terminal, and is
+invoked from both harness creation paths (fork-owned, unfenced). Two upstream hooks remain:
+
+1. `TabManager.swift` (#443): after upstream's restore-sweep `TerminalPanel` loop, add
+   `workspace.scheduleSupermuxHarnessGitMetadataProbes(reason: "harnessSessionRestore")`.
+2. `TabManager+SidebarGitHosting.swift` (#444): in `hasTerminalPanel`, return `true` for a
+   `SupermuxHarnessPanel` too.
+
+Terminal panes are untouched on both paths.
+
+**Unread indicator (445).** Harness panes never showed an unread mark because
+`PanelContentView`'s `.claudeHarness` arm did not forward `hasUnreadNotification` (upstream's
+outline ring is drawn by `GhosttyTerminalView`'s `notificationRingLayer`, which only terminals
+mount). The arm now forwards it, and the pane renders the fork's own treatment —
+`SupermuxHarnessUnreadIndicator` (`Sources/Supermux/Harness/`), a short glowing accent tick on the
+pane's leading edge that breathes slowly — instead of the outline the user called ugly. It honors
+the same `unreadPaneRing` setting and the same `workspaceAttentionColor` the terminal ring uses.
+The upstream ring renderer is deliberately NOT modified: it is on a typing-latency-sensitive path,
+and scoping the new treatment to the harness pane keeps the diff to one argument.
+
+### 433–442. Claude harness entrypoints — `claude-harness-builtin-action` etc.
+
+User-facing entrypoints for the harness pane, all routed through the one shared action id
+`cmux.newClaudeHarness` (Simulator pattern). The fork-owned glue (palette contribution/handler,
+`performNewClaudeHarnessPaneFromMenu`, `performConfiguredNewClaudeHarnessAction`,
+`performNewClaudeHarnessShortcutAction`) lives in
+`Sources/Supermux/Harness/SupermuxHarnessCommandPaletteIntegration.swift` (pbxproj ids
+`50BE0001…0132`/`…0133` under #432). To re-apply after a merge:
+
+1. `CmuxSurfaceTabBarBuiltInAction.swift` (#433): `case newClaudeHarness = "cmux.newClaudeHarness"`,
+   the alias block in `init?(configID:)` (`claude-harness`, `claudeharness`, `claude`, `harness`),
+   metadata arm (`supermux.harness.command.newPane.title` + keywords), `sparkles` default icon,
+   and add the case to the nil `bonsplitAction` group.
+2. `Workspace.swift` (#434): `.newClaudeHarness` arm in `executeSurfaceTabBarCommandButton`
+   calling `newSupermuxHarnessSurface(inPane: pane, focus: true)`.
+3. `AppDelegate.swift` (#435): `.newClaudeHarness` arm in `executeConfiguredCmuxAction` delegating
+   to `performConfiguredNewClaudeHarnessAction`; shortcut dispatch block for
+   `.supermuxNewClaudeHarness` immediately after the run-toggle dispatch (guard `isARepeat`,
+   beep on failure, return true).
+4. `ContentView.swift` (#436): `contributions.append(.newClaudeHarnessPane)` after the Simulator
+   contribution and `registry.registerNewClaudeHarnessPane(tabManager:windowId:)` beside
+   `registerNewSimulatorPane`. `ContentView+AgentChatCommandPalette.swift` (#436b): palette-id →
+   config-id map case.
+5. `cmuxApp.swift` (#437): File menu `splitCommandButton` "New Claude Pane" with
+   `menuShortcut(for: .supermuxNewClaudeHarness)` after the Simulator menu item.
+6. `CmuxConfig.swift` (#438): `static let newClaudeHarness = actionReference(...)` beside
+   `newSimulator`.
+7. Shortcut double-enum (#439–#440): app-target case/label/default (⌃⌘A) in
+   `KeyboardShortcutSettings.swift`; package `case supermuxNewClaudeHarness` in
+   `ShortcutAction.swift` plus arms inside the existing `supermux-shortcut-defaults` /
+   `-display-names` / `-groups` fences; Dock routing exclusion inside `run-shortcut-dock-routing`
+   (#212); drift tests in `cmuxTests/KeyboardShortcutContextTests.swift` (#66) and
+   `SupermuxShortcutActionTests.swift` (#68) each carry the sixth row.
+8. Socket (#441–#441c): `claudeharness` token in `v2PanelType(rawToken:)`; `surface.create` arm;
+   split guards in both `controlSurfaceSplit` and `controlPaneCreate` extended to
+   `|| panelType == .claudeHarness`; CLI help strings in `CLI/cmux.swift` list `claude-harness`.
+9. Docs (#442) and schema (#14): shortcut row in `web/data/cmux-shortcuts.ts` (surfaces section)
+   and the `supermuxNewClaudeHarness` enum id in `web/data/cmux.schema.json`.
+
+### 447–449. Harness web CI — `harness-web-ci`
+
+The harness web app is fork-owned (`harness-web/`) but its generated, committed single-file bundle
+ships inside the macOS app at `Resources/supermux-harness/index.html`. Keep one independent
+`harness_web` route rather than folding it into the broad `web` area: ordinary website and diff
+webview changes must not pay for the harness suite, while every harness source/test/package/lock
+change, the committed bundle, `scripts/supermux-build-harness-web.sh`, and the root `package.json`
+script registry must run it. Do not add the root `bun.lock`: the harness installs from
+`harness-web/bun.lock` and does not consume the root dependency graph. The new predicate is additive;
+leave every existing `web`, `agent_session_web`, and `macos` decision unchanged. In particular, the
+committed resource remains app-affecting under the existing macOS classifier.
+
+In `.github/workflows/ci.yml`, preserve all of these together:
+
+1. Export `harness_web` from `changes` and emit it as `true` from the fail-open/all-areas path, so
+   `workflow_dispatch`, empty diffs, router changes, and diff failures run the lane.
+2. The routed Linux `harness-web` job uses the repository's pinned
+   `oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6` action with Bun `1.3.14`, installs
+   `harness-web/bun.lock` frozen, runs `bun run typecheck` and the full `bun run test`, then invokes
+   the root `bun run harness-web:build` production path and fails on any diff in
+   `Resources/supermux-harness/index.html`.
+3. Add `harness-web` as a direct need of `linux-preflight`, `tests`, and `ci-status`. Map it to the
+   `harness_web` output in Linux preflight so a routed skip is a failure and an unrouted skip is
+   accepted. Keep it in the stable `tests` aggregate's explicit allowed-results loop too; the direct
+   dependency prevents a future topology edit from silently dropping the lane.
+
+The tests execute the classifier and the embedded Python gate scripts through the workflow's
+existing extraction helpers. Keep the positive cases separate from website-only negatives, and keep
+the behavior checks that a routed harness skip fails Linux preflight and a failed harness job fails
+the stable aggregate. Do not replace those with source grep assertions; only the established
+workflow-shape helper is used to pin the action version and exact validation commands.
+
+### 450. Harness transport contract tests
+
+`cmuxTests/SupermuxHarnessNativeEventTransportTests.swift` is a fork-owned Swift Testing suite.
+Keep its `50BE0001…013E` file reference and `…013F` sources-build entry in the four normal pbxproj
+locations. The suite pins the native half of the retained-WKWebView contract: events remain
+backlogged through one in-flight batch until the exact epoch/sequence acknowledgement arrives,
+failed evaluations retry identically, navigation re-sequences every unacknowledged event in order,
+batches obey both count and encoded-byte caps, backlog accounting remains bounded, and stale host
+generations can neither attach nor release the retained view.
+
+### 451. Focused-pane notification regression test
+
+`cmuxTests/SupermuxFocusedPaneNotificationTests.swift` is a fork-owned Swift Testing suite. Keep its
+`50BE0001…0140` file reference and `…0141` sources-build entry in the four normal pbxproj locations.
+The test drives the real `TerminalNotificationStore` against the selected workspace's focused panel
+with the app-focus seam forced active. The notification may remain in chronological history, but it
+must be read, carry no pane flash, contribute no unread/badge/outline state, create no focused-read
+indicator, and invoke no delivered alert or sound. The suppressed local path may still carry an
+explicit custom notification command, which remains automation rather than user-facing alerting.
+
+### 452–453. Focused-pane notification admission
+
+`Sources/Supermux/SupermuxFocusedPaneNotificationPolicy.swift` owns the pure decision. Treat a target
+as already visible only when it has an exact non-nil surface id and the store's existing live
+focus/external-delivery gate says that target is focused in the active main window. Targetless
+workspace notifications must keep their existing behavior rather than being guessed into a pane.
+For an already-visible target, preserve `record` and `command`, but force `markUnread`,
+`reorderWorkspace`, `desktop`, `sound`, and `paneFlash` off. The notification therefore stays in
+history as read while every user-facing attention surface remains absent; an explicitly configured
+custom command still runs.
+
+In `TerminalNotificationStore.applyNotification`, keep the `focused-pane-notification-suppression`
+fence immediately after final live-owner resolution and the existing `shouldSuppressExternalDelivery`
+calculation. That placement is load-bearing: async policy hooks and cross-workspace surface moves may
+change the live owner before completion, so applying focus suppression from the request's initial
+`isFocusedPanel` snapshot can suppress the wrong pane. Shadow the resolved `effects` once there so
+recording, unread indexes, sidebar/Dock/mobile badges, pane ring/flash, native alert/sound, and reorder
+all consume one policy result. The #332 direct APNs fence must call the same exact-target decision and
+skip visible forwarding for that focused pane; non-focused targets still bypass broad presence/away
+heuristics and forward normally.
+
+### 454–457. Focused-notification fixture updates
+
+These are test-only adaptations to the new admission invariant:
+
+- `NotificationAndMenuBarTests` now asserts a focused notification is read, produces no delivered
+  alert or sound, and keeps the command effect. Its separate focused-read-indicator lifecycle test
+  seeds that legacy indicator explicitly after creating unread with app focus off.
+- `TerminalAndGhosttyTests` creates unread with the app-focus seam off, then restores focus before the
+  mouse/key interaction, so those tests continue covering exact direct-interaction dismissal rather
+  than focused-notification admission.
+- `WorkspaceUnitTests` does the same around the competing-unread pane-navigation fixture.
+- `AgentNotificationMoveRaceTests` expects the immediate focused relay to be read with no focused-read
+  indicator, then retains its original source-confinement assertions after the panel moves.
+
+Keep each fence narrow around the fixture/expectation delta; the surrounding upstream test remains
+unchanged. `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` (#451) is the primary exact repro.
+
+### 458. Focused-pane notification documentation
+
+Keep the fenced paragraph in `docs/notifications.md` immediately before the existing
+`notifications.suppressOnlyFocusedSurface` withdraw setting. The new paragraph describes admission
+for an already-focused exact pane; the existing section describes later auto-withdrawal of a banner
+that was delivered while not focused. They are related but distinct and must not be collapsed into a
+setting claim: focused-pane admission is unconditional, while narrow auto-withdraw remains opt-in.
+
+### 459–460. Direct tagged-build launch links
+
+Tagged Debug apps already register the unique callback scheme `cmux-dev-<normalized-tag>`. Use that
+native LaunchServices identity for dogfood handoff instead of the retired localhost Tag Opener:
+
+```markdown
+[Open <tag>](cmux-dev-<tag>://launch)
+```
+
+The `launch` host is deliberately inert: opening the URL is enough for LaunchServices to start or
+activate the owning tagged app, while the app ignores the non-auth route. Never use `auth-callback`
+for this purpose because that route is reserved for Stack sign-in. A build made with `--launch` is
+registered automatically. After a build-only reload, run the system `lsregister -f` tool against the
+exact `App path:` printed by `reload.sh` before handing off the link; registration must not require
+launching a browser or a local server.
+
+Keep the fenced instructions in `CLAUDE.md` and the `cmux-dev-workflow` tagged-build reference in
+lockstep. Do not restore `http://127.0.0.1:17320/<tag>`: without a separately installed Tag Opener it
+opens the embedded browser and fails, which is exactly the handoff regression these touchpoints
+remove. The existing prohibition on `file://`, raw `.app`/DerivedData paths, and `/tmp` build links in
+chat remains unchanged.
+
+### 461. Claude harness Dock admission
+
+Keep the two narrow `claude-harness-dock-admission` fences in
+`Sources/AppDelegate+DockSurfaceMove.swift` inside `canMoveSurfaceIntoDock(_:)`. A workspace-owned
+Claude harness pane must return `false` before detach, and a pre-existing Dock-owned harness pane must
+also be rejected as a source. Dock does not retain the harness controller's event subscription,
+bridge routing, or persistence state, so admission is disabled until Dock implements that complete
+ownership contract.
+
+### 462. iOS release-lane identity coverage
+
+Keep the `ios-appstore-lane-identity` fences in `tests/test_ios_appstore_lane_identity.py` around only
+the Supermux-specific fake-tool support and assertions: capture `SUPERMUX_APP_BUNDLE_ID`, provide the
+fake `otool` used to inspect embedded frameworks, assert the beta and App Store bundle IDs, and reject
+the retired `com.cmuxterm.app` identity. The surrounding upstream release-lane harness remains
+unchanged.
+
+### 463. Remote-daemon timeout test queues
+
+In `RemoteDaemonRPCClientTimeoutIsolationTests.swift`, create one dedicated serial callback queue per
+PTY attachment and pass it to `attachPTY`. Keep the declarations and arguments inside
+`remote-daemon-timeout-isolation-event-queues` fences. Do not use `.global()`: unrelated test work can
+starve those callback semaphores and make the timeout-isolation tests flaky without exercising a
+product failure.
+
+### 464. Harness web root build command
+
+Keep the additive `harness-web:build` script in the root `package.json`, invoking
+`scripts/supermux-build-harness-web.sh`. JSON cannot carry a fence, so this touchpoint is registered as
+`unfenced`. The script is the shared production bundle path used by developers and the harness-web CI
+freshness check; do not duplicate the bundler command in CI.
 
 ### 413, 413b. Pull-request glyph arrowhead — `pull-request-glyph-arrowhead`
 

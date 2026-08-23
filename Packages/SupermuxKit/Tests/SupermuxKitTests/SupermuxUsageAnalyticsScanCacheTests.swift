@@ -113,9 +113,9 @@ import Testing
         #expect(lines == ["survivor"])
     }
 
-    /// Many short lines in one chunk used to recopy the remaining buffer per
-    /// line, which cost seconds for a single megabyte.
-    @Test func readerStaysLinearOverManyShortLines() throws {
+    /// Many short lines in one chunk used to compact the remaining buffer once
+    /// per line. Linear consumption compacts at most once per chunk read.
+    @Test func readerCompactsAtMostOncePerChunkOverManyShortLines() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("supermux-lines-\(UUID().uuidString).txt")
         let line = String(repeating: "z", count: 19)
@@ -124,12 +124,21 @@ import Testing
         defer { try? FileManager.default.removeItem(at: url) }
 
         var count = 0
-        let started = Date()
-        SupermuxLineReader.forEachLine(in: url) { _ in count += 1 }
-        let elapsed = Date().timeIntervalSince(started)
+        var chunksRead = 0
+        var bufferCompactions = 0
+        let didRead = SupermuxLineReader.forEachLine(
+            in: url,
+            didReadChunk: { chunksRead += 1 },
+            didCompactBuffer: { bufferCompactions += 1 }
+        ) { _ in
+            count += 1
+        }
+
+        #expect(didRead)
         #expect(count == 60_000)
-        // Quadratic copying measured ~2.9s for this shape; linear is milliseconds.
-        #expect(elapsed < 1.0)
+        #expect(chunksRead > 1)
+        #expect(bufferCompactions > 0)
+        #expect(bufferCompactions <= chunksRead)
     }
 }
 
@@ -146,9 +155,12 @@ import Testing
     /// A partial published late in a pass must not erase that pass's own
     /// completed result.
     @Test func latePartialDoesNotClobberTheCompletedScan() async {
+        let deferredPartial = DeferredPartialPublisher()
+        let (applyAttempts, applyContinuation) = AsyncStream<SupermuxUsageAnalyticsSnapshot>.makeStream()
+        var applyIterator = applyAttempts.makeAsyncIterator()
         let model = SupermuxUsageAnalyticsModel(
             scan: { _, publish in
-                publish(SupermuxUsageAnalyticsSnapshot(entries: [], isComplete: false))
+                await deferredPartial.install(publish)
                 return SupermuxUsageAnalyticsSnapshot(
                     entries: [
                         SupermuxUsageAnalyticsEntry(
@@ -161,11 +173,19 @@ import Testing
                     isComplete: true
                 )
             },
-            minimumRefreshInterval: 0
+            minimumRefreshInterval: 0,
+            didAttemptApply: { applyContinuation.yield($0) }
         )
         await model.refresh()
-        // Give any queued partial hop to the main actor a chance to land.
-        try? await Task.sleep(for: .milliseconds(50))
+        let completedAttempt = await applyIterator.next()
+        #expect(completedAttempt?.isComplete == true)
+
+        await deferredPartial.publish(
+            SupermuxUsageAnalyticsSnapshot(entries: [], isComplete: false)
+        )
+        let partialAttempt = await applyIterator.next()
+        #expect(partialAttempt?.isComplete == false)
+
         #expect(model.snapshot.isComplete)
         #expect(model.report.tokens.output == 1000)
     }
@@ -243,6 +263,22 @@ import Testing
         await model.refresh()
         await model.refresh()
         #expect(seeded.lastCount == 1)
+    }
+}
+
+/// Retains a scan's escaping partial publisher so a test can invoke it only
+/// after the completed result has been applied.
+private actor DeferredPartialPublisher {
+    private var publisher: (@Sendable (SupermuxUsageAnalyticsSnapshot) -> Void)?
+
+    func install(
+        _ publish: @escaping @Sendable (SupermuxUsageAnalyticsSnapshot) -> Void
+    ) {
+        publisher = publish
+    }
+
+    func publish(_ snapshot: SupermuxUsageAnalyticsSnapshot) {
+        publisher?(snapshot)
     }
 }
 

@@ -1,0 +1,548 @@
+/* ---------------------------------------------------------------------------
+   THE MENU KIT — one material, one motion, for every floating surface.
+
+   Round 4 shipped five popovers built independently: three radii, three
+   paddings, two z-indexes, one shadow between them, four hand-written copies of
+   the same row. Round 5 unified that GEOMETRY and stopped there, which is what
+   the round-6 report answers: "i told you to redesign the pickers and menus
+   (all) and they still look same and ugly. no animations or good taste
+   whatsoever."
+
+   Three things are added here, and all three are the kit's, so every surface in
+   the pane gets them at once — model picker, permission modes, sessions,
+   context, •••, and the composer's slash/@ list.
+
+   1. MOTION (the "no animations" half, literally true before this).
+      Round 5 had one 110ms fade in and NO exit at all — a surface that arrived
+      over a tenth of a second vanished between two frames. Both halves are now
+      origin-aware scale + fade on `--ease-out` (cubic-bezier(0.16, 1, 0.3, 1),
+      declared in base.css): 150ms in, 100ms out, and the transform-origin is
+      the trigger's own corner, so the panel visibly grows out of the control
+      that opened it. Transform and opacity ONLY — nothing here animates a
+      layout property, so a menu opening never reflows the bar behind it.
+
+   2. MATERIAL. The panel is darker, more translucent, and layered: near-black
+      ink at 0.95 behind a saturating backdrop blur (so the native window's
+      vibrancy genuinely reads through it — the round-5 request, kept), a crisp
+      1px hairline, an inner top highlight where the glass catches the light,
+      and a two-part shadow (a tight contact shadow under a wide ambient one).
+      The highlight is drawn with a ::before hairline rather than an inset
+      box-shadow: composited inside the panel's own border an inset would
+      thicken the top stroke, which is the exact defect the composer pill
+      already documents in dock.css.
+
+   3. TYPOGRAPHY. Section title, row label, consequence line and trailing fact
+      were four things at 11.5–13px in three greys, which is one grey list. They
+      are four separated tiers now (the `--menu-*` scale below): the title is
+      small, upper-weighted and quiet; the LABEL is the only thing at the pane's
+      full ink; the consequence sits a tier down; the fact is the faintest and
+      tabular.
+
+   A surface may still set its own WIDTH and MAX-HEIGHT. Nothing re-declares the
+   material.
+--------------------------------------------------------------------------- */
+
+:root {
+  /* The kit's four type tiers, so a surface cannot invent a fifth. */
+  --menu-label-size: 13px;
+  --menu-title-size: 10.5px;
+  --menu-detail-size: 11.5px;
+  --menu-meta-size: 11px;
+  /* Motion. Kept in step with `ui/motion.ts` by tests/round6.test.ts: the
+     component holds a closing panel for exactly --pop-out, and a disagreement
+     unmounts it mid-animation — which looks like the instant disappearance
+     this replaces. */
+  --pop-in: 150ms;
+  --pop-out: 100ms;
+  /* The inner top highlight. Declared HERE rather than in theme.ts because it
+     is the kit's own material rather than a palette tier — nothing outside a
+     floating surface wears it, and it is never text, so the contrast audit has
+     nothing to say about it. Dark catches white light on near-black glass;
+     light catches a brighter paper edge on the panel's own tint. */
+  --pop-sheen: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="light"] {
+  --pop-sheen: rgba(255, 255, 255, 0.9);
+}
+
+/* ---------- the surface ---------- */
+
+.ui-pop {
+  position: absolute;
+  z-index: 45;
+  min-width: 200px;
+  max-width: min(360px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 5px;
+  border-radius: var(--r-pop);
+  background: var(--popover-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-popover);
+  /* Grows out of the trigger. The origin is set per side/align below; the
+     fallback is only reached by a surface that declares neither. */
+  transform-origin: var(--pop-origin-y, bottom) var(--pop-origin-x, center);
+  animation: ui-pop-in var(--pop-in) var(--ease-out);
+}
+
+/* The inner top highlight: one hairline of light along the panel's own top
+   edge, inside the radius. It is what separates "translucent rectangle" from
+   "pane of glass", and it costs nothing behind the element. */
+.ui-pop::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 0;
+  height: 1px;
+  border-radius: var(--r-pop) var(--r-pop) 0 0;
+  background: var(--pop-sheen);
+  pointer-events: none;
+}
+
+/* Leaving. Shorter than the entrance and a shorter travel with it: a panel on
+   its way out has already been answered, and lingering reads as lag rather than
+   as polish. `forwards` holds the last frame for the ~100ms the component keeps
+   it mounted, so it never flashes back to full opacity before unmounting. */
+.ui-pop.is-closing {
+  animation: ui-pop-out var(--pop-out) var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(var(--pop-rise, 4px));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ui-pop-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(calc(var(--pop-rise, 4px) * 0.5));
+  }
+}
+
+/* A menu that opens from the pane's FOOT rises into place; one that hangs from
+   a control above drops. The sign of the travel follows, or the panel appears
+   to slide the wrong way out of its own trigger. */
+.ui-pop.is-top {
+  bottom: calc(100% + 6px);
+  --pop-origin-y: bottom;
+  --pop-rise: 4px;
+}
+
+.ui-pop.is-bottom {
+  top: calc(100% + 6px);
+  --pop-origin-y: top;
+  --pop-rise: -4px;
+}
+
+/* Alignment picks the CORNER, not just the edge: a panel pinned to the right of
+   the bottom bar grows from its bottom-right, which is where the trigger is. */
+.ui-pop.is-end {
+  right: 0;
+  --pop-origin-x: right;
+}
+
+.ui-pop.is-start {
+  left: 0;
+  --pop-origin-x: left;
+}
+
+/* The completion popover spans the composer it belongs to. */
+.ui-pop.is-stretch {
+  left: 0;
+  right: 0;
+  max-width: none;
+  --pop-origin-x: center;
+}
+
+/* With motion off a surface must simply BE there. base.css collapses every
+   duration to 0.001ms, which leaves the entrance's opening frame on screen for
+   one tick; naming the end state explicitly is what makes the appearance
+   genuinely instant rather than a one-frame flicker of a 0.94 scale. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-pop,
+  .ui-pop.is-closing {
+    animation-name: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- rows ---------- */
+
+.ui-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+}
+
+.ui-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Groups are separated by a hairline inset from the panel's own edges, so it
+   reads as a divider and not as a second border cutting the panel in half. */
+.ui-menu-section + .ui-menu-section {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-faint);
+}
+
+/* The section title. Deliberately the SMALLEST thing on the panel and the only
+   thing wearing letterspacing: it names a group rather than offering a choice,
+   so it must not compete with the rows under it for the same reading weight.
+   Round 5 set it at 11.5px/500 in the same grey as a row's consequence line,
+   which is how a four-row permission menu read as one undifferentiated column
+   of text. */
+.ui-menu-label {
+  padding: 6px 9px 4px;
+  font-size: var(--menu-title-size);
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.ui-menu-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-height: 28px;
+  justify-content: center;
+  text-align: left;
+  padding: 5px 9px;
+  border-radius: var(--r-row);
+  font-size: var(--menu-label-size);
+  color: var(--text-soft);
+  /* Instant, and deliberately so: a row under the pointer must answer on the
+     frame the pointer arrives, or the list feels laggy rather than smooth. The
+     eased half is the PRESS, below, which is a gesture rather than a state. */
+  transition: background 90ms linear, color 90ms linear, transform 90ms var(--ease-out);
+}
+
+.ui-menu-item:hover:not(:disabled),
+.ui-menu-item:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* The press: the row dips a hair under the finger and comes back. One
+   transform, no layout, and the only place in the kit that animates on
+   activation. */
+.ui-menu-item:active:not(:disabled) {
+  background: var(--surface-active);
+  transform: scale(0.985);
+}
+
+/* A chosen row keeps its treatment when the pointer leaves — it is what the
+   panel is REPORTING, not something the cursor is doing — so it carries a faint
+   accent bed of its own, under the neutral hover. */
+.ui-menu-item.is-active {
+  background: var(--claude-faint);
+  color: var(--text);
+}
+
+.ui-menu-item.is-active:hover:not(:disabled),
+.ui-menu-item.is-active:focus-visible {
+  background: var(--claude-soft);
+}
+
+.ui-menu-item:disabled {
+  color: var(--text-faint);
+}
+
+.ui-menu-item.is-danger {
+  color: var(--danger);
+}
+
+.ui-menu-item.is-danger:hover:not(:disabled),
+.ui-menu-item.is-danger:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.ui-menu-item.is-danger:active:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.ui-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ui-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  transition: color 90ms linear;
+}
+
+.ui-menu-item:hover .ui-menu-icon,
+.ui-menu-item:focus-visible .ui-menu-icon {
+  color: var(--text);
+}
+
+.ui-menu-item.is-danger .ui-menu-icon {
+  color: var(--danger);
+}
+
+/* Tier two: the row's own name, and the only thing on the panel allowed to be
+   the pane's full ink at hover. 500 rather than 400 so a label reads ahead of
+   its own consequence line without being a heading. */
+.ui-menu-label-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+/* Trailing metadata is TEXT, not a chip. Round 4 put a filled pill on the right
+   of every model row, which made four rows read as four badges. */
+.ui-menu-meta {
+  flex: 0 0 auto;
+  font-size: var(--menu-meta-size);
+  font-weight: 400;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-menu-item.is-active .ui-menu-meta {
+  color: var(--text-muted);
+}
+
+.ui-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  flex: 0 0 auto;
+  color: var(--claude);
+}
+
+/* Tier three: what the row DOES, one step down in size and ink from its name. */
+.ui-menu-detail {
+  font-size: var(--menu-detail-size);
+  line-height: 1.45;
+  font-weight: 400;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-menu-item:hover .ui-menu-detail,
+.ui-menu-item:focus-visible .ui-menu-detail,
+.ui-menu-item.is-active .ui-menu-detail {
+  color: var(--text-muted);
+}
+
+/* Rows WITH a glyph indent their detail under the label; rows without one start
+   it on the label's own left edge. */
+.ui-menu-item:has(.ui-menu-icon) .ui-menu-detail {
+  padding-left: 22px;
+}
+
+.ui-menu-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 9px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- the panel's base ---------- */
+
+/* Sunken rather than bordered, so it reads as the foot of the panel and not as
+   one more row you could click. Negative margins carry it to the panel's own
+   edges, inside the radius. */
+.ui-menu-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin: 5px -5px -5px;
+  padding: 7px 11px;
+  border-top: 1px solid var(--border-faint);
+  background: var(--surface-sunken);
+  border-radius: 0 0 calc(var(--r-pop) - 1px) calc(var(--r-pop) - 1px);
+  font-size: var(--menu-detail-size);
+  color: var(--text-faint);
+}
+
+.ui-menu-keys {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.ui-menu-keys kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 15px;
+  min-width: 18px;
+  padding: 0 4px;
+  text-align: center;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background: var(--surface-hover);
+  color: var(--text-faint);
+}
+
+/* ---------- command-style list ----------
+
+   Selection here is driven by the KEYBOARD while the caret stays in the
+   textarea, so the active row must read as chosen without holding focus: a
+   tinted bed plus a leading accent bar, which two identical grey beds cannot
+   do. This is the one place the kit draws an accent bar, and it exists because
+   ⏎ acts on the marked row rather than on the hovered one.
+
+   Round 6 makes the row two lines. It was `name · hint · description` on one
+   baseline, so a long description pushed the command's own meaning off the
+   right edge and every row was a different length of grey — which is why the
+   report named the slash menu twice. */
+
+.ui-cmd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ui-cmd-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 6px 9px 6px 13px;
+  border-radius: var(--r-row);
+  transition: background 90ms linear, transform 90ms var(--ease-out);
+}
+
+.ui-cmd-item:hover,
+.ui-cmd-item:focus-visible {
+  background: var(--surface-hover);
+}
+
+.ui-cmd-item:active {
+  transform: scale(0.99);
+}
+
+.ui-cmd-item.is-active {
+  background: var(--claude-faint);
+}
+
+.ui-cmd-item.is-active::before {
+  content: "";
+  position: absolute;
+  /* Inside the row's own radius: at `left: 0` the bar butted into the panel
+     edge and read as a torn hairline. */
+  left: 4px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--r-pill);
+  background: var(--claude);
+}
+
+.ui-cmd-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ui-cmd-label {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ui-cmd-item.is-active .ui-cmd-label {
+  color: var(--claude);
+}
+
+/* The argument hint is a syntax fragment, not prose: it stays mono and quiet so
+   `/model <name>` reads as one command line rather than as two labels. */
+.ui-cmd-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--menu-meta-size);
+  color: var(--text-faint);
+}
+
+.ui-cmd-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--menu-detail-size);
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.ui-cmd-item:hover .ui-cmd-detail,
+.ui-cmd-item:focus-visible .ui-cmd-detail,
+.ui-cmd-item.is-active .ui-cmd-detail {
+  color: var(--text-muted);
+}
+
+/* ---------- triggers ----------
+
+   Every trigger in the pane is the same object: quiet ink, no bed at rest, a
+   bed under the pointer, and the SAME bed while its panel is open so the
+   trigger and the surface it opened read as one thing. */
+
+.menu {
+  position: relative;
+  min-width: 0;
+  display: flex;
+}
+
+.menu-trigger {
+  display: flex;
+  min-width: 0;
+  border-radius: var(--r-row);
+  transition: transform 90ms var(--ease-out);
+}
+
+.menu-trigger:active {
+  transform: scale(0.96);
+}

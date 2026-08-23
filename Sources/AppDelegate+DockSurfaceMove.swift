@@ -281,6 +281,13 @@ extension AppDelegate {
     private func canMoveSurfaceIntoDock(_ source: ContainerSurfaceLocation) -> Bool {
         switch source {
         case .workspace(_, let workspace, let panelId, _):
+            // SUPERMUX:begin claude-harness-dock-admission
+            if workspace.panels[panelId]?.panelType == .claudeHarness {
+                // Dock does not own harness subscriptions, bridge routing, or
+                // persistence. Keep the live pane with its Workspace owner.
+                return false
+            }
+            // SUPERMUX:end claude-harness-dock-admission
             if workspace.panels[panelId]?.panelType == .simulator {
                 // Simulator control and persistence route through Workspace. Until
                 // Dock has an equivalent owner, keep the live panel with that owner.
@@ -292,6 +299,9 @@ extension AppDelegate {
             // would leave the Dock panel detached from its remote owner.
             return false
         case .dock(let dock, let panelId):
+            // SUPERMUX:begin claude-harness-dock-admission
+            guard dock.panels[panelId]?.panelType != .claudeHarness else { return false }
+            // SUPERMUX:end claude-harness-dock-admission
             return dock.panels[panelId]?.panelType != .simulator
         }
     }

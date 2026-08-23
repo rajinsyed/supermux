@@ -1,0 +1,785 @@
+/* ---------------------------------------------------------------------------
+   Workflows.
+
+   The transcript keeps ONE quiet row per run; the run itself is browsed in a
+   framed multi-pane view — phases column, agent list, agent detail — with the
+   same fixed-geometry contracts the terminal version keeps (state chips sized
+   once, dots one shape, live text clipped not wrapped).
+--------------------------------------------------------------------------- */
+
+/* ---------- transcript row ----------
+
+   The agent row's two-line grammar, for a run: dot + name + dim "workflow"
+   tag, then one line of progress/outcome. */
+
+.wf-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  text-align: left;
+  padding: 6px 8px 6px 4px;
+  border-radius: var(--r-md);
+}
+
+/* No hover bed — same round-7 call as .agent-row: the ink lift and the chevron
+   reveal carry the affordance, keyboard focus gets a ring. */
+.wf-row:hover .wf-row-name,
+.wf-row:focus-visible .wf-row-name {
+  color: var(--text);
+}
+
+.wf-row:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+
+.wf-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wf-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wf-row-name {
+  font-size: 13px;
+  font-weight: 590;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 8ch;
+  flex: 0 1 auto;
+}
+
+.wf-row-badge {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  text-transform: lowercase;
+  flex: 0 0 auto;
+}
+
+.wf-row-spacer {
+  flex: 1;
+}
+
+/* Aggregates tick every couple of seconds while a run advances; a fixed box
+   keeps the row from reflowing the transcript under the reader. */
+.wf-row-summary {
+  height: 16px;
+  line-height: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-row-chev {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  align-self: center;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.wf-row:hover .wf-row-chev,
+.wf-row:focus-visible .wf-row-chev {
+  opacity: 1;
+}
+
+.wf-stopped-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.wf-error {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* ---------- state chips ----------
+
+   Sized ONCE at the widest state (RUNNING + spinner), coloured per state, so
+   a row advancing queued → running → done never changes width. The fixed floor
+   is load-bearing and asserted in tests/styles.test.ts; only the TYPE changed
+   in the round-5 pass — 10px uppercase at 0.05em letterspacing is a badge
+   shouting, and every other small label in the rebuilt pane is 11.5px sentence
+   case. Sentence case at 11px keeps the chip inside the same floor. */
+
+.wf-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 76px;
+  height: 16px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.wfb-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 80px;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.wf-state.is-queued,
+.wfb-state.is-queued {
+  background: var(--surface-active);
+  color: var(--text-muted);
+}
+
+.wf-state.is-running,
+.wfb-state.is-running {
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
+.wf-state.is-done,
+.wfb-state.is-done {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.wf-state.is-error,
+.wfb-state.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.wf-state.is-blocked,
+.wfb-state.is-blocked {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.wf-state.is-cached,
+.wfb-state.is-cached {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+.wf-state.is-stopped,
+.wfb-state.is-stopped {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* ---------- the browser (round-5 item 8) ----------
+
+   Rebuilt to the menu kit's proportions: the same 28px rows, the same 7px row
+   radius, the same 13px/11.5px type pair, the same hairline weights. The
+   browser is the largest surface in the pane and it was the last one still
+   speaking its own dialect — 12.5px rows on 10px radii beside 10.5px uppercase
+   column titles beside 13.5px names, with 14px pane padding against the menus'
+   4px.
+
+   Compact and premium here means: one type scale, one radius, sections that are
+   separated by air rather than by boxes, and a header that is a line of
+   identity rather than a toolbar. */
+
+.wf-browser {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+/* The region is a keyboard SCOPE (↑↓ walk the phases, x stops, esc goes back)
+   and takes focus programmatically the moment it opens — so the shared
+   `:focus-visible` treatment in base.css painted a 3px vermilion halo down the
+   entire frame every time the browser was opened, before the reader had pressed
+   anything. `outline: none` alone did not clear it: the shared rule's visible
+   half is a `box-shadow`, which the outline reset leaves untouched.
+
+   A control's focus ring must never be weakened — that is base.css's promise —
+   but this is not a control, it is the container the controls live in, and its
+   own rows carry their own focus treatment. */
+.wf-browser:focus,
+.wf-browser:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Identity, then the run's numbers, then its live state. One line, 40px, no
+   bed — the frame it sits in is already the container. */
+.wfb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px 0 6px;
+  border-bottom: 1px solid var(--border-faint);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.wfb-back {
+  flex: 0 0 auto;
+}
+
+/* The run's mark, at the kit's icon scale rather than as a 26px tile: a filled
+   violet square beside a 13px name was the heaviest object on the header and
+   read as an app icon. */
+.wfb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--violet);
+}
+
+.wfb-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.wfb-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 6ch;
+}
+
+/* On the name's own line rather than under it: the description is a subtitle,
+   and stacking it made the header two lines tall for a sentence that is usually
+   the same words as the name. */
+.wfb-desc {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.wfb-summary {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.wfb-elapsed {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+/* ---------- panes ---------- */
+
+.wfb-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(170px, 216px) 1fr;
+}
+
+@media (max-width: 620px) {
+  .wfb-panes {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+}
+
+.wfb-phases {
+  overflow-y: auto;
+  border-right: 1px solid var(--border-faint);
+  padding: 6px 5px;
+  min-width: 0;
+}
+
+@media (max-width: 620px) {
+  .wfb-phases {
+    border-right: none;
+    border-bottom: 1px solid var(--border-faint);
+    max-height: 30vh;
+  }
+}
+
+.wfb-right {
+  overflow-y: auto;
+  padding: 8px 12px 12px;
+  min-width: 0;
+}
+
+/* The kit's group label, not a uppercase small-caps heading: two columns each
+   topped by a letterspaced all-caps word made the browser read as a settings
+   screen. */
+.wfb-col-title {
+  margin: 0 0 4px;
+  padding: 4px 6px 2px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.wfb-col-count {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.wfb-empty {
+  margin: 2px 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- phases column ---------- */
+
+.wfb-phase-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* The kit's row, exactly. */
+.wfb-phase-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: var(--r-row);
+  font-size: 13px;
+  color: var(--text-soft);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.wfb-phase-row:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.wfb-phase-row:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* The SELECTED phase is what the right pane is showing, so its treatment has to
+   survive the pointer leaving — a selection that only existed under the cursor
+   left the two panes with nothing tying them together. */
+.wfb-phase-row.is-active {
+  background: var(--claude-soft);
+  color: var(--text);
+}
+
+.wfb-phase-row.is-running .wfb-phase-count {
+  color: var(--claude);
+}
+
+.wfb-phase-index {
+  width: 14px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.wfb-phase-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wfb-phase-count {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- agent list ---------- */
+
+.wfb-agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wfb-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: var(--r-row);
+  font-size: 13px;
+  color: var(--text-soft);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+/* No hover bed — the round-7 no-slab policy for every delegated-work row. */
+.wfb-agent-row:hover {
+  color: var(--text);
+}
+
+.wfb-agent-row:focus-visible {
+  color: var(--text);
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+
+/* Every mark in the agent list and in the detail chip occupies the SAME 11px
+   of horizontal space, whichever it is: the running grid is an 11px box
+   (`.dock-glyph` in agents.css), and this is the settled dot's half of that
+   contract — 7px of dot centred in 11px of footprint. Without it a row
+   advancing running → done would slide its own label 4px left, thirty times
+   over a run, while the reader is reading it.
+
+   It rides on the DOT only (7 + 2 + 2 = 11), as a margin rather than a wrapper
+   box, so `.wfb-dot`'s own 7px geometry — one shape for every settled state,
+   asserted in tests/styles.test.ts — is untouched. */
+.wfb-mark {
+  margin: 0 2px;
+}
+
+/* One shape for every state: a column of thirty agents reads as a column of
+   colour only if the mark never changes size.
+
+   What changed in round 7 is which states get DRAWN as a dot at all. A RUNNING
+   agent is delegated work, and now wears the delegated pixel grid — the same
+   comet the transcript's agent rows and the dock wear — rather than a breathing
+   dot: the browser was the last surface still animating the round-5 pulse, so
+   the same fact ("this agent is working") had two different marks two views
+   apart. `@keyframes dot-breathe` is gone with it; nothing drove it once both
+   call sites moved to the grid.
+
+   `.is-running` keeps its COLOUR here, without the animation. It is the state
+   palette this sheet declares for `DisplayState`, and a static claude dot is
+   the honest fallback if any surface ever renders the class without the grid.
+   It must never grow an animation back: that is the round-5 pulse returning. */
+.wfb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  flex: 0 0 auto;
+  background: var(--text-faint);
+}
+
+.wfb-dot.is-queued {
+  background: var(--text-faint);
+}
+
+.wfb-dot.is-running {
+  background: var(--claude-strong);
+}
+
+.wfb-dot.is-done {
+  background: var(--success-dot);
+}
+
+.wfb-dot.is-error {
+  background: var(--danger-dot);
+}
+
+.wfb-dot.is-blocked {
+  background: var(--warning-dot);
+}
+
+.wfb-dot.is-cached {
+  background: var(--violet-dot);
+}
+
+.wfb-dot.is-stopped {
+  background: var(--warning-dot);
+}
+
+.wfb-agent-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fixed columns, so thirty rows form two readable columns of figures rather
+   than a ragged edge that shifts as each agent finishes. */
+.wfb-agent-tokens,
+.wfb-agent-elapsed {
+  flex: 0 0 auto;
+  min-width: 5ch;
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* ---------- agent detail ----------
+
+   Sections separated by AIR, not by boxes: the previous build gave the prompt,
+   the activity line and the outcome each their own uppercase heading, and three
+   headings over three paragraphs in a 300px column is more chrome than
+   content. */
+
+.wfb-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.wfb-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.wfb-detail-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.wfb-detail-elapsed,
+.wfb-detail-metrics {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.wfb-detail-metrics {
+  margin-top: -10px;
+}
+
+.wfb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.wfb-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.wfb-section-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.wfb-section.is-error .wfb-section-title {
+  color: var(--danger);
+}
+
+.wfb-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  border-radius: var(--r-xs);
+  transition: color var(--dur) var(--ease);
+}
+
+.wfb-expand:hover {
+  color: var(--claude);
+}
+
+.wfb-expand:focus-visible {
+  color: var(--claude);
+}
+
+.wfb-section-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: min(300px, 40vh);
+  overflow-y: auto;
+}
+
+.wfb-section.is-error .wfb-section-body {
+  color: var(--danger);
+}
+
+/* Live tool summaries arrive every second; clip, never wrap. */
+.wfb-section-body.is-activity {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: none;
+}
+
+.wfb-section-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.wfb-section-note.is-error {
+  color: var(--danger);
+}
+
+.wfb-detail-actions {
+  display: flex;
+}
+
+/* ---------- logs ---------- */
+
+.wfb-logs-block {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border-faint);
+  padding: 3px 10px;
+}
+
+.wf-logs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: var(--r-row);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.wf-logs-toggle:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.wf-logs-toggle:focus-visible {
+  color: var(--text);
+}
+
+.wf-logs {
+  margin: 4px 0 8px;
+  padding: 8px 12px 8px 30px;
+  border-radius: var(--r-pop);
+  background: var(--code-bg);
+  border: 1px solid var(--border-faint);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-height: min(200px, 30vh);
+  overflow-y: auto;
+}
+
+/* ---------- hint bar ----------
+
+   The kit's footer material, so the browser's base and a menu's base are the
+   same object: sunken, hairlined, 11.5px. */
+
+.wfb-hints {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-faint);
+  background: var(--surface-sunken);
+}
+
+.wfb-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.wfb-hint.is-action {
+  color: var(--text-muted);
+  border-radius: var(--r-xs);
+  padding: 2px 4px;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.wfb-hint.is-action:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.wfb-hint.is-action:focus-visible {
+  color: var(--text);
+}
+
+/* ---------- fallback overlay (row outside the router) ---------- */
+
+.wfb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  display: flex;
+  padding: 24px;
+}
+
+.wfb-overlay .wf-browser {
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-modal);
+  width: 100%;
+}

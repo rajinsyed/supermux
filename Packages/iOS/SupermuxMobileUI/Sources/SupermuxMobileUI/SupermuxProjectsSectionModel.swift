@@ -316,7 +316,7 @@ public final class SupermuxProjectsSectionModel {
                 self?.requestNestedWorktreeRemoval(projectID: projectID, worktree: worktree)
             },
             requestNewWorktree: { [weak self] projectID in
-                self?.requestNewWorktree(projectID)
+                _ = self?.requestNewWorktree(projectID)
             },
             preparingNewWorktreeProjectID: preparingNewWorktreeProjectID
         )

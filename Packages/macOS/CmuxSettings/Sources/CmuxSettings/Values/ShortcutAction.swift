@@ -164,6 +164,9 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Hashable, SettingCod
     // SUPERMUX:begin run-toggle-shortcut-case
     case supermuxToggleRun
     // SUPERMUX:end run-toggle-shortcut-case
+    // SUPERMUX:begin claude-harness-shortcut-case
+    case supermuxNewClaudeHarness
+    // SUPERMUX:end claude-harness-shortcut-case
     // SUPERMUX:begin workspace-switcher-shortcut-case
     case supermuxWorkspaceSwitcherNext
     case supermuxWorkspaceSwitcherPrevious

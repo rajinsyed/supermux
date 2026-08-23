@@ -153,9 +153,11 @@ extension TerminalController: ControlPaneContext {
         }
 
         let panelType: PanelType = inputs.typeRaw.flatMap { self.panelType(forRawToken: $0) } ?? .terminal
-        if panelType == .agentSession {
+        // SUPERMUX:begin claude-harness-socket-split-guard
+        if panelType == .agentSession || panelType == .claudeHarness {
             return .agentSessionRejected(typeRawValue: panelType.rawValue)
         }
+        // SUPERMUX:end claude-harness-socket-split-guard
         let placement = resolveControlPlacement(inputs.placementRaw)
         if case .invalid(let raw) = placement {
             return .invalidPlacement(rawValue: raw)

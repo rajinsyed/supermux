@@ -205,6 +205,8 @@ enum SupermuxLineReader {
     static func forEachLine(
         in url: URL,
         chunkSize: Int = 1 << 20,
+        didReadChunk: (() -> Void)? = nil,
+        didCompactBuffer: (() -> Void)? = nil,
         handle: (Data.SubSequence) -> Void
     ) -> Bool {
         guard let file = try? FileHandle(forReadingFrom: url) else { return false }
@@ -241,6 +243,7 @@ enum SupermuxLineReader {
 
         while let chunk = autoreleasepool(invoking: { try? file.read(upToCount: chunkSize) }),
               !chunk.isEmpty {
+            didReadChunk?()
             // Each chunk creates thousands of short-lived Foundation objects
             // (line slices, decoded records). Without draining per chunk they
             // accumulate for the whole multi-gigabyte scan — measured at
@@ -250,6 +253,7 @@ enum SupermuxLineReader {
                 drainLines()
                 if consumed > 0 {
                     buffer.removeFirst(consumed)
+                    didCompactBuffer?()
                     searched -= consumed
                     consumed = 0
                 }

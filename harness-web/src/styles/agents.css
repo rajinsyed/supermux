@@ -1,0 +1,605 @@
+/* ---------------------------------------------------------------------------
+   Agents.
+
+   Three surfaces share this sheet:
+   1. The WORKING PANEL — Cursor's "3 Working · Stop All" glass island above
+      the composer, holding one row per running agent/workflow/shell with the
+      subagent tree drawn as indentation.
+   2. The inline AGENT ROWS in the transcript — one quiet line per agent,
+      nesting with a └ guide, opening the agent's own chat.
+   3. The AGENT CHAT VIEW header — the framed view a subagent's conversation
+      renders in.
+--------------------------------------------------------------------------- */
+
+/* ---------- the working panel ----------
+
+   Cursor's island, verbatim: "2 Working …………… Stop All ✕" over a short list
+   of quiet rows. A row is an animated glyph, a name in plain ink, ONE dim
+   phrase of activity, and a right-aligned timer. No icons, no status words,
+   no metric chips — the state is the glyph, and the numbers live in the
+   drill-in. */
+
+.agents-dock {
+  border-radius: var(--r-xl);
+  background: var(--panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+/* Symmetric vertical padding: the head is the WHOLE pill when the dock is
+   collapsed, and the old 6px-top / 2px-bottom split (which leaned on the
+   expanded list to balance it) sat the chevron, label, and actions 2px low
+   in the closed pill. Every child centers on the same optical line now, in
+   both states. */
+.agents-dock-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px 5px 12px;
+}
+
+.agents-dock-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 6px 2px 0;
+  margin-left: -4px;
+  border-radius: var(--r-sm);
+  color: var(--text-soft);
+}
+
+/* The chevron is a baseline-less glyph; flexbox centres its box, but the
+   drawn stroke sits 0.5px high in the 11px viewBox next to 13px text. A
+   nudge puts the stroke on the label's optical centerline. */
+.agents-dock-fold svg {
+  transform: translateY(0.5px);
+}
+
+.agents-dock-fold:hover {
+  color: var(--text);
+}
+
+.agents-dock-fold:focus-visible {
+  color: var(--text);
+}
+
+.agents-dock-fold svg {
+  color: var(--text-faint);
+}
+
+.agents-dock-title {
+  font-size: 13px;
+  font-weight: 590;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.agents-dock-spacer {
+  flex: 1;
+}
+
+.agents-dock-stopall {
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.agents-dock-stopall:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.agents-dock-stopall:focus-visible {
+  color: var(--text);
+}
+
+.agents-dock-stopall:disabled {
+  opacity: 0.55;
+}
+
+.agents-dock-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  color: var(--text-faint);
+}
+
+.agents-dock-close:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.agents-dock-close:focus-visible {
+  color: var(--text);
+}
+
+.agents-dock-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 7px;
+  display: flex;
+  flex-direction: column;
+  max-height: min(190px, 28vh);
+  overflow-y: auto;
+}
+
+.dock-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  border-radius: var(--r-md);
+}
+
+.dock-row.is-active .dock-label {
+  color: var(--text);
+}
+
+.dock-row-open {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  transition: background var(--dur) var(--ease);
+}
+
+/* Same no-bed policy as the transcript's delegated rows: the pointer lifts the
+   ink, the keyboard gets a ring, and nothing paints a slab under the name. */
+.dock-row-open:hover .dock-label,
+.dock-row-open:focus-visible .dock-label {
+  color: var(--text);
+}
+
+.dock-row-open:hover .dock-detail,
+.dock-row-open:focus-visible .dock-detail {
+  color: var(--text-muted);
+}
+
+.dock-row-open:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+
+/* The tree: nested agents step in under their parent. The indent alone
+   carries the hierarchy — guides would be one more line of chrome. */
+.dock-row[data-depth="2"] .dock-row-open {
+  padding-left: 28px;
+}
+
+.dock-row[data-depth="3"] .dock-row-open {
+  padding-left: 48px;
+}
+
+.dock-row[data-depth="4"] .dock-row-open {
+  padding-left: 68px;
+}
+
+/* The running mark on a DELEGATED-work row — a subagent, a workflow, a
+   background shell. The third member of the loading family (base.css documents
+   all three), and the one whose job is to be calm.
+
+   Round 5 gave this the same sweeping dash the turn's "Working for 54s" wore,
+   which is what the round-6 review caught: a running Workflow row and the
+   turn-level state were the same animation two lines apart, so the pane said
+   "something is loading" three times and "what kind of thing" never. It is the
+   reference PIXEL GRID now — a comet lapping the perimeter for subagents, a
+   chevron wavefront driving right for workflows — so a glance at the dock says
+   both that delegated work is alive and which kind it is.
+
+   The grid is centred in a fixed 11px box so a working row is exactly as tall
+   as a settled one and the dock cannot twitch as agents finish. Cell/gap land
+   on the reference's 4px/1.5px inside that box. */
+.dock-glyph {
+  --px-cell: 3px;
+  --px-gap: 1px;
+  display: inline-grid;
+  align-content: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+}
+
+/* Delegated names retain their slower ambient cadence, but the old moving text
+   gradient is gone. The label itself breathes with compositor-only properties;
+   the grid still communicates the delegated-work kind. */
+.dock-glyph + .dock-label,
+.agent-row-glyph + .agent-row-main .agent-row-name,
+.agent-row-glyph + .wf-row-main .wf-row-name {
+  transform-origin: left center;
+  animation: status-breathe 3.4s var(--ease) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-glyph + .dock-label,
+  .agent-row-glyph + .agent-row-main .agent-row-name,
+  .agent-row-glyph + .wf-row-main .wf-row-name {
+    animation-name: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dock-label {
+  font-weight: 590;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 6ch;
+  flex: 0 1 auto;
+}
+
+.dock-detail {
+  color: var(--text-faint);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 4ch;
+  flex: 0 4 auto;
+}
+
+.dock-spacer {
+  flex: 1;
+}
+
+.dock-elapsed {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+/* Stop is ALWAYS visible on a stoppable row — the round-7 review found the
+   hover-reveal cut (a 9px faint glyph, invisible until the pointer was already
+   on the row) unreadable. A quiet ringed glyph at rest, so the row plainly says
+   it can be stopped, warming to danger under the pointer. */
+.dock-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.dock-stop:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.dock-stop:focus-visible {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.dock-error {
+  font-size: 11px;
+  color: var(--danger);
+  flex: 0 0 auto;
+  padding-right: 8px;
+}
+
+/* quiet buttons shared by dock rows and bash strips */
+.btn-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.btn-quiet:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-quiet:focus-visible {
+  color: var(--text);
+}
+
+.btn-quiet:disabled {
+  opacity: 0.55;
+}
+
+.btn-quiet.is-danger {
+  color: var(--danger);
+}
+
+.btn-quiet.is-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+/* ---------- inline agent rows (transcript) ----------
+
+   The reference's two-line grammar:
+
+     ● Logic test agent   general-purpose            2s ›
+       Completed
+
+   A dot carries the state; everything else is ink at two tiers. */
+
+.agent-row-wrap {
+  min-width: 0;
+}
+
+.agent-row-wrap.is-nested {
+  padding-left: 22px;
+}
+
+.agent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 4px 8px 4px 4px;
+  border-radius: var(--r-md);
+}
+
+.agent-row-glyph {
+  margin-top: 5px;
+}
+
+/* No hover bed (round-7 review: a lit slab under every delegated row read as
+   clutter). The affordance is the ink lift on the row's name plus the chevron
+   reveal below; keyboard focus keeps a visible ring instead of a wash. */
+.agent-row:hover .agent-row-name,
+.agent-row:focus-visible .agent-row-name {
+  color: var(--text);
+}
+
+.agent-row:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+
+/* The SETTLED mark on an inline row. A running row never draws one — it draws
+   the pixel grid above — so there is deliberately no `.is-running` rule here.
+ *
+ * `@keyframes dot-breathe` stood here through round 6, driving this sheet's
+ * `.agent-dot.is-running` and workflow.css's `.wfb-dot.is-running`. Both are
+ * gone in round 7: the inline rows had already moved to the grid (leaving the
+ * rule unreachable — `AgentRow` renders the dot only in its settled branch),
+ * and the workflow browser's agent list moved with them, which is the review's
+ * item 4. A pulsing dot is the round-5 mark the whole loading family exists to
+ * be rid of; nothing in the pane may reintroduce one. */
+.agent-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: var(--r-pill);
+  flex: 0 0 auto;
+  background: var(--text-faint);
+}
+
+.agent-dot.is-done {
+  background: var(--success-dot);
+}
+
+.agent-dot.is-error {
+  background: var(--danger-dot);
+}
+
+.agent-dot.is-stopped {
+  background: var(--warning-dot);
+}
+
+.agent-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-row-name {
+  font-size: 13px;
+  font-weight: 590;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 8ch;
+  flex: 0 1 auto;
+}
+
+/* The type reads as dim text after the name — never a chip; a filled tag on
+   every row of a tree is a column of noise. */
+.agent-row-type {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.agent-row-spacer {
+  flex: 1;
+}
+
+.agent-row-chev {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  align-self: center;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.agent-row:hover .agent-row-chev,
+.agent-row:focus-visible .agent-row-chev {
+  opacity: 1;
+}
+
+/* The second line: live activity or the settled outcome. A fixed box, so a
+   phrase arriving every second never resizes the row under the reader. */
+.agent-row-activity {
+  height: 16px;
+  line-height: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- agent chat view (framed) ---------- */
+
+.agent-view-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid var(--border-faint);
+  margin-bottom: 12px;
+}
+
+.agent-view-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-view-name {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-view-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* Dim text, not a chip — the same grammar the rows use. */
+.subagent-type {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.agent-view-stats {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.agent-view-elapsed {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.agent-view-source {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+}
+
+.agent-view-children {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-faint);
+}
+
+.agent-view-children-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.agent-view-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 9px;
+  border-radius: var(--r-md);
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.agent-view-child:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.agent-view-child:focus-visible {
+  color: var(--text);
+}
+
+.agent-view-child-id {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-view-child-open {
+  font-size: 11px;
+  color: var(--claude);
+  flex: 0 0 auto;
+}
+
+.agent-relay-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.agent-relay-status.is-failed {
+  color: var(--danger);
+}
+
+.agent-relay-status.is-delivered {
+  color: var(--success);
+}
+
+.agent-relay-hint {
+  color: var(--text-faint);
+}

@@ -1,4 +1,5 @@
 import AppKit
+import Bonsplit
 import ObjectiveC.runtime
 import SwiftUI
 import Testing
@@ -152,6 +153,41 @@ struct FileDropOverlayViewTests {
             (objc_getAssociatedObject(window, &fileDropOverlayKey) as? FileDropOverlayView) === overlays.first,
             "The window-associated file-drop overlay should match the single installed view"
         )
+    }
+
+    @Test
+    func overlaySkipsPaneTargetsThatPassFileDropsThrough() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+            window.orderOut(nil)
+        }
+        realizeWindowLayout(window)
+        let contentView = try #require(window.contentView)
+        let paneTarget = PaneDropTargetView(frame: NSRect(x: 40, y: 36, width: 220, height: 150))
+        paneTarget.dropContext = PaneDropContext(
+            workspaceId: UUID(),
+            panelId: UUID(),
+            paneId: PaneID()
+        )
+        paneTarget.capturesFileDrops = false
+        contentView.addSubview(paneTarget)
+        let overlay = FileDropOverlayView(frame: contentView.bounds)
+        contentView.addSubview(overlay, positioned: .above, relativeTo: nil)
+        let point = paneTarget.convert(
+            NSPoint(x: paneTarget.bounds.midX, y: paneTarget.bounds.midY),
+            to: nil
+        )
+
+        #expect(overlay.paneDropTargetUnderPoint(point) == nil)
+
+        paneTarget.capturesFileDrops = true
+        #expect(overlay.paneDropTargetUnderPoint(point) === paneTarget)
     }
 
     @Test

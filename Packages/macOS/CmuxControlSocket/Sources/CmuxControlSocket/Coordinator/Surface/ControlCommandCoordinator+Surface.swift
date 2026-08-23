@@ -380,11 +380,13 @@ extension ControlCommandCoordinator {
                 data: nil
             )
         case .agentSessionRejected(let typeRawValue):
+            // SUPERMUX:begin claude-harness-socket-split-error
             return .err(
                 code: "invalid_params",
-                message: "agent-session is only supported by surface.create",
+                message: "\(typeRawValue) is only supported by surface.create",
                 data: .object(["type": .string(typeRawValue)])
             )
+            // SUPERMUX:end claude-harness-socket-split-error
         case .browserDisabled(let outcome):
             return browserDisabledResult(outcome)
         case .workspaceNotFound:

@@ -38,7 +38,19 @@ extension TabManager: SidebarGitHosting {
     }
 
     func hasTerminalPanel(workspaceId: UUID, panelId: UUID) -> Bool {
-        tabs.first(where: { $0.id == workspaceId })?.terminalPanel(for: panelId) != nil
+        guard let workspace = tabs.first(where: { $0.id == workspaceId }) else { return false }
+        if workspace.terminalPanel(for: panelId) != nil { return true }
+        // SUPERMUX:begin claude-harness-git-probe-eligible
+        // This seam has exactly one caller — `SidebarGitMetadataService`'s
+        // watcher restart — where it means "is this panel eligible for a local
+        // git probe", not "is it literally a TerminalPanel". A Claude harness
+        // pane owns a real project/worktree cwd (`panelDirectories`, the same
+        // value `gitProbeDirectory` reads), so after the git-watch setting is
+        // toggled back on, a harness-only workspace must be re-watched like a
+        // terminal one instead of silently losing its branch chip.
+        if workspace.panels[panelId] is SupermuxHarnessPanel { return true }
+        // SUPERMUX:end claude-harness-git-probe-eligible
+        return false
     }
 
     func isRemoteTerminalPanel(workspaceId: UUID, panelId: UUID) -> Bool {

@@ -1,0 +1,393 @@
+/* ---------------------------------------------------------------------------
+   Foundation for the glass design system.
+
+   The pane is one deep page: the transcript scrolls edge-to-edge underneath,
+   and every piece of chrome — composer, working panel, framed views, menus —
+   floats above it as translucent glass. Nothing in the flow wears a heavy
+   card; containment is expressed with veils of the page's own ink and wide,
+   soft shadows rather than borders and boxes.
+--------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html[data-supermux-presentation="hidden"] *,
+html[data-supermux-presentation="hidden"] *::before,
+html[data-supermux-presentation="hidden"] *::after {
+  animation-play-state: paused !important;
+}
+
+body {
+  background: var(--page-bg, #0f0f13);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+:root {
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", "Cascadia Mono", monospace;
+  --r-xs: 5px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-composer: 22px;
+  --r-pill: 999px;
+  /* The menu kit's two radii, and the only two any floating surface uses.
+     Round 4's popovers ran --r-md, --r-lg and --r-xl side by side, which is
+     half of why five menus opened from one bar looked like five products. The
+     values are shadcn's New York preset: a 10px panel holding 7px rows. */
+  --r-pop: 10px;
+  --r-row: 7px;
+  --content-max: 760px;
+  --gutter: 20px;
+  /* One text origin for the floating dock: the status label, the composer's
+     own text, and the hint row all start exactly this far in from the gutter,
+     with the widest status indicator centred in the reserved space to their
+     left. */
+  --dock-indent: 24px;
+  /* Assistant content sits in a single column whose left edge never moves;
+     the work rail is drawn inside this indent rather than adding to it. */
+  --rail-indent: 13px;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur: 160ms;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+a {
+  color: var(--claude);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+:focus {
+  outline: none;
+}
+
+/* Keyboard focus must never be the weaker of the two affordances: hover
+   changes surface, border AND colour, so focus gets a visible halo. Every
+   control with a :hover rule pairs it with :focus-visible (audited in
+   tests/styles.test.ts); this shared ring sits under all of them. */
+:focus-visible {
+  outline: 2px solid var(--claude-strong);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-radius: var(--r-xs);
+}
+
+::selection {
+  background: var(--claude-soft);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.harness-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-anchor: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.harness-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.harness-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.harness-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--r-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.harness-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+  background-clip: content-box;
+}
+
+/* ---------- the loading family ----------
+
+   THREE loading treatments, and the differences between them are the design.
+
+   Round 5 had one: a sweeping dash, worn identically by the turn's "Working for
+   54s", by a running Workflow row, and by a tool call in flight. A reader could
+   not tell "the model is thinking" from "one shell command is running" from "an
+   agent is off working somewhere" without reading the words beside the mark,
+   which is the whole job the mark exists to do. Round 6 splits them by MOTION:
+
+     ORBIT   `.orbit`        — a dot travelling a closed ring, accent-coloured.
+                               ONE request is in flight and the pane is waiting
+                               on its answer: a tool call, an output poll, a
+                               catalog fetch. A closed circuit with a travelling
+                               head is the honest shape for "waiting on one
+                               thing", and it is the only mark that spins.
+
+     STATUS  `status-breathe` — no glyph at all; the readable status WORDS
+                               carry a quiet opacity/transform pulse. The turn
+                               label and delegated row names run at deliberately
+                               different tempos without repainting text gradients.
+
+     GRID    `.pxgrid`       — a 3×3 pixel grid, per the reference loader the
+                               round-6 review supplied. DELEGATED work, in two
+                               patterns that keep the two kinds distinct:
+                               `is-orbit`, a comet lapping the perimeter, for
+                               subagents; `is-drive`, a chevron wavefront
+                               driving right, for workflows. (The first cut here
+                               was a single breathing pip, which one review
+                               later read as the same dot again — the grid is a
+                               different SHAPE, not a different tempo.)
+
+   Every one animates transform/opacity only, so thirty on
+   screen cost nothing, and every one has a reduced-motion resting state that
+   still reads as "in progress" rather than freezing mid-effect.
+
+   `.sheen` / `.sheen-bar` and animated background-clipped labels are gone.
+   They repainted text every frame and could freeze transparent under reduced
+   motion. The status pulse lives in cards.css; delegated names reuse it at the
+   slower tempo declared in agents.css. */
+
+/* The orbit.
+ *
+ * One element: `::after` is the track, `::before` is the travelling dot, and
+ * the whole box rotates — which is invisible on the ring (a circle rotated is
+ * the same circle) and is the entire animation for the dot. One transform on
+ * one compositor layer, no per-frame layout.
+ *
+ * Every dimension derives from `--orbit-size`, which `Spinner` sets from its
+ * `size` prop, because the call sites run 8px (a status badge) to 14px (a view
+ * header): a fixed 1.5px track reads as a heavy blob at 8px and as a hairline
+ * at 14px. Proportional keeps one glyph crisp across the whole range. */
+.orbit {
+  --orbit-size: 12px;
+  --orbit-track: max(1px, calc(var(--orbit-size) * 0.085));
+  --orbit-dot: max(2.5px, calc(var(--orbit-size) * 0.3));
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  animation: orbit-travel 1.05s linear infinite;
+}
+
+/* The track: a full ring in the page's own ink, quiet enough that the dot is
+   what the eye follows. */
+.orbit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-pill);
+  border: var(--orbit-track) solid var(--border-strong);
+}
+
+/* The travelling head, parked at twelve o'clock and carried round by the
+   parent's rotation. Centred on the track rather than inside it, so the dot
+   reads as riding the ring instead of rattling around in it. */
+.orbit::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--orbit-track) / 2);
+  left: 50%;
+  width: var(--orbit-dot);
+  height: var(--orbit-dot);
+  margin-left: calc(var(--orbit-dot) / -2);
+  margin-top: calc(var(--orbit-dot) / -2);
+  border-radius: var(--r-pill);
+  background: var(--claude-strong);
+}
+
+@keyframes orbit-travel {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The pixel grid: delegated work. Nine cells; each lit cell runs the ONE shared
+   `pixel-on` keyframe with a per-cell inline delay from the component — the
+   delays ARE the pattern (perimeter steps for the orbit comet, column + row
+   distance for the drive chevron), so the CSS stays a single rule however many
+   patterns the component grows. Opacity only: nine cells cost one paint each,
+   no layout, no transform.
+
+   Cell and gap derive from the em so the grid rides the row's own type size;
+   at the dock's 11px box the cells land on the reference's 4px/1.5px. */
+.pxgrid {
+  display: grid;
+  grid-template-columns: repeat(3, var(--px-cell, 3px));
+  gap: var(--px-gap, 1px);
+}
+
+.pxgrid i {
+  width: var(--px-cell, 3px);
+  height: var(--px-cell, 3px);
+  border-radius: 0.5px;
+  background: var(--claude-strong);
+  opacity: 0.15;
+}
+
+/* Only lit cells animate: the orbit pattern's centre cell is the hole the comet
+   laps around — dark, still, dimmer than any lit cell's resting frame. */
+.pxgrid i:not(.is-off) {
+  animation: pixel-on 650ms ease-in-out infinite;
+}
+
+.pxgrid i.is-off {
+  opacity: 0.07;
+}
+
+@keyframes pixel-on {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+/* Motion off. Each of the three has a RESTING state that still says "in
+   progress" — a stopped animation must not mean a mark that reads as settled.
+   The orbit keeps its dot parked on a full ring (a determinate-looking gauge,
+   which is what a static spinner ought to be), and the grid sits at its
+   half-lit tone rather than at whichever frame it happened to stop on. Status
+   labels declare their own full-opacity resting state beside their animation. */
+@media (prefers-reduced-motion: reduce) {
+  .orbit::before {
+    background: var(--claude-strong);
+  }
+
+  .pxgrid i {
+    opacity: 0.55;
+    transform: none;
+  }
+
+  .pxgrid i.is-off {
+    opacity: 0.07;
+  }
+}
+
+/* ---------- the copy button's glyph stack ----------
+
+   `CopyButton` renders the copy sheet and the check on ONE grid cell and
+   cross-fades between them. The alternative — swapping the element on success —
+   is a hard cut, and the two glyphs do not have identical advance widths, so
+   every inline row that holds a copy button (a code block's head, the terminal
+   chrome, a user bubble) resized on click and shoved its neighbours. Stacked,
+   the box is the max of the two forever: confirmation is a change of ink and
+   nothing moves.
+
+   The check also arrives with a small scale, so success reads as the glyph
+   settling into place rather than blinking on.
+
+   Declared HERE rather than beside `.icon-btn` in cards.css because it belongs
+   to the primitive, not to the button chrome, and every sheet in the pane can
+   see base.css. */
+.copy-glyph {
+  display: grid;
+  place-items: center;
+}
+
+.copy-glyph-idle,
+.copy-glyph-done {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.copy-glyph-done {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.copy-btn.is-copied .copy-glyph-idle {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.copy-btn.is-copied .copy-glyph-done {
+  opacity: 1;
+  transform: none;
+}
+
+/* The floating chrome's shared material: page-tinted glass, blurred backdrop,
+   a hairline, and a wide soft shadow. Composer, working panel, framed views,
+   and the pending-decision cards all wear this. */
+.glass {
+  background: var(--panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1737,7 +1737,8 @@
               "supermuxWorkspaceSwitcherNext",
               "supermuxWorkspaceSwitcherPrevious",
               "supermuxCommit",
-              "supermuxCommitAccelerator"
+              "supermuxCommitAccelerator",
+              "supermuxNewClaudeHarness"
             ]
           },
           "properties": {

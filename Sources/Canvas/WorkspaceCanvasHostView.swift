@@ -114,6 +114,9 @@ struct WorkspaceCanvasHostView: View {
         case .cloudVMLoading: return "cloud.fill"
         case .mobilePairing: return "iphone"
         case .accountSignIn: return "person.crop.circle"
+        // SUPERMUX:begin claude-harness-canvas-icon
+        case .claudeHarness: return "sparkles"
+        // SUPERMUX:end claude-harness-canvas-icon
         }
     }
 

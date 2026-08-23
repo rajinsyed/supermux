@@ -16,6 +16,10 @@ extension VerticalTabsSidebar {
         case .customSidebar, .simulator, .extensionBrowser, .workspaceTodo, .notifications, .cloudVMLoading,
              .mobilePairing, .accountSignIn:
             return .unknown
+        // SUPERMUX:begin claude-harness-sidebar-kind
+        case .claudeHarness:
+            return .unknown
+        // SUPERMUX:end claude-harness-sidebar-kind
         case .agentSession:
             return .agentSession
         case .project:

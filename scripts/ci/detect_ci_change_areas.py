@@ -18,10 +18,15 @@ class ChangeAreas:
     web: bool
     go: bool
     agent_session_web: bool
+    # SUPERMUX:begin harness-web-ci
+    harness_web: bool
+    # SUPERMUX:end harness-web-ci
 
     @classmethod
     def all(cls) -> ChangeAreas:
-        return cls(macos=True, web=True, go=True, agent_session_web=True)
+        # SUPERMUX:begin harness-web-ci
+        return cls(macos=True, web=True, go=True, agent_session_web=True, harness_web=True)
+        # SUPERMUX:end harness-web-ci
 
     def as_output_lines(self) -> list[str]:
         return [
@@ -29,6 +34,9 @@ class ChangeAreas:
             f"web={bool_output(self.web)}",
             f"go={bool_output(self.go)}",
             f"agent_session_web={bool_output(self.agent_session_web)}",
+            # SUPERMUX:begin harness-web-ci
+            f"harness_web={bool_output(self.harness_web)}",
+            # SUPERMUX:end harness-web-ci
         ]
 
 
@@ -105,6 +113,15 @@ def is_agent_session_web_change(path: str) -> bool:
     }
 
 
+# SUPERMUX:begin harness-web-ci
+def is_harness_web_change(path: str) -> bool:
+    return path.startswith(("harness-web/", "Resources/supermux-harness/")) or path in {
+        "package.json",
+        "scripts/supermux-build-harness-web.sh",
+    }
+# SUPERMUX:end harness-web-ci
+
+
 def is_macos_neutral(path: str) -> bool:
     # `cmux-tui/` is the standalone cmux-tui Rust project, gated by its own `cmux-tui`
     # workflow; it never affects the macOS app build or app-host tests.
@@ -130,6 +147,9 @@ def classify_files(paths: Iterable[str]) -> ChangeAreas:
     web = False
     go = False
     agent_session_web = False
+    # SUPERMUX:begin harness-web-ci
+    harness_web = False
+    # SUPERMUX:end harness-web-ci
 
     for raw_path in paths:
         path = normalize_path(raw_path)
@@ -140,6 +160,9 @@ def classify_files(paths: Iterable[str]) -> ChangeAreas:
             web = True
             go = True
             agent_session_web = True
+            # SUPERMUX:begin harness-web-ci
+            harness_web = True
+            # SUPERMUX:end harness-web-ci
             continue
         if is_web_change(path):
             web = True
@@ -147,6 +170,10 @@ def classify_files(paths: Iterable[str]) -> ChangeAreas:
             go = True
         if is_agent_session_web_change(path):
             agent_session_web = True
+        # SUPERMUX:begin harness-web-ci
+        if is_harness_web_change(path):
+            harness_web = True
+        # SUPERMUX:end harness-web-ci
         if is_macos_change(path):
             macos = True
 
@@ -155,6 +182,9 @@ def classify_files(paths: Iterable[str]) -> ChangeAreas:
         web=web,
         go=go,
         agent_session_web=agent_session_web,
+        # SUPERMUX:begin harness-web-ci
+        harness_web=harness_web,
+        # SUPERMUX:end harness-web-ci
     )
 
 

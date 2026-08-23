@@ -178,6 +178,7 @@ extension ShortcutAction {
         case .supermuxWorkspaceSwitcherPrevious: return ShortcutStroke(key: "`", command: true, shift: true)
         case .supermuxCommit: return ShortcutStroke(key: "\r", command: true)
         case .supermuxCommitAccelerator: return ShortcutStroke(key: "\r", command: true, shift: true)
+        case .supermuxNewClaudeHarness: return ShortcutStroke(key: "a", command: true, control: true)
         // SUPERMUX:end supermux-shortcut-defaults
         case .findNext: return ShortcutStroke(key: "g", command: true)
         case .findPrevious: return ShortcutStroke(key: "g", command: true, option: true)

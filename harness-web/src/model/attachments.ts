@@ -1,0 +1,109 @@
+import type { AttachmentErrorCode } from "../bridge";
+import type { ImageAttachment } from "./types";
+
+export type { AttachmentErrorCode } from "../bridge";
+
+export const MAXIMUM_IMAGE_BYTES = 512 * 1024;
+export const MAXIMUM_TOTAL_IMAGE_BYTES = 2 * 1024 * 1024;
+export const MAXIMUM_IMAGE_COUNT = 8;
+
+const SUPPORTED_MEDIA_TYPES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+export interface PickedImageAttachments {
+  images: ImageAttachment[];
+  error?: AttachmentErrorCode;
+}
+
+export interface PendingImageAttachment {
+  id: string;
+  mediaType: string;
+  blob: Blob;
+  name?: string;
+  previewURL: string;
+}
+
+type AttachmentResult =
+  | { kind: "attachment"; attachment: Omit<PendingImageAttachment, "id" | "previewURL"> }
+  | { kind: "error"; code: AttachmentErrorCode };
+
+export function attachmentFromFile(file: File): AttachmentResult {
+  if (!SUPPORTED_MEDIA_TYPES.has(file.type)) {
+    return { kind: "error", code: "unsupportedMediaType" };
+  }
+  if (file.size === 0) return { kind: "error", code: "invalidImage" };
+  if (file.size > MAXIMUM_IMAGE_BYTES) {
+    return { kind: "error", code: "imageTooLarge" };
+  }
+  return {
+    kind: "attachment",
+    attachment: { mediaType: file.type, blob: file, name: file.name }
+  };
+}
+
+export function attachmentFromPayload(payload: ImageAttachment): AttachmentResult {
+  if (!SUPPORTED_MEDIA_TYPES.has(payload.mediaType)) {
+    return { kind: "error", code: "unsupportedMediaType" };
+  }
+  const maximumEncodedBytes = Math.ceil(MAXIMUM_IMAGE_BYTES / 3) * 4;
+  if (payload.dataBase64.length > maximumEncodedBytes) {
+    return { kind: "error", code: "imageTooLarge" };
+  }
+  if (!isStrictBase64(payload.dataBase64)) {
+    return { kind: "error", code: "invalidImage" };
+  }
+
+  try {
+    const decoded = atob(payload.dataBase64);
+    if (decoded.length === 0) return { kind: "error", code: "invalidImage" };
+    if (decoded.length > MAXIMUM_IMAGE_BYTES) {
+      return { kind: "error", code: "imageTooLarge" };
+    }
+    const bytes = new Uint8Array(decoded.length);
+    for (let index = 0; index < decoded.length; index += 1) {
+      bytes[index] = decoded.charCodeAt(index);
+    }
+    return {
+      kind: "attachment",
+      attachment: {
+        mediaType: payload.mediaType,
+        blob: new Blob([bytes], { type: payload.mediaType }),
+        name: payload.name
+      }
+    };
+  } catch {
+    return { kind: "error", code: "invalidImage" };
+  }
+}
+
+export async function payloadFromAttachment(
+  attachment: PendingImageAttachment
+): Promise<ImageAttachment> {
+  const bytes = new Uint8Array(await attachment.blob.arrayBuffer());
+  return {
+    mediaType: attachment.mediaType,
+    dataBase64: encodeBase64(bytes),
+    ...(attachment.name ? { name: attachment.name } : {})
+  };
+}
+
+function isStrictBase64(value: string): boolean {
+  if (value.length === 0 || value.length % 4 !== 0) return false;
+  return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  let result = "";
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index];
+    const hasSecond = index + 1 < bytes.length;
+    const hasThird = index + 2 < bytes.length;
+    const second = hasSecond ? bytes[index + 1] : 0;
+    const third = hasThird ? bytes[index + 2] : 0;
+    result += BASE64_ALPHABET[first >> 2];
+    result += BASE64_ALPHABET[((first & 0x03) << 4) | (second >> 4)];
+    result += hasSecond ? BASE64_ALPHABET[((second & 0x0f) << 2) | (third >> 6)] : "=";
+    result += hasThird ? BASE64_ALPHABET[third & 0x3f] : "=";
+  }
+  return result;
+}

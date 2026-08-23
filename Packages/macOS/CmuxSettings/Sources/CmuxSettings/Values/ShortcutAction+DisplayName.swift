@@ -183,6 +183,8 @@ extension ShortcutAction {
             return String(localized: "supermux.shortcut.commit.label", defaultValue: "Commit Changes")
         case .supermuxCommitAccelerator:
             return String(localized: "supermux.shortcut.commitAccelerator.label", defaultValue: "Commit Changes (Accelerator)")
+        case .supermuxNewClaudeHarness:
+            return String(localized: "supermux.harness.shortcut.newPane.label", defaultValue: "New Claude Pane")
         // SUPERMUX:end supermux-shortcut-display-names
         case .findNext: return "Find Next"
         case .findPrevious: return "Find Previous"

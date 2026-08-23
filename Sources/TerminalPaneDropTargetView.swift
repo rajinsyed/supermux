@@ -7,6 +7,9 @@ import CmuxTerminal
 final class PaneDropTargetView: NSView {
     weak var hostedView: GhosttySurfaceScrollView?
     var dropContext: PaneDropContext?
+    // SUPERMUX:begin claude-harness-file-drop-passthrough
+    var capturesFileDrops = true
+    // SUPERMUX:end claude-harness-file-drop-passthrough
     private var activeZone: DropZone?
     private let dropRoutingRegistration = PaneDropRoutingRegistration()
     private let dropZoneOverlayView = NSView(frame: .zero)
@@ -44,7 +47,10 @@ final class PaneDropTargetView: NSView {
 
     static func shouldCaptureHitTesting(
         pasteboardTypes: [NSPasteboard.PasteboardType]?,
-        eventType: NSEvent.EventType?
+        eventType: NSEvent.EventType?,
+        // SUPERMUX:begin claude-harness-file-drop-passthrough
+        capturesFileDrops: Bool = true
+        // SUPERMUX:end claude-harness-file-drop-passthrough
     ) -> Bool {
         let routingContext = WindowInputRoutingContext(eventType: eventType)
         guard routingContext.allowsPaneDropHitTesting else { return false }
@@ -54,6 +60,9 @@ final class PaneDropTargetView: NSView {
         guard hasTabTransfer || hasFileDropPayload else { return false }
 
         if hasFileDropPayload, !hasTabTransfer {
+            // SUPERMUX:begin claude-harness-file-drop-passthrough
+            guard capturesFileDrops else { return false }
+            // SUPERMUX:end claude-harness-file-drop-passthrough
             return routingContext.allowsFileDropPaneHitTesting
         }
         return true
@@ -74,7 +83,10 @@ final class PaneDropTargetView: NSView {
         let pasteboardTypes = NSPasteboard(name: .drag).types
         let capture = Self.shouldCaptureHitTesting(
             pasteboardTypes: pasteboardTypes,
-            eventType: eventType
+            eventType: eventType,
+            // SUPERMUX:begin claude-harness-file-drop-passthrough
+            capturesFileDrops: capturesFileDrops
+            // SUPERMUX:end claude-harness-file-drop-passthrough
         )
 #if DEBUG
         logHitTestDecision(capture: capture, pasteboardTypes: pasteboardTypes, eventType: eventType)
@@ -494,6 +506,9 @@ typealias TerminalPaneDropTargetView = PaneDropTargetView
 
 struct PaneDropTargetRepresentable: NSViewRepresentable {
     let dropContext: PaneDropContext?
+    // SUPERMUX:begin claude-harness-file-drop-passthrough
+    var capturesFileDrops = true
+    // SUPERMUX:end claude-harness-file-drop-passthrough
 
     func makeNSView(context: Context) -> PaneDropTargetView {
         PaneDropTargetView(frame: .zero)
@@ -502,6 +517,9 @@ struct PaneDropTargetRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: PaneDropTargetView, context: Context) {
         nsView.dropContext = dropContext
         nsView.hostedView = nil
+        // SUPERMUX:begin claude-harness-file-drop-passthrough
+        nsView.capturesFileDrops = capturesFileDrops
+        // SUPERMUX:end claude-harness-file-drop-passthrough
         if dropContext == nil {
             nsView.draggingExited(nil)
         }

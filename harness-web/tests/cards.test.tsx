@@ -1,0 +1,325 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { fixtures } from "../src/dev/fixtures";
+import { replayLines } from "../src/model/transcript";
+import type { PendingPermission } from "../src/model/types";
+import { CopyProvider } from "../src/ui/CopyContext";
+import { PlanCard } from "../src/ui/permission/PlanCard";
+import { QuestionCard } from "../src/ui/permission/QuestionCard";
+import { PermissionCard, type PermissionDecision } from "../src/ui/permission/PermissionCard";
+import { TodoStrip } from "../src/ui/status/TodoStrip";
+
+afterEach(cleanup);
+
+function pendingFrom(lines: typeof fixtures.question): PendingPermission {
+  const model = replayLines(lines);
+  const pending = model.pending[0];
+  if (!pending) throw new Error("fixture produced no pending request");
+  return pending;
+}
+
+function mount(node: React.ReactElement) {
+  return render(<CopyProvider dict={undefined}>{node}</CopyProvider>);
+}
+
+/**
+ * Presses a key the way a browser does: the event originates on whatever is
+ * focused and bubbles to the window handler, so `event.target` is real. A test
+ * that dispatches on `window` directly would never exercise the focused-control
+ * exemption in useCardKeys, which is where the round-1 fix broke.
+ */
+function press(key: string) {
+  const target: EventTarget =
+    document.activeElement && document.activeElement !== document.body
+      ? document.activeElement
+      : window;
+  act(() => {
+    target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  });
+}
+
+describe("QuestionCard keyboard", () => {
+  const pending = pendingFrom(fixtures.question);
+  const questions = pending.request.input.questions as Array<{
+    question: string;
+    multiSelect?: boolean;
+    options: Array<{ label: string }>;
+  }>;
+
+  function setup() {
+    const decisions: PermissionDecision[] = [];
+    mount(<QuestionCard pending={pending} onDecide={(d) => decisions.push(d)} />);
+    return decisions;
+  }
+
+  test("a number key answers the active question", () => {
+    setup();
+    press("2");
+    expect(screen.getByRole("button", { name: /Clerk/ }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("Enter submits even though auto-advance left focus on an option", () => {
+    const decisions = setup();
+    // Answer Q1; the 200ms auto-advance focuses the first option of Q2, which is
+    // exactly the state that used to swallow Enter into a toggle.
+    press("2");
+    const option = screen.getByRole("button", { name: /Clerk/ });
+    act(() => option.focus());
+    expect(document.activeElement).toBe(option);
+
+    press("Enter");
+
+    expect(decisions.length).toBe(1);
+    expect(decisions[0].behavior).toBe("allow");
+    const answers = (decisions[0].updatedInput as { answers: Record<string, string> }).answers;
+    expect(answers[questions[0].question]).toBe("Clerk");
+  });
+
+  test("Enter on a focused option submits instead of toggling it back off", () => {
+    const decisions = setup();
+    const option = screen.getByRole("button", { name: /Clerk/ });
+    fireEvent.click(option);
+    expect(option.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.keyDown(option, { key: "Enter" });
+
+    expect(option.getAttribute("aria-pressed")).toBe("true");
+    expect(decisions.length).toBe(1);
+  });
+
+  test("Space still toggles a focused option without submitting", () => {
+    const decisions = setup();
+    const option = screen.getByRole("button", { name: /Clerk/ });
+    act(() => option.focus());
+    press(" ");
+    expect(decisions.length).toBe(0);
+  });
+
+  test("auto-advance brings the newly focused option into view", async () => {
+    // `focus({ preventScroll: true })` is deliberate — it stops the browser
+    // fighting the transcript's follow-lock — so the scroll has to be explicit.
+    // Without it, answering Q1 on a short pane silently moves focus below the
+    // fold and the next 1–9 keypress answers a question the user cannot see.
+    const calls: Array<{ target: Element; options: { block?: string } }> = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
+      calls.push({ target: this, options: (arg ?? {}) as { block?: string } });
+    };
+    try {
+      setup();
+      calls.length = 0;
+      press("2");
+      // The advance runs on a 200ms timer inside the card.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      });
+
+      const last = calls[calls.length - 1];
+      expect(last).toBeDefined();
+      expect(last.options.block).toBe("nearest");
+      // It is the option that just took focus, and it belongs to the question
+      // the advance moved to — not the one that was already on screen.
+      //
+      // Round 6 shows ONE question at a time, so "which question" is the live
+      // section's own index rather than its position among several rendered
+      // sections. The promise is unchanged: the focused option belongs to
+      // question two, and the card scrolled it into view.
+      expect(last.target === document.activeElement).toBe(true);
+      const item = last.target.closest(".question-item");
+      expect(item).not.toBeNull();
+      expect(document.querySelectorAll(".question-item").length).toBe(1);
+      expect(item!.getAttribute("data-index")).toBe("1");
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("typed free text is merged with the picked options, not substituted for them", () => {
+    const decisions = setup();
+    const multi = questions.findIndex((q) => q.multiSelect);
+    expect(multi).toBeGreaterThan(-1);
+    // Step to the multi-select question. The prompt is no longer a button (one
+    // question is on screen at a time), so the stepper is how you get there.
+    fireEvent.click(screen.getByRole("button", { name: `Question ${multi + 1}, not answered` }));
+    const spec = questions[multi];
+    const first = screen.getByRole("button", { name: new RegExp(spec.options[0].label) });
+    fireEvent.click(first);
+
+    // The free-text field is opened by its row rather than standing permanently
+    // open under every option list.
+    fireEvent.click(screen.getByRole("button", { name: "Something else…" }));
+    const input = screen.getByPlaceholderText("Type your answer…");
+    fireEvent.change(input, { target: { value: "Team seats too" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    const answers = (decisions[0].updatedInput as { answers: Record<string, string> }).answers;
+    expect(answers[spec.question]).toBe(`${spec.options[0].label}, Team seats too`);
+  });
+
+  test("only the live question is rendered — no dead 'Not answered yet' sections", () => {
+    // Round-6 report: three questions produced one live list and two blocks of
+    // card held open to say nothing. The unanswered ones are marks in the
+    // stepper now, not sections.
+    const { container } = mount(<QuestionCard pending={pending} onDecide={() => {}} />);
+    expect(container.querySelectorAll(".question-item").length).toBe(1);
+    expect(container.textContent).not.toContain("Not answered yet");
+    expect(container.querySelectorAll(".q-step-dot").length).toBe(questions.length);
+  });
+
+  test("the stepper walks questions without answering them", () => {
+    const { container } = mount(<QuestionCard pending={pending} onDecide={() => {}} />);
+    expect(container.querySelector(".question-item")!.getAttribute("data-index")).toBe("0");
+    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+    expect(container.querySelector(".question-item")!.getAttribute("data-index")).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "Previous question" }));
+    expect(container.querySelector(".question-item")!.getAttribute("data-index")).toBe("0");
+  });
+
+  test("a step's mark reports whether that question has an answer", () => {
+    const { container } = mount(<QuestionCard pending={pending} onDecide={() => {}} />);
+    const dots = () => Array.from(container.querySelectorAll(".q-step-dot"));
+    expect(dots()[0].className).not.toContain("is-done");
+    fireEvent.click(screen.getByRole("button", { name: /Clerk/ }));
+    expect(dots()[0].className).toContain("is-done");
+    expect(dots()[0].getAttribute("aria-label")).toBe("Question 1, answered");
+  });
+});
+
+describe("PlanCard keyboard", () => {
+  const pending = pendingFrom(fixtures.plan);
+
+  function setup() {
+    const decisions: PermissionDecision[] = [];
+    mount(<PlanCard pending={pending} onDecide={(d) => decisions.push(d)} />);
+    return decisions;
+  }
+
+  test("Escape keeps planning with nothing focused", () => {
+    const decisions = setup();
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    expect(document.activeElement === null || document.activeElement === document.body).toBe(true);
+
+    press("Escape");
+
+    expect(decisions.length).toBe(1);
+    expect(decisions[0].behavior).toBe("deny");
+  });
+
+  test("Enter approves with auto-accept even when focus has left the primary", () => {
+    const decisions = setup();
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+
+    press("Enter");
+
+    expect(decisions.length).toBe(1);
+    expect(decisions[0].behavior).toBe("allow");
+    const suggestion = decisions[0].updatedPermissions?.[0] as { mode?: string } | undefined;
+    expect(suggestion?.mode).toBe("acceptEdits");
+  });
+
+  test("the printed shortcuts and the download action are both present", () => {
+    setup();
+    expect(screen.getByRole("button", { name: /Download plan/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Copy plan/ })).toBeDefined();
+  });
+});
+
+describe("approval cards are named for a screen reader", () => {
+  // An `alertdialog` inherits `dialog`'s name-required rule. Unnamed, the
+  // assertive interruption announces as "dialog" and the user is asked to
+  // authorise a shell command with no idea which one.
+  const cases: Array<[string, React.ReactElement]> = [
+    ["permission", <PermissionCard pending={pendingFrom(fixtures.permission)} queueCount={0} onDecide={() => {}} />],
+    ["question", <QuestionCard pending={pendingFrom(fixtures.question)} onDecide={() => {}} />],
+    ["plan", <PlanCard pending={pendingFrom(fixtures.plan)} onDecide={() => {}} />]
+  ];
+
+  for (const [name, node] of cases) {
+    test(`the ${name} card's alertdialog points at its own heading`, () => {
+      const { container } = mount(node);
+      const dialog = container.querySelector('[role="alertdialog"]')!;
+      const labelledby = dialog.getAttribute("aria-labelledby");
+      expect(labelledby).toBeTruthy();
+      const heading = container.querySelector(`#${CSS.escape(labelledby!)}`);
+      expect(heading).not.toBeNull();
+      expect(heading!.tagName).toBe("H3");
+      expect((heading!.textContent ?? "").trim().length).toBeGreaterThan(0);
+    });
+  }
+
+  test("the permission card also describes what is being asked", () => {
+    const { container } = mount(cases[0][1]);
+    const dialog = container.querySelector('[role="alertdialog"]')!;
+    const describedby = dialog.getAttribute("aria-describedby")!;
+    expect(container.querySelector(`#${CSS.escape(describedby)}`)!.textContent).toBe(
+      "Claude needs permission to continue"
+    );
+  });
+});
+
+describe("TodoStrip expansion", () => {
+  test("scrolls the active step after Disclosure mounts its list", async () => {
+    const calls: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      calls.push(this);
+    };
+    try {
+      mount(
+        <TodoStrip
+          todos={[
+            { content: "First", activeForm: "First", status: "completed" },
+            { content: "Current", activeForm: "Working", status: "in_progress" },
+            { content: "Last", activeForm: "Last", status: "pending" }
+          ]}
+        />
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Show all steps" }));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      });
+
+      expect(calls.at(-1)?.textContent).toContain("Current");
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+});
+
+describe("PermissionCard keyboard still works", () => {
+  const pending = pendingFrom(fixtures.permission);
+
+  test("Enter allows once and Escape opens the deny reason", () => {
+    const decisions: PermissionDecision[] = [];
+    mount(<PermissionCard pending={pending} queueCount={0} onDecide={(d) => decisions.push(d)} />);
+
+    press("Escape");
+    expect(screen.getByPlaceholderText("Reason (optional)")).toBeDefined();
+    expect(decisions.length).toBe(0);
+
+    // Escape again backs out of the sub-state rather than denying blind.
+    fireEvent.keyDown(screen.getByPlaceholderText("Reason (optional)"), { key: "Escape" });
+    expect(screen.queryByPlaceholderText("Reason (optional)")).toBeNull();
+
+    // Allow is a plain action button, not a toggle, so it keeps the browser's
+    // native Enter activation and the window handler must NOT double-fire.
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    press("Enter");
+    expect(decisions.length).toBe(1);
+    expect(decisions[0].behavior).toBe("allow");
+  });
+
+  test("Enter on the focused Allow button is left to the browser, never doubled", () => {
+    const decisions: PermissionDecision[] = [];
+    mount(<PermissionCard pending={pending} queueCount={0} onDecide={(d) => decisions.push(d)} />);
+    const allow = screen.getByRole("button", { name: /Allow once/ });
+    act(() => allow.focus());
+
+    press("Enter");
+
+    // No synthetic click in this environment, so exactly zero decisions proves
+    // the window handler stayed out of the way; a real browser contributes the
+    // one click. Two decisions here would mean Deny-then-Enter allows the call.
+    expect(decisions.length).toBe(0);
+  });
+});

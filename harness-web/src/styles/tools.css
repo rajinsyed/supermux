@@ -1,0 +1,650 @@
+/* ---------------------------------------------------------------------------
+   Tool cards.
+
+   Beautiful-UI "tool chips": at rest a tool call is one quiet line — glyph,
+   name, target, outcome — indistinguishable in weight from prose. Opening it
+   reveals the body inside a hairline container. No filled card at rest; the
+   border appears WITH the body, so a settled transcript reads as a list of
+   lines, not a wall of boxes.
+--------------------------------------------------------------------------- */
+
+.tool-card {
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.tool-card.is-open {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+/* Failure is a status ACCENT, not a frame: the folded row says it with the
+   red mark and icon; the open card adds a 2px ink of danger along its left
+   edge. The old treatment — a full red border plus a red-tinted body wash —
+   painted the whole card as an alarm for what is usually one line of stderr. */
+.tool-card.is-error.is-open {
+  box-shadow: inset 2px 0 0 var(--danger-dot);
+}
+
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 4px 8px 4px 4px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* A hairline under the head is what separates it from the body — quieter
+   than the old tinted band, and gone the moment the card folds. */
+.tool-card.is-open .tool-head {
+  border-radius: 0;
+  padding: 4px 9px 4px 5px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.tool-head:hover {
+  background: var(--surface-hover);
+  color: var(--text-soft);
+}
+
+.tool-head:focus-visible {
+  color: var(--text-soft);
+}
+
+.tool-caret {
+  display: inline-flex;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.tool-card.is-open .tool-caret,
+.tool-head:hover .tool-caret,
+.tool-head:focus-visible .tool-caret {
+  opacity: 1;
+}
+
+.tool-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.tool-card.is-error .tool-icon {
+  color: var(--danger);
+}
+
+.tool-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.tool-headline {
+  font-weight: 500;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 8ch;
+  flex: 0 1 auto;
+}
+
+.tool-subtitle {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 6ch;
+  flex: 0 4 auto;
+}
+
+@media (max-width: 900px) {
+  .tool-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+}
+
+.tool-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  font-size: 10.5px;
+  background: var(--surface-active);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tool-badge.is-add {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.tool-badge.is-del {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.tool-badge.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.tool-badge.is-warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.tool-badge.is-live {
+  background: var(--claude-soft);
+  color: var(--claude);
+}
+
+.tool-badge.is-quiet {
+  background: transparent;
+  color: var(--text-faint);
+  padding: 1px 3px;
+}
+
+.tool-status {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.mark-ok {
+  color: var(--success-dot);
+}
+
+.mark-error {
+  color: var(--danger-dot);
+}
+
+.mark-warn {
+  color: var(--warning-dot);
+}
+
+/* ---------- bodies ---------- */
+
+.tool-body {
+  padding: 8px 9px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* ---------- bash: one bed, not boxes-in-a-box ----------
+
+   An open Bash card used to stack three framed rectangles: the card, the
+   command's code block, and the output terminal. Inside the card the command
+   sheds its frame entirely — a bare mono line on the card's own surface, the
+   way a shell prompt echoes — and only the output keeps a (hairline) bed. */
+
+.tool-card[data-family="bash"] .tool-body > .code-block {
+  border: none;
+  background: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.tool-card[data-family="bash"] .tool-body > .code-block .code-block-body {
+  padding: 0 1px 2px;
+  color: var(--text-soft);
+}
+
+.tool-card[data-family="bash"] .tool-body > .code-block .code-block-more {
+  border-top: none;
+  padding-left: 1px;
+}
+
+.tool-waiting {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  padding: 2px 0;
+}
+
+.tool-section-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.tool-file-row {
+  display: flex;
+}
+
+.result-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.web-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.web-title {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.web-url {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-server {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ---------- todo list ---------- */
+
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.todo-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.todo-item.is-completed {
+  color: var(--text-faint);
+}
+
+.todo-item.is-completed .todo-text {
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+
+.todo-item.is-in_progress {
+  color: var(--text);
+}
+
+.todo-mark {
+  flex: 0 0 auto;
+  font-size: 11px;
+  width: 12px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+.todo-item.is-completed .todo-mark {
+  color: var(--success-dot);
+}
+
+.todo-item.is-in_progress .todo-mark {
+  color: var(--claude-strong);
+}
+
+/* ---------- question/answer record ---------- */
+
+.qa-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qa-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qa-question {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.qa-answer {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.qa-answer.is-unanswered {
+  color: var(--text-faint);
+}
+
+/* ---------- code block ----------
+
+   One quiet bed. The old block stacked a filled header band ("bash" + two
+   buttons) over the code, so an expanded Bash card read as three boxes deep.
+   The chip row keeps a hairline only, and a DENSE block (a command inside a
+   card whose head already names the tool) drops the row entirely — its wrap
+   and copy controls float over the corner, revealed on hover, the same
+   grammar the terminal's copy button already uses. */
+
+.code-block {
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-faint);
+  background: var(--code-bg);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.code-block-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px 3px 10px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.code-chip {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-block-spacer {
+  flex: 1;
+}
+
+.code-block-body {
+  margin: 0;
+  padding: 8px 11px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.code-block-body.is-wrapped {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.code-block.is-dense {
+  position: relative;
+}
+
+.code-block.is-dense .code-block-head {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 0;
+  border-bottom: none;
+  background: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+  z-index: 2;
+}
+
+.code-block.is-dense:hover .code-block-head,
+.code-block.is-dense:focus-within .code-block-head {
+  opacity: 1;
+}
+
+.code-block.is-dense .code-chip {
+  display: none;
+}
+
+.code-block.is-dense .code-block-head .icon-btn {
+  background: var(--code-bg);
+}
+
+.code-block.is-dense .code-block-head .icon-btn:hover {
+  background: var(--surface-active);
+}
+
+.code-block.is-dense .code-block-body {
+  padding: 6px 10px;
+}
+
+.code-block-more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 3px 11px 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border-faint);
+}
+
+.code-block-more:hover {
+  color: var(--text-soft);
+  background: var(--surface-hover);
+}
+
+.code-block-more:focus-visible {
+  color: var(--text-soft);
+  background: var(--surface-hover);
+}
+
+/* ---------- terminal ---------- */
+
+.terminal {
+  position: relative;
+  border-radius: var(--r-sm);
+  background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.terminal.is-empty {
+  padding: 6px 11px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  background: var(--code-bg);
+  border-color: var(--border-faint);
+}
+
+.terminal-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+  z-index: 2;
+}
+
+.terminal:hover .terminal-copy,
+.terminal:focus-within .terminal-copy {
+  opacity: 1;
+}
+
+.terminal .copy-btn {
+  color: var(--terminal-muted);
+  background: var(--terminal-chrome);
+}
+
+.terminal .copy-btn:hover {
+  color: var(--terminal-fg);
+}
+
+.terminal-body {
+  margin: 0;
+  padding: 8px 11px;
+  overflow-x: auto;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--terminal-fg);
+}
+
+.terminal-body.is-wrapped {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminal-body.is-clipped-end {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+
+.terminal-line {
+  min-height: 1.55em;
+  white-space: pre;
+}
+
+.terminal-body.is-wrapped .terminal-line {
+  white-space: pre-wrap;
+}
+
+.terminal.is-error .terminal-body {
+  color: var(--terminal-error);
+}
+
+.terminal-more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 3px 11px 4px;
+  font-size: 10.5px;
+  color: var(--terminal-muted);
+  border-top: 1px solid var(--terminal-border);
+}
+
+.terminal-more:hover {
+  color: var(--terminal-fg);
+  background: var(--terminal-chrome);
+}
+
+.terminal-more:focus-visible {
+  color: var(--terminal-fg);
+}
+
+/* ---------- diff ---------- */
+
+.diff {
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-faint);
+  background: var(--code-bg);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.diff-body {
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 6px 0;
+}
+
+.diff-row {
+  display: flex;
+  align-items: baseline;
+  min-width: max-content;
+  padding: 0 10px 0 0;
+}
+
+.diff-row.is-add {
+  background: var(--diff-add-bg);
+}
+
+.diff-row.is-add .diff-text,
+.diff-row.is-add .diff-mark {
+  color: var(--diff-add-fg);
+}
+
+.diff-row.is-del {
+  background: var(--diff-del-bg);
+}
+
+.diff-row.is-del .diff-text,
+.diff-row.is-del .diff-mark {
+  color: var(--diff-del-fg);
+}
+
+.diff-no {
+  flex: 0 0 34px;
+  text-align: right;
+  padding-right: 8px;
+  color: var(--diff-gutter);
+  font-size: 10.5px;
+  user-select: none;
+}
+
+.diff-mark {
+  flex: 0 0 14px;
+  text-align: center;
+  user-select: none;
+  color: var(--text-faint);
+}
+
+.diff-text {
+  white-space: pre;
+}
+
+.diff-gap {
+  height: 8px;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 8px;
+}
+
+.diff-more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 3px 11px 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border-faint);
+}
+
+.diff-more:hover {
+  color: var(--text-soft);
+  background: var(--surface-hover);
+}
+
+.diff-more:focus-visible {
+  color: var(--text-soft);
+  background: var(--surface-hover);
+}

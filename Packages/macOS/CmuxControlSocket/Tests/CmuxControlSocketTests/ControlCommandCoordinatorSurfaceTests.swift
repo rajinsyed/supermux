@@ -94,6 +94,51 @@ struct ControlCommandCoordinatorSurfaceTests {
         #expect(payload["type"] == .string("terminal"))
     }
 
+    // SUPERMUX:begin claude-harness-socket-split-error-test
+    @Test func rejectedHarnessPaneCreateNamesTheActualType() {
+        let context = FakeSurfaceControlCommandContext()
+        context.paneCreateResolution = .agentSessionRejected(typeRawValue: "claudeHarness")
+        let coordinator = ControlCommandCoordinator(context: context)
+
+        let result = coordinator.handle(ControlRequest(
+            id: .int(1),
+            method: "pane.create",
+            params: [
+                "direction": .string("right"),
+                "type": .string("claude-harness"),
+            ]
+        ))
+
+        #expect(result == .err(
+            code: "invalid_params",
+            message: "claudeHarness is only supported by surface.create",
+            data: .object(["type": .string("claudeHarness")])
+        ))
+    }
+
+    @Test func rejectedHarnessSurfaceSplitNamesTheActualType() {
+        let context = FakeSurfaceControlCommandContext()
+        context.splitResolution = .agentSessionRejected(typeRawValue: "claudeHarness")
+        let coordinator = ControlCommandCoordinator(context: context)
+
+        let result = coordinator.handle(ControlRequest(
+            id: .int(1),
+            method: "surface.split",
+            params: [
+                "direction": .string("right"),
+                "type": .string("claude-harness"),
+            ]
+        ))
+
+        #expect(result == .err(
+            code: "invalid_params",
+            message: "claudeHarness is only supported by surface.create",
+            data: .object(["type": .string("claudeHarness")])
+        ))
+    }
+
+    // SUPERMUX:end claude-harness-socket-split-error-test
+
     @Test func paneBreakRejectsExplicitNullSurfaceID() {
         let context = FakeSurfaceControlCommandContext()
         let coordinator = ControlCommandCoordinator(context: context)

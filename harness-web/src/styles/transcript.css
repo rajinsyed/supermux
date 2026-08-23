@@ -1,0 +1,882 @@
+/* ---------------------------------------------------------------------------
+   Transcript.
+
+   Full-bleed scroll under the floating dock. One centered column; the user's
+   message is a soft rounded veil (the way Cursor echoes the prompt), the
+   assistant's answer is bare ink on the page, and the work between them hangs
+   on a hairline rail. Generous vertical rhythm — the space between turns is
+   what separates them, not boxes.
+--------------------------------------------------------------------------- */
+
+.transcript-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.transcript {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The bottom padding is the DOCK's footprint (round-7 item 6).
+ *
+ * The dock floats over this scroller rather than sitting beside it in the flex
+ * column, so the scroller's viewport runs the full height of the pane and
+ * content passes behind the composer on its way up. What keeps the last message
+ * from coming to rest UNDER the pill is this padding: the content column ends
+ * `--dock-reserve` above the scroller's own bottom, so "scrolled to the bottom"
+ * lands the newest line just above the glass.
+ *
+ * `--dock-height` is measured and written onto `.app` by App.tsx (a
+ * ResizeObserver on the dock), because the dock's height is banners plus the
+ * working panel plus the todo strip plus a composer that grows to ten lines
+ * plus the bottom bar, and every one of those comes and goes. The fallback is a
+ * plausible resting dock, so the column is never wrong by a whole composer on
+ * the first frame before the observer has run.
+ *
+ * The extra 10px is BREATHING ROOM, not slack: without it the last line sits
+ * exactly on the veil's fully-opaque stop, which is legible but reads as
+ * clipped. */
+.transcript-inner {
+  --dock-reserve: calc(var(--dock-height, 96px) + 10px);
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 14px var(--gutter) var(--dock-reserve);
+}
+
+/* A framed sub-view ends ABOVE the dock — the frame's own bottom margin clears
+   it — so its scroller must not reserve the dock's height a second time. It
+   keeps the ordinary resting pad. */
+.view-frame .transcript-inner {
+  padding-bottom: 6px;
+}
+
+.transcript-pad {
+  height: 24px;
+}
+
+.transcript-spacer {
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.transcript-spacer.is-top {
+  align-items: flex-end;
+}
+
+.transcript-spacer.is-bottom {
+  align-items: flex-start;
+}
+
+.transcript-earlier,
+.transcript-later {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 14px;
+}
+
+.transcript-later {
+  padding: 14px 0 6px;
+}
+
+.link-btn {
+  color: var(--claude);
+  font-size: 12px;
+  border-radius: var(--r-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.link-btn:focus-visible {
+  text-decoration: underline;
+}
+
+/* ---------- turns ---------- */
+
+.turn {
+  margin-bottom: 18px;
+}
+
+.turn:last-child {
+  margin-bottom: 8px;
+}
+
+/* Virtual wrappers make every article its wrapper's last child. Restore the
+   ordinary rhythm except on the actual final transcript row. */
+.virtual-turn .turn:last-child {
+  margin-bottom: 18px;
+}
+
+.virtual-turn.is-last .turn:last-child {
+  margin-bottom: 8px;
+}
+
+/* ---------- user message ----------
+
+   Chat-bubble grammar (Cursor/iMessage): the user's words sit in a bubble
+   pushed to the RIGHT edge of the content column, sized to its content with a
+   sane cap, while the assistant's answer stays bare ink across the full
+   column. The asymmetry is what lets the eye find the turns. */
+
+/* A real bubble.
+ *
+ * It was a 14px box with its trailing corner cut to 5px — which at a 34px
+ * single-line height reads as a slightly-rounded rectangle with one chipped
+ * corner, not as speech. The radius is generous now (18px, the pane's --r-xl,
+ * against a 15px inner padding) so the curve is visible along the whole edge,
+ * and the trailing corner keeps a TAIL rather than a chip: 7px, enough to point
+ * the bubble at the user's side of the column without breaking the shape. The
+ * asymmetry is the only thing saying which way the message is going, so it has
+ * to survive the bigger radius rather than be swallowed by it. */
+.user-msg {
+  position: relative;
+  margin: 0 0 10px auto;
+  width: fit-content;
+  max-width: 85%;
+  padding: 9px 15px;
+  border-radius: var(--r-xl);
+  border-bottom-right-radius: 7px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  /* Tracks the answer's reading size (see `.assistant-text`), a touch below it
+     — the user's own words are the shorter half of the exchange and sit in a
+     bubble, so they do not need the full measure's leading, but leaving them at
+     the old 13px while the answer moved to 14.5px made the prompt read as a
+     caption on its own reply. */
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.user-msg-body {
+  min-height: 1.2em;
+}
+
+/* Reserve the hover tools' footprint on the first line at rest, so the text
+   never runs under them and hover never reflows the words. Sized for the whole
+   PILL now (two 22px controls plus its padding and hairline), not for two bare
+   buttons — the group is wider than the sum of what it holds. */
+.user-msg-body::before {
+  content: "";
+  float: right;
+  width: 56px;
+  height: 1px;
+}
+
+.user-msg-body.is-clipped {
+  max-height: 12.4em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black 72%, transparent 98%);
+  mask-image: linear-gradient(to bottom, black 72%, transparent 98%);
+}
+
+.user-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.user-msg-images img {
+  max-height: 120px;
+  max-width: 180px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+}
+
+.user-msg-actions {
+  margin-top: 4px;
+}
+
+/* ---------- the bubble's own actions ----------
+
+   Rewind and copy, pinned to the bubble's top-trailing corner.
+
+   They were two bare 24px icon buttons fading in from nothing, which at rest
+   left a 48px hole in the corner of every bubble and on hover produced two
+   glyphs floating with no visible relationship to each other. They are a PILL
+   now: one soft raised group with a hairline, holding both, so what appears
+   under the pointer reads as a small toolbar attached to this message rather
+   than two icons that happen to be near it.
+
+   The reveal carries a 3px rise as well as the fade — enough to read as the
+   group arriving, short enough not to draw the eye while scrolling — and
+   `visibility` rides along so the hidden state is not an invisible click target
+   sitting over the first line of the user's own words.
+
+   `:focus-within` on the bubble is what makes it keyboard-reachable: tabbing to
+   either control reveals the group exactly as hovering does. */
+
+.user-msg .user-msg-tools {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border-radius: var(--r-pill);
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lifted);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease),
+    visibility var(--dur) var(--ease);
+}
+
+.user-msg:hover .user-msg-tools,
+.user-msg:focus-within .user-msg-tools {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+/* A queued message the CLI consumed mid-turn, drawn INSIDE the turn's work at
+   the position it interjected. The bubble keeps its right-aligned identity —
+   it is the user speaking — with a little air above and below so it reads as
+   an aside within the run rather than the turn's own opening prompt. */
+.turn-interjection {
+  margin: 10px 0 4px;
+}
+
+.turn-interjection .user-msg {
+  margin-bottom: 0;
+}
+
+/* Inside the pill the buttons are round and tighter than the pane's default
+   24px square — the pill is the bed now, so each control only needs to own its
+   own glyph. */
+.user-msg .user-msg-tools .icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  color: var(--text-faint);
+}
+
+.user-msg .user-msg-tools .icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.user-msg .user-msg-tools .icon-btn:focus-visible {
+  color: var(--text);
+}
+
+/* The copy confirmation is a colour change on a glyph that cross-fades in
+   place (`.copy-glyph` in base.css); the toast under a 22px button in a pill
+   would be wider than the pill itself, so this one instance speaks with the
+   check alone. */
+.user-msg .user-msg-tools .copy-toast {
+  display: none;
+}
+
+/* ---------- assistant column ---------- */
+
+.turn-body {
+  padding-left: var(--rail-indent);
+  position: relative;
+}
+
+/* The reading size (round-7 item 5).
+ *
+ * 13.5px/1.6 is a CHROME size — it is what the tool cards, the dock and the
+ * fold rows are set at — and the assistant's answer was set at it too, so the
+ * one thing on the page a reader actually reads was typographically
+ * indistinguishable from the labels around it. The reference client sets its
+ * body around 15–16px; 14.5px is the same move at this pane's scale and keeps
+ * the column near 80 characters at --content-max (760px), which is the measure
+ * prose wants. Below that the chrome sizes stay put, so the answer now sits a
+ * full step ABOVE its own furniture and the hierarchy reads without any
+ * colour or weight change.
+ *
+ * 1.68 rather than 1.6 because the leading has to grow with the measure, not
+ * just with the size: a longer line needs more space under it for the eye to
+ * find the start of the next one. The paragraph gap in content.css is set in
+ * ems of this, so the two stay in proportion.
+ *
+ * `text-wrap: pretty` is the last piece — it costs nothing and it stops the
+ * short widowed final word that made dense replies look ragged. */
+.assistant-text {
+  font-size: 14.5px;
+  line-height: 1.68;
+  margin: 6px 0;
+  text-wrap: pretty;
+}
+
+.assistant-text:first-child {
+  margin-top: 0;
+}
+
+.assistant-text:last-child {
+  margin-bottom: 0;
+}
+
+@keyframes stream-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.assistant-text.is-streaming {
+  animation: stream-in 220ms var(--ease-out);
+}
+
+.block-image {
+  max-width: 100%;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  margin: 8px 0;
+}
+
+/* ---------- work group ----------
+
+   Tool calls, thinking, and agent rows hang together as one quiet group —
+   Cursor's output draws no rail, so the indent alone (the turn body's) is what
+   separates the work from the answer. No padding-left of its own: the indent
+   is the turn body's, so a paragraph reclassified between work and tail never
+   moves. */
+
+.turn-work {
+  position: relative;
+  margin: 4px 0;
+}
+
+.turn-work.is-folded {
+  display: none;
+}
+
+.turn-work-item {
+  margin: 1px 0;
+}
+
+/* ---------- fold header / streaming overflow ----------
+
+   Two controls that read alike but say different things.
+
+   `.work-overflow` is the STREAMING expander: rows are hidden right now and the
+   count is the whole point, so it keeps its leading chevron and its number.
+
+   `.fold-head` is the SETTLED summary: "Worked for 2m 30s". It shipped as a
+   left-hand chevron, the duration, and "1 earlier tool call" — three pieces of
+   chrome permanently on screen for one fact. Round 6:
+
+     • the count is gone (dropped in TurnView; the fold's contents are the
+       honest answer to "how much work", one click away);
+     • the affordance moved to the row's TRAILING edge, where the eye lands
+       after reading the label rather than before it; and
+     • it is hidden until the row is hovered or focused, so a settled
+       transcript is a column of sentences instead of a column of controls.
+
+   The whole row stays the button — keyboard reach and hit target are unchanged
+   — and `:focus-visible` reveals the glyph exactly as hover does, so a keyboard
+   reader is never shown less than a pointer reader.
+
+   Round 7 takes three more things off this row, all from the same dogfood note
+   ("the arrow and its box are always there and the row lights up under the
+   pointer"):
+
+     • the toggle is hidden at rest in EVERY state, folded included. Pinning it
+       on a folded turn meant a scrolled-back transcript — where every turn is
+       folded — was again a column of controls, which is the exact thing the
+       reveal was for. Folded-ness is legible from the transcript itself: the
+       work tree under the sentence is either there or it is not.
+     • the toggle has no bed and no border. A ghost button beside a sentence is
+       a second object on a line whose whole job is to be one sentence; the
+       chevron alone, in full ink, is the affordance.
+     • the row itself takes no hover BACKGROUND. "Worked for 2m 30s" is prose,
+       and prose that grows a grey slab under the pointer reads as a menu item.
+       The ink still lifts, so the row is still visibly live.
+
+   `.work-overflow` keeps both — it is a genuine control with a count on it, and
+   its hidden rows are the point. */
+
+.fold-head,
+.work-overflow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 2px;
+  margin: 2px 0;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* The settled row reserves its trailing affordance's footprint at rest, so
+   revealing the glyph never nudges the label. Padding rather than a gap: the
+   bare chevron is 16px and sits inside it. */
+.fold-head {
+  gap: 6px;
+  padding: 3px 4px 3px 2px;
+}
+
+/* Ink only. The bed belongs to controls, and this row is a sentence. */
+.fold-head:hover,
+.fold-head:focus-visible {
+  color: var(--text);
+}
+
+.work-overflow:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.work-overflow:focus-visible {
+  color: var(--text);
+}
+
+.fold-label {
+  font-weight: 500;
+}
+
+/* The trailing affordance: a BARE glyph, no bed and no border. It reserves its
+   own footprint at rest so revealing it never nudges the label.
+
+   `visibility` alongside opacity, so the hidden state is not a transparent
+   click target sitting over the row's own trailing edge. */
+.fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-3px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease),
+    visibility var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+/* Hover and focus-visible only — in every state, folded included. */
+.fold-head:hover .fold-toggle,
+.fold-head:focus-visible .fold-toggle {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  color: var(--text);
+}
+
+/* ---------- thinking ----------
+
+   Cursor's "Thought for 1s": a quiet prose header, expandable into the trace.
+   No icon chrome — the label alone. */
+
+.thinking {
+  margin: 4px 0;
+}
+
+.thinking-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 2px 0;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.thinking-head:hover {
+  color: var(--text-soft);
+}
+
+.thinking-head:focus-visible {
+  color: var(--text-soft);
+}
+
+.thinking-caret {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.thinking-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.thinking.is-streaming .thinking-icon {
+  animation: thinking-pulse 1.4s var(--ease) infinite;
+}
+
+.thinking-label {
+  font-weight: 500;
+}
+
+.thinking-label.shimmer {
+  color: var(--text-muted);
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking.is-streaming .thinking-icon {
+    animation-name: none;
+    opacity: 0.75;
+    transform: none;
+  }
+}
+
+.thinking-body {
+  margin: 3px 0;
+  padding: 1px 0 1px 12px;
+  border-left: 2px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-height: min(340px, 44vh);
+  overflow-y: auto;
+}
+
+.thinking-body p {
+  margin: 0 0 6px;
+}
+
+.thinking-body p:last-child {
+  margin-bottom: 0;
+}
+
+.thinking-redacted {
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+/* ---------- live indicator ----------
+
+   The TURN-level member of the loading family (base.css documents all three).
+
+   It was a sweeping dash beside "Working for 54s" — the SAME dash a running
+   Workflow row wore two lines above it. The dash and later dot constellation
+   are gone. The status label already names the state and elapsed time, so that
+   text itself carries the compositor-only pulse declared in cards.css.
+
+   `.working-dots` is retained as the primitive's status-text wrapper; it draws
+   no separate glyph and therefore adds no second visual statement beside the
+   words. */
+
+.turn-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 2px;
+  min-height: 18px;
+}
+
+.turn-live-label {
+  font-size: 12px;
+}
+
+.turn-interrupted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 2px;
+  font-size: 12px;
+  color: var(--warning);
+}
+
+/* ---------- notices ---------- */
+
+.notice {
+  display: flex;
+  gap: 9px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12.5px;
+}
+
+.notice.is-warning {
+  border-color: var(--warning-dot);
+  background: var(--warning-soft);
+}
+
+.notice.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.notice-icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--text-muted);
+}
+
+.notice.is-warning .notice-icon {
+  color: var(--warning);
+}
+
+.notice.is-error .notice-icon {
+  color: var(--danger);
+}
+
+.notice-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.notice-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* ---------- local slash commands ----------
+
+   A `/model opus[1m]` the user ran is a command, not speech: a small quiet
+   chip on the user's side of the column, with the command's stdout as a dim
+   one-line result underneath. Neither may ever render as a chat bubble. */
+
+.command-chip {
+  /* Block-level with fit-content width so `margin-left: auto` pushes it to the
+     user's edge, exactly like .user-msg. */
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px auto;
+  padding: 3px 9px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  max-width: 85%;
+  overflow-wrap: anywhere;
+}
+
+.command-chip-name {
+  color: var(--text);
+}
+
+.command-chip-args {
+  color: var(--text-muted);
+}
+
+.command-output {
+  margin: 2px 0 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- dividers ---------- */
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.divider-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ---------- relay chips (message sent to an agent, in the main chat) ---------- */
+
+.relay-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  padding: 7px 11px;
+  border-radius: var(--r-lg);
+  border: 1px dashed var(--border-strong);
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.relay-chip-arrow {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.relay-chip-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--claude);
+  font-size: 12px;
+  font-weight: 500;
+  flex: 0 0 auto;
+  border-radius: var(--r-xs);
+}
+
+.relay-chip-target:hover {
+  text-decoration: underline;
+}
+
+.relay-chip-target:focus-visible {
+  text-decoration: underline;
+}
+
+.relay-chip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.relay-chip-state {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.relay-ack {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin: 2px 0;
+}
+
+/* ---------- agent-thread user messages (prompt + relayed) ---------- */
+
+.thread-user {
+  margin: 0 0 14px;
+  padding: 11px 15px;
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-faint);
+  /* Same reading size as the main transcript's user bubble — an agent thread is
+     the same conversation in a frame, not a smaller class of one. */
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.thread-user.is-prompt {
+  background: var(--surface);
+}
+
+.thread-user.is-pending {
+  opacity: 0.75;
+}
+
+.thread-user-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 5px;
+}
+
+.thread-user-pending {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ---------- jump pill ----------
+
+   Floats OVER the transcript's last lines rather than reserving a blank band
+   under them; the drop shadow is what separates it from the content below.
+
+   Round 7: its wrapper now runs the pane's FULL height (the dock floats over
+   it), so a flat `bottom: 12px` would park the pill behind the composer — the
+   one control whose entire job is to be reachable when the reader is lost. It
+   rides on the same measured dock height everything else in this pass keys off,
+   and the fallback is the resting dock. */
+
+.jump-pill {
+  position: absolute;
+  bottom: calc(var(--dock-height, 96px) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--popover-bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lifted);
+  font-size: 11.5px;
+  color: var(--text-soft);
+  z-index: 15;
+  white-space: nowrap;
+}
+
+/* Inside a framed sub-view the FRAME already clears the dock, so the pill goes
+   back to sitting just above its own scroller's last line. Keying off the dock
+   height twice would float it most of a composer up the card. */
+.view-frame .jump-pill {
+  bottom: 12px;
+}
+
+.jump-pill:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.jump-pill:focus-visible {
+  color: var(--text);
+}
+
+/* ---------- misc statuses ---------- */
+
+.drill-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.drill-status.is-error {
+  color: var(--danger);
+}
