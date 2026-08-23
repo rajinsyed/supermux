@@ -53,6 +53,17 @@ struct SupermuxHarnessNativeEventTransportTests {
     }
 
     @Test
+    func acknowledgementRejectsRoundedValueAboveIntMax() {
+        let roundedAboveMaximum = NSNumber(value: Double(Int.max))
+
+        #expect(SupermuxHarnessNativeEventAcknowledgement(body: [
+            "version": roundedAboveMaximum,
+            "documentEpoch": "document-one",
+            "highestSequence": 1,
+        ]) == nil)
+    }
+
+    @Test
     func staleAcknowledgementsCannotDeleteNewerEvents() throws {
         let transport = makeTransport(maximumEventCountPerBatch: 1)
         #expect(transport.enqueue(event(id: "first")) == .accepted)

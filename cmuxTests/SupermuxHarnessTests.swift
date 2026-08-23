@@ -43,6 +43,7 @@ struct SupermuxHarnessTests {
         snapshot.model = "claude-opus-4-6"
         snapshot.permissionMode = "acceptEdits"
         snapshot.title = "Fix sidebar flicker"
+        snapshot.titleIsCustom = true
 
         let data = try JSONEncoder().encode(snapshot)
         let decoded = try JSONDecoder().decode(SessionSupermuxHarnessPanelSnapshot.self, from: data)
@@ -52,6 +53,7 @@ struct SupermuxHarnessTests {
         #expect(decoded.model == snapshot.model)
         #expect(decoded.permissionMode == snapshot.permissionMode)
         #expect(decoded.title == snapshot.title)
+        #expect(decoded.titleIsCustom == snapshot.titleIsCustom)
     }
 
     @Test
@@ -67,12 +69,41 @@ struct SupermuxHarnessTests {
         #expect(decoded.title == nil)
     }
 
+    @MainActor
+    @Test
+    func testUnboundRestoredPanelPreservesCustomTitleProvenance() {
+        var restored = SessionSupermuxHarnessPanelSnapshot()
+        restored.title = "Pinned title"
+        restored.titleIsCustom = true
+        let panel = SupermuxHarnessPanel(
+            workspaceId: UUID(),
+            workingDirectory: "/tmp",
+            restoreState: restored,
+            sessionRepository: makeSessionRepository(),
+            transcriptService: SupermuxHarnessSubagentTranscriptService(
+                projectsRootURL: SupermuxHarnessSessionController.claudeProjectsRootURL,
+                fileManager: .default
+            )
+        )
+        defer { panel.close() }
+
+        #expect(panel.currentSnapshot.title == "Pinned title")
+        #expect(panel.currentSnapshot.titleIsCustom == true)
+    }
+
     @Test
     func testPanelTypeDecodesClaudeHarnessCaseInsensitively() throws {
         let exact = try JSONDecoder().decode(PanelType.self, from: Data("\"claudeHarness\"".utf8))
         #expect(exact == .claudeHarness)
         let lowercased = try JSONDecoder().decode(PanelType.self, from: Data("\"claudeharness\"".utf8))
         #expect(lowercased == .claudeHarness)
+    }
+
+    @Test
+    func testClaudeHarnessBuiltInActionDoesNotReserveGenericAliases() {
+        #expect(CmuxSurfaceTabBarBuiltInAction(configID: "claude") == nil)
+        #expect(CmuxSurfaceTabBarBuiltInAction(configID: "harness") == nil)
+        #expect(CmuxSurfaceTabBarBuiltInAction(configID: "claude-harness") == .newClaudeHarness)
     }
 
     @MainActor
@@ -103,6 +134,33 @@ struct SupermuxHarnessTests {
         )
         #expect(panelSnapshot.directoryIsTrustedRemoteReport == true)
         #expect(panelSnapshot.directoryRequiresRemoteTrust == true)
+    }
+
+    @MainActor
+    @Test
+    func testRemoteHarnessSplitCarriesTrustProvenance() throws {
+        let remoteDirectory = "/home/seepine/workspace"
+        let sshCommand = "ssh seepine@192.168.5.20"
+        let workspace = Workspace(
+            workingDirectory: "/Users/alice/development",
+            initialTerminalCommand: sshCommand
+        )
+        let remotePanelId = try #require(workspace.focusedPanelId)
+        workspace.configureRemoteConnection(
+            sshRemoteConfiguration(command: sshCommand),
+            autoConnect: false
+        )
+        workspace.updateRemotePanelDirectory(panelId: remotePanelId, directory: remoteDirectory)
+        let paneId = try #require(workspace.bonsplitController.focusedPaneId)
+
+        let harnessPanel = try #require(workspace.splitPaneWithSupermuxHarness(
+            targetPane: paneId,
+            restoreState: SessionSupermuxHarnessPanelSnapshot()
+        ))
+
+        #expect(harnessPanel.workingDirectory == remoteDirectory)
+        #expect(workspace.remoteDirectoryReportPanelIds.contains(harnessPanel.id))
+        #expect(workspace.remoteDirectoryTrustRequiredPanelIds.contains(harnessPanel.id))
     }
 
     @MainActor
@@ -453,10 +511,11 @@ struct SupermuxHarnessTests {
 
         _ = try await controller.rewind(
             userMessageUuid: "message-current",
-            restoreFiles: false,
+            restoreFiles: true,
             resumeAtUuid: "message-previous"
         )
 
+        #expect(process.startedPlans.count == 2)
         let replacementPlan = try #require(process.startedPlans.last)
         #expect(replacementPlan.arguments.value(after: "--effort") == "xhigh")
     }
@@ -809,6 +868,70 @@ struct SupermuxHarnessTests {
 
     @MainActor
     @Test
+    func testRestartClearsPendingPermissionIndicatorBeforeReplacementRun() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(restoreState: nil, defaults: defaults, process: process)
+        defer { controller.close() }
+        var pendingStates: [Bool] = []
+        controller.pendingUserInputSink = { pendingStates.append($0) }
+
+        _ = try await controller.start(
+            resumeSessionId: nil,
+            forkSession: false,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+        try await process.emitPermissionRequest(requestID: "permission-1")
+        #expect(pendingStates == [true])
+
+        _ = try await controller.restart(
+            resumeSessionId: nil,
+            forkSession: false,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+
+        #expect(pendingStates == [true, false])
+    }
+
+    @MainActor
+    @Test
+    func testResultArrivingBeforeSendReturnsDoesNotLeaveTurnActive() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(restoreState: nil, defaults: defaults, process: process)
+        defer { controller.close() }
+        var runningStates: [Bool] = []
+        controller.runningStateSink = { runningStates.append($0) }
+        process.onUserMessageSend = {
+            try await process.emitLine([
+                "type": "result",
+                "subtype": "success",
+                "is_error": false,
+                "result": "Done.",
+                "uuid": UUID().uuidString,
+            ])
+        }
+
+        _ = try await controller.start(
+            resumeSessionId: nil,
+            forkSession: false,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+        try await controller.send(text: "hello", images: [], uuid: UUID().uuidString)
+
+        #expect(runningStates == [true, false])
+    }
+
+    @MainActor
+    @Test
     func testRunningIndicatorFollowsTurnsNotProcessLifetime() async throws {
         let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
         let process = MockSupermuxHarnessProcessSession()
@@ -941,6 +1064,86 @@ struct SupermuxHarnessTests {
         } catch let error as SupermuxHarnessBridgeError {
             #expect(error.code == "invalidRequest")
         }
+    }
+
+    @MainActor
+    @Test
+    func testForkedHistoryReadsTaskOutputFromSourceSession() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-harness-fork-task-\(UUID().uuidString)", isDirectory: true)
+        let projects = container.appendingPathComponent("projects", isDirectory: true)
+        let taskRoot = container.appendingPathComponent("claude-501", isDirectory: true)
+        let workingDirectory = container.appendingPathComponent("working", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: taskRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let historicalEvent = try SupermuxHarnessJSONObject(rawValue: [
+            "type": "user",
+            "session_id": "session-source",
+            "message": [
+                "role": "user",
+                "content": [[
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_old",
+                    "content": "Background task started.",
+                ]],
+            ],
+            "tool_use_result": [
+                "backgroundTaskId": "task-old",
+                "taskType": "local_bash",
+            ],
+        ])
+        let repository = StaticSupermuxHarnessSessionRepository(events: [historicalEvent])
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projects,
+            fileManager: .default
+        )
+        let mungedDirectory = try #require(
+            discovery.mungedProjectDirectoryNames(for: workingDirectory).first
+        )
+        let outputURL = taskRoot
+            .appendingPathComponent(mungedDirectory, isDirectory: true)
+            .appendingPathComponent("session-source", isDirectory: true)
+            .appendingPathComponent("tasks", isDirectory: true)
+            .appendingPathComponent("task-old.output")
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "source output".write(to: outputURL, atomically: true, encoding: .utf8)
+
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(
+            restoreState: nil,
+            defaults: defaults,
+            process: process,
+            workingDirectory: workingDirectory.path,
+            projectsRootURL: projects,
+            taskOutputRootURL: taskRoot,
+            sessionRepository: repository
+        )
+        defer { controller.close() }
+        _ = try await controller.loadSessionHistory(sessionId: "session-source")
+        _ = try await controller.start(
+            resumeSessionId: "session-source",
+            forkSession: true,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+        try await process.emitLine([
+            "type": "system",
+            "subtype": "init",
+            "session_id": "session-fork",
+        ])
+
+        let reply = try await controller.readTaskOutput(taskId: "task-old")
+        #expect(reply["text"] as? String == "source output")
+        #expect(reply["missing"] as? Bool == false)
     }
 
     @MainActor
@@ -1458,6 +1661,45 @@ struct SupermuxHarnessTests {
     }
 }
 
+private actor StaticSupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
+    let events: [SupermuxHarnessJSONObject]
+
+    init(events: [SupermuxHarnessJSONObject]) {
+        self.events = events
+    }
+
+    func listSessions(
+        for workingDirectoryURL: URL,
+        limit: Int?
+    ) async throws -> [SupermuxHarnessDiscoveredSession] {
+        _ = workingDirectoryURL
+        _ = limit
+        return []
+    }
+
+    func loadHistory(
+        for workingDirectoryURL: URL,
+        sessionID: String,
+        recordLimit: Int?,
+        maximumEventBytes: Int?
+    ) async throws -> SupermuxHarnessHistoryPage {
+        _ = workingDirectoryURL
+        _ = sessionID
+        _ = recordLimit
+        _ = maximumEventBytes
+        return SupermuxHarnessHistoryPage(events: events, truncated: false)
+    }
+
+    func sessionTitle(
+        for workingDirectoryURL: URL,
+        sessionID: String
+    ) async -> String? {
+        _ = workingDirectoryURL
+        _ = sessionID
+        return nil
+    }
+}
+
 private actor DelayedSupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
     private var titleRequests = 0
     private var requestWaiters: [(
@@ -1606,6 +1848,7 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
     private(set) var activeRunID: String?
     var responses: [String: Response] = [:]
     var heldControlSubtypes: Set<String> = []
+    var onUserMessageSend: (() async throws -> Void)?
     private(set) var operations: [Operation] = []
     private(set) var startedPlans: [SupermuxHarnessLaunchPlan] = []
 
@@ -1701,6 +1944,10 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
             throw SupermuxHarnessProcessError.notRunning
         }
         let object = try frame.jsonObject()
+        if object.string(forKey: "type") == "user" {
+            try await onUserMessageSend?()
+            return
+        }
         if object.string(forKey: "type") == "control_response" {
             let requestID = object.object(forKey: "response")?.string(forKey: "request_id") ?? ""
             operations.append(.permissionResponse(requestID: requestID))
