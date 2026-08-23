@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **450**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **451**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -29,7 +29,7 @@ Rules for adding a touchpoint:
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 244 | `CLAUDE.md` | `ios-dogfood-release-build` | Overrides upstream's "iOS builds open on the iPhone by default" section for this fork: `reload.sh --tag` ships a tagged DEV build the user cannot sign in to, so physical-phone dogfood uses a Release build with `CMUX_DEV_TAG=` empty and `CMUX_IOS_AUTH_ENV=production`. Records the exact invocation — the FIXED dogfood bundle id `com.supermux.ios.dogfood` (one persistent identity so sign-in/pairing survive across tags; per-tag `dev.cmux.ios.<tag>` is retired, and keychain-group sharing with the main install is forbidden — Iroh stores would mutually wipe), `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"`, the sanctioned per-build naming knob (#238/#239) — and the two overrides never to pass on it (`PRODUCT_DISPLAY_NAME`, `ASSETCATALOG_COMPILER_APPICON_NAME`) |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges (`selectWorkspaceRow`) and the actions-bundle Close Other/Below/Above closures exclude project-hidden workspaces (via a fenced parent-level `supermuxProjectHiddenWorkspaceIds()` helper — since upstream's 0.65 snapshot-boundary refactor moved row actions from `TabItemView` to the sidebar owner, the fenced logic lives in those parent functions; Move Up/Down stepping lives in the SHARED entrypoint, #131, so `moveWorkspaceRow` is back to the upstream one-liner), the actions bundle gets a fenced `supermuxMenuVisibility` provider (keyed by workspace id; consumed by #114, declared in #129, move enablement via the #131 stepped-plan check) so the four Move/Close menu items disable on real reachability instead of raw full-list indices, a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`, the row-input construction computes fenced `supermuxVisibleIndex`/`supermuxVisibleCount` (#132/#133) and `TabItemView.accessibilityTitle` announces "workspace N of M" against the visible list; renders the agent-activity indicator on flat-list workspace rows (indicator overlay in `TabItemView`; snapshot resolution moved to #128); gives the flat-list selection the faint accent tint used by nested project rows in `backgroundColor(for:)` (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06 via `isPointerHovering`); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
-| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, and `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
+| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, and `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` + `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width), with a third fallback putting the icon-only row in a horizontal `ScrollView` so mode buttons scroll instead of clipping at extreme narrowness; `right-sidebar-changes-mode-focushost` mounts `SupermuxChangesFocusHostBridge`/`SupermuxChangesFocusHostView` as the changes panel's background, registering a geometry-based focus host with the window's `MainWindowFocusController` |
 | 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
@@ -470,6 +470,7 @@ Rules for adding a touchpoint:
 | 448 | `scripts/ci/detect_ci_change_areas.py` | `harness-web-ci` | Adds the independent `harness_web` change area for `harness-web/**`, the committed `Resources/supermux-harness/**` bundle, its build script, and the root package script registry without widening the broad website area or changing existing macOS classification |
 | 449 | `tests/test_ci_change_areas.py` | `harness-web-ci` | Executable routing and aggregate-gate coverage for harness sources/package metadata, the bundled resource, workflow-dispatch fail-open output, stale routed-job handling in Linux preflight, the stable `tests` gate, pinned Bun/build commands, and website-only exclusions |
 | 450 | `cmuxTests/SupermuxHarnessNativeEventTransportTests.swift` | `unfenced` | **Fork-owned new test file.** Executable transport contract coverage for acknowledgement retention, identical retry, stale-ack safety, navigation re-sequencing, count/byte batching, bounded backlog, and stale host generations. pbxproj ids `50BE0001…013E`/`…013F` |
+| 451 | `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` | `unfenced` | **Fork-owned new test file.** Exact regression coverage that a notification targeting the already-focused pane is retained only as read history: no unread count, badge state, pane indicator/flash, delivered alert, or sound; explicit custom-command automation remains enabled. pbxproj ids `50BE0001…0140`/`…0141` |
 
 ## How to re-apply
 
@@ -1424,7 +1425,12 @@ The focused native transport tests (touchpoint #450) add file reference `50BE000
 file `50BE0001…013F` for `SupermuxHarnessNativeEventTransportTests.swift`, wired into the
 `cmuxTests` target in the same four places as the existing harness test file.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `221`.
+The focused-pane notification regression test (touchpoint #451) adds file reference
+`50BE0001…0140` and build file `50BE0001…0141` for
+`SupermuxFocusedPaneNotificationTests.swift`, wired into the `cmuxTests` target in the same four
+places as the other fork-owned app-target tests.
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `225`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
@@ -3967,3 +3973,13 @@ backlogged through one in-flight batch until the exact epoch/sequence acknowledg
 failed evaluations retry identically, navigation re-sequences every unacknowledged event in order,
 batches obey both count and encoded-byte caps, backlog accounting remains bounded, and stale host
 generations can neither attach nor release the retained view.
+
+### 451. Focused-pane notification regression test
+
+`cmuxTests/SupermuxFocusedPaneNotificationTests.swift` is a fork-owned Swift Testing suite. Keep its
+`50BE0001…0140` file reference and `…0141` sources-build entry in the four normal pbxproj locations.
+The test drives the real `TerminalNotificationStore` against the selected workspace's focused panel
+with the app-focus seam forced active. The notification may remain in chronological history, but it
+must be read, carry no pane flash, contribute no unread/badge/outline state, create no focused-read
+indicator, and invoke no delivered alert or sound. The suppressed local path may still carry an
+explicit custom notification command, which remains automation rather than user-facing alerting.
