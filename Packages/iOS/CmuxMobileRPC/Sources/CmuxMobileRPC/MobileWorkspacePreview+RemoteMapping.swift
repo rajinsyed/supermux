@@ -25,6 +25,7 @@ extension MobileWorkspacePreview {
             terminals: remote.terminals.map { terminal in
                 MobileTerminalPreview(remote: terminal)
             },
+            surfaces: (remote.surfaces ?? []).map(MobileSurfacePreview.init(remote:)),
             simulators: remote.simulators
         )
         // SUPERMUX:begin supermux-mobile-workspace-fields (carry the additive §6 fields into the preview — see SUPERMUX-TOUCHPOINTS.md)
@@ -38,6 +39,19 @@ extension MobileWorkspacePreview {
         self.supermuxUnreadCount = remote.supermuxUnreadCount
         self.supermuxUnreadPanelIDs = remote.supermuxUnreadPanelIDs
         // SUPERMUX:end supermux-mobile-workspace-fields
+    }
+}
+
+extension MobileSurfacePreview {
+    init(remote: MobileSyncWorkspaceListResponse.Surface) {
+        self.init(
+            id: ID(rawValue: remote.surfaceID),
+            kind: Kind(rawValue: remote.kind),
+            title: remote.title,
+            filePath: remote.filePath,
+            todo: remote.todo,
+            isFocused: remote.isFocused
+        )
     }
 }
 

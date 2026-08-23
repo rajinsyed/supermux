@@ -33,6 +33,7 @@ final class SupermuxProjectIconImageCache {
     /// The process-wide cache. One instance, because the whole point is to
     /// outlive the views — a per-view cache would die with the subtree it was
     /// meant to protect.
+    /// lint:allow singleton — synchronous image reuse must outlive every hosted row subtree.
     static let shared = SupermuxProjectIconImageCache()
 
     /// A cached icon and the identity of the bytes it was decoded from.

@@ -33,11 +33,6 @@ let package = Package(
         // Already in the graph transitively; declared directly for the shared
         // glass/material modifiers so fork surfaces match the app's chrome.
         .package(path: "../CmuxMobileSupport"),
-        // Focus mode groups upstream's transcript rows (`ChatTranscriptRow`)
-        // and re-renders the expanded ones with upstream's own row view, so
-        // both the model and the UI package are named directly.
-        .package(path: "../../Shared/CmuxAgentChat"),
-        .package(path: "../CmuxAgentChatUI"),
     ],
     targets: [
         .target(
@@ -49,8 +44,6 @@ let package = Package(
                 "CmuxMobileShellModel",
                 "CMUXMobileCore",
                 "CmuxMobileSupport",
-                "CmuxAgentChat",
-                "CmuxAgentChatUI",
             ],
             resources: [.process("Resources")],
             swiftSettings: [

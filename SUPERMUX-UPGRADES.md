@@ -14,16 +14,52 @@ Add a section here as the last step of every upstream merge.
 
 ---
 
+## cmux main @ `6d37f62a47` → main @ `91b991496d` (2026-08-24)
+
+Merged 2,241 upstream commits across 2,765 files, through upstream main from 2026-08-23.
+
+### iOS Agent Chat and Focus Mode
+
+- Upstream removed the iOS GUI Agent Chat transcript/composer. Supermux follows that product
+  direction and does not restore the deleted button or chat pane.
+- Supermux's dependent **Focus Mode** feature is retired with it: the grouping UI, setting,
+  localization, package dependencies, and tests were removed.
+- Upstream retained the artifact gallery/event-source infrastructure and `mobile.chat.*` RPC seams;
+  those backend/artifact capabilities remain available where upstream still uses them.
+
+### Upstream changes you will notice
+
+- iOS terminal scrolling now uses upstream's pixel-precise renderer-owned fractional viewport.
+  Supermux's no-momentum release behavior and scroll-speed preference remain layered on top.
+- The iOS workspace Changes view is now a hierarchical file tree, Simulator streams gained richer
+  controls, landscape terminal layout clears the Dynamic Island, and the New Task button stays
+  outside the keyboard safe area.
+- The iOS workspace list preserves its scroll position across workspace enter/exit, default-surface
+  fallback is more reliable, and pairing handles multiple Mac DEV builds correctly.
+- cmux-tui advanced through `v0.11.0`, including socket-discovery contracts, isolated core tests,
+  runtime diagnostics, and the updated headerless sidebar rails.
+
+### Fork integration
+
+- Projects, usage limits, Changes/Files title-menu entries, generic terminal/browser/Simulator
+  selection sync, and exact per-pane unread state remain intact on iOS.
+- Upstream independently adopted the identity-preserving workspace-list toolbar structure, so
+  Supermux touchpoint #250 was retired.
+- Upstream's new keyboard host/geometry architecture supersedes the old fork workaround;
+  touchpoints #213/#214 were retired rather than re-porting incompatible geometry assertions.
+- Tailscale packet-tunnel routes still tolerate a missing local endpoint, but upstream's generation
+  guard is restored so route substitution remains fail-closed.
+- The pane-tab **Disconnect SSH** action now reaches the existing remote disconnect path instead of
+  falling through an unhandled bonsplit action.
+
+---
+
 ## cmux 0.64.22 → main @ `6d37f62a47` (2026-08-09)
 
-> **Post-merge dogfood regression, fixed on this branch (touchpoints #213/#214):** upstream's
-> keyboard rework in `ba47b1dc0d` ("Keep the iOS terminal dock pinned during keyboard
-> reversals") moved the keyboard layout guide onto a new host view, but the renderer only
-> re-reads keyboard height in its own `layoutSubviews` — which UIKit no longer guarantees to
-> run when the host's guide moves. Result on device: the keyboard opened OVER the terminal
-> instead of shrinking it. Fixed by re-sampling the host guide on the existing display-link
-> pass. This is an upstream bug (stock cmux iOS at `6d37f62a47` has it too) — worth offering
-> upstream.
+> **Historical note:** this snapshot needed fork touchpoints #213/#214 to keep the iOS terminal
+> clear of the keyboard. The 2026-08-24 upstream merge replaced that implementation with upstream's
+> `GhosttySurfaceHostView` / `KeyboardDockGeometrySource` architecture, so those touchpoints and
+> their fork-only UITest assertions are now retired.
 >
 > Follow-up on the same branch: fork `origin/main` (PRs #21 + #22 — AI token headroom for
 > reasoning models, and the compact AI usage-analytics button beside the usage gauge) was merged

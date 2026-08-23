@@ -510,7 +510,7 @@ final class PortalTabDragRoutingTests: XCTestCase {
     func testPaneDropRoutingMapsFileDropsToSharedBonsplitDestinations() {
         let paneId = PaneID()
 
-        if case let .insert(targetPane, targetIndex) = PaneDropRouting.filePreviewDestination(
+        if case let .insert(targetPane, targetIndex) = PaneDropRouting.destination(
             targetPane: paneId,
             zone: .center
         ) {
@@ -520,7 +520,7 @@ final class PortalTabDragRoutingTests: XCTestCase {
             XCTFail("Center drops should insert into the hovered pane")
         }
 
-        if case let .split(targetPane, orientation, insertFirst) = PaneDropRouting.filePreviewDestination(
+        if case let .split(targetPane, orientation, insertFirst) = PaneDropRouting.destination(
             targetPane: paneId,
             zone: .left
         ) {
@@ -531,7 +531,7 @@ final class PortalTabDragRoutingTests: XCTestCase {
             XCTFail("Left drops should use Bonsplit horizontal split routing")
         }
 
-        if case let .split(targetPane, orientation, insertFirst) = PaneDropRouting.filePreviewDestination(
+        if case let .split(targetPane, orientation, insertFirst) = PaneDropRouting.destination(
             targetPane: paneId,
             zone: .bottom
         ) {

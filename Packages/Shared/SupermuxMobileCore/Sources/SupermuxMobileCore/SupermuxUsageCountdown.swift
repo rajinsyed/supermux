@@ -7,6 +7,7 @@ public import Foundation
 ///
 /// Shared between the Mac popover and the iOS usage screen so both spell a
 /// reset the same way.
+/// lint:allow namespace-enum — pure shared formatting policy with no runtime dependency.
 public enum SupermuxUsageCountdown {
     /// Formats the remaining time from `now` to `date`. `date` must be in the
     /// future (callers gate on it); a past/now date yields "0m".

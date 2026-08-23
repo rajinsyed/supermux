@@ -33,7 +33,9 @@ extension WorkspaceListView {
             displayPairedMacs: displayPairedMacsForPicker,
             foregroundMacDeviceID: store?.connectedMacDeviceID ?? store?.activeTicket?.macDeviceID,
             foregroundInstanceTag: store?.connectedMacInstanceTag,
-            aliasesFor: { store?.pairedMacAliasIDs(for: $0) ?? [] }
+            aliasesFor: {
+                store?.pairedMacAliasIDs(for: $0, instanceTag: $1) ?? []
+            }
         )
     }
 
@@ -49,7 +51,7 @@ extension WorkspaceListView {
         let scope = macSelectionScope
         return WorkspaceMachineSnapshots(
             workspaces: workspaces,
-            filterMachineIDFor: { scope.aliasIndex.deviceRepresentativeID(for: $0) },
+            filterMachineIDFor: { scope.aliasIndex.representativeID(for: $0) },
             macPickerMachineIDs: scope.machineIDs,
             namesByID: macDisplayNamesByID(),
             buildLabelsByID: macBuildLabelsByID(),
@@ -70,6 +72,10 @@ extension WorkspaceListView {
                 continue
             }
             names[id] = name
+            names[MobilePairedMac.pairingID(
+                macDeviceID: id,
+                instanceTag: workspace.macInstanceTag
+            )] = name
         }
         for device in store?.deviceTreeDevices ?? [] {
             if let name = device.displayName, !name.isEmpty {
@@ -102,7 +108,7 @@ extension WorkspaceListView {
         var seen = Set<String>()
         var present: [String] = []
         for id in MobileWorkspaceListFilter.machineIDs(in: workspaces) {
-            let representativeID = aliasIndex.deviceRepresentativeID(for: id)
+            let representativeID = aliasIndex.representativeID(for: id)
             if seen.insert(representativeID).inserted {
                 present.append(representativeID)
             }
@@ -209,6 +215,7 @@ struct WorkspaceMacTitlePicker: View, Equatable {
                 )
             }
             .accessibilityAddTraits(value.selection == .all ? .isSelected : [])
+            .accessibilityIdentifier("MobileWorkspaceMacPickerAll")
             ForEach(value.machines) { machine in
                 let selection = WorkspaceMacSelection.machine(machine.id)
                 Button {
@@ -221,6 +228,7 @@ struct WorkspaceMacTitlePicker: View, Equatable {
                     )
                 }
                 .accessibilityAddTraits(value.selection == selection ? .isSelected : [])
+                .accessibilityIdentifier(machineMenuAccessibilityIdentifier(machine.id))
             }
             if value.statusLine == .notConnected, let reconnect = actions.reconnect {
                 Divider()
@@ -249,6 +257,15 @@ struct WorkspaceMacTitlePicker: View, Equatable {
                 width: value.labelWidth,
                 statusLine: value.statusLine
             )
+            // Put the identity and status on the final combined label element.
+            // UIKit's toolbar bridge can otherwise omit the outer SwiftUI
+            // identifier from the native accessibility tree used by CUA.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(value.title)
+            .accessibilityValue(
+                value.statusLine.map(WorkspaceConnectionStatusLineView.text) ?? ""
+            )
+            .accessibilityIdentifier("MobileWorkspaceMacPicker")
         }
         .buttonStyle(.plain)
         .tint(.primary)
@@ -267,6 +284,11 @@ struct WorkspaceMacTitlePicker: View, Equatable {
         if isSelected {
             Image(systemName: "checkmark")
         }
+    }
+
+    private func machineMenuAccessibilityIdentifier(_ id: String) -> String {
+        let stableID = id.replacingOccurrences(of: "\u{1F}", with: "-")
+        return "MobileWorkspaceMacPickerMachine-\(stableID)"
     }
 }
 
@@ -308,7 +330,6 @@ private struct WorkspaceMacTitlePickerLabel: View {
         .frame(width: width, alignment: .center)
         .clipped()
         .contentShape(Rectangle())
-        .accessibilityValue(statusLine.map(WorkspaceConnectionStatusLineView.text) ?? "")
     }
 }
 #endif

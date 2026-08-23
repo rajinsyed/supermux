@@ -25,6 +25,7 @@ public import Foundation
 /// payload struct and the accent palette. ``relativePath(forProjectID:)`` is the
 /// contract between them, and `SupermuxSharedProjectIconStoreTests` pins it so
 /// the two cannot drift silently.
+/// lint:allow namespace-enum — shared app/extension storage contract with no runtime state.
 public enum SupermuxSharedProjectIconStore: Sendable {
     /// The app group both the app and its notification service extension join.
     ///

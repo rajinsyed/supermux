@@ -84,7 +84,7 @@ struct MobileNotificationFeedListBoundedItem: Decodable {
             // Bounded like every other decoded string: the name is clamped and
             // an over-long id drops the project (never the whole row — losing
             // a notification over a bad avatar would be the worse failure).
-            project: try mobileNotificationFeedListBoundedProject(
+            project: try Self.supermuxBoundedProject(
                 from: container,
                 limits: limits
             )
@@ -94,38 +94,40 @@ struct MobileNotificationFeedListBoundedItem: Decodable {
 }
 
 // SUPERMUX:begin notification-feed-project-wire
-/// Decodes and bounds the additive project field.
-///
-/// Returns `nil` — degrading the row to its project-less form — when the field
-/// is absent, malformed, or carries an over-long identifier. A row is never
-/// dropped for a bad project: the notification itself is what the user needs.
-private func mobileNotificationFeedListBoundedProject(
-    from container: KeyedDecodingContainer<MobileNotificationFeedListBoundedItem.CodingKeys>,
-    limits: MobileNotificationFeedListStringLimits
-) throws -> SupermuxNotificationProject? {
-    guard let decoded = try? container.decodeIfPresent(
-        SupermuxNotificationProject.self,
-        forKey: .project
-    ) else { return nil }
-    guard decoded.id.utf8.count <= limits.identifierByteLimit,
-          !decoded.id.isEmpty else { return nil }
-    var bounded = decoded
-    bounded.name = mobileNotificationFeedListString(
-        decoded.name,
-        limitedToUTF8Bytes: limits.metadataByteLimit
-    )
-    if let colorHex = decoded.colorHex, colorHex.utf8.count > limits.metadataByteLimit {
-        // Drop malformed decoration rather than truncating it into a different
-        // potentially-valid color. The notification row itself stays intact.
-        bounded.colorHex = nil
+private extension MobileNotificationFeedListBoundedItem {
+    /// Decodes and bounds the additive project field.
+    ///
+    /// Returns `nil` — degrading the row to its project-less form — when the field
+    /// is absent, malformed, or carries an over-long identifier. A row is never
+    /// dropped for a bad project: the notification itself is what the user needs.
+    static func supermuxBoundedProject(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        limits: MobileNotificationFeedListStringLimits
+    ) throws -> SupermuxNotificationProject? {
+        guard let decoded = try? container.decodeIfPresent(
+            SupermuxNotificationProject.self,
+            forKey: .project
+        ) else { return nil }
+        guard decoded.id.utf8.count <= limits.identifierByteLimit,
+              !decoded.id.isEmpty else { return nil }
+        var bounded = decoded
+        bounded.name = mobileNotificationFeedListString(
+            decoded.name,
+            limitedToUTF8Bytes: limits.metadataByteLimit
+        )
+        if let colorHex = decoded.colorHex, colorHex.utf8.count > limits.metadataByteLimit {
+            // Drop malformed decoration rather than truncating it into a different
+            // potentially-valid color. The notification row itself stays intact.
+            bounded.colorHex = nil
+        }
+        if let etag = decoded.iconETag, etag.utf8.count > limits.identifierByteLimit {
+            bounded.iconETag = nil
+        }
+        if let symbol = decoded.iconSymbol, symbol.utf8.count > limits.metadataByteLimit {
+            bounded.iconSymbol = nil
+        }
+        return bounded
     }
-    if let etag = decoded.iconETag, etag.utf8.count > limits.identifierByteLimit {
-        bounded.iconETag = nil
-    }
-    if let symbol = decoded.iconSymbol, symbol.utf8.count > limits.metadataByteLimit {
-        bounded.iconSymbol = nil
-    }
-    return bounded
 }
 // SUPERMUX:end notification-feed-project-wire
 

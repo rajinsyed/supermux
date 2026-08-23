@@ -11,6 +11,15 @@ private let terminalScrollDeliveryLog = Logger(
 )
 
 extension MobileShellComposite {
+    /// The phone owns primary-screen scrolling for this surface: screen-anchored
+    /// render grid with a CONFIRMED primary screen. The same condition suppresses
+    /// the Mac scroll RPC in `scrollTerminal` and routes the local mirror's
+    /// pixel-precise scroll path.
+    public func ownsLocalPrimaryScreenScroll(surfaceID: String) -> Bool {
+        usesScreenAnchoredRenderGrid
+            && terminalActiveScreenBySurfaceID[surfaceID] == .primary
+    }
+
     /// Forward a scroll gesture to the Mac's real surface. libghostty does the
     /// mode-correct thing: normal screen moves the viewport into scrollback;
     /// alt screen + mouse reporting encodes mouse-wheel to the PTY for the
@@ -35,8 +44,7 @@ extension MobileShellComposite {
         // dropping what may be alternate-screen wheel input would eat TUI
         // scrolling, while forwarding a primary-screen scroll merely moves the
         // Mac's own viewport, which screen-anchored frames ignore.
-        if usesScreenAnchoredRenderGrid,
-           terminalActiveScreenBySurfaceID[surfaceID] == .primary {
+        if ownsLocalPrimaryScreenScroll(surfaceID: surfaceID) {
             return
         }
         // SUPERMUX:begin ios-terminal-alt-scroll-budget
@@ -128,6 +136,11 @@ extension MobileShellComposite {
     private func performTerminalScroll(_ delivery: TerminalScrollDelivery) async {
         guard let client = remoteClient,
               let workspaceID = workspaceID(forTerminalID: delivery.surfaceID) else {
+            recordAppEvent(
+                .terminalScrollFailed,
+                correlationID: delivery.surfaceID,
+                failure: .offline
+            )
             return
         }
         do {
@@ -148,6 +161,10 @@ extension MobileShellComposite {
                 params: params
             )
             let data = try await client.sendRequest(request)
+            recordAppEvent(
+                .terminalScrollSent,
+                correlationID: delivery.surfaceID
+            )
             guard let maxScrollbackRows = delivery.maxScrollbackRows,
                   maxScrollbackRows > 0,
                   remoteClient === client else {
@@ -165,6 +182,11 @@ extension MobileShellComposite {
             )
         } catch {
             terminalScrollDeliveryLog.error("scroll forward failed surface=\(delivery.surfaceID, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            recordAppEvent(
+                .terminalScrollFailed,
+                correlationID: delivery.surfaceID,
+                failure: DiagnosticFailureKind.classify(error)
+            )
         }
     }
 }

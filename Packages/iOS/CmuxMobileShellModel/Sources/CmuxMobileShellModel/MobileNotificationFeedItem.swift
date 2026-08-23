@@ -1,3 +1,4 @@
+import CMUXMobileCore
 public import Foundation
 // SUPERMUX:begin notification-feed-project-wire
 public import SupermuxMobileCore
@@ -80,13 +81,17 @@ public struct MobileNotificationFeedItem: Identifiable, Equatable, Sendable {
         project: SupermuxNotificationProject? = nil
         // SUPERMUX:end notification-feed-project-wire
     ) {
-        self.id = MobileNotificationFeedItemID(
+        let identity = CmxMacAppInstanceIdentity(
             macDeviceID: macDeviceID,
-            macInstanceTag: macInstanceTag,
+            instanceTag: macInstanceTag
+        )
+        self.id = MobileNotificationFeedItemID(
+            macDeviceID: identity.macDeviceID,
+            macInstanceTag: identity.instanceTag,
             notificationID: notificationID
         )
-        self.macDeviceID = macDeviceID
-        self.macInstanceTag = macInstanceTag
+        self.macDeviceID = identity.macDeviceID
+        self.macInstanceTag = identity.instanceTag
         self.notificationID = notificationID
         self.macDisplayName = macDisplayName
         self.remoteWorkspaceID = remoteWorkspaceID

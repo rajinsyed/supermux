@@ -110,6 +110,9 @@ Status per fork feature area:
 
 **Recorded non-goals** (deliberate, may be revisited later):
 
+- **iOS GUI Agent Chat / Focus Mode** — upstream removed the transcript/composer UI in #10576;
+  Supermux follows upstream and does not restore the dependent Focus Mode feature. Retained
+  artifact/event and `mobile.chat.*` infrastructure remains upstream-owned plumbing, not a fork UI.
 - `files.read` (file **preview** on the phone) — stretch goal, not required for parity; the file
   browser manages entries without reading contents.
 - Push/pull **job-progress events** — reserved; v1 serves `changes.push`/`changes.pull` over a

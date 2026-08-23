@@ -1,3 +1,4 @@
+import CmuxNotifications
 import Foundation
 
 extension Workspace {
@@ -6,17 +7,27 @@ extension Workspace {
     func supermuxMobileUnreadPanelIDs(
         notificationStore: TerminalNotificationStore?
     ) -> [String] {
-        guard let notificationStore else { return [] }
-        let isWorkspaceManuallyUnread = notificationStore.hasManualUnread(
-            forTabId: id
+        supermuxMobileUnreadPanelIDs(
+            unreadSnapshot: notificationStore?.sidebarUnread.snapshot
+        )
+    }
+
+    /// Returns pane ids from the immutable unread snapshot shared by sidebar consumers.
+    @MainActor
+    func supermuxMobileUnreadPanelIDs(
+        unreadSnapshot: SidebarUnreadSnapshot?
+    ) -> [String] {
+        guard let unreadSnapshot else { return [] }
+        let isWorkspaceManuallyUnread = unreadSnapshot.hasManualUnread(
+            forWorkspaceId: id
         )
         let manualUnreadRepresentative = representativePanelIdForWorkspaceManualUnread()
 
         return orderedPanelIds.compactMap { panelID in
             guard panels[panelID] != nil else { return nil }
             let showsIndicator = Self.shouldShowUnreadIndicator(
-                hasUnreadNotification: notificationStore.hasVisibleNotificationIndicator(
-                    forTabId: id,
+                hasUnreadNotification: unreadSnapshot.hasVisibleNotificationIndicator(
+                    forWorkspaceId: id,
                     surfaceId: panelID
                 ),
                 hasPanelUnreadIndicator: manualUnreadPanelIds.contains(panelID)

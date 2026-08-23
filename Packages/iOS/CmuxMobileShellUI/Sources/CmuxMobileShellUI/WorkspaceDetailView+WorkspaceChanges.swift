@@ -12,13 +12,10 @@ extension WorkspaceDetailView {
         store.workspaceChangesCapable && connectionStatus == .connected
     }
 
-    /// Dirty terminal-title entry point. Chat and browser headers keep their
+    /// Dirty terminal-title entry point. Browser headers keep their
     /// existing labels and chrome unchanged.
     var workspaceTitleChangesChip: MobileWorkspaceChangesChip? {
-        let showsChatHeader = isChatMode
-            && chosenChatSession.map { chatConversationStores[$0.id] != nil } == true
-        guard !showsChatHeader,
-              activeBrowser == nil,
+        guard activeBrowser == nil,
               workspaceChangesAreAvailable,
               let chip = workspaceChangesChip,
               chip.filesChanged > 0 else { return nil }
@@ -37,22 +34,16 @@ extension WorkspaceDetailView {
     func openWorkspaceChanges() {
         guard workspaceChangesAreAvailable else { return }
         let workspaceID = workspace.rpcWorkspaceID.rawValue
-        dismissTerminalKeyboardForChrome()
-        store.dismissWorkspaceChangesHint(workspaceID: workspaceID)
-        workspaceChangesHint = nil
-        // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
-        // Fired from the overflow menu, setting the flag in the same turn as
-        // the keyboard dismissal can overlap the menu's dismissal transition
-        // and swallow the presentation; defer it one main-actor turn.
-        Task { @MainActor in
-            isWorkspaceChangesSheetPresented = true
-        }
-        // SUPERMUX:end ios-workspace-toolbar-persistent-actions
-        Task {
-            await store.fetchWorkspaceChangesSummaries(
-                workspaceIDs: [workspaceID],
-                force: true
-            )
+        workspaceChangesPresentation.present {
+            dismissTerminalKeyboardForChrome()
+            store.dismissWorkspaceChangesHint(workspaceID: workspaceID)
+            workspaceChangesHint = nil
+            Task {
+                await store.fetchWorkspaceChangesSummaries(
+                    workspaceIDs: [workspaceID],
+                    force: true
+                )
+            }
         }
     }
 

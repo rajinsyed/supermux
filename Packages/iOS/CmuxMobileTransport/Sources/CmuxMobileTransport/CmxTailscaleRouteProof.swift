@@ -22,6 +22,24 @@ enum CmxTailscaleRouteProofError: Error, Equatable, Sendable {
     case remotePortMismatch
 }
 
+extension CmxTailscaleRouteProofError {
+    /// Failures caused by the tunnel becoming visible while a pairing attempt
+    /// is already in flight. These are safe to retry with the same QR grant.
+    var isTransientReadinessFailure: Bool {
+        switch self {
+        case .pathUnavailable, .tailscaleInterfaceUnavailable,
+             .ambiguousTailscaleInterfaces, .routeGenerationChanged,
+             .interfaceChanged, .connectionPathUnavailable:
+            return true
+        case .unsupportedRouteKind, .unsupportedAuthorizationMode,
+             .authorizationEvidenceMismatch, .unsupportedEndpoint,
+             .nonNumericPeer, .peerOutsideTailscaleRange, .peerIsLocalDevice,
+             .localEndpointMismatch, .remoteEndpointMismatch, .remotePortMismatch:
+            return false
+        }
+    }
+}
+
 struct CmxTailscaleIPAddress: Hashable, Sendable {
     enum Family: Sendable {
         case ipv4
@@ -104,7 +122,7 @@ struct CmxNetworkInterfaceIdentity: Hashable, Sendable {
     let index: Int
 }
 
-struct CmxTailscaleInterfaceSnapshot: Equatable, Sendable {
+struct CmxTailscaleInterfaceSnapshot: Hashable, Sendable {
     let identity: CmxNetworkInterfaceIdentity
     let isUp: Bool
     let isRunning: Bool
@@ -137,6 +155,20 @@ struct CmxTailscaleRouteProof: Equatable, Sendable {
     let interface: CmxNetworkInterfaceIdentity
     let selfAddresses: Set<CmxTailscaleIPAddress>
     let generation: UInt64
+}
+
+/// Which facts a connection-path validation may assert. A connection's path
+/// update can arrive before the socket has bound its local endpoint, so
+/// endpoint-level facts (local/remote address, remote port) only exist once
+/// the connection is established; validating them earlier misreads a
+/// still-connecting dial as an endpoint substitution and kills pairing.
+enum CmxTailscaleRouteValidationPhase: Sendable {
+    /// A path update on a connection that may not be established yet:
+    /// validate route-level facts only.
+    case pathUpdate
+    /// The connection reported ready, or a write is about to begin: the
+    /// path must carry the proven endpoints.
+    case established
 }
 
 struct CmxTailscaleRouteProofValidator {
@@ -202,16 +234,12 @@ struct CmxTailscaleRouteProofValidator {
     func validate(
         proof: CmxTailscaleRouteProof,
         authoritySnapshot: CmxTailscaleAuthoritySnapshot,
-        connectionPath: CmxTailscaleConnectionPathSnapshot
+        connectionPath: CmxTailscaleConnectionPathSnapshot,
+        phase: CmxTailscaleRouteValidationPhase
     ) throws {
-        // SUPERMUX:begin tailscale-packet-tunnel-proof (equivalent NWPathMonitor revisions must not tear down a proven Tailscale route — see SUPERMUX-TOUCHPOINTS.md)
-        // The generic NWPathMonitor revision can advance after a packet-tunnel
-        // connection becomes ready even when its security-relevant route is
-        // unchanged. The checks below re-prove the exact interface, Tailscale
-        // self-address set, connection path, peer address, and port against the
-        // current snapshot, so generation equality adds no authority and caused
-        // valid physical-device sessions to disconnect immediately.
-        // SUPERMUX:end tailscale-packet-tunnel-proof
+        guard authoritySnapshot.generation == proof.generation else {
+            throw CmxTailscaleRouteProofError.routeGenerationChanged
+        }
         guard authoritySnapshot.pathSatisfied else {
             throw CmxTailscaleRouteProofError.pathUnavailable
         }
@@ -226,6 +254,9 @@ struct CmxTailscaleRouteProofValidator {
               connectionPath.availableInterfaces.contains(proof.interface) else {
             throw CmxTailscaleRouteProofError.connectionPathUnavailable
         }
+        // A still-connecting dial has no bound endpoints yet; those facts are
+        // asserted at ready and at every write boundary instead.
+        guard phase == .established else { return }
         // SUPERMUX:begin tailscale-packet-tunnel-proof (accept Network.framework's observed nil local endpoint while retaining interface and remote-endpoint proof — see SUPERMUX-TOUCHPOINTS.md)
         // Network.framework may omit `NWPath.localEndpoint` for packet-tunnel
         // connections even after the connection is ready. A present endpoint
