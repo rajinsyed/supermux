@@ -56,7 +56,9 @@ Merged 2,241 upstream commits across 2,765 files, through upstream main from 202
 
 - Upstream main currently has failing standalone package tests in `CMUXMobileCore` diagnostics and
   `CmuxMobileShell` connection-authority suites. Focused runs reproduced the same failures in a clean
-  upstream worktree, so they are upstream test debt rather than Supermux merge regressions.
+  upstream worktree, so they are active upstream regressions rather than Supermux merge regressions.
+  The authority failure was narrowed to upstream's computer-instance-identity changes and makes real
+  iPhone Mac-selection/pairing dogfood especially important.
 - No physical-phone dogfood was performed. Per the standing merge checklist, verify the Projects
   section and Mac selection/pairing on a real iPhone before merging this runtime/UI update.
 
