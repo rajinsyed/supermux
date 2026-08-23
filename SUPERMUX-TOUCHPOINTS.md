@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **458**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **460**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -478,6 +478,8 @@ Rules for adding a touchpoint:
 | 456 | `cmuxTests/WorkspaceUnitTests.swift` | `focused-pane-notification-suppression-navigation-fixture` | Keeps the competing-unread navigation-flash test valid by modeling attention that arrived while the app was not focused, then restoring active focus before pane navigation |
 | 457 | `cmuxTests/AgentNotificationMoveRaceTests.swift` | `focused-pane-notification-suppression-move-test` | Updates the immediate source-confined relay assertion: a focused target is stored read with no focused-read indicator before the panel moves, while the test still proves it never rebinds across the authorized workspace boundary |
 | 458 | `docs/notifications.md` | `focused-pane-notification-suppression-doc` | Documents the exact focused-pane behavior and its boundary: read history remains, user-facing alert surfaces and mobile push are suppressed, explicit command automation remains, and targetless workspace notifications keep existing behavior |
+| 459 | `CLAUDE.md` | `dogfood-direct-launch-link` | Replaces the localhost Tag Opener handoff with the tagged app's native `cmux-dev-<tag>://launch` Markdown link. Build-only handoffs register the printed app path through `lsregister -f`; `--launch` already registers it. The link launches directly through LaunchServices without a browser/server and reserves `auth-callback` for sign-in |
+| 460 | `skills/cmux-dev-workflow/references/tagged-builds.md` | `dogfood-direct-launch-link-skill` | Mirrors #459 in the contributor workflow reference: direct custom-scheme handoff, build-only LaunchServices registration, normalized tag slug, inert `launch` host, and the same ban on raw app/DerivedData paths in chat |
 
 ## How to re-apply
 
@@ -4042,3 +4044,25 @@ Keep the fenced paragraph in `docs/notifications.md` immediately before the exis
 for an already-focused exact pane; the existing section describes later auto-withdrawal of a banner
 that was delivered while not focused. They are related but distinct and must not be collapsed into a
 setting claim: focused-pane admission is unconditional, while narrow auto-withdraw remains opt-in.
+
+### 459–460. Direct tagged-build launch links
+
+Tagged Debug apps already register the unique callback scheme `cmux-dev-<normalized-tag>`. Use that
+native LaunchServices identity for dogfood handoff instead of the retired localhost Tag Opener:
+
+```markdown
+[Open <tag>](cmux-dev-<tag>://launch)
+```
+
+The `launch` host is deliberately inert: opening the URL is enough for LaunchServices to start or
+activate the owning tagged app, while the app ignores the non-auth route. Never use `auth-callback`
+for this purpose because that route is reserved for Stack sign-in. A build made with `--launch` is
+registered automatically. After a build-only reload, run the system `lsregister -f` tool against the
+exact `App path:` printed by `reload.sh` before handing off the link; registration must not require
+launching a browser or a local server.
+
+Keep the fenced instructions in `CLAUDE.md` and the `cmux-dev-workflow` tagged-build reference in
+lockstep. Do not restore `http://127.0.0.1:17320/<tag>`: without a separately installed Tag Opener it
+opens the embedded browser and fails, which is exactly the handoff regression these touchpoints
+remove. The existing prohibition on `file://`, raw `.app`/DerivedData paths, and `/tmp` build links in
+chat remains unchanged.

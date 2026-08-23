@@ -13,7 +13,22 @@ Always build with a tag. **Never run bare `xcodebuild` or `open` an untagged `cm
 ./scripts/reload.sh --tag <branch-slug> --launch   # also open it
 ```
 
-A tag gives the app its own name, bundle ID, socket, and derived data path, so it runs side-by-side with the user's main app. Report the build to the user as a markdown link to `http://127.0.0.1:17320/<tag>`. Never put a `file://` URL, a raw `.app` path, or `/tmp/cmux-<tag>/...` in chat output.
+<!-- SUPERMUX:begin dogfood-direct-launch-link -->
+A tag gives the app its own name, bundle ID, socket, derived data path, and direct URL scheme, so it
+runs side-by-side with the user's main app. Before handing off a build made without `--launch`,
+register the printed `App path:` with LaunchServices without opening it:
+
+```bash
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "<App path printed by reload.sh>"
+```
+
+Then report the build as a direct Markdown link:
+`[Open <tag>](cmux-dev-<tag>://launch)`. Cmd-clicking it launches the tagged app directly without a
+browser or local HTTP server. Use the normalized tag slug printed by `reload.sh`; `--launch` also
+registers the scheme automatically. Never use the old `http://127.0.0.1:17320/<tag>` Tag Opener
+link, and never put a `file://` URL, raw `.app` or DerivedData path, or `/tmp/cmux-<tag>/...` in chat
+output. Keep the host `launch` rather than `auth-callback`, which is reserved for sign-in.
+<!-- SUPERMUX:end dogfood-direct-launch-link -->
 
 Other variants: `reloadp.sh` (Release), `reloads.sh` (Release as isolated "cmux STAGING"), `reload2.sh --tag <tag>` (both).
 
