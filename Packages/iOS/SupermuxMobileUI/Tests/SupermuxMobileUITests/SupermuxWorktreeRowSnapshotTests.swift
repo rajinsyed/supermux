@@ -68,6 +68,22 @@ import Testing
         #expect(missing?.url == nil)
     }
 
+    /// The badge draws the glyph alone — no `#115` — so its accessibility
+    /// label is the only place the PR number is still spoken. A visual
+    /// tightening must not take it from VoiceOver as well.
+    @Test func theIconOnlyBadgeStillSpeaksItsNumberAndState() throws {
+        let badge = try #require(SupermuxPullRequestBadgeSnapshot(
+            dto: SupermuxPullRequestDTO(
+                number: 115,
+                state: "open",
+                url: "https://github.com/acme/app/pull/115"
+            )
+        ))
+        let label = SupermuxMobilePullRequestBadge.accessibilityLabel(for: badge)
+        #expect(label.contains("115"))
+        #expect(label.contains(SupermuxMobilePullRequestBadge.stateWord(.open)))
+    }
+
     @Test func rowsPreserveTheMacsOrder() {
         let rows = SupermuxWorktreeRowSnapshot.rows(from: [
             SupermuxWorktreeDTO(path: "/w/b-two", branch: "b-two"),
