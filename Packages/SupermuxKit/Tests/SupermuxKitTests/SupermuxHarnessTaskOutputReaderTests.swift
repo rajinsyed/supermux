@@ -27,6 +27,26 @@ struct SupermuxHarnessTaskOutputReaderTests {
         #expect(page.text.hasSuffix("tail"))
     }
 
+    @Test func truncatedTailStartsAtAValidUTF8Boundary() throws {
+        let sandbox = try makeSandbox(named: "utf8-tail", maximumBytes: 3)
+        defer { try? FileManager.default.removeItem(at: sandbox.container) }
+        let outputURL = try makeOutputFile(
+            in: sandbox.root,
+            taskID: "task",
+            data: Data("AéBC".utf8)
+        )
+
+        let page = try sandbox.reader.read(
+            taskID: "task",
+            observedTaskIDs: ["task"],
+            outputFilePath: outputURL.path
+        )
+
+        #expect(page.truncated)
+        #expect(page.text == "BC")
+        #expect(!page.text.contains("�"))
+    }
+
     @Test func tmpAliasRootAcceptsPrivateTmpProtocolPath() throws {
         let container = URL(
             fileURLWithPath: "/tmp/supermux-task-output-alias-\(UUID().uuidString)",
@@ -209,7 +229,10 @@ struct SupermuxHarnessTaskOutputReaderTests {
         let reader: SupermuxHarnessTaskOutputReader
     }
 
-    private func makeSandbox(named name: String) throws -> Sandbox {
+    private func makeSandbox(
+        named name: String,
+        maximumBytes: Int = 64 << 10
+    ) throws -> Sandbox {
         let container = FileManager.default.temporaryDirectory
             .appendingPathComponent("supermux-task-output-\(name)-\(UUID().uuidString)", isDirectory: true)
         let root = container.appendingPathComponent("claude-501", isDirectory: true)
@@ -220,7 +243,8 @@ struct SupermuxHarnessTaskOutputReaderTests {
             reader: SupermuxHarnessTaskOutputReader(
                 temporaryRootURL: root,
                 canonicalRootURL: root.resolvingSymlinksInPath(),
-                fileManager: .default
+                fileManager: .default,
+                maximumBytes: maximumBytes
             )
         )
     }

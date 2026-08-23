@@ -22,10 +22,13 @@ interface Script {
   running: boolean;
   failStart?: string;
   failRestart?: string;
+  failSetModel?: string;
+  failInterrupt?: string;
   /** `rewind_files` refuses while the conversation rewind still succeeds. */
   restoreFails?: boolean;
   restoreSessionId?: string;
   historyEvents?: ProtocolLine[];
+  loadHistory?: (sessionId: string) => Promise<{ events: ProtocolLine[]; truncated: boolean }>;
   cachedModels?: boolean;
 }
 
@@ -53,7 +56,10 @@ function makeBridge(script: Script): HarnessBridge {
     },
     async loadSessionHistory({ sessionId }) {
       note(`loadSessionHistory:${sessionId}`);
-      return { events: script.historyEvents ?? rewindHistory, truncated: false };
+      return script.loadHistory?.(sessionId) ?? {
+        events: script.historyEvents ?? rewindHistory,
+        truncated: false
+      };
     },
     async start(params = {}) {
       note("start");
@@ -86,11 +92,14 @@ function makeBridge(script: Script): HarnessBridge {
       note("send");
       return { sent: true };
     },
-    interrupt: noop,
+    interrupt: async () => {
+      if (script.failInterrupt) throw new Error(script.failInterrupt);
+    },
     cancelQueued: noop,
     stop: noop,
     setModel: async () => {
       note("setModel");
+      if (script.failSetModel) throw new Error(script.failSetModel);
     },
     setPermissionMode: noop,
     respondPermission: noop,
@@ -166,6 +175,16 @@ async function flush() {
   });
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (reason?: unknown) => void = () => undefined;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
 beforeEach(() => {
   delete window.supermuxHarnessMock;
 });
@@ -201,6 +220,46 @@ describe("swapping sessions never goes through start()", () => {
     expect(s.calls.indexOf("loadSessionHistory:session-abc")).toBeLessThan(
       s.calls.indexOf("restart")
     );
+  });
+
+  test("an older history load cannot override a newer session selection", async () => {
+    const historyA = deferred<{ events: ProtocolLine[]; truncated: boolean }>();
+    const historyB = deferred<{ events: ProtocolLine[]; truncated: boolean }>();
+    const s = script({
+      running: true,
+      loadHistory: (sessionId) => (sessionId === "session-a" ? historyA.promise : historyB.promise)
+    });
+    const { out } = await mount(s);
+
+    act(() => {
+      out.current!.restart("session-a", false);
+      out.current!.restart("session-b", false);
+    });
+    historyB.resolve({ events: [], truncated: false });
+    await flush();
+    historyA.resolve({ events: [], truncated: false });
+    await flush();
+
+    expect(s.restartParams.map((params) => params.resumeSessionId)).toEqual(["session-b"]);
+  });
+
+  test("a failed history load does not restart under the previous transcript", async () => {
+    const s = script({
+      running: true,
+      loadHistory: async () => {
+        throw new Error("history unavailable");
+      }
+    });
+    const { store, out } = await mount(s);
+    const turnsBefore = store.getSnapshot().turns;
+
+    act(() => {
+      out.current!.restart("session-abc", false);
+    });
+    await flush();
+
+    expect(s.restartParams).toHaveLength(0);
+    expect(store.getSnapshot().turns).toEqual(turnsBefore);
   });
 
   test("fork travels with the resume", async () => {
@@ -511,6 +570,34 @@ describe("a model picked before the first start rides along with it", () => {
       out.current!.setModel("haiku");
     });
     expect(s.calls).toContain("setModel");
+  });
+
+  test("a rejected live model change leaves the authoritative model selected", async () => {
+    const s = script({ failSetModel: "unsupported model" });
+    const { store, out } = await mount(s);
+    await act(async () => {
+      out.current!.send("hello", []);
+    });
+    act(() => {
+      store.dispatch({ kind: "setModel", model: "sonnet" });
+      out.current!.setModel("opus", "high");
+    });
+    await flush();
+
+    expect(store.getSnapshot().session.model).toBe("sonnet");
+    expect(store.getSnapshot().session.modelPickPending).toBeUndefined();
+  });
+
+  test("a failed queue-clearing interrupt keeps locally queued messages", async () => {
+    const s = script({ failInterrupt: "interrupt failed" });
+    const { store, out } = await mount(s);
+    act(() => {
+      store.dispatch({ kind: "localSend", uuid: "queued", text: "keep me", atMs: 1 });
+      out.current!.interrupt(true);
+    });
+    await flush();
+
+    expect(store.getSnapshot().queued.map((message) => message.uuid)).toEqual(["queued"]);
   });
 });
 

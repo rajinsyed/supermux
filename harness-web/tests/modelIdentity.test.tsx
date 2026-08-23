@@ -249,6 +249,8 @@ interface Script {
   restore?: { sessionId: string; model?: string };
   /** context.defaults.lastUsed — the machine-wide last-used model. */
   lastUsed?: { model: string; effort?: EffortLevel };
+  /** Omits settings-file defaults so context carries only lastUsed. */
+  lastUsedOnly?: boolean;
   /**
    * When set, the RESTORED session's history load stalls until
    * `releaseHistory()` runs — the shape of the real bug: the user's restored
@@ -271,7 +273,9 @@ function makeBridge(script: Script): HarnessBridge {
         restore: script.restore,
         cachedModels: CATALOG,
         // The user's ~/.claude/settings.json: model gpt-5.6-sol, effortLevel xhigh.
-        defaults: { model: "gpt-5.6-sol", effort: "xhigh", lastUsed: script.lastUsed }
+        defaults: script.lastUsedOnly
+          ? { lastUsed: script.lastUsed }
+          : { model: "gpt-5.6-sol", effort: "xhigh", lastUsed: script.lastUsed }
       };
     },
     async listSessions() {
@@ -660,6 +664,27 @@ describe("item A: a fresh pane defaults to the machine-wide last-used model", ()
     expect(triggerEffort(store)).toBe("high");
 
     // And a first send RUNS it too: display and reality must not diverge.
+    await act(async () => {
+      out.current!.send("hello", []);
+    });
+    await flush();
+    expect(script.startParams[0]?.model).toBe("opus[1m]");
+    expect(script.startParams[0]?.effort).toBe("high");
+  });
+
+  test("lastUsed still applies when no settings-file default exists", async () => {
+    const script: Script = {
+      restartParams: [],
+      startParams: [],
+      setModelCalls: [],
+      historyEvents: [],
+      lastUsed: { model: "opus[1m]", effort: "high" },
+      lastUsedOnly: true
+    };
+    const { store, out } = await mount(script);
+
+    expect(triggerLabel(store)).toBe("Opus (1M context)");
+    expect(triggerEffort(store)).toBe("high");
     await act(async () => {
       out.current!.send("hello", []);
     });

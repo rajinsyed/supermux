@@ -449,6 +449,41 @@ describe("shared incremental subagent transcript resources", () => {
     expect(calls).toBe(2);
   });
 
+  test("reopening retries a terminal transcript that was previously missing", async () => {
+    let calls = 0;
+    installBridge(async () => {
+      calls += 1;
+      if (calls === 1) return response(1, { replace: true, missing: true });
+      return response(2, {
+        replace: true,
+        events: [assistant("assistant-final", "appeared after terminal signal")]
+      });
+    });
+    let current: TranscriptResource | undefined;
+    const view = render(
+      <Root>
+        <TranscriptProbe capture={(value) => (current = value)} />
+      </Root>
+    );
+    await waitFor(() => expect(current?.phase).toBe("missing"));
+
+    view.rerender(
+      <Root>
+        <TranscriptProbe open={false} capture={(value) => (current = value)} />
+      </Root>
+    );
+    view.rerender(
+      <Root>
+        <TranscriptProbe capture={(value) => (current = value)} />
+      </Root>
+    );
+
+    await waitFor(() => expect(calls).toBe(2));
+    await waitFor(() =>
+      expect(view.getByTestId("resource").textContent).toContain("appeared after terminal signal")
+    );
+  });
+
   test("identity changes clear all prior state and ignore stale completions", async () => {
     const first = deferred<SubagentTranscript>();
     const second = deferred<SubagentTranscript>();

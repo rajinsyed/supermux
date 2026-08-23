@@ -132,6 +132,34 @@ describe("versioned native event reduction", () => {
     ).toBeUndefined();
   });
 
+  test("acknowledges output overflow diagnostics", () => {
+    const store = new HarnessStore();
+    installReceiver({
+      onBatch: store.receive,
+      onEnvelope: store.receiveEnvelope,
+      onPresentationVisibility: store.setPresentationVisibility,
+      onTheme: () => undefined
+    });
+
+    expect(
+      window.supermuxHarness?.receiveEnvelope(
+        envelope("document-one", 1, [
+          {
+            kind: "outputOverflow",
+            stream: "stdout",
+            discardedByteCount: 1024,
+            userMessage: "Output was truncated."
+          }
+        ])
+      )
+    ).toEqual({
+      version: 1,
+      documentEpoch: "document-one",
+      highestSequence: 1
+    });
+    expect(store.getSnapshot().banners.at(-1)?.title).toBe("Output was truncated.");
+  });
+
   test("deduplicates an identical retry after it was reduced", () => {
     const store = new HarnessStore();
     let rootNotifications = 0;

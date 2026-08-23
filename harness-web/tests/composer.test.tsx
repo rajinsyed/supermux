@@ -769,6 +769,8 @@ function mountAttachmentComposer(options: {
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: () => {} });
   }
   let identity = options.identity;
+  let draft = "";
+  let rendered: ReturnType<typeof render>;
   const view = () => (
     <CopyProvider dict={undefined}>
       <Composer
@@ -782,8 +784,11 @@ function mountAttachmentComposer(options: {
         queued={[]}
         commands={[]}
         permissionMode="default"
-        draft=""
-        onDraftChange={() => {}}
+        draft={draft}
+        onDraftChange={(next) => {
+          draft = next;
+          rendered.rerender(view());
+        }}
         onSend={options.onSend ?? (() => {})}
         onInterrupt={() => {}}
         onCancelQueued={() => {}}
@@ -796,9 +801,13 @@ function mountAttachmentComposer(options: {
       />
     </CopyProvider>
   );
-  const rendered = render(view());
+  rendered = render(view());
   return {
     ...rendered,
+    setDraft(next: string) {
+      draft = next;
+      rendered.rerender(view());
+    },
     setIdentity(next: string) {
       identity = next;
       rendered.rerender(view());
@@ -952,6 +961,34 @@ describe("composer attachment contract", () => {
       expect(urls.revoked).toEqual(["blob:attachment-0"]);
       expect(document.querySelectorAll(".attach-chip").length).toBe(0);
     });
+  });
+
+  test("an image send keeps its submit order while bytes are loading", async () => {
+    let releaseBytes: (value: ArrayBuffer) => void = () => undefined;
+    const bytes = new Promise<ArrayBuffer>((resolve) => {
+      releaseBytes = resolve;
+    });
+    const image = new File([new Uint8Array([1])], "slow.png", { type: "image/png" });
+    Object.defineProperty(image, "arrayBuffer", {
+      configurable: true,
+      value: () => bytes
+    });
+    const sent: string[] = [];
+    const rendered = mountAttachmentComposer({ onSend: (text) => sent.push(text) });
+    pasteFiles([image]);
+    await screen.findByText("slow.png");
+    rendered.setDraft("first");
+    fireEvent.click(document.querySelector(".btn-send")!);
+
+    rendered.setDraft("second");
+    fireEvent.click(document.querySelector(".btn-send")!);
+    expect(sent).toEqual([]);
+
+    await act(async () => {
+      releaseBytes(new Uint8Array([1]).buffer);
+      await bytes;
+    });
+    await waitFor(() => expect(sent).toEqual(["first", "second"]));
   });
 
   test("conversation identity reset releases staged attachments", async () => {

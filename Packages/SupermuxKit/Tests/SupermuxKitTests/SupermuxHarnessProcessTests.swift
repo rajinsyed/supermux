@@ -76,6 +76,33 @@ struct SupermuxHarnessInputWriterTests {
         #expect(String(decoding: data, as: UTF8.self) == "firstsecond")
     }
 
+    @Test func acceptsPolicyValidAttachmentFramesLargerThanOneMiB() async throws {
+        let rawImage = Data(repeating: 0, count: SupermuxHarnessAttachmentPolicy.maximumImageBytes)
+        let image = SupermuxHarnessImage(
+            mediaType: "image/png",
+            dataBase64: rawImage.base64EncodedString()
+        )
+        let frame = try SupermuxHarnessProtocolEncoder().userMessage(
+            text: "",
+            images: [image, image],
+            uuid: UUID().uuidString
+        )
+        #expect(frame.lineData.count > 1024 * 1024)
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-input-writer-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        #expect(FileManager.default.createFile(atPath: fileURL.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: fileURL)
+        let writer = SupermuxHarnessInputWriter(fileHandle: handle)
+
+        try await writer.write(frame.lineData)
+        await writer.close()
+
+        let written = try Data(contentsOf: fileURL)
+        #expect(written == frame.lineData)
+    }
+
     @Test func rejectsSingleWriteLargerThanQueueCapacity() async {
         let pipe = Pipe()
         let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)

@@ -88,6 +88,11 @@ struct SupermuxFocusedPaneNotificationTests {
             surfaceID: UUID(),
             externalDeliverySuppressed: false
         ))
+        #expect(!policy.targetIsAlreadyVisible(
+            surfaceID: UUID(),
+            externalDeliverySuppressed: true,
+            targetWindowIsKey: false
+        ))
     }
 
     @Test("Focused pane policy suppresses presentation but preserves history and automation")

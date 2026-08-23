@@ -450,6 +450,50 @@ describe("killed and stopped settle the launching block", () => {
   });
 });
 
+test("a new process clears task-to-tool routing from the previous run", () => {
+  const index = createIndex();
+  let model = createModel();
+  model = applyLine(
+    model,
+    index,
+    {
+      type: "assistant",
+      uuid: "assistant-old",
+      message: {
+        id: "message-old",
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "tool-old",
+            name: "Bash",
+            input: { command: "sleep 1" }
+          }
+        ]
+      }
+    } as ProtocolLine,
+    1
+  );
+  model = applyLine(
+    model,
+    index,
+    {
+      type: "system",
+      subtype: "task_started",
+      task_id: "reused-task",
+      tool_use_id: "tool-old",
+      task_type: "local_bash",
+      uuid: "task-old"
+    } as ProtocolLine,
+    2
+  );
+  expect(index.taskToTool.get("reused-task")).toBe("tool-old");
+
+  model = applyEvent(model, index, { kind: "runStarted", runId: "run-new" }, 3);
+
+  expect(index.taskToTool.has("reused-task")).toBe(false);
+});
+
 describe("a terminal status is a latch", () => {
   /** The workflow mid-flight, then killed by the user at frame 37. */
   function stoppedWorkflow() {

@@ -430,6 +430,39 @@ struct SupermuxHarnessTests {
 
     @MainActor
     @Test
+    func testRewindPreservesSelectedEffortOnReplacementRun() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        var restored = SessionSupermuxHarnessPanelSnapshot()
+        restored.sessionId = "session-original"
+        restored.model = "sonnet"
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(
+            restoreState: restored,
+            defaults: defaults,
+            process: process
+        )
+        defer { controller.close() }
+        _ = try await controller.start(
+            resumeSessionId: "session-original",
+            forkSession: false,
+            model: "sonnet",
+            permissionMode: nil,
+            effort: "xhigh"
+        )
+
+        _ = try await controller.rewind(
+            userMessageUuid: "message-current",
+            restoreFiles: false,
+            resumeAtUuid: "message-previous"
+        )
+
+        let replacementPlan = try #require(process.startedPlans.last)
+        #expect(replacementPlan.arguments.value(after: "--effort") == "xhigh")
+    }
+
+    @MainActor
+    @Test
     func testNoResumeRestartRetiresRestoredSessionBeforeInitialize() async throws {
         let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
         defer { clearHarnessDefaults(defaults) }
@@ -474,7 +507,50 @@ struct SupermuxHarnessTests {
 
     @MainActor
     @Test
-    func testRestartClosesRouterThenAwaitsTerminationBeforeRelaunch() async throws {
+    func testForkRestartRetiresRestoredSessionBeforeInitialize() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        var restored = SessionSupermuxHarnessPanelSnapshot()
+        restored.sessionId = "session-old"
+        let panel = SupermuxHarnessPanel(
+            workspaceId: UUID(),
+            workingDirectory: "/tmp",
+            restoreState: restored,
+            sessionRepository: makeSessionRepository(),
+            transcriptService: SupermuxHarnessSubagentTranscriptService(
+                projectsRootURL: SupermuxHarnessSessionController.claudeProjectsRootURL,
+                fileManager: .default
+            )
+        )
+        let process = MockSupermuxHarnessProcessSession()
+        let controller = makeController(
+            restoreState: restored,
+            defaults: defaults,
+            process: process
+        )
+        controller.restoreStateRetirementSink = { [weak panel] in
+            panel?.retireRestoreState()
+        }
+        defer {
+            controller.close()
+            panel.close()
+        }
+
+        _ = try await controller.restart(
+            resumeSessionId: "session-old",
+            forkSession: true,
+            model: nil,
+            permissionMode: nil,
+            effort: nil
+        )
+
+        #expect(controller.snapshot.sessionId == nil)
+        #expect(panel.currentSnapshot.sessionId == nil)
+    }
+
+    @MainActor
+    @Test
+    func testRestartSignalsTerminationBeforeClosingRouter() async throws {
         let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
         defer { clearHarnessDefaults(defaults) }
         let process = MockSupermuxHarnessProcessSession()
@@ -501,10 +577,13 @@ struct SupermuxHarnessTests {
             effort: nil
         )
 
+        let terminationSignalIndex = try #require(
+            process.operations.firstIndex(of: .terminate(runID: "run-1"))
+        )
         let permissionIndex = try #require(
             process.operations.firstIndex(of: .permissionResponse(requestID: "permission-1"))
         )
-        let terminationIndex = try #require(
+        let terminationWaitIndex = try #require(
             process.operations.firstIndex(of: .terminateAndWait(runID: "run-1"))
         )
         let relaunchIndex = try #require(
@@ -513,8 +592,9 @@ struct SupermuxHarnessTests {
                 return false
             }
         )
-        #expect(permissionIndex < terminationIndex)
-        #expect(terminationIndex < relaunchIndex)
+        #expect(terminationSignalIndex < permissionIndex)
+        #expect(permissionIndex < terminationWaitIndex)
+        #expect(terminationWaitIndex < relaunchIndex)
     }
 
     @MainActor
@@ -1527,6 +1607,7 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
     var responses: [String: Response] = [:]
     var heldControlSubtypes: Set<String> = []
     private(set) var operations: [Operation] = []
+    private(set) var startedPlans: [SupermuxHarnessLaunchPlan] = []
 
     private var heldControlContinuations: [String: CheckedContinuation<Void, Never>] = [:]
     private var protocolLineSink: SupermuxHarnessProtocolLineSink?
@@ -1558,6 +1639,7 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
         nextRunNumber += 1
         isRunning = true
         activeRunID = runID
+        startedPlans.append(plan)
         operations.append(.start(
             runID: runID,
             resumeSessionID: plan.arguments.value(after: "--resume"),
@@ -1580,7 +1662,8 @@ private final class MockSupermuxHarnessProcessSession: SupermuxHarnessProcessSes
     func terminate() throws {
         guard let runID = activeRunID else { throw SupermuxHarnessProcessError.notRunning }
         operations.append(.terminate(runID: runID))
-        finish(runID: runID)
+        // Process.terminate() is only a signal; the lifecycle remains active until
+        // terminateAndWait observes the fully drained exit.
     }
 
     func terminateAndWait(timeout: TimeInterval) async throws -> Int32 {

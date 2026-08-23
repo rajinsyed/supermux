@@ -79,6 +79,9 @@ struct SupermuxHarnessSessionRepositoryConcurrencyTests {
         #expect(metrics.scanCount == 2)
         #expect(metrics.coalescedRequestCount == 1)
         #expect(metrics.dirtyRerunRequestCount == 1)
+        let finalAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let finalSize = try #require((finalAttributes[.size] as? NSNumber)?.uint64Value)
+        #expect(metrics.indexBytesRead == finalSize)
     }
 
     @Test func independentCanonicalPathsMayScanConcurrently() async throws {

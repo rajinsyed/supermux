@@ -149,6 +149,23 @@ struct SupermuxHarnessNativeEventTransportTests {
     }
 
     @Test
+    func permanentlyOversizedEventIsNotReportedAsRecoverableBackpressure() {
+        let transport = SupermuxHarnessNativeEventTransport(
+            configuration: configuration(
+                maximumEncodedBatchBytes: 128,
+                maximumBacklogBytes: 1024 * 1024
+            ),
+            epochGenerator: { "document-one" }
+        )
+
+        #expect(
+            transport.enqueue(event(id: "oversized", payload: String(repeating: "x", count: 512)))
+                != .recoveryRequired
+        )
+        #expect(transport.pendingEventCount == 0)
+    }
+
+    @Test
     func newestHostGenerationCannotBeStolenOrReleasedByAStaleHost() {
         let ownership = SupermuxHarnessWebHostOwnership()
         let staleHost = Host()

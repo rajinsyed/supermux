@@ -5,9 +5,11 @@ struct SupermuxFocusedPaneNotificationPolicy {
     /// Returns whether the exact pane target is already visible and focused.
     func targetIsAlreadyVisible(
         surfaceID: UUID?,
-        externalDeliverySuppressed: Bool
+        externalDeliverySuppressed: Bool,
+        targetWindowIsKey: Bool = true
     ) -> Bool {
-        surfaceID != nil && externalDeliverySuppressed
+        _ = targetWindowIsKey
+        return surfaceID != nil && externalDeliverySuppressed
     }
 
     /// Removes user-facing alert effects while preserving history and automation.

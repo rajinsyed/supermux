@@ -601,6 +601,50 @@ struct DockPortalReconcileTests {
         }
     }
 
+    @Test("Claude harness surface stays with workspace owner")
+    @MainActor
+    func harnessSurfaceCannotMoveIntoDock() async throws {
+        try await AppContextSerialGate.withExclusiveAppContext {
+            let previousAppDelegate = AppDelegate.shared
+            let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+            let appDelegate = AppDelegate()
+            let manager = TabManager(autoWelcomeIfNeeded: false)
+            AppDelegate.shared = appDelegate
+            appDelegate.tabManager = manager
+            TerminalController.shared.setActiveTabManager(manager)
+            let windowId = appDelegate.registerMainWindowContextForTesting(tabManager: manager)
+            defer {
+                TerminalController.shared.setActiveTabManager(previousManager)
+                appDelegate.unregisterMainWindowContextForTesting(windowId: windowId)
+                manager.tabs.forEach { $0.teardownAllPanels() }
+                AppDelegate.shared = previousAppDelegate
+            }
+
+            let workspace = try #require(manager.tabs.first)
+            let pane = try #require(workspace.bonsplitController.allPaneIds.first)
+            let harness = try #require(workspace.newSupermuxHarnessSurface(
+                inPane: pane,
+                workingDirectory: "/tmp",
+                focus: false
+            ))
+            let sourceTabId = try #require(workspace.surfaceIdFromPanelId(harness.id))
+            let dock = workspace.dockSplit
+            let rootPane = try #require(dock.bonsplitController.allPaneIds.first)
+
+            #expect(!appDelegate.canMoveSurfaceIntoDock(
+                sourceTabId: sourceTabId.uuid,
+                destinationDock: dock
+            ))
+            #expect(!appDelegate.moveSurfaceIntoDock(
+                sourceTabId: sourceTabId.uuid,
+                destinationDock: dock,
+                destination: .insert(targetPane: rootPane, targetIndex: nil)
+            ))
+            #expect(workspace.panels[harness.id] === harness)
+            #expect(dock.panel(for: sourceTabId) == nil)
+        }
+    }
+
     @Test("Move Dock surface to workspace reconciles destination")
     @MainActor
     func moveDockSurfaceToWorkspaceReconcilesDestination() async throws {
