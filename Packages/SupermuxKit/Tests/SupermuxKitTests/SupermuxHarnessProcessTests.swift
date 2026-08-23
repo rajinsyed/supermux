@@ -132,6 +132,31 @@ struct SupermuxHarnessInputWriterTests {
         }
     }
 
+    @Test func closeCancelsActiveWriteBeforeReturning() async throws {
+        let pipe = Pipe()
+        let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)
+        let payload = Data(repeating: UInt8(ascii: "x"), count: 4 * 1024 * 1024)
+        let writeTask = Task {
+            try await writer.write(payload)
+        }
+        for _ in 0..<100 {
+            await Task.yield()
+        }
+
+        await writer.close()
+        let received = pipe.fileHandleForReading.readDataToEndOfFile()
+
+        #expect(received.count < payload.count)
+        do {
+            try await writeTask.value
+            Issue.record("Expected active write to be cancelled by close")
+        } catch let error as SupermuxHarnessProcessError {
+            #expect(error == .inputClosed)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test func closedReaderReturnsWriteFailureWithoutRaisingSIGPIPE() async throws {
         let pipe = Pipe()
         let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)
