@@ -75,7 +75,7 @@ struct SupermuxHarnessNativeEventAcknowledgement {
               double <= Double(Int.max) else {
             return nil
         }
-        return Int(double)
+        return Int(exactly: double)
     }
 
     private static func uint64(_ value: Any?) -> UInt64? {

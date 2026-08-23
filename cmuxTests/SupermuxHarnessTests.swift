@@ -1,3 +1,4 @@
+import AppKit
 import CmuxCore
 import Foundation
 import Testing
@@ -104,6 +105,20 @@ struct SupermuxHarnessTests {
         #expect(CmuxSurfaceTabBarBuiltInAction(configID: "claude") == nil)
         #expect(CmuxSurfaceTabBarBuiltInAction(configID: "harness") == nil)
         #expect(CmuxSurfaceTabBarBuiltInAction(configID: "claude-harness") == .newClaudeHarness)
+    }
+
+    @Test
+    func testHarnessDropOverlayPassesFileDragsThroughButKeepsTabTransfers() {
+        #expect(!TerminalPaneDropTargetView.shouldCaptureHitTesting(
+            pasteboardTypes: [.fileURL],
+            eventType: .leftMouseDragged,
+            capturesFileDrops: false
+        ))
+        #expect(TerminalPaneDropTargetView.shouldCaptureHitTesting(
+            pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType, .fileURL],
+            eventType: .leftMouseDragged,
+            capturesFileDrops: false
+        ))
     }
 
     @MainActor

@@ -36,7 +36,7 @@ enum CmuxSurfaceTabBarBuiltInAction: String, Codable, Sendable, CaseIterable, Ha
             self = .newSimulator
         // SUPERMUX:begin claude-harness-builtin-action
         case "cmux.newClaudeHarness", "newClaudeHarness", "new-claude-harness",
-             "claude-harness", "claudeharness", "claude", "harness":
+             "claude-harness", "claudeharness":
             self = .newClaudeHarness
         // SUPERMUX:end claude-harness-builtin-action
         case "cmux.splitRight", "splitRight":

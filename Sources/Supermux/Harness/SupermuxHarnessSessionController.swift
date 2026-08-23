@@ -23,6 +23,7 @@ final class SupermuxHarnessSessionController {
         var taskType: String
         var toolUseID: String?
         var outputFile: String?
+        var sourceSessionID: String?
     }
 
     private static var liveControllers: [ObjectIdentifier: WeakController] = [:]
@@ -69,6 +70,7 @@ final class SupermuxHarnessSessionController {
     private var titleRefreshGeneration: UInt64 = 0
     private var pendingRenameID: UUID?
     private var isTurnActive = false
+    private var turnStateRevision: UInt64 = 0
 
     init(
         workingDirectory: String?,
@@ -386,6 +388,7 @@ final class SupermuxHarnessSessionController {
             if controlRouter === router {
                 controlRouter = nil
             }
+            emitPendingUserInputStateIfChanged()
         }
         if let stoppedRunID, processSession.activeRunID == stoppedRunID {
             do {
@@ -523,8 +526,17 @@ final class SupermuxHarnessSessionController {
             throw SupermuxHarnessBridgeError.sessionNotRunning
         }
         let frame = try encoder.userMessage(text: text, images: images, uuid: uuid)
-        try await processSession.send(frame)
+        let activatedTurn = !isTurnActive
         setTurnActive(true)
+        let sendTurnRevision = turnStateRevision
+        do {
+            try await processSession.send(frame)
+        } catch {
+            if activatedTurn, turnStateRevision == sendTurnRevision {
+                setTurnActive(false)
+            }
+            throw error
+        }
     }
 
     func interrupt(cancelQueued: Bool) async throws {
@@ -570,6 +582,7 @@ final class SupermuxHarnessSessionController {
             if controlRouter === router {
                 controlRouter = nil
             }
+            emitPendingUserInputStateIfChanged()
         }
     }
 
@@ -892,7 +905,7 @@ final class SupermuxHarnessSessionController {
         let outputFile = record.outputFile
         let expectedOutputFiles = derivedTaskOutputFiles(
             taskID: taskId,
-            sessionID: currentSessionID
+            sessionID: record.sourceSessionID ?? currentSessionID
         )
         let taskOutputRootURL = self.taskOutputRootURL
         let taskOutputCanonicalRootURL = self.taskOutputCanonicalRootURL
@@ -935,6 +948,7 @@ final class SupermuxHarnessSessionController {
         processSession.close()
         guard let router = controlRouter else { return }
         controlRouter = nil
+        emitPendingUserInputStateIfChanged()
         Task { @MainActor [router] in
             await router.close(denialMessage: Self.closedDenialMessage)
         }
@@ -1198,10 +1212,17 @@ final class SupermuxHarnessSessionController {
         var record = taskRecordsByID[taskID] ?? TaskRecord(
             taskType: taskType ?? "unknown",
             toolUseID: nil,
-            outputFile: nil
+            outputFile: nil,
+            sourceSessionID: nil
         )
         if let taskType { record.taskType = taskType }
         if let toolUseID { record.toolUseID = toolUseID }
+        if let sessionID, record.sourceSessionID != sessionID {
+            record.sourceSessionID = sessionID
+            if outputFile == nil {
+                record.outputFile = nil
+            }
+        }
         if let outputFile {
             record.outputFile = outputFile
         } else if record.outputFile == nil {
@@ -1301,6 +1322,7 @@ final class SupermuxHarnessSessionController {
     private func setTurnActive(_ active: Bool) {
         guard isTurnActive != active else { return }
         isTurnActive = active
+        turnStateRevision &+= 1
         runningStateSink?(active)
     }
 

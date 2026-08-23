@@ -14,6 +14,7 @@ struct SupermuxHarnessPanelView: View {
     let panel: SupermuxHarnessPanel
     let isFocused: Bool
     let isVisibleInUI: Bool
+    let allowsPointerInput: Bool
     let portalPriority: Int
     let appearance: PanelAppearance
     /// Item 10: mirrors `TerminalPanelView.hasUnreadNotification`. The harness
@@ -37,7 +38,7 @@ struct SupermuxHarnessPanelView: View {
         )
         .id(panel.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(isVisibleInUI)
+        .allowsHitTesting(isVisibleInUI && allowsPointerInput)
         .accessibilityHidden(!isVisibleInUI)
         .zIndex(Double(portalPriority))
         .background(Color(nsColor: appearance.contentBackgroundColor))

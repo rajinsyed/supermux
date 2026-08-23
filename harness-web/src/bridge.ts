@@ -79,7 +79,7 @@ export interface HarnessBridge {
     paths: string[];
     attachmentError?: AttachmentErrorCode;
   }>;
-  openFile(params: { path: string; line?: number }): Promise<void>;
+  openFile(params: { path: string }): Promise<void>;
   copyText(params: { text: string }): Promise<void>;
   saveFile(params: { suggestedName: string; text: string }): Promise<{ saved: boolean }>;
   notify(params: { title: string; body: string }): Promise<void>;

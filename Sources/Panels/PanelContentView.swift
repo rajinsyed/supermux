@@ -220,6 +220,7 @@ struct PanelContentView: View {
                     panel: harnessPanel,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
+                    allowsPointerInput: allowsPointerInput,
                     portalPriority: portalPriority,
                     appearance: appearance,
                     hasUnreadNotification: hasUnreadNotification,
@@ -233,11 +234,16 @@ struct PanelContentView: View {
     @ViewBuilder
     private var paneDropTargetOverlay: some View {
         if shouldInstallPaneDropTarget {
-            PaneDropTargetRepresentable(dropContext: PaneDropContext(
-                workspaceId: workspaceId,
-                panelId: panel.id,
-                paneId: paneId
-            ))
+            PaneDropTargetRepresentable(
+                dropContext: PaneDropContext(
+                    workspaceId: workspaceId,
+                    panelId: panel.id,
+                    paneId: paneId
+                ),
+                // SUPERMUX:begin claude-harness-drop-target
+                capturesFileDrops: panel.panelType != .claudeHarness
+                // SUPERMUX:end claude-harness-drop-target
+            )
         }
     }
 

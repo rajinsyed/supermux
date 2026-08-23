@@ -24,7 +24,7 @@ struct SupermuxHarnessDebugMenuButtons: View {
         }
         _ = workspace.newSupermuxHarnessSurface(
             inPane: paneId,
-            workingDirectory: workspace.currentDirectory,
+            workingDirectory: nil,
             focus: true
         )
     }

@@ -4,6 +4,9 @@ import Foundation
 @MainActor
 final class FakeSurfaceControlCommandContext: ControlCommandContext {
     var paneCreateResolution: ControlPaneCreateResolution = .tabManagerUnavailable
+    // SUPERMUX:begin claude-harness-socket-split-error-test
+    var splitResolution: ControlSurfaceSplitResolution = .tabManagerUnavailable
+    // SUPERMUX:end claude-harness-socket-split-error-test
     var createResolution: ControlSurfaceCreateResolution = .tabManagerUnavailable
     var surfaceListSnapshot: ControlSurfaceListSnapshot?
     var resumeResolution: ControlSurfaceResumeResolution = .surfaceNotFound
@@ -35,6 +38,15 @@ final class FakeSurfaceControlCommandContext: ControlCommandContext {
         surfaceListSnapshot
     }
     func controlPaneRoutingResolvesTabManager(routing: ControlRoutingSelectors) -> Bool { true }
+
+    // SUPERMUX:begin claude-harness-socket-split-error-test
+    func controlSurfaceSplit(
+        routing: ControlRoutingSelectors,
+        inputs: ControlSurfaceSplitInputs
+    ) -> ControlSurfaceSplitResolution {
+        splitResolution
+    }
+    // SUPERMUX:end claude-harness-socket-split-error-test
 
     func controlPaneCreate(
         routing: ControlRoutingSelectors,

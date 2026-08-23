@@ -138,10 +138,7 @@ extension SupermuxHarnessWebRendererCoordinator {
         case "harness.pickFiles":
             return await pickLocalFiles()
         case "harness.openFile":
-            openFileInWorkspace(
-                path: try request.requiredString("path"),
-                line: request.integer("line")
-            )
+            openFileInWorkspace(path: try request.requiredString("path"))
             return [:] as [String: Any]
         case "harness.copyText":
             let text = try request.requiredRawString("text")
@@ -328,8 +325,7 @@ extension SupermuxHarnessWebRendererCoordinator {
         return byteCount >= 0 ? byteCount : nil
     }
 
-    private func openFileInWorkspace(path: String, line: Int?) {
-        _ = line
+    private func openFileInWorkspace(path: String) {
         guard let app = AppDelegate.shared,
               let location = app.workspaceContainingPanel(
                   panelId: panelId,

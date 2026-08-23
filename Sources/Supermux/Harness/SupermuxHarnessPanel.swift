@@ -83,6 +83,9 @@ final class SupermuxHarnessPanel: Panel {
         if snapshot.title == nil, displayTitle != Self.defaultTitle {
             snapshot.title = displayTitle
         }
+        if snapshot.titleIsCustom == nil {
+            snapshot.titleIsCustom = restoreState?.titleIsCustom
+        }
         if snapshot.sessionId == nil {
             snapshot.sessionId = restoreState?.sessionId
         }

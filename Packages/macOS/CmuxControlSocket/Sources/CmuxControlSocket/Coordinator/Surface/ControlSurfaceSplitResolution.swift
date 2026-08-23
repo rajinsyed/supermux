@@ -14,8 +14,10 @@ public enum ControlSurfaceSplitResolution: Sendable, Equatable {
     /// "Missing or invalid direction (left|right|up|down)"). The coordinator
     /// pre-validates the same token set, so this is a drift-safety net.
     case invalidDirection
-    /// The type token resolved to `agent-session` (legacy `invalid_params` /
-    /// "agent-session is only supported by surface.create", `data: {"type": …}`).
+    // SUPERMUX:begin claude-harness-socket-split-error
+    /// The type token resolved to a surface kind that only `surface.create` supports.
+    /// Carries the resolved raw type value for the error payload and message.
+    // SUPERMUX:end claude-harness-socket-split-error
     case agentSessionRejected(typeRawValue: String)
     /// The browser was disabled; carries the shared external-open outcome.
     case browserDisabled(ControlSurfaceBrowserDisabledOutcome)

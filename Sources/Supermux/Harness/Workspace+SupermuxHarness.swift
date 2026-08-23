@@ -102,6 +102,14 @@ extension Workspace {
     ) -> SupermuxHarnessPanel? {
         let directory = restoreState.workingDirectory
             ?? (usesRemoteDirectoryProvenance ? presentedCurrentDirectory : currentDirectory)
+        let sourcePanelId = bonsplitController.selectedTab(inPane: paneId)
+            .flatMap { panelIdFromSurfaceId($0.id) }
+        let sourcePanelUsesRemoteFallback = sourcePanelId.map {
+            reportedPanelDirectory(panelId: $0) == nil && terminalPanel(for: $0) == nil
+        } ?? true
+        let trustsHarnessDirectory = restoreState.workingDirectory == nil &&
+            (sourcePanelId.map { remoteDirectoryReportPanelIds.contains($0) } == true ||
+                (usesRemoteDirectoryProvenance && sourcePanelUsesRemoteFallback && directory != nil))
         let harnessPanel = SupermuxHarnessPanel(
             workspaceId: id,
             workingDirectory: directory,
@@ -143,6 +151,9 @@ extension Workspace {
         }
 
         bonsplitController.selectTab(newTab.id)
+        if trustsHarnessDirectory, let directory {
+            _ = updateRemotePanelDirectory(panelId: harnessPanel.id, directory: directory)
+        }
         suppressReparentFocusUntilLayoutFollowUp(
             previousHostedView,
             reason: "workspace.supermuxHarnessSplitReparent"

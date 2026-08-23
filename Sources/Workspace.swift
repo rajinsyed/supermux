@@ -9927,6 +9927,10 @@ final class Workspace: Identifiable, ObservableObject {
         if let harnessPanel = detached.panel as? SupermuxHarnessPanel {
             harnessPanel.updateWorkspaceId(id)
             installSupermuxHarnessPanelSubscription(harnessPanel)
+            scheduleSupermuxHarnessGitMetadataProbe(
+                panelId: harnessPanel.id,
+                reason: "harnessSurfaceTransfer"
+            )
         }
         // SUPERMUX:end claude-harness-transfer-in
         if detached.directoryIsTrustedRemoteReport {
