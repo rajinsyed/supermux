@@ -266758,6 +266758,23 @@
         }
       }
     },
+    "supermux.changes.unpushed.rowHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@\n%2$@ · %3$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@\n%2$@ · %3$@"
+          }
+        }
+      }
+    },
     "supermux.changes.unpushed.showMore" : {
       "extractionState" : "manual",
       "localizations" : {
