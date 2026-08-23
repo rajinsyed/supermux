@@ -77,10 +77,13 @@ struct SupermuxPullRequestStatusIcon: View {
     }
 }
 
-/// Draws the GitHub-style git-pull-request glyph (two branch nodes joined to a
-/// third) using the same path geometry as cmux's sidebar PR icons, scaled from
-/// its native 13-unit canvas to `size`. Strokes with `.foreground`, so the
-/// badge's `foregroundStyle` tint colors it.
+/// Draws the GitHub-style git-pull-request glyph using the same path geometry
+/// as cmux's sidebar PR icons, scaled from its native 13-unit canvas to `size`.
+/// Strokes with `.foreground`, so the badge's `foregroundStyle` tint colors it.
+///
+/// The open glyph carries a left-pointing **arrowhead**: two branches with a
+/// bare connector is the `git-branch` icon, not `git-pull-request`, and the
+/// arrow is the difference.
 struct SupermuxPullRequestGlyph: View {
     /// Which PR glyph to draw.
     enum Kind { case open, merged }
@@ -91,6 +94,12 @@ struct SupermuxPullRequestGlyph: View {
     private static let canvas: CGFloat = 13
     private static let nodeDiameter: CGFloat = 3
     private static let stroke = StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
+    /// Where the open glyph's arrow tip lands. Far enough left to read as
+    /// aimed at the left branch, not so far it collides with that branch's
+    /// node at 12pt.
+    private static let arrowTipX: CGFloat = 6.6
+    /// How far each barb trails behind the tip, on both axes (45° barbs).
+    private static let arrowBarb: CGFloat = 1.4
 
     var body: some View {
         ZStack {
@@ -106,12 +115,26 @@ struct SupermuxPullRequestGlyph: View {
         Path { path in
             switch kind {
             case .open:
+                // Left branch: a bare shaft between its two nodes.
                 path.move(to: CGPoint(x: 3.0, y: 4.8))
                 path.addLine(to: CGPoint(x: 3.0, y: 9.2))
-                path.move(to: CGPoint(x: 4.8, y: 3.0))
-                path.addLine(to: CGPoint(x: 9.4, y: 3.0))
+                // Right branch: up from its node, round the corner, then run
+                // LEFT and end in an arrowhead aimed at the left branch. The
+                // arrow is the whole point of the glyph — it is what says
+                // "merge this into that" rather than "here are two branches" —
+                // and the two branches stay separate strokes, as in GitHub's
+                // own octicon, so the arrow reads as flying between them.
+                path.move(to: CGPoint(x: 11.0, y: 9.2))
                 path.addLine(to: CGPoint(x: 11.0, y: 4.6))
-                path.addLine(to: CGPoint(x: 11.0, y: 9.2))
+                path.addArc(
+                    tangent1End: CGPoint(x: 11.0, y: 3.0),
+                    tangent2End: CGPoint(x: Self.arrowTipX, y: 3.0),
+                    radius: 1.6
+                )
+                path.addLine(to: CGPoint(x: Self.arrowTipX, y: 3.0))
+                path.move(to: CGPoint(x: Self.arrowTipX + Self.arrowBarb, y: 3.0 - Self.arrowBarb))
+                path.addLine(to: CGPoint(x: Self.arrowTipX, y: 3.0))
+                path.addLine(to: CGPoint(x: Self.arrowTipX + Self.arrowBarb, y: 3.0 + Self.arrowBarb))
             case .merged:
                 path.move(to: CGPoint(x: 4.6, y: 4.6))
                 path.addLine(to: CGPoint(x: 7.1, y: 7.0))
