@@ -1212,6 +1212,22 @@ final class TerminalNotificationStore: ObservableObject {
             tabId: request.tabId,
             surfaceId: request.surfaceId
         )
+        // SUPERMUX:begin focused-pane-notification-suppression
+        // A pane the user is already watching needs history, not attention UI.
+        // Shadow the hook-resolved effects once at the admission chokepoint so
+        // badges, rings, flashes, native delivery, sound, and workspace reorder
+        // all inherit the same decision. Explicit custom-command automation is
+        // deliberately preserved by the focused-pane policy.
+        let focusedPanePolicy = SupermuxFocusedPaneNotificationPolicy()
+        let focusedPaneAlreadyVisible = focusedPanePolicy.targetIsAlreadyVisible(
+            surfaceID: request.surfaceId,
+            externalDeliverySuppressed: shouldSuppressExternalDelivery
+        )
+        let effects = focusedPanePolicy.resolvedEffects(
+            effects,
+            targetIsAlreadyVisible: focusedPaneAlreadyVisible
+        )
+        // SUPERMUX:end focused-pane-notification-suppression
         let notification = TerminalNotification(
             id: UUID(),
             tabId: request.tabId,
@@ -1382,13 +1398,17 @@ final class TerminalNotificationStore: ObservableObject {
             )
         }
         // SUPERMUX:begin direct-phone-push
-        // The direct lane ignores Mac focus suppression entirely: a phone
-        // remote-controlling this Mac keeps the app frontmost on the phone's
-        // workspace while nobody is at the Mac, so any Mac-side presence guess
-        // loses notifications. The phone owns presentation — its foreground
-        // delegate already suppresses the banner when it is showing the exact
-        // target terminal, so an always-send Mac cannot double-notify.
-        if PhonePushClient.shared.configuration().forwardingEnabled {
+        // Match every other alert surface: when the exact target pane is already
+        // focused, the notification remains read history and no phone banner is
+        // forwarded. A non-focused pane still uses the direct APNs lane even when
+        // the Mac is otherwise active.
+        let focusedPaneAlreadyVisible = SupermuxFocusedPaneNotificationPolicy()
+            .targetIsAlreadyVisible(
+                surfaceID: notification.surfaceId,
+                externalDeliverySuppressed: shouldSuppressExternalDelivery
+            )
+        if !focusedPaneAlreadyVisible,
+           PhonePushClient.shared.configuration().forwardingEnabled {
             SupermuxComposition.directPhonePush.forward(
                 notification: notification,
                 badgeCount: indexes.unreadCount,

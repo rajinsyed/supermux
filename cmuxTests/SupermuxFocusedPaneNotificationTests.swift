@@ -71,4 +71,40 @@ struct SupermuxFocusedPaneNotificationTests {
         #expect(!focusedEffects.sound)
         #expect(focusedEffects.command)
     }
+
+    @Test("Focus suppression requires an exact pane target")
+    func focusSuppressionRequiresExactPaneTarget() {
+        let policy = SupermuxFocusedPaneNotificationPolicy()
+
+        #expect(policy.targetIsAlreadyVisible(
+            surfaceID: UUID(),
+            externalDeliverySuppressed: true
+        ))
+        #expect(!policy.targetIsAlreadyVisible(
+            surfaceID: nil,
+            externalDeliverySuppressed: true
+        ))
+        #expect(!policy.targetIsAlreadyVisible(
+            surfaceID: UUID(),
+            externalDeliverySuppressed: false
+        ))
+    }
+
+    @Test("Focused pane policy suppresses presentation but preserves history and automation")
+    func focusedPanePolicySuppressesPresentationOnly() {
+        let policy = SupermuxFocusedPaneNotificationPolicy()
+        let original = TerminalNotificationPolicyEffects()
+        let resolved = policy.resolvedEffects(
+            original,
+            targetIsAlreadyVisible: true
+        )
+
+        #expect(resolved.record)
+        #expect(!resolved.markUnread)
+        #expect(!resolved.reorderWorkspace)
+        #expect(!resolved.desktop)
+        #expect(!resolved.sound)
+        #expect(resolved.command)
+        #expect(!resolved.paneFlash)
+    }
 }

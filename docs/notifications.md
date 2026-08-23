@@ -58,6 +58,12 @@ cmux notify --title "Done" --tab 0 --panel 1
 
 Use `Cmd+Shift+U` to jump to the latest unread notification. Use `Ctrl+Cmd+U` to mark the current item as oldest unread and jump to the next latest unread. Both shortcuts are configurable in Settings > Keyboard Shortcuts and in `~/.config/cmux/cmux.json`.
 
+## Notifications from the focused pane
+
+<!-- SUPERMUX:begin focused-pane-notification-suppression-doc -->
+When the app is active and a notification targets the exact pane already in focus, Supermux keeps it as read history instead of asking for attention you have already given it. It creates no unread count or badge, pane ring or flash, desktop alert or sound, or mobile push. An explicitly configured notification command still runs as automation. Notifications without an exact pane target retain the existing workspace-level behavior.
+<!-- SUPERMUX:end focused-pane-notification-suppression-doc -->
+
 ## Suppress only the focused surface
 
 By default cmux withdraws a delivered banner when its workspace becomes visible/active, which can retract a banner for a non-focused surface (e.g. a second agent in the same visible workspace) before you notice it. Set the opt-in flag below to `true` so the auto-withdraw fires **only** for the exact focused surface — matching the delivery gate. A banner for a non-focused surface then stays up until you focus that surface (or click/dismiss it). Workspace-visible-but-not-focused surfaces and surfaces in non-visible workspaces keep their banners; explicit "mark workspace read" and clicking/typing still clear notifications as before.

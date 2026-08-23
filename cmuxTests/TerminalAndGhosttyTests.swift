@@ -3266,6 +3266,10 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         AppFocusState.overrideIsFocused = true
         XCTAssertTrue(window.makeFirstResponder(surfaceView))
 
+        // SUPERMUX:begin focused-pane-notification-suppression-interaction-fixtures
+        // Seed unread state as if it arrived before this focused interaction.
+        AppFocusState.overrideIsFocused = false
+        // SUPERMUX:end focused-pane-notification-suppression-interaction-fixtures
         store.addNotification(
             tabId: workspace.id,
             surfaceId: terminalPanel.id,
@@ -3336,6 +3340,10 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         AppFocusState.overrideIsFocused = true
         XCTAssertTrue(window.makeFirstResponder(surfaceView))
 
+        // SUPERMUX:begin focused-pane-notification-suppression-interaction-fixtures
+        // Seed unread state as if it arrived before this focused interaction.
+        AppFocusState.overrideIsFocused = false
+        // SUPERMUX:end focused-pane-notification-suppression-interaction-fixtures
         store.addNotification(
             tabId: workspace.id,
             surfaceId: terminalPanel.id,
@@ -3345,6 +3353,9 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         )
         XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
 
+        // SUPERMUX:begin focused-pane-notification-suppression-interaction-fixtures
+        AppFocusState.overrideIsFocused = true
+        // SUPERMUX:end focused-pane-notification-suppression-interaction-fixtures
         let event = makeKeyEvent(characters: "", keyCode: 122, window: window)
         surfaceView.keyDown(with: event)
         drainMainQueue()

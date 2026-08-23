@@ -322,7 +322,10 @@ struct AgentNotificationRegressionTests {
             Issue.record("Expected relay-target delivery, got \(result)")
             return
         }
-        #expect(fixture.store.focusedReadIndicatorSurfaceId(forTabId: fixture.source.id) == fixture.panelId)
+        // SUPERMUX:begin focused-pane-notification-suppression-move-test
+        #expect(fixture.store.focusedReadIndicatorSurfaceId(forTabId: fixture.source.id) == nil)
+        #expect(fixture.store.notifications.first(where: { $0.title == "Relay immediate" })?.isRead == true)
+        // SUPERMUX:end focused-pane-notification-suppression-move-test
 
         try movePanel(fixture)
 

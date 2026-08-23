@@ -1181,7 +1181,8 @@ final class NotificationDockBadgeTests: XCTestCase {
         }
     }
 
-    func testFocusedTerminalNotificationStillRunsLocalSoundFeedbackWhenExternalDeliveryIsSuppressed() throws {
+    // SUPERMUX:begin focused-pane-notification-suppression-feedback-test
+    func testFocusedTerminalNotificationSuppressesAlertsButPreservesCommandAutomation() throws {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("AppDelegate.shared must be set for this test")
             return
@@ -1194,14 +1195,14 @@ final class NotificationDockBadgeTests: XCTestCase {
         let originalAppFocusOverride = AppFocusState.overrideIsFocused
 
         var deliveredNotificationIDs: [UUID] = []
-        var localFeedbackNotificationIDs: [UUID] = []
+        var suppressedEffectsByNotificationID: [UUID: TerminalNotificationPolicyEffects] = [:]
 
         store.replaceNotificationsForTesting([])
         store.configureNotificationDeliveryHandlerForTesting { _, notification in
             deliveredNotificationIDs.append(notification.id)
         }
-        store.configureSuppressedNotificationFeedbackHandlerForTesting { _, notification in
-            localFeedbackNotificationIDs.append(notification.id)
+        store.configureSuppressedNotificationFeedbackHandlerForTesting { _, notification, effects in
+            suppressedEffectsByNotificationID[notification.id] = effects
         }
         appDelegate.tabManager = manager
         appDelegate.notificationStore = store
@@ -1209,6 +1210,8 @@ final class NotificationDockBadgeTests: XCTestCase {
 
         defer {
             store.replaceNotificationsForTesting([])
+            store.resetNotificationDeliveryHandlerForTesting()
+            store.resetSuppressedNotificationFeedbackHandlerForTesting()
             appDelegate.tabManager = originalTabManager
             appDelegate.notificationStore = originalNotificationStore
             AppFocusState.overrideIsFocused = originalAppFocusOverride
@@ -1223,17 +1226,21 @@ final class NotificationDockBadgeTests: XCTestCase {
         store.addNotification(
             tabId: workspace.id,
             surfaceId: terminalPanel.id,
-            title: "Unread",
+            title: "Observed",
             subtitle: "",
             body: ""
         )
 
-        let createdNotificationID = try XCTUnwrap(store.notifications.first?.id)
-        XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
+        let notification = try XCTUnwrap(store.notifications.first)
+        let focusedEffects = try XCTUnwrap(suppressedEffectsByNotificationID[notification.id])
+        XCTAssertTrue(notification.isRead)
+        XCTAssertFalse(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertTrue(deliveredNotificationIDs.isEmpty)
-        XCTAssertEqual(localFeedbackNotificationIDs.count, 1)
-        XCTAssertEqual(localFeedbackNotificationIDs, [createdNotificationID])
+        XCTAssertFalse(focusedEffects.desktop)
+        XCTAssertFalse(focusedEffects.sound)
+        XCTAssertTrue(focusedEffects.command)
     }
+    // SUPERMUX:end focused-pane-notification-suppression-feedback-test
 
     func testFocusedTerminalSuppressedNotificationRunsCustomCommand() throws {
         guard let appDelegate = AppDelegate.shared else {
@@ -1605,7 +1612,8 @@ final class MenuBarBadgeLabelFormatterTests: XCTestCase {
 
 @MainActor
 final class FocusedNotificationIndicatorTests: XCTestCase {
-    func testFocusedNotificationIndicatorRemainsVisibleAfterFocusedNotificationIsRead() {
+    // SUPERMUX:begin focused-pane-notification-suppression-indicator-test
+    func testFocusedReadIndicatorRemainsVisibleAfterNotificationIsRead() {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = TabManager()
         let store = TerminalNotificationStore.shared
@@ -1618,7 +1626,7 @@ final class FocusedNotificationIndicatorTests: XCTestCase {
         store.configureNotificationDeliveryHandlerForTesting { _, _ in }
         appDelegate.tabManager = manager
         appDelegate.notificationStore = store
-        AppFocusState.overrideIsFocused = true
+        AppFocusState.overrideIsFocused = false
 
         defer {
             store.replaceNotificationsForTesting([])
@@ -1641,6 +1649,7 @@ final class FocusedNotificationIndicatorTests: XCTestCase {
             subtitle: "",
             body: ""
         )
+        store.setFocusedReadIndicator(forTabId: workspace.id, surfaceId: panelId)
 
         XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: panelId))
         XCTAssertTrue(store.hasVisibleNotificationIndicator(forTabId: workspace.id, surfaceId: panelId))
@@ -1654,6 +1663,7 @@ final class FocusedNotificationIndicatorTests: XCTestCase {
 
         XCTAssertFalse(store.hasVisibleNotificationIndicator(forTabId: workspace.id, surfaceId: panelId))
     }
+    // SUPERMUX:end focused-pane-notification-suppression-indicator-test
 
     func testNewNotificationOnDifferentSurfaceClearsPreviousFocusedReadIndicator() {
         let appDelegate = AppDelegate.shared ?? AppDelegate()

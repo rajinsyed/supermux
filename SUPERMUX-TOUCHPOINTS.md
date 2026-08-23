@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **451**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **458**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -29,7 +29,7 @@ Rules for adding a touchpoint:
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 244 | `CLAUDE.md` | `ios-dogfood-release-build` | Overrides upstream's "iOS builds open on the iPhone by default" section for this fork: `reload.sh --tag` ships a tagged DEV build the user cannot sign in to, so physical-phone dogfood uses a Release build with `CMUX_DEV_TAG=` empty and `CMUX_IOS_AUTH_ENV=production`. Records the exact invocation — the FIXED dogfood bundle id `com.supermux.ios.dogfood` (one persistent identity so sign-in/pairing survive across tags; per-tag `dev.cmux.ios.<tag>` is retired, and keychain-group sharing with the main install is forbidden — Iroh stores would mutually wipe), `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"`, the sanctioned per-build naming knob (#238/#239) — and the two overrides never to pass on it (`PRODUCT_DISPLAY_NAME`, `ASSETCATALOG_COMPILER_APPICON_NAME`) |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges (`selectWorkspaceRow`) and the actions-bundle Close Other/Below/Above closures exclude project-hidden workspaces (via a fenced parent-level `supermuxProjectHiddenWorkspaceIds()` helper — since upstream's 0.65 snapshot-boundary refactor moved row actions from `TabItemView` to the sidebar owner, the fenced logic lives in those parent functions; Move Up/Down stepping lives in the SHARED entrypoint, #131, so `moveWorkspaceRow` is back to the upstream one-liner), the actions bundle gets a fenced `supermuxMenuVisibility` provider (keyed by workspace id; consumed by #114, declared in #129, move enablement via the #131 stepped-plan check) so the four Move/Close menu items disable on real reachability instead of raw full-list indices, a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`, the row-input construction computes fenced `supermuxVisibleIndex`/`supermuxVisibleCount` (#132/#133) and `TabItemView.accessibilityTitle` announces "workspace N of M" against the visible list; renders the agent-activity indicator on flat-list workspace rows (indicator overlay in `TabItemView`; snapshot resolution moved to #128); gives the flat-list selection the faint accent tint used by nested project rows in `backgroundColor(for:)` (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06 via `isPointerHovering`); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
-| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, and `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` + `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
+| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`, and `SupermuxFocusedPaneNotificationPolicy.swift`, ids `…0142`/`…0143`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` + `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width), with a third fallback putting the icon-only row in a horizontal `ScrollView` so mode buttons scroll instead of clipping at extreme narrowness; `right-sidebar-changes-mode-focushost` mounts `SupermuxChangesFocusHostBridge`/`SupermuxChangesFocusHostView` as the changes panel's background, registering a geometry-based focus host with the window's `MainWindowFocusController` |
 | 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
@@ -354,7 +354,7 @@ Rules for adding a touchpoint:
 | 329 | `Sources/Panels/BrowserPanel+MobileBrowserStreaming.swift` | `mac-browser-stream-teardown-grace` | Three fences: the last stream handler removal parks the offscreen render host behind a short cancellable grace instead of tearing it down synchronously; a restart inside the grace cancels the pending teardown and reuses the parked host with zero window/reparent churn; explicit `clearMobileStreamViewport` tears down immediately, while a web-view replacement during grace restores the captured desktop viewport before abandoning the dead web view's render host |
 | 330 | `cmuxTests/MobileBrowserStreamTeardownGraceTests.swift` | `mac-browser-stream-teardown-grace` | **Whole-file fork test.** Behavior coverage: a stopped stream parks the render host and a rapid restart reuses it with the teardown cancelled; grace expiry with no restart fully tears down; web-view replacement restores the desktop viewport; panel close during the grace skips the wait |
 | 331 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobilePushCoordinator.swift` | `ios-direct-apns-token` | Mirrors each successful APNs device token into fork-owned `SupermuxMobilePushRegistrationStore` before upstream's cloud registration runs. The store persists a stable installation id plus the current and last Mac-acknowledged tokens, drains changes made during an in-flight registration, and registers/removes the device when `supermux.phone_push.v1` is advertised. The fixed bundle guard keeps upstream/tagged identities on their original cloud-only path. The settings bridge also preserves whether Time Sensitive Notifications are unsupported versus user-disabled so the personal-team build does not advertise an impossible repair |
-| 332 | `Sources/TerminalNotificationStore.swift` | `direct-phone-push` | Adds the topic-restricted personal APNs provider at the two existing notification chokepoints. Visible sends deliberately IGNORE upstream's Mac focus suppression: a phone remote-controlling this Mac keeps the app frontmost on the phone's workspace while nobody is at the Mac, so any Mac-side presence guess loses notifications. The Mac always sends while phone forwarding is enabled; the phone owns presentation (its foreground delegate suppresses the banner when it is showing the exact target terminal, so an always-send Mac cannot double-notify). Dismiss/badge synchronization runs beside the existing cold lane under the same forwarding preference; hide-content is inherited. Transport stays in fork-owned `SupermuxDirectPhonePush`/`SupermuxPhonePushService` |
+| 332 | `Sources/TerminalNotificationStore.swift` | `direct-phone-push` | Adds the topic-restricted personal APNs provider at the two existing notification chokepoints. Visible sends share the exact-pane focus decision from #453: the already-focused target is retained as read history with no phone push, while a non-focused target still forwards whenever phone forwarding is enabled, regardless of broad Mac activity/presence guesses. The phone's foreground delegate remains a final duplicate-presentation guard. Dismiss/badge synchronization runs beside the existing cold lane under the same forwarding preference; hide-content is inherited. Transport stays in fork-owned `SupermuxDirectPhonePush`/`SupermuxPhonePushService` |
 | 333 | `ios/Config/supermux.entitlements` | `unfenced` | **Fork-owned build-stage signing entitlement** (`aps-environment = development`, used only by the xcodebuild pass with the Apple Development profile — workspace-wide distribution settings leak into SwiftPM targets, which cannot take profiles). `scripts/supermux-ios-release.sh` then RE-SIGNS the built app with `Apple Distribution` + the `Supermux iPhone Ad Hoc` profile, using the entitlements extracted from that profile (`aps-environment = production`), and rejects a profile or final signature that is not production. The Ad Hoc profile must also carry `com.apple.developer.usernotifications.time-sensitive` (the App ID's Time Sensitive Notifications capability — a free checkbox on a paid team, unlike Critical Alerts), because the payload sends `"interruption-level": "time-sensitive"` and iOS silently downgrades it to active when the entitlement is absent; the script verifies it in the profile and the final signature. Sign in with Apple is deliberately NOT required: nothing in the iOS sources uses it, production auth runs through the web flow, so this lane must not inherit upstream's paid-team requirement for it. Sandbox APNs accepted every send with 200 but silently dropped delivery to the backgrounded app |
 | 334 | `Sources/Mobile/MobileHostIrohRuntime.swift` | `profileless-release-iroh-storage` | Extends the existing DEBUG file-backed secure-store composition to `SUPERMUX_LOCAL_RELEASE`. The local Developer ID-signed Mac app has no provisioning profile/application-identifier entitlement, so the data-protection Keychain returns `errSecMissingEntitlement` and the entire mobile host remains offline; the release script's explicit condition uses the already hardened `0600` per-bundle file stores for identity and relay credentials without changing upstream production Release builds |
 | 335 | `Sources/Mobile/MobileHostIrohRuntime+Lifecycle.swift` | `profileless-release-iroh-storage` | Compiles the matching bundle-scoped `developmentStoreDirectory(service:)` helper for `SUPERMUX_LOCAL_RELEASE`, keeping every local-release identity/credential family under `Application Support/cmux/iroh-debug/com.supermux.app/`. Must use the same compilation condition as #334 or the Release build fails at compile time |
@@ -471,6 +471,13 @@ Rules for adding a touchpoint:
 | 449 | `tests/test_ci_change_areas.py` | `harness-web-ci` | Executable routing and aggregate-gate coverage for harness sources/package metadata, the bundled resource, workflow-dispatch fail-open output, stale routed-job handling in Linux preflight, the stable `tests` gate, pinned Bun/build commands, and website-only exclusions |
 | 450 | `cmuxTests/SupermuxHarnessNativeEventTransportTests.swift` | `unfenced` | **Fork-owned new test file.** Executable transport contract coverage for acknowledgement retention, identical retry, stale-ack safety, navigation re-sequencing, count/byte batching, bounded backlog, and stale host generations. pbxproj ids `50BE0001…013E`/`…013F` |
 | 451 | `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` | `unfenced` | **Fork-owned new test file.** Exact regression coverage that a notification targeting the already-focused pane is retained only as read history: no unread count, badge state, pane indicator/flash, delivered alert, or sound; explicit custom-command automation remains enabled. pbxproj ids `50BE0001…0140`/`…0141` |
+| 452 | `Sources/Supermux/SupermuxFocusedPaneNotificationPolicy.swift` | `unfenced` | **Fork-owned new app-target policy.** Defines the one exact-target decision (`surfaceID != nil` plus the existing live focus-delivery gate) and resolves presentation effects: preserve record/custom-command automation, suppress unread/reorder/desktop/sound/pane-flash |
+| 453 | `Sources/TerminalNotificationStore.swift` | `focused-pane-notification-suppression` | Applies #452 once at final live-owner admission, after async notification hooks and retargeting, so the already-focused exact pane is recorded read and every unread/badge/ring/flash/desktop/sound/reorder surface inherits one decision. The existing #332 direct APNs fence consumes the same policy before forwarding |
+| 454 | `cmuxTests/NotificationAndMenuBarTests.swift` | `focused-pane-notification-suppression-feedback-test`, `focused-pane-notification-suppression-indicator-test` | Updates the old focused-alert contract to require read/no-sound presentation while preserving custom-command automation, and seeds the legacy focused-read-indicator lifecycle explicitly rather than relying on a newly focused notification to create it |
+| 455 | `cmuxTests/TerminalAndGhosttyTests.swift` | `focused-pane-notification-suppression-interaction-fixtures` | Keeps mouse/key direct-interaction dismissal coverage meaningful by seeding unread while app focus is false, then restoring active focus before the actual interaction; a notification created while already focused no longer supplies that fixture |
+| 456 | `cmuxTests/WorkspaceUnitTests.swift` | `focused-pane-notification-suppression-navigation-fixture` | Keeps the competing-unread navigation-flash test valid by modeling attention that arrived while the app was not focused, then restoring active focus before pane navigation |
+| 457 | `cmuxTests/AgentNotificationMoveRaceTests.swift` | `focused-pane-notification-suppression-move-test` | Updates the immediate source-confined relay assertion: a focused target is stored read with no focused-read indicator before the panel moves, while the test still proves it never rebinds across the authorized workspace boundary |
+| 458 | `docs/notifications.md` | `focused-pane-notification-suppression-doc` | Documents the exact focused-pane behavior and its boundary: read history remains, user-facing alert surfaces and mobile push are suppressed, explicit command automation remains, and targetless workspace notifications keep existing behavior |
 
 ## How to re-apply
 
@@ -641,7 +648,7 @@ Verification: `swift test` in `Packages/SupermuxKit` (`SupermuxNotificationProje
 
 ### 386–396. iOS pane unread acknowledgment — `ios-pane-unread-acknowledgment`
 
-Keep the Mac semantics unchanged: a notification delivered for the pane already under focus remains unread, keeps the persistent blue pane ring, and clears only after a direct interaction. The phone must not auto-clear merely because the pane is visible. `Workspace.supermuxMobileUnreadPanelIDs(notificationStore:)` is the Mac-authoritative projection and must continue to call the same `Workspace.shouldShowUnreadIndicator(...)` predicate as `WorkspaceContentView`: visible notification/focused-read state, manual/restored panel state, and the representative pane for workspace-manual unread. Both mobile transports send `supermux_unread_panel_ids` for every workspace; `[]` means a supporting host with no indicated pane, while absence means an older/upstream host.
+A notification delivered while its exact target pane is already focused is admitted as read history by #453, so it creates no Mac or phone pane ring. Existing unread state that arrived before the pane was focused still clears only after the normal focus/direct-interaction acknowledgment path; the phone must not auto-clear that pre-existing state merely because the pane is visible. `Workspace.supermuxMobileUnreadPanelIDs(notificationStore:)` is the Mac-authoritative projection and must continue to call the same `Workspace.shouldShowUnreadIndicator(...)` predicate as `WorkspaceContentView`: visible notification/focused-read state, manual/restored panel state, and the representative pane for workspace-manual unread. Both mobile transports send `supermux_unread_panel_ids` for every workspace; `[]` means a supporting host with no indicated pane, while absence means an older/upstream host.
 
 The mobile ring copies the Mac renderer's current geometry and presentation values exactly: 2pt inset, 6pt corner radius, 2.5pt system-blue stroke, 0.35 glow opacity, and 3pt glow radius. It is a visual-only overlay with hit testing disabled. `SupermuxMobilePaneUnreadPresentation` only tests whether the active remote panel id is in the transported array; it never reads the notification feed and never mutates unread state.
 
@@ -669,15 +676,16 @@ when `scheduledDeliveryEnabled` is true and `timeSensitiveEnabled` is false, act
 pushes can still be delayed and the readiness screen must report that real limitation. Keep #337's
 behavior test together with this mapping.
 
-In `TerminalNotificationStore`, preserve both `direct-phone-push` fences. Visible forwarding runs
-OUTSIDE the `shouldAttemptPhone` branch on purpose — the direct lane must ignore Mac focus
-suppression (a phone remote-controlling the Mac keeps it frontmost on the phone's workspace, so a
-focus-gated lane never fires while working from the phone) and is gated only on the forwarding
-preference. The phone owns presentation: its foreground delegate suppresses the banner when it is
-already showing the exact target terminal. Dismiss forwarding stays beside
-`PhonePushClient.forwardDismissed` under the same preference. Do not reintroduce a Mac-side
-presence/away heuristic — one was tried (`SupermuxMacAwayPolicy`) and removed because any Mac-side
-guess loses notifications for the remote-control workflow.
+In `TerminalNotificationStore`, preserve both `direct-phone-push` fences. Visible forwarding stays
+outside the upstream `shouldAttemptPhone` branch because a non-focused target must still use the
+direct lane whenever phone forwarding is enabled, regardless of broad Mac activity/presence guesses.
+It now shares #453's narrower exact-pane rule: if the notification has a pane id and that exact pane is
+already focused in the active app, retain read history but send no phone push. The phone's foreground
+delegate remains a final duplicate-presentation guard for any delivery that races phone-side
+navigation. Dismiss forwarding stays beside `PhonePushClient.forwardDismissed` under the same
+preference. Do not reintroduce a Mac-side presence/away heuristic — one was tried
+(`SupermuxMacAwayPolicy`) and removed because broad guesses lose notifications for the
+remote-control workflow.
 
 Signing is two-stage. xcodebuild signs with the `Supermux iPhone Development` profile and the
 development entitlement in `ios/Config/supermux.entitlements` (workspace-wide distribution build
@@ -1430,7 +1438,12 @@ The focused-pane notification regression test (touchpoint #451) adds file refere
 `SupermuxFocusedPaneNotificationTests.swift`, wired into the `cmuxTests` target in the same four
 places as the other fork-owned app-target tests.
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `225`.
+The focused-pane notification policy (touchpoint #452) adds file reference `50BE0001…0142` and
+build file `50BE0001…0143` for `SupermuxFocusedPaneNotificationPolicy.swift`, wired into the
+`Supermux` group and the `cmux` target's Sources phase. The path may stay bare because the final
+filename contains no OpenStep-special `+` character.
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `229`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
@@ -3983,3 +3996,49 @@ with the app-focus seam forced active. The notification may remain in chronologi
 must be read, carry no pane flash, contribute no unread/badge/outline state, create no focused-read
 indicator, and invoke no delivered alert or sound. The suppressed local path may still carry an
 explicit custom notification command, which remains automation rather than user-facing alerting.
+
+### 452–453. Focused-pane notification admission
+
+`Sources/Supermux/SupermuxFocusedPaneNotificationPolicy.swift` owns the pure decision. Treat a target
+as already visible only when it has an exact non-nil surface id and the store's existing live
+focus/external-delivery gate says that target is focused in the active main window. Targetless
+workspace notifications must keep their existing behavior rather than being guessed into a pane.
+For an already-visible target, preserve `record` and `command`, but force `markUnread`,
+`reorderWorkspace`, `desktop`, `sound`, and `paneFlash` off. The notification therefore stays in
+history as read while every user-facing attention surface remains absent; an explicitly configured
+custom command still runs.
+
+In `TerminalNotificationStore.applyNotification`, keep the `focused-pane-notification-suppression`
+fence immediately after final live-owner resolution and the existing `shouldSuppressExternalDelivery`
+calculation. That placement is load-bearing: async policy hooks and cross-workspace surface moves may
+change the live owner before completion, so applying focus suppression from the request's initial
+`isFocusedPanel` snapshot can suppress the wrong pane. Shadow the resolved `effects` once there so
+recording, unread indexes, sidebar/Dock/mobile badges, pane ring/flash, native alert/sound, and reorder
+all consume one policy result. The #332 direct APNs fence must call the same exact-target decision and
+skip visible forwarding for that focused pane; non-focused targets still bypass broad presence/away
+heuristics and forward normally.
+
+### 454–457. Focused-notification fixture updates
+
+These are test-only adaptations to the new admission invariant:
+
+- `NotificationAndMenuBarTests` now asserts a focused notification is read, produces no delivered
+  alert or sound, and keeps the command effect. Its separate focused-read-indicator lifecycle test
+  seeds that legacy indicator explicitly after creating unread with app focus off.
+- `TerminalAndGhosttyTests` creates unread with the app-focus seam off, then restores focus before the
+  mouse/key interaction, so those tests continue covering exact direct-interaction dismissal rather
+  than focused-notification admission.
+- `WorkspaceUnitTests` does the same around the competing-unread pane-navigation fixture.
+- `AgentNotificationMoveRaceTests` expects the immediate focused relay to be read with no focused-read
+  indicator, then retains its original source-confinement assertions after the panel moves.
+
+Keep each fence narrow around the fixture/expectation delta; the surrounding upstream test remains
+unchanged. `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` (#451) is the primary exact repro.
+
+### 458. Focused-pane notification documentation
+
+Keep the fenced paragraph in `docs/notifications.md` immediately before the existing
+`notifications.suppressOnlyFocusedSurface` withdraw setting. The new paragraph describes admission
+for an already-focused exact pane; the existing section describes later auto-withdrawal of a banner
+that was delivered while not focused. They are related but distinct and must not be collapsed into a
+setting claim: focused-pane admission is unconditional, while narrow auto-withdraw remains opt-in.

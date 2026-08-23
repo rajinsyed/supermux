@@ -5469,6 +5469,11 @@ final class WorkspaceAttentionFlashTests: XCTestCase {
 
         workspace.moveFocus(direction: .left)
 
+        // SUPERMUX:begin focused-pane-notification-suppression-navigation-fixture
+        // Model attention that arrived while the app was not focused, then
+        // restore active focus before exercising pane navigation.
+        AppFocusState.overrideIsFocused = false
+        // SUPERMUX:end focused-pane-notification-suppression-navigation-fixture
         notificationStore.addNotification(
             tabId: workspace.id,
             surfaceId: leftPanelId,
@@ -5476,6 +5481,9 @@ final class WorkspaceAttentionFlashTests: XCTestCase {
             subtitle: "",
             body: "Left pane owns notification attention"
         )
+        // SUPERMUX:begin focused-pane-notification-suppression-navigation-fixture
+        AppFocusState.overrideIsFocused = true
+        // SUPERMUX:end focused-pane-notification-suppression-navigation-fixture
 
         XCTAssertTrue(
             notificationStore.hasVisibleNotificationIndicator(forTabId: workspace.id, surfaceId: leftPanelId),

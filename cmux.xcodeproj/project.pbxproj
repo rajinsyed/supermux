@@ -2142,6 +2142,7 @@ C0DE71B10000000000000001 /* AppDelegate+AgentChatNotifications.swift in Sources 
 		50BE000100000000000000F6 /* SupermuxEmptyHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F5 /* SupermuxEmptyHomeView.swift */; };
 		50BE000100000000000000F3 /* SupermuxFileExplorerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */; };
 		50BE000100000000000000F4 /* SupermuxFileExplorerPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F2 /* SupermuxFileExplorerPrompt.swift */; };
+		50BE00010000000000000143 /* SupermuxFocusedPaneNotificationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000142 /* SupermuxFocusedPaneNotificationPolicy.swift */; };
 		50BE00010000000000000141 /* SupermuxFocusedPaneNotificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000140 /* SupermuxFocusedPaneNotificationTests.swift */; };
 		50BE00010000000000000135 /* SupermuxHarnessBinarySetting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000134 /* SupermuxHarnessBinarySetting.swift */; };
 		50BE00010000000000000123 /* SupermuxHarnessBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000122 /* SupermuxHarnessBridge.swift */; };
@@ -4873,6 +4874,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 		50BE000100000000000000F5 /* SupermuxEmptyHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxEmptyHomeView.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F1 /* SupermuxFileExplorerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxFileExplorerCommands.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F2 /* SupermuxFileExplorerPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxFileExplorerPrompt.swift; sourceTree = "<group>"; };
+		50BE00010000000000000142 /* SupermuxFocusedPaneNotificationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxFocusedPaneNotificationPolicy.swift"; sourceTree = "<group>"; };
 		50BE00010000000000000140 /* SupermuxFocusedPaneNotificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxFocusedPaneNotificationTests.swift; sourceTree = "<group>"; };
 		50BE00010000000000000134 /* SupermuxHarnessBinarySetting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harness/SupermuxHarnessBinarySetting.swift; sourceTree = "<group>"; };
 		50BE00010000000000000122 /* SupermuxHarnessBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harness/SupermuxHarnessBridge.swift; sourceTree = "<group>"; };
@@ -5652,6 +5654,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE00010000000000000107 /* SupermuxBannerProjectDecorator.swift */,
 				50BE00010000000000000110 /* SupermuxNotificationRowBody.swift */,
 				50BE000200000000000000B1 /* TerminalController+SupermuxMobile.swift */,
+				50BE00010000000000000142 /* SupermuxFocusedPaneNotificationPolicy.swift */,
 				50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */,
 				50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */,
 				50BE000200000000000000C9 /* SupermuxMobileHost+PresetsActions.swift */,
@@ -10172,6 +10175,7 @@ C0DE71B10000000000000002 /* AppDelegate+AgentChatNotifications.swift */ = {isa =
 				50BE000100000000000000F6 /* SupermuxEmptyHomeView.swift in Sources */,
 				50BE000100000000000000F3 /* SupermuxFileExplorerCommands.swift in Sources */,
 				50BE000100000000000000F4 /* SupermuxFileExplorerPrompt.swift in Sources */,
+				50BE00010000000000000143 /* SupermuxFocusedPaneNotificationPolicy.swift in Sources */,
 				50BE00010000000000000135 /* SupermuxHarnessBinarySetting.swift in Sources */,
 				50BE00010000000000000123 /* SupermuxHarnessBridge.swift in Sources */,
 				50BE00010000000000000133 /* SupermuxHarnessCommandPaletteIntegration.swift in Sources */,
