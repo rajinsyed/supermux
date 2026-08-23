@@ -613,6 +613,8 @@ export interface AgentThread {
   summary?: string;
   model?: string;
   agentId?: string;
+  /** Workflow identity paired with `agentId`; absent for ordinary Agent calls. */
+  workflowRunId?: string;
   totalTokens?: number;
   toolUses?: number;
   durationMs?: number;

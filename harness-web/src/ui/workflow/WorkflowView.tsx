@@ -38,10 +38,12 @@ export function WorkflowView({
    * empty agent view or offering a button that does nothing.
    */
   const openAgentChat = useCallback(
-    (target: { agentId?: string }): boolean => {
-      if (!target.agentId) return false;
+    (target: { workflowRunId?: string; agentId?: string }): boolean => {
+      if (!target.workflowRunId || !target.agentId) return false;
       const thread = Object.values(model.agentThreads).find(
-        (candidate) => candidate.agentId === target.agentId
+        (candidate) =>
+          candidate.workflowRunId === target.workflowRunId &&
+          candidate.agentId === target.agentId
       );
       if (!thread) return false;
       openView({ kind: "agent", toolUseId: thread.toolUseId });

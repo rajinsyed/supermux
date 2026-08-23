@@ -59,6 +59,7 @@ export function classifyLocalUserText(raw: string): LocalUserText {
   const text = raw.trimStart();
   if (text.startsWith("<local-command-caveat>")) return { kind: "hidden" };
   if (text.startsWith("<task-notification>")) return { kind: "hidden" };
+  if (text.startsWith("<system-reminder>")) return { kind: "hidden" };
   if (text.startsWith("[Request interrupted")) return { kind: "interrupt" };
   if (text.startsWith(CONTINUED_PREFIX)) return { kind: "continued" };
   // Tag order varies by CLI version: newer transcripts open with

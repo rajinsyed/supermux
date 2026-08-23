@@ -541,15 +541,9 @@ export function useHarness(store: HarnessStore): HarnessController {
     lastPushedPick.current = key;
     bridge.setModel({ model: selector, effort: session.effort }).catch(() => {
       if (lastPushedPick.current !== key) return;
+      // Keep the selection pending. Clearing the latch here leaves the picker on
+      // a model the process rejected and prevents a later run from reconciling it.
       lastPushedPick.current = undefined;
-      const current = store.getSnapshot().session;
-      if (current.modelPickPending && current.model) {
-        store.dispatch({
-          kind: "setModel",
-          model: current.model,
-          effort: current.effort
-        });
-      }
     });
   }, [bridge, store]);
   useEffect(() => {
@@ -839,8 +833,10 @@ export function useHarness(store: HarnessStore): HarnessController {
   const setPermissionMode = useCallback(
     (mode: PermissionMode) => {
       permissionModeWasSelected.current = true;
+      const snapshot = store.getSnapshot();
+      const runId = snapshot.runId;
       if (permissionModeMutationsPending.current === 0) {
-        confirmedPermissionMode.current = store.getSnapshot().session.permissionMode;
+        confirmedPermissionMode.current = snapshot.session.permissionMode;
       }
       permissionModeMutationsPending.current += 1;
       const generation = ++permissionModeMutationGeneration.current;
@@ -854,8 +850,10 @@ export function useHarness(store: HarnessStore): HarnessController {
             confirmedPermissionMode.current = mode;
           } catch {
             if (permissionModeMutationGeneration.current !== generation) return;
+            const latest = store.getSnapshot();
+            if (latest.runId !== runId) return;
             const confirmed = confirmedPermissionMode.current;
-            if (confirmed && store.getSnapshot().session.permissionMode === mode) {
+            if (confirmed && latest.session.permissionMode === mode) {
               store.dispatch({ kind: "setPermissionMode", mode: confirmed });
             }
           }

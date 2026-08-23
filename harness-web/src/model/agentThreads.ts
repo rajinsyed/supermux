@@ -572,6 +572,7 @@ export function applyAgentOutputToThread(
         }
       : existing.toolStats,
     agentId: asString(structured?.agentId) ?? existing.agentId,
+    workflowRunId: asString(structured?.workflowRunId) ?? existing.workflowRunId,
     taskId: existing.taskId ?? asString(structured?.agentId),
     subagentType: existing.subagentType ?? asString(structured?.agentType),
     model: asString(structured?.resolvedModel) ?? existing.model,

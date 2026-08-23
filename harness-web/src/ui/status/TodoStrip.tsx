@@ -14,8 +14,17 @@ export function TodoStrip({ todos }: { todos: TodoItem[] }) {
   // brought into view on expand and whenever the current step moves.
   useEffect(() => {
     if (!open) return;
-    const node = list.current?.querySelector<HTMLElement>(".todo-item.is-in_progress");
-    node?.scrollIntoView({ block: "nearest" });
+    let innerFrame = 0;
+    const outerFrame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(() => {
+        const node = list.current?.querySelector<HTMLElement>(".todo-item.is-in_progress");
+        node?.scrollIntoView({ block: "nearest" });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outerFrame);
+      if (innerFrame) cancelAnimationFrame(innerFrame);
+    };
   }, [open, todos]);
 
   if (todos.length === 0) return null;

@@ -86,6 +86,8 @@ const SINGLE_LINE_HEIGHT = 28;
 export function Composer(props: ComposerProps) {
   const copy = useCopy();
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const draftRef = useRef(props.draft);
+  draftRef.current = props.draft;
   const submitChain = useRef<Promise<void>>(Promise.resolve());
   const submissionsPending = useRef(0);
   const [caret, setCaret] = useState(0);
@@ -198,7 +200,8 @@ export function Composer(props: ComposerProps) {
   );
 
   const submit = useCallback(() => {
-    const text = props.draft.trim();
+    const submittedDraft = props.draft;
+    const text = submittedDraft.trim();
     // One mutation path for the plan decision: Enter and the primary button must
     // not disagree about whether typed text refines the plan or approves it.
     if (props.planPending) {
@@ -215,6 +218,7 @@ export function Composer(props: ComposerProps) {
     // text-only submit therefore cannot overtake or duplicate an image message.
     const hasImages = images.length > 0;
     const payloads = hasImages ? consumeForSend() : Promise.resolve<ImageAttachment[]>([]);
+    draftRef.current = "";
     props.onDraftChange("");
     reset();
     if (!hasImages && submissionsPending.current === 0) {
@@ -226,7 +230,12 @@ export function Composer(props: ComposerProps) {
       submitChain.current = submitChain.current
         .then(async () => {
           const resolved = await payloads;
-          if (resolved) props.onSend(text, resolved);
+          if (resolved) {
+            props.onSend(text, resolved);
+          } else if (draftRef.current.length === 0) {
+            draftRef.current = submittedDraft;
+            props.onDraftChange(submittedDraft);
+          }
         })
         .catch(() => undefined)
         .finally(() => {

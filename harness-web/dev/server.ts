@@ -36,11 +36,15 @@ let building: Promise<{ js: string; css: string }> | undefined;
 async function current(): Promise<{ js: string; css: string }> {
   if (cache) return cache;
   if (!building) {
-    building = bundle().then((result) => {
-      cache = result;
-      building = undefined;
-      return result;
-    });
+    const pending = bundle()
+      .then((result) => {
+        cache = result;
+        return result;
+      })
+      .finally(() => {
+        if (building === pending) building = undefined;
+      });
+    building = pending;
   }
   return building;
 }

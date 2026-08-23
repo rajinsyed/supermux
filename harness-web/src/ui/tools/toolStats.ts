@@ -60,5 +60,15 @@ export function toolStatsSummary(stats: SubagentToolStats, copy: CopyFn): string
       )
     );
   }
+  if (stats.otherToolCount) {
+    out.push(
+      plural(
+        copy,
+        stats.otherToolCount,
+        "supermux.harness.subagent.otherToolsOne",
+        "supermux.harness.subagent.otherTools"
+      )
+    );
+  }
   return out;
 }

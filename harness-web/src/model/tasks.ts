@@ -20,7 +20,12 @@ export function hasLiveBackgroundWork(turn: Turn): boolean {
     for (const block of blocks) {
       if (block.kind !== "tool") continue;
       const info = block.subagent;
-      if (info?.taskId && info.background && !isTaskSettled(info.status)) return true;
+      const asyncLaunched =
+        (block.name === "Task" || block.name === "Agent") &&
+        block.structured?.status === "async_launched";
+      if (((info?.taskId && info.background) || asyncLaunched) && !isTaskSettled(info?.status)) {
+        return true;
+      }
       if (scan(block.children)) return true;
     }
     return false;

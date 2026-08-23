@@ -155,6 +155,10 @@ export const copyDefaults = {
   "supermux.harness.tool.rawOutput": "Output",
   "supermux.harness.tool.durationMs": "{count}ms",
   "supermux.harness.tool.webResult": "Result",
+  "supermux.harness.tool.headline.todo": "Updated the plan",
+  "supermux.harness.tool.headline.askUser": "Asked you a question",
+  "supermux.harness.tool.headline.enterPlan": "Entered plan mode",
+  "supermux.harness.tool.headline.presentPlan": "Presented a plan",
 
   "supermux.harness.subagent.badge": "Subagent",
   "supermux.harness.subagent.background": "Background",
@@ -182,6 +186,8 @@ export const copyDefaults = {
   "supermux.harness.subagent.searches": "{count} searches",
   "supermux.harness.subagent.commandsOne": "{count} command",
   "supermux.harness.subagent.commands": "{count} commands",
+  "supermux.harness.subagent.otherToolsOne": "{count} other tool",
+  "supermux.harness.subagent.otherTools": "{count} other tools",
   "supermux.harness.subagent.lineDelta": "+{added} −{removed}",
   "supermux.harness.subagent.spawnDepth": "Depth {depth}",
   "supermux.harness.subagent.fromDisk": "Agent transcript",
@@ -303,6 +309,8 @@ export const copyDefaults = {
     "Claude is waiting on this agent, so the message arrives when it finishes.",
   "supermux.harness.relay.chip": "Sent to {agent}",
   "supermux.harness.relay.chipUnknown": "Sent to an agent",
+  "supermux.harness.relay.chipFailed": "Failed to send to {agent}",
+  "supermux.harness.relay.chipFailedUnknown": "Failed to send to an agent",
   "supermux.harness.relay.ack": "Relayed",
 
   // The rest of the round-3 `tasks.*` family went with the TasksStrip the dock

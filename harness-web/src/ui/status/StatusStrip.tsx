@@ -57,11 +57,17 @@ export function StatusStrip({
   }
 
   if (runPhase === "exited") {
+    if (model.turns.length > 0) return null;
     return (
       <Strip tone="error">
         <AlertTriangle size={12} className="status-glyph" />
         <span className="status-text">
-          {model.exitError ?? copy("supermux.harness.status.exited")}
+          {model.exitError ??
+            copy(
+              model.startFailed
+                ? "supermux.harness.error.startFailed"
+                : "supermux.harness.status.exited"
+            )}
         </span>
         <button type="button" className="status-action" onClick={onRestart}>
           <Refresh size={11} />

@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../protocol/types";
+import type { CopyFn } from "../CopyContext";
 import { basename, shortenPath, truncateMiddle } from "../format";
 
 export type ToolFamily =
@@ -50,7 +51,7 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-export function toolHeadline(name: string, input: JsonObject): string {
+export function toolHeadline(name: string, input: JsonObject, copy: CopyFn): string {
   const family = toolFamily(name);
   switch (family) {
     case "bash": {
@@ -77,11 +78,15 @@ export function toolHeadline(name: string, input: JsonObject): string {
     case "workflow":
       return str(input.name) ?? str(input.scriptPath) ?? name;
     case "todo":
-      return "Updated the plan";
+      return copy("supermux.harness.tool.headline.todo");
     case "interactive":
-      if (name === "AskUserQuestion") return "Asked you a question";
-      if (name === "EnterPlanMode") return "Entered plan mode";
-      return "Presented a plan";
+      if (name === "AskUserQuestion") {
+        return copy("supermux.harness.tool.headline.askUser");
+      }
+      if (name === "EnterPlanMode") {
+        return copy("supermux.harness.tool.headline.enterPlan");
+      }
+      return copy("supermux.harness.tool.headline.presentPlan");
     case "mcp":
       return mcpToolName(name);
     default: {

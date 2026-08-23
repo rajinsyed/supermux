@@ -63,9 +63,12 @@ export const AgentRow = memo(function AgentRow({
     block.status === "running" ||
     block.status === "pending" ||
     (info.status !== undefined && !isTaskSettled(info.status));
-  const description =
-    info.description ?? (block.input.description as string | undefined) ?? block.name;
-  const type = info.subagentType ?? (block.input.subagent_type as string | undefined);
+  const inputDescription =
+    typeof block.input.description === "string" ? block.input.description : undefined;
+  const inputType =
+    typeof block.input.subagent_type === "string" ? block.input.subagent_type : undefined;
+  const description = info.description ?? inputDescription ?? block.name;
+  const type = info.subagentType ?? inputType;
 
   /**
    * The second line, as ONE phrase. While it runs: what it is doing right now.

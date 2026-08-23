@@ -533,11 +533,14 @@ describe("the agent detail", () => {
   });
 
   test("WorkflowView routes by workflow run and agent id together", () => {
+    installBridge();
     const opened: HarnessView[] = [];
     const base = replayLines(FLOW);
     const record = Object.values(base.tasksById).find((task) => task.workflow);
     if (!record?.workflow?.runId) throw new Error("fixture produced no workflow run");
-    const agent = record.workflow.agents.find((candidate) => candidate.agentId);
+    const agent = record.workflow.agents.find(
+      (candidate) => candidate.label === "merger" && candidate.agentId
+    );
     if (!agent?.agentId) throw new Error("fixture produced no workflow agent id");
     const model = {
       ...base,
@@ -568,7 +571,11 @@ describe("the agent detail", () => {
         <WorkflowView model={model} taskId={record.taskId} onBack={() => undefined} />
       </OpenViewContext.Provider>
     );
-    fireEvent.click(container.querySelector<HTMLElement>(".wfb-agent-row")!);
+    const row = Array.from(container.querySelectorAll<HTMLElement>(".wfb-agent-row")).find(
+      (candidate) => candidate.textContent?.includes(agent.label)
+    );
+    if (!row) throw new Error("fixture produced no matching workflow row");
+    fireEvent.click(row);
     fireEvent.click(getByText("Open full transcript"));
 
     expect(opened).toEqual([{ kind: "agent", toolUseId: "toolu_right_run" }]);

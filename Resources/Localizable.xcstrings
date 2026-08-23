@@ -268254,6 +268254,40 @@
         }
       }
     },
+    "supermux.harness.relay.chipFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to send to {agent}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{agent} への送信に失敗しました"
+          }
+        }
+      }
+    },
+    "supermux.harness.relay.chipFailedUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to send to an agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントへの送信に失敗しました"
+          }
+        }
+      }
+    },
     "supermux.harness.relay.chipUnknown" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -275122,6 +275156,74 @@
         }
       }
     },
+    "supermux.harness.tool.headline.askUser" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asked you a question"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "質問しました"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.headline.enterPlan" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entered plan mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計画モードに入りました"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.headline.presentPlan" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Presented a plan"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計画を提示しました"
+          }
+        }
+      }
+    },
+    "supermux.harness.tool.headline.todo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updated the plan"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計画を更新しました"
+          }
+        }
+      }
+    },
     "supermux.harness.tool.linesAdded" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -277107,6 +277209,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "+{added} −{removed}"
+          }
+        }
+      }
+    },
+    "supermux.harness.subagent.otherTools" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} other tools"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他のツール {count} 件"
+          }
+        }
+      }
+    },
+    "supermux.harness.subagent.otherToolsOne" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} other tool"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他のツール {count} 件"
           }
         }
       }

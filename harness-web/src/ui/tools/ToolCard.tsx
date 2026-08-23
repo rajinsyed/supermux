@@ -231,7 +231,7 @@ export const ToolCard = memo(function ToolCard({
   if (family === "workflow") return <WorkflowRow block={block} />;
 
   const Icon = ICONS[family];
-  const headline = toolHeadline(block.name, block.input);
+  const headline = toolHeadline(block.name, block.input, copy);
   const subtitle = toolSubtitle(block.name, block.input);
   const subtitleFull = toolSubtitleFull(block.name, block.input);
   const badges = badgesFor(block, family, copy);

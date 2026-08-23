@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import type { RelayRecord } from "../../model/types";
 import { useCopy } from "../CopyContext";
-import { ArrowUp, Check, Layers } from "../Icons";
+import { AlertTriangle, ArrowUp, Check, Layers } from "../Icons";
 import { Spinner } from "../primitives/Spinner";
 import { OpenViewContext } from "../views/OpenViewContext";
 
@@ -20,8 +20,17 @@ export function RelayChip({ relay }: { relay: RelayRecord }) {
   const copy = useCopy();
   const openView = useContext(OpenViewContext);
   const label = relay.description
-    ? copy("supermux.harness.relay.chip", { agent: relay.description })
-    : copy("supermux.harness.relay.chipUnknown");
+    ? copy(
+        relay.state === "failed"
+          ? "supermux.harness.relay.chipFailed"
+          : "supermux.harness.relay.chip",
+        { agent: relay.description }
+      )
+    : copy(
+        relay.state === "failed"
+          ? "supermux.harness.relay.chipFailedUnknown"
+          : "supermux.harness.relay.chipUnknown"
+      );
 
   return (
     <div className={`relay-chip is-${relay.state}`}>
@@ -42,6 +51,8 @@ export function RelayChip({ relay }: { relay: RelayRecord }) {
           <Spinner size={9} />
         ) : relay.state === "delivered" ? (
           <Check size={10} className="mark-ok" />
+        ) : relay.state === "failed" ? (
+          <AlertTriangle size={10} className="mark-error" />
         ) : null}
       </span>
     </div>
