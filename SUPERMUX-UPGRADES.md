@@ -52,6 +52,14 @@ Merged 2,241 upstream commits across 2,765 files, through upstream main from 202
 - The pane-tab **Disconnect SSH** action now reaches the existing remote disconnect path instead of
   falling through an unhandled bonsplit action.
 
+### Watch-outs
+
+- Upstream main currently has failing standalone package tests in `CMUXMobileCore` diagnostics and
+  `CmuxMobileShell` connection-authority suites. Focused runs reproduced the same failures in a clean
+  upstream worktree, so they are upstream test debt rather than Supermux merge regressions.
+- No physical-phone dogfood was performed. Per the standing merge checklist, verify the Projects
+  section and Mac selection/pairing on a real iPhone before merging this runtime/UI update.
+
 ---
 
 ## cmux 0.64.22 → main @ `6d37f62a47` (2026-08-09)
