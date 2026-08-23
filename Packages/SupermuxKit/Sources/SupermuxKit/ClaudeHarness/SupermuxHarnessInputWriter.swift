@@ -14,6 +14,7 @@ actor SupermuxHarnessInputWriter {
     private struct ActiveWrite {
         let id: UInt64
         let continuation: CheckedContinuation<Void, any Error>
+        var task: Task<Void, Never>?
     }
 
     private let fileHandle: FileHandle
@@ -36,7 +37,7 @@ actor SupermuxHarnessInputWriter {
         }
     }
 
-    func close() {
+    func close() async {
         guard !isClosed else { return }
         isClosed = true
         let active = activeWrite
@@ -44,11 +45,13 @@ actor SupermuxHarnessInputWriter {
         let writes = queuedWrites
         queuedWrites.removeAll()
         queuedByteCount = 0
+        active?.task?.cancel()
         active?.continuation.resume(throwing: SupermuxHarnessProcessError.inputClosed)
         for write in writes {
             write.continuation.resume(throwing: SupermuxHarnessProcessError.inputClosed)
         }
         try? fileHandle.close()
+        await active?.task?.value
     }
 
     private func enqueue(
@@ -78,14 +81,21 @@ actor SupermuxHarnessInputWriter {
         guard !isClosed, activeWrite == nil, !queuedWrites.isEmpty else { return }
         let write = queuedWrites.removeFirst()
         queuedByteCount -= write.data.count
-        activeWrite = ActiveWrite(id: write.id, continuation: write.continuation)
+        activeWrite = ActiveWrite(
+            id: write.id,
+            continuation: write.continuation,
+            task: nil
+        )
         let writeDescriptor = Darwin.dup(descriptor)
         guard writeDescriptor >= 0 else {
             let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             finishWrite(id: write.id, result: .failure(error))
             return
         }
-        guard Darwin.fcntl(writeDescriptor, F_SETNOSIGPIPE, 1) >= 0 else {
+        let flags = Darwin.fcntl(writeDescriptor, F_GETFL)
+        guard flags >= 0,
+              Darwin.fcntl(writeDescriptor, F_SETFL, flags | O_NONBLOCK) >= 0,
+              Darwin.fcntl(writeDescriptor, F_SETNOSIGPIPE, 1) >= 0 else {
             let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             Darwin.close(writeDescriptor)
             finishWrite(id: write.id, result: .failure(error))
@@ -93,11 +103,12 @@ actor SupermuxHarnessInputWriter {
         }
         let id = write.id
         let data = write.data
-        Task.detached(priority: .utility) { [weak self] in
+        let task = Task.detached(priority: .utility) { [weak self] in
             defer { Darwin.close(writeDescriptor) }
             let result = Result { try Self.writeSynchronously(data, to: writeDescriptor) }
             await self?.finishWrite(id: id, result: result)
         }
+        activeWrite?.task = task
     }
 
     private func finishWrite(id: UInt64, result: Result<Void, any Error>) {
@@ -133,6 +144,7 @@ actor SupermuxHarnessInputWriter {
             guard let baseAddress = bytes.baseAddress else { return }
             var offset = 0
             while offset < bytes.count {
+                try Task.checkCancellation()
                 let count = Darwin.write(
                     descriptor,
                     baseAddress.advanced(by: offset),
@@ -143,6 +155,11 @@ actor SupermuxHarnessInputWriter {
                     continue
                 }
                 if count < 0, errno == EINTR { continue }
+                if count < 0, errno == EAGAIN || errno == EWOULDBLOCK {
+                    var state = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
+                    let pollResult = Darwin.poll(&state, 1, 50)
+                    if pollResult >= 0 || errno == EINTR { continue }
+                }
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
         }

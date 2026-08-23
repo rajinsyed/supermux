@@ -423,6 +423,7 @@ public final class SupermuxHarnessProcessSession {
         }
         session.isForcedDrainInProgress = true
         for stream in pendingStreams {
+            guard !session.drainedStreams.contains(stream) else { continue }
             session.drainedStreams.insert(stream)
             await outputDiagnosticSink(SupermuxHarnessOutputDiagnostic(
                 stream: stream == .stdout ? .stdout : .stderr,
