@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **460**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **464**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
   all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
@@ -480,6 +480,10 @@ Rules for adding a touchpoint:
 | 458 | `docs/notifications.md` | `focused-pane-notification-suppression-doc` | Documents the exact focused-pane behavior and its boundary: read history remains, user-facing alert surfaces and mobile push are suppressed, explicit command automation remains, and targetless workspace notifications keep existing behavior |
 | 459 | `CLAUDE.md` | `dogfood-direct-launch-link` | Replaces the localhost Tag Opener handoff with the tagged app's native `cmux-dev-<tag>://launch` Markdown link. Build-only handoffs register the printed app path through `lsregister -f`; `--launch` already registers it. The link launches directly through LaunchServices without a browser/server and reserves `auth-callback` for sign-in |
 | 460 | `skills/cmux-dev-workflow/references/tagged-builds.md` | `dogfood-direct-launch-link-skill` | Mirrors #459 in the contributor workflow reference: direct custom-scheme handoff, build-only LaunchServices registration, normalized tag slug, inert `launch` host, and the same ban on raw app/DerivedData paths in chat |
+| 461 | `Sources/AppDelegate+DockSurfaceMove.swift` | `claude-harness-dock-admission` | Rejects workspace→Dock and Dock→Dock moves for Claude harness panels because Dock does not own their controller subscription, bridge routing, or persistence lifecycle |
+| 462 | `tests/test_ios_appstore_lane_identity.py` | `ios-appstore-lane-identity` | Extends the release-lane fake tools and assertions for Supermux bundle-ID stamping, including beta, App Store, embedded-framework inspection, and retired-id exclusion |
+| 463 | `Packages/macOS/CmuxRemoteDaemon/Tests/CmuxRemoteDaemonTests/RemoteDaemonRPCClientTimeoutIsolationTests.swift` | `remote-daemon-timeout-isolation-event-queues` | Gives timeout-isolation PTY callbacks dedicated serial queues so unrelated global-queue contention cannot starve the test's synchronization path |
+| 464 | `package.json` | `unfenced` | Registers the root `harness-web:build` command that invokes `scripts/supermux-build-harness-web.sh` for local and CI bundle freshness checks |
 
 ## How to re-apply
 
@@ -4066,3 +4070,35 @@ lockstep. Do not restore `http://127.0.0.1:17320/<tag>`: without a separately in
 opens the embedded browser and fails, which is exactly the handoff regression these touchpoints
 remove. The existing prohibition on `file://`, raw `.app`/DerivedData paths, and `/tmp` build links in
 chat remains unchanged.
+
+### 461. Claude harness Dock admission
+
+Keep the two narrow `claude-harness-dock-admission` fences in
+`Sources/AppDelegate+DockSurfaceMove.swift` inside `canMoveSurfaceIntoDock(_:)`. A workspace-owned
+Claude harness pane must return `false` before detach, and a pre-existing Dock-owned harness pane must
+also be rejected as a source. Dock does not retain the harness controller's event subscription,
+bridge routing, or persistence state, so admission is disabled until Dock implements that complete
+ownership contract.
+
+### 462. iOS release-lane identity coverage
+
+Keep the `ios-appstore-lane-identity` fences in `tests/test_ios_appstore_lane_identity.py` around only
+the Supermux-specific fake-tool support and assertions: capture `SUPERMUX_APP_BUNDLE_ID`, provide the
+fake `otool` used to inspect embedded frameworks, assert the beta and App Store bundle IDs, and reject
+the retired `com.cmuxterm.app` identity. The surrounding upstream release-lane harness remains
+unchanged.
+
+### 463. Remote-daemon timeout test queues
+
+In `RemoteDaemonRPCClientTimeoutIsolationTests.swift`, create one dedicated serial callback queue per
+PTY attachment and pass it to `attachPTY`. Keep the declarations and arguments inside
+`remote-daemon-timeout-isolation-event-queues` fences. Do not use `.global()`: unrelated test work can
+starve those callback semaphores and make the timeout-isolation tests flaky without exercising a
+product failure.
+
+### 464. Harness web root build command
+
+Keep the additive `harness-web:build` script in the root `package.json`, invoking
+`scripts/supermux-build-harness-web.sh`. JSON cannot carry a fence, so this touchpoint is registered as
+`unfenced`. The script is the shared production bundle path used by developers and the harness-web CI
+freshness check; do not duplicate the bundler command in CI.

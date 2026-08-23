@@ -17,6 +17,8 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     private var hasLoadedShell = false
     private var hasFinishedNavigation = false
     private var hasCompletedVisiblePaintFlush = false
+    private var shellRecoveryTask: Task<Void, Never>?
+    private var consecutiveShellRecoveryAttempts = 0
     private(set) var isPanelFocused = false
     private var isPresentationVisible = true
     private var isClosed = false
@@ -36,6 +38,8 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     private var presentationRevision: UInt64 = 1
     private var deliveredPresentationRevision: UInt64 = 0
     nonisolated private static let deliveryRetryIntervalNanoseconds: UInt64 = 33_000_000
+    nonisolated private static let shellRecoveryDelayNanoseconds: UInt64 = 100_000_000
+    nonisolated private static let maximumConsecutiveShellRecoveryAttempts = 3
     nonisolated static let imagePreviewMaxBytes = 512 * 1024
     nonisolated static let imagePreviewTotalMaxBytes = 2 * 1024 * 1024
 
@@ -217,6 +221,8 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         eventFlushTask = nil
         presentationDeliveryTask?.cancel()
         presentationDeliveryTask = nil
+        shellRecoveryTask?.cancel()
+        shellRecoveryTask = nil
         activeEventDeliveryID = nil
         activePresentationDeliveryID = nil
         eventTransport.discardAll()
@@ -293,6 +299,9 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard webView === self.webView else { return }
+        shellRecoveryTask?.cancel()
+        shellRecoveryTask = nil
+        consecutiveShellRecoveryAttempts = 0
         hasFinishedNavigation = true
         scheduleEventFlush()
         if !isPresentationVisible {
@@ -305,6 +314,64 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         }
         if isPanelFocused {
             focus()
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = navigation
+        _ = error
+        scheduleShellRecovery(for: webView, delayed: true)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = navigation
+        _ = error
+        scheduleShellRecovery(for: webView, delayed: true)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        scheduleShellRecovery(for: webView, delayed: false)
+    }
+
+    private func scheduleShellRecovery(for webView: WKWebView, delayed: Bool) {
+        guard webView === self.webView,
+              !isClosed,
+              consecutiveShellRecoveryAttempts < Self.maximumConsecutiveShellRecoveryAttempts else {
+            return
+        }
+        consecutiveShellRecoveryAttempts += 1
+        hasLoadedShell = false
+        hasFinishedNavigation = false
+        hasCompletedVisiblePaintFlush = false
+        eventFlushTask?.cancel()
+        eventFlushTask = nil
+        presentationDeliveryTask?.cancel()
+        presentationDeliveryTask = nil
+        activeEventDeliveryID = nil
+        activePresentationDeliveryID = nil
+        setHostCompositorPresentationVisible(false)
+        shellRecoveryTask?.cancel()
+        shellRecoveryTask = Task { @MainActor [weak self, weak webView] in
+            if delayed {
+                try? await Task.sleep(nanoseconds: Self.shellRecoveryDelayNanoseconds)
+            }
+            guard !Task.isCancelled,
+                  let self,
+                  let webView,
+                  webView === self.webView,
+                  !self.isClosed else {
+                return
+            }
+            self.shellRecoveryTask = nil
+            self.loadShellIfNeeded()
         }
     }
 
@@ -421,9 +488,17 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         }
 
         while !isClosed {
-            if eventTransport.enqueue(event) == .accepted {
+            switch eventTransport.enqueue(event) {
+            case .accepted:
                 scheduleEventFlush()
                 return
+            case .eventTooLarge:
+#if DEBUG
+                NSLog("SupermuxHarness dropped an event that exceeds the native bridge envelope limit")
+#endif
+                return
+            case .recoveryRequired:
+                break
             }
             if !isBackpressured {
                 isBackpressured = true

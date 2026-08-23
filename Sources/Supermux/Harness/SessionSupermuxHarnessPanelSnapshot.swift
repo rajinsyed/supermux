@@ -9,6 +9,7 @@ struct SessionSupermuxHarnessPanelSnapshot: Codable, Sendable {
     var workingDirectory: String?
     var sessionId: String?
     var model: String?
+    var effort: String?
     var permissionMode: String?
     var title: String?
     /// True when `title` came from an explicit rename rather than the CLI's

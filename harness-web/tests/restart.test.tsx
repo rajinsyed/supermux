@@ -22,6 +22,7 @@ interface Script {
   running: boolean;
   failStart?: string;
   failRestart?: string;
+  restartImpl?: (params: StartParams) => Promise<{ runId: string }>;
   failSetModel?: string;
   failInterrupt?: string;
   /** `rewind_files` refuses while the conversation rewind still succeeds. */
@@ -82,6 +83,7 @@ function makeBridge(script: Script): HarnessBridge {
       if (script.failRestart) {
         throw new HarnessBridgeError({ code: "start_failed", userMessage: script.failRestart });
       }
+      if (script.restartImpl) return script.restartImpl(params);
       script.running = true;
       return { runId: "run-2" };
     },
@@ -241,6 +243,33 @@ describe("swapping sessions never goes through start()", () => {
     await flush();
 
     expect(s.restartParams.map((params) => params.resumeSessionId)).toEqual(["session-b"]);
+  });
+
+  test("a newer selection waits for an in-flight restart and then wins", async () => {
+    const firstRestart = deferred<{ runId: string }>();
+    const s = script({
+      running: true,
+      restartImpl: (params) =>
+        params.resumeSessionId === "session-a"
+          ? firstRestart.promise
+          : Promise.resolve({ runId: "run-b" })
+    });
+    const { out } = await mount(s);
+
+    act(() => out.current!.restart("session-a", false));
+    await flush();
+    expect(s.restartParams.map((params) => params.resumeSessionId)).toEqual(["session-a"]);
+
+    act(() => out.current!.restart("session-b", false));
+    await flush();
+    expect(s.restartParams.map((params) => params.resumeSessionId)).toEqual(["session-a"]);
+
+    firstRestart.resolve({ runId: "run-a" });
+    await flush();
+    expect(s.restartParams.map((params) => params.resumeSessionId)).toEqual([
+      "session-a",
+      "session-b"
+    ]);
   });
 
   test("a failed history load does not restart under the previous transcript", async () => {
@@ -592,7 +621,8 @@ describe("a model picked before the first start rides along with it", () => {
     const s = script({ failInterrupt: "interrupt failed" });
     const { store, out } = await mount(s);
     act(() => {
-      store.dispatch({ kind: "localSend", uuid: "queued", text: "keep me", atMs: 1 });
+      store.dispatch({ kind: "localSend", uuid: "active", text: "in flight", atMs: 1 });
+      store.dispatch({ kind: "localSend", uuid: "queued", text: "keep me", atMs: 2 });
       out.current!.interrupt(true);
     });
     await flush();

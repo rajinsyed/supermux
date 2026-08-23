@@ -86,6 +86,8 @@ const SINGLE_LINE_HEIGHT = 28;
 export function Composer(props: ComposerProps) {
   const copy = useCopy();
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const submitChain = useRef<Promise<void>>(Promise.resolve());
+  const submissionsPending = useRef(0);
   const [caret, setCaret] = useState(0);
   const [escArmed, setEscArmed] = useState(false);
   const {
@@ -195,7 +197,7 @@ export function Composer(props: ComposerProps) {
     [caret, popover.kind, popover.start, props, reset]
   );
 
-  const submit = useCallback(async () => {
+  const submit = useCallback(() => {
     const text = props.draft.trim();
     // One mutation path for the plan decision: Enter and the primary button must
     // not disagree about whether typed text refines the plan or approves it.
@@ -207,19 +209,30 @@ export function Composer(props: ComposerProps) {
       return;
     }
     if (!text && images.length === 0) return;
-    if (images.length === 0) {
-      props.onSend(text, []);
-      reset();
-      requestAnimationFrame(() => {
-        const node = textarea.current;
-        if (node) node.style.height = "auto";
-      });
-      return;
-    }
 
+    // Capture attachment ownership immediately, clear the controlled draft, and
+    // reserve this submit's position before any Blob.arrayBuffer() await. A later
+    // text-only submit therefore cannot overtake or duplicate an image message.
+    const hasImages = images.length > 0;
+    const payloads = hasImages ? consumeForSend() : Promise.resolve<ImageAttachment[]>([]);
+    props.onDraftChange("");
     reset();
-    const payloads = await consumeForSend();
-    if (payloads) props.onSend(text, payloads);
+    if (!hasImages && submissionsPending.current === 0) {
+      // Keep the ordinary text-only path synchronous. It still joins the chain
+      // whenever an earlier image submission owns the next wire position.
+      props.onSend(text, []);
+    } else {
+      submissionsPending.current += 1;
+      submitChain.current = submitChain.current
+        .then(async () => {
+          const resolved = await payloads;
+          if (resolved) props.onSend(text, resolved);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          submissionsPending.current -= 1;
+        });
+    }
     requestAnimationFrame(() => {
       const node = textarea.current;
       if (node) node.style.height = "auto";

@@ -23,7 +23,6 @@ struct SupermuxHarnessSubagentTranscriptLocator: Sendable {
     func locate(
         _ address: SupermuxHarnessSubagentTranscriptAddress
     ) throws -> Location? {
-        let address = address.canonicalized
         guard address.identifiers.allSatisfy(isSafeIdentifier) else {
             throw SupermuxHarnessSubagentTranscriptReaderError.invalidIdentifier
         }

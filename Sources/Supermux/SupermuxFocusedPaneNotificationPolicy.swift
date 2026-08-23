@@ -8,8 +8,7 @@ struct SupermuxFocusedPaneNotificationPolicy {
         externalDeliverySuppressed: Bool,
         targetWindowIsKey: Bool = true
     ) -> Bool {
-        _ = targetWindowIsKey
-        return surfaceID != nil && externalDeliverySuppressed
+        surfaceID != nil && externalDeliverySuppressed && targetWindowIsKey
     }
 
     /// Removes user-facing alert effects while preserving history and automation.

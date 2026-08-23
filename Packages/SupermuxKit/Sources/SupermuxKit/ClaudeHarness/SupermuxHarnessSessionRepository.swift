@@ -204,13 +204,13 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
                 let selectedRead = try await scanner.readSelectedRecords(
                     fileURL,
                     expected: metadata.observation,
+                    expectedFingerprint: metadata.fingerprint,
                     selections: selection.ranges,
                     fallbackSessionID: sessionID,
                     chunkSize: configuration.readChunkBytes
                 )
                 recordSelectedRead(selectedRead, path: path)
-                guard selectedRead.before == metadata.observation,
-                      selectedRead.isStable else {
+                guard selectedRead.preservesPrefix(metadata.observation) else {
                     invalidate(path: path)
                     continue
                 }
@@ -399,7 +399,7 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
                 observer: scanObserver
             )
             recordScan(result, path: path)
-            if !result.isStable {
+            if !result.canCommitScannedPrefix {
                 if var currentFlight = flightsByPath[path],
                    currentFlight.id == flightID {
                     currentFlight.isDirty = false
@@ -423,9 +423,10 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
                   let latestState else {
                 throw CocoaError(.fileReadUnknown)
             }
-            let needsDirtyRerun = currentFlight.isDirty &&
-                currentFlight.requestedObservation != result.after
-            currentFlight.requestedObservation = result.after
+            let needsDirtyRerun = result.appendedDuringScan || (
+                currentFlight.isDirty && currentFlight.requestedObservation != result.before
+            )
+            currentFlight.requestedObservation = result.pathAfter
             currentFlight.isDirty = false
             flightsByPath[path] = currentFlight
             if needsDirtyRerun { continue }
@@ -453,7 +454,7 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
         nextGeneration &+= 1
         let generation = nextGeneration
         let metadata = SupermuxHarnessSessionMetadataCacheEntry(
-            observation: result.after,
+            observation: result.before,
             cursor: result.cursor,
             fingerprint: result.fingerprint,
             committed: committedMetadata,
@@ -486,7 +487,7 @@ public actor SupermuxHarnessSessionRepository: SupermuxHarnessSessionReading {
                 provisionalHistory = index
             }
             history = SupermuxHarnessSessionHistoryCacheEntry(
-                observation: result.after,
+                observation: result.before,
                 committed: historyDelta,
                 provisional: provisionalHistory,
                 generation: generation

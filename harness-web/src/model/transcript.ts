@@ -179,6 +179,9 @@ export function applyEvent(
     case "protocol":
       return applyLine(model, index, event.line, nowMs);
     case "runStarted": {
+      // Task identifiers are process-scoped; never route a new run through an
+      // old run's tool-use association when a frame omits tool_use_id.
+      index.taskToTool.clear();
       // No turn can still be live at the instant a process starts: the run that
       // was producing it is gone. A turn left open here comes from replayed
       // history whose recording stops mid-turn — a session that crashed while
@@ -769,7 +772,7 @@ export function applyLocalAction(
           // the model the process is still on cannot revert the menu (see
           // SessionMeta.modelPickPending). A bootstrap projection does not: a
           // restore snapshot is a memory, and the live wire outranks it.
-          modelPickPending: action.pick ? true : model.session.modelPickPending
+          modelPickPending: action.pick ? true : undefined
         },
         revision: model.revision + 1
       };

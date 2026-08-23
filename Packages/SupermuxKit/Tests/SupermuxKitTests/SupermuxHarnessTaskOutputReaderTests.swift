@@ -68,7 +68,6 @@ struct SupermuxHarnessTaskOutputReaderTests {
         let reader = SupermuxHarnessTaskOutputReader(
             temporaryRootURL: root,
             canonicalRootURL: canonicalRoot,
-            fileManager: .default
         )
         let privatePath = outputURL.path.hasPrefix("/private/tmp/")
             ? outputURL.path
@@ -155,7 +154,6 @@ struct SupermuxHarnessTaskOutputReaderTests {
         let reader = SupermuxHarnessTaskOutputReader(
             temporaryRootURL: expectedRoot,
             canonicalRootURL: expectedRoot,
-            fileManager: .default
         )
 
         #expect(throws: SupermuxHarnessTaskOutputReaderError.unsafeOutputPath) {
@@ -206,7 +204,7 @@ struct SupermuxHarnessTaskOutputReaderTests {
                 taskID: "task",
                 observedTaskIDs: ["task"],
                 outputFilePath: first.path,
-                expectedOutputFilePath: second.path
+                expectedOutputFilePaths: [second.path]
             )
         }
     }
@@ -243,7 +241,6 @@ struct SupermuxHarnessTaskOutputReaderTests {
             reader: SupermuxHarnessTaskOutputReader(
                 temporaryRootURL: root,
                 canonicalRootURL: root.resolvingSymlinksInPath(),
-                fileManager: .default,
                 maximumBytes: maximumBytes
             )
         )

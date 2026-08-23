@@ -1,7 +1,8 @@
 import Foundation
 
 actor SupermuxHarnessInputWriter {
-    private static let maximumQueuedBytes = 1024 * 1024
+    /// Covers the largest policy-valid 2 MiB image payload after base64 and JSON framing.
+    private static let maximumQueuedBytes = 4 * 1024 * 1024
 
     private let fileHandle: FileHandle
     private var queuedWrites: [(data: Data, continuation: CheckedContinuation<Void, any Error>)] = []

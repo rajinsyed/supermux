@@ -1,14 +1,4 @@
 {
-  "harnessAttachments": {
-    "attachmentName": "image",
-    "unsupported": "Unsupported image format. Use PNG, JPEG, GIF, or WebP.",
-    "invalid": "Could not read this image.",
-    "tooLarge": "Each image must be 512 KiB or smaller.",
-    "totalTooLarge": "Attachments must total 2 MiB or less.",
-    "tooMany": "You can attach up to 8 images.",
-    "invalidBridgeAttachments": "One or more image attachments are invalid.",
-    "outputOverflow": "Claude emitted an oversized output line. That line was skipped and the stream recovered."
-  },
   "ios": {
     "metaTitle": "cmux iOS — your terminals on iPhone and iPad",
     "metaDescription": "The cmux iOS app mirrors your Mac terminals to iPhone and iPad in realtime, over your own Tailscale or local network. Drive your coding agents from anywhere.",

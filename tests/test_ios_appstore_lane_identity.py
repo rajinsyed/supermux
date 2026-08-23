@@ -305,7 +305,9 @@ def setting(prefix):
 
 if "archive" in args:
     archive = Path(after("-archivePath"))
+    # SUPERMUX:begin ios-appstore-lane-identity
     bundle_id = setting("SUPERMUX_APP_BUNDLE_ID=")
+    # SUPERMUX:end ios-appstore-lane-identity
     build_number = setting("CURRENT_PROJECT_VERSION=") or "1"
     marketing_version = setting("MARKETING_VERSION=") or {BETA_MARKETING_VERSION!r}
     crash_reporting_enabled = setting("CMUX_CRASH_REPORTING_ENABLED=") or "YES"
@@ -392,6 +394,7 @@ sys.exit(0)
 """,
     )
 
+    # SUPERMUX:begin ios-appstore-lane-identity
     _write_executable(
         fakebin / "otool",
         """#!/usr/bin/env sh
@@ -399,6 +402,7 @@ sys.exit(0)
 exit 0
 """,
     )
+    # SUPERMUX:end ios-appstore-lane-identity
 
     _write_executable(
         fakebin / "security",
@@ -630,10 +634,12 @@ def test_upload_beta_lane_uses_beta_marketing_version(tmp: Path, fakebin: Path) 
         for line in (tmp / "xcodebuild.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     archive_call = next(call for call in xcodebuild_calls if "archive" in call)
+    # SUPERMUX:begin ios-appstore-lane-identity
     _check(
         f"SUPERMUX_APP_BUNDLE_ID={BETA_BUNDLE_ID}" in archive_call,
         "beta archive command stamps the beta bundle id",
     )
+    # SUPERMUX:end ios-appstore-lane-identity
     _check(
         f"MARKETING_VERSION={BETA_MARKETING_VERSION}" in archive_call,
         "beta archive command stamps the beta marketing version",
@@ -921,10 +927,12 @@ def test_upload_appstore_lane_uses_production_bundle_id(tmp: Path, fakebin: Path
         for line in (tmp / "xcodebuild.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     archive_call = next(call for call in xcodebuild_calls if "archive" in call)
+    # SUPERMUX:begin ios-appstore-lane-identity
     _check(
         f"SUPERMUX_APP_BUNDLE_ID={APPSTORE_BUNDLE_ID}" in archive_call,
         "archive command stamps com.cmux.app",
     )
+    # SUPERMUX:end ios-appstore-lane-identity
     _check(
         f"MARKETING_VERSION={APPSTORE_MARKETING_VERSION}" in archive_call,
         "archive command stamps the App Store marketing version",
@@ -937,10 +945,12 @@ def test_upload_appstore_lane_uses_production_bundle_id(tmp: Path, fakebin: Path
         "CMUX_CRASH_REPORTING_ENABLED=NO" in archive_call,
         "App Store archive disables crash reporting",
     )
+    # SUPERMUX:begin ios-appstore-lane-identity
     _check(
         all("SUPERMUX_APP_BUNDLE_ID=com.cmuxterm.app" not in call for call in archive_call),
         "archive command does not stamp the retired com.cmuxterm.app id",
     )
+    # SUPERMUX:end ios-appstore-lane-identity
 
     export_options = plistlib.loads((tmp / "ExportOptions.plist").read_bytes())
     profiles = export_options.get("provisioningProfiles", {})

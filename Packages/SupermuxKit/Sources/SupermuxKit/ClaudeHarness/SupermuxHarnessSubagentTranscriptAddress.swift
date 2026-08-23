@@ -16,30 +16,6 @@ public enum SupermuxHarnessSubagentTranscriptAddress: Hashable, Sendable {
         agentID: String
     )
 
-    var canonicalized: SupermuxHarnessSubagentTranscriptAddress {
-        switch self {
-        case .localAgent(_, let sessionID, let taskID):
-            return .localAgent(
-                workingDirectoryURL: canonicalWorkingDirectoryURL,
-                sessionID: sessionID,
-                taskID: taskID
-            )
-        case .workflowAgent(_, let sessionID, let workflowRunID, let agentID):
-            return .workflowAgent(
-                workingDirectoryURL: canonicalWorkingDirectoryURL,
-                sessionID: sessionID,
-                workflowRunID: workflowRunID,
-                agentID: agentID
-            )
-        }
-    }
-
-    var canonicalWorkingDirectoryURL: URL {
-        workingDirectoryURL
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-    }
-
     var workingDirectoryURL: URL {
         switch self {
         case .localAgent(let workingDirectoryURL, _, _),

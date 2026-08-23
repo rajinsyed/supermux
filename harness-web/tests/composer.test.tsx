@@ -87,6 +87,12 @@ async function popoverRow(label: string): Promise<HTMLElement> {
   return row;
 }
 
+async function settlePopoverCompletion(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+}
+
 describe("slash-command popover completes a real command", () => {
   test("accepting with Enter keeps the leading slash", async () => {
     const harness = mount();
@@ -94,6 +100,7 @@ describe("slash-command popover completes a real command", () => {
     await popoverRow("/compact");
 
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    await settlePopoverCompletion();
 
     // Without the sigil the CLI reads "compact " as prose and the model answers
     // it, instead of running the slash command.
@@ -107,6 +114,7 @@ describe("slash-command popover completes a real command", () => {
     const row = await popoverRow("/compact");
 
     fireEvent.mouseDown(row);
+    await settlePopoverCompletion();
 
     expect(harness.draft()).toBe("/compact ");
   });
@@ -118,9 +126,7 @@ describe("slash-command popover completes a real command", () => {
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
     // The completion repositions the caret in a rAF; let it land so the popover
     // is genuinely closed and the next Enter submits rather than re-completing.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
+    await settlePopoverCompletion();
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
 
     expect(harness.sent).toEqual(["/context"]);
@@ -132,6 +138,7 @@ describe("slash-command popover completes a real command", () => {
     await popoverRow("src/ui/App.tsx");
 
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    await settlePopoverCompletion();
 
     expect(harness.draft()).toBe("look at @src/ui/App.tsx ");
   });
@@ -805,12 +812,16 @@ function mountAttachmentComposer(options: {
   return {
     ...rendered,
     setDraft(next: string) {
-      draft = next;
-      rendered.rerender(view());
+      act(() => {
+        draft = next;
+        rendered.rerender(view());
+      });
     },
     setIdentity(next: string) {
-      identity = next;
-      rendered.rerender(view());
+      act(() => {
+        identity = next;
+        rendered.rerender(view());
+      });
     }
   };
 }

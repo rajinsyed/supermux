@@ -268,7 +268,12 @@ export function AgentChatView({
               </button>
             </div>
           ) : phase === "missing" ? (
-            <div className="drill-status">{copy("supermux.harness.agentView.unavailable")}</div>
+            <div className="drill-status">
+              {copy("supermux.harness.agentView.unavailable")}
+              <button type="button" className="link-btn" onClick={retry}>
+                {copy("supermux.harness.agentView.retry")}
+              </button>
+            </div>
           ) : running ? (
             // A live agent that has not spoken yet is WORKING, not empty. The
             // empty copy reads as "there is nothing here", which is wrong for a

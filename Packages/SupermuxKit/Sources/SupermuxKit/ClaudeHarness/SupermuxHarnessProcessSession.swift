@@ -137,7 +137,7 @@ public final class SupermuxHarnessProcessSession {
         return started
     }
 
-    /// Writes one encoded protocol frame through the serialized one-megabyte stdin queue.
+    /// Writes one encoded protocol frame through the serialized bounded stdin queue.
     ///
     /// - Parameter frame: A newline-terminated frame produced by ``SupermuxHarnessProtocolEncoder``.
     /// - Throws: ``SupermuxHarnessProcessError/notRunning`` or an input-writer error.

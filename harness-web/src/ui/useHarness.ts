@@ -133,6 +133,23 @@ export function useHarness(store: HarnessStore): HarnessController {
    * chose. So a deliberate swap retires the snapshot permanently.
    */
   const snapshotRetired = useRef(false);
+  /** Latest-wins token for explicit session switches and their history loads. */
+  const restartRequestGeneration = useRef(0);
+  /** Native restart/rewind operations are exclusive; newer selections wait instead of being rejected. */
+  const restartOperationChain = useRef<Promise<void>>(Promise.resolve());
+  const restartOperationsPending = useRef(0);
+  /** Serializes live model mutations so a failed later pick can roll back to the last accepted one. */
+  const modelMutationChain = useRef<Promise<void>>(Promise.resolve());
+  const modelMutationGeneration = useRef(0);
+  const modelMutationsPending = useRef(0);
+  const confirmedModelSelection = useRef<{ model: string; effort?: EffortLevel } | undefined>(
+    undefined
+  );
+  /** Same rollback discipline for rapid permission-mode cycling. */
+  const permissionModeMutationChain = useRef<Promise<void>>(Promise.resolve());
+  const permissionModeMutationGeneration = useRef(0);
+  const permissionModeMutationsPending = useRef(0);
+  const confirmedPermissionMode = useRef<PermissionMode | undefined>(undefined);
 
   const reloadContext = useCallback(() => {
     bridge
@@ -161,7 +178,10 @@ export function useHarness(store: HarnessStore): HarnessController {
         // here rather than as a separate field because the priority is total:
         // everything session-specific still wins through the ordinary
         // resolution order.
-        if (next.defaults && (next.defaults.model || next.defaults.effort)) {
+        if (
+          next.defaults &&
+          (next.defaults.model || next.defaults.effort || next.defaults.lastUsed)
+        ) {
           const lastUsed = next.defaults.lastUsed;
           store.dispatch({
             kind: "sessionDefaults",
@@ -181,7 +201,11 @@ export function useHarness(store: HarnessStore): HarnessController {
           // Only while the store has no answer of its own: an init frame or a
           // picker choice that already landed outranks the serialized snapshot.
           if (restoredModel && !store.getSnapshot().session.model) {
-            store.dispatch({ kind: "setModel", model: restoredModel });
+            store.dispatch({
+              kind: "setModel",
+              model: restoredModel,
+              effort: next.restore?.effort
+            });
           }
           modelBootstrapComplete.current = true;
         }
@@ -314,7 +338,11 @@ export function useHarness(store: HarnessStore): HarnessController {
       return {
         ...params,
         model: params.model ?? selected ?? context?.restore?.model ?? displayedDefault,
-        effort: params.effort ?? session.effort ?? (selected ? undefined : session.defaultEffort),
+        effort:
+          params.effort ??
+          session.effort ??
+          context?.restore?.effort ??
+          (selected ? undefined : session.defaultEffort),
         permissionMode:
           params.permissionMode ??
           session.permissionMode ??
@@ -441,7 +469,6 @@ export function useHarness(store: HarnessStore): HarnessController {
       flushStranded();
       const uuid = uuidv4();
       store.dispatch({ kind: "localSend", uuid, text, images, atMs: Date.now() });
-      setDraftState("");
       bridge.saveDraft({ text: "" }).catch(() => undefined);
       enqueueSend(text, images, uuid);
     },
@@ -512,7 +539,18 @@ export function useHarness(store: HarnessStore): HarnessController {
     const key = `${snapshot.runId ?? ""}|${selector}|${session.effort ?? ""}`;
     if (lastPushedPick.current === key) return;
     lastPushedPick.current = key;
-    bridge.setModel({ model: selector, effort: session.effort }).catch(() => undefined);
+    bridge.setModel({ model: selector, effort: session.effort }).catch(() => {
+      if (lastPushedPick.current !== key) return;
+      lastPushedPick.current = undefined;
+      const current = store.getSnapshot().session;
+      if (current.modelPickPending && current.model) {
+        store.dispatch({
+          kind: "setModel",
+          model: current.model,
+          effort: current.effort
+        });
+      }
+    });
   }, [bridge, store]);
   useEffect(() => {
     reconcilePendingModelPick();
@@ -552,20 +590,44 @@ export function useHarness(store: HarnessStore): HarnessController {
 
   const interrupt = useCallback(
     (cancelQueued: boolean) => {
-      // The CLI drops the queue when asked to; the chips have to go with it, or
-      // the pane keeps queueing behind messages that will never be sent.
-      if (cancelQueued) store.dispatch({ kind: "clearQueued" });
-      bridge.interrupt({ cancelQueued }).catch(() => undefined);
+      void bridge.interrupt({ cancelQueued }).then(() => {
+        // The CLI drops the queue when asked to; commit the matching chip removal
+        // only after the authoritative control response succeeds.
+        if (cancelQueued) store.dispatch({ kind: "clearQueued" });
+      }).catch(() => undefined);
     },
     [bridge, store]
   );
 
   const cancelQueued = useCallback(
     (uuid: string) => {
-      store.dispatch({ kind: "cancelQueued", uuid });
-      bridge.cancelQueued({ messageUuid: uuid }).catch(() => undefined);
+      void bridge.cancelQueued({ messageUuid: uuid }).then(() => {
+        store.dispatch({ kind: "cancelQueued", uuid });
+      }).catch(() => undefined);
     },
     [bridge, store]
+  );
+
+  const enqueueRestartOperation = useCallback(
+    <T,>(operation: () => Promise<T>): Promise<T> => {
+      restartOperationsPending.current += 1;
+      starting.current = true;
+      setRestarting(true);
+      const result = restartOperationChain.current.then(operation);
+      const completed = result.finally(() => {
+        restartOperationsPending.current -= 1;
+        if (restartOperationsPending.current === 0) {
+          starting.current = false;
+          setRestarting(false);
+        }
+      });
+      restartOperationChain.current = completed.then(
+        () => undefined,
+        () => undefined
+      );
+      return completed;
+    },
+    []
   );
 
   /**
@@ -574,12 +636,8 @@ export function useHarness(store: HarnessStore): HarnessController {
    * `start` while a process is up is what produced "A Claude session is already
    * running" on every session pick and every New Session.
    */
-  const runRestart = useCallback(
+  const performRestart = useCallback(
     async (params: StartParams): Promise<void> => {
-      setRestarting(true);
-      // A restart IS a start in flight: without this, a send racing the restart
-      // would see a phase that is not yet `running` and spawn a second process.
-      starting.current = true;
       try {
         const { runId } = await bridge.restart(startOptions(params));
         // The native side emits its own runStarted; replaying it here is
@@ -593,51 +651,69 @@ export function useHarness(store: HarnessStore): HarnessController {
           error: error instanceof Error ? error.message : undefined
         });
         throw error;
-      } finally {
-        starting.current = false;
-        setRestarting(false);
       }
     },
     [bridge, startOptions, store]
   );
 
+  const runRestart = useCallback(
+    (params: StartParams): Promise<void> =>
+      enqueueRestartOperation(() => performRestart(params)),
+    [enqueueRestartOperation, performRestart]
+  );
+
   const restart = useCallback(
     (resumeSessionId?: string, fork?: boolean) => {
       const target = resumeSessionId ?? currentSessionId();
-      // Picking a session from the browser is a deliberate move off whatever the
-      // panel was serialized with; the snapshot must not be replayed over it.
-      if (resumeSessionId) {
-        snapshotRetired.current = true;
-        restoredSessionId.current = resumeSessionId;
-      }
-      const load = target
-        ? bridge
-            .loadSessionHistory({ sessionId: target })
-            .then((result) => {
-              store.dispatch({ kind: "reset" });
-              if (result.truncated) store.dispatch({ kind: "historyTruncated" });
-              store.receive(result.events.map((line) => ({ kind: "protocol" as const, line })));
-              // Drain the replay before building restart params so a selection
-              // from the old session cannot be sent back over the session being
-              // resumed. History carries NO init frame — the disk mapper only
-              // forwards user/assistant records — so `historyReplayed` is what
-              // settles the replayed turns and adopts the resumed session's own
-              // last-used model (its last assistant frame) for the trigger and
-              // the restart params.
-              store.flushNow();
-              store.dispatch({ kind: "historyReplayed" });
-            })
-            .catch(() => undefined)
-        : Promise.resolve();
-      void load.then(() =>
-        runRestart({ resumeSessionId: target, forkSession: fork }).catch(() => undefined)
-      );
+      const requestGeneration = ++restartRequestGeneration.current;
+      void (async () => {
+        let history: Awaited<ReturnType<HarnessBridge["loadSessionHistory"]>> | undefined;
+        if (target) {
+          try {
+            history = await bridge.loadSessionHistory({ sessionId: target });
+          } catch (error: unknown) {
+            if (restartRequestGeneration.current === requestGeneration) {
+              store.dispatch({
+                kind: "startFailed",
+                error: error instanceof Error ? error.message : undefined
+              });
+            }
+            return;
+          }
+        }
+        if (restartRequestGeneration.current !== requestGeneration) return;
+        await enqueueRestartOperation(async () => {
+          if (restartRequestGeneration.current !== requestGeneration) return;
+          // Commit ownership only once the requested history is available and this
+          // selection owns the exclusive native-restart slot.
+          if (resumeSessionId) {
+            snapshotRetired.current = true;
+            restoredSessionId.current = resumeSessionId;
+          }
+          if (history) {
+            store.dispatch({ kind: "reset" });
+            if (history.truncated) store.dispatch({ kind: "historyTruncated" });
+            store.receive(history.events.map((line) => ({ kind: "protocol" as const, line })));
+            // Drain the replay before building restart params so a selection
+            // from the old session cannot be sent back over the session being
+            // resumed. History carries NO init frame — the disk mapper only
+            // forwards user/assistant records — so `historyReplayed` is what
+            // settles the replayed turns and adopts the resumed session's own
+            // last-used model (its last assistant frame) for the trigger and
+            // the restart params.
+            store.flushNow();
+            store.dispatch({ kind: "historyReplayed" });
+          }
+          await performRestart({ resumeSessionId: target, forkSession: fork });
+        }).catch(() => undefined);
+      })();
     },
-    [bridge, currentSessionId, runRestart, store]
+    [bridge, currentSessionId, enqueueRestartOperation, performRestart, store]
   );
 
   /** Explicitly NOT a resume: no session id goes down, and the pane is cleared. */
   const newSession = useCallback(() => {
+    restartRequestGeneration.current += 1;
     // Capture before reset. This is the selection actually in effect, whether it
     // came from the model picker or from the CLI's init frame.
     const current = store.getSnapshot().session;
@@ -673,12 +749,9 @@ export function useHarness(store: HarnessStore): HarnessController {
   );
 
   const rewind = useCallback(
-    async (request: RewindRequest, restoreFiles: boolean): Promise<RewindResult> => {
-      setRestarting(true);
-      // A rewind restarts the process, so it is a start in flight for the same
-      // reason a restart is.
-      starting.current = true;
-      try {
+    (request: RewindRequest, restoreFiles: boolean): Promise<RewindResult> => {
+      restartRequestGeneration.current += 1;
+      return enqueueRestartOperation(async () => {
         const result = await bridge.rewind({
           userMessageUuid: request.uuid,
           restoreFiles,
@@ -694,34 +767,71 @@ export function useHarness(store: HarnessStore): HarnessController {
         // rewind, so it comes back in the result rather than as a rejection —
         // the caller decides what to say about the half that did not happen.
         return result;
-      } finally {
-        starting.current = false;
-        setRestarting(false);
-      }
+      });
     },
-    [bridge, store]
+    [bridge, enqueueRestartOperation, store]
   );
 
   const setModel = useCallback(
     (next: string, effort?: EffortLevel) => {
-      // One authoritative copy. startOptions reads this same session state when a
-      // process does not exist yet or a later restart needs to resend the choice.
-      // `pick` marks this as a USER choice: until a wire frame reports the same
-      // model, frames naming a DIFFERENT one (the in-flight turn's
-      // message_start, a mid-restart init) are ignored instead of snapping the
-      // menu back to whatever the process launched with.
-      store.dispatch({ kind: "setModel", model: next, effort, pick: true });
-      // `set_model` needs a live process to receive it. Pushing it at a pane
-      // that has none is not merely useless — the rejection surfaces as a
-      // failure for a choice the menu already shows as taken. The pick is not
-      // lost: the pending-pick effect above re-pushes it when a run comes up,
-      // and startOptions carries it onto the next start either way.
       const snapshot = store.getSnapshot();
-      if (snapshot.runPhase !== "running") return;
-      // Mark this push so the pending-pick effect does not immediately send
-      // the identical frame a second time.
-      lastPushedPick.current = `${snapshot.runId ?? ""}|${next}|${effort ?? ""}`;
-      bridge.setModel({ model: next, effort }).catch(() => undefined);
+      // Before a process exists this is configuration for the next start, so the
+      // local store is authoritative and startOptions carries it onto the wire.
+      if (snapshot.runPhase !== "running" || !snapshot.session.model) {
+        store.dispatch({ kind: "setModel", model: next, effort, pick: true });
+        return;
+      }
+
+      if (modelMutationsPending.current === 0) {
+        confirmedModelSelection.current = {
+          model: snapshot.session.model,
+          effort: snapshot.session.effort
+        };
+      }
+      modelMutationsPending.current += 1;
+      const generation = ++modelMutationGeneration.current;
+      const runId = snapshot.runId;
+      const key = `${runId ?? ""}|${next}|${effort ?? ""}`;
+
+      // Preserve the picker's synchronous feedback and the stale-frame latch. The
+      // serial control chain below owns rollback, so rapid picks cannot restore an
+      // older optimistic value after a later request settles.
+      store.dispatch({ kind: "setModel", model: next, effort, pick: true });
+      lastPushedPick.current = key;
+      modelMutationChain.current = modelMutationChain.current
+        .catch(() => undefined)
+        .then(async () => {
+          const current = store.getSnapshot();
+          if (current.runPhase !== "running" || current.runId !== runId) return;
+          try {
+            await bridge.setModel({ model: next, effort });
+            confirmedModelSelection.current = { model: next, effort };
+          } catch {
+            if (modelMutationGeneration.current !== generation) return;
+            const confirmed = confirmedModelSelection.current;
+            const latest = store.getSnapshot();
+            if (
+              confirmed &&
+              latest.runPhase === "running" &&
+              latest.runId === runId &&
+              latest.session.model === next &&
+              latest.session.modelPickPending
+            ) {
+              lastPushedPick.current = undefined;
+              store.dispatch({
+                kind: "setModel",
+                model: confirmed.model,
+                effort: confirmed.effort
+              });
+            }
+          }
+        })
+        .finally(() => {
+          modelMutationsPending.current -= 1;
+          if (modelMutationsPending.current === 0) {
+            confirmedModelSelection.current = undefined;
+          }
+        });
     },
     [bridge, store]
   );
@@ -729,8 +839,33 @@ export function useHarness(store: HarnessStore): HarnessController {
   const setPermissionMode = useCallback(
     (mode: PermissionMode) => {
       permissionModeWasSelected.current = true;
+      if (permissionModeMutationsPending.current === 0) {
+        confirmedPermissionMode.current = store.getSnapshot().session.permissionMode;
+      }
+      permissionModeMutationsPending.current += 1;
+      const generation = ++permissionModeMutationGeneration.current;
+
       store.dispatch({ kind: "setPermissionMode", mode });
-      bridge.setPermissionMode({ mode }).catch(() => undefined);
+      permissionModeMutationChain.current = permissionModeMutationChain.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            await bridge.setPermissionMode({ mode });
+            confirmedPermissionMode.current = mode;
+          } catch {
+            if (permissionModeMutationGeneration.current !== generation) return;
+            const confirmed = confirmedPermissionMode.current;
+            if (confirmed && store.getSnapshot().session.permissionMode === mode) {
+              store.dispatch({ kind: "setPermissionMode", mode: confirmed });
+            }
+          }
+        })
+        .finally(() => {
+          permissionModeMutationsPending.current -= 1;
+          if (permissionModeMutationsPending.current === 0) {
+            confirmedPermissionMode.current = undefined;
+          }
+        });
     },
     [bridge, store]
   );

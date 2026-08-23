@@ -199,4 +199,3 @@ function mergeAssistantBlock(
   }
   return model;
 }
-

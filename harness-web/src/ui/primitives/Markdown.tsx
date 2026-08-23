@@ -202,6 +202,7 @@ const MarkdownContent = memo(function MarkdownContent({
   streaming?: boolean;
   mutableFence?: MutableFenceSource;
 }) {
+  const copy = useCopy();
   renderedParserInputCodeUnits += text.length;
   const components = useMemo<Components>(
     () => ({
@@ -251,10 +252,14 @@ const MarkdownContent = memo(function MarkdownContent({
         );
       },
       img({ alt }) {
-        return <span className="md-image-placeholder">{alt ?? "image"}</span>;
+        return (
+          <span className="md-image-placeholder">
+            {alt || copy("supermux.harness.composer.attachmentName")}
+          </span>
+        );
       }
     }),
-    [mutableFence, sourceOffset, stateKey, streaming]
+    [copy, mutableFence, sourceOffset, stateKey, streaming]
   );
 
   return (

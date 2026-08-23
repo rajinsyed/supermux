@@ -1221,7 +1221,8 @@ final class TerminalNotificationStore: ObservableObject {
         let focusedPanePolicy = SupermuxFocusedPaneNotificationPolicy()
         let focusedPaneAlreadyVisible = focusedPanePolicy.targetIsAlreadyVisible(
             surfaceID: request.surfaceId,
-            externalDeliverySuppressed: shouldSuppressExternalDelivery
+            externalDeliverySuppressed: shouldSuppressExternalDelivery,
+            targetWindowIsKey: targetWindowIsKey(forTabId: request.tabId)
         )
         let effects = focusedPanePolicy.resolvedEffects(
             effects,
@@ -1362,6 +1363,17 @@ final class TerminalNotificationStore: ObservableObject {
         return AppFocusState.isAppFocused() && isActiveTab && isFocusedSurface
     }
 
+    // SUPERMUX:begin focused-pane-notification-suppression
+    private func targetWindowIsKey(forTabId tabId: UUID) -> Bool {
+        guard let context = AppDelegate.shared?.contextContainingTabId(tabId) else {
+            // Windowless test contexts and the legacy single-manager fallback use
+            // the existing app-focus seam.
+            return AppFocusState.isAppFocused()
+        }
+        return context.window?.isKeyWindow ?? AppFocusState.isAppFocused()
+    }
+    // SUPERMUX:end focused-pane-notification-suppression
+
     private func deliverNotificationSideEffects(
         _ notification: TerminalNotification,
         shouldSuppressExternalDelivery: Bool,
@@ -1405,7 +1417,8 @@ final class TerminalNotificationStore: ObservableObject {
         let focusedPaneAlreadyVisible = SupermuxFocusedPaneNotificationPolicy()
             .targetIsAlreadyVisible(
                 surfaceID: notification.surfaceId,
-                externalDeliverySuppressed: shouldSuppressExternalDelivery
+                externalDeliverySuppressed: shouldSuppressExternalDelivery,
+                targetWindowIsKey: targetWindowIsKey(forTabId: notification.tabId)
             )
         if !focusedPaneAlreadyVisible,
            PhonePushClient.shared.configuration().forwardingEnabled {

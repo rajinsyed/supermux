@@ -94,7 +94,15 @@ export function SubagentTranscriptView({
     );
   }
   if (state.phase === "missing") {
-    return <div className="drill-status">{copy("supermux.harness.subagent.transcriptMissing")}</div>;
+    return (
+      <div className="drill-status">
+        {copy("supermux.harness.subagent.transcriptMissing")}
+        <button type="button" className="link-btn" onClick={state.reload}>
+          <Refresh size={11} />
+          {copy("supermux.harness.subagent.transcriptRefresh")}
+        </button>
+      </div>
+    );
   }
   if (state.phase === "failed") {
     return (

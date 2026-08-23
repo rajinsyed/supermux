@@ -180,6 +180,7 @@ function AppBody({
   // app in the background), which is why the pane showed no badge or banner.
 
   const pending = model.pending[0];
+  const permissionResponsesInFlight = useRef(new Set<string>());
 
   useEffect(() => {
     if (!pending) return;
@@ -189,34 +190,41 @@ function AppBody({
 
   const decide = useCallback(
     (decision: PermissionDecision) => {
-      if (!pending) return;
-      store.dispatch({
-        kind: "permissionResolved",
-        requestId: pending.requestId,
-        behavior: decision.behavior,
-        // Carried so the reducer can leave a record of an answered question in
-        // the transcript; the answers only exist in this payload.
-        updatedInput:
-          decision.updatedInput && typeof decision.updatedInput === "object"
-            ? (decision.updatedInput as JsonObject)
-            : undefined
-      });
-      harness.bridge
+      if (!pending || permissionResponsesInFlight.current.has(pending.requestId)) return;
+      const request = pending;
+      permissionResponsesInFlight.current.add(request.requestId);
+      void harness.bridge
         .respondPermission({
-          requestId: pending.requestId,
+          requestId: request.requestId,
           behavior: decision.behavior,
           updatedInput: decision.updatedInput,
           updatedPermissions: decision.updatedPermissions,
           message: decision.message,
           interrupt: decision.interrupt
         })
-        .catch(() => undefined);
-      const setMode = decision.updatedPermissions?.find((s) => s.type === "setMode") as
-        | { mode?: string }
-        | undefined;
-      if (setMode?.mode) {
-        store.dispatch({ kind: "setPermissionMode", mode: setMode.mode as never });
-      }
+        .then(() => {
+          store.dispatch({
+            kind: "permissionResolved",
+            requestId: request.requestId,
+            behavior: decision.behavior,
+            // Carried so the reducer can leave a record of an answered question in
+            // the transcript; the answers only exist in this payload.
+            updatedInput:
+              decision.updatedInput && typeof decision.updatedInput === "object"
+                ? (decision.updatedInput as JsonObject)
+                : undefined
+          });
+          const setMode = decision.updatedPermissions?.find((s) => s.type === "setMode") as
+            | { mode?: string }
+            | undefined;
+          if (setMode?.mode) {
+            store.dispatch({ kind: "setPermissionMode", mode: setMode.mode as never });
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          permissionResponsesInFlight.current.delete(request.requestId);
+        });
     },
     [harness.bridge, pending, store]
   );

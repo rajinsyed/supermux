@@ -20,6 +20,7 @@ struct SupermuxHarnessNativeEventTransportConfiguration {
 enum SupermuxHarnessNativeEventEnqueueResult: Equatable {
     case accepted
     case recoveryRequired
+    case eventTooLarge
 }
 
 struct SupermuxHarnessNativeEventEnvelope {
@@ -157,8 +158,10 @@ final class SupermuxHarnessNativeEventTransport {
     func enqueue(_ event: [String: Any]) -> SupermuxHarnessNativeEventEnqueueResult {
         guard nextSequence < UInt64.max,
               let encoded = try? JSONSerialization.data(withJSONObject: event, options: [.sortedKeys]),
-              encoded.count <= configuration.maximumBacklogBytes,
-              pendingEncodedByteCount <= configuration.maximumBacklogBytes - encoded.count else {
+              encoded.count <= configuration.maximumBacklogBytes else {
+            return .eventTooLarge
+        }
+        guard pendingEncodedByteCount <= configuration.maximumBacklogBytes - encoded.count else {
             return .recoveryRequired
         }
         let singleEnvelope = SupermuxHarnessNativeEventEnvelope(
@@ -169,7 +172,7 @@ final class SupermuxHarnessNativeEventTransport {
         )
         guard let singleEnvelopeBytes = singleEnvelope.encodedData?.count,
               singleEnvelopeBytes <= configuration.maximumEncodedBatchBytes else {
-            return .recoveryRequired
+            return .eventTooLarge
         }
 
         pending.append(PendingEvent(

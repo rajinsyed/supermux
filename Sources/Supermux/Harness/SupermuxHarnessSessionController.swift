@@ -43,6 +43,7 @@ final class SupermuxHarnessSessionController {
     private var processSession: (any SupermuxHarnessProcessSessionProtocol)!
     private var controlRouter: SupermuxHarnessControlRouter?
     private let encoder = SupermuxHarnessProtocolEncoder()
+    private let decoder = SupermuxHarnessProtocolDecoder()
     private let binarySetting: SupermuxHarnessBinarySetting
     private let modelCatalogStore: SupermuxHarnessModelCatalogStore
     private let lastUsedModelStore: SupermuxHarnessLastUsedModelStore
@@ -60,6 +61,7 @@ final class SupermuxHarnessSessionController {
     private var binarySettingRevision = 0
     private var cachedCLIStatus: [String: Any]?
     private var taskRecordsByID: [String: TaskRecord] = [:]
+    private var historicalTaskRecordsBySessionID: [String: [String: TaskRecord]] = [:]
     private var sessionFileWatcher: SupermuxHarnessSessionFileWatcher?
     private var lifecycleEventDeliveryTask: Task<Void, Never>?
     private var watchedSessionID: String?
@@ -164,34 +166,39 @@ final class SupermuxHarnessSessionController {
         guard let sessionId = snapshot.sessionId, !sessionId.isEmpty else { return nil }
         var restore: [String: Any] = ["sessionId": sessionId]
         if let model = snapshot.model { restore["model"] = model }
+        if let effort = snapshot.effort { restore["effort"] = effort }
         if let mode = snapshot.permissionMode { restore["permissionMode"] = mode }
         return restore
     }
 
     func cliStatus() async -> [String: Any] {
-        if let cachedCLIStatus { return cachedCLIStatus }
-        let status: [String: Any]
-        do {
-            let plan = try await resolveClaudeLaunchPlan()
-            var available: [String: Any] = [
-                "available": true,
-                "path": plan.executableURL.path,
-            ]
-            if let version = await Self.claudeVersion(
-                executablePath: plan.executableURL.path,
-                environment: plan.environment
-            ) {
-                available["version"] = version
+        while true {
+            if let cachedCLIStatus { return cachedCLIStatus }
+            let binaryRevision = binarySettingRevision
+            let status: [String: Any]
+            do {
+                let plan = try await resolveClaudeLaunchPlan()
+                var available: [String: Any] = [
+                    "available": true,
+                    "path": plan.executableURL.path,
+                ]
+                if let version = await Self.claudeVersion(
+                    executablePath: plan.executableURL.path,
+                    environment: plan.environment
+                ) {
+                    available["version"] = version
+                }
+                status = available
+            } catch let error as AgentExecutableResolverError {
+                status = ["available": false, "error": error.message]
+            } catch {
+                status = ["available": false, "error": error.localizedDescription]
             }
-            status = available
-        } catch let error as AgentExecutableResolverError {
-            status = ["available": false, "error": error.message]
-        } catch {
-            status = ["available": false, "error": error.localizedDescription]
+            guard !isClosed else { return status }
+            guard binaryRevision == binarySettingRevision else { continue }
+            cachedCLIStatus = status
+            return status
         }
-        guard !isClosed else { return status }
-        cachedCLIStatus = status
-        return status
     }
 
     func contextBootstrap() async -> (cliStatus: [String: Any], cachedModels: [[String: Any]]?) {
@@ -368,6 +375,11 @@ final class SupermuxHarnessSessionController {
         defer { isStartPending = false }
 
         let stoppedRunID = processSession.activeRunID
+        if let stoppedRunID, processSession.activeRunID == stoppedRunID {
+            // Signal first so a CLI that stopped draining stdin cannot make the
+            // best-effort permission denials block Stop/Restart indefinitely.
+            try? processSession.terminate()
+        }
         if let router = controlRouter {
             await router.close(denialMessage: Self.stoppedDenialMessage)
             if controlRouter === router {
@@ -413,7 +425,13 @@ final class SupermuxHarnessSessionController {
         guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
         invalidateSessionTitleRefresh()
         pendingRenameID = nil
-        taskRecordsByID.removeAll()
+        if let resumeSessionId {
+            // A fork keeps the source transcript visible, so its historical task
+            // cards must remain addressable even though new tasks use a new session.
+            taskRecordsByID = historicalTaskRecordsBySessionID[resumeSessionId] ?? [:]
+        } else {
+            taskRecordsByID.removeAll()
+        }
         cancelModelCatalogProbe()
         let resolvedPlan = try await resolveClaudeLaunchPlan()
         guard !isClosed, !processSession.isRunning else {
@@ -452,15 +470,14 @@ final class SupermuxHarnessSessionController {
         controlRouter = router
 
         if let model { snapshot.model = model }
+        snapshot.effort = effort
         // A start that carried a model is a model USE: the machine-wide
         // last-used default follows it, so the next new pane opens on it.
         recordModelUse(model: model, effort: effort)
         snapshot.permissionMode = resolvedPermissionMode.rawValue
         snapshot.sessionId = forkSession ? nil : resumeSessionId
-        if resumeSessionId == nil {
-            restoreStateRetirementSink?()
-        }
         if resumeSessionId == nil || forkSession {
+            restoreStateRetirementSink?()
             // A fresh or forked session starts untitled; the CLI titles it after
             // its first turn. Keeping the previous session's title (or rename
             // pin) would mislabel the new conversation, and the old session's
@@ -544,14 +561,15 @@ final class SupermuxHarnessSessionController {
 
     func stop() async {
         let stoppedRunID = processSession.activeRunID
+        if let stoppedRunID, processSession.activeRunID == stoppedRunID {
+            try? processSession.terminate()
+        }
         if let router = controlRouter {
             await router.close(denialMessage: Self.stoppedDenialMessage)
             if controlRouter === router {
                 controlRouter = nil
             }
         }
-        guard processSession.activeRunID == stoppedRunID else { return }
-        try? processSession.terminate()
     }
 
     func rewindPreview(userMessageUuid: String) async -> [String: Any] {
@@ -614,7 +632,7 @@ final class SupermuxHarnessSessionController {
             forkSession: false,
             model: snapshot.model,
             permissionMode: snapshot.permissionMode,
-            effort: nil
+            effort: snapshot.effort
         )
         var reply: [String: Any] = [
             "runId": runID,
@@ -633,6 +651,7 @@ final class SupermuxHarnessSessionController {
             throw SupermuxHarnessBridgeError.sessionNotRunning
         }
         snapshot.model = model
+        snapshot.effort = effort
         // The CLI acknowledged the switch, so this model is now in USE — the
         // machine-wide last-used default follows the ack, not the request.
         recordModelUse(model: model, effort: effort)
@@ -785,6 +804,13 @@ final class SupermuxHarnessSessionController {
             maximumEventBytes: Self.historyEventBytesLimit
         )
         guard !isClosed else { throw SupermuxHarnessBridgeError.invalidRequest }
+        let historicalRecords = taskRecords(from: page.events)
+        historicalTaskRecordsBySessionID[sessionId] = historicalRecords
+        if currentSessionID == sessionId {
+            for (taskID, record) in historicalRecords where taskRecordsByID[taskID] == nil {
+                taskRecordsByID[taskID] = record
+            }
+        }
         return [
             "events": page.events.map(\.rawValue),
             "truncated": page.truncated,
@@ -863,26 +889,24 @@ final class SupermuxHarnessSessionController {
         }
         let observedTaskIDs = Set(taskRecordsByID.keys)
         let outputFile = record.outputFile
-        let expectedOutputFile = derivedTaskOutputFile(
+        let expectedOutputFiles = derivedTaskOutputFiles(
             taskID: taskId,
             sessionID: currentSessionID
         )
         let taskOutputRootURL = self.taskOutputRootURL
         let taskOutputCanonicalRootURL = self.taskOutputCanonicalRootURL
-        let fileManager = self.fileManager
         let page: SupermuxHarnessTaskOutputPage
         do {
             page = try await Task.detached(priority: .userInitiated) {
                 let reader = SupermuxHarnessTaskOutputReader(
                     temporaryRootURL: taskOutputRootURL,
-                    canonicalRootURL: taskOutputCanonicalRootURL,
-                    fileManager: fileManager
+                    canonicalRootURL: taskOutputCanonicalRootURL
                 )
                 return try reader.read(
                     taskID: taskId,
                     observedTaskIDs: observedTaskIDs,
                     outputFilePath: outputFile,
-                    expectedOutputFilePath: expectedOutputFile
+                    expectedOutputFilePaths: expectedOutputFiles
                 )
             }.value
         } catch is SupermuxHarnessTaskOutputReaderError {
@@ -905,14 +929,13 @@ final class SupermuxHarnessSessionController {
         cancelModelCatalogProbe()
         sessionFileWatcher?.cancel()
         sessionFileWatcher = nil
-        guard let router = controlRouter else {
-            processSession.close()
-            return
-        }
+        // Termination must not wait behind best-effort permission writes to a CLI
+        // that may already be wedged with a full stdin pipe.
+        processSession.close()
+        guard let router = controlRouter else { return }
         controlRouter = nil
-        Task { @MainActor [self, router] in
+        Task { @MainActor [router] in
             await router.close(denialMessage: Self.closedDenialMessage)
-            processSession.close()
         }
     }
 
@@ -1068,7 +1091,7 @@ final class SupermuxHarnessSessionController {
             forkSession: false,
             model: snapshot.model,
             permissionMode: snapshot.permissionMode,
-            effort: nil
+            effort: snapshot.effort
         )
         guard let router = controlRouter else {
             throw SupermuxHarnessBridgeError.sessionNotRunning
@@ -1086,6 +1109,23 @@ final class SupermuxHarnessSessionController {
             return nil
         }
         return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    private func taskRecords(
+        from events: [SupermuxHarnessJSONObject]
+    ) -> [String: TaskRecord] {
+        let activeRecords = taskRecordsByID
+        taskRecordsByID = [:]
+        for event in events {
+            consumeTaskRecordFromProtocolLine(SupermuxHarnessDecodedLine(
+                rawLine: "",
+                object: event,
+                frame: decoder.decodeObject(event)
+            ))
+        }
+        let historicalRecords = taskRecordsByID
+        taskRecordsByID = activeRecords
+        return historicalRecords
     }
 
     private func consumeTaskRecordFromProtocolLine(_ line: SupermuxHarnessDecodedLine) {
@@ -1166,36 +1206,35 @@ final class SupermuxHarnessSessionController {
         if let outputFile {
             record.outputFile = outputFile
         } else if record.outputFile == nil {
-            record.outputFile = derivedTaskOutputFile(
+            let candidates = derivedTaskOutputFiles(
                 taskID: taskID,
                 sessionID: sessionID ?? currentSessionID
             )
+            record.outputFile = candidates.first(where: { fileManager.fileExists(atPath: $0) })
+                ?? candidates.first
         }
         taskRecordsByID[taskID] = record
     }
 
-    private func derivedTaskOutputFile(taskID: String, sessionID: String?) -> String? {
+    private func derivedTaskOutputFiles(taskID: String, sessionID: String?) -> [String] {
         guard let directoryURL = workingDirectoryURL,
               let sessionID,
               Self.isSafePathIdentifier(taskID),
               Self.isSafePathIdentifier(sessionID) else {
-            return nil
+            return []
         }
         let discovery = SupermuxHarnessSessionDiscovery(
             projectsRootURL: projectsRootURL,
             fileManager: fileManager
         )
-        guard let mungedDirectory = discovery
-            .mungedProjectDirectoryNames(for: directoryURL)
-            .first else {
-            return nil
+        return discovery.mungedProjectDirectoryNames(for: directoryURL).map { mungedDirectory in
+            taskOutputRootURL
+                .appendingPathComponent(mungedDirectory, isDirectory: true)
+                .appendingPathComponent(sessionID, isDirectory: true)
+                .appendingPathComponent("tasks", isDirectory: true)
+                .appendingPathComponent("\(taskID).output")
+                .path
         }
-        return taskOutputRootURL
-            .appendingPathComponent(mungedDirectory, isDirectory: true)
-            .appendingPathComponent(sessionID, isDirectory: true)
-            .appendingPathComponent("tasks", isDirectory: true)
-            .appendingPathComponent("\(taskID).output")
-            .path
     }
 
     private nonisolated static func toolResultDetails(

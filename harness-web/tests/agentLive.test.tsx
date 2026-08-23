@@ -200,7 +200,7 @@ describe("every agent shows the brief it was given", () => {
     expect(blocks.filter((b) => b.kind === "userText" && b.prompt).length).toBe(1);
   });
 
-  test("the brief is on screen before the agent has said anything", () => {
+  test("the brief is on screen before the agent has said anything", async () => {
     const store = new HarnessStore();
     const { container } = mount(<LiveView store={store} toolUseId={RELAY_AGENT_TOOL_USE_ID} />);
     // Up to and including the agent's task_started: it exists, it has its
@@ -211,9 +211,10 @@ describe("every agent shows the brief it was given", () => {
       const frame = line as { type?: string; subtype?: string };
       if (frame.type === "system" && frame.subtype === "task_started") break;
     }
-    act(() => {
+    await act(async () => {
       store.receive(upToStart.map((line) => ({ kind: "protocol" as const, line })));
       store.flushNow();
+      await new Promise((resolve) => setTimeout(resolve, 5));
     });
     const prompt = container.querySelector(".thread-user.is-prompt");
     expect(prompt).not.toBeNull();

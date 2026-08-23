@@ -159,7 +159,9 @@ class SubagentTranscriptEntry {
   private finish(signalKey: string): void {
     if (this.active?.key !== signalKey) return;
     this.active = undefined;
-    this.lastSettledSignalKey = signalKey;
+    // A file that does not exist yet is transient, especially immediately after
+    // a terminal task signal. Reopening must be allowed to probe the same key.
+    this.lastSettledSignalKey = this.snapshot.phase === "missing" ? undefined : signalKey;
     const next = this.pending;
     this.pending = undefined;
     if (next && next.key !== this.lastSettledSignalKey) this.start(next);

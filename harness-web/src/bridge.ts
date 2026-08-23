@@ -270,6 +270,14 @@ function isNativeEvent(value: unknown): value is NativeEvent {
       );
     case "stderr":
       return typeof value.text === "string";
+    case "outputOverflow":
+      return (
+        (value.stream === "stdout" || value.stream === "stderr") &&
+        typeof value.discardedByteCount === "number" &&
+        Number.isFinite(value.discardedByteCount) &&
+        value.discardedByteCount >= 0 &&
+        typeof value.userMessage === "string"
+      );
     case "theme":
       return isHarnessTheme(value.theme);
     case "modelCatalog":

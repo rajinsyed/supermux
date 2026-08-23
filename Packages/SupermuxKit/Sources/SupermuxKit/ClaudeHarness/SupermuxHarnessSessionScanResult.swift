@@ -15,4 +15,13 @@ struct SupermuxHarnessSessionScanResult: Sendable {
     let maximumReadChunkBytes: Int
 
     var isStable: Bool { before == after && after == pathAfter }
+
+    /// The descriptor/path still name an append-only extension of the scanned prefix.
+    var canCommitScannedPrefix: Bool {
+        after.isSameOrAppend(of: before) && pathAfter.isSameOrAppend(of: before)
+    }
+
+    var appendedDuringScan: Bool {
+        after != before || pathAfter != before
+    }
 }

@@ -102,7 +102,7 @@ public actor SupermuxHarnessSubagentTranscriptService: SupermuxHarnessSubagentTr
 
     /// Loads the current transcript state through the revisioned API.
     ///
-    /// Concurrent callers for the same canonical address share one scan. A request arriving while
+    /// Concurrent callers for the same logical address share one scan. A request arriving while
     /// that scan is active marks one coalesced dirty rerun, so no caller can settle on a snapshot
     /// taken before a concurrently requested refresh.
     ///
@@ -118,7 +118,6 @@ public actor SupermuxHarnessSubagentTranscriptService: SupermuxHarnessSubagentTr
         if let afterRevision, afterRevision < 0 {
             throw SupermuxHarnessSubagentTranscriptReaderError.invalidRevision
         }
-        let address = address.canonicalized
         beginLease(for: address)
         defer { endLease(for: address) }
         await scanInstrumentation?.didBeginRequest?()

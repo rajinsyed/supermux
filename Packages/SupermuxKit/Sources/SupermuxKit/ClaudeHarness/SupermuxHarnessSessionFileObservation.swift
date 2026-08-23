@@ -11,6 +11,14 @@ struct SupermuxHarnessSessionFileObservation: Equatable, Sendable {
     let statusChangeSeconds: Int64
     let statusChangeNanoseconds: Int64
 
+    func isSameOrAppend(of earlier: SupermuxHarnessSessionFileObservation) -> Bool {
+        self == earlier || (
+            canonicalPath == earlier.canonicalPath
+                && identity == earlier.identity
+                && size > earlier.size
+        )
+    }
+
     init(fileURL: URL, status: stat) {
         canonicalPath = SupermuxHarnessSessionPathPolicy.canonicalFileURL(fileURL).path
         identity = SupermuxHarnessSessionFileIdentity(

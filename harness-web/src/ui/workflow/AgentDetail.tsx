@@ -73,6 +73,10 @@ function TextSection({
         ) : document.phase === "missing" ? (
           <div className="wfb-section-note">
             {copy("supermux.harness.workflow.browser.fullMissing")}
+            <button type="button" className="link-btn" onClick={document.reload}>
+              <Refresh size={10} />
+              {copy("supermux.harness.workflow.browser.retry")}
+            </button>
           </div>
         ) : document.phase === "failed" ? (
           <div className="wfb-section-note is-error">

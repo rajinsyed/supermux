@@ -46,6 +46,7 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
     func readSelectedRecords(
         _ fileURL: URL,
         expected: SupermuxHarnessSessionFileObservation,
+        expectedFingerprint: SupermuxHarnessSessionContinuityFingerprint,
         selections: [SupermuxHarnessSessionRecordSelection],
         fallbackSessionID: String,
         chunkSize: Int
@@ -55,6 +56,7 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
             try Self.readSelectedRecordsSynchronously(
                 fileURL,
                 expected: expected,
+                expectedFingerprint: expectedFingerprint,
                 selections: selections,
                 fallbackSessionID: fallbackSessionID,
                 chunkSize: max(1, chunkSize),
@@ -221,6 +223,7 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
     private static func readSelectedRecordsSynchronously(
         _ fileURL: URL,
         expected: SupermuxHarnessSessionFileObservation,
+        expectedFingerprint: SupermuxHarnessSessionContinuityFingerprint,
         selections: [SupermuxHarnessSessionRecordSelection],
         fallbackSessionID: String,
         chunkSize: Int,
@@ -231,21 +234,33 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
         defer { Darwin.close(descriptor) }
         let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
         let before = try observation(fileURL: fileURL, descriptor: descriptor)
-        guard before == expected else {
+        var maximumReadChunkBytes = 0
+        let preservesExpectedPrefix = before == expected || (
+            before.isSameOrAppend(of: expected) &&
+                validateContinuity(
+                    expectedFingerprint,
+                    expectedObservation: expected,
+                    before: before,
+                    handle: handle,
+                    chunkSize: chunkSize,
+                    maximumReadChunkBytes: &maximumReadChunkBytes
+                )
+        )
+        guard preservesExpectedPrefix else {
             return SupermuxHarnessSessionSelectedRead(
                 before: before,
                 after: before,
                 pathAfter: try pathObservation(fileURL),
+                prefixValidated: false,
                 events: [],
                 recordCount: 0,
                 bytesRead: 0,
-                maximumReadChunkBytes: 0
+                maximumReadChunkBytes: maximumReadChunkBytes
             )
         }
 
         var events: [SupermuxHarnessJSONObject] = []
         var bytesRead: UInt64 = 0
-        var maximumReadChunkBytes = 0
         for selection in selections {
             guard selection.range.upperBound <= before.size,
                   selection.range.count <= UInt64(SupermuxLineReader.maximumLineBytes) else {
@@ -275,10 +290,23 @@ struct SupermuxHarnessSessionFileScanner: Sendable {
         }
         let after = try observation(fileURL: fileURL, descriptor: descriptor)
         let pathAfter = try pathObservation(fileURL)
+        let prefixValidated = after.isSameOrAppend(of: before)
+            && pathAfter.isSameOrAppend(of: before)
+            && (
+                after == expected || validateContinuity(
+                    expectedFingerprint,
+                    expectedObservation: expected,
+                    before: after,
+                    handle: handle,
+                    chunkSize: chunkSize,
+                    maximumReadChunkBytes: &maximumReadChunkBytes
+                )
+            )
         return SupermuxHarnessSessionSelectedRead(
             before: before,
             after: after,
             pathAfter: pathAfter,
+            prefixValidated: prefixValidated,
             events: events,
             recordCount: selections.count,
             bytesRead: bytesRead,

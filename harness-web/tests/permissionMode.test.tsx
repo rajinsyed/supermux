@@ -141,6 +141,7 @@ describe("permission mode state", () => {
 
     act(() => out.current!.setPermissionMode("plan"));
     act(() => out.current!.cyclePermissionMode());
+    await flush();
 
     expect(store.getSnapshot().session.permissionMode).toBe("bypassPermissions");
     expect(script.permissionModes).toEqual(["plan", "bypassPermissions"]);

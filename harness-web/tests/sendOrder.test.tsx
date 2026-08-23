@@ -167,8 +167,10 @@ describe("messages reach the bridge in the order they were typed", () => {
     await flush();
     expect(wire.startCount).toBe(1);
 
-    store.receive([{ kind: "runExited", runId: "run-1", status: 0 }]);
-    store.flushNow();
+    act(() => {
+      store.receive([{ kind: "runExited", runId: "run-1", status: 0 }]);
+      store.flushNow();
+    });
     expect(store.getSnapshot().runPhase).toBe("exited");
 
     await act(async () => {
@@ -189,8 +191,10 @@ describe("messages reach the bridge in the order they were typed", () => {
     const wire: Wire = { sent: [], startDelayMs: 5, startCount: 0 };
     const { store, out } = await mount(wire);
 
-    store.receive([{ kind: "runStarted", runId: "run-native-1" }]);
-    store.flushNow();
+    act(() => {
+      store.receive([{ kind: "runStarted", runId: "run-native-1" }]);
+      store.flushNow();
+    });
     expect(store.getSnapshot().runPhase).toBe("running");
 
     await act(async () => {

@@ -530,7 +530,12 @@ export interface HarnessContext {
   theme: HarnessTheme;
   copy: Record<string, string>;
   cliStatus: CliStatus;
-  restore?: { sessionId: string; model?: string; permissionMode?: PermissionMode };
+  restore?: {
+    sessionId: string;
+    model?: string;
+    effort?: EffortLevel;
+    permissionMode?: PermissionMode;
+  };
   draft?: string;
   /**
    * The model catalog persisted from a previous `initialize` handshake, keyed on

@@ -16,9 +16,11 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
         }
 
         let existingPTYEvent = DispatchSemaphore(value: 0)
+        // SUPERMUX:begin remote-daemon-timeout-isolation-event-queues
         let existingPTYEventQueue = DispatchQueue(
             label: "com.cmux.tests.remote-daemon.timeout-isolation.existing-pty-event"
         )
+        // SUPERMUX:end remote-daemon-timeout-isolation-event-queues
         let unexpectedTermination = DispatchSemaphore(value: 0)
         let client = RemoteDaemonRPCClient(
             configuration: configuration(),
@@ -41,7 +43,9 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
             rows: 24,
             command: nil,
             requireExisting: true,
+            // SUPERMUX:begin remote-daemon-timeout-isolation-event-queues
             queue: existingPTYEventQueue
+            // SUPERMUX:end remote-daemon-timeout-isolation-event-queues
         ) { event in
             if case .data(let data) = event, data == Data("still-alive".utf8) {
                 existingPTYEvent.signal()
@@ -82,9 +86,11 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
         }
 
         let stalledAttachRead = DispatchSemaphore(value: 0)
+        // SUPERMUX:begin remote-daemon-timeout-isolation-event-queues
         let stalledAttachEventQueue = DispatchQueue(
             label: "com.cmux.tests.remote-daemon.timeout-isolation.stalled-attach-event"
         )
+        // SUPERMUX:end remote-daemon-timeout-isolation-event-queues
         let unexpectedTermination = DispatchSemaphore(value: 0)
         let client = RemoteDaemonRPCClient(
             configuration: configuration(),
@@ -107,7 +113,9 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
             rows: 24,
             command: nil,
             requireExisting: true,
+            // SUPERMUX:begin remote-daemon-timeout-isolation-event-queues
             queue: stalledAttachEventQueue
+            // SUPERMUX:end remote-daemon-timeout-isolation-event-queues
         ) { event in
             if case .data(let data) = event, data == Data("attach-read".utf8) {
                 stalledAttachRead.signal()
