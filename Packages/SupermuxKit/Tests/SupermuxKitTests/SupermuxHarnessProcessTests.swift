@@ -508,6 +508,31 @@ struct SupermuxHarnessProcessSessionTests {
         #expect(releasedSession == nil)
     }
 
+    @Test func processExitWaitsForDescendantHeldPipesToReachEOF() async throws {
+        let recorder = Recorder()
+        let session = makeSession(recorder: recorder, escalationInterval: 0.02)
+        let script = #"""
+        (
+          sleep 0.15
+          printf '{"type":"keep_alive","late":true}\n'
+          printf 'late-err' >&2
+        ) &
+        trap 'exit 0' TERM
+        printf '{"type":"keep_alive","ready":true}\n'
+        while :; do sleep 1; done
+        """#
+        let started = try session.start(plan: shellPlan(script))
+        _ = await recorder.nextProtocolLine()
+        session.close()
+
+        let exit = await recorder.nextExit()
+
+        #expect(recorder.protocolLines.last?.object.bool(forKey: "late") == true)
+        #expect(recorder.stderrLines.last == "late-err")
+        #expect(recorder.timeline.last == "exited")
+        #expect(exit == .exited(runID: started.runID, status: 9))
+    }
+
     @Test func terminateAndWaitReturnsOnlyAfterExitedLifecycleAndBothStreamsDrain() async throws {
         let recorder = Recorder()
         let session = makeSession(recorder: recorder, escalationInterval: 5)

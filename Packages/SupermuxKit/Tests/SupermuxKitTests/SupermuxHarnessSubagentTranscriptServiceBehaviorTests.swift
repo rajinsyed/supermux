@@ -74,20 +74,36 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
         try FileManager.default.createSymbolicLink(at: linkedWorking, withDestinationURL: realWorking)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let discovery = SupermuxHarnessSessionDiscovery(
-            projectsRootURL: projects,
-            fileManager: .default
-        )
-        let names = discovery.mungedProjectDirectoryNames(for: linkedWorking)
-        let lexicalName = try #require(names.last)
-        let transcriptDirectory = projects
-            .appendingPathComponent(lexicalName, isDirectory: true)
+        let munge: (URL) -> String = { url in
+            url.standardizedFileURL.path.unicodeScalars.map { scalar in
+                CharacterSet.alphanumerics.contains(scalar) ? String(scalar) : "-"
+            }.joined()
+        }
+        let lexicalDirectory = projects
+            .appendingPathComponent(munge(linkedWorking), isDirectory: true)
             .appendingPathComponent("session", isDirectory: true)
             .appendingPathComponent("subagents", isDirectory: true)
-        try FileManager.default.createDirectory(at: transcriptDirectory, withIntermediateDirectories: true)
+        let resolvedDirectory = projects
+            .appendingPathComponent(munge(realWorking), isDirectory: true)
+            .appendingPathComponent("session", isDirectory: true)
+            .appendingPathComponent("subagents", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: lexicalDirectory,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: resolvedDirectory,
+            withIntermediateDirectories: true
+        )
         try (assistantLine(uuid: "event-1", text: "lexical transcript") + "\n")
             .write(
-                to: transcriptDirectory.appendingPathComponent("agent-task.jsonl"),
+                to: lexicalDirectory.appendingPathComponent("agent-task.jsonl"),
+                atomically: false,
+                encoding: .utf8
+            )
+        try (assistantLine(uuid: "control", text: "resolved transcript") + "\n")
+            .write(
+                to: resolvedDirectory.appendingPathComponent("agent-task.jsonl"),
                 atomically: false,
                 encoding: .utf8
             )
@@ -107,6 +123,60 @@ struct SupermuxHarnessSubagentTranscriptServiceBehaviorTests {
 
         #expect(!update.missing)
         #expect(eventIDs(update) == ["event-1"])
+    }
+
+    @Test func symlinkAliasesShareOneCacheEntryAndRevision() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-subagent-cache-alias-\(UUID().uuidString)", isDirectory: true)
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        let realWorking = root.appendingPathComponent("real-working", isDirectory: true)
+        let linkedWorking = root.appendingPathComponent("linked-working", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: realWorking, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: linkedWorking, withDestinationURL: realWorking)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let discovery = SupermuxHarnessSessionDiscovery(
+            projectsRootURL: projects,
+            fileManager: .default
+        )
+        let transcriptDirectory = try #require(
+            discovery.projectDirectoryURLs(for: realWorking).first
+        )
+            .appendingPathComponent("session", isDirectory: true)
+            .appendingPathComponent("subagents", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: transcriptDirectory,
+            withIntermediateDirectories: true
+        )
+        try (assistantLine(uuid: "event-1", text: "shared") + "\n").write(
+            to: transcriptDirectory.appendingPathComponent("agent-task.jsonl"),
+            atomically: false,
+            encoding: .utf8
+        )
+        let service = SupermuxHarnessSubagentTranscriptService(
+            projectsRootURL: projects,
+            fileManager: .default
+        )
+
+        let real = try await service.loadTranscript(
+            at: .localAgent(
+                workingDirectoryURL: realWorking,
+                sessionID: "session",
+                taskID: "task"
+            ),
+            afterRevision: nil
+        )
+        let linked = try await service.loadTranscript(
+            at: .localAgent(
+                workingDirectoryURL: linkedWorking,
+                sessionID: "session",
+                taskID: "task"
+            ),
+            afterRevision: nil
+        )
+
+        #expect(real.revision == linked.revision)
+        #expect(await service.cacheSnapshot().entryCount == 1)
     }
 
     @Test func laggingConsumersReceiveAReconciliableDeltaOrReplacement() async throws {

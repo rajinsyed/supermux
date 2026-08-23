@@ -500,6 +500,14 @@ struct SupermuxHarnessSessionDiscoveryTests {
         ])
 
         #expect(try discovery.listSessions(for: requestedDirectory).isEmpty)
+        #expect(discovery.sessionFileURL(
+            for: requestedDirectory,
+            sessionID: "foreign"
+        ) == nil)
+        #expect(discovery.sessionTitle(
+            for: requestedDirectory,
+            sessionID: "foreign"
+        ) == nil)
         #expect(throws: SupermuxHarnessSessionDiscoveryError.sessionNotFound("foreign")) {
             _ = try discovery.loadHistory(for: requestedDirectory, sessionID: "foreign")
         }

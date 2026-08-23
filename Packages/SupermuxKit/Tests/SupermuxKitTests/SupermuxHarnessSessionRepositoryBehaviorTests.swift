@@ -106,7 +106,7 @@ struct SupermuxHarnessSessionRepositoryBehaviorTests {
         #expect(actualHistory.truncated)
     }
 
-    @Test func sessionTitlePreservesTheFirstSafeCandidateWithoutCwdFiltering() async throws {
+    @Test func sessionTitleRejectsACwdCollisionFromAnotherDirectory() async throws {
         let sandbox = try SupermuxHarnessSessionRepositorySandbox(name: "title-cwd-semantics")
         defer { sandbox.remove() }
         let foreignDirectory = sandbox.rootURL.appendingPathComponent("foreign", isDirectory: true)
@@ -127,7 +127,7 @@ struct SupermuxHarnessSessionRepositoryBehaviorTests {
         #expect(await sandbox.repository.sessionTitle(
             for: sandbox.workingDirectoryURL,
             sessionID: "session"
-        ) == "Foreign title")
+        ) == nil)
         #expect(try await sandbox.repository.listSessions(
             for: sandbox.workingDirectoryURL,
             limit: nil
@@ -139,6 +139,79 @@ struct SupermuxHarnessSessionRepositoryBehaviorTests {
                 recordLimit: nil
             )
         }
+    }
+
+    @Test func emptyQueuedPromptIsNotVisibleHistory() throws {
+        let data = try SupermuxHarnessSessionRepositorySandbox.jsonLine([
+            "type": "attachment",
+            "uuid": "queued",
+            "attachment": [
+                "type": "queued_command",
+                "commandMode": "prompt",
+                "prompt": "",
+            ],
+        ])
+        let record = try #require(SupermuxHarnessSessionIndexedRecord(
+            data: data,
+            range: SupermuxHarnessSessionRecordRange(
+                lowerBound: 0,
+                upperBound: UInt64(data.count)
+            ),
+            includesHistory: true
+        ))
+
+        #expect(record.eventRange == nil)
+        #expect(record.link?.isVisible == false)
+    }
+
+    @Test func appendAfterUnsampledPrefixRewriteForcesAFullReindex() async throws {
+        let sandbox = try SupermuxHarnessSessionRepositorySandbox(name: "prefix-rewrite")
+        defer { sandbox.remove() }
+        let directory = try sandbox.firstProjectDirectory()
+        let padding = String(repeating: "x", count: 1_400)
+        func identifier(_ index: Int) -> String {
+            String(format: "id-%08d", index)
+        }
+        func record(_ index: Int, parent: String?) -> [String: Any] {
+            [
+                "type": index == 0 ? "user" : "assistant",
+                "uuid": identifier(index),
+                "parentUuid": parent ?? NSNull(),
+                "cwd": sandbox.workingDirectoryURL.path,
+                "message": [
+                    "role": index == 0 ? "user" : "assistant",
+                    "content": "\(index)-\(padding)",
+                ],
+            ]
+        }
+        let original = (0..<100).map { index in
+            record(index, parent: index == 0 ? nil : identifier(index - 1))
+        }
+        let fileURL = try sandbox.writeSession(
+            id: "session",
+            records: original,
+            directory: directory
+        )
+        let first = try await sandbox.repository.loadHistory(
+            for: sandbox.workingDirectoryURL,
+            sessionID: "session"
+        )
+        #expect(first.events.first?.string(forKey: "uuid") == identifier(0))
+
+        var rewritten = original
+        rewritten[20] = record(20, parent: "xx-00000019")
+        rewritten.append(record(100, parent: identifier(99)))
+        try sandbox.rewriteInPlace(
+            SupermuxHarnessSessionRepositorySandbox.jsonlData(records: rewritten),
+            at: fileURL
+        )
+
+        let second = try await sandbox.repository.loadHistory(
+            for: sandbox.workingDirectoryURL,
+            sessionID: "session"
+        )
+        #expect(second.events.first?.string(forKey: "uuid") == identifier(20))
+        #expect(second.events.last?.string(forKey: "uuid") == identifier(100))
     }
 
     @Test func repositoryRejectsSymlinkedSessionFiles() async throws {

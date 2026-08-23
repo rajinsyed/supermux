@@ -68,6 +68,21 @@ struct SupermuxHarnessModelCatalogTests {
         #expect(defaults.string(forKey: "unrelated") == "keep")
     }
 
+    @Test func staleCatalogDataIsIgnored() throws {
+        let suiteName = "SupermuxHarnessModelCatalogTests.stale.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SupermuxHarnessModelCatalogStore(defaults: defaults)
+
+        try store.store(
+            [try model(value: "claude-obsolete")],
+            forBinaryPath: "/opt/claude",
+            storedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        #expect(store.snapshot(forBinaryPath: "/opt/claude") == nil)
+    }
+
     @Test func corruptCatalogDataIsIgnored() throws {
         let suiteName = "SupermuxHarnessModelCatalogTests.corrupt.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
