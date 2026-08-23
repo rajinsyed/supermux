@@ -119,7 +119,7 @@ public actor SupermuxHarnessSubagentTranscriptService: SupermuxHarnessSubagentTr
         if let afterRevision, afterRevision < 0 {
             throw SupermuxHarnessSubagentTranscriptReaderError.invalidRevision
         }
-        let key = canonicalAddress(address)
+        let key = try cacheAddress(address)
         beginLease(for: key)
         defer { endLease(for: key) }
         await scanInstrumentation?.didBeginRequest?()
@@ -142,12 +142,17 @@ public actor SupermuxHarnessSubagentTranscriptService: SupermuxHarnessSubagentTr
         )
     }
 
-    private func canonicalAddress(
+    private func cacheAddress(
         _ address: SupermuxHarnessSubagentTranscriptAddress
-    ) -> SupermuxHarnessSubagentTranscriptAddress {
-        let workingDirectoryURL = address.workingDirectoryURL
+    ) throws -> SupermuxHarnessSubagentTranscriptAddress {
+        let locator = SupermuxHarnessSubagentTranscriptLocator(
+            projectsRootURL: projectsRootURL,
+            fileManager: fileManager
+        )
+        let workingDirectoryURL = try locator.locate(address)?.transcriptURL
             .resolvingSymlinksInPath()
             .standardizedFileURL
+            ?? address.workingDirectoryURL.resolvingSymlinksInPath().standardizedFileURL
         switch address {
         case .localAgent(_, let sessionID, let taskID):
             return .localAgent(

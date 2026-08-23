@@ -15,6 +15,7 @@ final class SupermuxHarnessRunningProcess {
     var pendingExitStatus: Int32?
     var forcedDrainDeadline: ContinuousClock.Instant?
     var isTerminating = false
+    var isForcedDrainInProgress = false
     var drainedStreams: Set<SupermuxHarnessProcessStream> = []
     private var stdoutBuffer = SupermuxHarnessOutputLineBuffer()
     private var stderrBuffer = SupermuxHarnessOutputLineBuffer()

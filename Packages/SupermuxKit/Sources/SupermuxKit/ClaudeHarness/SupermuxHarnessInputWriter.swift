@@ -79,11 +79,23 @@ actor SupermuxHarnessInputWriter {
         let write = queuedWrites.removeFirst()
         queuedByteCount -= write.data.count
         activeWrite = ActiveWrite(id: write.id, continuation: write.continuation)
-        let descriptor = self.descriptor
+        let writeDescriptor = Darwin.dup(descriptor)
+        guard writeDescriptor >= 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            finishWrite(id: write.id, result: .failure(error))
+            return
+        }
+        guard Darwin.fcntl(writeDescriptor, F_SETNOSIGPIPE, 1) >= 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            Darwin.close(writeDescriptor)
+            finishWrite(id: write.id, result: .failure(error))
+            return
+        }
         let id = write.id
         let data = write.data
         Task.detached(priority: .utility) { [weak self] in
-            let result = Result { try Self.writeSynchronously(data, to: descriptor) }
+            defer { Darwin.close(writeDescriptor) }
+            let result = Result { try Self.writeSynchronously(data, to: writeDescriptor) }
             await self?.finishWrite(id: id, result: result)
         }
     }

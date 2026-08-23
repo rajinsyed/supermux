@@ -413,15 +413,24 @@ public final class SupermuxHarnessProcessSession {
             return
         }
         guard let deadline = session.forcedDrainDeadline, clock.now >= deadline else { return }
-        for stream in [SupermuxHarnessProcessStream.stdout, .stderr]
-            where !session.drainedStreams.contains(stream) {
+        guard !session.isForcedDrainInProgress else { return }
+        let pendingStreams = [SupermuxHarnessProcessStream.stdout, .stderr].filter {
+            !session.drainedStreams.contains($0)
+        }
+        guard !pendingStreams.isEmpty else {
+            finishIfExitedAndDrained(session)
+            return
+        }
+        session.isForcedDrainInProgress = true
+        for stream in pendingStreams {
+            session.drainedStreams.insert(stream)
             await outputDiagnosticSink(SupermuxHarnessOutputDiagnostic(
                 stream: stream == .stdout ? .stdout : .stderr,
                 discardedByteCount: 0,
                 kind: .truncated
             ))
-            session.drainedStreams.insert(stream)
         }
+        session.isForcedDrainInProgress = false
         finishIfExitedAndDrained(session)
     }
 

@@ -213,7 +213,9 @@ final class SupermuxHarnessSessionController {
         }
         let cachedModels = modelCatalogStore.snapshot(forBinaryPath: binaryPath)?.models
             .map(\.rawValue)
-        startModelCatalogProbeIfNeeded(expectedBinaryPath: binaryPath)
+        if cachedModels?.isEmpty != false {
+            startModelCatalogProbeIfNeeded(expectedBinaryPath: binaryPath)
+        }
         return (status, cachedModels?.isEmpty == false ? cachedModels : nil)
     }
 

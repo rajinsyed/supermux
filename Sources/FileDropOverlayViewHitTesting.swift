@@ -444,12 +444,18 @@ extension FileDropOverlayView {
             let pointInSubview = subview.convert(point, from: view)
             guard subview.bounds.contains(pointInSubview) else { continue }
             if let paneTarget = subview as? PaneDropTargetView {
-                return paneTarget
+                // SUPERMUX:begin claude-harness-file-drop-passthrough
+                if paneTarget.capturesFileDrops { return paneTarget }
+                // SUPERMUX:end claude-harness-file-drop-passthrough
+                continue
             }
             if let nestedTarget = paneDropTarget(in: subview, at: pointInSubview) {
                 return nestedTarget
             }
         }
-        return view as? PaneDropTargetView
+        guard let paneTarget = view as? PaneDropTargetView else { return nil }
+        // SUPERMUX:begin claude-harness-file-drop-passthrough
+        return paneTarget.capturesFileDrops ? paneTarget : nil
+        // SUPERMUX:end claude-harness-file-drop-passthrough
     }
 }

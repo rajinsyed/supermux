@@ -107,9 +107,12 @@ extension Workspace {
         let sourcePanelUsesRemoteFallback = sourcePanelId.map {
             reportedPanelDirectory(panelId: $0) == nil && terminalPanel(for: $0) == nil
         } ?? true
-        let trustsHarnessDirectory = restoreState.workingDirectory == nil &&
-            (sourcePanelId.map { remoteDirectoryReportPanelIds.contains($0) } == true ||
-                (usesRemoteDirectoryProvenance && sourcePanelUsesRemoteFallback && directory != nil))
+        let sourceHasTrustedRemoteDirectory = sourcePanelId.map {
+            remoteDirectoryReportPanelIds.contains($0)
+        } == true
+        let trustsHarnessDirectory = sourceHasTrustedRemoteDirectory ||
+            (restoreState.workingDirectory == nil &&
+                usesRemoteDirectoryProvenance && sourcePanelUsesRemoteFallback && directory != nil)
         let harnessPanel = SupermuxHarnessPanel(
             workspaceId: id,
             workingDirectory: directory,

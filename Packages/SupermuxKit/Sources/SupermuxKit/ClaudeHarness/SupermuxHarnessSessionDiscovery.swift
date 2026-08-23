@@ -192,7 +192,9 @@ public struct SupermuxHarnessSessionDiscovery {
         let selectedUUIDs = Set(chainUUIDs)
         var eventsByUUID: [String: SupermuxHarnessJSONObject] = [:]
         try forEachRecord(in: index.fileURL) { record in
-            guard let uuid = nonemptyString(record["uuid"]), selectedUUIDs.contains(uuid),
+            guard let uuid = nonemptyString(record["uuid"]),
+                  selectedUUIDs.contains(uuid),
+                  isVisibleHistoryRecord(record),
                   let event = recordMapper.protocolEvent(
                       from: record,
                       fallbackSessionID: sessionID
@@ -328,23 +330,7 @@ public struct SupermuxHarnessSessionDiscovery {
                 }
                 let isConversation = type == "user" || type == "assistant"
                 let isSidechain = record["isSidechain"] as? Bool == true
-                // A message the user queued mid-turn persists ONLY as a
-                // `queued_command` attachment (the CLI consumes it inside the
-                // running turn and writes no `user` record); it joins the
-                // replay chain so the record mapper can resurface it. Other
-                // commandModes refeed machine-authored payloads and stay out.
-                let attachment = record["attachment"] as? [String: Any]
-                let isQueuedPrompt = type == "attachment" &&
-                    attachment?["type"] as? String == "queued_command" &&
-                    attachment?["commandMode"] as? String == "prompt"
-                let queuedPrompt = attachment?["prompt"]
-                let hasQueuedPromptContent = nonemptyString(queuedPrompt) != nil ||
-                    (queuedPrompt as? [[String: Any]])?.isEmpty == false
-                let isVisible = (isConversation &&
-                    record["isMeta"] as? Bool != true &&
-                    !isSidechain &&
-                    record["message"] is [String: Any]) ||
-                    (isQueuedPrompt && hasQueuedPromptContent && !isSidechain)
+                let isVisible = isVisibleHistoryRecord(record)
                 if linksByUUID[uuid] == nil || isVisible {
                     linksByUUID[uuid] = SessionRecordLink(
                         parentUUID: nonemptyString(record["parentUuid"]),
@@ -371,6 +357,27 @@ public struct SupermuxHarnessSessionDiscovery {
             )
         }
         return nil
+    }
+
+    private func isVisibleHistoryRecord(_ record: [String: Any]) -> Bool {
+        let type = record["type"] as? String
+        let isConversation = type == "user" || type == "assistant"
+        let isSidechain = record["isSidechain"] as? Bool == true
+        if isConversation {
+            return record["isMeta"] as? Bool != true &&
+                !isSidechain &&
+                record["message"] is [String: Any]
+        }
+
+        // A prompt queued mid-turn may persist only as this attachment shape.
+        let attachment = record["attachment"] as? [String: Any]
+        let isQueuedPrompt = type == "attachment" &&
+            attachment?["type"] as? String == "queued_command" &&
+            attachment?["commandMode"] as? String == "prompt"
+        let queuedPrompt = attachment?["prompt"]
+        let hasContent = nonemptyString(queuedPrompt) != nil ||
+            (queuedPrompt as? [[String: Any]])?.isEmpty == false
+        return isQueuedPrompt && hasContent && !isSidechain
     }
 
     /// Whether `leaf` sits strictly above `descendant` on its parent chain.

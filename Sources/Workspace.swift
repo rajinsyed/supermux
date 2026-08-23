@@ -9927,15 +9927,19 @@ final class Workspace: Identifiable, ObservableObject {
         if let harnessPanel = detached.panel as? SupermuxHarnessPanel {
             harnessPanel.updateWorkspaceId(id)
             installSupermuxHarnessPanelSubscription(harnessPanel)
-            scheduleSupermuxHarnessGitMetadataProbe(
-                panelId: harnessPanel.id,
-                reason: "harnessSurfaceTransfer"
-            )
         }
         // SUPERMUX:end claude-harness-transfer-in
         if detached.directoryIsTrustedRemoteReport {
             remoteDirectoryReportPanelIds.insert(detached.panelId); remoteDirectoryTrustRequiredPanelIds.insert(detached.panelId)
         }
+        // SUPERMUX:begin claude-harness-transfer-in
+        if detached.panel is SupermuxHarnessPanel {
+            scheduleSupermuxHarnessGitMetadataProbe(
+                panelId: detached.panelId,
+                reason: "harnessSurfaceTransfer"
+            )
+        }
+        // SUPERMUX:end claude-harness-transfer-in
         let didAdoptWorkspaceRemoteTracking = shouldAdoptDetachedWorkspaceRemoteTracking(detached)
         if didAdoptWorkspaceRemoteTracking,
            let remotePTYSessionID = normalizedRemotePTYSessionID(detached.remotePTYSessionID) {

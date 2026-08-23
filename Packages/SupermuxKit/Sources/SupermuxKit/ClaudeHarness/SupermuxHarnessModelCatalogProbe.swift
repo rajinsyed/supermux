@@ -28,26 +28,34 @@ public final class SupermuxHarnessModelCatalogProbe {
     /// - Returns: The account-specific initialize catalog.
     /// - Throws: A process, encoding, writing, cancellation, or probe lifecycle error.
     public func probe(plan: SupermuxHarnessLaunchPlan) async throws -> SupermuxHarnessInitializeCatalog {
+        let requestID = UUID().uuidString
         let streamPair = AsyncStream.makeStream(
             of: ProbeEvent.self,
-            bufferingPolicy: .unbounded
+            bufferingPolicy: .bufferingNewest(256)
         )
         let session = SupermuxHarnessProcessSession(
             protocolLineSink: { line in
                 streamPair.continuation.yield(.protocolLine(line))
+                if case .controlResponse(let response)? = line.frame,
+                   response.requestID == requestID {
+                    streamPair.continuation.finish()
+                }
             },
             stderrSink: { _ in },
             lifecycleSink: { event in
                 streamPair.continuation.yield(.lifecycle(event))
+                if case .exited = event {
+                    streamPair.continuation.finish()
+                }
             }
         )
         let started = try session.start(plan: plan)
-        let requestID = UUID().uuidString
         let timeoutTask = Task { [timeout] in
             let nanoseconds = Int64(timeout * 1_000_000_000)
             try? await ContinuousClock().sleep(for: .nanoseconds(nanoseconds))
             guard !Task.isCancelled else { return }
             streamPair.continuation.yield(.timeout)
+            streamPair.continuation.finish()
         }
 
         do {
