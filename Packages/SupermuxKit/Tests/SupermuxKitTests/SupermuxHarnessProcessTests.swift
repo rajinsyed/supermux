@@ -132,6 +132,20 @@ struct SupermuxHarnessInputWriterTests {
         }
     }
 
+    @Test func closedReaderReturnsWriteFailureWithoutRaisingSIGPIPE() async throws {
+        let pipe = Pipe()
+        let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)
+        try pipe.fileHandleForReading.close()
+
+        do {
+            try await writer.write(Data("frame".utf8))
+            Issue.record("Expected closed-pipe write failure")
+        } catch {
+            #expect(error is POSIXError)
+        }
+        await writer.close()
+    }
+
     @Test func writeFailureClosesWriterForLaterWrites() async throws {
         let pipe = Pipe()
         let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)

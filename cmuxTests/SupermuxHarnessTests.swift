@@ -168,9 +168,11 @@ struct SupermuxHarnessTests {
         workspace.updateRemotePanelDirectory(panelId: remotePanelId, directory: remoteDirectory)
         let paneId = try #require(workspace.bonsplitController.focusedPaneId)
 
+        var restored = SessionSupermuxHarnessPanelSnapshot()
+        restored.workingDirectory = remoteDirectory
         let harnessPanel = try #require(workspace.splitPaneWithSupermuxHarness(
             targetPane: paneId,
-            restoreState: SessionSupermuxHarnessPanelSnapshot()
+            restoreState: restored
         ))
 
         #expect(harnessPanel.workingDirectory == remoteDirectory)
@@ -753,6 +755,48 @@ struct SupermuxHarnessTests {
 
         #expect(firstEvent?["models"] != nil)
         #expect(secondEvent?["models"] != nil)
+        #expect(probeCount == 1)
+    }
+
+    @MainActor
+    @Test
+    func testFreshCachedCatalogDoesNotLaunchAnotherProbe() async throws {
+        let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
+        defer { clearHarnessDefaults(defaults) }
+        var probeCount = 0
+        let catalog = SupermuxHarnessInitializeCatalog(
+            response: try SupermuxHarnessJSONObject(rawValue: [
+                "models": [["value": "opus", "displayName": "Opus"]],
+            ])
+        )
+        let controller = makeController(
+            restoreState: nil,
+            defaults: defaults,
+            process: MockSupermuxHarnessProcessSession(),
+            modelCatalogProbe: { _ in
+                probeCount += 1
+                return catalog
+            }
+        )
+        defer { controller.close() }
+        let firstCatalogEvent = AsyncStream.makeStream(of: Void.self)
+        controller.eventSink = { event in
+            guard event["kind"] as? String == "modelCatalog" else { return }
+            firstCatalogEvent.continuation.yield()
+            firstCatalogEvent.continuation.finish()
+        }
+
+        _ = await controller.contextBootstrap()
+        _ = await firstCatalogEvent.stream.first(where: { _ in true })
+        let second = await controller.contextBootstrap()
+        let didProbeAgain = await SupermuxHarnessControllerTestWait().until(
+            timeout: .milliseconds(250)
+        ) {
+            await MainActor.run { probeCount > 1 }
+        }
+
+        #expect(second.cachedModels?.count == 1)
+        #expect(!didProbeAgain)
         #expect(probeCount == 1)
     }
 

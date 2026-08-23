@@ -223,6 +223,44 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(fourth.string(forKey: "timestamp") == "t4")
     }
 
+    @Test func hiddenDuplicateUUIDDoesNotReplaceVisibleReplayEvent() throws {
+        let sandbox = try makeSandbox(named: "duplicate-visible")
+        defer { try? FileManager.default.removeItem(at: sandbox.root) }
+        let directory = try firstProjectDirectory(in: sandbox)
+        try writeSession(id: "duplicate", directory: directory, records: [
+            [
+                "type": "assistant",
+                "uuid": "shared",
+                "parentUuid": NSNull(),
+                "isSidechain": false,
+                "message": ["role": "assistant", "content": "visible"],
+            ],
+            [
+                "type": "assistant",
+                "uuid": "shared",
+                "parentUuid": NSNull(),
+                "isSidechain": true,
+                "message": ["role": "assistant", "content": "hidden"],
+            ],
+            [
+                "type": "assistant",
+                "uuid": "child",
+                "parentUuid": "shared",
+                "isSidechain": false,
+                "message": ["role": "assistant", "content": "child"],
+            ],
+            ["type": "last-prompt", "leafUuid": "child"],
+        ])
+
+        let page = try sandbox.discovery.loadHistory(
+            for: sandbox.workingDirectory,
+            sessionID: "duplicate"
+        )
+
+        #expect(page.events.compactMap { $0.string(forKey: "uuid") } == ["shared", "child"])
+        #expect(page.events.first?.object(forKey: "message")?.string(forKey: "content") == "visible")
+    }
+
     @Test func historyWalksThroughAttachmentAndSystemRecordsInTheParentChain() throws {
         // Real sessions interleave hook attachments, system records, and
         // file-history snapshots into the uuid chain. Indexing only
