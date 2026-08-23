@@ -1,25 +1,44 @@
 public import SwiftUI
 
 /// The clickable pull-request badge shown on sidebar worktree and nested
-/// workspace rows: a real git-pull-request glyph plus the PR number, tinted by
-/// the PR's lifecycle state (green open, purple merged, red closed).
+/// workspace rows: a round tinted chip carrying a real git-pull-request glyph,
+/// colored by the PR's lifecycle state (green open, purple merged, red closed).
 ///
-/// State is conveyed by the glyph shape and color, so the badge stays compact
-/// (no state word); the state word lives in the accessibility label for
-/// VoiceOver. Used by both ``SupermuxOpenWorkspaceRowView`` and
-/// ``SupermuxWorktreeRowView`` so the badge looks identical wherever a worktree
-/// appears. Holds only a value and an open closure, so it crosses the sidebar
-/// snapshot boundary cleanly.
+/// **Icon only — no `#1234`.** The badge sits at the right edge of rows that
+/// already truncate the workspace title and its branch, so the number spent the
+/// row's scarcest resource on the one thing in the badge nothing acts on: the
+/// state is what the row reports, and the glyph's shape and tint carry it
+/// already. Dropping the digits gives that width back to the two labels that
+/// identify the row.
+///
+/// The number is not lost, only moved to where it costs no width: the hover
+/// tooltip (`help`) and the accessibility label. On the desktop the tooltip is
+/// the better home for it anyway — it can spell out "Open pull request #1234"
+/// in full, which the badge never had room to do.
+///
+/// State conveyed by shape and color, the word reserved for VoiceOver. Used by
+/// both ``SupermuxOpenWorkspaceRowView`` and ``SupermuxWorktreeRowView`` so the
+/// badge looks identical wherever a worktree appears, and mirrored on the phone
+/// by `SupermuxMobilePullRequestBadge`. Holds only a value and an open closure,
+/// so it crosses the sidebar snapshot boundary cleanly.
 public struct SupermuxPullRequestBadge: View {
     private let pullRequest: SupermuxPullRequest
     private let fontScale: CGFloat
     private let onOpen: (URL) -> Void
 
+    /// The glyph's footprint at `fontScale == 1`. Up from the 11 it drew beside
+    /// the number: with nothing next to it the glyph is the whole badge, so it
+    /// carries the state alone.
+    private static let baseGlyphSize: CGFloat = 12
+    /// The chip's diameter at `fontScale == 1` — the glyph plus the breathing
+    /// room the capsule gave it, now equal on all four sides.
+    private static let baseChipSize: CGFloat = 18
+
     /// Creates a badge.
     /// - Parameters:
     ///   - pullRequest: The pull request to display.
     ///   - fontScale: Sidebar font scale (cmux's `sidebar-font-size`); `1` at the
-    ///     default size, multiplied into the badge's text and icon.
+    ///     default size, multiplied into the badge's icon and chip.
     ///   - onOpen: Opens the PR's URL when the badge is clicked.
     public init(
         pullRequest: SupermuxPullRequest,
@@ -35,19 +54,18 @@ public struct SupermuxPullRequestBadge: View {
         Button {
             onOpen(pullRequest.url)
         } label: {
-            HStack(spacing: 2 * fontScale) {
-                SupermuxPullRequestStatusIcon(status: pullRequest.status, size: 11 * fontScale)
-                Text(verbatim: "#\(pullRequest.number)")
-                    .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
-            }
+            SupermuxPullRequestStatusIcon(
+                status: pullRequest.status,
+                size: Self.baseGlyphSize * fontScale
+            )
             .foregroundStyle(pullRequest.status.supermuxTint)
             .opacity(pullRequest.isStale ? 0.5 : 1)
-            .padding(.horizontal, 4 * fontScale)
-            .padding(.vertical, 1.5 * fontScale)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(pullRequest.status.supermuxTint.opacity(0.16))
+            .frame(
+                width: Self.baseChipSize * fontScale,
+                height: Self.baseChipSize * fontScale
             )
+            .background(Circle().fill(pullRequest.status.supermuxTint.opacity(0.16)))
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .help(pullRequest.status.supermuxOpenHelp(number: pullRequest.number))
@@ -57,8 +75,13 @@ public struct SupermuxPullRequestBadge: View {
 }
 
 /// The status icon: a real git-pull-request glyph for open/merged (matching
-/// cmux's own sidebar PR icons) and `xmark.circle` for closed. Inherits the
+/// cmux's own sidebar PR icons) and a bare `xmark` for closed. Inherits the
 /// surrounding `foregroundStyle`, so the badge's state tint colors it.
+///
+/// Closed draws `xmark`, not `xmark.circle`: the badge's own chip is the circle
+/// now, and the ringed variant put a circle inside a circle. Every case is
+/// drawn into the same `size` footprint so all three center identically in the
+/// chip.
 struct SupermuxPullRequestStatusIcon: View {
     let status: SupermuxPullRequest.Status
     let size: CGFloat
@@ -70,17 +93,22 @@ struct SupermuxPullRequestStatusIcon: View {
         case .merged:
             SupermuxPullRequestGlyph(kind: .merged, size: size)
         case .closed:
-            Image(systemName: "xmark.circle")
-                .font(.system(size: size * 0.66, weight: .semibold))
+            Image(systemName: "xmark")
+                .font(.system(size: size * 0.78, weight: .semibold))
                 .frame(width: size, height: size)
         }
     }
 }
 
-/// Draws the GitHub-style git-pull-request glyph (two branch nodes joined to a
-/// third) using the same path geometry as cmux's sidebar PR icons, scaled from
-/// its native 13-unit canvas to `size`. Strokes with `.foreground`, so the
-/// badge's `foregroundStyle` tint colors it.
+/// Draws the GitHub-style git-pull-request glyph using the same path geometry
+/// as cmux's sidebar PR icons, scaled from its native 13-unit canvas to `size`.
+/// Strokes with `.foreground`, so the badge's `foregroundStyle` tint colors it.
+///
+/// The open glyph carries a left-pointing **arrowhead**: two branches with a
+/// bare connector is the `git-branch` icon, not `git-pull-request`, and the
+/// arrow is the difference. It went unnoticed while `#1234` sat beside the
+/// glyph and carried the meaning; making the badge icon-only put the whole job
+/// on the glyph and exposed it.
 struct SupermuxPullRequestGlyph: View {
     /// Which PR glyph to draw.
     enum Kind { case open, merged }
@@ -91,6 +119,12 @@ struct SupermuxPullRequestGlyph: View {
     private static let canvas: CGFloat = 13
     private static let nodeDiameter: CGFloat = 3
     private static let stroke = StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
+    /// Where the open glyph's arrow tip lands. Far enough left to read as
+    /// aimed at the left branch, not so far it collides with that branch's
+    /// node at 12pt.
+    private static let arrowTipX: CGFloat = 6.6
+    /// How far each barb trails behind the tip, on both axes (45° barbs).
+    private static let arrowBarb: CGFloat = 1.4
 
     var body: some View {
         ZStack {
@@ -106,12 +140,26 @@ struct SupermuxPullRequestGlyph: View {
         Path { path in
             switch kind {
             case .open:
+                // Left branch: a bare shaft between its two nodes.
                 path.move(to: CGPoint(x: 3.0, y: 4.8))
                 path.addLine(to: CGPoint(x: 3.0, y: 9.2))
-                path.move(to: CGPoint(x: 4.8, y: 3.0))
-                path.addLine(to: CGPoint(x: 9.4, y: 3.0))
+                // Right branch: up from its node, round the corner, then run
+                // LEFT and end in an arrowhead aimed at the left branch. The
+                // arrow is the whole point of the glyph — it is what says
+                // "merge this into that" rather than "here are two branches" —
+                // and the two branches stay separate strokes, as in GitHub's
+                // own octicon, so the arrow reads as flying between them.
+                path.move(to: CGPoint(x: 11.0, y: 9.2))
                 path.addLine(to: CGPoint(x: 11.0, y: 4.6))
-                path.addLine(to: CGPoint(x: 11.0, y: 9.2))
+                path.addArc(
+                    tangent1End: CGPoint(x: 11.0, y: 3.0),
+                    tangent2End: CGPoint(x: Self.arrowTipX, y: 3.0),
+                    radius: 1.6
+                )
+                path.addLine(to: CGPoint(x: Self.arrowTipX, y: 3.0))
+                path.move(to: CGPoint(x: Self.arrowTipX + Self.arrowBarb, y: 3.0 - Self.arrowBarb))
+                path.addLine(to: CGPoint(x: Self.arrowTipX, y: 3.0))
+                path.addLine(to: CGPoint(x: Self.arrowTipX + Self.arrowBarb, y: 3.0 + Self.arrowBarb))
             case .merged:
                 path.move(to: CGPoint(x: 4.6, y: 4.6))
                 path.addLine(to: CGPoint(x: 7.1, y: 7.0))

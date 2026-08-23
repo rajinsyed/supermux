@@ -16424,13 +16424,28 @@ struct TabItemView: View, Equatable {
         var body: some View {
             ZStack {
                 Path { path in
+                    // SUPERMUX:begin pull-request-glyph-arrowhead (open-PR glyph gains its arrowhead — see SUPERMUX-TOUCHPOINTS.md)
+                    // Upstream drew two branches joined by a bare connector,
+                    // which is the `git-branch` icon, not `git-pull-request` —
+                    // the left-pointing arrow is the difference, and it is the
+                    // whole "pull" in pull request. Geometry matches
+                    // SupermuxKit's `SupermuxPullRequestGlyph` so every surface
+                    // that draws a PR icon draws the same one.
                     path.move(to: CGPoint(x: 3.0, y: 4.8))
                     path.addLine(to: CGPoint(x: 3.0, y: 9.2))
 
-                    path.move(to: CGPoint(x: 4.8, y: 3.0))
-                    path.addLine(to: CGPoint(x: 9.4, y: 3.0))
+                    path.move(to: CGPoint(x: 11.0, y: 9.2))
                     path.addLine(to: CGPoint(x: 11.0, y: 4.6))
-                    path.addLine(to: CGPoint(x: 11.0, y: 9.2))
+                    path.addArc(
+                        tangent1End: CGPoint(x: 11.0, y: 3.0),
+                        tangent2End: CGPoint(x: 6.6, y: 3.0),
+                        radius: 1.6
+                    )
+                    path.addLine(to: CGPoint(x: 6.6, y: 3.0))
+                    path.move(to: CGPoint(x: 8.0, y: 1.6))
+                    path.addLine(to: CGPoint(x: 6.6, y: 3.0))
+                    path.addLine(to: CGPoint(x: 8.0, y: 4.4))
+                    // SUPERMUX:end pull-request-glyph-arrowhead
                 }
                 .stroke(color, style: Self.stroke)
 

@@ -426,6 +426,8 @@ Rules for adding a touchpoint:
 | 410 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+Surfaces.swift` | `simulator-stream-presentation-lifecycle` | Adds the direct `CMUXMobileCore` import needed for the generic focused-panel value, then replaces the Simulator pane's unconditional `onDisappear` teardown with the presentation-lifecycle modifier gated on the exact authoritative workspace/panel selection |
 | 411 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileSimulatorStreamStoreTests.swift` | `simulator-stream-presentation-lifecycle` | Behavior coverage for both SwiftUI lifecycle orders: replacement appears before old detail disappears, and old detail disappears before replacement appears and must request a restart |
 | 412 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellCompositeSimulatorStreamTests.swift` | `simulator-stream-presentation-lifecycle` | Red/green regression proving a delayed presentation stop cannot remove a reactivated panel's live-session marker, while a genuinely inactive panel still stops |
+| 413 | `Sources/ContentView.swift` | `pull-request-glyph-arrowhead` | Gives `PullRequestOpenIcon` its left-pointing arrowhead: upstream drew two branches joined by a bare connector, which is the `git-branch` glyph rather than `git-pull-request`. Rounds the 45° chamfer into an arc and detaches the two branch strokes, matching GitHub's octicon and SupermuxKit's `SupermuxPullRequestGlyph` |
+| 413b | `Sources/Sidebar/AppKitList/Cells/SidebarWorkspaceRowSlotViews.swift` | `pull-request-glyph-arrowhead` | The AppKit twin of #413 in `SidebarRowPullRequestIconView.draw`, so the AppKit sidebar list draws the same corrected glyph as the SwiftUI one (`NSBezierPath.appendArc(from:to:radius:)`; the view is `isFlipped`, so the y-down geometry ports unchanged) |
 | 145 | `cmuxTests/PostHogAnalyticsPropertiesTests.swift` | `unfenced` | **KNOWN FORK DEBT — this file is NOT yet modified; the row is a placeholder so the debt is not lost.** Three upstream tests contradict touchpoint #130 and are red on the fork: `appKitSidebarFeatureFlagDefaultsOn` asserts `defaultWhenUnavailable` for `sidebar-appkit-list-experiment` against the fork's `false`; `featureFlagResolutionPrecedence` sets a remote `true` for that key and asserts it reaches `remoteValue(for:)`; `remoteControlledFlagsRejectNewLocalOverrideWrites` sets a remote `true` for that key and asserts it blocks `setOverride`. Verified byte-identical to pre-merge `HEAD`, so this is standing debt, **not** 0.64.21 merge damage. Needs either a retarget of the three tests onto a neutral flag key or fences around the three expectations — OPEN DECISION, see SUPERMUX.md "Known limitations" |
 ## How to re-apply
 
@@ -3715,3 +3717,45 @@ swift test --package-path Packages/iOS/CmuxMobileShell \
 
 Then verify on a real phone: open Simulator, switch to a terminal or another workspace, return, and
 confirm the same pane resumes without either the phone stream or Mac Simulator connection failing.
+
+### 413, 413b. Pull-request glyph arrowhead — `pull-request-glyph-arrowhead`
+
+**Symptom:** the open-PR icon does not read as a pull request. It looks like a branch diagram, or
+just "weird" — most visibly once the PR badge went icon-only (no `#1234` beside it) and the glyph
+had to carry the meaning alone.
+
+**Cause:** the glyph was missing its arrowhead. GitHub's `git-pull-request` octicon is two SEPARATE
+branch strokes with a left-pointing arrow flying between them — the arrow is literally the "pull".
+Upstream drew the two branches joined by one continuous connector and no arrow, which is the
+`git-branch` icon. It also cut the top-right corner with a 45° chamfer (`(9.4,3) → (11,4.6)`) where
+every other corner in the set is round; at 12–13pt that diagonal is a couple of stair-stepped pixels.
+
+The corrected 13-unit geometry, shared by all four copies:
+
+```
+left branch:   move(3.0, 4.8) → line(3.0, 9.2)
+right branch:  move(11.0, 9.2) → line(11.0, 4.6)
+               → arc(tangent1: (11.0, 3.0), tangent2: (6.6, 3.0), radius: 1.6)
+               → line(6.6, 3.0)
+arrowhead:     move(8.0, 1.6) → line(6.6, 3.0) → line(8.0, 4.4)
+nodes:         (3,3) (3,11) (11,11)      [unchanged]
+```
+
+The merged glyph is unchanged — it was already correct.
+
+Four files carry this geometry, and they are copies on purpose (each side of the SwiftUI/AppKit and
+macOS/iOS splits owns its own path). Re-apply to all four or the app draws two different PR icons:
+
+| File | Kind |
+|---|---|
+| `Packages/SupermuxKit/…/UI/SupermuxPullRequestBadgeView.swift` | fork, SwiftUI — has named `arrowTipX`/`arrowBarb` constants |
+| `Packages/iOS/SupermuxMobileUI/…/SupermuxMobilePullRequestGlyph.swift` | fork, SwiftUI (phone twin) |
+| `Sources/ContentView.swift` (`PullRequestOpenIcon`) | upstream, SwiftUI — **fenced** |
+| `Sources/Sidebar/…/Cells/SidebarWorkspaceRowSlotViews.swift` | upstream, AppKit `NSBezierPath` — **fenced** |
+
+The AppKit copy uses `appendArc(from:to:radius:)` for the corner. That view sets `isFlipped = true`,
+so the y-down coordinates port across unchanged — do not flip them.
+
+Verify by eye at real size, not just zoomed: the arrow has to survive 12pt. Render the glyph into
+its chip at 13/21 (phone) and 12/18 (desktop) and confirm the arrowhead is still legible and its
+barbs do not collide with the left branch's node.

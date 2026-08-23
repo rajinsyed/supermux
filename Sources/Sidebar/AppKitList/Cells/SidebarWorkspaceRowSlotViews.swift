@@ -239,13 +239,26 @@ final class SidebarRowPullRequestIconView: NSView {
             node(3.0, 11.0)
             node(11.0, 7.0)
         default:
+            // SUPERMUX:begin pull-request-glyph-arrowhead (open-PR glyph gains its arrowhead — see SUPERMUX-TOUCHPOINTS.md)
+            // The AppKit twin of the SwiftUI `PullRequestOpenIcon` fix: a bare
+            // connector between two branches is `git-branch`, not
+            // `git-pull-request`. Same 13-unit geometry, drawn with
+            // NSBezierPath; this view is `isFlipped`, so y-down matches.
             path.move(to: NSPoint(x: 3.0, y: 4.8))
             path.line(to: NSPoint(x: 3.0, y: 9.2))
-            path.move(to: NSPoint(x: 4.8, y: 3.0))
-            path.line(to: NSPoint(x: 9.4, y: 3.0))
+            path.move(to: NSPoint(x: 11.0, y: 9.2))
             path.line(to: NSPoint(x: 11.0, y: 4.6))
-            path.line(to: NSPoint(x: 11.0, y: 9.2))
+            path.appendArc(
+                from: NSPoint(x: 11.0, y: 3.0),
+                to: NSPoint(x: 6.6, y: 3.0),
+                radius: 1.6
+            )
+            path.line(to: NSPoint(x: 6.6, y: 3.0))
+            path.move(to: NSPoint(x: 8.0, y: 1.6))
+            path.line(to: NSPoint(x: 6.6, y: 3.0))
+            path.line(to: NSPoint(x: 8.0, y: 4.4))
             path.stroke()
+            // SUPERMUX:end pull-request-glyph-arrowhead
             node(3.0, 3.0)
             node(3.0, 11.0)
             node(11.0, 11.0)
