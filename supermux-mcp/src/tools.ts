@@ -142,18 +142,32 @@ export function registerTools(server: McpServer, config: Config): void {
           ? project.setupCommands.map((c) => c.trim()).filter(Boolean).join("\n")
           : "";
         const ccx = ccxCommand(config.ccxBin, model, prompt);
-        const initialCommand = setupScript ? `${setupScript}\n${ccx}` : ccx;
+        const commandText = setupScript ? `${setupScript}\n${ccx}` : ccx;
 
+        // Create the workspace with a plain shell in the worktree cwd, then
+        // TYPE the command into it — exactly what `cmux new-workspace
+        // --command` does. Passing a script as `initial_command` makes it the
+        // surface's boot process: a multi-line script is not a valid boot
+        // command, the surface dies instantly, and the whole workspace closes.
+        // A typed command also keeps the shell (and the workspace) alive after
+        // ccx exits, and keeps cwd = the worktree so the sidebar nests the
+        // workspace under its project (directory-in-worktrees-dir is the
+        // durable nesting signal).
         const result = await socketCall(config.socketPath, "workspace.create", {
           cwd: directory,
           title: workspace_name ?? (worktree ? worktree.branch : undefined),
-          initial_command: initialCommand,
           focus: focus ?? false,
           workspace_env: {
             SUPERSET_ROOT_PATH: project.rootPath,
             SUPERMUX_ROOT_PATH: project.rootPath,
             SUPERMUX_WORKTREE_PATH: directory,
           },
+        });
+
+        await socketCall(config.socketPath, "surface.send_text", {
+          workspace_id: result.workspace_id,
+          surface_id: result.surface_id,
+          text: `${commandText}\n`,
         });
 
         return ok({
