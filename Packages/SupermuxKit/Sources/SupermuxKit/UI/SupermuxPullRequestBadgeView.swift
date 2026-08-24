@@ -26,13 +26,12 @@ public struct SupermuxPullRequestBadge: View {
     private let fontScale: CGFloat
     private let onOpen: (URL) -> Void
 
-    /// The glyph's footprint at `fontScale == 1`. Up from the 11 it drew beside
-    /// the number: with nothing next to it the glyph is the whole badge, so it
-    /// carries the state alone.
-    private static let baseGlyphSize: CGFloat = 12
-    /// The chip's diameter at `fontScale == 1` — the glyph plus the breathing
-    /// room the capsule gave it, now equal on all four sides.
-    private static let baseChipSize: CGFloat = 18
+    /// The glyph's footprint at `fontScale == 1`, sized to match the compact
+    /// desktop row typography.
+    private static let baseGlyphSize: CGFloat = 11
+    /// The chip's diameter at `fontScale == 1` — compact enough for the Mac
+    /// sidebar while preserving even breathing room around the glyph.
+    private static let baseChipSize: CGFloat = 16
 
     /// Creates a badge.
     /// - Parameters:
