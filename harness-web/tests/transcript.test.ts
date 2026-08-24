@@ -34,6 +34,57 @@ function replayAll(...groups: ProtocolLine[][]): TranscriptModel {
   return model;
 }
 
+describe("inline image blocks", () => {
+  test("keeps a structured image beside the tool result that produced it", () => {
+    const toolUseId = "toolu_image";
+    const dataBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=";
+    const model = replayAll(
+      [
+        {
+          type: "user",
+          message: { role: "user", content: "Show the generated image" },
+          uuid: "user-image"
+        } as ProtocolLine,
+        {
+          type: "assistant",
+          message: {
+            id: "msg-image",
+            role: "assistant",
+            content: [{ type: "tool_use", id: toolUseId, name: "Read", input: {} }]
+          },
+          uuid: "assistant-image-tool"
+        } as ProtocolLine,
+        {
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: toolUseId,
+                content: [
+                  { type: "text", text: "Generated preview" },
+                  {
+                    type: "image",
+                    source: { type: "base64", media_type: "image/png", data: dataBase64 }
+                  }
+                ]
+              }
+            ]
+          },
+          uuid: "tool-result-image"
+        } as ProtocolLine
+      ]
+    );
+
+    expect(model.turns[0].blocks.map((block) => block.kind)).toEqual(["tool", "image"]);
+    const image = model.turns[0].blocks[1];
+    expect(image).toMatchObject({ kind: "image", mediaType: "image/png", dataBase64 });
+    expect(tools(model)[0].resultText).toBe("Generated preview");
+  });
+});
+
 describe("rich-session.jsonl replay", () => {
   const model = replayLines(richSession);
 
