@@ -280,7 +280,11 @@ if [[ "${BUILD_IOS}" -eq 1 ]]; then
   ios_release_args=()
   [[ "${LAUNCH}" -eq 0 ]] && ios_release_args+=(--no-launch)
   [[ -n "${IOS_DEVICE_ID}" ]] && ios_release_args+=(--device-id "${IOS_DEVICE_ID}")
-  "${REPO_ROOT}/scripts/supermux-ios-release.sh" "${ios_release_args[@]}"
+  if [[ "${#ios_release_args[@]}" -eq 0 ]]; then
+    "${REPO_ROOT}/scripts/supermux-ios-release.sh"
+  else
+    "${REPO_ROOT}/scripts/supermux-ios-release.sh" "${ios_release_args[@]}"
+  fi
 fi
 
 echo "==> Installing to ${INSTALL_APP}"
