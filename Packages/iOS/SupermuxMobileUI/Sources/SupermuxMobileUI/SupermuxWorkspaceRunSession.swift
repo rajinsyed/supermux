@@ -17,7 +17,8 @@ public final class SupermuxWorkspaceRunSession {
 
     private var projectsStore: SupermuxMobileProjectsStore?
     private var runStore: SupermuxMobileRunStore?
-    private var busyProjectIDs: Set<String> = []
+    private var actionRequestIDsByProjectID: [String: UInt64] = [:]
+    @ObservationIgnored private var nextActionRequestID: UInt64 = 0
     @ObservationIgnored private var sessionConnectionID: AnyHashable?
 
     /// Creates an idle workspace run session.
@@ -28,8 +29,8 @@ public final class SupermuxWorkspaceRunSession {
 
     /// Whether the title menu should show a run action for this project.
     ///
-    /// The action stays hidden until the authoritative project list proves that
-    /// the project has at least one nonblank run command.
+    /// The action stays hidden until the authoritative project list and run
+    /// state have loaded and the project has at least one nonblank command.
     ///
     /// - Parameter projectID: The workspace's owning project id, or `nil` for an unassociated workspace.
     /// - Returns: `true` when a start/stop action is available.
@@ -65,7 +66,7 @@ public final class SupermuxWorkspaceRunSession {
             projectsStore = SupermuxMobileProjectsStore(client: client, capabilities: capabilities)
             runStore = SupermuxMobileRunStore(client: client, capabilities: capabilities)
             sessionConnectionID = connectionID
-            busyProjectIDs = []
+            actionRequestIDsByProjectID = [:]
             actionErrorDescription = nil
         }
 
@@ -81,7 +82,7 @@ public final class SupermuxWorkspaceRunSession {
         projectsStore = nil
         runStore = nil
         sessionConnectionID = nil
-        busyProjectIDs = []
+        actionRequestIDsByProjectID = [:]
         actionErrorDescription = nil
     }
 
@@ -118,8 +119,12 @@ public final class SupermuxWorkspaceRunSession {
 
     func menuState(forProjectID projectID: String?) -> MenuState? {
         guard let projectID,
-              let project = projectsStore?.projects.first(where: { $0.id == projectID }),
-              runStore?.showsRun == true else {
+              let projectsStore,
+              projectsStore.hasLoaded,
+              let project = projectsStore.projects.first(where: { $0.id == projectID }),
+              let runStore,
+              runStore.showsRun,
+              runStore.hasLoaded else {
             return nil
         }
         let commands = (project.runCommands ?? []).enumerated().compactMap { index, command in
@@ -129,8 +134,8 @@ public final class SupermuxWorkspaceRunSession {
         guard !commands.isEmpty else { return nil }
         return MenuState(
             projectID: projectID,
-            isRunning: runStore?.isRunning(projectID: projectID) == true,
-            isBusy: busyProjectIDs.contains(projectID),
+            isRunning: runStore.isRunning(projectID: projectID),
+            isBusy: actionRequestIDsByProjectID[projectID] != nil,
             commands: commands
         )
     }
@@ -139,19 +144,33 @@ public final class SupermuxWorkspaceRunSession {
         projectID: String,
         operation: (SupermuxMobileRunStore) async throws -> Void
     ) async -> Bool {
-        guard !busyProjectIDs.contains(projectID) else { return false }
+        guard actionRequestIDsByProjectID[projectID] == nil else { return false }
         guard let runStore else {
             actionErrorDescription = SupermuxMacUnavailableError().localizedDescription
             return false
         }
 
-        busyProjectIDs.insert(projectID)
+        nextActionRequestID &+= 1
+        let requestID = nextActionRequestID
+        actionRequestIDsByProjectID[projectID] = requestID
         actionErrorDescription = nil
-        defer { busyProjectIDs.remove(projectID) }
+        defer {
+            if actionRequestIDsByProjectID[projectID] == requestID {
+                actionRequestIDsByProjectID[projectID] = nil
+            }
+        }
         do {
             try await operation(runStore)
+            guard self.runStore === runStore,
+                  actionRequestIDsByProjectID[projectID] == requestID else {
+                return false
+            }
             return true
         } catch {
+            guard self.runStore === runStore,
+                  actionRequestIDsByProjectID[projectID] == requestID else {
+                return false
+            }
             actionErrorDescription = error.localizedDescription
             return false
         }
