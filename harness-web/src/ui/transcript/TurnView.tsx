@@ -67,9 +67,9 @@ function isStoppedBackgroundWork(block: Block): boolean {
  * Which work rows are folded away while the turn streams. Empty once the turn
  * settles: a settled turn shows everything (behind the fold header).
  *
- * `wasLive` carries only the immediately preceding render's live keys. That is
- * enough to keep a background shell visible in the frame that acknowledges Stop,
- * without accumulating every sequential tool call for the rest of the turn.
+ * `wasLive` remembers live background rows through their killed/stopped terminal
+ * sequence. Ordinary sequential tools are never retained, so they still fold as
+ * soon as the next activity replaces them.
  */
 function hiddenWhileStreaming(
   work: Block[],
@@ -167,8 +167,17 @@ export const TurnView = memo(function TurnView({
     () => work.filter(isLive).map((block) => block.key),
     [work]
   );
+  const stoppedBackgroundKeys = useMemo(
+    () => work.filter(isStoppedBackgroundWork).map((block) => block.key),
+    [work]
+  );
   const reachableWorkKeys = useMemo(() => work.map((block) => block.key), [work]);
-  const wasLive = useWasLiveKeys(turn.id, currentLiveKeys, reachableWorkKeys);
+  const wasLive = useWasLiveKeys(
+    turn.id,
+    currentLiveKeys,
+    stoppedBackgroundKeys,
+    reachableWorkKeys
+  );
   const hidden = useMemo(
     () => hiddenWhileStreaming(work, settled, wasLive),
     [work, settled, wasLive]
