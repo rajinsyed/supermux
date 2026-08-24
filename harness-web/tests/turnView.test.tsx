@@ -156,6 +156,52 @@ describe("work-group overflow while a turn runs", () => {
     expect(running.length).toBe(1);
   });
 
+  test("a superseded live row hides in ONE commit — no animated collapse mid-stream", async () => {
+    // The reported flash: each new tool step's arrival re-selects "the latest
+    // tool row", and the row it replaces used to run the Disclosure's 200ms
+    // height animation on its way out. During streaming that collapse plays
+    // right above the bottom-pinned tail, so the settled text above visibly
+    // jumps — the "weird flash" — several times per turn. Mid-stream hides must
+    // be instant: the row snaps to display:none in the same frame.
+    const turn = streamingTurn();
+    const tools = turn.blocks
+      .filter((block) => block.kind === "tool")
+      .slice(-2)
+      .map((block) => ({
+        ...block,
+        status: "success" as const,
+        subagent: undefined,
+        workflow: undefined,
+        structured: undefined,
+        children: []
+      }));
+    expect(tools.length).toBe(2);
+    const phase = (count: number): Turn => ({ ...turn, blocks: tools.slice(0, count) });
+
+    const { container, rerender } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={phase(1)} isLast />
+      </CopyProvider>
+    );
+    expect(visibleCards(container).length).toBe(1);
+
+    rerender(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={phase(2)} isLast />
+      </CopyProvider>
+    );
+    // Synchronously after the commit: the superseded row is already hidden.
+    // An animated collapse would keep it visible (with an inline height) for
+    // the next ~200ms, which is exactly the flash.
+    expect(visibleCards(container).length).toBe(1);
+    const hidden = Array.from(
+      container.querySelectorAll<HTMLElement>(".turn-work > .turn-work-hidden")
+    );
+    expect(hidden.length).toBeGreaterThan(0);
+    expect(hidden.every((node) => node.style.display === "none")).toBe(true);
+    expect(hidden.every((node) => node.style.height === "")).toBe(true);
+  });
+
   test("the hidden work is wrapped in the shared animated disclosure", () => {
     const turn = streamingTurn();
     const { container } = mount(turn);
