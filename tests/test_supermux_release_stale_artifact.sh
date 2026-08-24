@@ -285,14 +285,52 @@ if ! grep -Fq '==> Release complete: macOS + iOS' "$COMBINED_OUTPUT"; then
   echo "FAIL: combined release did not record overall completion" >&2
   exit 1
 fi
-if [[ "$(grep -c '^ensure$' "$TMP_DIR/ensure.log")" -ne 3 ]]; then
+
+DEFAULT_HOME="$TMP_DIR/home-default"
+DEFAULT_INSTALL="$TMP_DIR/install-default/Supermux.app"
+DEFAULT_OUTPUT="$TMP_DIR/default-output.log"
+DEFAULT_EVENT_LOG="$TMP_DIR/default-release-events.log"
+mkdir -p "$DEFAULT_INSTALL/Contents/MacOS"
+printf 'old app\n' > "$DEFAULT_INSTALL/Contents/MacOS/cmux"
+chmod +x "$DEFAULT_INSTALL/Contents/MacOS/cmux"
+: > "$DEFAULT_EVENT_LOG"
+
+set +e
+HOME="$DEFAULT_HOME" \
+PATH="$BIN_DIR:/usr/bin:/bin" \
+SUPERMUX_INSTALL_APP="$DEFAULT_INSTALL" \
+PLISTBUDDY="$BIN_DIR/plistbuddy" \
+OSASCRIPT="$BIN_DIR/osascript" \
+FAKE_ENSURE_LOG="$TMP_DIR/ensure.log" \
+FAKE_RELEASE_PREBUILD_LOG="$TMP_DIR/release-prebuild.log" \
+FAKE_XCODEBUILD_LOG="$TMP_DIR/xcodebuild.log" \
+FAKE_XCODEBUILD_MODE=success-with-product \
+FAKE_XCODEBUILD_SENTINEL=unused \
+FAKE_PLISTBUDDY_LOG="$TMP_DIR/plistbuddy.log" \
+FAKE_CODESIGN_LOG="$TMP_DIR/codesign.log" \
+FAKE_RELEASE_EVENT_LOG="$DEFAULT_EVENT_LOG" \
+  bash "$TEST_REPO/scripts/supermux-release.sh" \
+    > "$DEFAULT_OUTPUT" 2>&1
+DEFAULT_STATUS=$?
+set -e
+if [[ "$DEFAULT_STATUS" -ne 0 ]]; then
+  cat "$DEFAULT_OUTPUT"
+  echo "FAIL: default combined release exited with status $DEFAULT_STATUS" >&2
+  exit 1
+fi
+if ! grep -Fxq 'ios ' "$DEFAULT_EVENT_LOG"; then
+  cat "$DEFAULT_EVENT_LOG"
+  echo "FAIL: default combined release did not invoke the iOS helper without optional arguments" >&2
+  exit 1
+fi
+if [[ "$(grep -c '^ensure$' "$TMP_DIR/ensure.log")" -ne 4 ]]; then
   cat "$TMP_DIR/ensure.log"
-  echo "FAIL: combined release did not refresh GhosttyKit" >&2
+  echo "FAIL: combined releases did not refresh GhosttyKit" >&2
   exit 1
 fi
 
 prebuild_order="$(paste -sd, "$TMP_DIR/release-prebuild.log")"
-if [[ "$prebuild_order" != "submodule,xcodebuild,submodule,xcodebuild,submodule,xcodebuild" ]]; then
+if [[ "$prebuild_order" != "submodule,xcodebuild,submodule,xcodebuild,submodule,xcodebuild,submodule,xcodebuild" ]]; then
   cat "$TMP_DIR/release-prebuild.log"
   echo "FAIL: each Release build must synchronize submodules before xcodebuild; got $prebuild_order" >&2
   exit 1
