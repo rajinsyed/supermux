@@ -26,15 +26,17 @@ function streamingTurn(): Turn {
 }
 
 /** Work rows hidden by the streaming overflow are mounted but display: none. */
+function isVisible(node: HTMLElement): boolean {
+  for (let current: HTMLElement | null = node; current; current = current.parentElement) {
+    if (current.style.display === "none") return false;
+  }
+  return true;
+}
+
 function visibleCards(container: HTMLElement): HTMLElement[] {
   return Array.from(
     container.querySelectorAll<HTMLElement>(".turn-work .tool-card, .turn-work .subagent-card")
-  ).filter((card) => {
-    for (let node: HTMLElement | null = card; node; node = node.parentElement) {
-      if (node.style.display === "none") return false;
-    }
-    return true;
-  });
+  ).filter(isVisible);
 }
 
 describe("work-group overflow while a turn runs", () => {
@@ -48,6 +50,42 @@ describe("work-group overflow while a turn runs", () => {
     expect(overflow).not.toBeNull();
 
     expect(visibleCards(container).length).toBeLessThan(workBlocks);
+  });
+
+  test("shows the latest assistant update beside the latest tool row", () => {
+    const turn = streamingTurn();
+    const tools = turn.blocks
+      .filter((block) => block.kind === "tool")
+      .slice(-2)
+      .map((block) => ({ ...block, status: "success" as const, subagent: undefined }));
+    expect(tools.length).toBe(2);
+    const { container } = mount({
+      ...turn,
+      blocks: [
+        {
+          kind: "text",
+          key: "earlier-update",
+          messageId: "earlier-update",
+          text: "Earlier progress",
+          streaming: false
+        },
+        tools[0],
+        {
+          kind: "text",
+          key: "latest-update",
+          messageId: "latest-update",
+          text: "Checking the final state",
+          streaming: false
+        },
+        tools[1]
+      ]
+    });
+
+    const visibleUpdates = Array.from(
+      container.querySelectorAll<HTMLElement>(".turn-work .assistant-text")
+    ).filter(isVisible);
+    expect(visibleUpdates.map((node) => node.textContent)).toEqual(["Checking the final state"]);
+    expect(visibleCards(container).length).toBe(1);
   });
 
   test("the expander reveals every block it hid", () => {
@@ -215,14 +253,13 @@ describe("the live work row does not auto-size while a turn streams", () => {
     expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(true);
   });
 
-  test("a failure still auto-opens even while the turn streams", () => {
-    // The error text is the whole reason the card is tinted; hiding it to keep
-    // the row short would trade one defect for a worse one.
+  test("a failure stays collapsed while the turn streams", () => {
     const turn = toolTurn();
     const tool = turn.blocks.find((b) => b.kind === "tool")!;
     const failed = { ...tool, status: "error" as const, resultText: "Error: ENOENT" };
     const { container } = mount({ ...turn, blocks: [failed] });
-    expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(true);
+    expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(false);
+    expect(container.querySelector(".tool-head")!.getAttribute("aria-expanded")).toBe("false");
   });
 
   test("the user can still open a live row by hand", () => {

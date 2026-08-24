@@ -872,31 +872,29 @@ describe("composer attachment contract", () => {
     );
   });
 
-  test("drop rejects one image over 512 KiB", async () => {
+  test("drop accepts a six-megabyte image within Claude's supported limit", async () => {
     const { container } = mountAttachmentComposer();
-    const oversized = fileReportingSize("large.png", 512 * 1024 + 1);
+    const image = fileReportingSize("large.png", 6 * 1024 * 1024);
     fireEvent.drop(container.querySelector(".composer-shell")!, {
-      dataTransfer: { files: [oversized] }
+      dataTransfer: { files: [image] }
     });
 
     await settleAttachments();
-    expect(document.querySelectorAll(".attach-chip").length).toBe(0);
-    expect(screen.queryByRole("alert")?.textContent).toContain(
-      "Each image must be 512 KiB or smaller."
-    );
+    expect(document.querySelectorAll(".attach-chip").length).toBe(1);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  test("paste enforces the 2 MiB aggregate decoded-byte limit", async () => {
+  test("paste enforces the 20 MiB aggregate decoded-byte limit", async () => {
     mountAttachmentComposer();
     const files = Array.from({ length: 5 }, (_, index) =>
-      fileReportingSize(`image-${index}.png`, 512 * 1024)
+      fileReportingSize(`image-${index}.png`, 5 * 1024 * 1024)
     );
     pasteFiles(files);
 
     await settleAttachments();
     expect(document.querySelectorAll(".attach-chip").length).toBe(4);
     expect(screen.queryByRole("alert")?.textContent).toContain(
-      "Attachments must total 2 MiB or less."
+      "Attachments must total 20 MiB or less."
     );
   });
 
@@ -938,7 +936,7 @@ describe("composer attachment contract", () => {
     expect(document.querySelectorAll(".attach-chip").length).toBe(1);
     expect(screen.getByText("valid.png")).toBeDefined();
     expect(screen.queryByRole("alert")?.textContent).toContain(
-      "Each image must be 512 KiB or smaller."
+      "Each image must be 10 MiB or smaller."
     );
   });
 
