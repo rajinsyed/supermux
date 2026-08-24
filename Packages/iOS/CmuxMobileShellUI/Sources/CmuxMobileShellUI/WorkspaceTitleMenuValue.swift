@@ -16,8 +16,8 @@ struct WorkspaceTitleMenuValue: Equatable {
     let canToggleReadState: Bool
     let canCloseWorkspace: Bool
     // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
-    /// Fingerprint of the fork workspace-tool menu rows (Changes/Files).
-    /// hosted in the title menu, so `.equatable()` re-accepts the menu
+    /// Fingerprint of the fork workspace-tool menu rows (run/tools/close pane).
+    /// Hosted in the title menu, so `.equatable()` re-accepts the menu
     /// closure when any of them change. Defaults empty for hosts (previews,
     /// demo screens) with no tool entries.
     var toolEntriesFingerprint: String = ""

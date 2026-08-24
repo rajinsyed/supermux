@@ -89,7 +89,6 @@ public struct MacSurfaceGalleryPreviewView: View {
                         selectSimulatorStream: { _ in },
                         // SUPERMUX:begin ios-pane-actions
                         createSimulator: {},
-                        closePane: {},
                         // SUPERMUX:end ios-pane-actions
                         openTextSheet: {},
                         copyDebugLogs: {},

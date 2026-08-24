@@ -145,9 +145,7 @@ struct TerminalPickerMenu: View, Equatable {
         // SUPERMUX:begin ios-pane-actions
         SupermuxPaneMenuControls(
             canCreateSimulator: value.canCreateSimulator,
-            canClosePane: value.canClosePane,
-            createSimulator: actions.createSimulator,
-            closePane: actions.closePane
+            createSimulator: actions.createSimulator
         )
         // SUPERMUX:end ios-pane-actions
 

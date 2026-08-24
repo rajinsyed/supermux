@@ -11,7 +11,6 @@ struct TerminalPickerMenuActions {
     let selectSimulatorStream: (String) -> Void
     // SUPERMUX:begin ios-pane-actions
     let createSimulator: () -> Void
-    let closePane: () -> Void
     // SUPERMUX:end ios-pane-actions
     let openTextSheet: () -> Void
     let copyDebugLogs: () -> Void
