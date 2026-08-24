@@ -121,6 +121,9 @@ if ! security find-identity -v -p codesigning | grep -qF "${SIGN_IDENTITY}"; the
   exit 1
 fi
 
+echo "==> Synchronizing submodules to the release commit"
+git submodule update --init --recursive
+
 echo "==> Ensuring GhosttyKit matches the current submodule"
 "${REPO_ROOT}/scripts/ensure-ghosttykit.sh"
 
