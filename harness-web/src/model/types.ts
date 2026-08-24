@@ -657,6 +657,12 @@ export interface TranscriptModel {
   todos: TodoItem[];
   usage: UsageTotals;
   contextUsage?: ContextUsage;
+  /**
+   * Advances after each authoritative main-thread assistant frame. Context usage
+   * changes between API steps inside one turn, so the bridge refresh cannot wait
+   * for that turn's final result.
+   */
+  contextUsageRefreshRevision: number;
   activity: ActivityState;
   banners: Banner[];
   backgroundTasks: BackgroundTask[];

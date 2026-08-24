@@ -27,6 +27,7 @@ export function createModel(): TranscriptModel {
     stranded: [],
     todos: [],
     usage: emptyUsage(),
+    contextUsageRefreshRevision: 0,
     activity: { sessionState: "idle", status: null, thinkingTokens: 0 },
     banners: [],
     backgroundTasks: [],

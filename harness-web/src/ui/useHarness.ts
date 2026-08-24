@@ -265,10 +265,18 @@ export function useHarness(store: HarnessStore): HarnessController {
       .catch(() => undefined);
   }, [bridge]);
 
+  const contextRefreshRequestGeneration = useRef(0);
   const refreshContext = useCallback(() => {
+    const requestGeneration = ++contextRefreshRequestGeneration.current;
+    const requested = store.getSnapshot();
     bridge
       .getContextUsage()
-      .then((usage) => store.dispatch({ kind: "contextUsage", usage }))
+      .then((usage) => {
+        const current = store.getSnapshot();
+        if (requestGeneration !== contextRefreshRequestGeneration.current) return;
+        if (current.generation !== requested.generation || current.runId !== requested.runId) return;
+        store.dispatch({ kind: "contextUsage", usage });
+      })
       .catch(() => undefined);
   }, [bridge, store]);
 
@@ -277,18 +285,26 @@ export function useHarness(store: HarnessStore): HarnessController {
     refreshSessions();
   }, [reloadContext, refreshSessions]);
 
-  const lastTurnCount = useRef(0);
-  const refreshSettledContext = useCallback(() => {
-    const settled = store
-      .getSnapshot()
-      .turns.filter((turn) => turn.state !== "streaming").length;
-    if (settled === lastTurnCount.current) return;
-    lastTurnCount.current = settled;
-    if (settled > 0) refreshContext();
+  const lastContextRefreshKey = useRef<string | undefined>(undefined);
+  const refreshLiveContext = useCallback(() => {
+    const snapshot = store.getSnapshot();
+    if (snapshot.runPhase !== "running" || snapshot.contextUsageRefreshRevision === 0) return;
+    if (restartOperationsPending.current > 0) return;
+    const key = `${snapshot.generation}:${snapshot.runId ?? ""}:${snapshot.contextUsageRefreshRevision}`;
+    if (lastContextRefreshKey.current === key) return;
+    lastContextRefreshKey.current = key;
+    refreshContext();
   }, [refreshContext, store]);
   useEffect(() => {
-    refreshSettledContext();
-  }, [model.turns, refreshSettledContext]);
+    refreshLiveContext();
+  }, [
+    model.contextUsageRefreshRevision,
+    model.generation,
+    model.runId,
+    model.runPhase,
+    refreshLiveContext,
+    restarting
+  ]);
 
   const setDraft = useCallback(
     (text: string) => {
@@ -562,7 +578,7 @@ export function useHarness(store: HarnessStore): HarnessController {
     const runHiddenLifecycle = () => {
       scheduled = false;
       if (cancelled || store.getPresentationVisible()) return;
-      refreshSettledContext();
+      refreshLiveContext();
       reconcileStrandedMessages();
       reconcilePendingModelPick();
     };
@@ -578,7 +594,7 @@ export function useHarness(store: HarnessStore): HarnessController {
   }, [
     reconcilePendingModelPick,
     reconcileStrandedMessages,
-    refreshSettledContext,
+    refreshLiveContext,
     store
   ]);
 
