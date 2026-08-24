@@ -1,0 +1,22 @@
+{
+  "name": "supermux-mcp",
+  "version": "0.1.0",
+  "description": "Lightweight remote MCP server for supermux: create project worktrees and spawn Claude Code (ccx) sessions",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "typecheck": "bun x tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
+}
