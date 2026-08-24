@@ -3,7 +3,7 @@ import { getBridge } from "../../bridge";
 import type { CopyKey } from "../../copyKeys";
 import type { DockRow } from "../../model/dock";
 import { plural, useCopy } from "../CopyContext";
-import { ChevronDown, ChevronRight, Close, Stop } from "../Icons";
+import { ChevronDown, ChevronRight, Close, Stop, Terminal } from "../Icons";
 import { Disclosure } from "../primitives/Disclosure";
 import { WorkingGlyph } from "../primitives/Spinner";
 import type { HarnessView } from "../views/viewStack";
@@ -73,14 +73,27 @@ const DockRowView = memo(function DockRowView({
         onClick={() => onOpen(row.view)}
       >
         <WorkingGlyph variant={row.kind === "workflow" ? "drive" : "orbit"} />
-        <span className="dock-label" title={label}>
+        {/* A shell is a COMMAND, not another agent: it leads with the terminal
+            glyph and sets its command in the mono face, so the panel reads as
+            "two agents and a shell" at a glance instead of three lookalikes. */}
+        {row.kind === "shell" ? (
+          <Terminal size={11} className="dock-shell-icon" />
+        ) : null}
+        <span className={`dock-label${row.kind === "shell" ? " mono" : ""}`} title={label}>
           {label}
         </span>
         {/* The reference row is name + one dim phrase and NOTHING on the
-            right: no timer, no counters. The drill-in has the numbers. */}
+            right: no timer, no counters. The drill-in has the numbers — the
+            one exception is the agent's MODEL, which the user asked to see
+            while the work runs, exactly as the inline chat shows it. */}
         {activity ? (
           <span className="dock-detail" title={activity}>
             {activity}
+          </span>
+        ) : null}
+        {row.kind === "agent" && row.model ? (
+          <span className="dock-model" title={row.model}>
+            {row.model}
           </span>
         ) : null}
         <span className="dock-spacer" />

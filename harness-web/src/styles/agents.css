@@ -254,6 +254,42 @@
   flex: 0 4 auto;
 }
 
+/* The model doing an agent's work, in the same quiet register the composer's
+   trigger uses — one dim word, no chip bed. It sits after the activity so the
+   row still reads name → what → on-what. */
+.dock-model {
+  color: var(--text-faint);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 16ch;
+  flex: 0 0 auto;
+}
+
+/* ---------- shell rows ----------
+
+   A background terminal command is a different KIND of thing from an agent,
+   and the panel says so: the terminal glyph leads, the command sets in the
+   mono face a size down (a command is a command, not a title), and a faint
+   sunken bed behind the row keeps it visibly apart from the agent rows
+   without inventing a second panel. */
+.dock-row.is-shell .dock-row-open {
+  background: var(--surface-sunken);
+  border-radius: var(--r-sm);
+}
+
+.dock-shell-icon {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.dock-row.is-shell .dock-label {
+  font-size: 12px;
+  font-weight: 450;
+  color: var(--text-soft);
+}
+
 .dock-spacer {
   flex: 1;
 }

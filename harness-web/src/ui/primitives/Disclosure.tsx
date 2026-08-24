@@ -22,16 +22,25 @@ const FALLBACK_MS = 250;
  * subtree survives, so a drill-in transcript, an expanded log strip, or a
  * scrolled position inside the body is exactly where the reader left it when
  * the disclosure reopens. Use it wherever the body holds state worth keeping.
+ *
+ * `instant` skips the height animation in BOTH directions. It exists for the
+ * streaming tail: every new tool step re-selects "the latest row", and the row
+ * it supersedes used to play its 200ms collapse right above the bottom-pinned
+ * tail — the settled text visibly jumped several times per turn (the reported
+ * flash). A row swapped out by the stream is not the reader folding a card;
+ * it changes in the same frame, like the rest of the streamed content.
  */
 export function Disclosure({
   open,
   className,
   keepMounted = false,
+  instant = false,
   children
 }: {
   open: boolean;
   className?: string;
   keepMounted?: boolean;
+  instant?: boolean;
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(open);
@@ -54,7 +63,7 @@ export function Disclosure({
     if (!element && open) return;
     if (keepMounted && open && !mounted) return;
     previous.current = open;
-    if (!element || prefersReducedMotion()) {
+    if (!element || instant || prefersReducedMotion()) {
       if (!open) setMounted(false);
       return;
     }
@@ -91,7 +100,7 @@ export function Disclosure({
     };
     // `mounted` is a dependency because opening mounts the content one commit
     // later than the prop change; without it the open direction never animates.
-  }, [open, mounted, keepMounted]);
+  }, [open, mounted, keepMounted, instant]);
 
   if (!mounted && !keepMounted) return null;
   return (
