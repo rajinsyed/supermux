@@ -56,6 +56,27 @@ struct ControlCommandExecutionPolicyTests {
         }
     }
 
+    // SUPERMUX:begin supermux-local-socket-mobile-methods-test
+    @Test func supermuxMobileMethodsRunOnTheSocketWorker() {
+        // The fork serves mobile.supermux.* to local automation through an
+        // async worker-lane bridge; a .mainActor classification would hit the
+        // synchronous legacy switch (no case) and return method_not_found.
+        for method in [
+            "mobile.supermux.projects.list",
+            "mobile.supermux.worktree.create",
+            "mobile.supermux.worktree.open",
+            "mobile.supermux.changes.status",
+            "mobile.supermux.anything.future",
+        ] {
+            #expect(
+                ControlCommandExecutionPolicy(forMethod: method)
+                    == .socketWorker(mainThreadCallable: false),
+                "\(method)"
+            )
+        }
+    }
+    // SUPERMUX:end supermux-local-socket-mobile-methods-test
+
     @Test func everythingElseRunsOnTheMainActor() {
         for method in [
             "workspace.create", "browser.url.get",

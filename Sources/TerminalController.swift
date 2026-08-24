@@ -1174,6 +1174,31 @@ class TerminalController {
                     return response
                 }
             }
+            // SUPERMUX:begin supermux-local-socket-mobile-methods
+            // Local-socket bridge for the fork's mobile.supermux.* namespace
+            // (classified onto the worker lane by the same-named policy fence):
+            // the same async dispatcher the phone data-plane uses
+            // (Sources/Supermux/TerminalController+SupermuxMobile.swift), so
+            // local automation (the supermux-mcp server) creates and opens
+            // worktree workspaces through SupermuxTabManagerOpener — with the
+            // project association that nests them under their project —
+            // instead of the standalone-marked workspace.create path. Local
+            // socket callers are already authorized by the socket's own access
+            // mode (the same trust workspace.create runs under); the phone
+            // path's per-ticket scoping applies only to phone transports.
+            // 180s: worktree.create runs git checkouts (checkoutTimeout 120s).
+            if request.method.hasPrefix("mobile.supermux.") {
+                return v2AsyncResultCall(
+                    id: request.id,
+                    timeoutSeconds: 180
+                ) {
+                    await self.v2MobileSupermuxDispatch(
+                        method: request.method,
+                        params: request.params
+                    )
+                }
+            }
+            // SUPERMUX:end supermux-local-socket-mobile-methods
             if request.method == "mobile.task.models.list" {
                 return v2AsyncResultCall(
                     id: request.id,

@@ -37,6 +37,19 @@ public enum ControlCommandExecutionPolicy: Sendable, Equatable {
             return
         }
 #endif
+        // SUPERMUX:begin supermux-local-socket-mobile-methods
+        // The fork's mobile.supermux.* namespace (projects/worktrees/changes/
+        // run) is served to local automation over the control socket through
+        // an async worker-lane bridge on TerminalController (its bodies are
+        // async and can run git for minutes, so they must not classify
+        // .mainActor, whose legacy switch is synchronous and lacks the case —
+        // that combination returns method_not_found). Never main-thread
+        // callable: the bridge blocks its calling thread on a semaphore.
+        if method.hasPrefix("mobile.supermux.") {
+            self = .socketWorker(mainThreadCallable: false)
+            return
+        }
+        // SUPERMUX:end supermux-local-socket-mobile-methods
         if method.hasPrefix("vm.") || method.hasPrefix("remotes.") || method.hasPrefix("aiAccounts.")
             || Self.socketWorkerMethods.contains(method) {
             self = .socketWorker(
