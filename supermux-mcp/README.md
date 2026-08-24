@@ -51,7 +51,7 @@ claude mcp add --transport http supermux http://127.0.0.1:8787/mcp \
 | `list_projects` | Registered supermux projects (id, name, root, worktrees dir). |
 | `list_worktrees` | `git worktree list` for a project, flagged supermux-managed or not. |
 | `create_worktree` | New worktree + branch in a project (no workspace opened). |
-| `spawn_claude_session` | Create a worktree (or use `cwd`), open a supermux workspace there, run the project's setup commands, then launch `ccx [model] [prompt]` in the terminal. |
+| `spawn_claude_session` | Create a worktree (or use `cwd`), open a supermux workspace there, run the project's setup commands, then launch `ccx [model] [prompt]` in the terminal. On app builds with the `mobile.supermux` local-socket bridge, the worktree + workspace are created through the app's own project opener, so the workspace **nests under its project** in the sidebar (`nested: true` in the result); older builds fall back to a flat-list workspace (`nested: false` + note). |
 | `list_workspaces` | Open workspaces in the running app. |
 
 `spawn_claude_session` accepts `model` (`sol` \| `opus` \| `fable` \| any

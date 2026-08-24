@@ -129,6 +129,67 @@ export function registerTools(server: McpServer, config: Config): void {
     async ({ project: projectRef, branch, base_branch, cwd, model, prompt, workspace_name, run_setup, focus }) => {
       try {
         const project = await resolveProject(config.projectsFile, projectRef);
+        const ccx = ccxCommand(config.ccxBin, model, prompt);
+
+        // Preferred path: the app's own mobile.supermux.worktree.create with
+        // open:true (bridged onto the local socket by the fork). It routes
+        // through SupermuxTabManagerOpener, which records the workspace →
+        // project association — the ONLY way the workspace nests under its
+        // project in the sidebar. The generic workspace.create path marks
+        // every workspace standalone by design, so it can never nest.
+        if (!cwd) {
+          try {
+            const created = await socketCall(
+              config.socketPath,
+              "mobile.supermux.worktree.create",
+              {
+                project_id: project.id,
+                branch_name: branch ?? workspace_name ?? "",
+                ...(base_branch ? { base_branch } : {}),
+                open: true,
+                ...(workspace_name ? { workspace_name } : {}),
+              },
+              170_000,
+            );
+            const workspaceId = created.workspace_id as string | undefined;
+            const worktreeDTO = created.worktree as { path?: string; branch?: string } | undefined;
+            if (!workspaceId || !worktreeDTO?.path) {
+              throw new Error("worktree.create returned no workspace");
+            }
+            // The workspace's main terminal is clean (setup runs in its own
+            // dedicated terminal); type the ccx launch into it.
+            let sendError: unknown;
+            for (let attempt = 0; attempt < 5; attempt++) {
+              try {
+                await socketCall(config.socketPath, "surface.send_text", {
+                  workspace_id: workspaceId,
+                  text: `${ccx}\n`,
+                });
+                sendError = undefined;
+                break;
+              } catch (err) {
+                sendError = err;
+                await new Promise((r) => setTimeout(r, 700));
+              }
+            }
+            if (sendError) throw sendError;
+            return ok({
+              project: project.name,
+              directory: worktreeDTO.path,
+              worktree: { branch: worktreeDTO.branch, path: worktreeDTO.path },
+              nested: true,
+              ranSetup: true,
+              command: ccx,
+              workspace: { id: workspaceId },
+            });
+          } catch (err) {
+            // Older app builds don't serve mobile.supermux.* on the local
+            // socket; fall through to the generic path (workspace works but
+            // shows in the flat list, not nested under the project).
+            const message = (err as Error).message ?? "";
+            if (!message.includes("method_not_found")) throw err;
+          }
+        }
 
         let directory = cwd;
         let worktree: { branch: string; path: string; base: string } | undefined;
@@ -141,7 +202,6 @@ export function registerTools(server: McpServer, config: Config): void {
         const setupScript = shouldRunSetup
           ? project.setupCommands.map((c) => c.trim()).filter(Boolean).join("\n")
           : "";
-        const ccx = ccxCommand(config.ccxBin, model, prompt);
         // Setup scripts are written for the app's DEDICATED setup terminal and
         // commonly end with `exit` to auto-close it (e.g. the humaniser
         // project). Typed into the workspace's main shell verbatim, that
@@ -198,6 +258,8 @@ export function registerTools(server: McpServer, config: Config): void {
           project: project.name,
           directory,
           worktree,
+          nested: false,
+          note: "App build without the mobile.supermux socket bridge: workspace opened in the flat list, not nested under the project. Install the latest Supermux build to get nesting.",
           ranSetup: Boolean(setupScript),
           command: ccx,
           workspace: {
