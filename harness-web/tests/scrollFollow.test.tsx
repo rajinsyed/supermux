@@ -314,6 +314,68 @@ describe("scroll follow survives a streaming turn", () => {
     expect(node.scrollTop).toBe(parked);
   });
 
+  test("a stale scroll event at an unchanged position never breaks follow", async () => {
+    // Reproduced live: scroll events are delivered asynchronously, so during
+    // streaming the browser can deliver one event for a growth frame and then a
+    // second, coalesced event AFTER the hook's readings have caught up. That
+    // second event reads as "parked away from the bottom with no growth" and
+    // used to hit the fallthrough breakFollow() — unpinning a transcript nobody
+    // had touched, which is the "isn't scrolled to the bottom automatically"
+    // report.
+    const { getByTestId } = render(<Harness />);
+    const node = getByTestId("scroller");
+    const geometry = scriptGeometry(node, 100);
+    geometry.grow(400);
+    act(() => {
+      getByTestId("jump").click();
+    });
+    expect(node.scrollTop).toBe(400);
+
+    // Content grows; the growth's own scroll event updates the readings…
+    act(() => {
+      geometry.grow(200);
+      fireEvent.scroll(node);
+    });
+    // …and a duplicate event lands after them, at the same position.
+    act(() => {
+      fireEvent.scroll(node);
+    });
+    expect(getByTestId("pill").textContent).toBe("no-pill");
+
+    act(() => {
+      getByTestId("tick").click();
+    });
+    await frame();
+    expect(node.scrollTop).toBe(geometry.height - 100);
+  });
+
+  test("a shrink's clamp while following never breaks follow", async () => {
+    // A card collapsing drags scrollHeight down and the browser clamps
+    // scrollTop with it. That is the layout moving, not the reader, and it
+    // must leave a following reader following.
+    const { getByTestId } = render(<Harness />);
+    const node = getByTestId("scroller");
+    const geometry = scriptGeometry(node, 100);
+    geometry.grow(600);
+    act(() => {
+      getByTestId("jump").click();
+    });
+    expect(node.scrollTop).toBe(600);
+
+    act(() => {
+      geometry.grow(-250);
+      node.scrollTop = 350;
+    });
+    expect(getByTestId("pill").textContent).toBe("no-pill");
+
+    act(() => {
+      geometry.grow(300);
+      getByTestId("tick").click();
+    });
+    await frame();
+    expect(node.scrollTop).toBe(geometry.height - 100);
+  });
+
   test("PageUp breaks follow", () => {
     const { getByTestId } = render(<Harness />);
     const node = getByTestId("scroller");

@@ -113,6 +113,25 @@ describe("agent threads build from the forwarded frames", () => {
     expect(isThreadRunning(live.agentThreads[FWD_OUTER_TOOL_USE_ID])).toBe(true);
     expect(isThreadRunning(live.agentThreads[FWD_INNER_TOOL_USE_ID])).toBe(true);
   });
+
+  test("a RUNNING thread already knows its model from its forwarded frames", () => {
+    // The dogfood report: the model name shows once the agent finishes (the
+    // Agent tool_result's `resolvedModel`) but disappears the moment one is
+    // actually working — which is exactly when the user wants to know what is
+    // burning tokens. Every forwarded assistant frame names the model that
+    // produced it (`message.model`), so a live thread has the answer on the
+    // wire from its first frame.
+    const live = replayThrough(fwdNestedFixture, 40);
+    expect(isThreadRunning(live.agentThreads[FWD_OUTER_TOOL_USE_ID])).toBe(true);
+    expect(live.agentThreads[FWD_OUTER_TOOL_USE_ID].model).toBe("claude-sonnet-5");
+  });
+
+  test("a running agent's dock row carries that model", () => {
+    const live = replayThrough(fwdNestedFixture, 40);
+    const outer = dockRows(live).find((row) => row.label === "Outer relay")!;
+    expect(outer.running).toBe(true);
+    expect((outer as { model?: string }).model).toBe("claude-sonnet-5");
+  });
 });
 
 /**

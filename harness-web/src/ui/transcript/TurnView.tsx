@@ -328,6 +328,12 @@ export const TurnView = memo(function TurnView({
                       key={block.key}
                       open={!hidden[i] || showEarlier}
                       keepMounted
+                      // While the turn streams, "which row is the tail" changes
+                      // on every step; animating each superseded row's collapse
+                      // above a bottom-pinned scroller is the reported flash.
+                      // The reader's own expander (`showEarlier`) and the
+                      // settle boundary still animate.
+                      instant={!settled && !showEarlier}
                       className={hidden[i] ? "turn-work-hidden" : "turn-work-item"}
                     >
                       <BlockView block={block} live={!settled && !hidden[i]} generation={generation} />

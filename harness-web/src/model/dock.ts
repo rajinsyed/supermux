@@ -45,6 +45,8 @@ export interface DockRow {
   running: boolean;
   /** The wire's status token, for the dot's tint while the row is live. */
   status?: string;
+  /** The model doing the work, for agent rows — the frames name it live. */
+  model?: string;
   startedAtMs?: number;
   totalTokens?: number;
   /** `3/5` for workflows; undefined elsewhere. */
@@ -97,6 +99,7 @@ export function dockRows(model: TranscriptModel): DockRow[] {
       detail: thread.activity ?? thread.lastToolName ?? thread.subagentType,
       running: true,
       status: thread.status,
+      model: thread.model,
       startedAtMs: thread.startedAtMs,
       totalTokens: thread.totalTokens,
       view: { kind: "agent", toolUseId: thread.toolUseId },

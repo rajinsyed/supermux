@@ -174,11 +174,17 @@ export function applyAssistantToThread(
   const messageId = line.message.id ?? `msg:${line.uuid ?? thread.blocks.length}`;
   const subagentType = asString((line as unknown as JsonObject).subagent_type);
   const description = asString((line as unknown as JsonObject).task_description);
-  if (subagentType || description) {
+  // The model doing the work, from the frame that proves it. AgentOutput's
+  // `resolvedModel` only lands when the agent FINISHES; the forwarded frames
+  // name the model on every message, so a running thread knows it too — which
+  // is when the dock row and the agent-view chip actually need it.
+  const frameModel = asString(line.message.model);
+  if (subagentType || description || frameModel) {
     thread = {
       ...thread,
       subagentType: thread.subagentType ?? subagentType,
-      description: thread.description ?? description
+      description: thread.description ?? description,
+      model: frameModel ?? thread.model
     };
   }
   thread = takeLiveOver(thread);

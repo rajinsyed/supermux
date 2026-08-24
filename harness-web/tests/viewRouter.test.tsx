@@ -8,6 +8,7 @@ import {
   RELAY_AGENT_TOOL_USE_ID,
   relayFixture
 } from "../src/dev/fixtures/round4";
+import { shellsFixture } from "../src/dev/fixtures/round3";
 import { dockRows } from "../src/model/dock";
 import {
   applyLine,
@@ -149,6 +150,42 @@ describe("the agents dock", () => {
     // Only main is left, so the whole dock is absent — no empty shell with a
     // header reading "0 agents".
     expect(container.querySelector(".agents-dock")).toBeNull();
+  });
+
+  test("a running agent's row names the model doing the work", () => {
+    // The dogfood report: the model name shows in the agent's chat header once
+    // it finishes, but the working panel — the surface you watch WHILE it runs
+    // — never says which model is burning the tokens. The forwarded frames name
+    // it (`message.model`), so the row can too.
+    const { container } = mount(
+      <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
+    );
+    const outer = container.querySelector(`[data-row-id="agent:${FWD_OUTER_TOOL_USE_ID}"]`)!;
+    expect(outer.querySelector(".dock-model")?.textContent).toBe("claude-sonnet-5");
+  });
+
+  test("a background shell's row is visibly a TERMINAL row, not another agent", () => {
+    // "background terminal commands should be clearly distinguishable and look
+    // different": a shell is a command, so its row leads with the terminal
+    // glyph and sets its command in the mono face, instead of wearing the same
+    // agent chrome as everything else in the panel.
+    const shellModel = replayLines(shellsFixture.slice(0, 30));
+    const shellRows = dockRows(shellModel);
+    expect(shellRows.some((row) => row.kind === "shell")).toBe(true);
+    const { container } = mount(
+      <AgentsDock rows={shellRows} activeView={MAIN_VIEW} onOpen={() => undefined} />
+    );
+    const shell = container.querySelector(".dock-row.is-shell")!;
+    expect(shell).not.toBeNull();
+    expect(shell.querySelector(".dock-shell-icon")).not.toBeNull();
+    expect(shell.querySelector(".dock-label")?.classList.contains("mono")).toBe(true);
+    // And an agent row keeps the plain face — the difference is the point.
+    const { container: agents } = mount(
+      <AgentsDock rows={rows} activeView={MAIN_VIEW} onOpen={() => undefined} />
+    );
+    const agentRow = agents.querySelector(`[data-row-id="agent:${FWD_OUTER_TOOL_USE_ID}"]`)!;
+    expect(agentRow.querySelector(".dock-shell-icon")).toBeNull();
+    expect(agentRow.querySelector(".dock-label")?.classList.contains("mono")).toBe(false);
   });
 
   test("a live row is name + activity, with the glyph as its only state mark", () => {

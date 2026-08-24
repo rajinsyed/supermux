@@ -174,13 +174,15 @@ export function useScrollFollow(deps: unknown[]) {
         }
         return;
       }
-      // Not at the bottom, but the reader did not move UP to get here: the
-      // content grew and the pin that follows it has not run yet. Breaking on
-      // that flashed the pill for one frame every time a large block mounted,
-      // on a transcript nobody had touched. Growth is not intent; only the
-      // reader is.
-      if (height > lastHeightBefore) return;
-      breakFollow();
+      // Not at the bottom, and the reader did not move UP to get here. Every
+      // remaining way to be in this state is the LAYOUT, not the reader:
+      // content grew and the pin has not run yet; content shrank and the
+      // browser clamp dragged scrollTop down with it; or the browser delivered
+      // a stale/coalesced scroll event at a position the readings already
+      // recorded (measured live: that stale event is what used to hit a
+      // breakFollow() here and park a transcript nobody had touched, which is
+      // the "isn't scrolled to the bottom automatically" report). Only the
+      // directional branch above may break follow.
     };
     node.addEventListener("scroll", onScroll, { passive: true });
     return () => node.removeEventListener("scroll", onScroll);
