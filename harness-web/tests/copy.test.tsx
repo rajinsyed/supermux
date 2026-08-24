@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { copyDefaults, format, type CopyKey } from "../src/copyKeys";
 import { richSession } from "../src/dev/fixtures";
 import { replayLines } from "../src/model/transcript";
@@ -11,7 +11,10 @@ import { toolMetrics } from "../src/ui/tools/ToolBodies";
 import { ToolCard } from "../src/ui/tools/ToolCard";
 import { TurnView } from "../src/ui/transcript/TurnView";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  delete window.webkit;
+});
 
 const copy = ((key: CopyKey, values?: Record<string, string | number>) =>
   values ? format(copyDefaults[key], values) : copyDefaults[key]) as (
@@ -161,6 +164,32 @@ describe("assistant Markdown links", () => {
     const link = container.querySelector<HTMLAnchorElement>("a");
     expect(link).not.toBeNull();
     expect(link?.getAttribute("href")).toBe("cmux-dev-harness-fixes://launch");
+  });
+
+  test("renders the exact project-relative changelog image the assistant references", async () => {
+    const path = "public/images/changelog-2026-08-24/banner-v4.png";
+    const dataBase64 = "iVBORw0KGgo=";
+    const calls: unknown[] = [];
+    window.webkit = {
+      messageHandlers: {
+        supermuxHarness: {
+          async postMessage(message) {
+            calls.push(message);
+            return { ok: true, value: { mediaType: "image/png", dataBase64 } };
+          }
+        }
+      }
+    };
+
+    const { container } = mount(<Markdown text={`![Latest changelog banner](${path})`} />);
+
+    await waitFor(() => expect(container.querySelector("img.block-image")).not.toBeNull());
+    const image = container.querySelector<HTMLImageElement>("img.block-image");
+    expect(image?.getAttribute("src")).toBe(`data:image/png;base64,${dataBase64}`);
+    expect(image?.getAttribute("alt")).toBe("Latest changelog banner");
+    expect(calls).toEqual([
+      expect.objectContaining({ method: "harness.readImage", params: { path } })
+    ]);
   });
 });
 
