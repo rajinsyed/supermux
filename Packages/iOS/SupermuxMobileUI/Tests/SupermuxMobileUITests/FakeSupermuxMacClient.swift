@@ -130,6 +130,9 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var runStateResponse = SupermuxRunStateResponse(runs: [])
     /// When set, `runState` throws instead of returning.
     var runStateError: (any Error)?
+    /// When true, `runState` parks until ``resumeRunState()`` is called.
+    var runStateShouldHold = false
+    private var runStateContinuations: [CheckedContinuation<Void, Never>] = []
     /// The response the next `usageState` call returns.
     var usageStateResponse = SupermuxUsageStateDTO(
         claude: SupermuxUsageProviderDTO(state: SupermuxUsageProviderDTO.loadingState),
@@ -142,6 +145,9 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var runStartResponse: SupermuxRunWriteResponse?
     /// When set, `runStart` throws instead of returning.
     var runStartError: (any Error)?
+    /// When true, `runStart` parks until ``resumeRunStart()`` is called.
+    var runStartShouldHold = false
+    private var runStartContinuations: [CheckedContinuation<Void, Never>] = []
     /// The response the next `runStop` call returns; `nil` synthesizes an
     /// idle row for the requested project.
     var runStopResponse: SupermuxRunWriteResponse?
@@ -170,6 +176,7 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     private(set) var callLog: [String] = []
     private(set) var projectsListCallCount = 0
     private(set) var runStateCallCount = 0
+    private(set) var runStartCallCount = 0
     private(set) var worktreesListCallCount = 0
     private(set) var iconRequests: [(projectID: String, etag: String?)] = []
     private(set) var subscribedTopicSets: [Set<SupermuxMobileTopic>] = []
@@ -446,18 +453,41 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     func runState(_ request: SupermuxRunStateRequest) async throws -> SupermuxRunStateResponse {
         callLog.append("runState")
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
-        if let runStateError { throw runStateError }
         runStateCallCount += 1
+        if runStateShouldHold {
+            await withCheckedContinuation { continuation in
+                runStateContinuations.append(continuation)
+            }
+        }
+        if let runStateError { throw runStateError }
         return runStateResponse
+    }
+
+    /// Resumes the oldest parked `runState` call, if any.
+    func resumeRunState() {
+        guard !runStateContinuations.isEmpty else { return }
+        runStateContinuations.removeFirst().resume()
     }
 
     func runStart(_ request: SupermuxRunStartRequest) async throws -> SupermuxRunWriteResponse {
         callLog.append("runStart")
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        runStartCallCount += 1
+        if runStartShouldHold {
+            await withCheckedContinuation { continuation in
+                runStartContinuations.append(continuation)
+            }
+        }
         if let runStartError { throw runStartError }
         return runStartResponse ?? SupermuxRunWriteResponse(
             run: SupermuxRunStateDTO(projectId: request.projectID, isRunning: true)
         )
+    }
+
+    /// Resumes the oldest parked `runStart` call, if any.
+    func resumeRunStart() {
+        guard !runStartContinuations.isEmpty else { return }
+        runStartContinuations.removeFirst().resume()
     }
 
     func runStop(_ request: SupermuxRunStopRequest) async throws -> SupermuxRunWriteResponse {

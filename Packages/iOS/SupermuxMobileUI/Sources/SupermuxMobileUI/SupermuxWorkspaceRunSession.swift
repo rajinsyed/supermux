@@ -23,6 +23,9 @@ public final class SupermuxWorkspaceRunSession {
     /// Creates an idle workspace run session.
     public init() {}
 
+    /// Whether the authoritative project list has completed its first fetch.
+    var hasLoadedProjects: Bool { projectsStore?.hasLoaded == true }
+
     /// Whether the title menu should show a run action for this project.
     ///
     /// The action stays hidden until the authoritative project list proves that
