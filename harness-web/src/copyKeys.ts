@@ -73,9 +73,9 @@ export const copyDefaults = {
   "supermux.harness.composer.attachmentUnsupported":
     "Unsupported image format. Use PNG, JPEG, GIF, or WebP.",
   "supermux.harness.composer.attachmentInvalid": "Could not read this image.",
-  "supermux.harness.composer.attachmentTooLarge": "Each image must be 512 KiB or smaller.",
+  "supermux.harness.composer.attachmentTooLarge": "Each image must be 10 MiB or smaller.",
   "supermux.harness.composer.attachmentTotalTooLarge":
-    "Attachments must total 2 MiB or less.",
+    "Attachments must total 20 MiB or less.",
   "supermux.harness.composer.attachmentTooMany": "You can attach up to 8 images.",
   "supermux.harness.composer.queued": "Queued",
   "supermux.harness.composer.cancelQueued": "Cancel queued message",

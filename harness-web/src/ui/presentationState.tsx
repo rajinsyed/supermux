@@ -71,32 +71,26 @@ class PresentationStateStore {
   markWasLive(
     turnKey: string,
     blockKeys: readonly string[],
+    stoppedBackgroundKeys: readonly string[],
     reachableKeys: readonly string[]
   ): void {
-    let keys = this.wasLiveByTurn.get(turnKey);
-    if (!keys) {
-      if (blockKeys.length === 0) return;
-      keys = new Set();
-      this.wasLiveByTurn.set(turnKey, keys);
-    } else {
-      // Refresh this turn's LRU position and discard blocks the canonical turn no
-      // longer reaches before applying the hard per-turn bound.
-      this.wasLiveByTurn.delete(turnKey);
-      this.wasLiveByTurn.set(turnKey, keys);
-      const reachable = new Set(reachableKeys);
-      for (const key of keys) {
-        if (!reachable.has(key)) keys.delete(key);
-      }
-    }
-    for (const key of blockKeys) {
-      keys.delete(key);
-      keys.add(key);
+    const reachable = new Set(reachableKeys);
+    const previous = this.wasLiveByTurn.get(turnKey);
+    const keys = new Set(blockKeys.filter((key) => reachable.has(key)));
+    // Stop arrives as two terminal frames (`killed`, then `stopped`). Keep a row
+    // that was live through the whole terminal sequence; ordinary sequential
+    // tools still disappear because they never enter stoppedBackgroundKeys.
+    for (const key of stoppedBackgroundKeys) {
+      if (reachable.has(key) && previous?.has(key)) keys.add(key);
     }
     while (keys.size > MAX_WAS_LIVE_KEYS_PER_TURN) {
       const oldest = keys.values().next().value;
       if (oldest === undefined) break;
       keys.delete(oldest);
     }
+
+    this.wasLiveByTurn.delete(turnKey);
+    if (keys.size > 0) this.wasLiveByTurn.set(turnKey, keys);
     while (this.wasLiveByTurn.size > MAX_WAS_LIVE_TURNS) {
       const oldest = this.wasLiveByTurn.keys().next().value;
       if (oldest === undefined) break;
@@ -172,36 +166,38 @@ export function usePresentationState(
 }
 
 /**
- * Durable membership for streaming-tail rows. The current live keys are included
- * synchronously; a layout effect records them before the next frame can settle a
- * task and virtual unmount/remount can then recover the history.
+ * Liveness memory for streaming-tail rows. Current live keys are included
+ * synchronously; a live background row that enters a stopped state remains
+ * retained through every terminal acknowledgement frame.
  */
 export function useWasLiveKeys(
   turnKey: string,
   currentLiveKeys: readonly string[],
+  stoppedBackgroundKeys: readonly string[],
   reachableKeys: readonly string[]
 ): ReadonlySet<string> {
   const store = useContext(PresentationStateContext);
   const fallback = useMemo(() => new Set<string>(), [turnKey]);
   useLayoutEffect(() => {
     if (store) {
-      store.markWasLive(turnKey, currentLiveKeys, reachableKeys);
+      store.markWasLive(turnKey, currentLiveKeys, stoppedBackgroundKeys, reachableKeys);
       return;
     }
     const reachable = new Set(reachableKeys);
-    for (const key of fallback) {
-      if (!reachable.has(key)) fallback.delete(key);
-    }
+    const previous = new Set(fallback);
+    fallback.clear();
     for (const key of currentLiveKeys) {
-      fallback.delete(key);
-      fallback.add(key);
+      if (reachable.has(key)) fallback.add(key);
+    }
+    for (const key of stoppedBackgroundKeys) {
+      if (reachable.has(key) && previous.has(key)) fallback.add(key);
     }
     while (fallback.size > MAX_WAS_LIVE_KEYS_PER_TURN) {
       const oldest = fallback.values().next().value;
       if (oldest === undefined) break;
       fallback.delete(oldest);
     }
-  }, [currentLiveKeys, fallback, reachableKeys, store, turnKey]);
+  }, [currentLiveKeys, fallback, reachableKeys, stoppedBackgroundKeys, store, turnKey]);
 
   return useMemo(() => {
     const keys = new Set(store?.wasLive(turnKey) ?? fallback);

@@ -78,6 +78,22 @@ import Testing
         }
     }
 
+    @Test func encoderAcceptsImageAboveLegacyClipboardLimit() throws {
+        let image = Data(repeating: 0x61, count: 6 * 1024 * 1024)
+            .base64EncodedString()
+        let frame = try encoder.userMessage(
+            text: "inspect",
+            images: [SupermuxHarnessImage(mediaType: "image/png", dataBase64: image)],
+            uuid: "large-image"
+        )
+
+        let content = try #require(
+            try frame.jsonObject().object(forKey: "message")?.rawValue["content"] as? [[String: Any]]
+        )
+        let source = try #require(content.last?["source"] as? [String: Any])
+        #expect(source["data"] as? String == image)
+    }
+
     @Test func encoderRejectsPerImageAggregateAndCountLimitViolations() {
         let policy = SupermuxHarnessAttachmentPolicy.self
         let oversized = Data(repeating: 0x61, count: policy.maximumImageBytes + 1)
@@ -90,13 +106,15 @@ import Testing
             )
         }
 
-        let maximumImage = Data(repeating: 0x62, count: policy.maximumImageBytes)
-            .base64EncodedString()
+        let aggregateImage = Data(
+            repeating: 0x62,
+            count: policy.maximumTotalImageBytes / 5 + 1
+        ).base64EncodedString()
         #expect(throws: SupermuxHarnessAttachmentPolicy.ValidationError.self) {
             _ = try encoder.userMessage(
                 text: "inspect",
                 images: (0..<5).map { _ in
-                    SupermuxHarnessImage(mediaType: "image/png", dataBase64: maximumImage)
+                    SupermuxHarnessImage(mediaType: "image/png", dataBase64: aggregateImage)
                 },
                 uuid: "aggregate"
             )

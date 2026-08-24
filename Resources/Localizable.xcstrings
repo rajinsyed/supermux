@@ -272782,13 +272782,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Each image must be 512 KiB or smaller."
+            "value" : "Each image must be 10 MiB or smaller."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "画像1枚あたり512 KiB以下にしてください。"
+            "value" : "画像1枚あたり10 MiB以下にしてください。"
           }
         }
       }
@@ -272816,13 +272816,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Attachments must total 2 MiB or less."
+            "value" : "Attachments must total 20 MiB or less."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添付画像の合計サイズは2 MiB以下にしてください。"
+            "value" : "添付画像の合計サイズは20 MiB以下にしてください。"
           }
         }
       }

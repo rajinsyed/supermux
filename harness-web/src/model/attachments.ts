@@ -3,12 +3,14 @@ import type { ImageAttachment } from "./types";
 
 export type { AttachmentErrorCode } from "../bridge";
 
-export const MAXIMUM_IMAGE_BYTES = 512 * 1024;
-export const MAXIMUM_TOTAL_IMAGE_BYTES = 2 * 1024 * 1024;
+// Match Claude's direct-API image ceiling; the aggregate stays below the
+// standard 32 MiB request envelope after base64 expansion and JSON overhead.
+export const MAXIMUM_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAXIMUM_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAXIMUM_IMAGE_COUNT = 8;
 
 const SUPPORTED_MEDIA_TYPES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
-const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const BASE64_CHUNK_BYTES = 32 * 1024;
 
 export interface PickedImageAttachments {
   images: ImageAttachment[];
@@ -21,6 +23,8 @@ export interface PendingImageAttachment {
   blob: Blob;
   name?: string;
   previewURL: string;
+  /** Reuse native-picker bytes instead of decoding and encoding the same payload twice. */
+  dataBase64?: string;
 }
 
 type AttachmentResult =
@@ -68,7 +72,8 @@ export function attachmentFromPayload(payload: ImageAttachment): AttachmentResul
       attachment: {
         mediaType: payload.mediaType,
         blob: new Blob([bytes], { type: payload.mediaType }),
-        name: payload.name
+        name: payload.name,
+        dataBase64: payload.dataBase64
       }
     };
   } catch {
@@ -79,10 +84,11 @@ export function attachmentFromPayload(payload: ImageAttachment): AttachmentResul
 export async function payloadFromAttachment(
   attachment: PendingImageAttachment
 ): Promise<ImageAttachment> {
-  const bytes = new Uint8Array(await attachment.blob.arrayBuffer());
+  const dataBase64 =
+    attachment.dataBase64 ?? encodeBase64(new Uint8Array(await attachment.blob.arrayBuffer()));
   return {
     mediaType: attachment.mediaType,
-    dataBase64: encodeBase64(bytes),
+    dataBase64,
     ...(attachment.name ? { name: attachment.name } : {})
   };
 }
@@ -93,17 +99,9 @@ function isStrictBase64(value: string): boolean {
 }
 
 function encodeBase64(bytes: Uint8Array): string {
-  let result = "";
-  for (let index = 0; index < bytes.length; index += 3) {
-    const first = bytes[index];
-    const hasSecond = index + 1 < bytes.length;
-    const hasThird = index + 2 < bytes.length;
-    const second = hasSecond ? bytes[index + 1] : 0;
-    const third = hasThird ? bytes[index + 2] : 0;
-    result += BASE64_ALPHABET[first >> 2];
-    result += BASE64_ALPHABET[((first & 0x03) << 4) | (second >> 4)];
-    result += hasSecond ? BASE64_ALPHABET[((second & 0x0f) << 2) | (third >> 6)] : "=";
-    result += hasThird ? BASE64_ALPHABET[third & 0x3f] : "=";
+  const chunks: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK_BYTES) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + BASE64_CHUNK_BYTES)));
   }
-  return result;
+  return btoa(chunks.join(""));
 }

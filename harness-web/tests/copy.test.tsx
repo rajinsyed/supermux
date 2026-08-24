@@ -6,6 +6,7 @@ import { replayLines } from "../src/model/transcript";
 import type { ToolBlock, Turn } from "../src/model/types";
 import { CopyProvider } from "../src/ui/CopyContext";
 import { formatRelativeTime } from "../src/ui/format";
+import { Markdown } from "../src/ui/primitives/Markdown";
 import { toolMetrics } from "../src/ui/tools/ToolBodies";
 import { ToolCard } from "../src/ui/tools/ToolCard";
 import { TurnView } from "../src/ui/transcript/TurnView";
@@ -149,6 +150,17 @@ describe("relative time comes from the catalog", () => {
     }) as typeof copy;
     expect(formatRelativeTime(now - 10_000, ja, now)).toBe("たった今");
     expect(formatRelativeTime(now - 7 * 60_000, ja, now)).toBe("7分前");
+  });
+});
+
+describe("assistant Markdown links", () => {
+  test("renders a tagged macOS dogfood launch URL as a clickable link", () => {
+    const { container } = mount(
+      <Markdown text="[Open harness-fixes](cmux-dev-harness-fixes://launch)" />
+    );
+    const link = container.querySelector<HTMLAnchorElement>("a");
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href")).toBe("cmux-dev-harness-fixes://launch");
   });
 });
 

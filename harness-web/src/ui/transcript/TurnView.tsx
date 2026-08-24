@@ -18,9 +18,6 @@ import { useFoldGuardHost } from "./foldGuard";
 import { RelayChip } from "./RelayChip";
 import { UserMessage } from "./UserMessage";
 
-/** Trailing work rows kept visible while a turn is still running. */
-const LIVE_TAIL = 1;
-
 function splitBlocks(turn: Turn): { work: Block[]; tail: Block[] } {
   // A failed agent attempt that a later retry replaced is the retry's history,
   // not sibling work: filtered before counts and folds, or "Failed" rows and
@@ -61,31 +58,50 @@ function isLive(block: Block): boolean {
   return hasLiveBackgroundWork({ blocks: [block] } as Turn);
 }
 
+function isStoppedBackgroundWork(block: Block): boolean {
+  if (block.kind !== "tool" || block.subagent?.background !== true) return false;
+  return block.subagent.status === "stopped" || block.subagent.status === "killed";
+}
+
 /**
  * Which work rows are folded away while the turn streams. Empty once the turn
  * settles: a settled turn shows everything (behind the fold header).
  *
- * `wasLive` is the set of blocks that have been live at any point in this turn,
- * and membership is permanent. Liveness alone is not enough: pressing Stop on a
- * background shell settles its task, which un-lives the card, which drops it
- * behind "3 earlier tool calls" IN THE SAME FRAME — the row the user just acted
- * on disappearing as the acknowledgement of the act. A card that earned a place
- * on screen by running keeps it until the turn settles and the whole tree opens.
+ * `wasLive` remembers live background rows through their killed/stopped terminal
+ * sequence. Ordinary sequential tools are never retained, so they still fold as
+ * soon as the next activity replaces them.
  */
 function hiddenWhileStreaming(
   work: Block[],
   settled: boolean,
   wasLive: ReadonlySet<string>
 ): boolean[] {
-  if (settled || work.length <= LIVE_TAIL) return work.map(() => false);
-  const keepFrom = work.length - LIVE_TAIL;
-  // Anything still running stays on screen wherever it sits: a subagent that
-  // spawned ten tools ago is the row a user most wants to watch. The user's
-  // own interjected message stays too — a bubble that vanishes behind
-  // "3 earlier tool calls" seconds after it was sent reads as a swallowed send.
+  if (settled || work.length <= 1) return work.map(() => false);
+
+  let latestTextIndex = -1;
+  let latestToolIndex = -1;
+  for (let index = work.length - 1; index >= 0; index -= 1) {
+    const block = work[index];
+    if (latestTextIndex < 0 && block.kind === "text" && block.text.trim().length > 0) {
+      latestTextIndex = index;
+    }
+    if (latestToolIndex < 0 && block.kind === "tool") latestToolIndex = index;
+    if (latestTextIndex >= 0 && latestToolIndex >= 0) break;
+  }
+  const fallbackIndex = latestTextIndex < 0 && latestToolIndex < 0 ? work.length - 1 : -1;
+
+  // The default live surface is at most two status rows: Claude's latest text
+  // update and the latest tool call. Anything still running stays on screen
+  // wherever it sits, and a user interjection stays visible so a just-sent
+  // message never disappears behind the overflow control.
   return work.map(
     (block, index) =>
-      index < keepFrom && block.kind !== "userText" && !wasLive.has(block.key)
+      index !== latestTextIndex &&
+      index !== latestToolIndex &&
+      index !== fallbackIndex &&
+      block.kind !== "userText" &&
+      !isLive(block) &&
+      !(wasLive.has(block.key) && isStoppedBackgroundWork(block))
   );
 }
 
@@ -151,8 +167,17 @@ export const TurnView = memo(function TurnView({
     () => work.filter(isLive).map((block) => block.key),
     [work]
   );
+  const stoppedBackgroundKeys = useMemo(
+    () => work.filter(isStoppedBackgroundWork).map((block) => block.key),
+    [work]
+  );
   const reachableWorkKeys = useMemo(() => work.map((block) => block.key), [work]);
-  const wasLive = useWasLiveKeys(turn.id, currentLiveKeys, reachableWorkKeys);
+  const wasLive = useWasLiveKeys(
+    turn.id,
+    currentLiveKeys,
+    stoppedBackgroundKeys,
+    reachableWorkKeys
+  );
   const hidden = useMemo(
     () => hiddenWhileStreaming(work, settled, wasLive),
     [work, settled, wasLive]

@@ -118,8 +118,13 @@ describe("classifyLocalUserText", () => {
     ).toEqual({ kind: "commandOutput", text: "Compacted conversation" });
   });
 
-  test("hides caveat scaffolding, task notifications, system reminders, and empty stdout", () => {
+  test("hides caveat scaffolding, skill payloads, task notifications, system reminders, and empty stdout", () => {
     expect(classifyLocalUserText(CAVEAT).kind).toBe("hidden");
+    expect(
+      classifyLocalUserText(
+        "Base directory for this skill: /tmp/example/.claude/skills/cmux-testing\n\n# cmux Testing\n\nInternal skill instructions"
+      ).kind
+    ).toBe("hidden");
     expect(classifyLocalUserText("<task-notification>\n<task-id>x</task-id>").kind).toBe("hidden");
     expect(classifyLocalUserText("<system-reminder>internal guidance</system-reminder>").kind).toBe(
       "hidden"

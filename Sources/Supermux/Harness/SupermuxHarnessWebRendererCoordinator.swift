@@ -40,8 +40,6 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     nonisolated private static let deliveryRetryIntervalNanoseconds: UInt64 = 33_000_000
     nonisolated private static let shellRecoveryDelayNanoseconds: UInt64 = 100_000_000
     nonisolated private static let maximumConsecutiveShellRecoveryAttempts = 3
-    nonisolated static let imagePreviewMaxBytes = 512 * 1024
-    nonisolated static let imagePreviewTotalMaxBytes = 2 * 1024 * 1024
 
     var onSessionStateChanged: ((Bool) -> Void)?
     var onSessionTitleChanged: ((String?) -> Void)?
@@ -742,9 +740,35 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         return url.standardizedFileURL.resolvingSymlinksInPath()
     }
 
+    nonisolated static func isAllowedExternalLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        if scheme == "http" || scheme == "https" || scheme == "mailto" {
+            return true
+        }
+
+        let prefix = "cmux-dev-"
+        guard scheme.hasPrefix(prefix) else { return false }
+        let tag = scheme.dropFirst(prefix.count)
+        guard let first = tag.first,
+              let last = tag.last,
+              first != "-",
+              last != "-",
+              tag.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }),
+              url.host?.lowercased() == "launch",
+              url.user == nil,
+              url.password == nil,
+              url.port == nil,
+              url.path.isEmpty || url.path == "/",
+              url.query == nil,
+              url.fragment == nil else {
+            return false
+        }
+        return true
+    }
+
     private func handleExternalLink(_ url: URL) {
-        guard let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" || scheme == "mailto" else {
+        guard Self.isAllowedExternalLink(url),
+              let scheme = url.scheme?.lowercased() else {
             return
         }
 

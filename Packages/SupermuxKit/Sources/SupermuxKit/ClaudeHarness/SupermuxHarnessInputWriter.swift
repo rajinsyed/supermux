@@ -2,8 +2,8 @@ import Darwin
 import Foundation
 
 actor SupermuxHarnessInputWriter {
-    /// Covers the largest policy-valid 2 MiB image payload after base64 and JSON framing.
-    private static let maximumQueuedBytes = 4 * 1024 * 1024
+    /// Covers the 20 MiB attachment aggregate after base64 and JSON framing.
+    private static let maximumQueuedBytes = 32 * 1024 * 1024
 
     private struct QueuedWrite {
         let id: UInt64

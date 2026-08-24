@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { fixtures } from "../src/dev/fixtures";
 import { shellsFixture, withWorkflowLogs, workflowFixture } from "../src/dev/fixtures/round3";
 import { replayLines } from "../src/model/transcript";
@@ -26,15 +26,17 @@ function streamingTurn(): Turn {
 }
 
 /** Work rows hidden by the streaming overflow are mounted but display: none. */
+function isVisible(node: HTMLElement): boolean {
+  for (let current: HTMLElement | null = node; current; current = current.parentElement) {
+    if (current.style.display === "none") return false;
+  }
+  return true;
+}
+
 function visibleCards(container: HTMLElement): HTMLElement[] {
   return Array.from(
     container.querySelectorAll<HTMLElement>(".turn-work .tool-card, .turn-work .subagent-card")
-  ).filter((card) => {
-    for (let node: HTMLElement | null = card; node; node = node.parentElement) {
-      if (node.style.display === "none") return false;
-    }
-    return true;
-  });
+  ).filter(isVisible);
 }
 
 describe("work-group overflow while a turn runs", () => {
@@ -48,6 +50,81 @@ describe("work-group overflow while a turn runs", () => {
     expect(overflow).not.toBeNull();
 
     expect(visibleCards(container).length).toBeLessThan(workBlocks);
+  });
+
+  test("shows the latest assistant update beside the latest tool row", () => {
+    const turn = streamingTurn();
+    const tools = turn.blocks
+      .filter((block) => block.kind === "tool")
+      .slice(-2)
+      .map((block) => ({ ...block, status: "success" as const, subagent: undefined }));
+    expect(tools.length).toBe(2);
+    const { container } = mount({
+      ...turn,
+      blocks: [
+        {
+          kind: "text",
+          key: "earlier-update",
+          messageId: "earlier-update",
+          text: "Earlier progress",
+          streaming: false
+        },
+        tools[0],
+        {
+          kind: "text",
+          key: "latest-update",
+          messageId: "latest-update",
+          text: "Checking the final state",
+          streaming: false
+        },
+        tools[1]
+      ]
+    });
+
+    const visibleUpdates = Array.from(
+      container.querySelectorAll<HTMLElement>(".turn-work .assistant-text")
+    ).filter(isVisible);
+    expect(visibleUpdates.map((node) => node.textContent)).toEqual(["Checking the final state"]);
+    expect(visibleCards(container).length).toBe(1);
+  });
+
+  test("sequential live tools do not accumulate across renders", async () => {
+    const turn = streamingTurn();
+    const tools = turn.blocks
+      .filter((block) => block.kind === "tool")
+      .slice(-3)
+      .map((block) => ({
+        ...block,
+        status: "success" as const,
+        subagent: undefined,
+        workflow: undefined,
+        structured: undefined,
+        children: []
+      }));
+    expect(tools.length).toBe(3);
+
+    const phase = (liveIndex: number): Turn => ({
+      ...turn,
+      blocks: tools.slice(0, liveIndex + 1).map((tool, index) => ({
+        ...tool,
+        status: index === liveIndex ? "running" as const : "success" as const
+      }))
+    });
+    const { container, rerender } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={phase(0)} isLast />
+      </CopyProvider>
+    );
+    expect(visibleCards(container).length).toBe(1);
+
+    for (const liveIndex of [1, 2]) {
+      rerender(
+        <CopyProvider dict={undefined}>
+          <TurnView turn={phase(liveIndex)} isLast />
+        </CopyProvider>
+      );
+      await waitFor(() => expect(visibleCards(container).length).toBe(1), { timeout: 800 });
+    }
   });
 
   test("the expander reveals every block it hid", () => {
@@ -168,13 +245,13 @@ describe("work-group overflow while a turn runs", () => {
 });
 
 /**
- * `LIVE_TAIL = 1` means the streaming turn shows exactly ONE work row, so that
- * row's height is the layout. `defaultOpen` auto-expanded bash/todo/task/patched
- * edit but left read/search shut, so as a turn cycled Read → Edit → Bash → Read
- * the single row swapped between a collapsed strip and an open terminal card —
- * measured on `longform` at 9.63 shifts/second, largest 132px, of settled text
- * the reader was mid-paragraph on. Auto-expansion now waits for the turn to
- * settle, which is a boundary the reader already expects to reflow.
+ * A streaming turn keeps only its latest assistant update and latest tool row by
+ * default, so those rows' height is the layout. `defaultOpen` auto-expanded
+ * bash/todo/task/patched edit but left read/search shut, so as a turn cycled
+ * Read → Edit → Bash → Read the current tool swapped between a collapsed strip
+ * and an open terminal card — measured on `longform` at 9.63 shifts/second,
+ * largest 132px, of settled text the reader was mid-paragraph on. Auto-expansion
+ * now waits for the turn to settle, which is a boundary the reader expects.
  */
 describe("the live work row does not auto-size while a turn streams", () => {
   function toolTurn(): Turn {
@@ -215,14 +292,13 @@ describe("the live work row does not auto-size while a turn streams", () => {
     expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(true);
   });
 
-  test("a failure still auto-opens even while the turn streams", () => {
-    // The error text is the whole reason the card is tinted; hiding it to keep
-    // the row short would trade one defect for a worse one.
+  test("a failure stays collapsed while the turn streams", () => {
     const turn = toolTurn();
     const tool = turn.blocks.find((b) => b.kind === "tool")!;
     const failed = { ...tool, status: "error" as const, resultText: "Error: ENOENT" };
     const { container } = mount({ ...turn, blocks: [failed] });
-    expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(true);
+    expect(container.querySelector(".tool-card")!.classList.contains("is-open")).toBe(false);
+    expect(container.querySelector(".tool-head")!.getAttribute("aria-expanded")).toBe("false");
   });
 
   test("the user can still open a live row by hand", () => {
@@ -289,11 +365,10 @@ describe("an automatic fold never sweeps away what the reader opened", () => {
    * the one workflow surface that still lives inside a turn.
    */
 
-  test("stopping a background shell does not fold its card out of the run", () => {
-    // Finding 4: the same sweep, one frame wide. A backgrounded shell is `live`
-    // only while its task runs, so the moment Stop settles the task the card
-    // stopped being live and dropped behind "N earlier tool calls" — instantly,
-    // in the frame that answered the click.
+  test("stopping a background shell keeps its card through every terminal frame", async () => {
+    // The CLI reports one stop twice: task_updated says `killed`, then the
+    // task_notification says `stopped`. A one-render liveness grace kept the card
+    // for the first frame and folded it away on the second acknowledgement.
     const running = replayLines(shellsFixture.slice(0, 27));
     const streaming: Turn = {
       ...running.turns[0],
@@ -310,26 +385,33 @@ describe("an automatic fold never sweeps away what the reader opened", () => {
       Array.from(container.querySelectorAll<HTMLElement>(".turn-work > *")).find((node) =>
         node.textContent?.includes("tick")
       );
-    const before = shell();
-    expect(before).toBeDefined();
-    expect(before!.style.display).not.toBe("none");
+    expect(shell()).toBeDefined();
+    expect(shell()!.style.display).not.toBe("none");
 
-    // Replay the CLI's real kill sequence onto the same turn.
-    const stopped = replayLines(shellsFixture);
-    rerender(
-      <CopyProvider dict={undefined}>
-        <TurnView
-          turn={{
-            ...streaming,
-            blocks: stopped.turns[0].blocks.slice(0, streaming.blocks.length)
-          }}
-          isLast
-        />
-      </CopyProvider>
-    );
-    const after = shell();
-    expect(after).toBeDefined();
-    expect(after!.style.display).not.toBe("none");
+    const renderThrough = (count: number) => {
+      const replayed = replayLines(shellsFixture.slice(0, count));
+      rerender(
+        <CopyProvider dict={undefined}>
+          <TurnView
+            turn={{
+              ...streaming,
+              blocks: replayed.turns[0].blocks.slice(0, streaming.blocks.length)
+            }}
+            isLast
+          />
+        </CopyProvider>
+      );
+    };
+
+    renderThrough(48); // task_updated: killed
+    expect(shell()!.style.display).not.toBe("none");
+
+    renderThrough(49); // task_notification: stopped
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(shell()).toBeDefined();
+    expect(shell()!.style.display).not.toBe("none");
   });
 });
 

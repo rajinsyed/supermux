@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { taskBridgeStub } from "./bridgeStub";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { HarnessBridge, StartParams } from "../src/bridge";
 import { HarnessBridgeError } from "../src/bridge";
 import type { ProtocolLine } from "../src/protocol/types";
@@ -31,6 +31,8 @@ interface Script {
   historyEvents?: ProtocolLine[];
   loadHistory?: (sessionId: string) => Promise<{ events: ProtocolLine[]; truncated: boolean }>;
   cachedModels?: boolean;
+  contextUsagePercentages?: number[];
+  contextUsageCalls: number;
 }
 
 function makeBridge(script: Script): HarnessBridge {
@@ -107,7 +109,10 @@ function makeBridge(script: Script): HarnessBridge {
     respondPermission: noop,
     renameSession: noop,
     async getContextUsage() {
-      return { totalTokens: 0, maxTokens: 200000, percentage: 0 };
+      const percentages = script.contextUsagePercentages ?? [0];
+      const percentage = percentages[Math.min(script.contextUsageCalls, percentages.length - 1)];
+      script.contextUsageCalls += 1;
+      return { totalTokens: percentage * 2000, maxTokens: 200000, percentage };
     },
     async fileSuggestions() {
       return { paths: [] };
@@ -153,6 +158,7 @@ function script(overrides: Partial<Script> = {}): Script {
     rewindParams: [],
     openedInNewPane: [],
     running: false,
+    contextUsageCalls: 0,
     ...overrides
   };
 }
@@ -739,5 +745,83 @@ describe("opening a session in another pane", () => {
     await flush();
     expect(s.openedInNewPane).toEqual(["session-xyz"]);
     expect(s.calls).not.toContain("restart");
+  });
+});
+
+describe("live context usage", () => {
+  test("refreshes after an assistant step while the turn is still streaming", async () => {
+    const s = script({ contextUsagePercentages: [10, 25] });
+    const { store, out } = await mount(s);
+
+    act(() => {
+      store.receive([{ kind: "runStarted", runId: "run-live-context" }]);
+      store.flushNow();
+      store.dispatch({
+        kind: "localSend",
+        uuid: "first-prompt",
+        text: "first",
+        atMs: 1000
+      });
+      store.receive([
+        {
+          kind: "protocol",
+          line: {
+            type: "assistant",
+            uuid: "assistant-complete",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "done" }]
+            }
+          }
+        },
+        {
+          kind: "protocol",
+          line: {
+            type: "result",
+            uuid: "result-complete",
+            subtype: "success",
+            is_error: false,
+            result: "done"
+          }
+        }
+      ]);
+      store.flushNow();
+    });
+
+    await waitFor(() => expect(out.current?.model.contextUsage?.percentage).toBe(10));
+
+    act(() => {
+      store.dispatch({
+        kind: "localSend",
+        uuid: "second-prompt",
+        text: "second",
+        atMs: 2000
+      });
+      store.receive([
+        {
+          kind: "protocol",
+          line: {
+            type: "assistant",
+            uuid: "assistant-live",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "tool_use",
+                  id: "tool-live",
+                  name: "Read",
+                  input: { file_path: "/tmp/example" }
+                }
+              ]
+            }
+          }
+        }
+      ]);
+      store.flushNow();
+    });
+
+    expect(store.getSnapshot().turns.at(-1)?.state).toBe("streaming");
+    await waitFor(() => expect(out.current?.model.contextUsage?.percentage).toBe(25));
+    expect(s.contextUsageCalls).toBe(2);
   });
 });

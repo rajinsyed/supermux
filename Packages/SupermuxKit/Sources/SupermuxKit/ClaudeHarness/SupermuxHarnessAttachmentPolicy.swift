@@ -2,10 +2,10 @@ import Foundation
 
 /// Validates image attachments before they cross a harness protocol boundary.
 public struct SupermuxHarnessAttachmentPolicy: Sendable {
-    /// The largest decoded payload accepted for one image.
-    public static let maximumImageBytes = 512 * 1024
-    /// The largest decoded payload accepted across one message's images.
-    public static let maximumTotalImageBytes = 2 * 1024 * 1024
+    /// Claude's direct-API ceiling for one decoded image payload.
+    public static let maximumImageBytes = 10 * 1024 * 1024
+    /// Keeps base64 expansion plus JSON below the standard 32 MiB request envelope.
+    public static let maximumTotalImageBytes = 20 * 1024 * 1024
     /// The largest image count accepted by the composer's single attachment strip.
     public static let maximumImageCount = 8
     /// MIME types accepted by Claude's image content-block protocol.

@@ -35,6 +35,7 @@ interface MarkdownProps {
 }
 
 const ALLOWED_PROTOCOL = /^(https?:|mailto:|#|\/)/i;
+const DOGFOOD_LAUNCH_URL = /^cmux-dev-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:\/\/launch\/?$/i;
 const REMARK_PLUGINS = [remarkGfm];
 const STREAM_PARSER = unified().use(remarkParse).use(remarkGfm);
 
@@ -126,7 +127,12 @@ export function resetStreamingMarkdownDiagnostics(): void {
 
 function safeHref(href: string | undefined): string | undefined {
   if (!href) return undefined;
-  return ALLOWED_PROTOCOL.test(href.trim()) ? href : undefined;
+  const trimmed = href.trim();
+  return ALLOWED_PROTOCOL.test(trimmed) || DOGFOOD_LAUNCH_URL.test(trimmed) ? trimmed : undefined;
+}
+
+function safeUrlTransform(href: string): string {
+  return safeHref(href) ?? "";
 }
 
 export const Markdown = memo(function Markdown({
@@ -263,7 +269,12 @@ const MarkdownContent = memo(function MarkdownContent({
   );
 
   return (
-    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components} skipHtml>
+    <ReactMarkdown
+      remarkPlugins={REMARK_PLUGINS}
+      components={components}
+      urlTransform={safeUrlTransform}
+      skipHtml
+    >
       {text}
     </ReactMarkdown>
   );

@@ -44,6 +44,15 @@ export function applyAssistant(
     next = evictUuids(next, new Set(line.supersedes));
   }
   const parent = line.parent_tool_use_id ?? null;
+  if (!parent) {
+    // A turn can contain many API steps. Each complete main-thread assistant
+    // frame is a new context accounting boundary, even while the turn remains
+    // streaming through its next tool call.
+    next = {
+      ...next,
+      contextUsageRefreshRevision: next.contextUsageRefreshRevision + 1
+    };
+  }
   // The record's own clock when it has one — replayed frames arrive long after
   // they were written, and turns stamped at wall-now report nonsense spans.
   const stamp = line.timestamp ? Date.parse(line.timestamp) : Number.NaN;

@@ -106,7 +106,7 @@ struct SupermuxHarnessInputWriterTests {
     @Test func rejectsSingleWriteLargerThanQueueCapacity() async {
         let pipe = Pipe()
         let writer = SupermuxHarnessInputWriter(fileHandle: pipe.fileHandleForWriting)
-        let data = Data(repeating: 0, count: 4 * 1024 * 1024 + 1)
+        let data = Data(repeating: 0, count: 32 * 1024 * 1024 + 1)
         do {
             try await writer.write(data)
             Issue.record("Expected queue-cap error")
