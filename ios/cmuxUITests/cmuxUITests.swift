@@ -6785,6 +6785,7 @@ final class cmuxUITests: XCTestCase {
     func testWorkspaceSurfacePickerClosesTheLocalBrowserThroughSharedPaneAction() throws {
         let app = launchWorkspaceDetailDelayedTerminalPreviewApp()
         let terminalDropdown = app.buttons["MobileTerminalDropdown"]
+        let titleMenu = workspaceTitleElement(in: app)
 
         tap(terminalDropdown, in: app)
         tapMenuItem(app.buttons["MobileNewBrowserMenuItem"], in: app)
@@ -6792,7 +6793,11 @@ final class cmuxUITests: XCTestCase {
         let browserCloseButton = app.buttons["MobileBrowserCloseButton"]
         XCTAssertTrue(browserCloseButton.waitForExistence(timeout: 4))
 
-        // The existing browser × and the new picker command share the same
+        tap(terminalDropdown, in: app)
+        assertMenuButtonDoesNotExist("MobileClosePaneMenuItem", in: app)
+        dismissOpenMenu(in: app)
+
+        // The existing browser × and the title-menu command share the same
         // captured-target confirmation path.
         tap(browserCloseButton, in: app)
         let cancel = app.buttons["MobileClosePaneCancelButton"]
@@ -6800,7 +6805,7 @@ final class cmuxUITests: XCTestCase {
         tap(cancel, in: app)
         XCTAssertTrue(browserCloseButton.exists)
 
-        tap(terminalDropdown, in: app)
+        tap(titleMenu, in: app)
         let closePane = app.buttons["MobileClosePaneMenuItem"]
         XCTAssertTrue(closePane.waitForExistence(timeout: 4))
         tapMenuItem(closePane, in: app)

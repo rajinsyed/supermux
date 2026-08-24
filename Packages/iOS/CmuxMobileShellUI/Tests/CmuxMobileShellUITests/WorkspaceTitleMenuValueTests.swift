@@ -27,9 +27,23 @@ import Testing
         #expect(available != unavailable)
     }
 
+    @Test func forkMenuFingerprintInvalidatesTheMenuValue() {
+        let stopped = menuValue(
+            labelToken: .standard(title: "Workspace", subtitle: "Terminal"),
+            toolEntriesFingerprint: "run:false|close:true"
+        )
+        let running = menuValue(
+            labelToken: stopped.labelToken,
+            toolEntriesFingerprint: "run:true|close:true"
+        )
+
+        #expect(stopped != running)
+    }
+
     private func menuValue(
         labelToken: WorkspaceTitleMenuLabelToken,
-        canCustomizeWorkspace: Bool = true
+        canCustomizeWorkspace: Bool = true,
+        toolEntriesFingerprint: String = ""
     ) -> WorkspaceTitleMenuValue {
         WorkspaceTitleMenuValue(
             contentWidth: 390,
@@ -45,6 +59,7 @@ import Testing
             canRenameWorkspace: true,
             canToggleReadState: true,
             canCloseWorkspace: true,
+            toolEntriesFingerprint: toolEntriesFingerprint,
             labelToken: labelToken,
             terminalTheme: .monokai
         )

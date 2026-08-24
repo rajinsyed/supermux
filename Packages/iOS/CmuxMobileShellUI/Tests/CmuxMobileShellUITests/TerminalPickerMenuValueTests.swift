@@ -59,7 +59,7 @@ import Testing
     }
 
     // SUPERMUX:begin ios-pane-actions
-    @Test func paneActionAvailabilityParticipatesInMenuIdentity() {
+    @Test func simulatorCreationAvailabilityParticipatesInMenuIdentity() {
         let hidden = TerminalPickerMenuValue(
             liveTerminals: [],
             snapshotRows: [],
@@ -73,14 +73,11 @@ import Testing
             selectedID: nil,
             canCreateWorkspace: true,
             hasActiveBrowser: false,
-            canCreateSimulator: true,
-            canClosePane: true
+            canCreateSimulator: true
         )
 
         #expect(!hidden.canCreateSimulator)
-        #expect(!hidden.canClosePane)
         #expect(visible.canCreateSimulator)
-        #expect(visible.canClosePane)
         #expect(visible != hidden)
     }
     // SUPERMUX:end ios-pane-actions

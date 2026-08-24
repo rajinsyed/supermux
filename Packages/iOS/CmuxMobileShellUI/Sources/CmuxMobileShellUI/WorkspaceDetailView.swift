@@ -63,6 +63,7 @@ struct WorkspaceDetailView: View {
     /// `supermuxWorkspaceTools` sheet mount is shared with the macOS branch.
     @State var isSupermuxChangesSheetPresented = false
     @State var isSupermuxFilesSheetPresented = false
+    @State var supermuxWorkspaceRunSession = SupermuxWorkspaceRunSession()
     // SUPERMUX:end ios-workspace-toolbar-persistent-actions
     #if canImport(UIKit)
     @State private var isFeedbackComposerPresented = false
@@ -203,6 +204,8 @@ struct WorkspaceDetailView: View {
                 connection: store.supermuxConnectionSeam,
                 workspaceID: workspace.rpcWorkspaceID.rawValue,
                 workspaceName: workspace.name,
+                projectID: workspace.supermuxProjectID,
+                runSession: supermuxWorkspaceRunSession,
                 showingChanges: $isSupermuxChangesSheetPresented,
                 showingFiles: $isSupermuxFilesSheetPresented
             )
@@ -449,6 +452,10 @@ struct WorkspaceDetailView: View {
     private var workspaceTitleToolMenuEntries: some View {
         SupermuxWorkspaceToolsMenuEntries(
             hostCapabilities: store.supermuxConnectionSeam?.hostCapabilities,
+            projectID: workspace.supermuxProjectID,
+            runSession: supermuxWorkspaceRunSession,
+            canClosePane: canCloseActivePane,
+            closePane: requestClosePane,
             showingChanges: $isSupermuxChangesSheetPresented,
             showingFiles: $isSupermuxFilesSheetPresented
         )
@@ -463,7 +470,10 @@ struct WorkspaceDetailView: View {
         let files = SupermuxWorkspaceTools.showsFilesEntry(
             hostCapabilities: seam?.hostCapabilities
         )
-        return "\(changes)|\(files)"
+        let run = supermuxWorkspaceRunSession.menuIdentityToken(
+            forProjectID: workspace.supermuxProjectID
+        )
+        return "\(changes)|\(files)|\(canCloseActivePane)|\(run)"
     }
     // SUPERMUX:end ios-workspace-toolbar-persistent-actions
 
@@ -478,6 +488,10 @@ struct WorkspaceDetailView: View {
             trailingItemCount: structuralTrailingItemKeys.count,
             // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
             isEnabled: hasTitleMenuActions
+                || canCloseActivePane
+                || supermuxWorkspaceRunSession.showsEntry(
+                    forProjectID: workspace.supermuxProjectID
+                )
                 || SupermuxWorkspaceTools.showsAnyEntry(
                     hostCapabilities: store.supermuxConnectionSeam?.hostCapabilities
                 ),
@@ -840,8 +854,7 @@ struct WorkspaceDetailView: View {
                 supportsSimulatorStream: store.supportsSimulatorStream,
                 activeSimulatorStreamPanelID: activeSimulatorStream?.id,
                 // SUPERMUX:begin ios-pane-actions
-                canCreateSimulator: canCreateSimulatorPane,
-                canClosePane: canCloseActivePane
+                canCreateSimulator: canCreateSimulatorPane
                 // SUPERMUX:end ios-pane-actions
             ),
             actions: TerminalPickerMenuActions(
@@ -856,7 +869,6 @@ struct WorkspaceDetailView: View {
                 // SUPERMUX:end supermux-mobile-selection-sync
                 // SUPERMUX:begin ios-pane-actions
                 createSimulator: createSimulatorFromToolbar,
-                closePane: requestClosePane,
                 // SUPERMUX:end ios-pane-actions
                 openTextSheet: openTextSheetFromMenu,
                 copyDebugLogs: {
