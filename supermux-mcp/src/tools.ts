@@ -142,7 +142,18 @@ export function registerTools(server: McpServer, config: Config): void {
           ? project.setupCommands.map((c) => c.trim()).filter(Boolean).join("\n")
           : "";
         const ccx = ccxCommand(config.ccxBin, model, prompt);
-        const commandText = setupScript ? `${setupScript}\n${ccx}` : ccx;
+        // Setup scripts are written for the app's DEDICATED setup terminal and
+        // commonly end with `exit` to auto-close it (e.g. the humaniser
+        // project). Typed into the workspace's main shell verbatim, that
+        // `exit` kills the shell — surface closes, workspace closes, ccx never
+        // runs. So the script executes in a CHILD shell (`base64 -d | sh -l`),
+        // where `exit` only ends the child; base64 makes the multi-line
+        // script a single typed line immune to quoting/paste mangling. ccx
+        // runs after it, sequenced with `;` so a failed setup still leaves an
+        // interactive session in the worktree.
+        const commandText = setupScript
+          ? `printf '%s' ${shellQuote(Buffer.from(setupScript, "utf8").toString("base64"))} | base64 -d | sh -l; ${ccx}`
+          : ccx;
 
         // Create the workspace with a plain shell in the worktree cwd, then
         // TYPE the command into it — exactly what `cmux new-workspace
@@ -164,11 +175,24 @@ export function registerTools(server: McpServer, config: Config): void {
           },
         });
 
-        await socketCall(config.socketPath, "surface.send_text", {
-          workspace_id: result.workspace_id,
-          surface_id: result.surface_id,
-          text: `${commandText}\n`,
-        });
+        // The surface's shell may still be booting right after create; retry
+        // briefly so the command is never silently dropped.
+        let sendError: unknown;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            await socketCall(config.socketPath, "surface.send_text", {
+              workspace_id: result.workspace_id,
+              surface_id: result.surface_id,
+              text: `${commandText}\n`,
+            });
+            sendError = undefined;
+            break;
+          } catch (err) {
+            sendError = err;
+            await new Promise((r) => setTimeout(r, 600));
+          }
+        }
+        if (sendError) throw sendError;
 
         return ok({
           project: project.name,
