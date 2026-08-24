@@ -58,6 +58,9 @@ with open(app_path, "wb") as handle:
             "CFBundleDisplayName": "Supermux",
             "CMUXDevTag": "",
             "CMUXAuthEnvironment": "production",
+            "CFBundleURLTypes": [
+                {"CFBundleURLSchemes": ["cmux-ios-com.supermux.ios"]},
+            ],
             "NSUserActivityTypes": ["INSendMessageIntent"],
         },
         handle,

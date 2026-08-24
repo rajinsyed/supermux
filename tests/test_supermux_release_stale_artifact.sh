@@ -36,6 +36,17 @@ printf '  1) TESTHASH "Developer ID Application: Test (TEAM)"\n'
 SH
 chmod +x "$BIN_DIR/security"
 
+cat > "$BIN_DIR/git" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  'rev-parse HEAD') printf '0123456789abcdef\n' ;;
+  'submodule update --init --recursive') printf 'submodule\n' >> "${FAKE_RELEASE_PREBUILD_LOG:?}" ;;
+  *) echo "unexpected git invocation: $*" >&2; exit 2 ;;
+esac
+SH
+chmod +x "$BIN_DIR/git"
+
 cat > "$BIN_DIR/xcodebuild" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -43,6 +54,7 @@ if [[ "${1:-}" == "-version" ]]; then
   printf 'Xcode 26.3\nBuild version TEST\n'
   exit 0
 fi
+printf 'xcodebuild\n' >> "${FAKE_RELEASE_PREBUILD_LOG:?}"
 printf '%s\n' "$*" >> "${FAKE_XCODEBUILD_LOG:?}"
 PCM_MARKER="$HOME/Library/Developer/Xcode/DerivedData/cmux-supermux-release/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/stale.pcm"
 if [[ -e "$PCM_MARKER" ]]; then
@@ -126,6 +138,7 @@ run_release() {
   HOME="$home_dir" \
     PATH="$BIN_DIR:/usr/bin:/bin" \
     FAKE_ENSURE_LOG="$TMP_DIR/ensure.log" \
+    FAKE_RELEASE_PREBUILD_LOG="$TMP_DIR/release-prebuild.log" \
     FAKE_XCODEBUILD_LOG="$TMP_DIR/xcodebuild.log" \
     FAKE_XCODEBUILD_MODE="$mode" \
     FAKE_XCODEBUILD_SENTINEL="$sentinel" \
@@ -233,6 +246,7 @@ SUPERMUX_INSTALL_APP="$COMBINED_INSTALL" \
 PLISTBUDDY="$BIN_DIR/plistbuddy" \
 OSASCRIPT="$BIN_DIR/osascript" \
 FAKE_ENSURE_LOG="$TMP_DIR/ensure.log" \
+FAKE_RELEASE_PREBUILD_LOG="$TMP_DIR/release-prebuild.log" \
 FAKE_XCODEBUILD_LOG="$TMP_DIR/xcodebuild.log" \
 FAKE_XCODEBUILD_MODE=success-with-product \
 FAKE_XCODEBUILD_SENTINEL=unused \
@@ -274,6 +288,13 @@ fi
 if [[ "$(grep -c '^ensure$' "$TMP_DIR/ensure.log")" -ne 3 ]]; then
   cat "$TMP_DIR/ensure.log"
   echo "FAIL: combined release did not refresh GhosttyKit" >&2
+  exit 1
+fi
+
+prebuild_order="$(paste -sd, "$TMP_DIR/release-prebuild.log")"
+if [[ "$prebuild_order" != "submodule,xcodebuild,submodule,xcodebuild,submodule,xcodebuild" ]]; then
+  cat "$TMP_DIR/release-prebuild.log"
+  echo "FAIL: each Release build must synchronize submodules before xcodebuild; got $prebuild_order" >&2
   exit 1
 fi
 
