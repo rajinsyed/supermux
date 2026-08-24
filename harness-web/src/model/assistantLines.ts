@@ -20,6 +20,7 @@ import {
   withTurn,
   type TranscriptIndex
 } from "./helpers";
+import { inlineImagePayload } from "./imageContent";
 import { appendNotice, ensureTurn, nextBlockKey } from "./turns";
 import type {
   Block,
@@ -189,6 +190,13 @@ function mergeAssistantBlock(
     );
     index.finalizedBlocks.add(block.key);
     if (path) return writeBlock(model, { turnIndex, path }, block);
+    return insertBlock(model, index, turnIndex, block, parent).model;
+  }
+  if (content.type === "image") {
+    const image = inlineImagePayload(content);
+    if (!image) return model;
+    const block: Block = { kind: "image", key: nextBlockKey(index, messageId), ...image };
+    index.finalizedBlocks.add(block.key);
     return insertBlock(model, index, turnIndex, block, parent).model;
   }
   if (content.type === "tool_use") {

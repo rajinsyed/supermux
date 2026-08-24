@@ -150,6 +150,9 @@ export const BlockView = memo(function BlockView({
           className="block-image"
           src={`data:${block.mediaType};base64,${block.dataBase64}`}
           alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
         />
       );
     default:

@@ -115,6 +115,79 @@ describe("agent threads build from the forwarded frames", () => {
   });
 });
 
+describe("agent thread inline images", () => {
+  test("keeps an image result in the agent conversation that produced it", () => {
+    const rootToolUseId = "toolu_image_agent";
+    const readToolUseId = "toolu_image_read";
+    const dataBase64 = "iVBORw0KGgo=";
+    const model = replayLines([
+      {
+        type: "user",
+        message: { role: "user", content: "Delegate image inspection" },
+        uuid: "agent-image-user"
+      } as ProtocolLine,
+      {
+        type: "assistant",
+        message: {
+          id: "agent-image-spawn",
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: rootToolUseId,
+              name: "Agent",
+              input: { description: "Inspect image", prompt: "Read the image" }
+            }
+          ]
+        },
+        uuid: "agent-image-spawn-frame"
+      } as ProtocolLine,
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text: "Read the image" }] },
+        parent_tool_use_id: rootToolUseId,
+        uuid: "agent-image-prompt"
+      } as ProtocolLine,
+      {
+        type: "assistant",
+        message: {
+          id: "agent-image-read",
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: readToolUseId, name: "Read", input: { file_path: "image.png" } }
+          ]
+        },
+        parent_tool_use_id: rootToolUseId,
+        uuid: "agent-image-read-frame"
+      } as ProtocolLine,
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: readToolUseId,
+              content: [
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: "image/png", data: dataBase64 }
+                }
+              ]
+            }
+          ]
+        },
+        parent_tool_use_id: rootToolUseId,
+        uuid: "agent-image-result"
+      } as ProtocolLine
+    ]);
+
+    const blocks = model.agentThreads[rootToolUseId].blocks;
+    expect(blocks.map((block) => block.kind)).toEqual(["userText", "tool", "image"]);
+    expect(blocks[2]).toMatchObject({ kind: "image", mediaType: "image/png", dataBase64 });
+  });
+});
+
 /**
  * The dock is a LIVE SET.
  *

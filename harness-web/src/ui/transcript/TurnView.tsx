@@ -25,9 +25,13 @@ function splitBlocks(turn: Turn): { work: Block[]; tail: Block[] } {
   const blocks = turn.blocks.filter(
     (block) => block.kind !== "tool" || block.supersededByToolUseId === undefined
   );
-  let cut = blocks.length;
-  for (let i = blocks.length - 1; i >= 0; i -= 1) {
-    const block = blocks[i];
+  // Images are output, not hidden implementation work. Remove them while finding
+  // the collapsible work prefix, then merge them back into the visible tail in
+  // their original order so a settled turn never folds its preview away.
+  const nonImages = blocks.filter((block) => block.kind !== "image");
+  let cut = nonImages.length;
+  for (let i = nonImages.length - 1; i >= 0; i -= 1) {
+    const block = nonImages[i];
     if (block.kind === "text" && block.text.trim().length > 0) {
       cut = i;
       continue;
@@ -38,7 +42,12 @@ function splitBlocks(turn: Turn): { work: Block[]; tail: Block[] } {
     }
     break;
   }
-  return { work: blocks.slice(0, cut), tail: blocks.slice(cut) };
+  const work = nonImages.slice(0, cut);
+  const visibleKeys = new Set(nonImages.slice(cut).map((block) => block.key));
+  return {
+    work,
+    tail: blocks.filter((block) => block.kind === "image" || visibleKeys.has(block.key))
+  };
 }
 
 /**

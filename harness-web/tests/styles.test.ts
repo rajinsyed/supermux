@@ -653,3 +653,14 @@ describe("the header survives a thin split pane", () => {
     expect(sheet).toMatch(/@media \(max-width: 460px\)[\s\S]*?\.cost-badge[\s\S]*?display: none/);
   });
 });
+
+describe("inline images reserve stable transcript space", () => {
+  test("the image owns bounded geometry before asynchronous decode completes", async () => {
+    const rule = ruleFor(await css("transcript.css"), ".block-image");
+    expect(rule).toMatch(/display:\s*block/);
+    expect(rule).toMatch(/width:\s*min\(100%,\s*\d+px\)/);
+    expect(rule).toMatch(/max-height:\s*min\(\d+px,\s*\d+vh\)/);
+    expect(rule).toMatch(/aspect-ratio:\s*auto\s+16\s*\/\s*9/);
+    expect(rule).toMatch(/object-fit:\s*contain/);
+  });
+});

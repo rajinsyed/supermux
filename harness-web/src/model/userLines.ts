@@ -6,6 +6,7 @@ import {
 } from "./agentThreads";
 import { markTurnAborted, readTool, writeBlock } from "./blocks";
 import { activeTurnIndex, asNumber, asString, isPlainObject, withTurn, type TranscriptIndex } from "./helpers";
+import { parseToolResultContent, type InlineImagePayload } from "./imageContent";
 import { classifyLocalUserText } from "./localText";
 import { normalizeToolResultPayload } from "./toolResultPayload";
 import { classifyToolStatus, extractTodos } from "./toolStatus";
@@ -17,6 +18,7 @@ import {
   startUserTurn
 } from "./turns";
 import type {
+  ImageBlock,
   SubagentInfo,
   SubagentToolStats,
   TaskRecord,
@@ -53,7 +55,15 @@ export function applyUser(
   for (const item of content ?? []) {
     if (item.type === "tool_result") {
       const result = item as { tool_use_id: string; content?: unknown; is_error?: boolean };
-      next = applyToolResult(next, index, result.tool_use_id, result, line.tool_use_result, atMs);
+      next = applyToolResult(
+        next,
+        index,
+        result.tool_use_id,
+        result,
+        line.tool_use_result,
+        atMs,
+        parent === null
+      );
       next = touchActiveTurn(next, atMs);
       continue;
     }
@@ -297,12 +307,14 @@ function applyToolResult(
   toolUseId: string,
   result: { content?: unknown; is_error?: boolean },
   structured: JsonObject | undefined,
-  nowMs: number
+  nowMs: number,
+  includesInlineImages: boolean
 ): TranscriptModel {
   const resolved = clearPendingForTool(model, toolUseId);
   const found = readTool(resolved, index, toolUseId);
   if (!found) return resolved;
-  const text = stringifyToolResultContent(result.content);
+  const content = parseToolResultContent(result.content);
+  const text = content.text;
   const status = classifyToolStatus(found.block.name, result.is_error === true, text, structured);
   const subagent = subagentFromResult(found.block.subagent, structured, status);
   const payload = normalizeToolResultPayload(text, structured);
@@ -320,6 +332,14 @@ function applyToolResult(
     endedAtMs: nowMs
   };
   let next = writeBlock(resolved, found.location, nextBlock);
+  if (includesInlineImages) {
+    next = writeToolResultImages(
+      next,
+      found.location.turnIndex,
+      found.block.key,
+      content.images
+    );
+  }
   // The Agent tool_result lands on the MAIN turn (parent null), so this is
   // where a thread learns its model, agentId and final tallies when no task
   // frame carried them.
@@ -345,18 +365,27 @@ function clearPendingForTool(model: TranscriptModel, toolUseId: string): Transcr
   return { ...model, pending, revision: model.revision + 1 };
 }
 
-function stringifyToolResultContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (isPlainObject(part) && typeof part.text === "string") return part.text;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  if (content === undefined || content === null) return "";
-  return JSON.stringify(content, null, 2);
+function writeToolResultImages(
+  model: TranscriptModel,
+  turnIndex: number,
+  toolBlockKey: string,
+  images: InlineImagePayload[]
+): TranscriptModel {
+  const turn = model.turns[turnIndex];
+  if (!turn) return model;
+  const imageKeyPrefix = `${toolBlockKey}:result-image:`;
+  const hadImages = turn.blocks.some((block) => block.key.startsWith(imageKeyPrefix));
+  if (!hadImages && images.length === 0) return model;
+
+  const blocks = turn.blocks.filter((block) => !block.key.startsWith(imageKeyPrefix));
+  const toolIndex = blocks.findIndex((block) => block.key === toolBlockKey);
+  if (toolIndex < 0) return model;
+  const imageBlocks: ImageBlock[] = images.map((image, imageIndex) => ({
+    kind: "image",
+    key: `${imageKeyPrefix}${imageIndex}`,
+    mediaType: image.mediaType,
+    dataBase64: image.dataBase64
+  }));
+  blocks.splice(toolIndex + 1, 0, ...imageBlocks);
+  return withTurn(model, turnIndex, { ...turn, blocks, revision: turn.revision + 1 });
 }

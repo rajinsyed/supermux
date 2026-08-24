@@ -31,6 +31,10 @@ type AttachmentResult =
   | { kind: "attachment"; attachment: Omit<PendingImageAttachment, "id" | "previewURL"> }
   | { kind: "error"; code: AttachmentErrorCode };
 
+export type ImagePayloadValidation =
+  | { kind: "valid"; decoded: string }
+  | { kind: "error"; code: AttachmentErrorCode };
+
 export function attachmentFromFile(file: File): AttachmentResult {
   if (!SUPPORTED_MEDIA_TYPES.has(file.type)) {
     return { kind: "error", code: "unsupportedMediaType" };
@@ -45,7 +49,7 @@ export function attachmentFromFile(file: File): AttachmentResult {
   };
 }
 
-export function attachmentFromPayload(payload: ImageAttachment): AttachmentResult {
+export function validateImagePayload(payload: ImageAttachment): ImagePayloadValidation {
   if (!SUPPORTED_MEDIA_TYPES.has(payload.mediaType)) {
     return { kind: "error", code: "unsupportedMediaType" };
   }
@@ -63,22 +67,29 @@ export function attachmentFromPayload(payload: ImageAttachment): AttachmentResul
     if (decoded.length > MAXIMUM_IMAGE_BYTES) {
       return { kind: "error", code: "imageTooLarge" };
     }
-    const bytes = new Uint8Array(decoded.length);
-    for (let index = 0; index < decoded.length; index += 1) {
-      bytes[index] = decoded.charCodeAt(index);
-    }
-    return {
-      kind: "attachment",
-      attachment: {
-        mediaType: payload.mediaType,
-        blob: new Blob([bytes], { type: payload.mediaType }),
-        name: payload.name,
-        dataBase64: payload.dataBase64
-      }
-    };
+    return { kind: "valid", decoded };
   } catch {
     return { kind: "error", code: "invalidImage" };
   }
+}
+
+export function attachmentFromPayload(payload: ImageAttachment): AttachmentResult {
+  const validation = validateImagePayload(payload);
+  if (validation.kind === "error") return validation;
+
+  const bytes = new Uint8Array(validation.decoded.length);
+  for (let index = 0; index < validation.decoded.length; index += 1) {
+    bytes[index] = validation.decoded.charCodeAt(index);
+  }
+  return {
+    kind: "attachment",
+    attachment: {
+      mediaType: payload.mediaType,
+      blob: new Blob([bytes], { type: payload.mediaType }),
+      name: payload.name,
+      dataBase64: payload.dataBase64
+    }
+  };
 }
 
 export async function payloadFromAttachment(

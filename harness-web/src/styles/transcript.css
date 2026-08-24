@@ -338,7 +338,12 @@
 }
 
 .block-image {
-  max-width: 100%;
+  display: block;
+  width: min(100%, 720px);
+  max-height: min(520px, 65vh);
+  aspect-ratio: auto 16 / 9;
+  object-fit: contain;
+  background: var(--surface-sunken);
   border-radius: var(--r-md);
   border: 1px solid var(--border);
   margin: 8px 0;

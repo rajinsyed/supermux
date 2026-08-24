@@ -83,6 +83,68 @@ describe("inline image blocks", () => {
     expect(image).toMatchObject({ kind: "image", mediaType: "image/png", dataBase64 });
     expect(tools(model)[0].resultText).toBe("Generated preview");
   });
+
+  test("keeps a valid image block from an assistant frame", () => {
+    const dataBase64 = "R0lGODlhAQABAAAAACw=";
+    const model = replayAll([
+      {
+        type: "user",
+        message: { role: "user", content: "Show it inline" },
+        uuid: "user-assistant-image"
+      } as ProtocolLine,
+      {
+        type: "assistant",
+        message: {
+          id: "msg-assistant-image",
+          role: "assistant",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/gif", data: dataBase64 }
+            }
+          ]
+        },
+        uuid: "assistant-inline-image"
+      } as ProtocolLine
+    ]);
+
+    expect(model.turns[0].blocks).toHaveLength(1);
+    expect(model.turns[0].blocks[0]).toMatchObject({
+      kind: "image",
+      mediaType: "image/gif",
+      dataBase64
+    });
+  });
+
+  test("rejects malformed and non-image payloads instead of building executable data URLs", () => {
+    const model = replayAll([
+      {
+        type: "user",
+        message: { role: "user", content: "Show it inline" },
+        uuid: "user-invalid-image"
+      } as ProtocolLine,
+      {
+        type: "assistant",
+        message: {
+          id: "msg-invalid-image",
+          role: "assistant",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/svg+xml", data: "PHN2Zz4=" }
+            },
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "not-base64" }
+            }
+          ]
+        },
+        uuid: "assistant-invalid-image"
+      } as ProtocolLine
+    ]);
+
+    expect(model.turns[0].blocks).toEqual([]);
+  });
 });
 
 describe("rich-session.jsonl replay", () => {

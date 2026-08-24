@@ -1,11 +1,17 @@
 import type { AssistantLine, ContentBlock, JsonObject, UserLine } from "../protocol/types";
 import { mergeTextBlock, mergeThinkingBlock, mergeToolUseBlock } from "./blocks";
 import { asNumber, asString, isPlainObject, isTaskTool } from "./helpers";
+import {
+  inlineImagePayload,
+  parseToolResultContent,
+  type InlineImagePayload
+} from "./imageContent";
 import { classifyToolStatus } from "./toolStatus";
 import { normalizeToolResultPayload } from "./toolResultPayload";
 import type {
   AgentThread,
   Block,
+  ImageBlock,
   TaskRecord,
   TextBlock,
   ThinkingBlock,
@@ -183,8 +189,15 @@ export function applyAssistantToThread(
   }
   thread = takeLiveOver(thread);
 
-  for (const content of line.message.content ?? []) {
-    thread = mergeContentIntoThread(thread, content, messageId, line.uuid, nowMs);
+  for (const [contentIndex, content] of (line.message.content ?? []).entries()) {
+    thread = mergeContentIntoThread(
+      thread,
+      content,
+      contentIndex,
+      messageId,
+      line.uuid,
+      nowMs
+    );
     // An Agent tool_use INSIDE this thread opens a child thread. The spawn is
     // attributed here (parent = this thread) and the child's own frames arrive
     // under its own id, which is exactly the round-4 nesting rule.
@@ -210,6 +223,7 @@ export function applyAssistantToThread(
 function mergeContentIntoThread(
   thread: AgentThread,
   content: ContentBlock,
+  contentIndex: number,
   messageId: string,
   uuid: string | undefined,
   nowMs: number
@@ -232,6 +246,13 @@ function mergeContentIntoThread(
       at,
       mergeThinkingBlock(existing, key, messageId, text, signature, uuid, nowMs, 0)
     );
+  }
+  if (content.type === "image") {
+    const image = inlineImagePayload(content);
+    if (!image) return thread;
+    const key = `${thread.toolUseId}|${messageId}|image|${contentIndex}`;
+    const at = indexOfKey(thread.blocks, key);
+    return putBlock(thread, at, { kind: "image", key, ...image });
   }
   if (content.type === "tool_use") {
     const tool = content as { id: string; name: string; input?: JsonObject };
@@ -424,7 +445,8 @@ function settleThreadTool(
   const at = indexOfTool(thread.blocks, toolUseId);
   if (at < 0) return thread;
   const block = thread.blocks[at] as ToolBlock;
-  const text = stringifyResult(result.content);
+  const content = parseToolResultContent(result.content);
+  const text = content.text;
   const status = classifyToolStatus(block.name, result.is_error === true, text, structured);
   const payload = normalizeToolResultPayload(text, structured);
   const next: ToolBlock = {
@@ -438,23 +460,29 @@ function settleThreadTool(
     structured: payload.structured,
     endedAtMs: nowMs
   };
-  return putBlock(thread, at, next);
+  return writeThreadToolResultImages(putBlock(thread, at, next), block.key, content.images);
 }
 
-function stringifyResult(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (isPlainObject(part) && typeof part.text === "string") return part.text;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  if (content === undefined || content === null) return "";
-  return JSON.stringify(content, null, 2);
+function writeThreadToolResultImages(
+  thread: AgentThread,
+  toolBlockKey: string,
+  images: InlineImagePayload[]
+): AgentThread {
+  const imageKeyPrefix = `${toolBlockKey}:result-image:`;
+  const hadImages = thread.blocks.some((block) => block.key.startsWith(imageKeyPrefix));
+  if (!hadImages && images.length === 0) return thread;
+
+  const blocks = thread.blocks.filter((block) => !block.key.startsWith(imageKeyPrefix));
+  const toolIndex = blocks.findIndex((block) => block.key === toolBlockKey);
+  if (toolIndex < 0) return thread;
+  const imageBlocks: ImageBlock[] = images.map((image, imageIndex) => ({
+    kind: "image",
+    key: `${imageKeyPrefix}${imageIndex}`,
+    mediaType: image.mediaType,
+    dataBase64: image.dataBase64
+  }));
+  blocks.splice(toolIndex + 1, 0, ...imageBlocks);
+  return { ...thread, blocks };
 }
 
 /**
