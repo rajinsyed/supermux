@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { fixtures } from "../src/dev/fixtures";
 import { shellsFixture, withWorkflowLogs, workflowFixture } from "../src/dev/fixtures/round3";
 import { replayLines } from "../src/model/transcript";
@@ -365,11 +365,10 @@ describe("an automatic fold never sweeps away what the reader opened", () => {
    * the one workflow surface that still lives inside a turn.
    */
 
-  test("stopping a background shell does not fold its card out of the run", () => {
-    // Finding 4: the same sweep, one frame wide. A backgrounded shell is `live`
-    // only while its task runs, so the moment Stop settles the task the card
-    // stopped being live and dropped behind "N earlier tool calls" — instantly,
-    // in the frame that answered the click.
+  test("stopping a background shell keeps its card through every terminal frame", async () => {
+    // The CLI reports one stop twice: task_updated says `killed`, then the
+    // task_notification says `stopped`. A one-render liveness grace kept the card
+    // for the first frame and folded it away on the second acknowledgement.
     const running = replayLines(shellsFixture.slice(0, 27));
     const streaming: Turn = {
       ...running.turns[0],
@@ -386,26 +385,33 @@ describe("an automatic fold never sweeps away what the reader opened", () => {
       Array.from(container.querySelectorAll<HTMLElement>(".turn-work > *")).find((node) =>
         node.textContent?.includes("tick")
       );
-    const before = shell();
-    expect(before).toBeDefined();
-    expect(before!.style.display).not.toBe("none");
+    expect(shell()).toBeDefined();
+    expect(shell()!.style.display).not.toBe("none");
 
-    // Replay the CLI's real kill sequence onto the same turn.
-    const stopped = replayLines(shellsFixture);
-    rerender(
-      <CopyProvider dict={undefined}>
-        <TurnView
-          turn={{
-            ...streaming,
-            blocks: stopped.turns[0].blocks.slice(0, streaming.blocks.length)
-          }}
-          isLast
-        />
-      </CopyProvider>
-    );
-    const after = shell();
-    expect(after).toBeDefined();
-    expect(after!.style.display).not.toBe("none");
+    const renderThrough = (count: number) => {
+      const replayed = replayLines(shellsFixture.slice(0, count));
+      rerender(
+        <CopyProvider dict={undefined}>
+          <TurnView
+            turn={{
+              ...streaming,
+              blocks: replayed.turns[0].blocks.slice(0, streaming.blocks.length)
+            }}
+            isLast
+          />
+        </CopyProvider>
+      );
+    };
+
+    renderThrough(48); // task_updated: killed
+    expect(shell()!.style.display).not.toBe("none");
+
+    renderThrough(49); // task_notification: stopped
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(shell()).toBeDefined();
+    expect(shell()!.style.display).not.toBe("none");
   });
 });
 
