@@ -3,7 +3,7 @@ import Foundation
 import SupermuxMobileCore
 // SUPERMUX:end notification-feed-project-wire
 
-nonisolated struct MobileNotificationFeedWireItem: Sendable {
+struct MobileNotificationFeedWireItem: Sendable {
     let id: String
     let workspaceID: String
     let surfaceID: String?

@@ -3,11 +3,20 @@ import SwiftUI
 
 struct AltScreenNoticeButton: View {
     let dismissNotice: () -> Void
+    @Environment(\.mobileChildPresentationProvider) private var childPresentationProvider
     @State private var isPresentingExplanation = false
+
+    private var explanationPresentation: MobileChildSheetPresentation {
+        childPresentationProvider?.presentation(
+            for: .workspaceDetail(.alternateScreenExplanation),
+            fallback: $isPresentingExplanation
+        )
+            ?? MobileChildSheetPresentation(isPresented: $isPresentingExplanation)
+    }
 
     var body: some View {
         Button {
-            isPresentingExplanation = true
+            explanationPresentation.present()
         } label: {
             Label(buttonAccessibilityLabel, systemImage: "exclamationmark.triangle.fill")
         }
@@ -15,42 +24,12 @@ struct AltScreenNoticeButton: View {
         .foregroundStyle(.orange)
         .accessibilityLabel(buttonAccessibilityLabel)
         .accessibilityIdentifier("MobileTerminalAltScreenNoticeButton")
-        // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
-        .altScreenNoticeExplanationPopover(
-            isPresented: $isPresentingExplanation,
-            dismissNotice: dismissFromPopover
-        )
-        // SUPERMUX:end ios-workspace-toolbar-persistent-actions
-    }
-
-    private var buttonAccessibilityLabel: String {
-        L10n.string(
-            "mobile.altScreenNotice.button.accessibilityLabel",
-            defaultValue: "Explain full-screen terminal sizing"
-        )
-    }
-
-    private func dismissFromPopover() {
-        dismissNotice()
-        isPresentingExplanation = false
-    }
-}
-
-// SUPERMUX:begin ios-workspace-toolbar-persistent-actions
-/// The alt-screen sizing explanation, shared by the standalone notice button
-/// above and the workspace toolbar's overflow-menu entry so both entry points
-/// present identical content.
-extension View {
-    func altScreenNoticeExplanationPopover(
-        isPresented: Binding<Bool>,
-        dismissNotice: @escaping () -> Void
-    ) -> some View {
-        popover(isPresented: isPresented) {
+        .popover(isPresented: explanationPresentation.isPresented) {
             ViewThatFits(in: .vertical) {
-                AltScreenNoticeExplanationContent(dismissNotice: dismissNotice)
+                popoverContent
 
                 ScrollView {
-                    AltScreenNoticeExplanationContent(dismissNotice: dismissNotice)
+                    popoverContent
                 }
                 .scrollBounceBehavior(.basedOnSize)
             }
@@ -60,24 +39,14 @@ extension View {
             )
             .presentationSizing(AltScreenNoticePresentationSizing())
             .presentationCompactAdaptation(.popover)
+            .onDisappear(perform: explanationPresentation.didDismiss)
         }
     }
-}
 
-struct AltScreenNoticeExplanationContent: View {
-    let dismissNotice: () -> Void
-
-    static var title: String {
-        L10n.string(
-            "mobile.altScreenNotice.title",
-            defaultValue: "Full-screen terminal app"
-        )
-    }
-
-    var body: some View {
+    private var popoverContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label {
-                Text(Self.title)
+                Text(title)
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -90,7 +59,7 @@ struct AltScreenNoticeExplanationContent: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button(action: dismissNotice) {
+            Button(action: dismissFromPopover) {
                 Text(dismissActionTitle)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -102,10 +71,24 @@ struct AltScreenNoticeExplanationContent: View {
         .multilineTextAlignment(.leading)
     }
 
+    private var buttonAccessibilityLabel: String {
+        L10n.string(
+            "mobile.altScreenNotice.button.accessibilityLabel",
+            defaultValue: "Explain full-screen terminal sizing"
+        )
+    }
+
+    private var title: String {
+        L10n.string(
+            "mobile.altScreenNotice.title",
+            defaultValue: "Full-screen terminal app"
+        )
+    }
+
     private var explanation: String {
         L10n.string(
             "mobile.altScreenNotice.explanation",
-            defaultValue: "Full-screen mode mirrors the Mac terminal's exact size, so it may not fill this screen. Claude Code: `/tui default`. Codex: restart with `codex --no-alt-screen`."
+            defaultValue: "Full-screen mode mirrors the Mac terminal's exact size, so it may not fill this screen, and scrolling won't be as smooth. Claude Code: `/tui default`. Codex: restart with `codex --no-alt-screen`."
         )
     }
 
@@ -115,5 +98,9 @@ struct AltScreenNoticeExplanationContent: View {
             defaultValue: "Don't Show Again"
         )
     }
+
+    private func dismissFromPopover() {
+        dismissNotice()
+        explanationPresentation.dismiss()
+    }
 }
-// SUPERMUX:end ios-workspace-toolbar-persistent-actions

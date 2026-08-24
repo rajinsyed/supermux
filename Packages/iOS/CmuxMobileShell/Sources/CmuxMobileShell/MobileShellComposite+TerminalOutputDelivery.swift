@@ -22,6 +22,11 @@ extension MobileShellComposite {
         // writes would re-fire observers for every delivered render-grid frame.
         if terminalActiveScreenBySurfaceID[renderGrid.surfaceID] != renderGrid.activeScreen {
             terminalActiveScreenBySurfaceID[renderGrid.surfaceID] = renderGrid.activeScreen
+            recordAppEvent(
+                .terminalAlternateScreenChanged,
+                correlationID: renderGrid.surfaceID,
+                count: renderGrid.activeScreen == .alternate ? 1 : 0
+            )
         }
         if renderGrid.activeScreen == .alternate, renderGrid.full {
             terminalAlternateRenderGridBaselineSurfaceIDs.insert(renderGrid.surfaceID)
@@ -417,6 +422,7 @@ extension MobileShellComposite {
                terminalReplayBarrierAckStreamTokensBySurfaceID[surfaceID] == nil,
                terminalViewportReplayBarrierPendingAckTokensBySurfaceID[surfaceID] == nil,
                !terminalReplaySurfaceIDsInFlight.contains(surfaceID),
+               terminalOutputQueuesBySurfaceID[surfaceID]?.isIdle != false,
                !terminalReplayFailureRetryExhausted(surfaceID: surfaceID) {
                 MobileDebugLog.anchormux("terminal.output.replay_retry_after_drop surface=\(surfaceID)")
                 requestTerminalReplay(
@@ -546,6 +552,7 @@ extension MobileShellComposite {
                     let baselineReplayRequestCount = missingBaselineReplayBarrier
                         ? terminalRenderGridBaselineReplayRequestCountsBySurfaceID[surfaceID]
                         : nil
+                    cancelTerminalReplayBarrierWatchdog(surfaceID: surfaceID)
                     terminalReplayBarrierAckStreamTokensBySurfaceID.removeValue(forKey: surfaceID)
                     terminalReplayBarrierTokensBySurfaceID.removeValue(forKey: surfaceID)
                     terminalColdAttachReplayBarrierTokensBySurfaceID.removeValue(forKey: surfaceID)
@@ -576,6 +583,7 @@ extension MobileShellComposite {
                     reason: "followup_cap"
                 )
             } else {
+                cancelTerminalReplayBarrierWatchdog(surfaceID: surfaceID)
                 terminalReplayBarrierAckStreamTokensBySurfaceID.removeValue(forKey: surfaceID)
                 terminalReplayBarrierTokensBySurfaceID.removeValue(forKey: surfaceID)
                 terminalColdAttachReplayBarrierTokensBySurfaceID.removeValue(forKey: surfaceID)

@@ -12,11 +12,12 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **464**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **495**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
-  touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142** are unused;
-  all are documented as RETIRED below except **#19**, which was never assigned (the table jumps
-  #18 → #20). Numbers **134** and **135** are each used
+  touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142, 213, 214, 229, 237,
+  250, and 252–258** are unused; all are documented as RETIRED below except **#19**, which was
+  never assigned (the table jumps #18 → #20). The 2026-08-24 upstream merge retired #213/#214,
+  #229/#237, #250, and #252–258; do not reuse them. Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
   two `lint-allow-upstream-debt` rows) — a pre-existing collision, deliberately left as-is so
   existing cross-references keep resolving. Do not reuse them, and do not renumber. Letter
@@ -29,7 +30,7 @@ Rules for adding a touchpoint:
 | 1 | `CLAUDE.md` | `claude-md-pointer` | Points agents at SUPERMUX.md before they work in this repo |
 | 244 | `CLAUDE.md` | `ios-dogfood-release-build` | Overrides upstream's "iOS builds open on the iPhone by default" section for this fork: `reload.sh --tag` ships a tagged DEV build the user cannot sign in to, so physical-phone dogfood uses a Release build with `CMUX_DEV_TAG=` empty and `CMUX_IOS_AUTH_ENV=production`. Records the exact invocation — the FIXED dogfood bundle id `com.supermux.ios.dogfood` (one persistent identity so sign-in/pairing survive across tags; per-tag `dev.cmux.ios.<tag>` is retired, and keychain-group sharing with the main install is forbidden — Iroh stores would mutually wipe), `SUPERMUX_IOS_DISPLAY_SUFFIX=" <tag>"`, the sanctioned per-build naming knob (#238/#239) — and the two overrides never to pass on it (`PRODUCT_DISPLAY_NAME`, `ASSETCATALOG_COMPILER_APPICON_NAME`) |
 | 2 | `Sources/ContentView.swift` | `sidebar-projects-section`, `sidebar-hide-project-workspaces`, `sidebar-flatrow-activity`, `sidebar-selection-faint`, `sidebar-unified-row-style`, `sidebar-projects-empty-area` | Mounts `SupermuxProjectsMount()` atop the sidebar; hides project-owned workspaces from the flat list and threads a `projectHiddenWorkspaceIds` set through `WorkspaceListRenderContext` — shift-click ranges (`selectWorkspaceRow`) and the actions-bundle Close Other/Below/Above closures exclude project-hidden workspaces (via a fenced parent-level `supermuxProjectHiddenWorkspaceIds()` helper — since upstream's 0.65 snapshot-boundary refactor moved row actions from `TabItemView` to the sidebar owner, the fenced logic lives in those parent functions; Move Up/Down stepping lives in the SHARED entrypoint, #131, so `moveWorkspaceRow` is back to the upstream one-liner), the actions bundle gets a fenced `supermuxMenuVisibility` provider (keyed by workspace id; consumed by #114, declared in #129, move enablement via the #131 stepped-plan check) so the four Move/Close menu items disable on real reachability instead of raw full-list indices, a fenced `.onChange` strips newly project-hidden ids from `selectedTabIds`, the row-input construction computes fenced `supermuxVisibleIndex`/`supermuxVisibleCount` (#132/#133) and `TabItemView.accessibilityTitle` announces "workspace N of M" against the visible list; renders the agent-activity indicator on flat-list workspace rows (indicator overlay in `TabItemView`; snapshot resolution moved to #128); gives the flat-list selection the faint accent tint used by nested project rows in `backgroundColor(for:)` (honoring `sidebarSelectionColorHex` — the user hue at 0.16 opacity — before falling back to `accentColor`); restyles the flat-list row to the nested project-workspace design (`sidebar-unified-row-style`: 11.5·scale title semibold-only-when-selected, spacing-2 line stack, vertical padding 4, corner radius 5, hover tint primary@0.06 via `isPointerHovering`); subtracts the Projects-section height from the empty-area remainder so the sidebar's empty space stays unscrollable |
-| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`, and `SupermuxFocusedPaneNotificationPolicy.swift`, ids `…0142`/`…0143`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` + `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` into the cmuxTests target, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
+| 3 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the SupermuxKit package + `Sources/Supermux/` files (incl. `SupermuxRowMenuVisibility.swift`, ids `…00F9`/`…00FA`, `SupermuxWorkspaceReorderStepping.swift`, ids `…00FB`/`…00FC`, `SupermuxDirectPhonePush.swift`, ids `…0103`/`…0104`, and `SupermuxFocusedPaneNotificationPolicy.swift`, ids `…0142`/`…0143`) into the cmux target, `cmuxTests/SupermuxSidebarBranchTests.swift` + `cmuxTests/SupermuxNewWorkspaceHomeDirectoryTests.swift` + `cmuxTests/SupermuxSidebarAgentStatusRowsTests.swift` + `cmuxTests/SupermuxFocusedPaneNotificationTests.swift` into the cmuxTests target, links upstream's `CMUXAuthCore` and `CmuxAuthRuntime` products into cmuxTests so its new auth imports resolve at link time, and the three `AppIcon*.icon` Icon Composer files into the app Resources phase (see #17; the SupermuxMobile package/test wiring in this file is registered separately as #95) |
 | 4b | `Resources/Localizable.xcstrings` | `unfenced` | Adds en+ja entries for all `supermux.*` keys (additive only; never edits non-supermux keys — sole exceptions, all for the #80 fork behavior: the en+ja values of `settings.app.workspaceInheritWorkingDirectory.subtitleOff` (#82) and of `settings.search.alias.setting.app.workspace-inherit-working-directory` (#84) are rewritten) |
 | 5 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-changes-mode-*`, `right-sidebar-compact-mode-bar` | Adds the `changes` right-sidebar mode (case/label/symbol/shortcut/rootsync) and renders `SupermuxChangesMount` for it; `right-sidebar-compact-mode-bar` wraps the mode-bar controls in `ViewThatFits` so the mode buttons collapse to icon-only when the sidebar is narrow (keeps the close button visible down to the lowered min width), with a third fallback putting the icon-only row in a horizontal `ScrollView` so mode buttons scroll instead of clipping at extreme narrowness; `right-sidebar-changes-mode-focushost` mounts `SupermuxChangesFocusHostBridge`/`SupermuxChangesFocusHostView` as the changes panel's background, registering a geometry-based focus host with the window's `MainWindowFocusController` |
 | 6 | `Sources/RightSidebarMode+Availability.swift` | `right-sidebar-changes-mode-*` | `changes` is always available and reachable from the CLI mode argument |
@@ -132,7 +133,7 @@ Rules for adding a touchpoint:
 | 103 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-project-workspaces`, `supermux-mobile-row-activity` | Hide filter: a fenced `supermuxFlatWorkspaces` helper (`workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)`), where `supermuxShownProjectIDs` is non-empty only while `snapshot.isVisible && snapshot.hasLoaded && trimmedQuery.isEmpty && !filter.isActive` — i.e. the hide is active only when the Projects section is visible AND loaded AND no search/filter, plus two fenced swaps where upstream read `workspaces` — one in `filteredWorkspaces` (a one-line `let workspaces = supermuxFlatWorkspaces` rebind) and one in `groupedWorkspaces` (the fence wraps only the `return`; upstream's `parsedMachines` precompute sits above it, unfenced). Row dot: one fenced `.supermuxWorkspaceActivityDot(rawActivity:)` modifier on `WorkspaceNavigationRow` in `workspaceRow` |
 | 104 | `ios/cmux/AppCompositionRoot.swift` | `uitest-clear-paired-mac-state` | When `UITestConfig.mockDataEnabled` and the harness sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1`, deletes `Application Support/cmux/` (the `MobilePairedMacStore` sqlite + WAL/SHM) once at composition-root init, before `CMUXMobileRootScene` opens the store. Fixes cross-test pairing-state leakage on the shared simulator: since #89 made pairing actually complete, a persisted paired Mac from a prior test/run auto-navigated past `MobileAddDeviceForm` and its dead-host reconnect churn broke 3 cmuxUITests (cmuxUITests.swift:245/:586). No-op for real installs: the mock gate is DEBUG-only and the env var is only set by the XCUITest harness (#105) |
 | 105 | `ios/cmuxUITests/cmuxUITests.swift` | `uitest-clear-paired-mac-launch` | `launchApp` sets `CMUX_UITEST_CLEAR_PAIRED_MACS=1` on every harness launch so each test starts from an unpaired slate (consumed by #104) |
-| 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned url dependency changes still require lockfile churn. Also silences the `fatal: path … exists on disk, but not in <merge-base>` stderr noise from `git show` on manifests new since the merge-base. **FIVE fence blocks** (previous notes said three/four): helper `lockfile_recorded_dependency_calls`, `path_dependency_remote_pin_roots`, the `current_remote_memo` declaration in `main` (upstream's refactor deleted the surrounding line the memo used to piggyback on, so it is now its own fenced block — a merge that drops it makes the script crash with `NameError: current_remote_memo`), the changed-roots skip in `main`, and `file_text_at`. **Since Focus Mode (#244–250), SEVEN**: two more skips close the same unsatisfiable-demand hole one level up, where a path dep is added onto a package whose remote pins the depender ALREADY resolved. The per-package loop and the iOS-workspace gate both then demanded a lockfile diff that SwiftPM/Xcode will not write, because the recorded remote pins and the `originHash` come back byte-identical (verified against a real `-resolvePackageDependencies`). Both new skips compare the *remote* dependency closure before and after and bail only when it is unchanged, so adding a genuine `.package(url:)` still fails the check |
+| 107 | `scripts/check-package-resolved-policy.py` | `fix-resolved-policy-path-deps` | Manifest diffs whose `.package(…)` changes are limited to path-based dependencies (`.package(path:)`, including brand-new path-referenced manifests) no longer demand a `Package.resolved` diff — SwiftPM never records path deps in any lockfile, so that demand was unsatisfiable (`swift package resolve` rewrites nothing). Pinned URL dependency changes still require lockfile churn. Also silences the expected `git show` error for manifests new since the merge base. **Seven fence blocks:** `lockfile_recorded_dependency_calls`, `path_dependency_remote_pin_roots`, the `current_remote_memo` declaration, the changed-roots skip, `file_text_at`, and two higher-level skips for the per-package and iOS-workspace gates. Those last skips compare the remote dependency closure before and after, allowing path-only graph changes whose recorded pins and `originHash` are unchanged while still rejecting genuine `.package(url:)` changes without lockfile churn |
 | 108 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools` | Two fences: `import SupermuxMobileUI`, and the `.supermuxWorkspaceTools(connection:workspaceID:workspaceName:showingChanges:showingFiles:)` modifier on the detail `body`'s outer `Group`. Since the #228 toolbar consolidation the modifier mounts ONLY the two sheets (`SupermuxChangesScreen` / `SupermuxFileBrowserScreen`), driven by the `isSupermuxChangesSheetPresented` / `isSupermuxFilesSheetPresented` bindings that #228's explicit overflow menu flips via the fork-owned `SupermuxWorkspaceToolsMenuEntries`; it no longer adds `ToolbarItem`s of its own. Fed by the #96 `supermuxConnectionSeam`; each menu entry hides without its capability (`supermux.changes.v1` / `supermux.files.v1`). Note upstream now ships its OWN mobile diff viewer behind `workspace.changes.v1`; both are advertised whenever `CmuxFeatureFlags.mobileWorkspaceChangesFlag` is on — see SUPERMUX.md "Known limitations", open decision 2 |
 | 109 | `scripts/lint-ios-package-conventions.sh` | `lint-ios-conventions-fork-scopes` | Adds the fork mobile packages (`Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobile*`) to the lint's SCOPES so the iOS conventions lint (CI job `package-conventions-lint` in `.github/workflows/test-ios.yml`) mechanically enforces its per-line rules on them; deliberate constant/text namespace holders in the fork packages carry inline `lint:allow` justifications |
 | 110 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-search` | ⚠️ **INERT since the 0.64.21 merge — comment-only marker, the fork behavior is gone.** It used to replace upstream's `.searchable(text: $searchText)` on the workspace `List` so the phone had no main-list search bar. Upstream moved search into two NEW files (`…/WorkspaceListSearchHost.swift` pre-iOS 26, `…/MobilePrimaryTabScaffold.swift` for the iOS 26 search Tab) and `searchText` is now an injected property rather than `@State`, so **phone search is LIVE again** and there is nothing left in this file to remove. OPEN DECISION — re-apply at the new hosts, retire the touchpoint, or accept upstream's search (current default). See SUPERMUX.md "Known limitations" |
@@ -180,8 +181,8 @@ Rules for adding a touchpoint:
 | 152 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `mobile-event-liveness-observation`, `mobile-liveness-background-gate` | Keeps per-envelope liveness bookkeeping (`lastTerminalEventAt` and the consecutive-probe counter) out of Swift Observation, and makes the render-grid liveness watchdog foreground-only both before a probe starts and when an already-started probe completes. The timer deliberately stays on `.main`; only the recovery decision is gated. Regression coverage: #154 |
 | 153 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellRenderGridLivenessTestSupport.swift` | `mobile-liveness-background-gate` | Adds a delayed-success probe mode to the existing scripted liveness router so #154 can deterministically prove that a probe started just before backgrounding cannot publish a late recovery. The pre-existing held-probe mode still returns no response and remains unchanged |
 | 154 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellEventStreamPerformanceTests.swift` | `unfenced` | Whole fork-owned Swift package test file in the upstream `CmuxMobileShellTests` target. Proves high-frequency event liveness timestamps update without Observation notifications, backgrounded watchdog ticks start no probes, and an in-flight probe completing after background cannot publish recovery |
-| 155 | `Packages/iOS/CmuxMobileTransport/Sources/CmuxMobileTransport/CmxTailscaleRouteProof.swift` | `tailscale-packet-tunnel-proof` | Fixes two Network.framework packet-tunnel behaviors that broke physical-device Tailscale pairing. First, a ready tunnel path may report `localEndpoint == nil`; absence is now accepted, while a present endpoint must still equal a proven Tailscale self-address. Second, the generic authority generation may advance immediately after connect even when the security-relevant route is identical; generation equality is no longer required because validation re-proves the current path status, exact Tailscale interface identity and self-address set, active connection-path interface, peer address, and peer port on every path update and before each write. The first bug rejected every authorized dial before credentials; the second connected successfully and then tore down the session about 300 ms later |
-| 156 | `Packages/iOS/CmuxMobileTransport/Tests/CmuxMobileTransportTests/CmxTailscaleRouteProofTests.swift` | `tailscale-packet-tunnel-proof` | Regression coverage for #155: validation succeeds when Network.framework omits the local endpoint and when only the authority generation changes on an otherwise identical route. It still fails closed for a present-but-wrong local address and for a substituted interface even when that replacement carries the same Tailscale self-addresses |
+| 155 | `Packages/iOS/CmuxMobileTransport/Sources/CmuxMobileTransport/CmxTailscaleRouteProof.swift` | `tailscale-packet-tunnel-proof` | Accepts a missing `NWPath.localEndpoint` for an established packet-tunnel route while retaining upstream's generation guard and every route-substitution check. A present local endpoint must still equal a proven Tailscale self-address; the authority generation, exact interface identity and self-address set, active connection-path interface, peer address, and peer port remain fail-closed |
+| 156 | `Packages/iOS/CmuxMobileTransport/Tests/CmuxMobileTransportTests/CmxTailscaleRouteProofTests.swift` | `tailscale-packet-tunnel-proof` | Regression coverage for #155: an established route succeeds when Network.framework omits the local endpoint, while a present-but-wrong local address still fails. Upstream-owned coverage also proves a newer authority generation throws `routeGenerationChanged` and a substituted interface throws `interfaceChanged` |
 | 157 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileCoreRPCSession.swift` | `mobile-rpc-client-work-quota` | Backpressures the phone's multiplexed RPC writer against `MobileHostRPCWorkQuota` instead of letting post-pairing bootstrap fan out enough requests for the Mac host to close the entire connection as `rpc work capacity exceeded`. `PendingWrite` carries the decoded payload byte count; the session tracks only requests already sent and still awaiting a host response, mirrors both the host's request-count and aggregate-byte policies, and keeps one request slot free because the client may receive a response just before the host actor removes that response task. A host response or teardown wakes the writer; requests cancelled or timed out before transmission are skipped when capacity becomes available |
 | 158 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileCoreRPCSession+IndependentEvents.swift` | `mobile-rpc-client-work-quota` | Releases the client-side work-quota slot as soon as any response id returns, before checking whether the local caller is still pending. This is required because a timed-out or cancelled caller may still receive the host's late response; ignoring that response would leak one writer slot for the rest of the session |
 | 159 | `Packages/iOS/CmuxMobileRPC/Tests/CmuxMobileRPCTests/MobileCoreRPCSessionPipelinedTests.swift` | `mobile-rpc-client-work-quota` | Red/green regression for #157–#158. Enqueues one more request than the client's host-compatible window, proves the extra request is not written while all earlier responses are outstanding, then delivers one response and proves exactly one queued request advances. Before #157 the writer immediately sent the whole burst and the expectation failed |
@@ -234,20 +235,18 @@ Rules for adding a touchpoint:
 | 210 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+TerminalScrollDelivery.swift` | `ios-terminal-alt-scroll-quantize` | After the budget admits alt-screen lines, runs them through the per-surface quantizer and forwards only the whole-line portion (fractions carry). Registered separately from the same file's #191 budget and #206 activity stamp |
 | 211 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/TerminalAlternateScrollLineQuantizerTests.swift` | `unfenced` | Whole new regression for #208: fractions accumulate before any emit, whole lines pass with carry, reversal unwinds signed carry, non-finite ignored, and 1× vs 0.25× delivery now differs ~4× per identical finger travel |
 | 212 | `Sources/AppDelegate+DockShortcutRouting.swift` | `run-shortcut-dock-routing` | Adds all fork shortcut actions (`supermuxToggleRun`, `supermuxWorkspaceSwitcherNext/Previous`, `supermuxCommit`, `supermuxCommitAccelerator`, `supermuxNewClaudeHarness`) as one `.mainContainer` case to upstream's deliberately-exhaustive Dock-routing switch. Upstream added this file with no `default:` so every action must be classified; all fork actions target app/workspace/project state, never a surface tree, so none reroute into the Dock. Re-apply: add the fenced `case ...: .mainContainer` group before the closing brace of `dockShortcutRoutingDisposition` |
-| 213 | `Packages/iOS/CmuxMobileTerminal/Sources/CmuxMobileTerminal/GhosttySurfaceView.swift` | `ios-terminal-host-keyboard-sync` | **Fixes "keyboard covers the terminal" (upstream regression in `ba47b1dc0d`).** Upstream moved the keyboard layout guide onto `GhosttySurfaceHostView` and made it the ONLY keyboard-geometry source — but on a physical iPhone 17 Pro (iOS 26) the host's `UIKeyboardLayoutGuide.layoutFrame` **never arms**: KBDIAG traced it staying a zero-size rect (or bare safe-area) for the entire keyboard-up period, so guide-derived `keyboardHeight` stayed 0 and the grid kept full height under the keyboard; the dock rode the same dead guide. SIX fenced blocks: (1)+(2) `advanceBottomDockTransition` re-samples `synchronizeKeyboardGeometryFromLayoutGuide()` every display-link frame and ORs `keyboardGeometryChanged` into the early-out guard; (3) `handleKeyboardWillChangeFrame` records `keyboardNotificationOverlap` from the notification end frame and calls `updateDockKeyboardFallbackConstant(transition:)` (animated on the keyboard's own curve); (4) the `keyboardNotificationOverlap` property + `updateDockKeyboardFallbackConstant` — the dock-to-guide constraint constant is derived as `-(overlap − guideGap)` so it SELF-NEUTRALIZES to 0 whenever the guide actually tracks (a healthy guide keeps sole authority); (5) `keyboardOverlapFromLayoutGuide` falls back to the notification overlap when the guide frame is zero-size / unseated / safe-area-only; (6) a convergence call in `synchronizeKeyboardGeometryFromLayoutGuide`. Offer upstream — stock cmux iOS has the dead-guide failure too. Re-apply: notification overlap as fallback authority everywhere the guide yields nothing, constraint compensation that subtracts the guide's own gap |
-| 214 | `ios/cmuxUITests/cmuxUITests.swift` | `ios-terminal-host-keyboard-sync` | Regression teeth for #213 on the REAL keyboard path (`assertTerminalDockPinnedToSoftwareKeyboard`): upstream's assertions only proved the dock chrome tracked the guide — `renderMaxY`/`viewportHeight` derive from the same stale `keyboardHeight`, so they agreed even when both were wrong. The fenced block additionally asserts `keyboardHeight ≈ boundsHeight − keyboardGuideTop` (renderer model tracks the host guide) and `viewportHeight < boundsHeight − 120` (keyboard-up grid actually shrinks), with no synthetic keyboard-height override involved |
 | 215 | `Packages/macOS/CmuxAppKitSupportUI/Sources/CmuxAppKitSupportUI/Popover/ArrowlessPopoverAnchor.swift` | `popover-dynamic-height-reanchor` | Defers initial show, dismissal, and hosted-root layout until after `NSViewRepresentable.updateNSView` returns, preventing AppKit child-window ordering from re-entering SwiftUI/Observation mid-update. When an already-visible arrowless popover's content changes size, updates `contentSize` and re-shows the same popover against its original synthetic anchor so the edge stays fixed. Deferred work coalesces and rapid open→close cancels the pending show. Fixes the Usage Limits and Token Usage popover crash/drift paths |
 | 215a | `Packages/macOS/CmuxAppKitSupportUI/Sources/CmuxAppKitSupportUI/Popover/CmuxPopoverMutation.swift` | `popover-dynamic-height-reanchor` | Schedules coalesced popover mutations on the next common-mode main-run-loop turn instead of a main-actor task, because macOS 27 can run that task within the same AppKit layout cycle; generation checks preserve cancellation and rescheduling semantics |
 | 215b | `Packages/macOS/CmuxAppKitSupportUI/Sources/CmuxAppKitSupportUI/Popover/ArrowlessPopoverRootViewUpdatePolicy.swift` | `popover-dynamic-height-reanchor` | Changes first presentation from synchronous hosted-root mutation to deferred presentation, and treats dismissal as no root refresh; visible content updates retain their deferred path |
 | 216 | `Packages/macOS/CmuxAppKitSupportUI/Tests/CmuxAppKitSupportUITests/ArrowlessPopoverRootViewUpdatePolicyTests.swift` | `popover-dynamic-height-reanchor` | Focused coverage for next-run-loop deferral/coalescing/cancellation, deferred first presentation and cancellation, dismissal skipping hosted-root refresh, visible resize/reanchor planning, subpixel jitter, and hidden/invalid no-ops |
-| 217 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceActiveSurface.swift` | `ios-pane-actions` | Adds the captured close-target model and resolves the visible terminal/chat, phone-local browser, streamed browser, or Simulator into the exact pane the shared close action must address |
+| 217 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceActiveSurface.swift` | `ios-pane-actions` | Adds the captured close-target model and resolves the visible terminal, generic Mac surface, phone-local browser, streamed browser, or Simulator into the exact pane the shared close action must address |
 | 218 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `ios-pane-actions` | Stores the pending pane-close target and Simulator-create request, mounts the shared confirmation, passes close/create availability and actions into the surface picker, cancels stale Simulator creates when another surface wins, and exposes the existing selection/toast seams to the fork-owned action extension |
 | 219 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+SupermuxPaneActions.swift` | `ios-pane-actions` | Whole-file fork extension: one capability-gated action path captures and confirms the visible pane, closes phone-local browsers locally, closes every remote panel kind through `mobile.supermux.pane.close`, creates native Simulator panes through `mobile.supermux.simulator.create`, activates the returned stream descriptor, and reports failures without optimistic state drift |
 | 220 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+Surfaces.swift` | `ios-pane-actions` | Routes the phone-local browser’s existing × button through the same captured-target confirmation used by the new picker action instead of keeping a second immediate-close path |
 | 221 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/TerminalPickerMenu.swift` | `ios-pane-actions` | Mounts `SupermuxPaneMenuControls` into the native surface picker so New Simulator and destructive Close Pane are available without duplicating localized SwiftUI menu code in the upstream package |
 | 222 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/TerminalPickerMenuValue.swift` | `ios-pane-actions` | Carries snapshot-stable `canCreateSimulator` and `canClosePane` availability into the equatable native menu value |
 | 223 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/TerminalPickerMenuActions.swift` | `ios-pane-actions` | Carries the shared Simulator-create and pane-close closures emitted by the surface picker |
-| 224 | `Packages/iOS/CmuxMobileShellUI/Tests/CmuxMobileShellUITests/WorkspaceActiveSurfaceTests.swift` | `ios-pane-actions` | Behavior coverage that terminal and chat target the selected terminal, the phone-local browser targets local close, streamed browser/Simulator target their panel ids, and missing remote ids fail closed |
+| 224 | `Packages/iOS/CmuxMobileShellUI/Tests/CmuxMobileShellUITests/WorkspaceActiveSurfaceTests.swift` | `ios-pane-actions` | Behavior coverage that terminals target the selected terminal, generic Mac surfaces and streamed browser/Simulator surfaces target their panel ids, the phone-local browser targets local close, and missing remote ids fail closed |
 | 225 | `Packages/iOS/CmuxMobileShellUI/Tests/CmuxMobileShellUITests/TerminalPickerMenuValueTests.swift` | `ios-pane-actions` | Verifies pane action availability participates in the menu’s equatable identity and defaults hidden against unsupported/upstream hosts |
 | 226 | `ios/cmuxUITests/cmuxUITests.swift` | `ios-pane-actions` | End-to-end UI coverage on the local-browser fallback: the existing browser × opens the shared confirmation, cancel preserves the browser, and the new picker Close Pane action confirms and dismisses the same captured pane |
 | 227 | `cmuxTests/SimulatorPanelIntegrationTests.swift` | `ios-pane-actions` | Pins the Mac-side generic close invariant for Simulator panels: `Workspace.closePanel(force:)` removes the Simulator while preserving the sibling terminal, matching the RPC handler’s type-agnostic mutation path |
@@ -258,9 +257,7 @@ Rules for adding a touchpoint:
 | 234 | `CLI/cmux.swift` | `ccx-resume-launcher` | Threads the selected replay environment through hook-side resume argv generation so `surface.resume.set` publishes the same ccx-aware command as app-side restore planning |
 | 235 | `Sources/SurfaceResumeCommandCanonicalizer+PortableAgentExecutable.swift` | `ccx-resume-launcher` | Recognizes a validated ccx executable in inline stored restore commands and attaches restore authorization without rewriting ccx to the ordinary Claude wrapper |
 | 236 | `Packages/macOS/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/SupermuxCCXResumeLauncherTests.swift` | `unfenced` | Whole-file headless regression coverage for direct ccx restore, one-shot authorization, secret exclusion, Claude-only marker isolation, and invalid-marker fallback to ordinary Claude |
-| 228 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `ios-workspace-toolbar-persistent-actions` | Consolidates the workspace-detail toolbar so UIKit's native overflow ("More") can never trigger: ONE trailing `ToolbarItem` with the fixed [Agent Chat][terminal picker] cluster, and the lower-frequency actions moved into the workspace TITLE menu via `workspaceTitleToolMenuEntries` — upstream Changes (id `MobileChangesButton`, title carries live +N/−M), the fork rows via `SupermuxWorkspaceToolsMenuEntries` (#108 bindings), and the alt-screen notice row presenting the shared explanation popover (anchored on the detail body). Replaces the conditional `workspace-altscreen-notice` / `workspace-changes` items (and the fork's former separate entries) whose state-varying widths made iOS evict a varying subset into a native ••• per pane. Also fences: the widened title-menu `isEnabled` gate + `toolEntriesFingerprint` plumbing (`WorkspaceTitleMenuValue.swift`, same id — defeats `.equatable()` pinning a stale menu closure), the `isSupermuxChangesSheetPresented`/`isSupermuxFilesSheetPresented`/`isAltScreenExplanationPresented` state, `onChange` keyboard-dismiss parity for the fork sheets, the deferred-one-turn presentation in `openWorkspaceChanges` (menu-dismissal race), and the badge-headroom reserves (`backButtonReserve` 44→60, `floor` 96→80) in `MobileLeadingToolbarTitleWidth.swift` (same fence id) |
-| 229 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+AgentChat.swift` | `ios-workspace-toolbar-persistent-actions` | Makes `shouldShowChatToggle` structurally true and fixes `toolbarTrailingCluster` at two 44pt controls (96pt frame): the Agent Chat button is always mounted, merely disabled (with an accessibility hint) until the visible tab has a session, so agent/pane churn never changes the bar's shape. Companion fence in `AltScreenNoticeButton.swift` (same id) extracts `AltScreenNoticeExplanationContent` + `altScreenNoticeExplanationPopover(isPresented:dismissNotice:)` so the standalone notice button and #228's title-menu row present identical content |
-| 237 | `ios/cmuxUITests/cmuxUITests.swift` | `ios-workspace-toolbar-persistent-actions` | Reverses upstream's no-session expectation in the long-title workspace-toolbar preview: the Agent Chat button must remain present-but-disabled without a chat descriptor, and native toolbar overflow (`More`) must not replace the stable action cluster |
+| 228 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `ios-workspace-toolbar-persistent-actions` | Keeps the fork's capability-gated Changes and Files entries in the workspace title menu while leaving upstream's chat-less toolbar structure untouched. Fences own the two sheet bindings, keyboard-dismiss parity, `SupermuxWorkspaceToolsMenuEntries`, the title-menu `isEnabled` extension, and `toolEntriesFingerprint` plumbing in `WorkspaceTitleMenuValue.swift` so `.equatable()` refreshes when entry availability changes |
 | 238 | `ios/Config/Shared.xcconfig` | `ios-supermux-brand` | `PRODUCT_DISPLAY_NAME` = `Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)` (was `cmux`), the iOS app's home-screen name. `SUPERMUX_IOS_DISPLAY_SUFFIX` (new fork variable, empty default) lets dogfood builds append `" <tag>"` from the command line without passing `PRODUCT_DISPLAY_NAME` itself. `PRODUCT_NAME` stays `cmux` on purpose — it names the built product (`cmux.app`), which every reload/install/queue script resolves by path |
 | 239 | `ios/Config/Release.xcconfig` | `ios-supermux-brand` | Local Release builds display `Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)` (was `cmux BETA`; suffix empty → `Supermux`). The TestFlight/App Store lanes pass `PRODUCT_DISPLAY_NAME` on the xcodebuild command line (`ios/scripts/upload-testflight.sh`, `ios/scripts/resolve_testflight_distribution.py`), so upstream channel names and `tests/test_ios_testflight_pro_distribution.py` are untouched |
 | 240 | `ios/scripts/reload.sh` | `ios-supermux-brand` | Tagged dev builds display `Supermux DEV <tag>` (was `cmux DEV <tag>`). The tag suffix is kept so parallel tagged installs stay tellable apart; the `cmux.app` product path this script resolves is unchanged |
@@ -272,15 +269,7 @@ Rules for adding a touchpoint:
 | 247 | `Packages/iOS/CmuxMobileTerminal/Sources/CmuxMobileTerminal/GhosttySurfaceView.swift` | `ios-terminal-default-zoom` | Replaces the initializer's stale literal 10 pt default with `MobileTerminalFontPreference.defaultSize`, preventing the public surface default from drifting from the canonical preference |
 | 248 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+TerminalArtifacts.swift` | `ios-terminal-default-zoom` | Mounts each newly selected terminal at `MobileTerminalZoomPreference.resolvedFontSize`, making the floating "Set as default" action affect subsequent terminal mounts instead of only the floating Reset action |
 | 249 | `Packages/iOS/CmuxMobileTerminal/Tests/CmuxMobileTerminalTests/MobileTerminalZoomControlTests.swift` | `unfenced` | Whole-file regression coverage for the 12 pt built-in, saved-default persistence/clearing, and all three floating zoom buttons dispatching their actions |
-| 250 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Toolbar.swift` | `supermux-mobile-list-toolbar-identity` | Moves the `showsNavigationToolbar` condition INSIDE the `.toolbar` builder instead of branching around `content`. Upstream's `if showsNavigationToolbar { content.toolbar {…} } else { content }` gave `content` a different structural identity per branch, so every workspace push/pop tore down and rebuilt `WorkspaceListTable` (a `UIViewControllerRepresentable`) — resetting scroll to zero, forcing a full `structureChanged` rebuild of every cell, and re-firing every hosted `.task`. Measured: push+pop built the representable 3× and moved the offset 1200 → 0 |
 | 251 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListTableCoordinator.swift` | `supermux-mobile-list-reconfigure-rows` | Splits the non-structural update path: rows whose height changed go through `reconfigureRows(at:)` (same cell instance, hosted SwiftUI state preserved, height still re-queried), while only rows with a changed native-action payload keep `reloadRows` (UIKit caches swipe-derived accessibility actions on the cell and reconfiguring does not invalidate them). Previously every height change reloaded, destroying the hosted subtree — which blanked the fork's project avatars, since the whole Projects section is one hosted cell and its decoded icons live in `@State`. Distinct from #150, which fences the same file for the Projects row itself |
-| 252 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/ChatFocusMode+Supermux.swift` | `agent-chat-focus-mode` | **Whole-file fork addition inside an upstream package** (same pattern as the other whole-file rows here). Declares `ChatTranscriptGrouping` (a row-array → entry-array regrouper plus a configuration `identity`), its `Entry` type, the `chatTranscriptGrouping` environment value, and the `.chatTranscriptGrouping(_:)` modifier. A `nil` grouping renders upstream byte-for-byte, so demos, previews, tests, and an upstream-paired phone are unaffected. New file — cannot conflict on merge |
-| 253 | `Packages/iOS/CmuxAgentChatUI/Sources/CmuxAgentChatUI/Transcript/ChatTranscriptTableView.swift` | `agent-chat-focus-mode` | Seven fences: the `@Environment(\.chatTranscriptGrouping)` read; the `grouping` + `groupedEntries` fields on `ChatTranscriptTableConfiguration` and the arguments that fill them (**entries are computed ONCE in `updateUIView`**, not per cell, or the closure re-runs for every visible row while the transcript streams); `groupingReloadIdentity` + `groupedEntriesByID`; the `.groupedEntry(String)` item case and its `id`; the `makeItems()` branch emitting entries instead of rows; the cell-factory branch; and `groupingChanged` folded into `shouldReload`. **The reload fold is load-bearing**: expanding a group or flipping the setting can leave item ids identical, and without it the table keeps stale cells |
-| 254 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobileDisplaySettings.swift` | `ios-agent-chat-focus-mode` | Three fences: the `agentChatFocusModeKey` constant, the `agentChatFocusMode` observed property with write-through, and its seed in `init` (absent key reads as **true** — focus mode is the intended default, so a fresh install gets the quiet transcript without visiting Settings). Key is `supermux.mobile.agentChatFocusMode` |
-| 255 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobileSettingsView.swift` | `ios-agent-chat-focus-mode` | One fence at the top of the existing Display section: the **Focus Mode** toggle plus its explanatory footer, bound to `displaySettings.agentChatFocusMode`. Accessibility id `MobileSettingsAgentChatFocusMode`. The same file's terminal-scroll-speed slider remains registered as #199 |
-| 256 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceChatPane.swift` | `ios-agent-chat-focus-mode` | Three fences: `import SupermuxMobileUI`, the `@Environment(MobileDisplaySettings.self)` read, and the `.supermuxChatFocusMode(isEnabled:)` modifier on the `ChatScreen` group. **This is the only line that turns focus mode on**; remove it and the phone renders upstream's transcript unchanged |
-| 257 | `Packages/iOS/SupermuxMobileUI/Package.swift` | `unfenced` | Fork-owned manifest: adds `../../Shared/CmuxAgentChat` and `../CmuxAgentChatUI` package + target dependencies so the fork can name `ChatTranscriptRow` / `ChatRowActions` and re-render expanded rows with upstream's own `ChatTranscriptRowView`. Acyclic — `CmuxMobileShellUI` already depends on both |
-| 258 | `ios/cmux/Resources/Localizable.xcstrings` | `unfenced` | Two `supermux.settings.agentChatFocusMode*` keys (en + ja) for the Settings toggle and its footer. The shell package resolves `L10n` against the **app** bundle, so these belong here, NOT in the `SupermuxMobileUI` package catalog (which carries the four `supermux.chat.focus.*` keys) |
 | 259 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceShellView.swift` | `supermux-mobile-compact-root-chrome` | Nine fences. Everything that gated the phone's ROOT chrome on `compactNavigationPath.isEmpty` now reads `showsCompactRootChrome`, which folds in an in-flight interactive pop: the import, the `@State compactRootChrome`, the `showsCompactRootChrome` predicate, the compose-button gate, the `rootToolbarContent` gate, the destination's `.toolbarVisibility`, the `SupermuxInteractivePopObserver` mount, the `navigationPathChanged()` reset in `.onChange(of: compactNavigationPath)`, and the `showsNavigationToolbar` argument. See #260 for why |
 | 260 | `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/SupermuxCompactRootChrome.swift` | `unfenced` | **Fork-owned new file.** The predicate + the UIKit pop observer behind #259. Fixes two separate late-chrome bugs on the phone: (a) the top bar's items were absent for the whole edge-swipe back, because `NavigationStack` only writes the emptied path when the gesture COMMITS while UIKit reveals the root immediately — tapping the back button was clean, which is what pinned the cause; (b) the tab bar arrived ~1s late on BOTH back paths, because the `.toolbarVisibility(.hidden, for: .tabBar)` request lives on the pushed destination and that destination stays mounted, still asking for a hidden bar, for the entire pop animation. `SupermuxInteractivePopObserver` only adds a target-action to the pop recognizer — the DELEGATE stays with upstream's `InteractiveSwipeBackEnabler`, which owns whether the gesture may begin and how it arbitrates against terminal pans. A committed pop deliberately does NOT clear the flag (that would re-hide mid-animation); the path change does. `SupermuxCompactRootChromeTests` pins all six transitions |
 | 261 | `Packages/Shared/SupermuxMobileCore/Sources/SupermuxMobileCore/SupermuxUnreadBadgeStyle.swift` | `unfenced` | **Fork-owned new file.** The single description of the unread badge's geometry, count text and paint recipe, read by all three renderers (Mac SwiftUI, Mac AppKit, phone). Lives in the wire-contract package because that is the only one BOTH apps already depend on; it deliberately imports no UI framework, so the platforms own painting and share only proportions. Everything derives from the numeral's font size rather than absolute points, and the `99+` overflow marker resolves from the package localization catalog (#298). `SupermuxUnreadBadgeStyleTests` pins the cap, countless-dot fallback, one-digit circularity, the compact 9pt→14pt Mac height, and the phone's 10pt→16pt base height |
@@ -362,7 +351,7 @@ Rules for adding a touchpoint:
 | 337 | `Packages/iOS/CmuxMobileShellUI/Tests/CmuxMobileShellUITests/MobilePushReadinessTests.swift` | `ios-direct-apns-token` | Regression coverage proving an unsupported Time Sensitive setting can reach `.ready`, while Scheduled Summary remains the sole limitation when enabled on that build; the upstream parameterized test still proves a supported-but-disabled setting reaches `.presentationLimited([.timeSensitiveDisabled])` |
 | 338 | `scripts/reload.sh` | `reload-supermux-profile`, `reload-supermux-profile-parse`, `reload-supermux-profile-seed` | Adds `--supermux-profile` (implies `--prod-auth`): after the same-tag app is told to quit, calls the supermux-owned `scripts/supermux-seed-dev-profile.sh` to copy the main `com.supermux.app` release install's UserDefaults + Stack Auth `credentials.json` into the tag's isolated identity, so a user-facing Mac dogfood build launches already signed in to the production account with the user's settings. The seeder is supermux-owned (no touchpoint); the three fences are the flag var, the arg parse, and the post-quit seeding call |
 | 339 | `CLAUDE.md` | `mac-dogfood-supermux-profile` | Documents #338 next to upstream's "Build and reload" section: user-facing Mac dogfood builds must pass `--supermux-profile` (plain `--tag` sign-in points at an unserved localhost origin), sign-out inside a seeded build is forbidden (shared Stack session — revoking it signs the main app out too), agent-only builds keep plain `--tag` |
-| 340 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Toolbar.swift` | `supermux-mobile-usage-button` | Two fences: `import SupermuxMobileUI`, and `SupermuxUsageToolbarButton(model: supermuxUsage)` as the FIRST entry of the iOS `.topBarTrailing` `ToolbarItemGroup`, before upstream's `viewOptionsButton()` / `newWorkspaceButton`. The phone twin of the Mac sidebar footer gauge (#146): a ring filled to the tightest Claude/Codex limit, opening the read-only `SupermuxUsageScreen` sheet. Purely additive — no upstream toolbar item is replaced or wrapped. Renders nothing without `supermux.usage.v1`, so a fork phone paired with an upstream cmux Mac shows exactly upstream's toolbar. **The button must stay stateless.** This whole `ToolbarItemGroup` sits inside `if showsNavigationToolbar`, which is false for the duration of every pushed workspace, so a session owned by the button's own `@State` is destroyed on push and rebuilt on pop — emptying the ring and restarting the poll after routine navigation. The session therefore lives in `@State supermuxUsage` on `WorkspaceListView` (#340b). Note this fence also sits INSIDE the #250 `supermux-mobile-list-toolbar-identity` region, which must keep gating only the toolbar's CONTENT — never branching around `content` |
+| 340 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+Toolbar.swift` | `supermux-mobile-usage-button` | Two fences: `import SupermuxMobileUI`, and `SupermuxUsageToolbarButton(model: supermuxUsage)` as the FIRST entry of the iOS `.topBarTrailing` `ToolbarItemGroup`, before upstream's `viewOptionsButton()` / `newWorkspaceButton`. The phone twin of the Mac sidebar footer gauge (#146): a ring filled to the tightest Claude/Codex limit, opening the read-only `SupermuxUsageScreen` sheet. Purely additive — no upstream toolbar item is replaced or wrapped. Renders nothing without `supermux.usage.v1`, so a fork phone paired with an upstream cmux Mac shows exactly upstream's toolbar. **The button must stay stateless.** This whole `ToolbarItemGroup` sits inside `if showsNavigationToolbar`, which is false for the duration of every pushed workspace, so a session owned by the button's own `@State` is destroyed on push and rebuilt on pop — emptying the ring and restarting the poll after routine navigation. The session therefore lives in `@State supermuxUsage` on `WorkspaceListView` (#340b). Upstream now owns the identity-preserving shape: keep the condition inside the toolbar content and never branch around `content` |
 | 340b | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-usage-button` | Two iOS-only fences: the internal (not private) `@State supermuxUsage = SupermuxUsageSectionModel()` beside the #97 projects model, guarded by `#if os(iOS)`, and a `.supermuxUsageDriver(model:connection:)` on the stable iOS `workspaceTable`. The driver owns the session `.task`, keyed on the connection identity, exactly like the #97 projects driver; cancellation (a navigation push) PAUSES the poll loop but keeps the store, so the gauge holds its last reading and a pop resumes instead of reloading. The macOS `List` branch deliberately has neither state nor driver because it renders no usage entry point; attaching one there creates a consumer-less poll loop. Must stay on the stable iOS view — never inside the toolbar branch or a table cell. See #340 |
 | 341 | `Sources/Supermux/SupermuxMobileHost+Usage.swift` | `unfenced` | **Whole-file fork addition** (`Sources/Supermux/`, pbxproj ids `50BE0002…00E1`/`…00E2` under #95). Serves `mobile.supermux.usage.state` by projecting `SupermuxComposition.usageModel` — the SAME model the sidebar gauge and popover render — through the package-tested `SupermuxMobileUsagePayloadBuilder`. Awaits `usageModel.refresh()` first, because that poll loop is view-driven and a Mac with no sidebar mounted would otherwise report `loading` forever; the model's own hard floor applies to every caller, so a phone polling fast cannot add provider traffic. Read-only: no cswap switch/enable path is exposed to the phone |
 | 352 | `Sources/TerminalNotification.swift` | `notification-project-identity` | Adds the optional `project: SupermuxNotificationProject?` snapshot (plus the `SupermuxMobileCore` import and the defaulted init parameter) so every notification carries the project it fired from. A frozen snapshot, never a live reference: history stays readable after a project is renamed, recolored, or unregistered. Defaulted `nil`, so no upstream construction site changes |
@@ -374,7 +363,7 @@ Rules for adding a touchpoint:
 | 358 | `Sources/TerminalController+MobileNotificationSync.swift` | `notification-feed-project-wire` | Populates the wire item's project from the persisted history record and clamps its name with the existing metadata byte bound — the feed response is trimmed to a frame budget, so one pathological project name must not push notifications out of the frame |
 | 359 | `Packages/iOS/CmuxMobileRPC/Package.swift` | `notification-feed-project-wire` | Adds the `SupermuxMobileCore` dependency so the RPC layer can decode the shared notification-project type |
 | 360 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileNotificationFeedListItem.swift` | `notification-feed-project-wire` | Adds the optional `project` field, its `supermux_project` coding key, the defaulted init parameter, and the tolerant `decodeIfPresent` |
-| 361 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileNotificationFeedListBoundedItem.swift` | `notification-feed-project-wire` | **THE production decode path** — a field added only to #360 decodes as `nil` in production while #360's own unit tests pass, because this type carries a DUPLICATE key set and is what actually runs. Adds the key plus `mobileNotificationFeedListBoundedProject`, which bounds the name/color/etag/symbol and drops the project (never the whole row) on a malformed or over-long identifier: losing a notification over a bad avatar is the worse failure |
+| 361 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileNotificationFeedListBoundedItem.swift` | `notification-feed-project-wire` | **THE production decode path** — a field added only to #360 decodes as `nil` in production while #360's own unit tests pass, because this type carries a DUPLICATE key set and is what actually runs. Adds the key plus the type-scoped `supermuxBoundedProject`, which bounds the name/color/etag/symbol and drops the project (never the whole row) on a malformed or over-long identifier: losing a notification over a bad avatar is the worse failure |
 | 362 | `Packages/iOS/CmuxMobileShellModel/Package.swift` | `notification-feed-project-wire` | Adds the `SupermuxMobileCore` dependency to the target and its test target |
 | 363 | `Packages/iOS/CmuxMobileShellModel/Sources/CmuxMobileShellModel/MobileNotificationFeedItem.swift` | `notification-feed-project-wire` | Adds the `project` field to the domain snapshot in all THREE required places: the stored property, the memberwise init, and `updating(isRead:connectionStatus:)` — that initializer re-lists every field, so omitting it there would silently blank the avatar on the first mark-read or reconnect |
 | 364 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+NotificationFeed.swift` | `notification-feed-project-wire` | Threads the decoded project through `applyNotificationFeedSnapshot`'s wire→domain projection, normalizing the name with the same metadata bound as the other labels. A project whose name normalizes away keeps its id and accent so the avatar still renders |
@@ -385,7 +374,7 @@ Rules for adding a touchpoint:
 | 369 | `ios/Config/Shared.xcconfig` | `ios-communication-notifications` | Declares `SUPERMUX_APP_BUNDLE_ID` (which `PRODUCT_BUNDLE_IDENTIFIER` now derives from), `SUPERMUX_NSE_BUNDLE_ID` (derived from the app's, so it follows every channel/dogfood override and stays a CHILD of it — iOS refuses to load an extension whose id is not), and the empty `SUPERMUX_APP_DEV_PROFILE_SPECIFIER` / `SUPERMUX_NSE_DEV_PROFILE_SPECIFIER` / `SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS` defaults. **The indirection is the whole point:** an xcodebuild command-line build setting applies to EVERY target in the workspace, so the release script's bundle-id/profile/entitlements overrides would otherwise be stamped onto the extension too, giving it the app's id and an APNs entitlement its own App ID does not carry |
 | 370 | `ios/Config/Release.xcconfig` | `ios-communication-notifications` | Sets `SUPERMUX_APP_BUNDLE_ID` instead of assigning `PRODUCT_BUNDLE_IDENTIFIER` directly, so the extension's derived id follows the Release channel's id (see #369) |
 | 371 | `ios/Config/Info.plist` | `ios-communication-notifications` | Adds `NSUserActivityTypes = [INSendMessageIntent]`, required by the Communication Notifications capability. Its absence is the ITMS-90894 rejection and, at runtime, one of several SILENT failures where the push still arrives but renders as an ordinary banner with no avatar |
-| 372 | `scripts/supermux-ios-release.sh` | `unfenced` | Fork-owned. Ships the nested extension: passes `SUPERMUX_APP_BUNDLE_ID` / the per-target profile+entitlement variables instead of the workspace-wide overrides (#369); generalizes `resolve_adhoc_profile` to take a profile name and resolves the extension's second Ad Hoc profile; signs strictly INSIDE-OUT (extension frameworks → extension → app frameworks → app — signing the .app first invalidates its own signature); embeds each bundle's own `embedded.mobileprovision` and signs each with ONLY its own profile's entitlements; and asserts the extension's bundle id/child-prefix/extension point/principal class, the app's `NSUserActivityTypes`, the Communication Notifications entitlement in both profile and final signature, the extension's team + application-identifier, and a `codesign --verify --deep` pass. Every one of those failures is otherwise silent |
+| 372 | `scripts/supermux-ios-release.sh` | `unfenced` | Fork-owned. Ships the nested extension: passes `SUPERMUX_APP_BUNDLE_ID` / the per-target profile+entitlement variables instead of the workspace-wide overrides (#369); generalizes `resolve_adhoc_profile` to take a profile name and resolves the extension's second Ad Hoc profile; signs strictly INSIDE-OUT (extension frameworks → extension → app frameworks → app — signing the .app first invalidates its own signature); embeds each bundle's own `embedded.mobileprovision` and signs each with ONLY its own profile's entitlements; and asserts the extension's bundle id/child-prefix/extension point/principal class, the app's `NSUserActivityTypes`, the Communication Notifications entitlement in both profile and final signature, the extension's team + application-identifier, and a `codesign --verify --deep` pass. It also rejects the release unless the app registers the exact `cmux-ios-com.supermux.ios` pairing scheme, preventing a shared-scheme or wrong-bundle QR regression. Every one of those failures is otherwise silent |
 | 373 | `Sources/Update/NotificationPopoverRow.swift` | `notification-popover-redesign` | The popover row now renders the SHARED row body (`Sources/Supermux/SupermuxNotificationRowBody.swift`) instead of its own layout. The popover and the notifications panel list the same notifications from the same store; with two independent bodies the redesign landed only in the panel while the popover — the surface behind the bell button and ⌘I, which is what most people open — kept the old look. Takes an `NSImage` resolved above the popover's `LazyVStack` (#374) and adds identity compares for it and the avatar flag to `==` — a store reference below that boundary is the #2586 spin-loop. Keeps the `…workspaceTitle` accessibility identifier that `MultiWindowNotificationsWorkspaceHeadlineUITests` queries |
 | 374 | `Sources/Update/UpdateTitlebarAccessory.swift` | `notification-read-toggle-shared`, `notification-popover-redesign` | Two fences. The read-toggle one is #356. The redesign one brings the titlebar popover to parity with the notifications panel: a two-tier header (identity line + control row with the grouping toggle, Mark All Read, and Clear All), project sections via `SupermuxNotificationGrouping`, and every project icon resolved ONCE above the `LazyVStack` via the shared `SupermuxNotificationProjectBridge.projectIcons(for:)` helper, passing immutable `NSImage` values down — the same snapshot-boundary discipline as the existing per-render title index. Grouping reads the SAME `supermux.notifications.groupByProject` key the panel writes, so one behavior has one preference. The control row stays mounted with its actions disabled when empty, because `MultiWindowNotificationsUITests` asserts Clear All exists-and-is-disabled in the empty popover |
 | 375 | `Sources/AppDelegate.swift` | `notification-project-banner` | One line in `applicationDidFinishLaunching` calling `SupermuxBannerProjectDecorator.sweepOrphanedAvatars()`. Avatar PNGs are handed to `UNNotificationAttachment`, which MOVES them into its own store; a banner that failed to schedule leaves its copy in the temp directory. Background, best-effort, older-than-an-hour |
@@ -410,7 +399,7 @@ Rules for adding a touchpoint:
 | 394 | `Sources/TerminalController+MobileSimulator.swift` | `ios-pane-unread-acknowledgment` | Routes an accepted Simulator `.tap` through `dismissNotificationOnDirectInteraction` for the resolved workspace/panel before forwarding the tap. Touch movement and non-pointer actions remain unchanged |
 | 395 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `ios-pane-unread-acknowledgment` | Disables the legacy workspace-wide open read receipt when `supermux_unread_panel_ids` is present, so opening/visibility never clears sibling panes. Older/upstream Macs omit the field and keep the pre-existing broad fallback |
 | 396 | `Packages/SupermuxKit/Sources/SupermuxKit/Mobile/SupermuxMobileWorkspaceFields.swift` | `unfenced` | Adds the shared `supermux_unread_panel_ids` wire-key constant used by the legacy sender. The key always travels on a supporting Supermux Mac, including an empty array, so absence remains an unambiguous old-host capability signal |
-| 397 | `Sources/Workspace.swift` | `supermux-mobile-workspace-fields` | Exposes one type-erased publisher merging manual and restored pane-unread collections. `MobileWorkspaceListObserver` subscribes narrowly to this instead of hot `objectWillChange`, so exact pane-id changes propagate even while the workspace-level unread boolean stays true |
+| 397 | `Sources/Workspace.swift` | `supermux-mobile-workspace-fields` | Exposes one type-erased subject-backed publisher for exact manual/restored pane-unread changes. Upstream moved manual unread state into the Observation-backed `WorkspacePanelUnreadModel`, so the two mutation sites now explicitly send instead of relying on a removed `$manualUnreadPanelIds` Combine projection. `MobileWorkspaceListObserver` still subscribes narrowly, and exact pane-id changes propagate even while the workspace-level unread boolean stays true |
 | 398 | `Sources/SessionNotificationSnapshot.swift` | `notification-project-identity` | Persists the optional frozen project snapshot in workspace session JSON and restores it into `TerminalNotification`. Optional/defaulted for backward compatibility with snapshots written before project-aware notifications |
 | 399 | `Packages/SupermuxKit/Sources/SupermuxKit/Notifications/SupermuxNotificationFocusPolicy.swift` | `unfenced` | **Fork-owned new file.** Pure focus reconciliation for filtered notification lists: preserve a still-visible row, otherwise choose the newest visible id, otherwise clear focus. Keeps SwiftUI state writes out of `body` and package-tests the Return-key target decision |
 | 400 | `Packages/SupermuxKit/Tests/SupermuxKitTests/SupermuxNotificationFocusPolicyTests.swift` | `unfenced` | **Fork-owned package coverage.** Verifies preserved visible focus, reseating after filtering, and empty-list clearing |
@@ -439,7 +428,7 @@ Rules for adding a touchpoint:
 | 420 | `Sources/ClosedItemHistory+PanelTitle.swift` | `claude-harness-closed-title` | Recently-closed fallback title for the harness pane |
 | 421 | `Sources/CmuxLifecycleEventPublishing.swift` | `claude-harness-lifecycle-kind` | Publishes surface kind `claude_harness` in cmux lifecycle events |
 | 422 | `Sources/Workspace+SurfaceNavigation.swift` | `claude-harness-surface-navigation` | Maps `.claudeHarness` to `SurfaceKind.claudeHarness.rawValue` in workspace state snapshots |
-| 423 | `Sources/PaneDropTargetView+FileDropTextDestination.swift` | `claude-harness-file-drop` | Adds `.claudeHarness` to the `return nil` group (no file-drop text destination) |
+| 423 | `Sources/PaneDropContainer.swift` | `claude-harness-file-drop` | Keeps `.claudeHarness` out of the generic file-drop text destination after upstream consolidated drop routing into `PaneDropContainer`; harness file drags continue through the dedicated composer path |
 | 424 | `Sources/Search/GlobalSearchDocuments.swift` | `claude-harness-global-search` | Indexes harness panes with `kind = .title` in global search |
 | 425 | `Sources/Workspace+LayoutCapture.swift` | `claude-harness-layout-capture` | Counts the harness pane as an unsupported surface in declarative layout capture (placeholder terminal) |
 | 426 | `Sources/Workspace.swift` | `claude-harness-snapshot`, `claude-harness-snapshot-arm`, `claude-harness-snapshot-field`, `claude-harness-restore-arm`, `claude-harness-transfer-in`, `claude-harness-attach-rollback` | Session snapshot local + arm + `SessionPanelSnapshot` field wiring, restore arm delegating to `restoreSupermuxHarnessPanel` while suppressing untrusted saved remote cwd values, cross-workspace transfer re-install of the display-state subscription plus a destination-workspace Git metadata reprobe after remote-directory trust is restored, and rollback detach on failed attach. The factory/subscription bodies live in the supermux-owned `Sources/Supermux/Harness/Workspace+SupermuxHarness.swift` |
@@ -492,6 +481,29 @@ Rules for adding a touchpoint:
 | 470 | `Packages/macOS/CmuxControlSocket/Tests/CmuxControlSocketTests/FakeSurfaceControlCommandContext.swift` | `claude-harness-socket-split-error-test` | Adds an injectable surface-split resolution to the package test context so harness split rejection can be exercised through the real coordinator response path |
 | 471 | `Packages/macOS/CmuxControlSocket/Tests/CmuxControlSocketTests/ControlCommandCoordinatorSurfaceTests.swift` | `claude-harness-socket-split-error-test` | Verifies both `pane.create` and `surface.split` errors name `claudeHarness` rather than incorrectly reporting `agent-session` |
 | 472 | `Sources/FileDropOverlayViewHitTesting.swift` | `claude-harness-file-drop-passthrough` | Makes the window-level Finder drag overlay honor `PaneDropTargetView.capturesFileDrops`, so a harness overlay that passes file drags through cannot be rediscovered and invoked out-of-band while tab-transfer routing remains intact |
+| 473 | `Packages/iOS/CmuxMobileTerminal/Sources/CmuxMobileTerminal/GhosttySurfaceView.swift` | `lint-allow-upstream-debt` | Inline `lint:allow lock` fence for upstream's synchronous local pixel-scroll remainder handoff between the main actor and serial surface queue |
+| 474 | `Packages/iOS/CmuxMobileTerminal/Sources/CmuxMobileTerminal/GhosttySurfaceView+LocalPixelScroll.swift` | `lint-allow-upstream-debt` | Companion `lint:allow lock` fence on the pixel-scroll helper's shared-state parameter |
+| 475 | `Packages/iOS/CmuxMobileTransport/Sources/CmuxMobileTransport/CmxTailscaleRouteAuthority.swift` | `lint-allow-upstream-debt` | Three `lint:allow lock` fences for upstream's synchronous Network.framework callback sequence stamping |
+| 476 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/DiagnosticBuildStamp.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's stateless cross-platform diagnostic stamp formatter |
+| 477 | `Packages/iOS/CmuxMobileShellModel/Sources/CmuxMobileShellModel/MacSurfaceTextDecoder.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's stateless panel-byte decoder |
+| 478 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/PanelFileSurfaceView.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's file-surface subtitle policy |
+| 479 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MacSurfaceGalleryPreviewView.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's immutable preview fixture bytes |
+| 480 | `Packages/iOS/CmuxMobileSimulatorStream/Sources/CmuxMobileSimulatorStream/SimStreamTouchMapping.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's pure Simulator touch geometry |
+| 481 | `ios/cmuxPackage/Sources/cmuxFeature/MobileKeychainAccessGroupPolicy.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's pure signing-metadata policy |
+| 482 | `Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/KimiConfigLocationResolver.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's stateless Kimi configuration layout resolver |
+| 483 | `Packages/Shared/CmuxSimulatorStreamKit/Sources/CmuxSimulatorStreamKit/SimStreamProtocol.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's immutable Simulator-stream wire constants |
+| 484 | `Packages/Shared/CmuxSimulatorStreamKit/Sources/CmuxSimulatorStreamKit/SimStreamWireCodec.swift` | `lint-allow-upstream-debt` | Fenced namespace allowance for upstream's stateless Simulator-stream binary codec |
+| 485 | `Sources/TerminalController+MobileSurfaces.swift` | `claude-harness-mobile-surface-kind` | Maps the fork's Claude harness panel to the open mobile surface wire string `claudeHarness`, so generic phone surface inventories stay exhaustive and render it through upstream's unknown-kind fallback card |
+| 486 | `cmuxTests/MobileSurfaceKindMappingTests.swift` | `claude-harness-mobile-surface-kind` | Extends the canonical PanelType→mobile-wire mapping regression with the fork's `claudeHarness` case |
+| 487 | `Sources/Workspace.swift` | `remote-tab-context-disconnect` | Handles bonsplit's `disconnectRemote` tab-context action through the existing workspace disconnect path without clearing the saved remote configuration. Upstream exposes the menu item but otherwise falls through `@unknown default`, leaving “Disconnect SSH” inert |
+| 488 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MacSurfaceGalleryPreviewView.swift` | `ios-pane-actions` | Supplies inert New Simulator / Close Pane closures to upstream's gallery preview fixture so the fork-extended `TerminalPickerMenuActions` memberwise initializer remains compilable without changing preview behavior |
+| 489 | `Packages/Shared/CMUXMobileCore/Tests/CMUXMobileCoreTests/CmxPairingURLSchemeTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the fixed Supermux iOS release bundle to own an exact release-classified pairing URL scheme |
+| 490 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileMacBuildCompatibilityPolicyTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the official iOS policy to admit the exact Supermux macOS release namespace over authenticated Tailscale host status |
+| 491 | `cmuxTests/MobileHostIdentityTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the Supermux Mac release to target the fixed `com.supermux.ios` app for pairing and pushes by default |
+| 492 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/CmxPairingURLScheme.swift` | `supermux-release-mobile-identity` | Classifies the fixed `cmux-ios-com.supermux.ios` exact-bundle scheme as a release lane instead of rejecting the Supermux iOS identity |
+| 493 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileMacBuildCompatibilityPolicy.swift` | `supermux-release-mobile-identity` | Admits the exact `mac:com.supermux.app` namespace under the official Release compatibility policy while keeping unknown namespaces fail-closed |
+| 494 | `Sources/Mobile/MobileIOSPairingTargetStore.swift` | `supermux-release-mobile-identity` | Makes the fixed Supermux Mac release target only `com.supermux.ios` for QR pairing and pushes; upstream cmux release and tagged DEV target selection remain unchanged |
+| 495 | `Sources/Mobile/Pairing/MobilePairingModel.swift` | `supermux-release-mobile-identity` | Gives the fixed Supermux iOS pairing target its localized product name in the Mac pairing window |
 
 ## How to re-apply
 
@@ -768,61 +780,16 @@ Re-apply the wire, observer, cache, and renderer changes as one unit. Verify wit
 
 Keep `MobileTerminalFontPreference.defaultSize` at 12 pt and make every defaulted `GhosttySurfaceView` initializer reference that constant rather than duplicating a number. `MobileTerminalZoomPreference.resolvedFontSize` must return the explicitly saved size when present and the built-in 12 pt size otherwise. The production terminal mount in `WorkspaceDetailView+TerminalArtifacts.swift` must pass that resolved value into `GhosttySurfaceRepresentable`; passing the built-in constant directly recreates the bug where tapping the floating "Set as default" button persists a value that no newly selected terminal ever reads. The floating Reset action continues to apply the resolved value, while Restore built-in clears the explicit preference and applies 12 pt. Keep `MobileTerminalZoomControlTests` in the package test target to cover persistence/clearing and dispatch from all three floating buttons.
 
-### 252–258. Agent chat Focus Mode — `agent-chat-focus-mode` + `ios-agent-chat-focus-mode`
+### 252–258. RETIRED (2026-08-24 upstream merge)
 
-A coding-agent session is mostly tool calls. Rendered one row each, they bury the handful of
-sentences the agent actually said — which is what the user opened the phone to read. Focus Mode
-folds each consecutive run of work rows behind a single tappable "Working · N steps" summary.
+Upstream removed the iOS Agent Chat GUI, so Supermux retired the dependent Focus Mode feature,
+settings, localization, package dependencies, and tests. The artifact/event/RPC infrastructure
+upstream retained is not part of these retired UI touchpoints.
 
-**What folds:** `toolUse`, `thought`, `terminal`, `fileEdit`.
-**What never folds:** prose, user prompts, `question`, `permissionRequest`, `status`, `attachment`,
-date headers, the unread separator, and pending outbound prompts. Questions and permission requests
-BLOCK the agent — hiding them behind a disclosure would strand the session. `SupermuxChatFocusGroupingTests`
-pins both lists, plus the invariant that grouping never drops or reorders a row.
+### 250. RETIRED (2026-08-24 upstream merge)
 
-Runs shorter than `minimumGroupSize` (2) stay expanded: folding a single call costs a tap and saves
-nothing.
-
-**Where the code lives.** All of it is fork-owned under
-`Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/AgentChat/`
-(`SupermuxChatFocusGrouping` — the pure fold; `SupermuxChatFocusMode` — the modifier that owns
-expanded state; `SupermuxChatWorkGroupRow` — the summary; `SupermuxChatShimmerText`). Upstream keeps
-owning the table, keyboard tracking, paging, and every individual row view — expanded runs call
-straight back into `ChatTranscriptRowView`.
-
-**Three things are load-bearing and easy to lose on a re-apply:**
-
-1. **Entries are computed once per update, in `updateUIView`** (#245), and shared by `makeItems()`
-   and the cell factory. Computing them inside the factory instead re-runs the fold for every
-   visible cell on every streamed delta, and lets the two disagree about what entry N is.
-2. **`groupingReloadIdentity` must stay in `shouldReload`** (#245). It combines the grouping's
-   configuration identity with the ordered entry ids, so both "the setting flipped" and "a group
-   expanded, so its rows moved" force a reload. Without it the table keeps stale cells.
-3. **Expanded state lives in `SupermuxChatFocusModifier`, above the transcript** — deliberately not
-   in `SupermuxChatWorkGroupRow`. The transcript is a `UITableView` that decides to reload by
-   comparing item identity; a tap that only flipped a child view's private `@State` would resize a
-   cell the table does not know changed (self-sizing drift). Keeping it above means a tap changes
-   the grouping identity, which forces a clean reload.
-
-**To re-apply after an upstream merge:**
-
-- If upstream reshapes `ChatTranscriptTableView`, re-add the seven fences from #245. The
-  `.groupedEntry` case follows whatever item taxonomy upstream now has.
-- If upstream reshapes the Display settings section, re-add the #247 toggle.
-- Verify it is actually live, not just compiling: open a Claude session with Focus Mode on and
-  confirm runs of tool calls appear as one "Working · N steps" row that expands on tap. If every
-  tool call still renders individually, the #248 modifier or item 1 above was dropped.
-
-### 250. Workspace-list toolbar identity — `supermux-mobile-list-toolbar-identity`
-
-The rule is one sentence: **never branch around `content` to add or remove the toolbar.** Keep a
-single `content.toolbar { … }` and put `if showsNavigationToolbar` inside the
-`ToolbarContentBuilder`. Two branches of a `_ConditionalContent` are two structural identities, so
-an `if/else` around `content` destroys and rebuilds everything it wraps — including the UIKit table
-— on every push and pop. `WorkspaceShellView.swift` already does it the correct way for
-`rootToolbarContent`; match that shape. If an upstream merge reintroduces the `if/else`, the symptom
-is the workspace list losing its scroll position and visibly repainting when you navigate back, not
-a compile error.
+Upstream independently adopted the identity-preserving workspace-list toolbar structure, so the
+fork fence and registry row were removed.
 
 ### 251. Reconfigure, don't reload, on height-only updates — `supermux-mobile-list-reconfigure-rows`
 
@@ -836,49 +803,33 @@ UIKit's own boundary after the swipe controls close. Reverting to a blanket `rel
 not fail any build; it silently reintroduces project avatars blanking whenever an unrelated row
 changes height.
 
-### 228–229, 237. Persistent iOS workspace toolbar actions — `ios-workspace-toolbar-persistent-actions`
+### 228. iOS workspace title-menu tools — `ios-workspace-toolbar-persistent-actions`
 
-Root cause this guards against: on iOS 26 every extra trailing `ToolbarItem` risks UIKit's
-native overflow ("More" / `OverflowBarButtonItem`) evicting a state-varying subset of items the
-moment leading + trailing exceed the bar's item band (~362pt on a 402pt phone) — with the
-alt-screen notice, upstream Changes, and the fork entries all conditional, and the back
-button's unread badge alone worth ~18pt, the bar looked different per pane/agent state,
-sometimes collapsing entirely to one native •••. Two invariants:
+Upstream now owns the chat-less workspace toolbar structure. Supermux only appends its
+capability-gated Changes and Files rows after `WorkspaceTitleMenuContent`, extends the title menu's
+`isEnabled` value, and fingerprints their availability through
+`WorkspaceTitleMenuValue.toolEntriesFingerprint` so `.equatable()` never pins a stale menu closure.
+The two sheet bindings remain above the UIKit branch because their shared mount spans every detail
+surface, and presentation uses the same keyboard-dismiss chrome policy as upstream actions.
 
-1. EXACTLY ONE trailing `ToolbarItem` (`workspace-trailing`) with a fixed two-control cluster —
-   Agent Chat (always mounted, `.disabled` until the visible tab has a session) and the
-   terminal picker. No dedicated overflow button.
-2. Everything lower-frequency lives in the workspace TITLE menu
-   (`workspaceTitleToolMenuEntries`, appended after `WorkspaceTitleMenuContent`): upstream
-   Changes (keeps id `MobileChangesButton`; title appends live `+N −M` from
-   `workspaceChangesChip`), the fork's Changes/Files rows
-   (`SupermuxWorkspaceToolsMenuEntries`, #108), and the alt-screen notice row (same
-   `isAlternateScreen` + `showAltScreenNotice` conditions as the old standalone item; presents
-   the shared `AltScreenNoticeExplanationContent` popover anchored on the detail body, since a
-   menu row cannot anchor one). The title menu's `isEnabled` must OR in these entries, and
-   `WorkspaceTitleMenuValue.toolEntriesFingerprint` must fingerprint their inputs or
-   `.equatable()` pins a stale menu closure.
+### 229 and 237. RETIRED (2026-08-24 upstream merge)
 
-Menu actions that present something must defer their state flip one main-actor turn
-(`Task { @MainActor in … }`) so the presentation does not race the menu's dismissal. The fork
-sheets get keyboard-dismiss parity via `onChange` of their presentation bindings calling
-`dismissTerminalKeyboardForChrome()` — one chrome policy for all three entries. In
-`MobileLeadingToolbarTitleWidth`, `backButtonReserve` (60) keeps unread-badge headroom and
-`floor` (80) keeps the title pill from pushing the cluster into overflow even in the badge +
-long-title worst case.
+Upstream removed the iOS Agent Chat button and its chat-dependent toolbar previews. Supermux took
+that UI removal instead of restoring its former fixed chat-button cluster or override tests.
 
-In `ios/cmuxUITests`, `testWorkspaceDetailToolbarKeepsPersistentActionsVisibleWithLongTitleWithoutChatSession`
-keeps the no-chat-session preview and asserts `MobileWorkspaceAgentChatButton` exists but is
-disabled and no native overflow button replaces the controls. This intentionally overrides
-upstream's old assertion that the chat button disappears without a descriptor.
+### 213–214. RETIRED (2026-08-24 upstream merge)
+
+Upstream replaced the old `GhosttySurfaceView` keyboard workaround with
+`GhosttySurfaceHostView`/`KeyboardDockGeometrySource` and host-driven keyboard transitions. The
+fork implementation and its now-incompatible UITest assertions were removed.
 
 ### 217–227. iOS pane close + Simulator creation — `ios-pane-actions`
 
 Keep the Mac mutation surface in the existing fork namespace rather than adding more upstream dispatch cases: `SupermuxMobileMethod.paneClose` / `.simulatorCreate`, `SupermuxMobileCapability.panesV1`, the matching authorization classifications, and the handlers in `Sources/Supermux/TerminalController+SupermuxMobile.swift`. Close must resolve an explicit `workspace_id` + `panel_id`, verify the panel belongs to that workspace, mark it history-eligible, and call the single generic `Workspace.closePanel(force: true)` path — never branch by terminal/browser/Simulator type. Simulator creation must reuse `Workspace.newSimulatorSurface(inPane:focus: false)`, remain gated by the upstream Simulator feature/capability, and return the normal `MobileSimulatorPanelDescriptor`. Phone requests add `focus: true`; the Mac then routes the created panel through the shared control-focus action before replying and closes it if that focus phase fails. A missing flag retains the older background-create behavior.
 
-On iOS, keep one captured-target confirmation path. `WorkspaceActiveSurface.paneCloseTarget` maps terminal and Agent Chat to the selected terminal id, the phone-local browser to local close, and streamed browser/Simulator to their panel ids. `WorkspaceDetailView+SupermuxPaneActions.swift` owns the action: the local fallback closes through `BrowserSurfaceStore`; remote panes call the capability-gated fork client and wait for authoritative workspace/browser/Simulator events instead of mutating optimistic copies. The existing browser × and the surface-picker Close Pane item must both call `requestClosePane`. New Simulator uses a request UUID exactly like New Browser so a late response cannot override a newer user selection; install the returned descriptor into `MobileSimulatorStreamStore` before selecting it.
+On iOS, keep one captured-target confirmation path. `WorkspaceActiveSurface.paneCloseTarget` maps a terminal to the selected terminal id, a generic Mac surface to its own id, the phone-local browser to local close, and streamed browser/Simulator surfaces to their panel ids. `WorkspaceDetailView+SupermuxPaneActions.swift` owns the action: the local fallback closes through `BrowserSurfaceStore`; remote panes call the capability-gated fork client and wait for authoritative workspace/browser/Simulator events instead of mutating optimistic copies. The existing browser × and the surface-picker Close Pane item must both call `requestClosePane`. New Simulator uses a request UUID exactly like New Browser so a late response cannot override a newer user selection; install the returned descriptor into `MobileSimulatorStreamStore` before selecting it.
 
-The native surface picker carries only two availability booleans and two closures; localized menu/confirmation UI lives in fork-owned `SupermuxMobileUI` (`supermux.panes.*`, en + ja). Against an upstream Mac or an older fork host without `supermux.panes.v1`, remote close and New Simulator stay hidden; the phone-local browser remains closable. Re-run the headless SupermuxMobileCore/Kit/UI package tests, compile the app-hosted suites, and preserve the focused coverage in #224–227.
+The native surface picker carries only two availability booleans and two closures; localized menu/confirmation UI lives in fork-owned `SupermuxMobileUI` (`supermux.panes.*`, en + ja). Any upstream preview that constructs `TerminalPickerMenuActions` must supply inert versions of those closures (#488). Against an upstream Mac or an older fork host without `supermux.panes.v1`, remote close and New Simulator stay hidden; the phone-local browser remains closable. Re-run the headless SupermuxMobileCore/Kit/UI package tests, compile the app-hosted suites, and preserve the focused coverage in #224–227.
 
 ### 230–236. ccx-specific Claude session restore — `ccx-resume-launcher`
 
@@ -1032,13 +983,11 @@ Before `writeLoop` calls `transport.send`, wait until the quota admits the pendi
 
 ### 156. `Packages/iOS/CmuxMobileTransport/Tests/CmuxMobileTransportTests/CmxTailscaleRouteProofTests.swift` — `tailscale-packet-tunnel-proof`
 
-Keep both packet-tunnel regressions beside the existing exact IPv4/IPv6 proof test. First, build a valid proof and validate a satisfied connection path whose available interfaces include the proven Tailscale interface, whose remote address/port exactly match the route, and whose `localAddress` is `nil`; validation must succeed. Second, validate the same proof against a newer authority generation whose security-relevant route is otherwise identical; that must also succeed. Keep the fail-closed companions: a non-nil local address outside `proof.selfAddresses` throws `localEndpointMismatch`, and replacing the proven interface identity throws `interfaceChanged` even when the replacement reports the same Tailscale self-addresses. All additions stay inside the fence.
+Keep the packet-tunnel regression beside the existing exact IPv4/IPv6 proof test. Build a valid proof and validate a satisfied established connection path whose available interfaces include the proven Tailscale interface, whose remote address/port exactly match the route, and whose `localAddress` is `nil`; validation must succeed. Keep the fenced fail-closed companion proving a non-nil local address outside `proof.selfAddresses` throws `localEndpointMismatch`. Do not weaken upstream's unfenced generation and interface-substitution expectations: a newer authority generation must throw `routeGenerationChanged`, and replacing the proven interface identity must throw `interfaceChanged`.
 
 ### 155. `Packages/iOS/CmuxMobileTransport/Sources/CmuxMobileTransport/CmxTailscaleRouteProof.swift` — `tailscale-packet-tunnel-proof`
 
-In `CmxTailscaleRouteProofValidator.validate`, do not reject a proof merely because the generic `NWPathMonitor` authority generation advanced. Remove the `authoritySnapshot.generation == proof.generation` guard and keep the fenced rationale in its place. Network.framework can publish a distinct path revision immediately after a packet-tunnel connection becomes ready even though the route's security-relevant properties are unchanged; treating that revision counter as authority tears down a valid session immediately after pairing.
-
-Also treat `connectionPath.localAddress` as an optional extra proof rather than a required field:
+Retain upstream's `authoritySnapshot.generation == proof.generation` guard. The fork changes only `connectionPath.localAddress`, treating it as an optional extra proof rather than a required field:
 
 ```swift
 // SUPERMUX:begin tailscale-packet-tunnel-proof
@@ -1049,7 +998,7 @@ if let localAddress = connectionPath.localAddress,
 // SUPERMUX:end tailscale-packet-tunnel-proof
 ```
 
-Do not weaken the security-relevant checks around these changes: the current authority path must be satisfied and still expose exactly one matching Tailscale interface with the prepared interface identity and self-address set; the connection path must be satisfied and contain that exact interface; and the remote address/port must exactly match the authorized peer. Network.framework can also report `localEndpoint == nil` for a ready packet-tunnel connection while all of those stronger route/interface checks succeed, so requiring a non-nil value makes every valid Tailscale dial fail locally before credentials are written.
+Do not weaken the security-relevant checks around this change: the authority generation must still match; the current authority path must be satisfied and still expose exactly one matching Tailscale interface with the prepared interface identity and self-address set; the connection path must be satisfied and contain that exact interface; and the remote address/port must exactly match the authorized peer. Network.framework can report `localEndpoint == nil` for a ready packet-tunnel connection while all of those stronger route/interface checks succeed, so requiring a non-nil value rejects a valid route locally before credentials are written.
 
 ### 154. `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellEventStreamPerformanceTests.swift` — whole-file regression coverage
 
@@ -3251,30 +3200,27 @@ nothing and no legitimate lockfile diff can exist. The fork's new path-only pack
 (`SupermuxMobileCore/Kit/UI` + the fenced `CmuxMobileShellUI` path dep) made the script exit 1 at
 HEAD with no possible fix on the lockfile side.
 
-Three fence blocks, all sharing the `fix-resolved-policy-path-deps` id:
+Seven fence blocks share the `fix-resolved-policy-path-deps` id:
 
-- **`lockfile_recorded_dependency_calls(calls)`** (module-level helper): filters dependency calls
-  down to those SwiftPM records in a lockfile — a call counts as recorded when it has a `url:`
-  argument or has no `path:` argument (registry/url pins), so path-only calls are excluded.
-- **`main`'s changed-roots loop:** after the existing `current_calls == previous_calls`
-  short-circuit, also `continue` when the *lockfile-recorded* calls are unchanged between
-  merge-base and HEAD. A brand-new path-only manifest reads as `previous_calls == []` with zero
-  recorded calls on both sides, so it passes; any added/removed/edited `url:` pin still differs
-  and still requires lockfile churn (verified: a scratch commit adding
-  `.package(url: …, from: …)` to `CmuxMobileShellUI/Package.swift` without lockfile churn exits
-  1 naming both affected lockfiles, and exits 0 once the lockfiles are touched in the same range).
-- **`file_text_at`:** runs `git show` with stderr suppressed and returns `""` on failure, because
-  a manifest new since the merge-base has no blob at that ref — expected, previously leaked
-  `fatal: path … exists on disk, but not in <merge-base>` noise into the check output.
+- **`lockfile_recorded_dependency_calls(calls)`** filters dependency calls to URL/registry pins that
+  SwiftPM can record.
+- **`path_dependency_remote_pin_roots(...)`** distinguishes pin-free local graph edits from path
+  edges that change which remote-pinned packages enter the resolution closure.
+- **`file_text_at`** treats a manifest absent at the merge base as empty without leaking expected
+  `git show` stderr.
+- **`current_remote_memo`** supplies the shared graph memo used by the precise changed-root check.
+- **The changed-roots skip** exempts a path edit only when both recorded calls and reachable
+  remote-pin roots are unchanged.
+- **The iOS-workspace skip** suppresses an impossible Xcode lockfile demand when the workspace's
+  union of remote calls is byte-for-byte unchanged.
+- **The per-package skip** does the same for an affected package root whose remote closure did not
+  change.
 
-Re-apply note: if upstream rewrites the script, re-apply by keeping the invariant "a manifest
-dependency change requires a lockfile diff only if the change is visible to Package.resolved
-(url/registry pins)". If upstream ships its own path-dep exemption, drop all three fences and
-take upstream. Do NOT weaken the pinned-dependency protection: url-pin changes without lockfile
-churn must keep failing (re-run the scratch-worktree red/green check above after any merge).
-Note: the policy script has NO automated tests in-repo — the scratch-worktree red/green check
-described above is the only verification of this fence's behavior, so it must be repeated by
-hand after any merge that touches the script.
+Re-apply note: keep the invariant "a manifest dependency change requires a lockfile diff only if
+it changes what Package.resolved can record." If upstream ships an equivalent path-dependency
+exemption, drop all seven fences and take upstream. Do not weaken pinned-dependency protection:
+URL-pin changes without lockfile churn must keep failing. Re-run the repository policy check and a
+scratch red/green URL-pin case after any merge that touches this script.
 
 ### 108. `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` — `supermux-mobile-workspace-tools`
 
@@ -3290,17 +3236,18 @@ logic is fork-owned in `Packages/iOS/SupermuxMobileUI` (`SupermuxWorkspaceTools.
   workspace.rpcWorkspaceID.rawValue, workspaceName: workspace.name, showingChanges:
   $isSupermuxChangesSheetPresented, showingFiles: $isSupermuxFilesSheetPresented)` on the outer
   `Group` in `body`, BEFORE `.mobileConnectionRecoveryOverlay` — the outer Group so the sheets
-  ride every detail branch (terminal / browser / chat) and survive upstream reshuffles of the
-  inner `.toolbar` blocks. IMPORTANT: pass `workspace.rpcWorkspaceID.rawValue`, NOT
+  ride every detail branch (terminal, browser, Simulator, and generic Mac surfaces) and survive
+  upstream reshuffles of the inner `.toolbar` blocks. IMPORTANT: pass
+  `workspace.rpcWorkspaceID.rawValue`, NOT
   `workspace.id.rawValue`. With two+ Macs paired, aggregation scopes `workspace.id` to
   `<macID>\u{1F}<uuid>`, but the Mac's `changes.*`/`files.*` RPCs parse `workspace_id` as a bare
   UUID, so the scoped id fails every request with `invalid_params`. `rpcWorkspaceID` is the
   Mac-local (unscoped) id the host expects.
 
-Since the #228 toolbar consolidation the modifier mounts ONLY the two `.sheet`s presenting
-`SupermuxChangesScreen` / `SupermuxFileBrowserScreen`; it adds no `ToolbarItem`s. The visible
-entries are `SupermuxWorkspaceToolsMenuEntries` rows inside #228's explicit trailing overflow
-menu, which flip the two `@State` bindings (fenced under #228) that this modifier receives.
+The modifier mounts only the two `.sheet`s presenting `SupermuxChangesScreen` /
+`SupermuxFileBrowserScreen`; it adds no `ToolbarItem`s. The visible entries are
+`SupermuxWorkspaceToolsMenuEntries` rows inside #228's workspace title menu, which flip the two
+`@State` bindings (fenced under #228) that this modifier receives.
 Each row hides unless the #96 seam is connected AND the host advertises its capability —
 `supermux.changes.v1` for Changes, `supermux.files.v1` for Files; an upstream Mac renders
 exactly today's UI. One store is built per presentation from the seam's `MobileCoreRPCClient`
@@ -3328,9 +3275,12 @@ fork packages too. The repo-wide namespace-type rule already scanned them regard
 The fork packages' deliberate constant/text namespace holders (`SupermuxWireErrorCode`,
 `SupermuxChangesSyncDeadline`, `SupermuxFileName`, `SupermuxFileOpErrorText`,
 `SupermuxProjectStyle`, `SupermuxWorkspaceTools`, `SupermuxMobileActivityPalette`,
-`SupermuxEditorErrorText`, `SupermuxFolderPickerPath`) carry inline `/// lint:allow …`
-justifications following the lint's own sanctioned-exception mechanism (precedent:
-`CmxPairingURLScheme`, `AutoNamingAgentCatalog`).
+`SupermuxEditorErrorText`, `SupermuxFolderPickerPath`, `SupermuxUsageCountdown`,
+`SupermuxSharedProjectIconStore`, and `SupermuxUnreadBadgeGradient`) carry inline
+`/// lint:allow …` justifications. `SupermuxProjectIconImageCache.shared` carries the matching
+singleton allowance because decoded icons must synchronously outlive every hosted row subtree. All
+follow the lint's sanctioned-exception mechanism (precedent: `CmxPairingURLScheme`,
+`AutoNamingAgentCatalog`).
 
 Re-apply note: re-add the fenced loop directly after upstream's `SCOPES=()` construction — any
 placement that appends the fork package directories to `SCOPES` before the first `scan` call
@@ -3651,69 +3601,33 @@ expectations to the fork's values, which is a larger fence and loses upstream's 
 not pick one from inside a merge. When it is resolved, replace this row's `unfenced` cell with the
 real fence id.
 
-### 134–138. Upstream conventions-lint debt at the 0.64.20 merge — `lint-allow-upstream-debt`
+### 134–138, 473–484. Upstream conventions-lint debt — `lint-allow-upstream-debt`
 
 Upstream paused its automatic CI on 2026-07-13 (all core workflows became `workflow_dispatch`-
 only), so `scripts/lint-ios-package-conventions.sh` violations accumulated on upstream `main`
-unchecked. The 0.64.20 merge (upstream snapshot `98a701ffd9`) imported five of them; the fork
-still dispatches the `iOS simulator tests` workflow, whose `package-conventions-lint` job fails
-on any ERROR. Each offender carries a two-line fence directly above the flagged declaration,
-with the `lint:allow <rule>` marker on the `SUPERMUX:end` line so it lands inside each rule's
-suppression window (free-function/lock: ≤2–3 lines above; namespace-enum: exactly 1 line above;
-namespace-type: ≤3 lines above). Per #109's rule, `scripts/lint-namespace-types-baseline.txt`
-was NOT grown.
+unchecked. The 0.64.20 merge imported five offenders. The 2026-08-24 merge imported twelve more
+files: upstream's pixel-scroll and Network.framework callback locks plus stateless namespace types
+for diagnostics, generic Mac surfaces, Simulator streaming, keychain policy, and Kimi config
+resolution. The fork still dispatches the iOS conventions job, which fails on any ERROR.
 
-Re-apply note: re-insert the two fence lines directly above the flagged declaration (below any
-doc comment; above `@MainActor` in `CmuxPopoverMutation.swift`), keeping `lint:allow <rule>` on
-the `SUPERMUX:end` line. Verify with `./scripts/lint-ios-package-conventions.sh` (expect
-"OK: no unjustified convention violations."). Drop any of these fences as soon as an upstream
-merge brings the real fix for (or upstream's own `lint:allow` at) that site — these fences are
-pure grandfathering and may only shrink.
+Each site keeps the smallest possible `lint-allow-upstream-debt` fence. Put the reviewed
+`lint:allow <rule>` justification on the begin line or immediately above the offending declaration
+so it stays within the linter's two/three-line suppression window. Parameter-type findings keep the
+fence inside the parameter list; whole namespace declarations close the fence immediately after the
+type. Per #109's rule, `scripts/lint-namespace-types-baseline.txt` was not grown.
 
-### 244–250. Agent chat Focus Mode — `agent-chat-focus-mode` + `ios-agent-chat-focus-mode`
+Re-apply note: preserve only enough fence to cover the upstream declaration, then run
+`./scripts/lint-ios-package-conventions.sh` and expect "OK: no unjustified convention violations."
+Drop a fence as soon as upstream fixes the design or adds its own reviewed allowance; this
+fork-side grandfathering may only shrink.
 
-A coding-agent session is mostly tool calls. Rendered one row each, they bury the handful of
-sentences the agent actually said — which is what the user opened the phone to read. Focus Mode
-folds each consecutive run of work rows behind a single tappable "Working · N steps" summary.
+### 487. Remote tab-context disconnect — `remote-tab-context-disconnect`
 
-**What folds:** `toolUse`, `thought`, `terminal`, `fileEdit`.
-**What never folds:** prose, user prompts, `question`, `permissionRequest`, `status`, `attachment`,
-date headers, the unread separator, and pending outbound prompts. Questions and permission requests
-BLOCK the agent — hiding them behind a disclosure would strand the session. `SupermuxChatFocusGroupingTests`
-pins both lists, plus the invariant that grouping never drops or reorders a row.
-
-Runs shorter than `minimumGroupSize` (2) stay expanded: folding a single call costs a tap and saves
-nothing.
-
-**Where the code lives.** All of it is fork-owned under
-`Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/AgentChat/`
-(`SupermuxChatFocusGrouping` — the pure fold; `SupermuxChatFocusMode` — the modifier that owns
-expanded state; `SupermuxChatWorkGroupRow` — the summary; `SupermuxChatShimmerText`). Upstream keeps
-owning the table, keyboard tracking, paging, and every individual row view — expanded runs call
-straight back into `ChatTranscriptRowView`.
-
-**Three things are load-bearing and easy to lose on a re-apply:**
-
-1. **Entries are computed once per update, in `updateUIView`** (#245), and shared by `makeItems()`
-   and the cell factory. Computing them inside the factory instead re-runs the fold for every
-   visible cell on every streamed delta, and lets the two disagree about what entry N is.
-2. **`groupingReloadIdentity` must stay in `shouldReload`** (#245). It combines the grouping's
-   configuration identity with the ordered entry ids, so both "the setting flipped" and "a group
-   expanded, so its rows moved" force a reload. Without it the table keeps stale cells.
-3. **Expanded state lives in `SupermuxChatFocusModifier`, above the transcript** — deliberately not
-   in `SupermuxChatWorkGroupRow`. The transcript is a `UITableView` that decides to reload by
-   comparing item identity; a tap that only flipped a child view's private `@State` would resize a
-   cell the table does not know changed (self-sizing drift). Keeping it above means a tap changes
-   the grouping identity, which forces a clean reload.
-
-**To re-apply after an upstream merge:**
-
-- If upstream reshapes `ChatTranscriptTableView`, re-add the seven fences from #245. The
-  `.groupedEntry` case follows whatever item taxonomy upstream now has.
-- If upstream reshapes the Display settings section, re-add the #247 toggle.
-- Verify it is actually live, not just compiling: open a Claude session with Focus Mode on and
-  confirm runs of tool calls appear as one "Working · N steps" row that expands on tap. If every
-  tool call still renders individually, the #248 modifier or item 1 above was dropped.
+In `Workspace.splitTabBar(_:didRequestTabContextAction:for:inPane:)`, route
+`.disconnectRemote` to `disconnectRemoteConnection(clearConfiguration: false)`. Bonsplit exposes the
+localized “Disconnect SSH” menu item, but upstream's delegate switch otherwise reaches
+`@unknown default` and does nothing. Keep `clearConfiguration: false` so the action ends the live
+session without forgetting the workspace's saved remote setup.
 
 ### 338–339. Mac user-dogfood profile seeding — `reload-supermux-profile*` + `mac-dogfood-supermux-profile`
 
@@ -3821,7 +3735,8 @@ The fences are thin switch arms; to re-apply after a merge:
    render `SupermuxHarnessPanelView` + drop-target `true` (#416), canvas icon `sparkles` (#417),
    sidebar kind `.unknown` (#418), palette label/keywords (#419), closed-history title (#420),
    lifecycle kind `claude_harness` (#421), surface-navigation raw value (#422), file-drop `nil`
-   (#423), global-search `.title` (#424), layout-capture unsupported (#425).
+   (#423), global-search `.title` (#424), layout-capture unsupported (#425), and the open mobile
+   inventory wire kind `claudeHarness` (#485).
 4. `Workspace.swift` (#426): declare `var claudeHarnessSnapshot: SessionSupermuxHarnessPanelSnapshot?
    = nil` beside the other per-kind locals; snapshot arm calls
    `supermuxHarnessSessionSnapshot(for:)` and nils the other locals; pass
@@ -3842,6 +3757,8 @@ The fences are thin switch arms; to re-apply after a merge:
 9. pbxproj (#431–#432): 4 entries per file with the reserved ids listed in the rows; re-run
    `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj`, `./scripts/check-pbxproj.sh`,
    and `./scripts/lint-pbxproj-test-wiring.sh`.
+10. Keep `MobileSurfaceKindMappingTests.canonicalKinds` exhaustive with `claudeHarness` (#486), so
+    a new upstream panel type cannot silently drop the fork surface from mobile state sync.
 
 Copy keys: every `supermux.harness.*` string in `Sources/Supermux/Harness/SupermuxHarnessCopy.swift`
 mirrors `harness-web/src/copyKeys.ts`; regenerate localizations with the loc scripts. Rebuild the
@@ -4110,3 +4027,28 @@ so the y-down coordinates port across unchanged — do not flip them.
 Verify by eye at real size, not just zoomed: the arrow has to survive 12pt. Render the glyph into
 its chip at 13/21 (phone) and 12/18 (desktop) and confirm the arrowhead is still legible and its
 barbs do not collide with the left branch's node.
+
+### 489–495. Supermux release mobile identity — `supermux-release-mobile-identity`
+
+Keep the exact release pair explicit and fail-closed:
+
+1. `CmxPairingURLScheme.swift` classifies only `cmux-ios-com.supermux.ios` as the fork's additional
+   release scheme. Do not broaden this to arbitrary foreign bundle ids. Its shared-core test requires
+   the exact scheme and release classification.
+2. `MobileMacBuildCompatibilityPolicy.swift` admits only `mac:com.supermux.app` beside upstream's
+   Stable/Nightly namespaces under `.official`. Its iOS shell test drives the authenticated-host
+   policy with a locally authorized Tailscale route.
+3. `MobileIOSPairingTargetStore.swift` receives the Mac bundle id as an injectable constructor value.
+   When the official tag and exact `com.supermux.app` bundle agree, its sole pairing/push target is
+   `com.supermux.ios`; upstream cmux and tagged DEV selection remain unchanged. The app-target test
+   requires that default.
+4. `MobilePairingModel.swift` maps that target to the localized `supermux.mobile.pairing.target`
+   product name (en+ja in `Resources/Localizable.xcstrings`, covered by #4b).
+5. `ios/Config/Release.xcconfig` must not restore the retired shared `CMUX_IOS_URL_SCHEME = cmux-ios`
+   override; inherit the exact-bundle scheme from `Shared.xcconfig`. The fork-owned
+   `scripts/supermux-ios-release.sh` (#372) rejects a built app unless its registered scheme is
+   `cmux-ios-com.supermux.ios`.
+
+Together these cover the real Tailscale QR failure introduced when upstream made app namespaces
+exact: without any one boundary, the fixed release pair can be rejected as build-incompatible, route
+its QR to cmux, or publish pushes to the wrong iOS bundle.

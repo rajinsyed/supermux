@@ -20,9 +20,9 @@ extension WorkspaceListView {
     /// selection stays in its dedicated title picker). The icon fills while a
     /// narrowing filter is active, mirroring Mail.
     @ViewBuilder
-    func viewOptionsButton() -> some View {
+    func viewOptionsButton(orderMachines: [WorkspaceFilterMachine]) -> some View {
         Button {
-            showingViewOptionsPopover = true
+            viewOptionsPresentation.present()
         } label: {
             Image(systemName: filter.isActive
                 ? "line.3.horizontal.decrease.circle.fill"
@@ -37,18 +37,19 @@ extension WorkspaceListView {
             if ProcessInfo.processInfo.environment[
                 "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_VIEW_OPTIONS"
             ] == "1" {
-                showingViewOptionsPopover = true
+                viewOptionsPresentation.present()
             }
             #endif
         }
-        .popover(isPresented: $showingViewOptionsPopover) {
+        .popover(isPresented: viewOptionsPresentation.isPresented) {
             WorkspaceListViewOptionsPopover(
                 filter: filter,
                 sortMode: workspaceSortMenuMode,
-                orderMachines: computerOrderSheetMachines,
+                orderMachines: orderMachines,
                 saveComputerOrder: setWorkspaceComputerPriority,
                 actions: workspaceListFilterMenuActions
             )
+            .onDisappear(perform: viewOptionsPresentation.didDismiss)
         }
     }
     #endif
@@ -60,30 +61,12 @@ extension WorkspaceListView {
         filterMachines: [WorkspaceFilterMachine]
     ) -> some View {
         #if os(iOS)
-            // SUPERMUX:begin supermux-mobile-list-toolbar-identity (the toolbar condition MUST live inside the builder, never as an if/else around `content` — see SUPERMUX-TOUCHPOINTS.md)
-            // `showsNavigationToolbar` is `navigationStyle != .push ||
-            // compactNavigationPath.isEmpty` (`WorkspaceShellView.swift:495`),
-            // so on the phone — where the style is always `.push` — it is
-            // exactly `compactNavigationPath.isEmpty`: it flips false on every
-            // push and true on every pop.
-            //
-            // This used to be `if showsNavigationToolbar { content.toolbar {…} }
-            // else { content }`. Putting the same `content` in two branches of a
-            // `_ConditionalContent` gives it a DIFFERENT structural identity per
-            // branch, so entering or leaving a workspace tore down and rebuilt
-            // everything inside — including `WorkspaceListTable`, a
-            // `UIViewControllerRepresentable`. A fresh table controller meant a
-            // scroll offset reset to zero, `attach()` clearing
-            // `previousConfiguration`/`appliedItems` so the next `apply` saw
-            // `structureChanged` and rebuilt every cell from scratch, and every
-            // hosted `.task` re-firing (the Projects avatars visibly blanked).
-            // Measured: a push+pop built the representable three times and moved
-            // the offset 1200 → 0.
-            //
-            // Keeping ONE `content` and gating only the toolbar's CONTENT holds
-            // the identity stable, so the table controller survives the
-            // navigation and keeps its scroll position. This is the same shape
-            // `WorkspaceShellView.swift:498` already uses for `rootToolbarContent`.
+            // The toolbar-visibility flip (off while a workspace is pushed on
+            // the compact stack, back on at exit) must stay inside the toolbar
+            // content builder. Branching the whole subtree on it changes the
+            // list's structural identity on every workspace enter/exit, which
+            // dismantles the represented workspace table and resets its scroll
+            // position to the top (issue #10481).
             content
                 .toolbar {
                     if showsNavigationToolbar {
@@ -118,14 +101,17 @@ extension WorkspaceListView {
                             // its snapshot and restart polling on every pop.
                             SupermuxUsageToolbarButton(model: supermuxUsage)
                             // SUPERMUX:end supermux-mobile-usage-button
-                            viewOptionsButton()
+                            viewOptionsButton(
+                                orderMachines: computerOrderSheetMachines(
+                                    machineSnapshots: machineSnapshots
+                                )
+                            )
                             if canCreateWorkspace {
                                 newWorkspaceButton.equatable()
                             }
                         }
                     }
                 }
-            // SUPERMUX:end supermux-mobile-list-toolbar-identity
         #else
             content
                 .toolbar {

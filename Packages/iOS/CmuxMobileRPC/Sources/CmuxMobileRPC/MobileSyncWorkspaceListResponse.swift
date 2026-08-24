@@ -52,6 +52,8 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         public let hasUnread: Bool?
         /// Terminals belonging to this workspace.
         public let terminals: [Terminal]
+        /// All workspace surfaces. `nil` when an older Mac omits the field.
+        public let surfaces: [Surface]?
         /// Simulator panes belonging to this workspace.
         public let simulators: [MobileSimulatorPanelDescriptor]
         // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields; absent on upstream Macs — see SUPERMUX-TOUCHPOINTS.md)
@@ -140,6 +142,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case lastActivityAt = "last_activity_at"
             case hasUnread = "has_unread"
             case terminals
+            case surfaces
             case simulators
             // SUPERMUX:begin supermux-mobile-workspace-fields
             case supermuxProjectID = "supermux_project_id"
@@ -173,6 +176,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             lastActivityAt: Double?,
             hasUnread: Bool?,
             terminals: [Terminal],
+            surfaces: [Surface]? = nil,
             simulators: [MobileSimulatorPanelDescriptor] = [],
             // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields on upstream's
             // memberwise init; defaulted to nil so upstream call sites compile unchanged and an
@@ -203,6 +207,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             self.lastActivityAt = lastActivityAt
             self.hasUnread = hasUnread
             self.terminals = terminals
+            self.surfaces = surfaces
             self.simulators = simulators
             // SUPERMUX:begin supermux-mobile-workspace-fields
             self.supermuxProjectID = supermuxProjectID
@@ -239,6 +244,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             lastActivityAt = try container.decodeIfPresent(Double.self, forKey: .lastActivityAt)
             hasUnread = try container.decodeIfPresent(Bool.self, forKey: .hasUnread)
             terminals = try container.decode([Terminal].self, forKey: .terminals)
+            surfaces = try container.decodeIfPresent([Surface].self, forKey: .surfaces)
             simulators = try container.decodeIfPresent(
                 [MobileSimulatorPanelDescriptor].self,
                 forKey: .simulators
@@ -256,6 +262,58 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
                 try? container.decodeIfPresent([String].self, forKey: .supermuxUnreadPanelIDs)
             ) ?? nil
             // SUPERMUX:end supermux-mobile-workspace-fields
+        }
+    }
+
+    /// A Mac-rendered surface in workspace spatial order.
+    public struct Surface: Decodable, Equatable, Sendable {
+        /// Stable Mac-local surface identifier.
+        public let surfaceID: String
+        /// Open surface-kind wire value.
+        public let kind: String
+        /// User-facing surface title.
+        public let title: String
+        /// Whether the surface currently holds focus on the owning Mac.
+        public let isFocused: Bool
+        /// Backing path for file-oriented surfaces, when present.
+        public let filePath: String?
+        /// Bounded checklist/status payload for todo surfaces.
+        public let todo: MobileTodoSnapshot?
+
+        private enum CodingKeys: String, CodingKey {
+            case surfaceID = "surface_id"
+            case kind
+            case title
+            case isFocused = "is_focused"
+            case filePath = "file_path"
+            case todo
+        }
+
+        /// Creates a projected surface DTO.
+        public init(
+            surfaceID: String,
+            kind: String,
+            title: String,
+            filePath: String?,
+            todo: MobileTodoSnapshot? = nil,
+            isFocused: Bool = false
+        ) {
+            self.surfaceID = surfaceID
+            self.kind = kind
+            self.title = title
+            self.isFocused = isFocused
+            self.filePath = filePath
+            self.todo = todo
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            surfaceID = try container.decode(String.self, forKey: .surfaceID)
+            kind = try container.decode(String.self, forKey: .kind)
+            title = try container.decode(String.self, forKey: .title)
+            isFocused = try container.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
+            filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
+            todo = try container.decodeIfPresent(MobileTodoSnapshot.self, forKey: .todo)
         }
     }
 

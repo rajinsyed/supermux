@@ -1026,12 +1026,13 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
             } else {
                 onOpenChanges = nil
             }
+            let isSelected = configuration.navigationStyle == .sidebar
+                && configuration.selectedWorkspaceID == workspace.id
             return AnyView(
                 WorkspaceRow(
                     workspace: workspace,
                     connectionStatus: connectionStatus,
-                    isSelected: configuration.navigationStyle == .sidebar
-                        && configuration.selectedWorkspaceID == workspace.id,
+                    isSelected: isSelected,
                     changesChip: changesChip,
                     onOpenChanges: onOpenChanges,
                     wrapWorkspaceTitles: configuration.wrapWorkspaceTitles,
@@ -1045,6 +1046,7 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDelegate,
                     children: onOpenChanges == nil ? .combine : .contain
                 )
                 .accessibilityAddTraits(.isButton)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityIdentifier("MobileWorkspaceRow-\(workspace.id.rawValue)")
                 .accessibilityLabel(workspace.name)
                 .accessibilityValue(

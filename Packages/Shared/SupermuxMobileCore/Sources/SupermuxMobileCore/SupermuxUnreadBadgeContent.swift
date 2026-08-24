@@ -87,6 +87,7 @@ public struct SupermuxUnreadBadgeContent: View {
 /// A white-to-black overlay rather than two pre-blended accent colors, because
 /// the fill is caller-supplied (the Mac lets the user set a custom badge color)
 /// and this shades whatever arrives without having to decompose it.
+/// lint:allow namespace-enum — shared immutable gradient constants for SwiftUI and Core Graphics.
 public enum SupermuxUnreadBadgeGradient {
     /// The wash, as SwiftUI stops.
     public static var overlay: LinearGradient {

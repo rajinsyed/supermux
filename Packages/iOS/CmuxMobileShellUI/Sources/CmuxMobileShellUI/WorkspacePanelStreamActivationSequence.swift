@@ -2,6 +2,7 @@
 /// Orders a streamed panel transition behind the Mac focus mutation that makes
 /// the browser or Simulator source operable.
 @MainActor
+/// lint:allow namespace-enum — a stateless ordering policy shared by browser and Simulator flows.
 enum WorkspacePanelStreamActivationSequence {
     static func run(
         focusTask: Task<Bool, Never>?,
