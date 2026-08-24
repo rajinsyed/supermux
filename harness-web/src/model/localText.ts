@@ -13,6 +13,7 @@
  *  - `<command-name>/model</command-name>\n<command-message>…</command-message>\n<command-args>opus[1m]</command-args>`
  *  - `<local-command-stdout>Set model to opus[1m] (claude-opus-5[1m])</local-command-stdout>`
  *  - `<local-command-caveat>Caveat: The messages below were generated…</local-command-caveat>`
+ *  - `Base directory for this skill: …` followed by the loaded skill body
  *  - `<task-notification>\n<task-id>…</task-id>…`
  *  - `[Request interrupted by user]` / `[Request interrupted by user for tool use]`
  *  - `This session is being continued from a previous conversation…` (the
@@ -54,9 +55,11 @@ function tagContent(text: string, tag: string): string | undefined {
 }
 
 const CONTINUED_PREFIX = "This session is being continued from a previous conversation";
+const SKILL_PAYLOAD_PREFIX = "Base directory for this skill:";
 
 export function classifyLocalUserText(raw: string): LocalUserText {
   const text = raw.trimStart();
+  if (text.startsWith(SKILL_PAYLOAD_PREFIX)) return { kind: "hidden" };
   if (text.startsWith("<local-command-caveat>")) return { kind: "hidden" };
   if (text.startsWith("<task-notification>")) return { kind: "hidden" };
   if (text.startsWith("<system-reminder>")) return { kind: "hidden" };

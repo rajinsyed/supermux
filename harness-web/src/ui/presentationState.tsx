@@ -73,30 +73,19 @@ class PresentationStateStore {
     blockKeys: readonly string[],
     reachableKeys: readonly string[]
   ): void {
-    let keys = this.wasLiveByTurn.get(turnKey);
-    if (!keys) {
-      if (blockKeys.length === 0) return;
-      keys = new Set();
-      this.wasLiveByTurn.set(turnKey, keys);
-    } else {
-      // Refresh this turn's LRU position and discard blocks the canonical turn no
-      // longer reaches before applying the hard per-turn bound.
-      this.wasLiveByTurn.delete(turnKey);
-      this.wasLiveByTurn.set(turnKey, keys);
-      const reachable = new Set(reachableKeys);
-      for (const key of keys) {
-        if (!reachable.has(key)) keys.delete(key);
-      }
-    }
-    for (const key of blockKeys) {
-      keys.delete(key);
-      keys.add(key);
-    }
+    const reachable = new Set(reachableKeys);
+    const keys = new Set(blockKeys.filter((key) => reachable.has(key)));
     while (keys.size > MAX_WAS_LIVE_KEYS_PER_TURN) {
       const oldest = keys.values().next().value;
       if (oldest === undefined) break;
       keys.delete(oldest);
     }
+
+    // Keep only the immediately preceding render's live rows. A stopped
+    // background command can then remain visible for its acknowledgement frame,
+    // while sequential tool calls do not accumulate for the whole turn.
+    this.wasLiveByTurn.delete(turnKey);
+    if (keys.size > 0) this.wasLiveByTurn.set(turnKey, keys);
     while (this.wasLiveByTurn.size > MAX_WAS_LIVE_TURNS) {
       const oldest = this.wasLiveByTurn.keys().next().value;
       if (oldest === undefined) break;
@@ -172,9 +161,9 @@ export function usePresentationState(
 }
 
 /**
- * Durable membership for streaming-tail rows. The current live keys are included
- * synchronously; a layout effect records them before the next frame can settle a
- * task and virtual unmount/remount can then recover the history.
+ * Previous-frame liveness for streaming-tail rows. Current live keys are included
+ * synchronously; the prior set survives one render so a command stopped by the
+ * user does not disappear in the same frame that acknowledges the stop.
  */
 export function useWasLiveKeys(
   turnKey: string,
@@ -189,12 +178,9 @@ export function useWasLiveKeys(
       return;
     }
     const reachable = new Set(reachableKeys);
-    for (const key of fallback) {
-      if (!reachable.has(key)) fallback.delete(key);
-    }
+    fallback.clear();
     for (const key of currentLiveKeys) {
-      fallback.delete(key);
-      fallback.add(key);
+      if (reachable.has(key)) fallback.add(key);
     }
     while (fallback.size > MAX_WAS_LIVE_KEYS_PER_TURN) {
       const oldest = fallback.values().next().value;

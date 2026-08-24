@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { fixtures } from "../src/dev/fixtures";
 import { shellsFixture, withWorkflowLogs, workflowFixture } from "../src/dev/fixtures/round3";
 import { replayLines } from "../src/model/transcript";
@@ -86,6 +86,45 @@ describe("work-group overflow while a turn runs", () => {
     ).filter(isVisible);
     expect(visibleUpdates.map((node) => node.textContent)).toEqual(["Checking the final state"]);
     expect(visibleCards(container).length).toBe(1);
+  });
+
+  test("sequential live tools do not accumulate across renders", async () => {
+    const turn = streamingTurn();
+    const tools = turn.blocks
+      .filter((block) => block.kind === "tool")
+      .slice(-3)
+      .map((block) => ({
+        ...block,
+        status: "success" as const,
+        subagent: undefined,
+        workflow: undefined,
+        structured: undefined,
+        children: []
+      }));
+    expect(tools.length).toBe(3);
+
+    const phase = (liveIndex: number): Turn => ({
+      ...turn,
+      blocks: tools.slice(0, liveIndex + 1).map((tool, index) => ({
+        ...tool,
+        status: index === liveIndex ? "running" as const : "success" as const
+      }))
+    });
+    const { container, rerender } = render(
+      <CopyProvider dict={undefined}>
+        <TurnView turn={phase(0)} isLast />
+      </CopyProvider>
+    );
+    expect(visibleCards(container).length).toBe(1);
+
+    for (const liveIndex of [1, 2]) {
+      rerender(
+        <CopyProvider dict={undefined}>
+          <TurnView turn={phase(liveIndex)} isLast />
+        </CopyProvider>
+      );
+      await waitFor(() => expect(visibleCards(container).length).toBe(1), { timeout: 800 });
+    }
   });
 
   test("the expander reveals every block it hid", () => {
@@ -206,13 +245,13 @@ describe("work-group overflow while a turn runs", () => {
 });
 
 /**
- * `LIVE_TAIL = 1` means the streaming turn shows exactly ONE work row, so that
- * row's height is the layout. `defaultOpen` auto-expanded bash/todo/task/patched
- * edit but left read/search shut, so as a turn cycled Read → Edit → Bash → Read
- * the single row swapped between a collapsed strip and an open terminal card —
- * measured on `longform` at 9.63 shifts/second, largest 132px, of settled text
- * the reader was mid-paragraph on. Auto-expansion now waits for the turn to
- * settle, which is a boundary the reader already expects to reflow.
+ * A streaming turn keeps only its latest assistant update and latest tool row by
+ * default, so those rows' height is the layout. `defaultOpen` auto-expanded
+ * bash/todo/task/patched edit but left read/search shut, so as a turn cycled
+ * Read → Edit → Bash → Read the current tool swapped between a collapsed strip
+ * and an open terminal card — measured on `longform` at 9.63 shifts/second,
+ * largest 132px, of settled text the reader was mid-paragraph on. Auto-expansion
+ * now waits for the turn to settle, which is a boundary the reader expects.
  */
 describe("the live work row does not auto-size while a turn streams", () => {
   function toolTurn(): Turn {

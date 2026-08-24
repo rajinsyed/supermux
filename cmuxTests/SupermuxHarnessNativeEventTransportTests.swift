@@ -235,6 +235,21 @@ struct SupermuxHarnessNativeEventTransportTests {
             hasFinishedNavigation: true
         ) == nil)
     }
+
+    @Test
+    func externalLinkPolicyAllowsOnlyTrustedDogfoodLaunchURLs() throws {
+        let dogfood = try #require(URL(string: "cmux-dev-harness-fixes://launch"))
+        let trailingSlash = try #require(URL(string: "cmux-dev-harness-fixes://launch/"))
+        let wrongHost = try #require(URL(string: "cmux-dev-harness-fixes://auth-callback"))
+        let extraPath = try #require(URL(string: "cmux-dev-harness-fixes://launch/other"))
+        let script = try #require(URL(string: "javascript:alert(1)"))
+
+        #expect(SupermuxHarnessWebRendererCoordinator.isAllowedExternalLink(dogfood))
+        #expect(SupermuxHarnessWebRendererCoordinator.isAllowedExternalLink(trailingSlash))
+        #expect(!SupermuxHarnessWebRendererCoordinator.isAllowedExternalLink(wrongHost))
+        #expect(!SupermuxHarnessWebRendererCoordinator.isAllowedExternalLink(extraPath))
+        #expect(!SupermuxHarnessWebRendererCoordinator.isAllowedExternalLink(script))
+    }
 #endif
 
     private func makeTransport(

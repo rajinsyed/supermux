@@ -35,6 +35,7 @@ struct SupermuxHarnessSessionRecordMapper: Sendable {
             "aborted",
             "supersedes",
             "isReplay",
+            "isMeta",
         ] {
             if let value = record[key] {
                 event[key] = value

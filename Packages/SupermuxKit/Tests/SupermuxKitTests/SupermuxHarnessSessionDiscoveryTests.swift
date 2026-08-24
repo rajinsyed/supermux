@@ -223,6 +223,20 @@ struct SupermuxHarnessSessionDiscoveryTests {
         #expect(fourth.string(forKey: "timestamp") == "t4")
     }
 
+    @Test func recordMapperPreservesMetaClassification() throws {
+        let event = try #require(SupermuxHarnessSessionRecordMapper().protocolEvent(
+            from: [
+                "type": "user",
+                "uuid": "meta-skill",
+                "isMeta": true,
+                "message": ["role": "user", "content": "# Sync Branch"],
+            ],
+            fallbackSessionID: "fallback"
+        ))
+
+        #expect(event.bool(forKey: "isMeta") == true)
+    }
+
     @Test func hiddenDuplicateUUIDDoesNotReplaceVisibleReplayEvent() throws {
         let sandbox = try makeSandbox(named: "duplicate-visible")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }

@@ -180,9 +180,14 @@ function badgesFor(block: ToolBlock, family: ToolFamily, copy: ReturnType<typeof
  * 132px, on `longform`. Expansion resumes the moment the turn settles, which is
  * a boundary the reader already expects to reflow.
  */
-function defaultOpen(block: ToolBlock, family: ToolFamily, live: boolean): boolean {
-  if (block.status === "error") return true;
+function defaultOpen(
+  block: ToolBlock,
+  family: ToolFamily,
+  status: ToolStatus,
+  live: boolean
+): boolean {
   if (live) return false;
+  if (status === "error") return true;
   if (family === "todo" || family === "task") return true;
   if (family === "bash") return true;
   if (family === "edit") {
@@ -211,14 +216,14 @@ export const ToolCard = memo(function ToolCard({
   // chrome follows the task's status instead.
   const status = family === "bash" ? backgroundBashStatus(block) : block.status;
   // The default is re-derived rather than frozen at mount, so a card that lands
-  // while its turn streams still opens once the turn settles — and a row that
-  // later fails auto-opens on the failure instead of staying shut because it
-  // was pending when it first rendered. A user toggle wins over both and lives
-  // outside the virtual subtree.
+  // while its turn streams still opens once the turn settles. Even failures stay
+  // compact while the turn is live; the status mark carries the outcome until
+  // the reader expands it or the turn settles. A user toggle wins over both and
+  // lives outside the virtual subtree.
   const [override, setOverride] = usePresentationOverride(
     `${stateKey ?? `tool:${block.key || localId}`}:open`
   );
-  const open = override ?? (status === "error" || defaultOpen(block, family, live));
+  const open = override ?? defaultOpen(block, family, status, live);
 
   // An agent's whole record in the transcript is ONE row too: the conversation
   // it had is read in its own full-chat view, not unrolled inline under the
