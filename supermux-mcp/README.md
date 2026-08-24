@@ -59,6 +59,24 @@ claude mcp add --transport http supermux http://127.0.0.1:8787/mcp \
 `SUPERMUX_ROOT_PATH` / `SUPERSET_ROOT_PATH` / `SUPERMUX_WORKTREE_PATH` in its
 environment, matching the app's own worktree setup-script contract.
 
+## Remote exposure (Tailscale Funnel)
+
+The deployed setup on this Mac:
+
+- launchd agent `com.syedrajin.supermux-mcp` runs
+  `~/.config/supermux-mcp/run.sh`, which sources `~/.config/supermux-mcp/env`
+  (`0600`: bearer token, socket capability, port, ccx path) and execs
+  `bun run src/index.ts`. Logs: `~/Library/Logs/supermux-mcp/`.
+- `tailscale funnel --bg 8787` publishes it at
+  `https://macbook-pro.<tailnet>.ts.net/mcp` (TLS terminated by Tailscale).
+- The capability token in the env file was captured by spawning a workspace
+  whose terminal ran `printenv CMUX_SOCKET_CAPABILITY`; a launchd-started
+  server is not a descendant of the app, so it needs this envelope for every
+  socket command. If the app's capability secret rotates, re-capture it.
+
+Manage: `launchctl kickstart -k gui/$UID/com.syedrajin.supermux-mcp` to
+restart, `tailscale funnel --https=443 off` to unpublish.
+
 ## Notes
 
 - The Supermux app must be running (the socket serves `workspace.create`).
