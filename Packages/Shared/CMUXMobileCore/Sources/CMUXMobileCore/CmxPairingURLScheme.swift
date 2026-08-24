@@ -86,6 +86,9 @@ public struct CmxPairingURLScheme {
     private static let releaseSchemes: Set<String> = [
         release,
         "cmux-ios-com.cmux.app",
+        // SUPERMUX:begin supermux-release-mobile-identity
+        "cmux-ios-com.supermux.ios",
+        // SUPERMUX:end supermux-release-mobile-identity
         "cmux-ios-dev.cmux.app.beta",
         "cmux-ios-dev.cmux.app.internal",
         "cmux-ios-dev.cmux.app.demo",

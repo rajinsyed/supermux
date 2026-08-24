@@ -93,6 +93,9 @@ public enum MobileMacBuildCompatibilityPolicy: Equatable, Sendable {
 
     private static func isOfficialMacNamespace(_ value: String) -> Bool {
         value == "mac:com.cmuxterm.app"
+            // SUPERMUX:begin supermux-release-mobile-identity
+            || value == "mac:com.supermux.app"
+            // SUPERMUX:end supermux-release-mobile-identity
             || value == "mac:com.cmuxterm.app.nightly"
             || value.hasPrefix("mac:com.cmuxterm.app.nightly.")
     }

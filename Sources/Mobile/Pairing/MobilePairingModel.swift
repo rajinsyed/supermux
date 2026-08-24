@@ -247,6 +247,13 @@ final class MobilePairingModel {
         bundleIdentifier: String
     ) -> String {
         switch bundleIdentifier {
+        // SUPERMUX:begin supermux-release-mobile-identity
+        case "com.supermux.ios":
+            return String(
+                localized: "supermux.mobile.pairing.target",
+                defaultValue: "Supermux"
+            )
+        // SUPERMUX:end supermux-release-mobile-identity
         case "com.cmux.app":
             return String(
                 localized: "mobile.pairing.target.appStore",

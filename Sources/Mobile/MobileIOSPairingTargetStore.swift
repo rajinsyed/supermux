@@ -8,16 +8,32 @@ struct MobileIOSPairingTargetStore {
 
     private let defaults: UserDefaults
     private let macInstanceTag: String
+    // SUPERMUX:begin supermux-release-mobile-identity
+    private let macBundleIdentifier: String?
+    // SUPERMUX:end supermux-release-mobile-identity
 
     init(
         defaults: UserDefaults = .standard,
-        macInstanceTag: String = MobileHostIdentity.instanceTag()
+        macInstanceTag: String = MobileHostIdentity.instanceTag(),
+        // SUPERMUX:begin supermux-release-mobile-identity
+        macBundleIdentifier: String? = Bundle.main.bundleIdentifier
+        // SUPERMUX:end supermux-release-mobile-identity
     ) {
         self.defaults = defaults
         self.macInstanceTag = macInstanceTag
+        // SUPERMUX:begin supermux-release-mobile-identity
+        self.macBundleIdentifier = macBundleIdentifier
+        // SUPERMUX:end supermux-release-mobile-identity
     }
 
     var availableNamespaces: [MobileIOSAppNamespace] {
+        // SUPERMUX:begin supermux-release-mobile-identity
+        if isSupermuxReleaseLane {
+            return ["com.supermux.ios"].compactMap(
+                MobileIOSAppNamespace.init(bundleIdentifier:)
+            )
+        }
+        // SUPERMUX:end supermux-release-mobile-identity
         if !isOfficialMacLane {
             return [
                 MobileIOSAppNamespace(
@@ -56,6 +72,15 @@ struct MobileIOSPairingTargetStore {
         defaults.set(namespace.bundleIdentifier, forKey: Self.defaultsKey)
         return true
     }
+
+    // SUPERMUX:begin supermux-release-mobile-identity
+    private var isSupermuxReleaseLane: Bool {
+        guard isOfficialMacLane else { return false }
+        return macBundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == "com.supermux.app"
+    }
+    // SUPERMUX:end supermux-release-mobile-identity
 
     private var isOfficialMacLane: Bool {
         switch macInstanceTag

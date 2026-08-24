@@ -49,6 +49,9 @@ Merged 2,241 upstream commits across 2,765 files, through upstream main from 202
   touchpoints #213/#214 were retired rather than re-porting incompatible geometry assertions.
 - Tailscale packet-tunnel routes still tolerate a missing local endpoint, but upstream's generation
   guard is restored so route substitution remains fail-closed.
+- Fixed the post-merge exact-bundle identity regression that made the fixed Supermux macOS and iOS
+  Release apps reject each other during Tailscale pairing. The Mac now targets `com.supermux.ios`,
+  the phone admits only `mac:com.supermux.app`, and the release script verifies the exact QR scheme.
 - The pane-tab **Disconnect SSH** action now reaches the existing remote disconnect path instead of
   falling through an unhandled bonsplit action.
 

@@ -278505,6 +278505,23 @@
         }
       }
     },
+    "supermux.mobile.pairing.target" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supermux"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supermux"
+          }
+        }
+      }
+    },
     "cli.coderouter.aliases": {
       "extractionState": "manual",
       "localizations": {

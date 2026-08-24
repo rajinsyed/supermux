@@ -32,8 +32,3 @@ PRODUCT_DISPLAY_NAME = Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)
 // service extension never inherits the app's production entitlements.
 SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS = Config/cmux-release.entitlements
 // SUPERMUX:end ios-communication-notifications
-
-// Release (TestFlight beta + App Store) pairing scheme. Dev builds register
-// cmux-ios-dev instead, so the Camera app routes each channel's QR to the
-// matching build. Keep in sync with CmxPairingURLScheme.release.
-CMUX_IOS_URL_SCHEME = cmux-ios

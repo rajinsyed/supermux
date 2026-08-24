@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **491**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **495**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142, 213, 214, 229, 237,
   250, and 252–258** are unused; all are documented as RETIRED below except **#19**, which was
@@ -374,7 +374,7 @@ Rules for adding a touchpoint:
 | 369 | `ios/Config/Shared.xcconfig` | `ios-communication-notifications` | Declares `SUPERMUX_APP_BUNDLE_ID` (which `PRODUCT_BUNDLE_IDENTIFIER` now derives from), `SUPERMUX_NSE_BUNDLE_ID` (derived from the app's, so it follows every channel/dogfood override and stays a CHILD of it — iOS refuses to load an extension whose id is not), and the empty `SUPERMUX_APP_DEV_PROFILE_SPECIFIER` / `SUPERMUX_NSE_DEV_PROFILE_SPECIFIER` / `SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS` defaults. **The indirection is the whole point:** an xcodebuild command-line build setting applies to EVERY target in the workspace, so the release script's bundle-id/profile/entitlements overrides would otherwise be stamped onto the extension too, giving it the app's id and an APNs entitlement its own App ID does not carry |
 | 370 | `ios/Config/Release.xcconfig` | `ios-communication-notifications` | Sets `SUPERMUX_APP_BUNDLE_ID` instead of assigning `PRODUCT_BUNDLE_IDENTIFIER` directly, so the extension's derived id follows the Release channel's id (see #369) |
 | 371 | `ios/Config/Info.plist` | `ios-communication-notifications` | Adds `NSUserActivityTypes = [INSendMessageIntent]`, required by the Communication Notifications capability. Its absence is the ITMS-90894 rejection and, at runtime, one of several SILENT failures where the push still arrives but renders as an ordinary banner with no avatar |
-| 372 | `scripts/supermux-ios-release.sh` | `unfenced` | Fork-owned. Ships the nested extension: passes `SUPERMUX_APP_BUNDLE_ID` / the per-target profile+entitlement variables instead of the workspace-wide overrides (#369); generalizes `resolve_adhoc_profile` to take a profile name and resolves the extension's second Ad Hoc profile; signs strictly INSIDE-OUT (extension frameworks → extension → app frameworks → app — signing the .app first invalidates its own signature); embeds each bundle's own `embedded.mobileprovision` and signs each with ONLY its own profile's entitlements; and asserts the extension's bundle id/child-prefix/extension point/principal class, the app's `NSUserActivityTypes`, the Communication Notifications entitlement in both profile and final signature, the extension's team + application-identifier, and a `codesign --verify --deep` pass. Every one of those failures is otherwise silent |
+| 372 | `scripts/supermux-ios-release.sh` | `unfenced` | Fork-owned. Ships the nested extension: passes `SUPERMUX_APP_BUNDLE_ID` / the per-target profile+entitlement variables instead of the workspace-wide overrides (#369); generalizes `resolve_adhoc_profile` to take a profile name and resolves the extension's second Ad Hoc profile; signs strictly INSIDE-OUT (extension frameworks → extension → app frameworks → app — signing the .app first invalidates its own signature); embeds each bundle's own `embedded.mobileprovision` and signs each with ONLY its own profile's entitlements; and asserts the extension's bundle id/child-prefix/extension point/principal class, the app's `NSUserActivityTypes`, the Communication Notifications entitlement in both profile and final signature, the extension's team + application-identifier, and a `codesign --verify --deep` pass. It also rejects the release unless the app registers the exact `cmux-ios-com.supermux.ios` pairing scheme, preventing a shared-scheme or wrong-bundle QR regression. Every one of those failures is otherwise silent |
 | 373 | `Sources/Update/NotificationPopoverRow.swift` | `notification-popover-redesign` | The popover row now renders the SHARED row body (`Sources/Supermux/SupermuxNotificationRowBody.swift`) instead of its own layout. The popover and the notifications panel list the same notifications from the same store; with two independent bodies the redesign landed only in the panel while the popover — the surface behind the bell button and ⌘I, which is what most people open — kept the old look. Takes an `NSImage` resolved above the popover's `LazyVStack` (#374) and adds identity compares for it and the avatar flag to `==` — a store reference below that boundary is the #2586 spin-loop. Keeps the `…workspaceTitle` accessibility identifier that `MultiWindowNotificationsWorkspaceHeadlineUITests` queries |
 | 374 | `Sources/Update/UpdateTitlebarAccessory.swift` | `notification-read-toggle-shared`, `notification-popover-redesign` | Two fences. The read-toggle one is #356. The redesign one brings the titlebar popover to parity with the notifications panel: a two-tier header (identity line + control row with the grouping toggle, Mark All Read, and Clear All), project sections via `SupermuxNotificationGrouping`, and every project icon resolved ONCE above the `LazyVStack` via the shared `SupermuxNotificationProjectBridge.projectIcons(for:)` helper, passing immutable `NSImage` values down — the same snapshot-boundary discipline as the existing per-render title index. Grouping reads the SAME `supermux.notifications.groupByProject` key the panel writes, so one behavior has one preference. The control row stays mounted with its actions disabled when empty, because `MultiWindowNotificationsUITests` asserts Clear All exists-and-is-disabled in the empty popover |
 | 375 | `Sources/AppDelegate.swift` | `notification-project-banner` | One line in `applicationDidFinishLaunching` calling `SupermuxBannerProjectDecorator.sweepOrphanedAvatars()`. Avatar PNGs are handed to `UNNotificationAttachment`, which MOVES them into its own store; a banner that failed to schedule leaves its copy in the temp directory. Background, best-effort, older-than-an-hour |
@@ -500,6 +500,10 @@ Rules for adding a touchpoint:
 | 489 | `Packages/Shared/CMUXMobileCore/Tests/CMUXMobileCoreTests/CmxPairingURLSchemeTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the fixed Supermux iOS release bundle to own an exact release-classified pairing URL scheme |
 | 490 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileMacBuildCompatibilityPolicyTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the official iOS policy to admit the exact Supermux macOS release namespace over authenticated Tailscale host status |
 | 491 | `cmuxTests/MobileHostIdentityTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the Supermux Mac release to target the fixed `com.supermux.ios` app for pairing and pushes by default |
+| 492 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/CmxPairingURLScheme.swift` | `supermux-release-mobile-identity` | Classifies the fixed `cmux-ios-com.supermux.ios` exact-bundle scheme as a release lane instead of rejecting the Supermux iOS identity |
+| 493 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileMacBuildCompatibilityPolicy.swift` | `supermux-release-mobile-identity` | Admits the exact `mac:com.supermux.app` namespace under the official Release compatibility policy while keeping unknown namespaces fail-closed |
+| 494 | `Sources/Mobile/MobileIOSPairingTargetStore.swift` | `supermux-release-mobile-identity` | Makes the fixed Supermux Mac release target only `com.supermux.ios` for QR pairing and pushes; upstream cmux release and tagged DEV target selection remain unchanged |
+| 495 | `Sources/Mobile/Pairing/MobilePairingModel.swift` | `supermux-release-mobile-identity` | Gives the fixed Supermux iOS pairing target its localized product name in the Mac pairing window |
 
 ## How to re-apply
 
@@ -4024,13 +4028,27 @@ Verify by eye at real size, not just zoomed: the arrow has to survive 12pt. Rend
 its chip at 13/21 (phone) and 12/18 (desktop) and confirm the arrowhead is still legible and its
 barbs do not collide with the left branch's node.
 
-### 489–491. Supermux release mobile identity regressions — `supermux-release-mobile-identity`
+### 489–495. Supermux release mobile identity — `supermux-release-mobile-identity`
 
-Keep these three behavior-level tests together. The shared-core test requires `com.supermux.ios` to
-resolve to the exact `cmux-ios-com.supermux.ios` release scheme. The iOS shell test requires the
-official policy to admit authenticated host status carrying `default` plus
-`mac:com.supermux.app`. The app-target test constructs the pairing target store with the fixed
-Supermux Mac bundle id and requires its sole default pairing/push target to be `com.supermux.ios`.
-These cover the real Tailscale QR failure introduced when upstream made bundle namespaces exact:
-without any one assertion, the fixed release pair can be mislabeled as incompatible, route its QR
-to cmux, or publish pushes to the wrong iOS bundle.
+Keep the exact release pair explicit and fail-closed:
+
+1. `CmxPairingURLScheme.swift` classifies only `cmux-ios-com.supermux.ios` as the fork's additional
+   release scheme. Do not broaden this to arbitrary foreign bundle ids. Its shared-core test requires
+   the exact scheme and release classification.
+2. `MobileMacBuildCompatibilityPolicy.swift` admits only `mac:com.supermux.app` beside upstream's
+   Stable/Nightly namespaces under `.official`. Its iOS shell test drives the authenticated-host
+   policy with a locally authorized Tailscale route.
+3. `MobileIOSPairingTargetStore.swift` receives the Mac bundle id as an injectable constructor value.
+   When the official tag and exact `com.supermux.app` bundle agree, its sole pairing/push target is
+   `com.supermux.ios`; upstream cmux and tagged DEV selection remain unchanged. The app-target test
+   requires that default.
+4. `MobilePairingModel.swift` maps that target to the localized `supermux.mobile.pairing.target`
+   product name (en+ja in `Resources/Localizable.xcstrings`, covered by #4b).
+5. `ios/Config/Release.xcconfig` must not restore the retired shared `CMUX_IOS_URL_SCHEME = cmux-ios`
+   override; inherit the exact-bundle scheme from `Shared.xcconfig`. The fork-owned
+   `scripts/supermux-ios-release.sh` (#372) rejects a built app unless its registered scheme is
+   `cmux-ios-com.supermux.ios`.
+
+Together these cover the real Tailscale QR failure introduced when upstream made app namespaces
+exact: without any one boundary, the fixed release pair can be rejected as build-incompatible, route
+its QR to cmux, or publish pushes to the wrong iOS bundle.

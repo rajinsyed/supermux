@@ -317,6 +317,7 @@ actual_bundle_id="$(plist_value CFBundleIdentifier "${INFO_PLIST}")"
 actual_display_name="$(plist_value CFBundleDisplayName "${INFO_PLIST}")"
 actual_dev_tag="$(plist_value CMUXDevTag "${INFO_PLIST}")"
 actual_auth_environment="$(plist_value CMUXAuthEnvironment "${INFO_PLIST}")"
+actual_pairing_scheme="$(plist_value CFBundleURLTypes:0:CFBundleURLSchemes:0 "${INFO_PLIST}")"
 
 [[ "${actual_bundle_id}" == "${BUNDLE_ID}" ]] \
   || die "built iOS bundle id is '${actual_bundle_id:-<absent>}', expected ${BUNDLE_ID}"
@@ -326,6 +327,8 @@ actual_auth_environment="$(plist_value CMUXAuthEnvironment "${INFO_PLIST}")"
   || die "built iOS app carries dogfood tag '${actual_dev_tag}'"
 [[ "${actual_auth_environment}" == "production" ]] \
   || die "built iOS auth environment is '${actual_auth_environment:-<absent>}', expected production"
+[[ "${actual_pairing_scheme}" == "cmux-ios-${BUNDLE_ID}" ]] \
+  || die "built iOS pairing scheme is '${actual_pairing_scheme:-<absent>}', expected cmux-ios-${BUNDLE_ID}"
 
 NSE_INFO_PLIST="${BUILT_NSE}/Info.plist"
 [[ -f "${NSE_INFO_PLIST}" ]] || die "notification service extension Info.plist is missing"
