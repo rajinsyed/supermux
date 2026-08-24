@@ -24,6 +24,20 @@ import Testing
         )
     }
 
+    // SUPERMUX:begin supermux-release-mobile-identity
+    @Test func supermuxReleaseOwnsAnExactReleaseScheme() throws {
+        let scheme = try #require(
+            CmxPairingURLScheme(
+                iOSBundleIdentifier: "com.supermux.ios"
+            )
+        )
+
+        #expect(scheme.rawValue == "cmux-ios-com.supermux.ios")
+        #expect(scheme.isRelease)
+        #expect(!scheme.isDevelopment)
+    }
+    // SUPERMUX:end supermux-release-mobile-identity
+
     @Test func invalidIdentityDoesNotFallBackToAnotherApp() {
         #expect(CmxPairingURLScheme(iOSBundleIdentifier: "") == nil)
         #expect(CmxPairingURLScheme(iOSBundleIdentifier: "invalid bundle") == nil)

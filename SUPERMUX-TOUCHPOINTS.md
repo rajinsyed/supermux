@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **488**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **491**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142, 213, 214, 229, 237,
   250, and 252–258** are unused; all are documented as RETIRED below except **#19**, which was
@@ -497,6 +497,9 @@ Rules for adding a touchpoint:
 | 486 | `cmuxTests/MobileSurfaceKindMappingTests.swift` | `claude-harness-mobile-surface-kind` | Extends the canonical PanelType→mobile-wire mapping regression with the fork's `claudeHarness` case |
 | 487 | `Sources/Workspace.swift` | `remote-tab-context-disconnect` | Handles bonsplit's `disconnectRemote` tab-context action through the existing workspace disconnect path without clearing the saved remote configuration. Upstream exposes the menu item but otherwise falls through `@unknown default`, leaving “Disconnect SSH” inert |
 | 488 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MacSurfaceGalleryPreviewView.swift` | `ios-pane-actions` | Supplies inert New Simulator / Close Pane closures to upstream's gallery preview fixture so the fork-extended `TerminalPickerMenuActions` memberwise initializer remains compilable without changing preview behavior |
+| 489 | `Packages/Shared/CMUXMobileCore/Tests/CMUXMobileCoreTests/CmxPairingURLSchemeTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the fixed Supermux iOS release bundle to own an exact release-classified pairing URL scheme |
+| 490 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileMacBuildCompatibilityPolicyTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the official iOS policy to admit the exact Supermux macOS release namespace over authenticated Tailscale host status |
+| 491 | `cmuxTests/MobileHostIdentityTests.swift` | `supermux-release-mobile-identity` | Regression coverage requiring the Supermux Mac release to target the fixed `com.supermux.ios` app for pairing and pushes by default |
 
 ## How to re-apply
 
@@ -4020,3 +4023,14 @@ so the y-down coordinates port across unchanged — do not flip them.
 Verify by eye at real size, not just zoomed: the arrow has to survive 12pt. Render the glyph into
 its chip at 13/21 (phone) and 12/18 (desktop) and confirm the arrowhead is still legible and its
 barbs do not collide with the left branch's node.
+
+### 489–491. Supermux release mobile identity regressions — `supermux-release-mobile-identity`
+
+Keep these three behavior-level tests together. The shared-core test requires `com.supermux.ios` to
+resolve to the exact `cmux-ios-com.supermux.ios` release scheme. The iOS shell test requires the
+official policy to admit authenticated host status carrying `default` plus
+`mac:com.supermux.app`. The app-target test constructs the pairing target store with the fixed
+Supermux Mac bundle id and requires its sole default pairing/push target to be `com.supermux.ios`.
+These cover the real Tailscale QR failure introduced when upstream made bundle namespaces exact:
+without any one assertion, the fixed release pair can be mislabeled as incompatible, route its QR
+to cmux, or publish pushes to the wrong iOS bundle.

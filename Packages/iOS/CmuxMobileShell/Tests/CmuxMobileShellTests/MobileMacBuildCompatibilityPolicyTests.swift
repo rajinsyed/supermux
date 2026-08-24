@@ -48,6 +48,19 @@ import Testing
         #expect(!policy.allows(instanceTag: nil))
     }
 
+    // SUPERMUX:begin supermux-release-mobile-identity
+    @Test func officialReleaseAcceptsTheSupermuxMacNamespace() {
+        let policy = MobileMacBuildCompatibilityPolicy.official
+
+        #expect(policy.allowsAuthenticatedHost(
+            instanceTag: "default",
+            clientNamespace: "mac:com.supermux.app",
+            macAppVersion: "0.64.22",
+            usesLocallyAuthorizedTailscaleRoute: true
+        ))
+    }
+    // SUPERMUX:end supermux-release-mobile-identity
+
     // SUPERMUX:begin official-ios-persistence-scope (regression: a sideloaded Release bundle may look tagged but must persist official Mac instances — see SUPERMUX-TOUCHPOINTS.md)
     @Test func officialPolicyDiscardsDetectedDevelopmentPersistenceScope() throws {
         let detectedScope = try #require(MobileIOSBuildScope("fix-mobile-ui"))

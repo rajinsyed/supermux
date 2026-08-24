@@ -66,6 +66,29 @@ struct MobileHostIdentityTests {
         )
     }
 
+    // SUPERMUX:begin supermux-release-mobile-identity
+    @Test func supermuxMacDefaultsToTheExactSupermuxIOSRelease() throws {
+        let suiteName = "mobile-ios-target-supermux-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = MobileIOSPairingTargetStore(
+            defaults: defaults,
+            macInstanceTag: "default",
+            macBundleIdentifier: "com.supermux.app"
+        )
+
+        #expect(store.availableNamespaces.map(\.bundleIdentifier) == [
+            "com.supermux.ios",
+        ])
+        #expect(store.selectedNamespace?.bundleIdentifier == "com.supermux.ios")
+        #expect(
+            store.selectedPairingURLScheme?.rawValue
+                == "cmux-ios-com.supermux.ios"
+        )
+        #expect(store.pushTargetNamespace?.bundleIdentifier == "com.supermux.ios")
+    }
+    // SUPERMUX:end supermux-release-mobile-identity
+
     @Test func nightlyMacOffersOfficialIOSBuildsInsteadOfTaggedDev() throws {
         let suiteName = "mobile-ios-target-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
