@@ -1,9 +1,11 @@
 import {
   memo,
+  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -11,6 +13,11 @@ import type { Code, Nodes, Parents, Root } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
+import {
+  loadProjectImage,
+  projectRelativeImagePath,
+  type ProjectImage
+} from "../../model/localImages";
 import { plural, useCopy } from "../CopyContext";
 import { usePresentationState } from "../presentationState";
 import { clipUtf8, lineCount } from "../utf8";
@@ -132,7 +139,46 @@ function safeHref(href: string | undefined): string | undefined {
 }
 
 function safeUrlTransform(href: string): string {
-  return safeHref(href) ?? "";
+  return safeHref(href) ?? (projectRelativeImagePath(href) ? href.trim() : "");
+}
+
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const copy = useCopy();
+  const path = projectRelativeImagePath(src);
+  const [image, setImage] = useState<ProjectImage>();
+
+  useEffect(() => {
+    let active = true;
+    setImage(undefined);
+    if (!path) return;
+
+    void loadProjectImage(path).then((resolved) => {
+      if (active) setImage(resolved);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [path]);
+
+  if (!image) {
+    return (
+      <span className="md-image-placeholder">
+        {alt || copy("supermux.harness.composer.attachmentName")}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      className="block-image"
+      src={`data:${image.mediaType};base64,${image.dataBase64}`}
+      alt={alt ?? ""}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+    />
+  );
 }
 
 export const Markdown = memo(function Markdown({
@@ -208,7 +254,6 @@ const MarkdownContent = memo(function MarkdownContent({
   streaming?: boolean;
   mutableFence?: MutableFenceSource;
 }) {
-  const copy = useCopy();
   renderedParserInputCodeUnits += text.length;
   const components = useMemo<Components>(
     () => ({
@@ -257,15 +302,11 @@ const MarkdownContent = memo(function MarkdownContent({
           </div>
         );
       },
-      img({ alt }) {
-        return (
-          <span className="md-image-placeholder">
-            {alt || copy("supermux.harness.composer.attachmentName")}
-          </span>
-        );
+      img({ src, alt }) {
+        return <MarkdownImage src={src} alt={alt} />;
       }
     }),
-    [copy, mutableFence, sourceOffset, stateKey, streaming]
+    [mutableFence, sourceOffset, stateKey, streaming]
   );
 
   return (

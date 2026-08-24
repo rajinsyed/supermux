@@ -79,6 +79,8 @@ export interface HarnessBridge {
     paths: string[];
     attachmentError?: AttachmentErrorCode;
   }>;
+  /** Read one supported image confined to the harness working directory. */
+  readImage(params: { path: string }): Promise<ImagePayload>;
   openFile(params: { path: string }): Promise<void>;
   copyText(params: { text: string }): Promise<void>;
   saveFile(params: { suggestedName: string; text: string }): Promise<{ saved: boolean }>;
@@ -206,6 +208,7 @@ const nativeBridge: HarnessBridge = {
   getContextUsage: () => callNative("harness.getContextUsage"),
   fileSuggestions: (params) => callNative("harness.fileSuggestions", params),
   pickFiles: () => callNative("harness.pickFiles"),
+  readImage: (params) => callNative("harness.readImage", params),
   openFile: (params) => callNative("harness.openFile", params),
   copyText: (params) => callNative("harness.copyText", params),
   saveFile: (params) => callNative("harness.saveFile", params),

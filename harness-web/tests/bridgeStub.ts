@@ -10,7 +10,7 @@ import type { HarnessBridge } from "../src/bridge";
  */
 export const taskBridgeStub: Pick<
   HarnessBridge,
-  "stopTask" | "backgroundTask" | "loadSubagentTranscript" | "readTaskOutput"
+  "stopTask" | "backgroundTask" | "loadSubagentTranscript" | "readTaskOutput" | "readImage"
 > = {
   async stopTask() {},
   async backgroundTask() {
@@ -21,5 +21,8 @@ export const taskBridgeStub: Pick<
   },
   async readTaskOutput() {
     return { text: "", truncated: false, missing: true };
+  },
+  async readImage() {
+    throw new Error("unused bridge method");
   }
 };

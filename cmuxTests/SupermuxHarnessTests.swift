@@ -904,6 +904,68 @@ struct SupermuxHarnessTests {
 
     @MainActor
     @Test
+    func testReadImageBridgeUsesOnlyThePaneRootForTheExactMarkdownPath() async throws {
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-harness-read-image-\(UUID().uuidString)", isDirectory: true)
+        let root = container.appendingPathComponent("project", isDirectory: true)
+        let path = "public/images/changelog-2026-08-24/banner-v4.png"
+        let imageURL = root.appendingPathComponent(path)
+        try FileManager.default.createDirectory(
+            at: imageURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let imageData = try makeHarnessPNGData()
+        try imageData.write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let coordinator = SupermuxHarnessWebRendererCoordinator(
+            sessionRepository: makeSessionRepository(),
+            transcriptService: SupermuxHarnessSubagentTranscriptService(
+                projectsRootURL: SupermuxHarnessSessionController.claudeProjectsRootURL,
+                fileManager: .default
+            )
+        )
+        coordinator.bind(
+            panelId: UUID(),
+            workspaceId: UUID(),
+            workingDirectory: root.path,
+            restoreState: nil,
+            theme: coordinator.theme,
+            isFocused: true,
+            isPresentationVisible: true
+        )
+        defer { coordinator.close() }
+        let request = try SupermuxHarnessBridgeRequest(body: [
+            "id": "read-image",
+            "method": "harness.readImage",
+            "params": [
+                "path": path,
+                "root": container.appendingPathComponent("outside").path,
+                "mediaType": "image/jpeg",
+                "sessionId": "forged-session",
+            ],
+        ])
+
+        let reply = try #require(try await coordinator.handle(request) as? [String: Any])
+
+        #expect(reply["mediaType"] as? String == "image/png")
+        #expect(Data(base64Encoded: try #require(reply["dataBase64"] as? String)) == imageData)
+
+        let traversal = try SupermuxHarnessBridgeRequest(body: [
+            "id": "read-image-traversal",
+            "method": "harness.readImage",
+            "params": ["path": "../outside.png"],
+        ])
+        do {
+            _ = try await coordinator.handle(traversal)
+            Issue.record("Expected traversal image path rejection")
+        } catch let error as SupermuxHarnessBridgeError {
+            #expect(error.code == "imageUnavailable")
+        }
+    }
+
+    @MainActor
+    @Test
     func testOutputOverflowSurfacesOneTypedBoundedEvent() async throws {
         let defaults = try makeHarnessDefaults(executablePath: "/usr/bin/true")
         defer { clearHarnessDefaults(defaults) }
@@ -1635,6 +1697,18 @@ struct SupermuxHarnessTests {
         process.releaseHeldControl(subtype: "rename_session")
         try await rename.value
         #expect(titles.last == "Custom title")
+    }
+
+    @MainActor
+    private func makeHarnessPNGData() throws -> Data {
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        image.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSRect(x: 0, y: 0, width: 1, height: 1).fill()
+        image.unlockFocus()
+        let tiff = try #require(image.tiffRepresentation)
+        let bitmap = try #require(NSBitmapImageRep(data: tiff))
+        return try #require(bitmap.representation(using: .png, properties: [:]))
     }
 
     @MainActor

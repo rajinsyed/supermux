@@ -82,6 +82,7 @@ function installBridge(load: HarnessBridge["loadSubagentTranscript"]): void {
     getContextUsage: unusedBridgeMethod,
     fileSuggestions: unusedBridgeMethod,
     pickFiles: unusedBridgeMethod,
+    readImage: unusedBridgeMethod,
     openFile: unusedBridgeMethod,
     copyText: unusedBridgeMethod,
     saveFile: unusedBridgeMethod,

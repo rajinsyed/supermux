@@ -137,6 +137,10 @@ extension SupermuxHarnessWebRendererCoordinator {
             return await controller.fileSuggestions(query: request.rawString("query") ?? "")
         case "harness.pickFiles":
             return await pickLocalFiles()
+        case "harness.readImage":
+            return try await controller.readImage(
+                path: try request.requiredRawString("path")
+            )
         case "harness.openFile":
             openFileInWorkspace(path: try request.requiredString("path"))
             return [:] as [String: Any]

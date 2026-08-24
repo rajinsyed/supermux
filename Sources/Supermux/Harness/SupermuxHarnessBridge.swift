@@ -69,6 +69,7 @@ struct SupermuxHarnessBridgeRequest {
 enum SupermuxHarnessBridgeError: LocalizedError {
     case invalidRequest
     case invalidAttachment
+    case imageUnavailable
     case missingParameter(String)
     case unsupportedMethod(String)
     case sessionAlreadyRunning
@@ -84,6 +85,7 @@ enum SupermuxHarnessBridgeError: LocalizedError {
         switch self {
         case .invalidRequest: return "invalidRequest"
         case .invalidAttachment: return "invalidAttachment"
+        case .imageUnavailable: return "imageUnavailable"
         case .missingParameter: return "missingParameter"
         case .unsupportedMethod: return "unsupportedMethod"
         case .sessionAlreadyRunning: return "sessionAlreadyRunning"
@@ -108,6 +110,11 @@ enum SupermuxHarnessBridgeError: LocalizedError {
             return String(
                 localized: "supermux.harness.bridge.error.invalidAttachment",
                 defaultValue: "One or more image attachments are invalid."
+            )
+        case .imageUnavailable:
+            return String(
+                localized: "supermux.harness.bridge.error.imageUnavailable",
+                defaultValue: "The image is unavailable."
             )
         case .missingParameter(let parameter):
             _ = parameter

@@ -429,6 +429,13 @@ export function installMockBridge(store: HarnessStore): Scenario {
     async pickFiles() {
       return { images: [], paths: [] };
     },
+    async readImage() {
+      return {
+        mediaType: "image/png",
+        dataBase64:
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+      };
+    },
     async openFile() {},
     async copyText({ text }) {
       await navigator.clipboard?.writeText(text).catch(() => undefined);

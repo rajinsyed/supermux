@@ -272572,6 +272572,23 @@
         }
       }
     },
+    "supermux.harness.bridge.error.imageUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image is unavailable."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像を読み込めません。"
+          }
+        }
+      }
+    },
     "supermux.harness.bridge.error.invalidAttachment" : {
       "extractionState" : "manual",
       "localizations" : {

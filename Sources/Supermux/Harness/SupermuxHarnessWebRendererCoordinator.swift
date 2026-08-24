@@ -258,10 +258,15 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
             replyHandler(["ok": false, "error": [:]], nil)
             return
         }
+        let documentEpoch = eventTransport.documentEpoch
         Task { @MainActor in
             do {
                 let request = try SupermuxHarnessBridgeRequest(body: message.body)
                 let reply = try await self.handle(request)
+                guard !self.isClosed,
+                      self.eventTransport.documentEpoch == documentEpoch else {
+                    throw SupermuxHarnessBridgeError.invalidRequest
+                }
                 replyHandler(["ok": true, "value": reply], nil)
             } catch let error as AgentExecutableResolverError {
                 replyHandler(

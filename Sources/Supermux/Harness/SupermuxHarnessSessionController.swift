@@ -899,6 +899,27 @@ final class SupermuxHarnessSessionController {
         return result
     }
 
+    func readImage(path: String) async throws -> [String: Any] {
+        guard !isClosed, let rootURL = workingDirectoryURL else {
+            throw SupermuxHarnessBridgeError.imageUnavailable
+        }
+        let image: SupermuxHarnessImage
+        do {
+            image = try await Task.detached(priority: .userInitiated) {
+                try SupermuxHarnessImageReader(rootURL: rootURL).read(relativePath: path)
+            }.value
+        } catch {
+            throw SupermuxHarnessBridgeError.imageUnavailable
+        }
+        guard !isClosed else {
+            throw SupermuxHarnessBridgeError.imageUnavailable
+        }
+        return [
+            "mediaType": image.mediaType,
+            "dataBase64": image.dataBase64,
+        ]
+    }
+
     func readTaskOutput(taskId: String) async throws -> [String: Any] {
         guard let record = taskRecordsByID[taskId] else {
             throw SupermuxHarnessBridgeError.invalidRequest
