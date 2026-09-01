@@ -97,11 +97,24 @@ public actor GitHubPullRequestRequestCoordinator {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.timeoutIntervalForRequest = max(PullRequestProbeService.probeTimeout, 8)
             configuration.timeoutIntervalForResource = max(PullRequestProbeService.probeTimeout, 8)
-            self.session = URLSession(configuration: configuration)
+            self.session = Self.makeProbeSession(configuration: configuration)
         }
         self.maximumCachedResponseCount = max(0, maximumCachedResponseCount)
         self.maximumCachedResponseBodyBytes = max(0, maximumCachedResponseBodyBytes)
         self.now = now
+    }
+
+    /// Builds the probe transport with the redirect authenticator installed, so
+    /// a renamed repository's redirect still authenticates. Shared by the
+    /// production initializer and tests so both exercise the same policy.
+    /// - Parameter configuration: The session configuration to use.
+    /// - Returns: A session that carries credentials across GitHub-host redirects.
+    static func makeProbeSession(configuration: URLSessionConfiguration) -> URLSession {
+        URLSession(
+            configuration: configuration,
+            delegate: GitHubPullRequestRedirectAuthenticator(),
+            delegateQueue: nil
+        )
     }
 
     func response(

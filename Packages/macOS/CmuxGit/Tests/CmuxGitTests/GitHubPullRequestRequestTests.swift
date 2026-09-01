@@ -11,7 +11,9 @@ struct GitHubPullRequestRequestTests {
         configuration.protocolClasses = [GitHubPullRequestStubURLProtocol.self]
         configuration.timeoutIntervalForRequest = 2
         configuration.timeoutIntervalForResource = 2
-        return URLSession(configuration: configuration)
+        // The production factory, so these tests exercise the real transport
+        // policy (including redirect credential handling), not a bare session.
+        return GitHubPullRequestRequestCoordinator.makeProbeSession(configuration: configuration)
     }
 
     @Test func missingCredentialsNeverStartsAnonymousTransport() async {
@@ -469,32 +471,21 @@ struct GitHubPullRequestRequestTests {
         #expect(await survivor.value?.statusCode == 200)
         #expect(GitHubPullRequestStubURLProtocol.capturedRequests().count == 1)
     }
-}
 
-/// Regression coverage for GitHub's renamed-repository redirect.
-///
-/// A repository renamed on GitHub keeps answering its old slug with a `301`
-/// to the canonical `/repositories/<id>` path. URLSession follows that
-/// redirect but drops the `Authorization` header while building the follow-up
-/// request, so a PRIVATE renamed repo answers `404` — which the probe maps to
-/// "this branch has no pull request" and the sidebar badge silently never
-/// appears. Verified against the live GitHub API: the old slug returns `301`,
-/// the redirect target with credentials returns the open PR, and the same
-/// target without credentials returns `404`.
-///
-/// Local git remotes keep the old name until someone runs `git remote set-url`,
-/// so this is not a transient state — it persists for the life of the checkout.
-@Suite(.serialized)
-struct GitHubPullRequestRenameRedirectTests {
-    private func makeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [GitHubPullRequestStubURLProtocol.self]
-        configuration.timeoutIntervalForRequest = 2
-        configuration.timeoutIntervalForResource = 2
-        return GitHubPullRequestRequestCoordinator.makeProbeSession(configuration: configuration)
-    }
+    /// Regression coverage for GitHub's renamed-repository redirect.
+    ///
+    /// A repository renamed on GitHub keeps answering its old slug with a `301`
+    /// to the canonical `/repositories/<id>` path, and a local git remote keeps
+    /// the old name until someone runs `git remote set-url`. URLSession follows
+    /// that redirect but drops the `Authorization` header while building the
+    /// follow-up request, so a PRIVATE renamed repo answers `404` — which the
+    /// probe maps to "this branch has no pull request", and the sidebar badge
+    /// silently never appears for the life of the checkout. Verified against
+    /// the live GitHub API: the old slug returns `301`, the redirect target
+    /// with credentials returns the open PR, and the same target without
+    /// credentials returns `404`.
 
-    @Test func renamedRepositoryRedirectKeepsCredentials() async throws {
+@Test func renamedRepositoryRedirectKeepsCredentials() async throws {
         GitHubPullRequestStubURLProtocol.reset(stubs: [
             .init(
                 statusCode: 301,
@@ -520,7 +511,7 @@ struct GitHubPullRequestRenameRedirectTests {
         #expect(response?.statusCode == 200)
     }
 
-    @Test func redirectToAnotherHostDropsCredentials() throws {
+@Test func redirectToAnotherHostDropsCredentials() throws {
         var previous = URLRequest(url: try #require(URL(string: "https://api.github.com/repos/o/r/pulls")))
         previous.setValue("Bearer test-token", forHTTPHeaderField: "Authorization")
         let proposed = URLRequest(url: try #require(URL(string: "https://evil.example.com/pulls")))
@@ -536,7 +527,7 @@ struct GitHubPullRequestRenameRedirectTests {
         )
     }
 
-    @Test func sameHostRedirectCarriesCredentials() throws {
+@Test func sameHostRedirectCarriesCredentials() throws {
         var previous = URLRequest(url: try #require(URL(string: "https://api.github.com/repos/o/r/pulls")))
         previous.setValue("Bearer test-token", forHTTPHeaderField: "Authorization")
         let proposed = URLRequest(url: try #require(URL(string: "https://api.github.com/repositories/1/pulls")))

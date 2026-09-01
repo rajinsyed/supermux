@@ -265,8 +265,15 @@ extension PullRequestProbeService {
         // regained access) re-resolves within one cache window instead of being
         // hidden. The `200 []` no-PR case below shares this same bounded backoff.
         if response.statusCode == 404 {
+            // Logged distinctly from the `200 []` case below: both resolve to
+            // `.notFound`, but they mean opposite things. `200 []` is GitHub
+            // confirming this branch has no pull request; `404` is the repo
+            // being unreadable under this credential — renamed, deleted, or
+            // out of scope. Sharing one log line made a renamed private repo
+            // indistinguishable from a branch with no PR, which is exactly how
+            // a permanently missing badge went unnoticed.
             debugLog(
-                "workspace.prRefresh.branch.notFound repo=\(repoSlug) branch=\(branch)"
+                "workspace.prRefresh.branch.repoUnreadable repo=\(repoSlug) branch=\(branch) status=404"
             )
             return .notFound
         }
