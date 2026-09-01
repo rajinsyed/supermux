@@ -280,6 +280,7 @@ public struct SupermuxProjectsSectionView: View {
             deleteWorktree: { worktree, deleteBranch in
                 deleteWorktree(worktree, project: project, deleteBranch: deleteBranch)
             },
+            deleteAllWorktrees: { deleteAllWorktrees(project: project) },
             toggleExpanded: {
                 if model.expandedProjectIds.contains(project.id) {
                     model.expandedProjectIds.remove(project.id)
@@ -469,8 +470,10 @@ public struct SupermuxProjectsSectionView: View {
         onRenameWorkspace(id, input.stringValue)
     }
 
+    // Internal (not private): shared with the bulk-removal extension in
+    // `SupermuxProjectsSectionView+BulkRemoval.swift`.
     @MainActor
-    private func presentError(_ error: any Error) {
+    func presentError(_ error: any Error) {
         let alert = NSAlert()
         alert.messageText = String(localized: "supermux.common.errorTitle", defaultValue: "Supermux")
         alert.informativeText = error.localizedDescription

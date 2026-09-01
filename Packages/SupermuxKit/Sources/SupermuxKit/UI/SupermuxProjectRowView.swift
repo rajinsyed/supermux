@@ -12,6 +12,8 @@ public struct SupermuxProjectRowActions {
     public var openWorktree: (SupermuxProjectWorktree) -> Void
     /// Deletes a worktree; the Bool requests local-branch deletion too.
     public var deleteWorktree: (SupermuxProjectWorktree, Bool) -> Void
+    /// Starts the "delete every managed worktree" flow (confirms first).
+    public var deleteAllWorktrees: () -> Void
     /// Toggles the worktree disclosure.
     public var toggleExpanded: () -> Void
     /// Opens the project editor sheet.
@@ -46,6 +48,7 @@ public struct SupermuxProjectRowActions {
         newWorktree: @escaping () -> Void,
         openWorktree: @escaping (SupermuxProjectWorktree) -> Void,
         deleteWorktree: @escaping (SupermuxProjectWorktree, Bool) -> Void,
+        deleteAllWorktrees: @escaping () -> Void = {},
         toggleExpanded: @escaping () -> Void,
         edit: @escaping () -> Void,
         remove: @escaping () -> Void,
@@ -63,6 +66,7 @@ public struct SupermuxProjectRowActions {
         self.newWorktree = newWorktree
         self.openWorktree = openWorktree
         self.deleteWorktree = deleteWorktree
+        self.deleteAllWorktrees = deleteAllWorktrees
         self.toggleExpanded = toggleExpanded
         self.edit = edit
         self.remove = remove
@@ -351,6 +355,15 @@ public struct SupermuxProjectRowView: View {
                     Button(worktree.displayName) { actions.openWorktree(worktree) }
                 }
             }
+        }
+        // Only supermux-managed worktrees are ever bulk-deleted, so hide the
+        // item when there is nothing it would act on.
+        if worktrees.contains(where: \.isSupermuxManaged) {
+            Button(
+                String(localized: "supermux.project.deleteAllWorktrees", defaultValue: "Delete All Worktrees…"),
+                role: .destructive,
+                action: actions.deleteAllWorktrees
+            )
         }
         if !project.actions.isEmpty {
             Menu(String(localized: "supermux.project.actionsMenu", defaultValue: "Actions")) {
