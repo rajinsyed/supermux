@@ -55,17 +55,31 @@ extension SupermuxProjectsModel {
     ///   action the user just confirmed into a silent no-op — so this uses the
     ///   success-reporting refresh and fails loudly instead, deleting nothing.
     public func removeAllWorktrees(projectId: UUID, deleteBranch: Bool) async throws -> SupermuxWorktreeBulkRemovalResult {
+        let managed = try await managedWorktreesForRemoval(projectId: projectId)
+        return await removeWorktrees(managed, projectId: projectId, force: false, deleteBranch: deleteBranch)
+    }
+
+    /// Re-lists the project's worktrees from git and returns the
+    /// supermux-managed ones — the exact set a bulk removal would act on.
+    ///
+    /// The sidebar calls this *before* showing its confirmation so the list the
+    /// user confirms is the list that gets deleted (then passes it to
+    /// ``removeWorktrees(_:projectId:force:deleteBranch:)``), rather than
+    /// confirming a cached snapshot and deleting a refreshed one.
+    /// - Parameter projectId: Owning project.
+    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git
+    ///   cannot list the worktrees; the cached list is left untouched.
+    public func managedWorktreesForRemoval(projectId: UUID) async throws -> [SupermuxProjectWorktree] {
         guard await refreshWorktreesReportingSuccess(for: projectId) else {
             throw SupermuxGitError.gitFailed(
-                command: "git worktree list",
+                command: "worktree list",
                 message: String(
                     localized: "supermux.worktree.deleteAll.listFailed",
                     defaultValue: "The project’s worktrees could not be listed. Nothing was deleted."
                 )
             )
         }
-        let managed = (worktreesByProjectId[projectId] ?? []).filter(\.isSupermuxManaged)
-        return await removeWorktrees(managed, projectId: projectId, force: false, deleteBranch: deleteBranch)
+        return (worktreesByProjectId[projectId] ?? []).filter(\.isSupermuxManaged)
     }
 
     /// Removes the given worktrees one after another through the single

@@ -11,9 +11,10 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct SupermuxProjectsModelBulkWorktreeRemovalTests {
-    private func makeLoadedModel(project: SupermuxProject) async throws -> SupermuxProjectsModel {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("supermux-bulk-worktree-removal-\(UUID().uuidString)", isDirectory: true)
+    /// Builds a model whose projects file lives inside `root` (the fixture
+    /// repo), so the fixture's `cleanUp` removes it too — no stray temp dirs.
+    private func makeLoadedModel(project: SupermuxProject, in root: String) async throws -> SupermuxProjectsModel {
+        let directory = URL(fileURLWithPath: root).appendingPathComponent(".supermux-test-state", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let store = SupermuxProjectStore(fileURL: directory.appendingPathComponent("projects.json"))
         try await store.save(SupermuxProjectsFile(
@@ -35,7 +36,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let root = try GitFixture.makeFixtureRepo(prefix: "supermux-bulk-worktree-removal")
         defer { GitFixture.cleanUp(root) }
         let project = SupermuxProject(name: "Fixture", rootPath: root)
-        let model = try await makeLoadedModel(project: project)
+        let model = try await makeLoadedModel(project: project, in: root)
         let first = try await model.createWorktree(projectId: project.id, branchName: "feature one", baseBranch: nil)
         let second = try await model.createWorktree(projectId: project.id, branchName: "feature two", baseBranch: nil)
 
@@ -56,7 +57,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let root = try GitFixture.makeFixtureRepo(prefix: "supermux-bulk-worktree-removal")
         defer { GitFixture.cleanUp(root) }
         let project = SupermuxProject(name: "Fixture", rootPath: root)
-        let model = try await makeLoadedModel(project: project)
+        let model = try await makeLoadedModel(project: project, in: root)
         _ = try await model.createWorktree(projectId: project.id, branchName: "feature one", baseBranch: nil)
         _ = try await model.createWorktree(projectId: project.id, branchName: "feature two", baseBranch: nil)
 
@@ -71,7 +72,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let root = try GitFixture.makeFixtureRepo(prefix: "supermux-bulk-worktree-removal")
         defer { GitFixture.cleanUp(root) }
         let project = SupermuxProject(name: "Fixture", rootPath: root)
-        let model = try await makeLoadedModel(project: project)
+        let model = try await makeLoadedModel(project: project, in: root)
         let clean = try await model.createWorktree(projectId: project.id, branchName: "clean", baseBranch: nil)
         let dirty = try await model.createWorktree(projectId: project.id, branchName: "dirty", baseBranch: nil)
         try GitFixture.write("wip\n", to: "untracked.txt", in: dirty.path)
@@ -102,7 +103,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let manualPath = (sibling as NSString).appendingPathComponent("manual-worktree")
         try GitFixture.runGit(["worktree", "add", "-b", "manual-branch", manualPath], in: root)
         let project = SupermuxProject(name: "Fixture", rootPath: root)
-        let model = try await makeLoadedModel(project: project)
+        let model = try await makeLoadedModel(project: project, in: root)
         let managed = try await model.createWorktree(projectId: project.id, branchName: "managed", baseBranch: nil)
 
         let result = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
@@ -123,7 +124,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let notARepo = try GitFixture.makeTempDirectory(prefix: "supermux-bulk-worktree-removal")
         defer { GitFixture.cleanUp(notARepo) }
         let project = SupermuxProject(name: "Plain folder", rootPath: notARepo)
-        let model = try await makeLoadedModel(project: project)
+        let model = try await makeLoadedModel(project: project, in: notARepo)
 
         await #expect(throws: SupermuxGitError.self) {
             try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
@@ -134,7 +135,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let root = try GitFixture.makeFixtureRepo(prefix: "supermux-bulk-worktree-removal")
         defer { GitFixture.cleanUp(root) }
         let project = SupermuxProject(name: "Fixture", rootPath: root)
-        let model = try await makeLoadedModel(project: project)
+        let model = try await makeLoadedModel(project: project, in: root)
         let real = try await model.createWorktree(projectId: project.id, branchName: "real", baseBranch: nil)
         // An unmanaged entry handed in directly is refused by the service; the
         // pass must record it and still remove the worktree after it.

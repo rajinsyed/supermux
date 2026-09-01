@@ -10,17 +10,25 @@ extension SupermuxProjectsSectionView {
     /// Entry point wired to ``SupermuxProjectRowActions/deleteAllWorktrees``.
     @MainActor
     func deleteAllWorktrees(project: SupermuxProject) {
-        let managed = (model.worktreesByProjectId[project.id] ?? []).filter(\.isSupermuxManaged)
-        guard !managed.isEmpty else { return }
-        guard let deleteBranches = confirmDeleteAllWorktrees(project: project, worktrees: managed) else { return }
         Task {
-            var outcome: SupermuxWorktreeBulkRemovalResult
+            // Re-list from git first, then confirm THAT list and delete exactly
+            // it — so what the user reads in the alert is what gets removed,
+            // even if worktrees changed since the sidebar last refreshed.
+            let managed: [SupermuxProjectWorktree]
             do {
-                outcome = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: deleteBranches)
+                managed = try await model.managedWorktreesForRemoval(projectId: project.id)
             } catch {
                 presentError(error)
                 return
             }
+            guard !managed.isEmpty else { return }
+            guard let deleteBranches = confirmDeleteAllWorktrees(project: project, worktrees: managed) else { return }
+            var outcome = await model.removeWorktrees(
+                managed,
+                projectId: project.id,
+                force: false,
+                deleteBranch: deleteBranches
+            )
             if !outcome.dirty.isEmpty, confirmForceDeleteAll(outcome.dirty) {
                 let forced = await model.removeWorktrees(
                     outcome.dirty,
