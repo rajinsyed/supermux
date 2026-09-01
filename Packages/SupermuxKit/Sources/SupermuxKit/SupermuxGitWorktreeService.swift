@@ -115,7 +115,7 @@ public actor SupermuxGitWorktreeService {
         // genuinely inside the project as "managed" (the escape test is lexical;
         // see `SupermuxWorktreePath.lexicalWorktreesDir`). If a corrupt config
         // (e.g. "..") escaped the root, fall back to a sentinel that matches
-        // nothing so no sibling worktree is ever reported deletable.
+        // nothing so no sibling worktree is ever reported as supermux-owned.
         let lexicalWorktreesDir = SupermuxWorktreePath.lexicalWorktreesDir(canonicalRoot: rootPath, project: project)
         let managedPrefix = lexicalWorktreesDir.hasPrefix(rootPath + "/") ? worktreesDir + "/" : "\u{0}"
         var worktrees: [SupermuxProjectWorktree] = []
@@ -328,9 +328,13 @@ public actor SupermuxGitWorktreeService {
         _ = try? await runGit(in: rootPath, ["branch", "-D", branch], commandLabel: "branch -D")
     }
 
-    /// Removes a supermux-managed worktree.
+    /// Removes a worktree of the project's repository, however it was created.
+    ///
+    /// `git worktree list` is the only source of truth, so a checkout added by
+    /// another tool is removed exactly like a supermux-created one: the same
+    /// dirty guard, teardown script, and git-native removal.
     /// - Parameters:
-    ///   - worktree: Worktree to remove; must be ``SupermuxProjectWorktree/isSupermuxManaged``.
+    ///   - worktree: Worktree to remove.
     ///   - project: Owning project.
     ///   - force: Removes even with uncommitted changes.
     ///   - deleteBranch: Also deletes the worktree's local branch (`git branch -D`).
@@ -341,9 +345,6 @@ public actor SupermuxGitWorktreeService {
         force: Bool = false,
         deleteBranch: Bool = false
     ) async throws {
-        guard worktree.isSupermuxManaged else {
-            throw SupermuxGitError.unmanagedWorktree(path: worktree.path)
-        }
         // A checkout whose directory is already gone (deleted in Finder or a
         // terminal) has no uncommitted work to lose, and the status probe
         // cannot even launch there — skip straight to git-native removal,

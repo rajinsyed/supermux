@@ -10,8 +10,6 @@ public enum SupermuxGitError: Error, LocalizedError, Equatable, Sendable {
     case unsafeWorktreePath(path: String)
     /// The worktree has uncommitted changes; pass `force` to override.
     case dirtyWorktree(path: String)
-    /// Deleting a worktree supermux does not manage was refused.
-    case unmanagedWorktree(path: String)
     /// The base branch could not be resolved locally or on `origin`.
     case unknownBaseBranch(name: String)
     /// A git command failed; carries the command and stderr for display.
@@ -38,11 +36,6 @@ public enum SupermuxGitError: Error, LocalizedError, Equatable, Sendable {
             return String(
                 localized: "supermux.gitError.dirtyWorktree",
                 defaultValue: "The worktree at \(path) has uncommitted changes."
-            )
-        case .unmanagedWorktree(let path):
-            return String(
-                localized: "supermux.gitError.unmanagedWorktree",
-                defaultValue: "The worktree at \(path) was not created by supermux; remove it with git directly."
             )
         case .unknownBaseBranch(let name):
             return String(

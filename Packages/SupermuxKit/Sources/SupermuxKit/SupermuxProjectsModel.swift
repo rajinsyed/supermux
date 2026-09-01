@@ -382,7 +382,6 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
             baseBranch: (trimmedBase?.isEmpty ?? true) ? nil : trimmedBase
         )
         await refreshWorktrees(for: projectId)
-        expandedProjectIds.insert(projectId)
         return worktree
     }
 

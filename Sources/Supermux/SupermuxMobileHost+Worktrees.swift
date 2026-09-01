@@ -177,7 +177,7 @@ extension TerminalController {
         return .ok(["workspace_id": workspaceID.uuidString])
     }
 
-    /// `mobile.supermux.worktree.remove`: removes a supermux-managed worktree.
+    /// `mobile.supermux.worktree.remove`: removes any of the project's worktrees.
     /// A dirty worktree without `force: true` fails with `dirty_worktree`; a
     /// forced removal runs the project's teardown script headlessly first
     /// (both inside ``SupermuxGitWorktreeService``, shared with the desktop).

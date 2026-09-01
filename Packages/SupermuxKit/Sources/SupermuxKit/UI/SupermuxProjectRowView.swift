@@ -435,13 +435,11 @@ struct SupermuxWorktreeRowView: View {
         .contextMenu {
             Button(String(localized: "supermux.worktree.open", defaultValue: "Open Workspace"), action: open)
             Divider()
-            if worktree.isSupermuxManaged {
-                Button(String(localized: "supermux.worktree.delete", defaultValue: "Delete Worktree"), role: .destructive) {
-                    delete(false)
-                }
-                Button(String(localized: "supermux.worktree.deleteWithBranch", defaultValue: "Delete Worktree and Branch"), role: .destructive) {
-                    delete(true)
-                }
+            Button(String(localized: "supermux.worktree.delete", defaultValue: "Delete Worktree"), role: .destructive) {
+                delete(false)
+            }
+            Button(String(localized: "supermux.worktree.deleteWithBranch", defaultValue: "Delete Worktree and Branch"), role: .destructive) {
+                delete(true)
             }
         }
         .accessibilityElement(children: .combine)

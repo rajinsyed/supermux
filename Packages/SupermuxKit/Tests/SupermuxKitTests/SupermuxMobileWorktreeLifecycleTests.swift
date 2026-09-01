@@ -82,7 +82,6 @@ struct SupermuxMobileWorktreeLifecycleTests {
 
     @Test func wireCodesMapEveryGitErrorOntoReservedCodes() {
         #expect(SupermuxMobileWorktreeErrorCode.wireCode(for: .dirtyWorktree(path: "/x")) == "dirty_worktree")
-        #expect(SupermuxMobileWorktreeErrorCode.wireCode(for: .unmanagedWorktree(path: "/x")) == "forbidden")
         #expect(SupermuxMobileWorktreeErrorCode.wireCode(for: .notAGitRepository(path: "/x")) == "invalid_params")
         #expect(SupermuxMobileWorktreeErrorCode.wireCode(for: .invalidBranchName(input: "?")) == "invalid_params")
         #expect(SupermuxMobileWorktreeErrorCode.wireCode(for: .unknownBaseBranch(name: "nope")) == "invalid_params")

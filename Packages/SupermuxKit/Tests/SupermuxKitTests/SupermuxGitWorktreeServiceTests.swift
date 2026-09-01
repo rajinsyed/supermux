@@ -624,7 +624,11 @@ import SupermuxKit
         #expect(FileManager.default.fileExists(atPath: worktree.path) == false)
     }
 
-    @Test func removeWorktreeRefusesUnmanagedWorktrees() async throws {
+    /// A worktree registered by another tool (a terminal, Codex, another app)
+    /// lives outside the project's worktrees directory. Deleting it from the
+    /// UI must work exactly like a supermux-created one: the same dirty guard,
+    /// then a git-native removal.
+    @Test func removeWorktreeRemovesExternallyCreatedWorktrees() async throws {
         let fixture = try makeFixtureRepo()
         defer { GitFixture.cleanUp(fixture.root) }
         let sibling = try makeTempDirectory()
@@ -636,9 +640,36 @@ import SupermuxKit
         let manual = try #require(listed.first { $0.branch == "manual-branch" })
         #expect(manual.isSupermuxManaged == false)
 
-        await #expect(throws: SupermuxGitError.unmanagedWorktree(path: manual.path)) {
+        try await service.removeWorktree(manual, project: fixture.project, deleteBranch: true)
+
+        #expect(FileManager.default.fileExists(atPath: manual.path) == false)
+        let remaining = try await service.listWorktrees(for: fixture.project)
+        #expect(remaining.contains { $0.path == manual.path } == false)
+        let branches = try await service.localBranches(repoRoot: fixture.root)
+        #expect(branches.contains("manual-branch") == false)
+    }
+
+    /// The dirty guard applies to external worktrees too: uncommitted work is
+    /// never silently discarded just because supermux did not create the checkout.
+    @Test func removeWorktreeGuardsDirtyExternallyCreatedWorktrees() async throws {
+        let fixture = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(fixture.root) }
+        let sibling = try makeTempDirectory()
+        defer { GitFixture.cleanUp(sibling) }
+        let outsidePath = (sibling as NSString).appendingPathComponent("manual-worktree")
+        try GitFixture.runGit(["worktree", "add", "-b", "manual-branch", outsidePath], in: fixture.root)
+        try GitFixture.write("wip\n", to: "untracked.txt", in: outsidePath)
+
+        let listed = try await service.listWorktrees(for: fixture.project)
+        let manual = try #require(listed.first { $0.branch == "manual-branch" })
+
+        await #expect(throws: SupermuxGitError.dirtyWorktree(path: manual.path)) {
             try await service.removeWorktree(manual, project: fixture.project)
         }
+        #expect(FileManager.default.fileExists(atPath: manual.path))
+
+        try await service.removeWorktree(manual, project: fixture.project, force: true)
+        #expect(FileManager.default.fileExists(atPath: manual.path) == false)
     }
 
     // MARK: - Path-escape regressions
