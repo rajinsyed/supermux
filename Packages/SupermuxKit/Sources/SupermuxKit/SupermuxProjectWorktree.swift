@@ -5,8 +5,8 @@ import Foundation
 /// Worktrees are never persisted by supermux — git's `worktree list` is the
 /// single source of truth, so externally created worktrees show up too and
 /// stale records cannot accumulate. ``isSupermuxManaged`` marks worktrees that
-/// live under the project's worktrees directory; only those may be deleted
-/// from the supermux UI.
+/// live under the project's worktrees directory; every listed worktree can be
+/// opened and deleted from the supermux UI regardless of who created it.
 public struct SupermuxProjectWorktree: Identifiable, Hashable, Sendable {
     /// Absolute path of the worktree checkout (also the stable identity).
     public let path: String

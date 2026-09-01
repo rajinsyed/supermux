@@ -267319,23 +267319,6 @@
         }
       }
     },
-    "supermux.gitError.unmanagedWorktree" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The worktree at %@ was not created by supermux; remove it with git directly."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ のワークツリーは supermux で作成されたものではありません。git で直接削除してください。"
-          }
-        }
-      }
-    },
     "supermux.gitError.unsafePath" : {
       "extractionState" : "manual",
       "localizations" : {

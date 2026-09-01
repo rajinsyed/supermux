@@ -8,8 +8,6 @@ public enum SupermuxMobileWorktreeErrorCode {
     /// The wire error code for a worktree-service failure.
     ///
     /// - `dirtyWorktree` → `dirty_worktree` (retry with `force: true`).
-    /// - `unmanagedWorktree` → `forbidden` (supermux refuses to delete
-    ///   worktrees it does not manage).
     /// - Caller-precondition failures (bad branch input, unknown base, a
     ///   project root that is not a git repository) → `invalid_params`.
     /// - Everything else (git itself failed, unsafe computed path) →
@@ -20,8 +18,6 @@ public enum SupermuxMobileWorktreeErrorCode {
         switch error {
         case .dirtyWorktree:
             return "dirty_worktree"
-        case .unmanagedWorktree:
-            return "forbidden"
         case .invalidBranchName, .unknownBaseBranch, .notAGitRepository:
             return "invalid_params"
         case .unsafeWorktreePath, .gitFailed:
