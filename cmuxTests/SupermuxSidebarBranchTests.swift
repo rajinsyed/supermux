@@ -186,6 +186,87 @@ final class SupermuxSidebarBranchTests: XCTestCase {
     }
 }
 
+/// Regression coverage for ``SupermuxWorkspaceObservation``, the subscription
+/// that re-reads the project-nested row snapshots when a rendered field (PR
+/// badge, branch, title, activity) changes.
+///
+/// Bug: "PR status indicators inside project nested workspaces are delayed."
+/// The observation debounced and coalesced on `RunLoop.main`, whose Combine
+/// scheduler fires only in the DEFAULT run-loop mode. cmux's PR poll writes
+/// `panelPullRequests` regardless of run-loop mode, but while a context menu,
+/// sidebar drag, sheet, or modal alert held the main run loop in an event-
+/// tracking / modal mode the token never bumped, so the badge stayed stale
+/// until the mode unwound. cmux's own flat rows already deliver on
+/// `DispatchQueue.main` for exactly this reason (see
+/// `sidebarWorkspaceObservations` in `WorkspaceSidebarObservation.swift`).
+@MainActor
+final class SupermuxWorkspaceObservationTests: XCTestCase {
+    /// The token must bump for a PR change delivered while the main run loop is
+    /// spinning in the event-tracking mode (context menu open, drag in flight)
+    /// — not only once it returns to the default mode.
+    func testPullRequestChangeBumpsTokenOutsideDefaultRunLoopMode() throws {
+        // A bare workspace (no TabManager): the host's live git probe would
+        // otherwise re-resolve the panel's real cwd and clear the branch/PR
+        // fixtures mid-test.
+        let workspace = Workspace(title: "Test")
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        workspace.updatePanelGitBranch(panelId: panelId, branch: "feature/pr", isDirty: false)
+
+        let observation = SupermuxWorkspaceObservation()
+        observation.observe(tabs: [workspace])
+        // Let the subscription's initial replays settle in the default mode so
+        // the assertion below isolates the PR change itself.
+        Self.spin(mode: .default, for: 0.2)
+        let before = observation.token
+
+        // The exact write cmux's PullRequestPollService performs when GitHub
+        // reports a PR for the panel's branch.
+        workspace.updatePanelPullRequest(
+            panelId: panelId,
+            number: 7,
+            label: "PR",
+            url: try XCTUnwrap(URL(string: "https://github.com/o/r/pull/7")),
+            status: .open,
+            branch: "feature/pr"
+        )
+        XCTAssertNotNil(
+            SupermuxWorkspaceRow.snapshot(for: workspace, isSelected: false, projectId: nil, isRunning: false).pullRequest,
+            "Precondition: the nested row's snapshot resolves the new PR."
+        )
+
+        // Spin ONLY in the event-tracking mode: AppKit registers it as a common
+        // mode (asserted here so the scenario is deterministic in the test
+        // host), so main-queue delivery proceeds while default-mode-only run
+        // loop timers stay parked — the state a context menu or drag leaves
+        // the app in.
+        Self.registerEventTrackingAsCommonMode()
+        let deadline = Date().addingTimeInterval(1.0)
+        while observation.token == before, Date() < deadline {
+            Self.spin(mode: .eventTracking, for: 0.02)
+        }
+        XCTAssertNotEqual(
+            observation.token,
+            before,
+            "A PR change must reach the nested rows while the run loop is in a tracking mode, not only after it returns to the default mode."
+        )
+    }
+
+    private static func spin(mode: RunLoop.Mode, for interval: TimeInterval) {
+        let deadline = Date().addingTimeInterval(interval)
+        while Date() < deadline {
+            // `run(mode:before:)` returns early when the mode has no sources;
+            // loop until the deadline so parked timers get every chance to fire.
+            if !RunLoop.main.run(mode: mode, before: deadline) {
+                Thread.sleep(forTimeInterval: 0.005)
+            }
+        }
+    }
+
+    private static func registerEventTrackingAsCommonMode() {
+        CFRunLoopAddCommonMode(CFRunLoopGetMain(), CFRunLoopMode(RunLoop.Mode.eventTracking.rawValue as CFString))
+    }
+}
+
 /// In-memory ``SupermuxDirectoryAssociationPersisting`` backend, standing in
 /// for the projects model so tests can mutate the durable directory map
 /// *directly* — the way the model's sibling-build `adopt()` fold-in and
