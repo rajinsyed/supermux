@@ -49,8 +49,21 @@ extension SupermuxProjectsModel {
     ///   - projectId: Owning project.
     ///   - deleteBranch: Also delete each worktree's local branch.
     /// - Returns: What was removed, what was kept dirty, and what failed.
-    public func removeAllWorktrees(projectId: UUID, deleteBranch: Bool) async -> SupermuxWorktreeBulkRemovalResult {
-        await refreshWorktrees(for: projectId)
+    /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when the
+    ///   worktrees cannot be listed. The plain ``refreshWorktrees(for:)`` clears
+    ///   the cached list to `[]` on failure, which would turn a destructive
+    ///   action the user just confirmed into a silent no-op — so this uses the
+    ///   success-reporting refresh and fails loudly instead, deleting nothing.
+    public func removeAllWorktrees(projectId: UUID, deleteBranch: Bool) async throws -> SupermuxWorktreeBulkRemovalResult {
+        guard await refreshWorktreesReportingSuccess(for: projectId) else {
+            throw SupermuxGitError.gitFailed(
+                command: "git worktree list",
+                message: String(
+                    localized: "supermux.worktree.deleteAll.listFailed",
+                    defaultValue: "The project’s worktrees could not be listed. Nothing was deleted."
+                )
+            )
+        }
         let managed = (worktreesByProjectId[projectId] ?? []).filter(\.isSupermuxManaged)
         return await removeWorktrees(managed, projectId: projectId, force: false, deleteBranch: deleteBranch)
     }

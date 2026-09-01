@@ -278749,6 +278749,23 @@
           }
         }
       }
+    },
+    "supermux.worktree.deleteAll.listFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The project’s worktrees could not be listed. Nothing was deleted."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクトのワークツリーを一覧できませんでした。何も削除されていません。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

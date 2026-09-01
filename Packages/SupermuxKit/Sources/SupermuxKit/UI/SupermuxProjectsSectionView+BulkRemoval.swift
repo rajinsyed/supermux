@@ -14,7 +14,13 @@ extension SupermuxProjectsSectionView {
         guard !managed.isEmpty else { return }
         guard let deleteBranches = confirmDeleteAllWorktrees(project: project, worktrees: managed) else { return }
         Task {
-            var outcome = await model.removeAllWorktrees(projectId: project.id, deleteBranch: deleteBranches)
+            var outcome: SupermuxWorktreeBulkRemovalResult
+            do {
+                outcome = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: deleteBranches)
+            } catch {
+                presentError(error)
+                return
+            }
             if !outcome.dirty.isEmpty, confirmForceDeleteAll(outcome.dirty) {
                 let forced = await model.removeWorktrees(
                     outcome.dirty,
