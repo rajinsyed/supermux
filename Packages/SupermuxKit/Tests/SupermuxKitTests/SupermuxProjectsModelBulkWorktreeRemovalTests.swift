@@ -39,7 +39,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let first = try await model.createWorktree(projectId: project.id, branchName: "feature one", baseBranch: nil)
         let second = try await model.createWorktree(projectId: project.id, branchName: "feature two", baseBranch: nil)
 
-        let result = await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
+        let result = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
 
         #expect(Set(result.removed.map(\.path)) == [first.path, second.path])
         #expect(result.dirty.isEmpty)
@@ -60,7 +60,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         _ = try await model.createWorktree(projectId: project.id, branchName: "feature one", baseBranch: nil)
         _ = try await model.createWorktree(projectId: project.id, branchName: "feature two", baseBranch: nil)
 
-        let result = await model.removeAllWorktrees(projectId: project.id, deleteBranch: true)
+        let result = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: true)
 
         #expect(result.removed.count == 2)
         #expect(try !branchExists("feature-one", in: root))
@@ -76,7 +76,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let dirty = try await model.createWorktree(projectId: project.id, branchName: "dirty", baseBranch: nil)
         try GitFixture.write("wip\n", to: "untracked.txt", in: dirty.path)
 
-        let first = await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
+        let first = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
 
         #expect(first.removed.map(\.path) == [clean.path])
         #expect(first.dirty.map(\.path) == [dirty.path])
@@ -105,7 +105,7 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let model = try await makeLoadedModel(project: project)
         let managed = try await model.createWorktree(projectId: project.id, branchName: "managed", baseBranch: nil)
 
-        let result = await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
+        let result = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
 
         #expect(result.removed.map(\.path) == [managed.path])
         #expect(result.dirty.isEmpty)
@@ -114,6 +114,20 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let remaining = model.worktreesByProjectId[project.id] ?? []
         #expect(remaining.contains { $0.branch == "manual-branch" && !$0.isSupermuxManaged })
         #expect(!remaining.contains { $0.isSupermuxManaged })
+    }
+
+    /// A failed `git worktree list` must surface as an error, not as a silent
+    /// no-op: `refreshWorktrees(for:)` clears the cached list to `[]` on failure,
+    /// which would otherwise make Delete All "succeed" while removing nothing.
+    @Test func removeAllThrowsWhenWorktreesCannotBeListed() async throws {
+        let notARepo = try GitFixture.makeTempDirectory(prefix: "supermux-bulk-worktree-removal")
+        defer { GitFixture.cleanUp(notARepo) }
+        let project = SupermuxProject(name: "Plain folder", rootPath: notARepo)
+        let model = try await makeLoadedModel(project: project)
+
+        await #expect(throws: SupermuxGitError.self) {
+            try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
+        }
     }
 
     @Test func removeWorktreesReportsTerminalFailuresWithoutStopping() async throws {
