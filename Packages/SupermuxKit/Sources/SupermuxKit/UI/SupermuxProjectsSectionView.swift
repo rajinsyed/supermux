@@ -403,7 +403,12 @@ public struct SupermuxProjectsSectionView: View {
             colorHex: project.colorHex,
             projectId: project.id,
             setupScript: setupScript,
-            setupEnvironment: setupEnvironment
+            setupEnvironment: setupEnvironment,
+            // Hand the badge this worktree row is showing to the host: the
+            // probe drops the path once it is an open workspace, and the
+            // nested row would otherwise go blank until cmux's own probe
+            // chain catches up (see SupermuxOpenWorkspaceRequest.pullRequest).
+            pullRequest: pullRequestModel.pullRequestsByWorktreePath[worktree.path]
         ))
     }
 

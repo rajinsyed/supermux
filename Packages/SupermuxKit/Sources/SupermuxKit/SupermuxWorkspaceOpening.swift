@@ -44,6 +44,18 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     /// terminal-surface first-responder grab is suppressed.
     public var preservesUserFocus: Bool
 
+    /// The pull request badge the worktree row was showing when the user opened
+    /// it, or `nil` when it had none (or the open is not a worktree open).
+    ///
+    /// The host seeds it into its own per-workspace PR state so the nested
+    /// workspace row keeps the badge from the first frame. Without it the
+    /// unopened-worktree probe drops the path the moment it becomes an open
+    /// workspace, and the row stays blank until cmux's own chain — shell
+    /// directory report, git branch probe, PR poll, GitHub fetch — completes.
+    /// cmux's probe remains authoritative: it confirms, updates, or clears the
+    /// seeded badge on its first pass. No probe of any kind runs for the seed.
+    public var pullRequest: SupermuxPullRequest?
+
     /// Creates a request.
     /// - Parameters:
     ///   - title: Workspace title.
@@ -54,6 +66,7 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     ///   - setupScript: Setup script for a dedicated setup terminal, or `nil`.
     ///   - setupEnvironment: Variables exported into the setup terminal.
     ///   - preservesUserFocus: Suppress the keyboard-focus grab (remote opens).
+    ///   - pullRequest: The worktree row's current PR badge to hand off, if any.
     public init(
         title: String,
         directory: String,
@@ -62,7 +75,8 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         projectId: UUID? = nil,
         setupScript: String? = nil,
         setupEnvironment: [String: String] = [:],
-        preservesUserFocus: Bool = false
+        preservesUserFocus: Bool = false,
+        pullRequest: SupermuxPullRequest? = nil
     ) {
         self.title = title
         self.directory = directory
@@ -72,6 +86,7 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         self.setupScript = setupScript
         self.setupEnvironment = setupEnvironment
         self.preservesUserFocus = preservesUserFocus
+        self.pullRequest = pullRequest
     }
 }
 

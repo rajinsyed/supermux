@@ -77,8 +77,37 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             workspace.customColor = colorHex
         }
         associate(workspaceId: workspace.id, directory: directory, with: request)
+        seedPullRequestIfNeeded(in: workspace, request: request)
         runSetupScriptIfNeeded(in: workspace, directory: directory, request: request)
         return workspace.id
+    }
+
+    /// Seeds cmux's per-panel PR state for the new workspace's terminal from the
+    /// badge the worktree row was showing, so the nested row renders it from
+    /// the first frame instead of waiting on the shell → git probe → PR poll →
+    /// GitHub chain. One in-memory write; cmux's probe stays authoritative and
+    /// confirms, updates, or clears it on its first pass for the panel.
+    ///
+    /// The seed carries no branch on purpose: the sidebar only displays a
+    /// branch-tagged PR once the panel's probed git branch matches it, and the
+    /// panel has no branch yet. cmux's first resolved result re-tags it with
+    /// the real branch (the existing PR-for-panel is replaced, never
+    /// duplicated), and a branch probe never evicts a branchless seed
+    /// (`updatePanelGitBranch` drops a panel's PR only when a *known* branch
+    /// changes).
+    private func seedPullRequestIfNeeded(in workspace: Workspace, request: SupermuxOpenWorkspaceRequest) {
+        guard let pullRequest = request.pullRequest,
+              let panelId = workspace.focusedPanelId,
+              let status = SidebarPullRequestStatus(rawValue: pullRequest.status.rawValue) else { return }
+        workspace.updatePanelPullRequest(
+            panelId: panelId,
+            number: pullRequest.number,
+            label: "PR",
+            url: pullRequest.url,
+            status: status,
+            branch: nil,
+            isStale: pullRequest.isStale
+        )
     }
 
     /// Spawns a dedicated, focused setup terminal in `workspace` that runs the
