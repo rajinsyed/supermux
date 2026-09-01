@@ -70,6 +70,25 @@ final class GitHubPullRequestStubURLProtocol: URLProtocol, @unchecked Sendable {
                 httpVersion: nil,
                 headerFields: stub.headers
             )!
+            if let redirectLocation = stub.redirectLocation,
+               let redirectURL = URL(string: redirectLocation) {
+                // Reproduce URLSession's own redirect credential policy: the
+                // loading system drops `Authorization` when it builds the
+                // follow-up request, and only a task delegate can put it back.
+                // Verified against the live GitHub API, where a renamed private
+                // repo's 301 followed without credentials answers 404.
+                var redirected = URLRequest(url: redirectURL)
+                redirected.httpMethod = request.httpMethod
+                for (field, value) in request.allHTTPHeaderFields ?? [:]
+                where field.lowercased() != "authorization" {
+                    redirected.setValue(value, forHTTPHeaderField: field)
+                }
+                client?.urlProtocol(self, wasRedirectedTo: redirected, redirectResponse: response)
+                Self.lock.lock()
+                Self.activeRequestCount -= 1
+                Self.lock.unlock()
+                return
+            }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: stub.data)
             client?.urlProtocolDidFinishLoading(self)

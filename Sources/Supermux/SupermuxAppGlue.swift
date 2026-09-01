@@ -326,7 +326,16 @@ final class SupermuxWorkspaceObservation: ObservableObject {
 
     /// Upstream's `workspaceObservationCoalesceInterval` (`TabItemView`),
     /// mirrored so nested rows and flat rows coalesce telemetry bursts alike.
-    private static let coalesceInterval: RunLoop.SchedulerTimeType.Stride = .milliseconds(40)
+    ///
+    /// Every leg below schedules on `DispatchQueue.main`, never `RunLoop.main`:
+    /// Combine's RunLoop scheduler delivers only in the DEFAULT run-loop mode,
+    /// so with a context menu open, a sidebar drag or window resize tracking,
+    /// or a sheet/modal alert up, a PR badge written by cmux's poll sat
+    /// undelivered until the mode unwound — the nested rows looked "delayed"
+    /// while the flat rows (which already deliver on the main queue; see
+    /// `sidebarWorkspaceObservations`) repainted. Main-queue delivery is
+    /// mode-agnostic and still deferred past `@Published`'s `willSet`.
+    private static let coalesceInterval: DispatchQueue.SchedulerTimeType.Stride = .milliseconds(40)
 
     private var observedIds: Set<UUID> = []
     private var observedTabs: [Workspace] = []
@@ -376,7 +385,7 @@ final class SupermuxWorkspaceObservation: ObservableObject {
     /// when the set of open workspaces actually changes — so steady-state renders
     /// (and pure reorders, which keep the same set) never rebuild the
     /// subscription. Delivery is always deferred past `@Published`'s `willSet`
-    /// (via `.receive(on:)` on the immediate leg and the `RunLoop.main`
+    /// (via `.receive(on:)` on the immediate leg and the `DispatchQueue.main`
     /// debounce scheduler on the coalesced legs) so the next body re-read sees
     /// the committed value.
     func observe(tabs: [Workspace]) {
@@ -395,12 +404,12 @@ final class SupermuxWorkspaceObservation: ObservableObject {
 
         let customTitleLegs = tabs.map { workspace in
             workspace.$customTitle.removeDuplicates().map { _ in () }
-                .receive(on: RunLoop.main)
+                .receive(on: DispatchQueue.main)
                 .eraseToAnyPublisher()
         }
         let observationLegs = tabs.map { workspace in
             workspace.sidebarObservationPublisher
-                .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
+                .debounce(for: Self.coalesceInterval, scheduler: DispatchQueue.main)
                 .eraseToAnyPublisher()
         }
         // A pure surface reorder can change which branch/PR is first in
@@ -413,17 +422,17 @@ final class SupermuxWorkspaceObservation: ObservableObject {
             workspace.paneLayoutVersionPublisher
                 .removeDuplicates()
                 .map { _ in () }
-                .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
+                .debounce(for: Self.coalesceInterval, scheduler: DispatchQueue.main)
                 .eraseToAnyPublisher()
         }
         let lifecycleLeg = SupermuxWorkspaceLifecycleRelay.lifecycleDidChange
             .filter { ids.contains($0) }
             .map { _ in () }
-            .debounce(for: Self.coalesceInterval, scheduler: RunLoop.main)
+            .debounce(for: Self.coalesceInterval, scheduler: DispatchQueue.main)
             .eraseToAnyPublisher()
 
         cancellable = Publishers.MergeMany(customTitleLegs + observationLegs + paneLayoutLegs + [lifecycleLeg])
-            .coalesceLatest(for: Self.coalesceInterval, scheduler: RunLoop.main)
+            .coalesceLatest(for: Self.coalesceInterval, scheduler: DispatchQueue.main)
             .sink { [weak self] in self?.bumpIfRenderedStateChanged() }
 
         // Automatic process titles at settled cadence (cmux's own row model);
@@ -595,7 +604,7 @@ struct SupermuxPresetsBarMount: View {
         // idiom) so reconcile reads the committed panels — synchronous
         // delivery both mutated observable state mid-view-update and saw the
         // pre-close dictionary, no-oping on the exact event it exists for.
-        .onReceive(workspace.panelsPublisher.receive(on: RunLoop.main)) { [weak workspace] _ in
+        .onReceive(workspace.panelsPublisher.receive(on: DispatchQueue.main)) { [weak workspace] _ in
             guard let workspace else { return }
             SupermuxComposition.runCoordinator.reconcile(workspace: workspace)
         }
