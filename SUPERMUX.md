@@ -47,7 +47,7 @@ building a parallel system.
 |------|--------|-------|
 | Sticky Projects (sidebar section, icons, colors, persisted) | ✅ | `SupermuxProjectsModel`, `SupermuxProjectStore`, `SupermuxProjectsSectionView`; mounted via the `sidebar-projects-section` touchpoint |
 | Open local / create worktree from a project | ✅ | `SupermuxGitWorktreeService` (selectable starting branch; piggycode semantics: `--no-track -b`, `push.autoSetupRemote`, `branch.<n>.base`, dedup, exclude) |
-| List / open / delete worktrees (dirty-checked) | ✅ | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, project row disclosure |
+| List / open / delete worktrees (dirty-checked), plus project-level Delete All Worktrees (clean ones go, dirty ones get a second confirm) | ✅ | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, `SupermuxProjectsModel+BulkWorktreeRemoval`, project row disclosure / context menu |
 | Worktree PR badges (clickable, state-colored) | ✅ | opened worktrees reuse cmux's per-workspace `SidebarPullRequestState` (carried on `SupermuxOpenWorkspace.pullRequest`); unopened ones via `SupermuxWorktreePullRequestModel` + `SupermuxPullRequestProbe` (wrapping `CmuxGit.PullRequestProbeService`); both render `SupermuxPullRequestBadge`. SupermuxKit now depends on `CmuxGit`. |
 | Changes (git) panel | ✅ | right-sidebar `changes` mode (`right-sidebar-changes-mode-*` touchpoints) → `SupermuxChangesPanelView` / `SupermuxChangesModel` / `SupermuxGitChangesService` |
 | Run actions (⌘G start/stop) | ✅ | `supermuxToggleRun` shortcut (shares ⌘G with Find Next) → `SupermuxRunCoordinator` |
