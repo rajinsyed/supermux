@@ -267,6 +267,75 @@ final class SupermuxWorkspaceObservationTests: XCTestCase {
     }
 }
 
+/// Regression coverage for the worktree → open-workspace PR badge handoff.
+///
+/// Bug: opening a worktree from the Projects section made its PR badge vanish
+/// for seconds to tens of seconds. The unopened-worktree probe model prunes the
+/// path the moment it becomes an open workspace, and the nested row's only
+/// source is cmux's per-panel PR state — which is empty until the shell
+/// reports a directory, the git probe reports a branch, and the PR poll (max 3
+/// panels per pass) fetches GitHub. The badge the user was looking at a moment
+/// earlier is handed to the host with the open request and seeded into cmux's
+/// own per-panel state, so the row keeps it and cmux's probe reconciles it.
+@MainActor
+final class SupermuxWorktreeOpenPullRequestHandoffTests: XCTestCase {
+    func testOpeningWorktreeSeedsNestedRowBadgeFromWorktreeProbe() throws {
+        let manager = TabManager()
+        let opener = SupermuxTabManagerOpener(tabManager: manager)
+        let directory = try Self.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let badge = SupermuxPullRequest(
+            number: 42,
+            status: .open,
+            url: try XCTUnwrap(URL(string: "https://github.com/o/r/pull/42"))
+        )
+
+        // No projectId: the association store persists to disk and this test
+        // only exercises the PR handoff.
+        let workspaceId = try XCTUnwrap(opener.openWorkspaceReturningWorkspaceId(SupermuxOpenWorkspaceRequest(
+            title: "feature",
+            directory: directory,
+            pullRequest: badge
+        )))
+        let workspace = try XCTUnwrap(manager.tabs.first { $0.id == workspaceId })
+
+        // The exact read SupermuxProjectsMount performs for the nested row,
+        // synchronously after the open — before any probe could have run.
+        let snapshot = SupermuxWorkspaceRow.snapshot(
+            for: workspace,
+            isSelected: true,
+            projectId: nil,
+            isRunning: false
+        )
+        XCTAssertEqual(
+            snapshot.pullRequest,
+            badge,
+            "The nested row must keep showing the worktree's badge the moment the worktree opens."
+        )
+    }
+
+    func testOpeningWithoutBadgeSeedsNothing() throws {
+        let manager = TabManager()
+        let opener = SupermuxTabManagerOpener(tabManager: manager)
+        let directory = try Self.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+
+        let workspaceId = try XCTUnwrap(opener.openWorkspaceReturningWorkspaceId(SupermuxOpenWorkspaceRequest(
+            title: "feature",
+            directory: directory
+        )))
+        let workspace = try XCTUnwrap(manager.tabs.first { $0.id == workspaceId })
+        XCTAssertTrue(workspace.panelPullRequests.isEmpty, "An open without a badge leaves cmux's PR state untouched.")
+    }
+
+    private static func makeTemporaryDirectory() throws -> String {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-pr-handoff-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url.path
+    }
+}
+
 /// In-memory ``SupermuxDirectoryAssociationPersisting`` backend, standing in
 /// for the projects model so tests can mutate the durable directory map
 /// *directly* — the way the model's sibling-build `adopt()` fold-in and
