@@ -301,18 +301,18 @@ public struct SupermuxProjectRowView: View {
             if !unopenedWorktrees.isEmpty {
                 worktreeCountToggle
             }
-            // Always laid out, faded in on hover, so the count pill never
-            // shifts sideways when the plus appears.
-            SupermuxSidebarIconButton(
-                systemName: "plus",
-                help: String(localized: "supermux.project.newWorktree", defaultValue: "New Worktree…"),
-                fontScale: fontScale,
-                action: actions.newWorktree
-            )
-            .opacity(isHovered ? 1 : 0)
-            .allowsHitTesting(isHovered)
-            .animation(.easeOut(duration: 0.12), value: isHovered)
+            // Hover-only, so the count pill sits flush right when idle.
+            if isHovered {
+                SupermuxSidebarIconButton(
+                    systemName: "plus",
+                    help: String(localized: "supermux.project.newWorktree", defaultValue: "New Worktree…"),
+                    fontScale: fontScale,
+                    action: actions.newWorktree
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
         }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
