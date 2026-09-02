@@ -15,6 +15,7 @@ public struct SupermuxProjectDetailScreen: View {
     private let iconPNGData: @Sendable (_ projectID: String) async -> Data?
     let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
     private let makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore?
+    private let makeAgentLaunchStore: @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore?
     // Internal (not private): the presets manager entry in
     // SupermuxProjectDetailScreen+RunSections.swift needs the editing seam.
     let editing: SupermuxProjectEditingActions?
@@ -33,6 +34,9 @@ public struct SupermuxProjectDetailScreen: View {
     /// event stream is structured — cancelled when the screen disappears.
     @State private var worktreesStore: SupermuxMobileWorktreesStore?
     @State private var showingNewWorktreeSheet = false
+    /// The Claude section's store for the presented sheet (options loaded in
+    /// `prepareNewWorktree`); `nil` when the host lacks the capability.
+    @State private var agentLaunchStore: SupermuxMobileAgentLaunchStore?
     @State private var isPreparingNewWorktree = false
     @State private var newWorktreeErrorMessage: String?
     /// The row awaiting the FIRST (always-shown) destructive removal confirm.
@@ -79,6 +83,7 @@ public struct SupermuxProjectDetailScreen: View {
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
         selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
         makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
+        makeAgentLaunchStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore? = { _ in nil },
         editing: SupermuxProjectEditingActions? = nil,
         presets: [SupermuxTerminalPresetDTO] = [],
         showsPresets: Bool = false,
@@ -89,6 +94,7 @@ public struct SupermuxProjectDetailScreen: View {
         self.iconPNGData = iconPNGData
         self.selectWorkspace = selectWorkspace
         self.makeWorktreesStore = makeWorktreesStore
+        self.makeAgentLaunchStore = makeAgentLaunchStore
         self.editing = editing
         self.presets = presets
         self.showsPresets = showsPresets
@@ -174,6 +180,7 @@ public struct SupermuxProjectDetailScreen: View {
                     branches: store.branches,
                     defaultBaseBranch: row.defaultBranch,
                     showsBaseBranchPicker: store.supportsStartingBranchSelection,
+                    agentStore: agentLaunchStore,
                     suggestBranch: { workspaceName in
                         try await store.suggestBranchName(workspaceName: workspaceName).branchName
                     },
@@ -466,7 +473,13 @@ public struct SupermuxProjectDetailScreen: View {
         Task {
             defer { isPreparingNewWorktree = false }
             do {
+                // Same overlap as the sidebar flow: the Claude section's
+                // options load alongside the branch snapshot.
+                let agentStore = makeAgentLaunchStore(row.id)
+                async let options: Void? = agentStore?.loadOptions()
                 try await store.refreshBranches()
+                _ = await options
+                agentLaunchStore = agentStore
                 showingNewWorktreeSheet = true
             } catch {
                 newWorktreeErrorMessage = error.localizedDescription

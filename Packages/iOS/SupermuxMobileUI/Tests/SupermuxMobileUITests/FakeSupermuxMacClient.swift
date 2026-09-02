@@ -41,6 +41,17 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
     var worktreeCreateResponse = SupermuxWorktreeCreateResponse()
     /// When set, `worktreeCreate` throws instead of returning.
     var worktreeCreateError: (any Error)?
+
+    /// The response the next `agentOptions` call returns.
+    var agentOptionsResponse = SupermuxAgentLaunchOptionsDTO(
+        commands: ["claude"], selectedCommand: "claude", models: [], modelsSource: .unavailable
+    )
+    /// When set, `agentOptions` throws instead of returning.
+    var agentOptionsError: (any Error)?
+    /// The response the next `agentStart` call returns.
+    var agentStartResponse = SupermuxAgentStartResponse()
+    /// When set, `agentStart` throws instead of returning.
+    var agentStartError: (any Error)?
     /// The response the next `worktreeOpen` call returns.
     var worktreeOpenResponse = SupermuxWorktreeOpenResponse()
     /// When set, `worktreeOpen` throws instead of returning.
@@ -256,6 +267,20 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
         if let worktreeCreateError { throw worktreeCreateError }
         return worktreeCreateResponse
+    }
+
+    func agentOptions(_ request: SupermuxAgentOptionsRequest) async throws -> SupermuxAgentLaunchOptionsDTO {
+        callLog.append("agentOptions")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let agentOptionsError { throw agentOptionsError }
+        return agentOptionsResponse
+    }
+
+    func agentStart(_ request: SupermuxAgentStartRequest) async throws -> SupermuxAgentStartResponse {
+        callLog.append("agentStart")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let agentStartError { throw agentStartError }
+        return agentStartResponse
     }
 
     func worktreeOpen(_ request: SupermuxWorktreeOpenRequest) async throws -> SupermuxWorktreeOpenResponse {

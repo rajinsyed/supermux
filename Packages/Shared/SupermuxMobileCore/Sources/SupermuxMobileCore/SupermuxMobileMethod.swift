@@ -35,6 +35,13 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Removes a worktree (dirty worktrees require `force`).
     case worktreeRemove = "mobile.supermux.worktree.remove"
 
+    // MARK: Agent launch (Claude in a new worktree)
+
+    /// Reads the configured Claude commands plus one command's model catalog.
+    case agentOptions = "mobile.supermux.agent.options"
+    /// Creates a worktree named from a prompt and starts Claude in it.
+    case agentStart = "mobile.supermux.agent.start"
+
     // MARK: Changes
 
     /// Starts/heartbeats/stops the per-workspace repository watcher.

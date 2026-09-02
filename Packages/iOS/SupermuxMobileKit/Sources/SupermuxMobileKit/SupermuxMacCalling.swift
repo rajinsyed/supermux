@@ -50,6 +50,16 @@ public protocol SupermuxMacCalling: Sendable {
     /// - Parameter request: The typed request (owns the exact wire shape).
     func worktreeRemove(_ request: SupermuxWorktreeRemoveRequest) async throws -> SupermuxWorktreeRemoveResponse
 
+    /// `mobile.supermux.agent.options`: the Mac's Claude commands plus one
+    /// command's model catalog and last-used model/effort.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func agentOptions(_ request: SupermuxAgentOptionsRequest) async throws -> SupermuxAgentLaunchOptionsDTO
+
+    /// `mobile.supermux.agent.start`: creates a worktree named from the prompt
+    /// and opens a workspace on the Mac already running Claude with it.
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func agentStart(_ request: SupermuxAgentStartRequest) async throws -> SupermuxAgentStartResponse
+
     /// `mobile.supermux.project.create`: registers a folder as a project
     /// (repo-shipped `config.json` is imported Mac-side).
     /// - Parameter request: The typed request (owns the exact wire shape).

@@ -42,6 +42,32 @@ enum SupermuxComposition {
     /// AI commit-message generator for the Changes panel.
     static let aiCommitMessenger: any SupermuxAICommitMessaging = SupermuxAICommitMessenger(client: aiClient)
 
+    /// AI workspace+branch namer for the prompt-first worktree launch.
+    static let aiWorktreeNamer: any SupermuxAIWorktreeNaming = SupermuxAIWorktreeNamer(client: aiClient)
+
+    /// Claude commands (`claude`, `cc`, `ccx`, …) and per-command last picks.
+    static let agentLauncherSettings = SupermuxAgentLauncherSettings(defaults: .standard)
+
+    /// Per-command model catalogs, cached in the same store the harness panes
+    /// use (under command pseudo-paths, so the two never collide).
+    static let agentModelCatalog = SupermuxAgentModelCatalog(
+        store: SupermuxHarnessModelCatalogStore(defaults: .standard)
+    )
+
+    /// The one shared "start Claude in a new worktree" path (Mac sheet + phone RPC).
+    static let agentWorktreeLauncher = SupermuxAgentWorktreeLauncher(
+        projectsModel: projectsModel,
+        namer: aiWorktreeNamer,
+        settings: agentLauncherSettings
+    )
+
+    /// Bundle handed to every window's Projects section.
+    static let agentLaunch = SupermuxAgentLaunchEnvironment(
+        launcher: agentWorktreeLauncher,
+        catalog: agentModelCatalog,
+        settings: agentLauncherSettings
+    )
+
     /// Personal Mac-to-APNs delivery for the fixed-identity Supermux iPhone app.
     static let phonePushService = SupermuxPhonePushService(
         baseDirectory: CmuxSettings.CmuxStateDirectory.url(
@@ -252,7 +278,9 @@ struct SupermuxProjectsMount: View {
             // pass and one repo cache instead of probing per window.
             pullRequestModel: SupermuxComposition.worktreePullRequestModel,
             // One app-wide logo cache, shared with the workspace switcher.
-            iconStore: SupermuxComposition.projectIconStore
+            iconStore: SupermuxComposition.projectIconStore,
+            // "Start Claude in a New Worktree" (prompt-first worktree launch).
+            agentLaunch: SupermuxComposition.agentLaunch
         )
         // Subscribe once on appear and re-subscribe only when the set of open
         // workspaces changes; `register` eagerly seeds the switcher's MRU order.

@@ -37,6 +37,19 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    which stages all changes, asks the model for a Conventional-Commits message, and commits. The key
    is stored in a private `0600` file (never in `cmux.json`); the model is configurable.
 
+8. **Start Claude from the New Worktree sheet (prompt-first).** The same New Worktree sheet
+   (Mac hover ＋ / context menu; phone swipe, long-press menu, inline row, detail header) has a
+   prompt field at the top. Leave it empty and it is the classic flow. Type a task and it becomes
+   a Claude launch: blank workspace/branch fields are derived from the prompt (one AI call when the
+   gateway key is set, an offline heuristic otherwise — typed values win), the worktree is created,
+   and the workspace opens with its terminal already running the chosen **Claude command** with the
+   prompt as its first message. The command list is user-editable (`claude`, `cc`, `ccx`, …
+   — aliases and wrapper scripts resolve because launches run as interactive-shell input), and
+   the **model picker shows the models that specific command advertises** (probed through the
+   user's login shell with Claude's stream-json `initialize`, cached per command), with an effort
+   picker scoped to the selection (the default model row takes effort too). The exact shell line
+   is previewed in the sheet. Last model/effort is remembered per command.
+
 Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
 diff viewer, per-workspace git branch/dirty tracking), supermux **extends** it rather than
 building a parallel system.
@@ -54,6 +67,7 @@ building a parallel system.
 | Custom app actions + terminal presets (per project) | ✅ | `SupermuxProjectAction`, editor Actions section, project-row Actions submenu |
 | Worktree setup/teardown + `config.json` import | ✅ | `SupermuxProjectConfig`(+`Loader`), `SupermuxWorktreeScript`/`SupermuxWorktreeEnvironment`; setup runs in a dedicated terminal via `SupermuxTabManagerOpener`, teardown headless in `SupermuxGitWorktreeService.removeWorktree`; import wired in `SupermuxProjectsModel` |
 | AI integration (Vercel AI Gateway key + branch names + commit messages) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/AI/` (`SupermuxAIConfig`, `SupermuxAIGatewayClient`, `SupermuxAIBranchNamer`, `SupermuxAICommitMessenger`); key UI via the `ai-settings` touchpoint (#18) → `SupermuxAISettingsCard`; wired in `SupermuxComposition`. Key in a `0600` secret file under the cmux state dir; model id (default `openai/gpt-5.4-mini`) editable in Settings, persisted in UserDefaults (`supermux.ai.model`). |
+| Start Claude in a new worktree (prompt-first, per-command model catalog) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/Agent/` (`SupermuxAgentLauncherSettings`, `SupermuxAgentModelCatalog` + `SupermuxAgentCommandProbePlan`, `SupermuxPromptNaming`, `SupermuxAgentLaunchCommand`, `SupermuxAgentWorktreeLauncher` — the one shared path), `AI/SupermuxAIWorktreeNamer`; Mac UI: the prompt path lives inside `UI/SupermuxNewWorktreeSheet(+Chips)` (shown when `agentLaunch` is injected); wired in `SupermuxComposition.agentLaunch`. Catalogs cache in the harness `SupermuxHarnessModelCatalogStore` under `/supermux-agent-command/<cmd>` pseudo-paths |
 | Localization (en + ja) | ✅ | macOS/app-target `supermux.*` keys in `Resources/Localizable.xcstrings`; the iOS screens package owns a SECOND catalog, `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/Resources/Localizable.xcstrings` (~207 keys). Regenerate with the scripts under "Localization" below |
 
 Both phases are verified against a live tagged build (worktree creation, the Changes panel on
@@ -107,6 +121,7 @@ Status per fork feature area:
 | 18 | Agent-completion push notifications | ✅ on iOS | The fixed `com.supermux.ios` build mirrors its sandbox APNs token to the paired Mac over `mobile.supermux.phone_push.register`. The Mac signs topic-restricted ES256 provider requests from a local-only key and forwards through the same `TerminalNotificationStore` admission, focus-suppression, forwarding-mode, and hide-content policy as cloud push. Visible alerts work while the app is foregrounded, backgrounded, locked, or terminated; the phone suppresses a foreground banner only when it already shows the exact target terminal. Touchpoints #331–#333 |
 
 | 19 | Usage limits (Claude Code + Codex) | ✅ on iOS, read-only by design | a gauge ring in the workspace-list toolbar, filled to the tightest limit across both providers, opening `SupermuxUsageScreen`: window meters with reset countdowns and the ahead-of-pace marker, the other cswap accounts, provider notes (not configured / re-login / offline session log), and the honest oldest-measurement footer. The Mac projects its EXISTING `SupermuxUsageModel` — the same one the sidebar popover renders — over `mobile.supermux.usage.state`; credentials, polling, and the rate-limit floor all stay Mac-side. **cswap account switching is deliberately not ported**: it mutates which account Claude Code is logged in as, and that decision belongs at the machine doing the work. Touchpoints #340–#341 |
+| 20 | Start Claude from the New Worktree sheet | ✅ on iOS | the iOS `SupermuxNewWorktreeSheet` gains a prompt field and a Claude section (`SupermuxNewWorktreeClaudeSection`) over `mobile.supermux.agent.options` / `agent.start`, gated on `supermux.agent_launch.v1`; store `SupermuxMobileAgentLaunchStore` (MobileKit), loaded alongside the branch snapshot in `requestNewWorktree` / the detail screen's prepare. No extra entry points: every existing New Worktree affordance reaches it. Commands, catalogs, naming, git, and the terminal launch stay Mac-side (the phone cannot edit the command list; do that in the Mac sheet) |
 
 **Recorded non-goals** (deliberate, may be revisited later):
 

@@ -61,7 +61,7 @@ enum SupermuxMobileAuthorization {
         case .projectsList, .projectCreate, .projectUpdate, .projectDelete,
              .projectOpen, .projectIcon, .projectsSetSectionCollapsed,
              .worktreesList, .worktreeSuggestBranch, .worktreeCreate,
-             .worktreeOpen, .worktreeRemove,
+             .worktreeOpen, .worktreeRemove, .agentOptions, .agentStart,
              .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch,
              .actionRun, .phonePushRegister, .usageState:
