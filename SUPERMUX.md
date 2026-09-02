@@ -20,6 +20,8 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    can be cleaned up from the UI.
 2. **Changes panel.** A right-sidebar git panel for the active workspace: changed files, diffs,
    stage/unstage/discard, commit, push/pull — quick git actions without leaving the keyboard.
+   Clicking a file row opens that file's diff (staged or working-tree side, matching the section)
+   in cmux's diff viewer as a browser tab beside the workspace; the next click replaces that tab.
 3. **Run actions (⌘G).** Per-project start/stop dev-server commands with running-state display.
 4. **Terminal presets.** Named terminal setups (command + cwd) launchable per project.
 5. **Custom app actions** per project (open editor, open URL, arbitrary commands).
@@ -49,7 +51,7 @@ building a parallel system.
 | Open local / create worktree from a project | ✅ | `SupermuxGitWorktreeService` (selectable starting branch; piggycode semantics: `--no-track -b`, `push.autoSetupRemote`, `branch.<n>.base`, dedup, exclude) |
 | List / open / delete worktrees (dirty-checked), plus project-level Delete All Worktrees (clean ones go, dirty ones get a second confirm) | ✅ | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, `SupermuxProjectsModel+BulkWorktreeRemoval`, project row disclosure / context menu |
 | Worktree PR badges (clickable, state-colored) | ✅ | opened worktrees reuse cmux's per-workspace `SidebarPullRequestState` (carried on `SupermuxOpenWorkspace.pullRequest`); unopened ones via `SupermuxWorktreePullRequestModel` + `SupermuxPullRequestProbe` (wrapping `CmuxGit.PullRequestProbeService`); both render `SupermuxPullRequestBadge`. SupermuxKit now depends on `CmuxGit`. |
-| Changes (git) panel | ✅ | right-sidebar `changes` mode (`right-sidebar-changes-mode-*` touchpoints) → `SupermuxChangesPanelView` / `SupermuxChangesModel` / `SupermuxGitChangesService` |
+| Changes (git) panel | ✅ | right-sidebar `changes` mode (`right-sidebar-changes-mode-*` touchpoints) → `SupermuxChangesPanelView` / `SupermuxChangesModel` / `SupermuxGitChangesService`; a file-row click captures `SupermuxChangesModel.fileDiffPatch` and `SupermuxFileDiffOpener` pipes it to the bundled `cmux diff -` CLI (upstream's viewer, one tab per workspace) |
 | Run actions (⌘G start/stop) | ✅ | `supermuxToggleRun` shortcut (shares ⌘G with Find Next) → `SupermuxRunCoordinator` |
 | Custom app actions + terminal presets (per project) | ✅ | `SupermuxProjectAction`, editor Actions section, project-row Actions submenu |
 | Worktree setup/teardown + `config.json` import | ✅ | `SupermuxProjectConfig`(+`Loader`), `SupermuxWorktreeScript`/`SupermuxWorktreeEnvironment`; setup runs in a dedicated terminal via `SupermuxTabManagerOpener`, teardown headless in `SupermuxGitWorktreeService.removeWorktree`; import wired in `SupermuxProjectsModel` |

@@ -95,6 +95,60 @@ import Testing
         #expect(text.contains("+hello mobile"))
     }
 
+    /// The `--no-index` preview hands git the resolved absolute path, but the
+    /// headers a viewer names the file by must be repo-relative — an absolute
+    /// `a/Users/…/repo/fresh.txt` would leak into the viewer's file tree.
+    @Test func untrackedPreviewHeadersAreRepoRelative() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        try FileManager.default.createDirectory(
+            atPath: (root as NSString).appendingPathComponent("sub"), withIntermediateDirectories: true
+        )
+        try GitFixture.write("hello\n", to: "sub/fresh.txt", in: root)
+
+        let diff = await service.fileDiff(repoPath: root, path: "sub/fresh.txt", staged: false)
+
+        let text = try #require(diff.text)
+        #expect(text.contains("diff --git a/sub/fresh.txt b/sub/fresh.txt"))
+        #expect(text.contains("+++ b/sub/fresh.txt"))
+        #expect(!text.contains(root))
+    }
+
+    @Test func relativizedNoIndexHeadersLeaveHunkContentAlone() {
+        let text = [
+            "diff --git a/tmp/repo/new.txt b/tmp/repo/new.txt",
+            "new file mode 100644",
+            "--- /dev/null",
+            "+++ b/tmp/repo/new.txt",
+            "@@ -0,0 +1 @@",
+            "+see b/tmp/repo/new.txt",
+        ].joined(separator: "\n")
+
+        let rewritten = SupermuxGitChangesService.relativizedNoIndexHeaders(
+            text, resolvedPath: "/tmp/repo/new.txt", relativePath: "new.txt"
+        )
+
+        #expect(rewritten.hasPrefix("diff --git a/new.txt b/new.txt\n"))
+        #expect(rewritten.contains("+++ b/new.txt\n"))
+        #expect(rewritten.hasSuffix("+see b/tmp/repo/new.txt"))
+    }
+
+    /// A staged rename must diff as a rename (both paths in the pathspec), not
+    /// as a bare addition of the new path.
+    @Test func stagedRenamePassesBothPathsSoGitReportsTheRename() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.runGit(["mv", "README.md", "RENAMED.md"], in: root)
+
+        let withOldPath = await service.fileDiff(
+            repoPath: root, path: "RENAMED.md", oldPath: "README.md", staged: true
+        )
+        let withoutOldPath = await service.fileDiff(repoPath: root, path: "RENAMED.md", staged: true)
+
+        #expect(withOldPath.text?.contains("rename from README.md") == true)
+        #expect(withoutOldPath.text?.contains("new file mode") == true)
+    }
+
     @Test func gitignoredFileIsNotPreviewedAndLeaksNothing() async throws {
         let root = try makeFixtureRepo()
         defer { GitFixture.cleanUp(root) }

@@ -503,6 +503,13 @@ struct SupermuxChangesMount: View {
                 guard let tabManager,
                       let appDelegate = NSApp.delegate as? AppDelegate else { return }
                 _ = appDelegate.openDiffViewerForFocusedWorkspace(for: tabManager)
+            },
+            onOpenFileDiff: { [weak tabManager] patch in
+                guard let tabManager,
+                      SupermuxFileDiffOpener.shared.present(patch, for: tabManager) else {
+                    NSSound.beep()
+                    return
+                }
             }
         )
         .onAppear { box.model.setDirectory(workspaceDirectory) }

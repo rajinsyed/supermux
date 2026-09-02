@@ -51,11 +51,16 @@ extension SupermuxGitChangesService {
     /// - Parameters:
     ///   - repoPath: Repository directory.
     ///   - path: Repo-relative path to diff.
+    ///   - oldPath: For a staged rename/copy, the source path. Both paths join
+    ///     the pathspec so git reports the rename itself rather than a bare
+    ///     addition of the new path. Ignored for untracked previews.
     ///   - staged: Whether to diff the index (`--cached`) instead of the
     ///     working tree.
     /// - Returns: The captured diff; never throws — a failing git invocation
     ///   degrades to an empty text diff (callers treat the path as unchanged).
-    public func fileDiff(repoPath: String, path: String, staged: Bool) async -> SupermuxGitFileDiff {
+    public func fileDiff(
+        repoPath: String, path: String, oldPath: String? = nil, staged: Bool
+    ) async -> SupermuxGitFileDiff {
         // The untracked preview shells out to `git diff --no-index`, which reads
         // exactly the operand path git is handed — and unlike a real pathspec
         // diff, git does NOT confine `--no-index` operands to the repository. So
@@ -74,10 +79,48 @@ extension SupermuxGitChangesService {
         ) {
             return SupermuxGitFileDiff(isBinary: true, text: nil, truncated: false)
         }
-        let (text, truncated) = await diffText(
-            repoPath: repoPath, path: path, staged: staged, noIndexResolvedPath: noIndexResolvedPath
+        var (text, truncated) = await diffText(
+            repoPath: repoPath, path: path, oldPath: oldPath, staged: staged,
+            noIndexResolvedPath: noIndexResolvedPath
         )
+        if let resolved = noIndexResolvedPath {
+            let canonicalRoot = URL(fileURLWithPath: repoPath).resolvingSymlinksInPath().path
+            text = Self.relativizedNoIndexHeaders(
+                text,
+                resolvedPath: resolved,
+                relativePath: Self.repoRelativePath(resolved, canonicalRoot: canonicalRoot) ?? path
+            )
+        }
         return SupermuxGitFileDiff(isBinary: false, text: text, truncated: truncated)
+    }
+
+    /// Rewrites a `--no-index` preview's file headers from the resolved
+    /// absolute operand git was handed (`a/Users/…/repo/new.txt`) to the
+    /// repo-relative path (`a/new.txt`), so a viewer's file tree and the
+    /// mobile diff header name the file the way the rest of the panel does.
+    /// Only the `diff --git`, `---`, and `+++` lines are touched; hunk content
+    /// is left byte-for-byte as captured.
+    static func relativizedNoIndexHeaders(
+        _ text: String, resolvedPath: String, relativePath: String
+    ) -> String {
+        // `resolvedPath` starts with "/", so git prints it as `a/Users/…` —
+        // the "a" prefix directly followed by the absolute path.
+        let replacements = [
+            ("a" + resolvedPath, "a/" + relativePath),
+            ("b" + resolvedPath, "b/" + relativePath),
+        ]
+        let headerPrefixes = ["diff --git ", "--- ", "+++ "]
+        return text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                var line = String(line)
+                guard headerPrefixes.contains(where: line.hasPrefix) else { return line }
+                for (absolute, relative) in replacements {
+                    line = line.replacingOccurrences(of: absolute, with: relative)
+                }
+                return line
+            }
+            .joined(separator: "\n")
     }
 
     // MARK: - Internals
@@ -185,11 +228,11 @@ extension SupermuxGitChangesService {
     /// deliberately ignored (git exits via SIGPIPE when `head` stops early,
     /// and `--no-index` exits 1 whenever the files differ).
     private func diffText(
-        repoPath: String, path: String, staged: Bool, noIndexResolvedPath: String?
+        repoPath: String, path: String, oldPath: String?, staged: Bool, noIndexResolvedPath: String?
     ) async -> (text: String, truncated: Bool) {
         let script = "git \(Self.noOptionalLocks) "
             + diffArguments(staged: staged, noIndex: noIndexResolvedPath != nil, extra: nil)
-            + " \(pathspec(path: path, noIndexResolvedPath: noIndexResolvedPath))"
+            + " \(pathspec(path: path, oldPath: oldPath, noIndexResolvedPath: noIndexResolvedPath))"
             + " | /usr/bin/head -c \(Self.maxFileDiffBytes + 1) | /usr/bin/base64"
         let result = await runShellPipeline(script, in: repoPath, shell: "/bin/bash")
         guard let armored = result.stdout,
@@ -213,12 +256,17 @@ extension SupermuxGitChangesService {
     /// The quoted pathspec. For a `--no-index` untracked preview the operand is
     /// the RESOLVED absolute path (`-- /dev/null <resolved>`), so git opens the
     /// exact object that passed confinement; otherwise the repo-relative path
-    /// (`-- <path>`), which git itself confines to the repository.
-    private func pathspec(path: String, noIndexResolvedPath: String?) -> String {
+    /// (`-- <path>`, plus the rename source when given), which git itself
+    /// confines to the repository.
+    private func pathspec(path: String, oldPath: String? = nil, noIndexResolvedPath: String?) -> String {
         if let resolved = noIndexResolvedPath {
             return "-- /dev/null \(Self.shellQuoted(resolved))"
         }
-        return "-- \(Self.shellQuoted(path))"
+        var spec = "-- \(Self.shellQuoted(path))"
+        if let oldPath, oldPath != path {
+            spec += " \(Self.shellQuoted(oldPath))"
+        }
+        return spec
     }
 
     /// Single-quotes `value` for safe interpolation into a shell script.

@@ -14,6 +14,9 @@ public struct SupermuxChangesPanelView: View {
     // still the snapshot boundary and only hands value snapshots to rows.
     @Bindable var model: SupermuxChangesModel
     private let onOpenDiff: (() -> Void)?
+    /// Host-app presenter for one file's patch (a click on a file row). `nil`
+    /// leaves rows inert.
+    private let onOpenFileDiff: ((SupermuxFileDiffPatch) -> Void)?
     /// Whether the right sidebar is actually on-screen. The sidebar keeps the
     /// changes panel mounted after its first show (so re-showing is instant), so
     /// the panel gates visibility-dependent work itself: the file-system-watcher
@@ -32,6 +35,9 @@ public struct SupermuxChangesPanelView: View {
     let commitShortcutHint: String
 
     @State var discardCandidate: SupermuxGitFileChange?
+    /// The row whose diff was last opened, kept highlighted so the panel shows
+    /// which file the host viewer is displaying. Reset on a directory switch.
+    @State private var selectedChangeID: SupermuxGitFileChange.ID?
     @State var isDiscardAllPresented = false
     @State var isHistoryExpanded = false
     @State var isIncomingExpanded = false
@@ -60,13 +66,16 @@ public struct SupermuxChangesPanelView: View {
     ///   - commitShortcutHint: Display string for the primary chord (button help).
     ///   - onOpenDiff: Host-app callback that opens a full diff view; the
     ///     "Open Diff" header button is hidden when `nil`.
+    ///   - onOpenFileDiff: Host-app callback that shows one file's captured
+    ///     patch (a click on a file row); rows are inert when `nil`.
     public init(
         model: SupermuxChangesModel,
         isVisible: Bool = true,
         commitShortcut: KeyboardShortcut? = KeyboardShortcut(.return, modifiers: .command),
         commitAcceleratorShortcut: KeyboardShortcut? = KeyboardShortcut(.return, modifiers: [.command, .shift]),
         commitShortcutHint: String = "⌘↩",
-        onOpenDiff: (() -> Void)?
+        onOpenDiff: (() -> Void)?,
+        onOpenFileDiff: ((SupermuxFileDiffPatch) -> Void)? = nil
     ) {
         self.model = model
         self.isVisible = isVisible
@@ -74,6 +83,7 @@ public struct SupermuxChangesPanelView: View {
         self.commitAcceleratorShortcut = commitAcceleratorShortcut
         self.commitShortcutHint = commitShortcutHint
         self.onOpenDiff = onOpenDiff
+        self.onOpenFileDiff = onOpenFileDiff
     }
 
     /// The panel layout: header, scrollable change sections, error caption,
@@ -121,6 +131,7 @@ public struct SupermuxChangesPanelView: View {
             }
         }
         .onDisappear { model.stopObserving() }
+        .onChange(of: model.directory) { _, _ in selectedChangeID = nil }
         .confirmationDialog(
             String(localized: "supermux.changes.discard.title", defaultValue: "Discard Changes"),
             isPresented: isDiscardDialogPresented,
@@ -354,6 +365,8 @@ public struct SupermuxChangesPanelView: View {
             ForEach(changes) { change in
                 SupermuxChangeRowView(
                     change: change,
+                    isSelected: selectedChangeID == change.id,
+                    onOpen: onOpenFileDiff == nil ? nil : { openFileDiff(change, staged: isStaged) },
                     onStage: isStaged ? nil : { stage(change) },
                     onUnstage: isStaged ? { unstage(change) } : nil,
                     onDiscard: isStaged ? nil : { discardCandidate = change }
@@ -393,6 +406,22 @@ public struct SupermuxChangesPanelView: View {
         // per-file mutation/refresh cycle (hundreds of process spawns).
         let untracked = model.snapshot.untracked
         Task { await model.stage(changes: untracked) }
+    }
+
+    /// Captures the row's patch for its section side and hands it to the host
+    /// viewer. The row highlights immediately; a capture that yields nothing
+    /// (binary, empty, or a mid-flight directory switch) leaves the model's
+    /// error caption to explain and clears the highlight again.
+    private func openFileDiff(_ change: SupermuxGitFileChange, staged: Bool) {
+        guard let onOpenFileDiff else { return }
+        selectedChangeID = change.id
+        Task {
+            guard let patch = await model.fileDiffPatch(for: change, staged: staged) else {
+                if selectedChangeID == change.id { selectedChangeID = nil }
+                return
+            }
+            onOpenFileDiff(patch)
+        }
     }
 
     private func stage(_ change: SupermuxGitFileChange) {

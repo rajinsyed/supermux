@@ -1,13 +1,18 @@
 import SwiftUI
 
 /// One file row in the Changes panel: kind badge, file name, directory, and
-/// hover actions.
+/// hover actions. Clicking the row (outside its action buttons) opens the
+/// file's diff through `onOpen`; the last-opened row stays highlighted.
 ///
 /// Receives an immutable ``SupermuxGitFileChange`` value plus optional action
 /// closures — never the changes model — so it stays below the panel's
 /// `LazyVStack` snapshot boundary without holding an observable store.
 struct SupermuxChangeRowView: View {
     let change: SupermuxGitFileChange
+    /// Whether this row is the one whose diff was last opened.
+    var isSelected = false
+    /// Opens the file's diff; `nil` leaves the row inert (no host viewer).
+    var onOpen: (() -> Void)?
     let onStage: (() -> Void)?
     let onUnstage: (() -> Void)?
     let onDiscard: (() -> Void)?
@@ -15,6 +20,20 @@ struct SupermuxChangeRowView: View {
     @State private var isHovering = false
 
     var body: some View {
+        rowContent
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
+            .background(rowBackground, in: RoundedRectangle(cornerRadius: 4))
+            // The whole row (padding included) is clickable, not just the text.
+            .contentShape(Rectangle())
+            .onTapGesture { onOpen?() }
+            .onHover { isHovering = $0 }
+            .help(rowHelp)
+            .accessibilityAddTraits(onOpen == nil ? [] : .isButton)
+            .accessibilityAction { onOpen?() }
+    }
+
+    private var rowContent: some View {
         HStack(spacing: 6) {
             kindBadge
             Text(change.fileName)
@@ -34,11 +53,17 @@ struct SupermuxChangeRowView: View {
                 hoverActions
             }
         }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        .background(Color.primary.opacity(isHovering ? 0.06 : 0), in: RoundedRectangle(cornerRadius: 4))
-        .onHover { isHovering = $0 }
-        .help(change.path)
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return Color.accentColor.opacity(0.18) }
+        return Color.primary.opacity(isHovering ? 0.06 : 0)
+    }
+
+    private var rowHelp: String {
+        onOpen == nil
+            ? change.path
+            : String(localized: "supermux.changes.row.open.help", defaultValue: "Open diff for \(change.path)")
     }
 
     private var kindBadge: some View {
