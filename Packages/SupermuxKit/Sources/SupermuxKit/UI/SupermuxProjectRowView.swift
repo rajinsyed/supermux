@@ -312,7 +312,6 @@ public struct SupermuxProjectRowView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -321,10 +320,12 @@ public struct SupermuxProjectRowView: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(Color.primary.opacity(isHovered ? 0.06 : 0))
         )
+        .animation(.easeOut(duration: 0.12), value: isHovered)
         .onHover { isHovered = $0 }
         .onTapGesture(perform: actions.openLocal)
         .contextMenu { projectMenu }
         .opacity(draggingProjectId == project.id ? 0.4 : 1)
+        .animation(.easeOut(duration: 0.15), value: draggingProjectId == project.id)
         .onDrag(beginDrag)
         .modifier(SupermuxProjectReorderDrop(delegate: dropDelegate))
         .accessibilityElement(children: .combine)

@@ -15,9 +15,11 @@ extension SupermuxProjectsSectionView {
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: model.isSectionCollapsed ? "chevron.right" : "chevron.down")
+                    Image(systemName: "chevron.right")
                         .font(.system(size: 8 * fontScale, weight: .bold))
                         .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(model.isSectionCollapsed ? 0 : 90))
+                        .animation(.easeOut(duration: 0.15), value: model.isSectionCollapsed)
                     Text(String(localized: "supermux.projects.header", defaultValue: "Projects"))
                         .font(.system(size: 10.5 * fontScale, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -26,16 +28,12 @@ extension SupermuxProjectsSectionView {
             }
             .buttonStyle(.plain)
             Spacer(minLength: 0)
-            Button {
-                pickAndAddProject()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 10 * fontScale, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(String(localized: "supermux.projects.add.help", defaultValue: "Add a project folder"))
-            .accessibilityLabel(String(localized: "supermux.projects.add.help", defaultValue: "Add a project folder"))
+            SupermuxSidebarIconButton(
+                systemName: "plus",
+                help: String(localized: "supermux.projects.add.help", defaultValue: "Add a project folder"),
+                fontScale: fontScale,
+                action: pickAndAddProject
+            )
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)

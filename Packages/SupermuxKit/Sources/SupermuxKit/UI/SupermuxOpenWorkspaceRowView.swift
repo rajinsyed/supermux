@@ -86,6 +86,7 @@ struct SupermuxOpenWorkspaceRowView: View {
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"))
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         // 7 + slot(20·s) + 6 == project row's 6 + avatar(20·s) + 7 → title aligns under the project name.
@@ -100,6 +101,8 @@ struct SupermuxOpenWorkspaceRowView: View {
                     ? Color.accentColor.opacity(0.16)
                     : Color.primary.opacity(isHovered ? 0.06 : 0))
         )
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.15), value: workspace.isSelected)
         .onHover { isHovered = $0 }
         .onTapGesture(perform: select)
         .contextMenu {
@@ -109,6 +112,7 @@ struct SupermuxOpenWorkspaceRowView: View {
             Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
         }
         .opacity(draggingWorkspaceId == workspace.id ? 0.4 : 1)
+        .animation(.easeOut(duration: 0.15), value: draggingWorkspaceId == workspace.id)
         .onDrag(beginDrag)
         .modifier(SupermuxWorkspaceReorderDrop(delegate: dropDelegate))
         .accessibilityElement(children: .combine)
