@@ -109,6 +109,48 @@ import CmuxSettings
         #expect(path == "/tmp/cmux-custom.sock")
     }
 
+    // SUPERMUX:begin socket-override-foreign-bundle-test
+    /// A tagged dev build opened from inside another cmux (the Supermux release
+    /// app bakes `CMUX_ALLOW_SOCKET_OVERRIDE=1` into its LSEnvironment, and a
+    /// URL-scheme or `open` launch from one of its terminals inherits that
+    /// terminal's `CMUX_SOCKET_PATH` / `CMUX_BUNDLE_ID`) must not adopt the
+    /// parent app's socket: it would never listen (the path is owned by the
+    /// parent) and its own bundled CLI would talk to the wrong app.
+    @Test func socketPathIgnoresOverrideInheritedFromAnotherBundleEvenWhenAllowed() {
+        let environment = [
+            "CMUX_SOCKET_PATH": "/tmp/supermux.sock",
+            "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
+            "CMUX_BUNDLE_ID": "com.supermux.app",
+        ]
+        let path = SocketControlSettings.socketPath(
+            environment: environment,
+            bundleIdentifier: "com.cmuxterm.app.debug.add.changes.panel",
+            isDebugBuild: true,
+            currentUserID: 501,
+            probeStableDefaultPathEntry: { _ in .missing }
+        )
+        #expect(path != "/tmp/supermux.sock")
+        #expect(path == "/tmp/cmux-debug-add-changes-panel.sock")
+    }
+
+    /// The same override is honored when the launching environment names this
+    /// very bundle (the tagged reload script's own launch).
+    @Test func socketPathHonorsOverrideFromItsOwnBundle() {
+        let path = SocketControlSettings.socketPath(
+            environment: [
+                "CMUX_SOCKET_PATH": "/tmp/cmux-custom.sock",
+                "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
+                "CMUX_BUNDLE_ID": "com.cmuxterm.app.debug.add.changes.panel",
+            ],
+            bundleIdentifier: "com.cmuxterm.app.debug.add.changes.panel",
+            isDebugBuild: true,
+            currentUserID: 501,
+            probeStableDefaultPathEntry: { _ in .missing }
+        )
+        #expect(path == "/tmp/cmux-custom.sock")
+    }
+    // SUPERMUX:end socket-override-foreign-bundle-test
+
     @Test func bareDebugXCTestLaunchUsesScopedSocketFallback() {
         let environment = [
             "XCTestConfigurationFilePath": "/tmp/Test-cmux-unit-2026.06.17.xctestconfiguration",

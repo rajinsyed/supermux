@@ -95,6 +95,109 @@ import Testing
         #expect(text.contains("+hello mobile"))
     }
 
+    /// The `--no-index` preview hands git the resolved absolute path, but the
+    /// headers a viewer names the file by must be repo-relative — an absolute
+    /// `a/Users/…/repo/fresh.txt` would leak into the viewer's file tree.
+    @Test func untrackedPreviewHeadersAreRepoRelative() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        try FileManager.default.createDirectory(
+            atPath: (root as NSString).appendingPathComponent("sub"), withIntermediateDirectories: true
+        )
+        try GitFixture.write("hello\n", to: "sub/fresh.txt", in: root)
+
+        let diff = await service.fileDiff(repoPath: root, path: "sub/fresh.txt", staged: false)
+
+        let text = try #require(diff.text)
+        #expect(text.contains("diff --git a/sub/fresh.txt b/sub/fresh.txt"))
+        #expect(text.contains("+++ b/sub/fresh.txt"))
+        #expect(!text.contains(root))
+    }
+
+    /// A name git must C-quote (a double quote) is printed as
+    /// `"a/Users/…/say \"hi\".txt"`; the header rewrite has to see through the
+    /// quoting or the viewer receives the absolute repository path.
+    @Test func untrackedPreviewWithAGitQuotedNameStaysRepoRelative() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        let quoted = "say \"hi\".txt"
+        try GitFixture.write("hello\n", to: quoted, in: root)
+
+        let diff = await service.fileDiff(repoPath: root, path: quoted, staged: false)
+
+        let text = try #require(diff.text)
+        #expect(text.contains("diff --git \"a/say \\\"hi\\\".txt\" \"b/say \\\"hi\\\".txt\""))
+        #expect(text.contains("+++ \"b/say \\\"hi\\\".txt\""))
+        #expect(!text.contains(root))
+    }
+
+    /// Non-ASCII names are common here (Japanese file names); git's default
+    /// `core.quotePath` would octal-escape them into `"\343\203\241…"`. The
+    /// capture asks git for raw paths so the viewer and mobile header show the
+    /// file name as typed.
+    @Test func untrackedPreviewWithANonASCIINameIsNotOctalEscaped() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("hello\n", to: "メモ.txt", in: root)
+
+        let diff = await service.fileDiff(repoPath: root, path: "メモ.txt", staged: false)
+
+        let text = try #require(diff.text)
+        #expect(text.contains("+++ b/メモ.txt"))
+        #expect(!text.contains("\\343"))
+        #expect(!text.contains(root))
+    }
+
+    @Test func relativizedNoIndexHeadersRewriteGitQuotedPaths() {
+        let text = [
+            "diff --git \"a/tmp/repo/tab\\tname.txt\" \"b/tmp/repo/tab\\tname.txt\"",
+            "--- /dev/null",
+            "+++ \"b/tmp/repo/tab\\tname.txt\"",
+        ].joined(separator: "\n")
+
+        let rewritten = SupermuxGitChangesService.relativizedNoIndexHeaders(
+            text, resolvedPath: "/tmp/repo/tab\tname.txt", relativePath: "tab\tname.txt"
+        )
+
+        #expect(rewritten.hasPrefix("diff --git \"a/tab\\tname.txt\" \"b/tab\\tname.txt\"\n"))
+        #expect(rewritten.hasSuffix("+++ \"b/tab\\tname.txt\""))
+    }
+
+    @Test func relativizedNoIndexHeadersLeaveHunkContentAlone() {
+        let text = [
+            "diff --git a/tmp/repo/new.txt b/tmp/repo/new.txt",
+            "new file mode 100644",
+            "--- /dev/null",
+            "+++ b/tmp/repo/new.txt",
+            "@@ -0,0 +1 @@",
+            "+see b/tmp/repo/new.txt",
+        ].joined(separator: "\n")
+
+        let rewritten = SupermuxGitChangesService.relativizedNoIndexHeaders(
+            text, resolvedPath: "/tmp/repo/new.txt", relativePath: "new.txt"
+        )
+
+        #expect(rewritten.hasPrefix("diff --git a/new.txt b/new.txt\n"))
+        #expect(rewritten.contains("+++ b/new.txt\n"))
+        #expect(rewritten.hasSuffix("+see b/tmp/repo/new.txt"))
+    }
+
+    /// A staged rename must diff as a rename (both paths in the pathspec), not
+    /// as a bare addition of the new path.
+    @Test func stagedRenamePassesBothPathsSoGitReportsTheRename() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.runGit(["mv", "README.md", "RENAMED.md"], in: root)
+
+        let withOldPath = await service.fileDiff(
+            repoPath: root, path: "RENAMED.md", oldPath: "README.md", staged: true
+        )
+        let withoutOldPath = await service.fileDiff(repoPath: root, path: "RENAMED.md", staged: true)
+
+        #expect(withOldPath.text?.contains("rename from README.md") == true)
+        #expect(withoutOldPath.text?.contains("new file mode") == true)
+    }
+
     @Test func gitignoredFileIsNotPreviewedAndLeaksNothing() async throws {
         let root = try makeFixtureRepo()
         defer { GitFixture.cleanUp(root) }

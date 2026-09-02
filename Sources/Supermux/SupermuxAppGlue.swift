@@ -542,6 +542,13 @@ struct SupermuxChangesMount: View {
             knownPullRequest: pullRequestObserver.knownPullRequest,
             onOpenURL: { [weak tabManager] url in
                 SupermuxChangesPullRequestLinkOpener.open(url, tabManager: tabManager)
+            },
+            onOpenFileDiff: { [weak tabManager] patch in
+                guard let tabManager,
+                      SupermuxFileDiffOpener.shared.present(patch, for: tabManager) else {
+                    NSSound.beep()
+                    return
+                }
             }
         )
         .onAppear { box.model.setDirectory(workspaceDirectory) }

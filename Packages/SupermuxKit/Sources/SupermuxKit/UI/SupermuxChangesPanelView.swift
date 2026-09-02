@@ -15,6 +15,9 @@ public struct SupermuxChangesPanelView: View {
     // still the snapshot boundary and only hands value snapshots to rows.
     @Bindable var model: SupermuxChangesModel
     private let onOpenDiff: (() -> Void)?
+    /// Host-app presenter for one file's patch (a click on a file row). `nil`
+    /// leaves rows inert.
+    private let onOpenFileDiff: ((SupermuxFileDiffPatch) -> Void)?
     /// Whether the right sidebar is actually on-screen. The sidebar keeps the
     /// changes panel mounted after its first show (so re-showing is instant), so
     /// the panel gates visibility-dependent work itself: the file-system-watcher
@@ -41,6 +44,10 @@ public struct SupermuxChangesPanelView: View {
     private let onOpenURL: (URL) -> Void
 
     @State var discardCandidate: SupermuxGitFileChange?
+    /// The row whose diff was last opened, kept highlighted so the panel shows
+    /// which file — and which side — the host viewer is displaying. Reset on
+    /// a directory switch.
+    @State private var selectedRow: SupermuxChangesRowSelection?
     @State var isDiscardAllPresented = false
     @State var isHistoryExpanded = false
     @State var isIncomingExpanded = false
@@ -72,6 +79,8 @@ public struct SupermuxChangesPanelView: View {
     ///   - pullRequests: The PR viewer model; `nil` disables the PR buttons.
     ///   - knownPullRequest: The workspace's PR from cmux's own probe, if any.
     ///   - onOpenURL: Opens a URL in the browser; defaults to `NSWorkspace`.
+    ///   - onOpenFileDiff: Host-app callback that shows one file's captured
+    ///     patch (a click on a file row); rows are inert when `nil`.
     public init(
         model: SupermuxChangesModel,
         isVisible: Bool = true,
@@ -81,7 +90,8 @@ public struct SupermuxChangesPanelView: View {
         onOpenDiff: (() -> Void)?,
         pullRequests: SupermuxPullRequestViewerModel? = nil,
         knownPullRequest: SupermuxPullRequest? = nil,
-        onOpenURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }
+        onOpenURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) },
+        onOpenFileDiff: ((SupermuxFileDiffPatch) -> Void)? = nil
     ) {
         self.model = model
         self.isVisible = isVisible
@@ -92,6 +102,7 @@ public struct SupermuxChangesPanelView: View {
         self.pullRequests = pullRequests
         self.knownPullRequest = knownPullRequest
         self.onOpenURL = onOpenURL
+        self.onOpenFileDiff = onOpenFileDiff
     }
 
     /// Identity for the PR viewer's context: a directory or branch switch
@@ -160,6 +171,7 @@ public struct SupermuxChangesPanelView: View {
         ) { _, key in
             pullRequests?.setContext(directory: key.directory, branch: key.branch)
         }
+        .onChange(of: model.directory) { _, _ in selectedRow = nil }
         .confirmationDialog(
             String(localized: "supermux.changes.discard.title", defaultValue: "Discard Changes"),
             isPresented: isDiscardDialogPresented,
@@ -413,6 +425,8 @@ public struct SupermuxChangesPanelView: View {
             ForEach(changes) { change in
                 SupermuxChangeRowView(
                     change: change,
+                    isSelected: selectedRow == SupermuxChangesRowSelection(change, staged: isStaged),
+                    onOpen: onOpenFileDiff == nil ? nil : { openFileDiff(change, staged: isStaged) },
                     onStage: isStaged ? nil : { stage(change) },
                     onUnstage: isStaged ? { unstage(change) } : nil,
                     onDiscard: isStaged ? nil : { discardCandidate = change }
@@ -452,6 +466,23 @@ public struct SupermuxChangesPanelView: View {
         // per-file mutation/refresh cycle (hundreds of process spawns).
         let untracked = model.snapshot.untracked
         Task { await model.stage(changes: untracked) }
+    }
+
+    /// Captures the row's patch for its section side and hands it to the host
+    /// viewer. The row highlights immediately; a capture that yields nothing
+    /// (binary, empty, or a mid-flight directory switch) leaves the model's
+    /// error caption to explain and clears the highlight again.
+    private func openFileDiff(_ change: SupermuxGitFileChange, staged: Bool) {
+        guard let onOpenFileDiff else { return }
+        let row = SupermuxChangesRowSelection(change, staged: staged)
+        selectedRow = row
+        Task {
+            guard let patch = await model.fileDiffPatch(for: change, staged: staged) else {
+                if selectedRow == row { selectedRow = nil }
+                return
+            }
+            onOpenFileDiff(patch)
+        }
     }
 
     private func stage(_ change: SupermuxGitFileChange) {
