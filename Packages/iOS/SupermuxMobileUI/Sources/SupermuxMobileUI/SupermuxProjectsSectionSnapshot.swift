@@ -181,6 +181,10 @@ public struct SupermuxProjectsSectionActions {
     /// The project currently fetching its branch snapshot ahead of the New
     /// Worktree sheet (its affordance shows a spinner); `nil` when idle.
     public let preparingNewWorktreeProjectID: String?
+    /// Builds the agent-launch store the New Worktree sheet's Claude section
+    /// runs on, or `nil` when the host lacks `supermux.agent_launch.v1` (the
+    /// sheet then hides its prompt path).
+    public let makeAgentLaunchStore: @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore?
 
     /// Memberwise initializer.
     /// - Parameters:
@@ -221,7 +225,8 @@ public struct SupermuxProjectsSectionActions {
             _ worktree: SupermuxWorktreeRowSnapshot
         ) -> Void = { _, _ in },
         requestNewWorktree: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
-        preparingNewWorktreeProjectID: String? = nil
+        preparingNewWorktreeProjectID: String? = nil,
+        makeAgentLaunchStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore? = { _ in nil }
     ) {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
@@ -237,6 +242,7 @@ public struct SupermuxProjectsSectionActions {
         self.requestNestedWorktreeRemoval = requestNestedWorktreeRemoval
         self.requestNewWorktree = requestNewWorktree
         self.preparingNewWorktreeProjectID = preparingNewWorktreeProjectID
+        self.makeAgentLaunchStore = makeAgentLaunchStore
     }
 }
 

@@ -53,6 +53,9 @@ enum SupermuxMobileCapabilities {
             // usage.state is served: the read-only Claude Code + Codex
             // rate-limit mirror of the sidebar's usage tracker.
             SupermuxMobileCapability.usageV1.rawValue,
+            // agent.options / agent.start are served: prompt-first worktree
+            // creation that opens a workspace already running Claude.
+            SupermuxMobileCapability.agentLaunchV1.rawValue,
         ]
     }
 }

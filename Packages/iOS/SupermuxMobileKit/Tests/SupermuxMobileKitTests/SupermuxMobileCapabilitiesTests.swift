@@ -75,6 +75,7 @@ import Testing
             (.panesV1, \.supportsPanes),
             (.phonePushV1, \.supportsPhonePush),
             (.usageV1, \.supportsUsage),
+            (.agentLaunchV1, \.supportsAgentLaunch),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {

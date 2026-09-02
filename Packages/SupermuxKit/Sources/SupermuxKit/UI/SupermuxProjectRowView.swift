@@ -280,8 +280,10 @@ public struct SupermuxProjectRowView: View {
                 ForEach(unopenedWorktrees) { worktree in
                     worktreeRow(worktree)
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(.easeOut(duration: 0.16), value: isExpanded)
     }
 
     /// Worktrees on disk that do not already have an open workspace, so the
@@ -297,33 +299,17 @@ public struct SupermuxProjectRowView: View {
                 .truncationMode(.tail)
             Spacer(minLength: 2)
             if !unopenedWorktrees.isEmpty {
-                Button(action: actions.toggleExpanded) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                        Text("\(unopenedWorktrees.count)")
-                            .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 7 * fontScale, weight: .bold))
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule().fill(Color.secondary.opacity(isHovered ? 0.14 : 0.08))
-                    )
-                }
-                .buttonStyle(.plain)
-                .help(String(localized: "supermux.project.worktrees.help", defaultValue: "Open another worktree"))
+                worktreeCountToggle
             }
+            // Hover-only, so the count pill sits flush right when idle.
             if isHovered {
-                Button(action: actions.newWorktree) {
-                    Image(systemName: "plus.square.on.square")
-                        .font(.system(size: 10 * fontScale, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(String(localized: "supermux.project.newWorktree", defaultValue: "New Worktree…"))
+                SupermuxSidebarIconButton(
+                    systemName: "plus",
+                    help: String(localized: "supermux.project.newWorktree", defaultValue: "New Worktree…"),
+                    fontScale: fontScale,
+                    action: actions.newWorktree
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .padding(.horizontal, 6)
@@ -334,15 +320,44 @@ public struct SupermuxProjectRowView: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(Color.primary.opacity(isHovered ? 0.06 : 0))
         )
+        .animation(.easeOut(duration: 0.12), value: isHovered)
         .onHover { isHovered = $0 }
         .onTapGesture(perform: actions.openLocal)
         .contextMenu { projectMenu }
         .opacity(draggingProjectId == project.id ? 0.4 : 1)
+        .animation(.easeOut(duration: 0.15), value: draggingProjectId == project.id)
         .onDrag(beginDrag)
         .modifier(SupermuxProjectReorderDrop(delegate: dropDelegate))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(project.name)
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// The "⑂ N ›" pill: unopened-worktree count plus a chevron that rotates
+    /// open. Tinted a little stronger while expanded so the open state reads
+    /// at a glance.
+    private var worktreeCountToggle: some View {
+        Button(action: actions.toggleExpanded) {
+            HStack(spacing: 3 * fontScale) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 8 * fontScale, weight: .semibold))
+                Text("\(unopenedWorktrees.count)")
+                    .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 6.5 * fontScale, weight: .bold))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+            .foregroundStyle(isExpanded ? Color.primary : Color.secondary)
+            .padding(.horizontal, 6 * fontScale)
+            .frame(height: 18 * fontScale)
+            .background(
+                Capsule().fill(Color.primary.opacity(isExpanded ? 0.12 : (isHovered ? 0.09 : 0.06)))
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(SupermuxPressEffectButtonStyle())
+        .animation(.easeOut(duration: 0.15), value: isExpanded)
+        .help(String(localized: "supermux.project.worktrees.help", defaultValue: "Open another worktree"))
     }
 
     @ViewBuilder
@@ -416,14 +431,17 @@ struct SupermuxWorktreeRowView: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            // Sits in the avatar column like the open-workspace placeholder,
+            // drawn faint so the branch name, not the glyph, carries the row.
             Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 9 * fontScale, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                .foregroundStyle(.tertiary)
                 .frame(width: 20 * fontScale)
             Text(worktree.displayName)
                 .font(.system(size: 11.5 * fontScale))
+                .foregroundStyle(isHovered ? Color.primary : Color.secondary)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.tail)
             Spacer(minLength: 2)
             if let pullRequest {
                 SupermuxPullRequestBadge(
@@ -432,6 +450,11 @@ struct SupermuxWorktreeRowView: View {
                     onOpen: openPullRequest
                 )
             }
+            // Hover-only "open" hint; laid out always so the PR badge stays put.
+            Image(systemName: "arrow.right")
+                .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .opacity(isHovered ? 1 : 0)
         }
         // Match the open-workspace row so worktree names align under the project name.
         .padding(.leading, 7)
@@ -443,6 +466,8 @@ struct SupermuxWorktreeRowView: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(Color.primary.opacity(isHovered ? 0.06 : 0))
         )
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .help(worktree.path)
         .onHover { isHovered = $0 }
         .onTapGesture(perform: open)
         .contextMenu {

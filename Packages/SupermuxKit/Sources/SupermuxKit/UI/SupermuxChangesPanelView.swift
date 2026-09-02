@@ -1,4 +1,5 @@
 public import SwiftUI
+import AppKit
 import Foundation
 
 /// Compact git changes panel for the cmux right sidebar.
@@ -33,6 +34,14 @@ public struct SupermuxChangesPanelView: View {
     let commitAcceleratorShortcut: KeyboardShortcut?
     /// Display string for the primary commit chord, shown in the button's help.
     let commitShortcutHint: String
+    /// The on-demand pull-request viewer; `nil` hides the PR buttons entirely
+    /// (previews/tests without a GitHub-backed host).
+    let pullRequests: SupermuxPullRequestViewerModel?
+    /// The open PR cmux already tracks for the workspace (its own sidebar
+    /// probe), so the header can show a button before anything is fetched.
+    let knownPullRequest: SupermuxPullRequest?
+    /// Opens a URL in the browser (PR page, check details).
+    private let onOpenURL: (URL) -> Void
 
     @State var discardCandidate: SupermuxGitFileChange?
     /// The row whose diff was last opened, kept highlighted so the panel shows
@@ -67,6 +76,9 @@ public struct SupermuxChangesPanelView: View {
     ///   - commitShortcutHint: Display string for the primary chord (button help).
     ///   - onOpenDiff: Host-app callback that opens a full diff view; the
     ///     "Open Diff" header button is hidden when `nil`.
+    ///   - pullRequests: The PR viewer model; `nil` disables the PR buttons.
+    ///   - knownPullRequest: The workspace's PR from cmux's own probe, if any.
+    ///   - onOpenURL: Opens a URL in the browser; defaults to `NSWorkspace`.
     ///   - onOpenFileDiff: Host-app callback that shows one file's captured
     ///     patch (a click on a file row); rows are inert when `nil`.
     public init(
@@ -76,6 +88,9 @@ public struct SupermuxChangesPanelView: View {
         commitAcceleratorShortcut: KeyboardShortcut? = KeyboardShortcut(.return, modifiers: [.command, .shift]),
         commitShortcutHint: String = "⌘↩",
         onOpenDiff: (() -> Void)?,
+        pullRequests: SupermuxPullRequestViewerModel? = nil,
+        knownPullRequest: SupermuxPullRequest? = nil,
+        onOpenURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) },
         onOpenFileDiff: ((SupermuxFileDiffPatch) -> Void)? = nil
     ) {
         self.model = model
@@ -84,7 +99,17 @@ public struct SupermuxChangesPanelView: View {
         self.commitAcceleratorShortcut = commitAcceleratorShortcut
         self.commitShortcutHint = commitShortcutHint
         self.onOpenDiff = onOpenDiff
+        self.pullRequests = pullRequests
+        self.knownPullRequest = knownPullRequest
+        self.onOpenURL = onOpenURL
         self.onOpenFileDiff = onOpenFileDiff
+    }
+
+    /// Identity for the PR viewer's context: a directory or branch switch
+    /// drops its cached PRs and closes the viewer.
+    private struct PullRequestContextKey: Equatable {
+        let directory: String?
+        let branch: String?
     }
 
     /// The panel layout: header, scrollable change sections, error caption,
@@ -93,7 +118,12 @@ public struct SupermuxChangesPanelView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if model.snapshot.isRepository {
+            if let pullRequests, pullRequests.selected != nil {
+                // The PR viewer replaces the change list and commit area; the
+                // header (branch + PR buttons) stays so the user can switch
+                // PRs or click the selected button to come back.
+                SupermuxPullRequestViewerView(model: pullRequests, onOpenURL: onOpenURL)
+            } else if model.snapshot.isRepository {
                 changeList
                 Divider()
                 if let error = model.lastError {
@@ -132,6 +162,15 @@ public struct SupermuxChangesPanelView: View {
             }
         }
         .onDisappear { model.stopObserving() }
+        // Keep the PR viewer keyed to the workspace: a directory or branch
+        // change clears its cache and closes it. No load happens here — the
+        // viewer only fetches when a PR button or its refresh is clicked.
+        .onChange(
+            of: PullRequestContextKey(directory: model.directory, branch: model.snapshot.branch),
+            initial: true
+        ) { _, key in
+            pullRequests?.setContext(directory: key.directory, branch: key.branch)
+        }
         .onChange(of: model.directory) { _, _ in selectedRow = nil }
         .confirmationDialog(
             String(localized: "supermux.changes.discard.title", defaultValue: "Discard Changes"),
@@ -179,6 +218,7 @@ public struct SupermuxChangesPanelView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 trackingBadges
+                pullRequestButtons
             } else {
                 Text(String(localized: "supermux.changes.notARepository", defaultValue: "Not a git repository"))
                     .font(.system(size: 11.5))
@@ -214,6 +254,25 @@ public struct SupermuxChangesPanelView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+    }
+
+    /// One chip per PR on the branch (open, merged or closed, colored by
+    /// state): cmux's already-known PR plus the PRs from the viewer's last
+    /// on-demand load. Clicking a chip opens
+    /// the viewer (loading that PR on first open); clicking the selected chip
+    /// returns to the changes list.
+    @ViewBuilder
+    private var pullRequestButtons: some View {
+        if let pullRequests {
+            ForEach(pullRequests.visibleButtons(known: knownPullRequest)) { summary in
+                SupermuxPullRequestHeaderButton(
+                    pullRequest: summary,
+                    isSelected: pullRequests.selected?.id == summary.id
+                ) {
+                    pullRequests.open(summary)
+                }
+            }
+        }
     }
 
     private var branchTitle: String {

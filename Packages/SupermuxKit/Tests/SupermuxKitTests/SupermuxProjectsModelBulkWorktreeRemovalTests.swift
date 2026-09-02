@@ -137,9 +137,8 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let project = SupermuxProject(name: "Fixture", rootPath: root)
         let model = try await makeLoadedModel(project: project, in: root)
         let real = try await model.createWorktree(projectId: project.id, branchName: "real", baseBranch: nil)
-        // A stray entry whose checkout git does not know fails at
-        // `git worktree remove`; the pass must record that failure and still
-        // remove the real worktree after it.
+        // A worktree that no longer exists on disk fails inside git; the pass
+        // must record it and still remove the worktree after it.
         let unmanaged = SupermuxProjectWorktree(path: "/nonexistent/manual", branch: "manual", isSupermuxManaged: false)
 
         let result = await model.removeWorktrees([unmanaged, real], projectId: project.id, force: false, deleteBranch: false)

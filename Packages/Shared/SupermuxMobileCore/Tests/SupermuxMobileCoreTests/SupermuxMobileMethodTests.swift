@@ -19,6 +19,9 @@ import Testing
         "mobile.supermux.worktree.create",
         "mobile.supermux.worktree.open",
         "mobile.supermux.worktree.remove",
+        // Agent launch
+        "mobile.supermux.agent.options",
+        "mobile.supermux.agent.start",
         // Changes
         "mobile.supermux.changes.watch",
         "mobile.supermux.changes.status",
@@ -63,7 +66,7 @@ import Testing
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 45)
+        #expect(SupermuxMobileMethod.all.count == 47)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

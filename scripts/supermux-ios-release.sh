@@ -53,6 +53,11 @@ DISTRIBUTION_IDENTITY="${SUPERMUX_IOS_DISTRIBUTION_IDENTITY:-Apple Distribution}
 DERIVED_DATA="${SUPERMUX_IOS_DERIVED_DATA:-${HOME}/Library/Developer/Xcode/DerivedData/cmux-ios-supermux-release}"
 LAUNCH=1
 DEVICE_ID="${SUPERMUX_IOS_DEVICE_ID:-${CMUX_IPHONE_DEVICE_ID:-}}"
+# How long a transient install failure may wait for the iPhone to become
+# reachable again, and how often to probe it while waiting.
+INSTALL_READINESS_DEADLINE_SECONDS="${SUPERMUX_IOS_INSTALL_READINESS_DEADLINE_SECONDS:-60}"
+INSTALL_READINESS_POLL_SECONDS="${SUPERMUX_IOS_INSTALL_READINESS_POLL_SECONDS:-2}"
+INSTALL_MAX_ATTEMPTS=5
 
 XCODEBUILD="${XCODEBUILD:-xcodebuild}"
 XCRUN="${XCRUN:-xcrun}"
@@ -473,7 +478,71 @@ nse_profile_app_groups_plist="${VERIFY_DIR}/nse-profile-entitlements.plist"
 
 echo "==> Verified app + notification-extension signatures, production APNs, Time Sensitive, and Communication Notifications for team ${DEVELOPMENT_TEAM}"
 echo "==> Installing ${APP_NAME} on iPhone ${DEVICE_ID}"
-"${XCRUN}" devicectl device install app --device "${DEVICE_ID}" "${BUILT_APP}"
+
+# devicectl fails the whole install when the phone cannot currently hold the
+# power / trusted-connectivity / core-services assertions it needs:
+#
+#   ERROR: The device is not able to fulfill the requested usage assertion
+#   requirements. (com.apple.dt.CoreDeviceError error 4016)
+#
+# Over a localNetwork (Wi-Fi) connection that is routine and transient — the
+# phone drops the tunnel when it sleeps, switches networks, or is simply not
+# awake, and re-establishes it moments later. The identical command then
+# succeeds. So on that error, wait until the phone answers a device query again
+# (short polls, so Ctrl-C interrupts promptly) and retry; any other failure is
+# permanent and is reported once with devicectl's own message.
+TRANSIENT_INSTALL_ERROR="CoreDeviceError error 4016"
+
+device_reachable() {
+  "${XCRUN}" devicectl device info details --device "${DEVICE_ID}" >/dev/null 2>&1
+}
+
+# Poll until the iPhone is reachable or the absolute deadline (in $SECONDS) passes.
+wait_for_device_until() {
+  local deadline="$1"
+  while :; do
+    device_reachable && return 0
+    [[ "${SECONDS}" -lt "${deadline}" ]] || return 1
+    sleep "${INSTALL_READINESS_POLL_SECONDS}"
+  done
+}
+
+# Returns 0 on success, 1 on a permanent failure (already printed), and 2 when
+# the phone never became reachable within the readiness deadline.
+install_app() {
+  local attempt install_err deadline
+  install_err="$(mktemp "${TMPDIR:-/tmp}/supermux-ios-install-err.XXXXXX")"
+  deadline="$((SECONDS + INSTALL_READINESS_DEADLINE_SECONDS))"
+  for ((attempt = 1; attempt <= INSTALL_MAX_ATTEMPTS; attempt++)); do
+    if "${XCRUN}" devicectl device install app --device "${DEVICE_ID}" "${BUILT_APP}" 2> "${install_err}"; then
+      rm -f "${install_err}"
+      return 0
+    fi
+    cat "${install_err}" >&2
+    if ! grep -Fq "${TRANSIENT_INSTALL_ERROR}" "${install_err}"; then
+      rm -f "${install_err}"
+      return 1
+    fi
+    if [[ "${attempt}" -ge "${INSTALL_MAX_ATTEMPTS}" ]]; then
+      break
+    fi
+    echo "==> install attempt ${attempt} failed: iPhone not reachable; waiting for it to reconnect (up to ${INSTALL_READINESS_DEADLINE_SECONDS}s total)" >&2
+    if ! wait_for_device_until "${deadline}"; then
+      rm -f "${install_err}"
+      return 2
+    fi
+  done
+  rm -f "${install_err}"
+  return 2
+}
+
+install_status=0
+install_app || install_status=$?
+case "${install_status}" in
+  0) ;;
+  2) die "could not install ${APP_NAME}: the iPhone is connected over Wi-Fi and did not become reachable within ${INSTALL_READINESS_DEADLINE_SECONDS}s (error 4016). Unlock it, keep it awake and on the same network, or plug it in over USB, then re-run." ;;
+  *) die "could not install ${APP_NAME}; see the devicectl error above" ;;
+esac
 echo "==> Installed ${APP_NAME} (${BUNDLE_ID})"
 
 if [[ "${LAUNCH}" -eq 1 ]]; then
