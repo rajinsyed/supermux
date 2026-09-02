@@ -114,6 +114,55 @@ import Testing
         #expect(!text.contains(root))
     }
 
+    /// A name git must C-quote (a double quote) is printed as
+    /// `"a/Users/…/say \"hi\".txt"`; the header rewrite has to see through the
+    /// quoting or the viewer receives the absolute repository path.
+    @Test func untrackedPreviewWithAGitQuotedNameStaysRepoRelative() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        let quoted = "say \"hi\".txt"
+        try GitFixture.write("hello\n", to: quoted, in: root)
+
+        let diff = await service.fileDiff(repoPath: root, path: quoted, staged: false)
+
+        let text = try #require(diff.text)
+        #expect(text.contains("diff --git \"a/say \\\"hi\\\".txt\" \"b/say \\\"hi\\\".txt\""))
+        #expect(text.contains("+++ \"b/say \\\"hi\\\".txt\""))
+        #expect(!text.contains(root))
+    }
+
+    /// Non-ASCII names are common here (Japanese file names); git's default
+    /// `core.quotePath` would octal-escape them into `"\343\203\241…"`. The
+    /// capture asks git for raw paths so the viewer and mobile header show the
+    /// file name as typed.
+    @Test func untrackedPreviewWithANonASCIINameIsNotOctalEscaped() async throws {
+        let root = try makeFixtureRepo()
+        defer { GitFixture.cleanUp(root) }
+        try GitFixture.write("hello\n", to: "メモ.txt", in: root)
+
+        let diff = await service.fileDiff(repoPath: root, path: "メモ.txt", staged: false)
+
+        let text = try #require(diff.text)
+        #expect(text.contains("+++ b/メモ.txt"))
+        #expect(!text.contains("\\343"))
+        #expect(!text.contains(root))
+    }
+
+    @Test func relativizedNoIndexHeadersRewriteGitQuotedPaths() {
+        let text = [
+            "diff --git \"a/tmp/repo/tab\\tname.txt\" \"b/tmp/repo/tab\\tname.txt\"",
+            "--- /dev/null",
+            "+++ \"b/tmp/repo/tab\\tname.txt\"",
+        ].joined(separator: "\n")
+
+        let rewritten = SupermuxGitChangesService.relativizedNoIndexHeaders(
+            text, resolvedPath: "/tmp/repo/tab\tname.txt", relativePath: "tab\tname.txt"
+        )
+
+        #expect(rewritten.hasPrefix("diff --git \"a/tab\\tname.txt\" \"b/tab\\tname.txt\"\n"))
+        #expect(rewritten.hasSuffix("+++ \"b/tab\\tname.txt\""))
+    }
+
     @Test func relativizedNoIndexHeadersLeaveHunkContentAlone() {
         let text = [
             "diff --git a/tmp/repo/new.txt b/tmp/repo/new.txt",
