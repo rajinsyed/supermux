@@ -309,8 +309,10 @@ public struct SupermuxProjectRowView: View {
                     fontScale: fontScale,
                     action: actions.newWorktree
                 )
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -463,6 +465,7 @@ struct SupermuxWorktreeRowView: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(Color.primary.opacity(isHovered ? 0.06 : 0))
         )
+        .animation(.easeOut(duration: 0.12), value: isHovered)
         .help(worktree.path)
         .onHover { isHovered = $0 }
         .onTapGesture(perform: open)

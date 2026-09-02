@@ -51,6 +51,7 @@ public struct SupermuxSidebarIconButton: View {
         }
         .buttonStyle(SupermuxPressEffectButtonStyle())
         .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
         .help(help)
         .accessibilityLabel(help)
     }
