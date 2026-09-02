@@ -31,7 +31,24 @@ struct SupermuxSwipeAction: Identifiable {
 /// to live: `gestureRecognizerShouldBegin` refuses the gesture outright unless
 /// the movement is decisively horizontal, so an ordinary vertical flick never
 /// starts a reveal. A SwiftUI `DragGesture` can only make that decision AFTER
-/// it has already begun tracking, by which point it has taken the touch.
+/// it has already begun tracking, by which point it has taken the touch — a
+/// `.highPriorityGesture(DragGesture)` here stops the table from scrolling
+/// whenever the drag starts on a row (verified, not guessed).
+///
+/// **Two things the hosting view does that the gate must survive.** Inside a
+/// `UIHostingConfiguration` cell SwiftUI arbitrates the UIKit recognizer
+/// against the row's own `Button`, and it asks the recognizer to begin AT
+/// TOUCH-DOWN, before the finger has moved: refusing that zero-translation
+/// probe failed the recognizer for the rest of the touch, so a swipe worked
+/// only when the finger happened to be moving before the probe (the "really
+/// hard to trigger" report). The gate now lets an unmoved touch begin and
+/// judges direction from the first sample that has moved
+/// (``SupermuxSwipeDirectionGate``). And a recognizer that begins does NOT
+/// cancel the SwiftUI button underneath — `cancelsTouchesInView` reaches the
+/// view, not SwiftUI's own responder recognizer — so a flick that opened the
+/// tray also fired the button on release and opened the workspace. The
+/// content is disabled for the life of a horizontal drag instead
+/// (``isSwiping``), which is what keeps the release from activating it.
 ///
 /// Behavior matches UIKit's, deliberately:
 ///
@@ -57,6 +74,10 @@ struct SupermuxSidebarSwipeRow<Content: View>: View {
     /// Whether the pan has passed the commit threshold and would fire the
     /// destructive action on release.
     @State private var isCommitting = false
+    /// True from the moment a drag is judged horizontal until just after it
+    /// ends. The content is disabled for that window so the button under the
+    /// finger cannot fire on release — see the type comment.
+    @State private var isSwiping = false
 
     private static var buttonWidth: CGFloat { 76 }
     /// How far past the revealed tray a drag must go to commit.
@@ -108,6 +129,7 @@ struct SupermuxSidebarSwipeRow<Content: View>: View {
         ZStack(alignment: .trailing) {
             actionTray
             content()
+                .disabled(isSwiping)
                 .background(SupermuxSidebarSwipeBackdrop())
                 // The tap-to-close shield goes on BEFORE `.offset`, so it
                 // travels with the content it covers. Applied after, it would
@@ -128,6 +150,7 @@ struct SupermuxSidebarSwipeRow<Content: View>: View {
             isOpen: isOpen,
             opensTowardNegativeX: layoutDirection != .rightToLeft,
             onChanged: { translation in
+                if !isSwiping { isSwiping = true }
                 dragTranslation = translation
                 let shouldCommit = commitAction != nil && offset > Self.commitThreshold
                 guard shouldCommit != isCommitting else { return }
@@ -196,6 +219,10 @@ struct SupermuxSidebarSwipeRow<Content: View>: View {
         let committing = isCommitting
         dragTranslation = 0
         isCommitting = false
+        // Re-enable on the next turn: UIKit is still delivering this touch's
+        // release to the row's button when the recognizer reports `.ended`,
+        // and the button must still see itself disabled then.
+        DispatchQueue.main.async { isSwiping = false }
         if committing, let commit = commitAction {
             openRowID = nil
             commit.perform()
@@ -269,8 +296,8 @@ private struct SupermuxRowPanGesture: UIGestureRecognizerRepresentable {
     }
 
     func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        context.coordinator.isRowOpen = isOpen
-        context.coordinator.opensTowardNegativeX = opensTowardNegativeX
+        context.coordinator.gate.isRowOpen = isOpen
+        context.coordinator.gate.opensTowardNegativeX = opensTowardNegativeX
         // Re-assert ownership: SwiftUI owns this recognizer's lifetime, and
         // nothing documents that it leaves our delegate installed across
         // updates. Losing the delegate would silently disable the direction
@@ -285,13 +312,15 @@ private struct SupermuxRowPanGesture: UIGestureRecognizerRepresentable {
         let coordinator = context.coordinator
         switch recognizer.state {
         case .began, .changed:
-            // Second line of defense behind `gestureRecognizerShouldBegin`.
-            // SwiftUI owns the recognizer's lifetime and it is not documented
-            // whether it keeps the delegate we install, so the direction gate
-            // is ALSO enforced here, where nothing external can bypass it. If
-            // the delegate ever stopped being consulted, the worst case is a
-            // horizontal swipe that also scrolls — never a vertical scroll
-            // that drags rows open.
+            // The direction verdict is made HERE, not in `shouldBegin`: the
+            // recognizer routinely begins on SwiftUI's touch-down probe with
+            // no movement at all, so `.began` may carry a zero translation
+            // and the first `.changed` samples only a point or two. The gate
+            // stays undecided until the finger has moved enough to read,
+            // then latches. This also makes the gate independent of whether
+            // SwiftUI keeps our delegate installed: the worst case without it
+            // is a horizontal swipe that also scrolls — never a vertical
+            // scroll that drags rows open.
             guard coordinator.tracksHorizontally(recognizer) else { return }
             onChanged(recognizer.translation(in: recognizer.view).x)
         case .ended, .cancelled, .failed:
@@ -308,46 +337,24 @@ private struct SupermuxRowPanGesture: UIGestureRecognizerRepresentable {
     /// Delegate for the direction gate, plus the per-gesture direction latch.
     @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        /// Whether the row is currently revealed — an open row must also accept
-        /// the closing swipe, which runs the other way.
-        var isRowOpen = false
+        /// The pure direction logic, configured from the row each update.
+        var gate = SupermuxSwipeDirectionGate()
 
-        /// Whether a closed row opens on a negative x translation (LTR).
-        /// Without this the gate would reject the opening drag outright in an
-        /// RTL layout, leaving no way to reveal the tray at all.
-        var opensTowardNegativeX = true
-
-        /// This gesture's direction verdict, latched on the first sample and
-        /// held until it ends. Re-deciding every frame would abandon a swipe
-        /// mid-drag the moment the finger arced downward.
-        private(set) var isTrackingHorizontally: Bool?
-
-        /// Whether this pan may move the row, deciding once per gesture.
+        /// Whether the pan may move the row, deciding once per gesture once
+        /// it has moved enough to judge.
         func tracksHorizontally(_ pan: UIPanGestureRecognizer) -> Bool {
-            if let isTrackingHorizontally { return isTrackingHorizontally }
-            let verdict = isHorizontal(pan)
-            isTrackingHorizontally = verdict
-            return verdict
+            gate.tracks(translation: pan.translation(in: pan.view))
         }
+
+        var isTrackingHorizontally: Bool? { gate.verdict }
 
         func endTracking() {
-            isTrackingHorizontally = nil
-        }
-
-        /// Horizontal intent only, with ambiguous diagonals conceded to the
-        /// scroll view. Without the bias factor a 45° flick would open rows
-        /// during ordinary scrolling.
-        private func isHorizontal(_ pan: UIPanGestureRecognizer) -> Bool {
-            let translation = pan.translation(in: pan.view)
-            guard abs(translation.x) > abs(translation.y) * 1.15 else { return false }
-            // A closed row only opens in the reveal direction; an open one
-            // moves either way (it can be dragged shut).
-            return isRowOpen || (opensTowardNegativeX ? translation.x < 0 : translation.x > 0)
+            gate.reset()
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-            return isHorizontal(pan)
+            return gate.mayBegin(translation: pan.translation(in: pan.view))
         }
 
         /// Coexist with the table's scroll pan rather than outranking it.
