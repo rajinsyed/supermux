@@ -81,13 +81,34 @@ printf 'fake iOS Release build\n'
 SH
 chmod +x "$BIN_DIR/xcodebuild"
 
+# The fake phone is reachable until an install fails. A failing install (the
+# first FAKE_INSTALL_FAILURES calls, exiting with FAKE_INSTALL_ERROR on stderr)
+# drops the tunnel for FAKE_UNREACHABLE_POLLS readiness probes, then the phone
+# comes back and the next install succeeds. Counters live in FAKE_XCRUN_STATE.
 cat > "$BIN_DIR/xcrun" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_XCRUN_LOG:?}"
+state="${FAKE_XCRUN_STATE:-}"
+counter() { [[ -n "$state" && -f "$state/$1" ]] && cat "$state/$1" || printf '0'; }
 case "$*" in
-  'devicectl device info details --device test-phone') exit 0 ;;
-  'devicectl device install app --device test-phone '*) exit 0 ;;
+  'devicectl device info details --device test-phone')
+    remaining="$(counter unreachable-polls)"
+    if [[ "$remaining" -gt 0 ]]; then
+      printf '%s' "$((remaining - 1))" > "$state/unreachable-polls"
+      echo 'ERROR: The device is not able to fulfill the requested usage assertion requirements. (com.apple.dt.CoreDeviceError error 4016)' >&2
+      exit 1
+    fi
+    exit 0 ;;
+  'devicectl device install app --device test-phone '*)
+    remaining="$(counter install-failures)"
+    if [[ "$remaining" -gt 0 ]]; then
+      printf '%s' "$((remaining - 1))" > "$state/install-failures"
+      printf '%s' "${FAKE_UNREACHABLE_POLLS:-0}" > "$state/unreachable-polls"
+      echo "${FAKE_INSTALL_ERROR:?}" >&2
+      exit 1
+    fi
+    exit 0 ;;
   'devicectl device process launch --terminate-existing --device test-phone com.supermux.ios') exit 0 ;;
   *) echo "unexpected xcrun invocation: $*" >&2; exit 2 ;;
 esac
@@ -319,4 +340,74 @@ grep -F -- 'SUPERMUX_IOS_APP_GROUP is fixed at group.com.supermux.ios' "$OVERRID
 [[ ! -e "$TMP_DIR/override-xcodebuild.log" ]] \
   || { cat "$OVERRIDE_OUTPUT_FILE"; echo 'FAIL: unsupported app-group override reached xcodebuild' >&2; exit 1; }
 
-echo 'PASS: supermux iOS release builds the app and notification extension, re-signs both with production capabilities, installs, launches, and rejects unsupported app-group overrides'
+# Run the release against the fake phone with the given scenario name and
+# extra environment; returns the script's exit status.
+run_release() {
+  local scenario="$1"; shift
+  HOME="$HOME_DIR" \
+  PATH="$BIN_DIR:/usr/bin:/bin" \
+  SUPERMUX_IOS_DEVELOPMENT_TEAM=ABCD123456 \
+  SUPERMUX_RELEASE_LOG_DIR="$LOG_DIR" \
+  SUPERMUX_GIT_SHA=0123456789 \
+  XCODEBUILD="$BIN_DIR/xcodebuild" \
+  XCRUN="$BIN_DIR/xcrun" \
+  CODESIGN="$BIN_DIR/codesign" \
+  SECURITY="$BIN_DIR/security" \
+  PLISTBUDDY="$BIN_DIR/plistbuddy" \
+  FAKE_ENSURE_LOG="$TMP_DIR/$scenario-ensure.log" \
+  FAKE_XCODEBUILD_LOG="$TMP_DIR/$scenario-xcodebuild.log" \
+  FAKE_XCRUN_LOG="$TMP_DIR/$scenario-xcrun.log" \
+  FAKE_CODESIGN_LOG="$TMP_DIR/$scenario-codesign.log" \
+  FAKE_XCRUN_STATE="$TMP_DIR/$scenario-state" \
+    env "$@" bash "$TEST_REPO/scripts/supermux-ios-release.sh" --device-id test-phone \
+      > "$TMP_DIR/$scenario.log" 2>&1
+}
+
+# A transient 4016 install failure must wait for the phone to answer again
+# (readiness probes between the two installs) instead of sleeping a fixed
+# interval, then retry once it is reachable.
+TRANSIENT_ERROR='ERROR: The device is not able to fulfill the requested usage assertion requirements. (com.apple.dt.CoreDeviceError error 4016)'
+mkdir -p "$TMP_DIR/transient-state"
+printf '1' > "$TMP_DIR/transient-state/install-failures"
+TRANSIENT_STARTED="$SECONDS"
+run_release transient \
+  FAKE_INSTALL_ERROR="$TRANSIENT_ERROR" FAKE_UNREACHABLE_POLLS=2 \
+  SUPERMUX_IOS_INSTALL_READINESS_POLL_SECONDS=0 \
+  || { cat "$TMP_DIR/transient.log"; echo 'FAIL: transient install failure was not retried' >&2; exit 1; }
+TRANSIENT_ELAPSED="$((SECONDS - TRANSIENT_STARTED))"
+DEVICE_CALLS="$(grep -E '^devicectl device (install app|info details) ' "$TMP_DIR/transient-xcrun.log" | sed -E 's/ --device test-phone.*//')"
+EXPECTED_CALLS="$(printf '%s\n' \
+  'devicectl device info details' \
+  'devicectl device install app' \
+  'devicectl device info details' \
+  'devicectl device info details' \
+  'devicectl device info details' \
+  'devicectl device install app')"
+[[ "$DEVICE_CALLS" == "$EXPECTED_CALLS" ]] \
+  || { cat "$TMP_DIR/transient-xcrun.log"; echo 'FAIL: transient install retry did not wait on device readiness probes before retrying' >&2; exit 1; }
+[[ "$TRANSIENT_ELAPSED" -lt 3 ]] \
+  || { echo "FAIL: transient install retry blocked on a fixed sleep (${TRANSIENT_ELAPSED}s)" >&2; exit 1; }
+grep -F -- '==> Installed Supermux (com.supermux.ios)' "$TMP_DIR/transient.log" >/dev/null \
+  || { cat "$TMP_DIR/transient.log"; echo 'FAIL: transient install retry did not report the install' >&2; exit 1; }
+
+# A permanent install failure is reported once with devicectl's own message; it
+# is neither retried nor diagnosed as a reachability problem.
+PERMANENT_ERROR='ERROR: Failed to install the app on the device. (com.apple.dt.CoreDeviceError error 3002) The application does not have a valid signature.'
+mkdir -p "$TMP_DIR/permanent-state"
+printf '9' > "$TMP_DIR/permanent-state/install-failures"
+if run_release permanent FAKE_INSTALL_ERROR="$PERMANENT_ERROR" SUPERMUX_IOS_INSTALL_READINESS_POLL_SECONDS=0; then
+  cat "$TMP_DIR/permanent.log"
+  echo 'FAIL: permanent install failure unexpectedly succeeded' >&2
+  exit 1
+fi
+[[ "$(grep -c '^devicectl device install app ' "$TMP_DIR/permanent-xcrun.log")" -eq 1 ]] \
+  || { cat "$TMP_DIR/permanent-xcrun.log"; echo 'FAIL: permanent install failure was retried' >&2; exit 1; }
+grep -F -- 'error 3002' "$TMP_DIR/permanent.log" >/dev/null \
+  || { cat "$TMP_DIR/permanent.log"; echo 'FAIL: permanent install failure lost the original devicectl error' >&2; exit 1; }
+if grep -F -- 'error 4016' "$TMP_DIR/permanent.log" >/dev/null; then
+  cat "$TMP_DIR/permanent.log"
+  echo 'FAIL: permanent install failure was misreported as a reachability problem' >&2
+  exit 1
+fi
+
+echo 'PASS: supermux iOS release builds the app and notification extension, re-signs both with production capabilities, installs, launches, rejects unsupported app-group overrides, retries transient installs on device readiness, and reports permanent install failures once'
