@@ -36,8 +36,9 @@ public struct SupermuxChangesPanelView: View {
 
     @State var discardCandidate: SupermuxGitFileChange?
     /// The row whose diff was last opened, kept highlighted so the panel shows
-    /// which file the host viewer is displaying. Reset on a directory switch.
-    @State private var selectedChangeID: SupermuxGitFileChange.ID?
+    /// which file — and which side — the host viewer is displaying. Reset on
+    /// a directory switch.
+    @State private var selectedRow: SupermuxChangesRowSelection?
     @State var isDiscardAllPresented = false
     @State var isHistoryExpanded = false
     @State var isIncomingExpanded = false
@@ -131,7 +132,7 @@ public struct SupermuxChangesPanelView: View {
             }
         }
         .onDisappear { model.stopObserving() }
-        .onChange(of: model.directory) { _, _ in selectedChangeID = nil }
+        .onChange(of: model.directory) { _, _ in selectedRow = nil }
         .confirmationDialog(
             String(localized: "supermux.changes.discard.title", defaultValue: "Discard Changes"),
             isPresented: isDiscardDialogPresented,
@@ -365,7 +366,7 @@ public struct SupermuxChangesPanelView: View {
             ForEach(changes) { change in
                 SupermuxChangeRowView(
                     change: change,
-                    isSelected: selectedChangeID == change.id,
+                    isSelected: selectedRow == SupermuxChangesRowSelection(change, staged: isStaged),
                     onOpen: onOpenFileDiff == nil ? nil : { openFileDiff(change, staged: isStaged) },
                     onStage: isStaged ? nil : { stage(change) },
                     onUnstage: isStaged ? { unstage(change) } : nil,
@@ -414,10 +415,11 @@ public struct SupermuxChangesPanelView: View {
     /// error caption to explain and clears the highlight again.
     private func openFileDiff(_ change: SupermuxGitFileChange, staged: Bool) {
         guard let onOpenFileDiff else { return }
-        selectedChangeID = change.id
+        let row = SupermuxChangesRowSelection(change, staged: staged)
+        selectedRow = row
         Task {
             guard let patch = await model.fileDiffPatch(for: change, staged: staged) else {
-                if selectedChangeID == change.id { selectedChangeID = nil }
+                if selectedRow == row { selectedRow = nil }
                 return
             }
             onOpenFileDiff(patch)

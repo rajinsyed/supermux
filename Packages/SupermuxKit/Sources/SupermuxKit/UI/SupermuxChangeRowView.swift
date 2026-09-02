@@ -29,8 +29,24 @@ struct SupermuxChangeRowView: View {
             .onTapGesture { onOpen?() }
             .onHover { isHovering = $0 }
             .help(rowHelp)
-            .accessibilityAddTraits(onOpen == nil ? [] : .isButton)
-            .accessibilityAction { onOpen?() }
+            .modifier(OpenAccessibility(onOpen: onOpen))
+    }
+
+    /// Exposes the row as a button with a default action only when it can
+    /// open a diff; an inert row offers VoiceOver and Full Keyboard Access
+    /// nothing to activate.
+    private struct OpenAccessibility: ViewModifier {
+        let onOpen: (() -> Void)?
+
+        func body(content: Content) -> some View {
+            if let onOpen {
+                content
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(.default, onOpen)
+            } else {
+                content
+            }
+        }
     }
 
     private var rowContent: some View {
