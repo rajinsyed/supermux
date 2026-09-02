@@ -473,7 +473,33 @@ nse_profile_app_groups_plist="${VERIFY_DIR}/nse-profile-entitlements.plist"
 
 echo "==> Verified app + notification-extension signatures, production APNs, Time Sensitive, and Communication Notifications for team ${DEVELOPMENT_TEAM}"
 echo "==> Installing ${APP_NAME} on iPhone ${DEVICE_ID}"
-"${XCRUN}" devicectl device install app --device "${DEVICE_ID}" "${BUILT_APP}"
+
+# devicectl fails the whole install when the phone cannot currently hold the
+# power / trusted-connectivity / core-services assertions it needs:
+#
+#   ERROR: The device is not able to fulfill the requested usage assertion
+#   requirements. (com.apple.dt.CoreDeviceError error 4016)
+#
+# Over a localNetwork (Wi-Fi) connection that is routine and transient — the
+# phone drops the tunnel when it sleeps, switches networks, or is simply not
+# awake, and re-establishes it moments later. The identical command then
+# succeeds. So retry with a short backoff before giving up, and only after
+# genuinely running out of attempts report it as a failure.
+install_app() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if "${XCRUN}" devicectl device install app --device "${DEVICE_ID}" "${BUILT_APP}"; then
+      return 0
+    fi
+    if [[ "${attempt}" -lt 5 ]]; then
+      echo "==> install attempt ${attempt} failed (device not reachable yet); retrying in $((attempt * 4))s" >&2
+      sleep "$((attempt * 4))"
+    fi
+  done
+  return 1
+}
+
+install_app || die "could not install ${APP_NAME} after 5 attempts. If this is error 4016, the iPhone is connected over Wi-Fi and is not currently reachable: unlock it, keep it awake and on the same network, or plug it in over USB, then re-run."
 echo "==> Installed ${APP_NAME} (${BUNDLE_ID})"
 
 if [[ "${LAUNCH}" -eq 1 ]]; then
