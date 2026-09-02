@@ -71,6 +71,11 @@ public struct SupermuxProjectsTableSection: View {
         .onChange(of: swipeableRowIdentity) { _, _ in
             openSwipeRowID = nil
         }
+        // A container, not an element: an identifier on a plain view stamps
+        // every descendant with it, which erased the rows' own identifiers
+        // (`SupermuxProjectRow-<id>`, `SupermuxSwipeAction-…`) from the
+        // hosted table's accessibility tree.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("SupermuxProjectsTableSection")
     }
 

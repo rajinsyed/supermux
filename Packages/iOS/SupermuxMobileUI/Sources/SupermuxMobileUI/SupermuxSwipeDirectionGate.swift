@@ -18,15 +18,27 @@ struct SupermuxSwipeDirectionGate: Equatable {
     /// a swipe mid-drag the moment the finger arced downward.
     private(set) var verdict: Bool?
 
+    /// Movement (|x| + |y|) before a sample is decisive enough to judge.
+    static let decisionDistance: CGFloat = 4
+
     /// Whether UIKit may start the recognizer for a touch that has moved by
     /// `translation` so far.
+    ///
+    /// Never refuses a touch that has not moved. Inside a SwiftUI hosting
+    /// view the recognizer is asked to begin at touch-down as well — before
+    /// any movement — and a recognizer refused there is failed for the rest
+    /// of the touch, which is what made the phone's swipe so hard to start.
+    /// An undecided begin is harmless: the row only moves once ``tracks``
+    /// has judged the drag horizontal.
     func mayBegin(translation: CGPoint) -> Bool {
-        isHorizontal(translation)
+        translation == .zero || isHorizontal(translation)
     }
 
-    /// Whether the pan may move the row, deciding once per touch.
+    /// Whether the pan may move the row, deciding once per touch — and only
+    /// once the finger has moved far enough to read a direction from.
     mutating func tracks(translation: CGPoint) -> Bool {
         if let verdict { return verdict }
+        guard abs(translation.x) + abs(translation.y) >= Self.decisionDistance else { return false }
         let decided = isHorizontal(translation)
         verdict = decided
         return decided
