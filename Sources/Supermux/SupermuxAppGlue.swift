@@ -538,17 +538,17 @@ struct SupermuxChangesMount: View {
                       let appDelegate = NSApp.delegate as? AppDelegate else { return }
                 _ = appDelegate.openDiffViewerForFocusedWorkspace(for: tabManager)
             },
+            pullRequests: box.pullRequests,
+            knownPullRequest: pullRequestObserver.knownPullRequest,
+            onOpenURL: { [weak tabManager] url in
+                SupermuxChangesPullRequestLinkOpener.open(url, tabManager: tabManager)
+            },
             onOpenFileDiff: { [weak tabManager] patch in
                 guard let tabManager,
                       SupermuxFileDiffOpener.shared.present(patch, for: tabManager) else {
                     NSSound.beep()
                     return
                 }
-            },
-            pullRequests: box.pullRequests,
-            knownPullRequest: pullRequestObserver.knownPullRequest,
-            onOpenURL: { [weak tabManager] url in
-                SupermuxChangesPullRequestLinkOpener.open(url, tabManager: tabManager)
             }
         )
         .onAppear { box.model.setDirectory(workspaceDirectory) }
