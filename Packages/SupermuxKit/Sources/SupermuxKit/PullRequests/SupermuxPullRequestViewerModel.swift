@@ -43,7 +43,10 @@ public final class SupermuxPullRequestViewerModel {
     /// Bumped on every context change so a load for a previous directory
     /// discards its result instead of overwriting the new one.
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    /// In-flight loads for the current context; ``isLoading`` is derived from
+    /// it so two quick clicks (PR A, then PR B) both complete and the spinner
+    /// stays until the last one lands.
+    @ObservationIgnored private var inflightLoads = 0
 
     /// Creates the model.
     /// - Parameters:
@@ -69,15 +72,14 @@ public final class SupermuxPullRequestViewerModel {
     }
 
     /// Points the viewer at a workspace. A change of directory or branch
-    /// drops every cached PR, closes the viewer and cancels an in-flight load;
+    /// drops every cached PR, closes the viewer and discards in-flight loads;
     /// an unchanged context is a no-op so re-renders never reset state.
     public func setContext(directory: String?, branch: String?) {
         guard directory != self.directory || branch != self.branch else { return }
         self.directory = directory
         self.branch = branch
         generation += 1
-        loadTask?.cancel()
-        loadTask = nil
+        inflightLoads = 0
         openPullRequests = []
         hasLoadedList = false
         selectedNumber = nil
@@ -143,14 +145,17 @@ public final class SupermuxPullRequestViewerModel {
 
     private func startLoad(numbers: [Int], reloadList: Bool) {
         guard let directory else { return }
-        loadTask?.cancel()
         let generation = generation
         let branch = branch
+        inflightLoads += 1
         isLoading = true
-        loadTask = Task { [weak self] in
+        Task { [weak self] in
             guard let self else { return }
             let outcome = await self.load(directory: directory, branch: branch, numbers: numbers, reloadList: reloadList)
-            guard !Task.isCancelled, generation == self.generation else { return }
+            // A context change while suspended reset the counter and dropped
+            // this pass's cache; its result is for a directory no longer shown.
+            guard generation == self.generation else { return }
+            self.inflightLoads -= 1
             self.apply(outcome)
         }
     }
@@ -186,7 +191,7 @@ public final class SupermuxPullRequestViewerModel {
     }
 
     private func apply(_ outcome: LoadOutcome) {
-        isLoading = false
+        isLoading = inflightLoads > 0
         if let list = outcome.list {
             openPullRequests = list
             hasLoadedList = true

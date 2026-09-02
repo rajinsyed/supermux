@@ -6,6 +6,8 @@ d = json.load(open("/tmp/supermux_keys.json"))
 INT_KEYS = {
     "supermux.changes.aheadBadge", "supermux.changes.behindBadge",
     "supermux.changes.pushCount", "supermux.changes.pullCount",
+    "supermux.pullRequest.viewer.files", "supermux.pullRequest.viewer.commits",
+    "supermux.pullRequest.viewer.comments", "supermux.pullRequest.files.truncated",
 }
 
 def to_format(key, val):
