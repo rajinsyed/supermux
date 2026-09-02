@@ -67,6 +67,8 @@ public enum SupermuxAgentLaunchError: Error, Equatable, Sendable, LocalizedError
     case emptyPrompt
     /// The project is not registered.
     case unknownProject
+    /// A long prompt could not be saved to the file the launch line reads.
+    case promptFileWriteFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -79,6 +81,11 @@ public enum SupermuxAgentLaunchError: Error, Equatable, Sendable, LocalizedError
             return String(
                 localized: "supermux.agent.error.unknownProject",
                 defaultValue: "This project is no longer registered."
+            )
+        case .promptFileWriteFailed(let reason):
+            return String(
+                localized: "supermux.agent.error.promptFileWriteFailed",
+                defaultValue: "Could not save the prompt for Claude: \(reason)"
             )
         }
     }
@@ -99,6 +106,9 @@ public final class SupermuxAgentWorktreeLauncher {
     private let settings: SupermuxAgentLauncherSettings
     /// The dialect the new terminal's shell reads the launch line in.
     public let shell: SupermuxShellFlavor
+    /// Where prompts too long for the pty's input line are stored (see
+    /// ``SupermuxAgentLaunchCommand/maxInputUTF8Length``).
+    public let promptFileDirectory: URL
 
     /// Creates the launcher.
     /// - Parameters:
@@ -107,22 +117,41 @@ public final class SupermuxAgentWorktreeLauncher {
     ///   - settings: Where commands and last choices are remembered.
     ///   - shell: The quoting dialect of the user's shell (`$SHELL`); the
     ///     new workspace's terminal runs that shell and reads the line.
+    ///   - promptFileDirectory: Where long prompts are written; defaults to
+    ///     a folder under the temporary directory, so the app passes its
+    ///     state directory.
     public init(
         projectsModel: SupermuxProjectsModel,
         namer: (any SupermuxAIWorktreeNaming)?,
         settings: SupermuxAgentLauncherSettings,
-        shell: SupermuxShellFlavor = .detect(shellPath: SupermuxAgentCommandProbePlan.shellPath())
+        shell: SupermuxShellFlavor = .detect(shellPath: SupermuxAgentCommandProbePlan.shellPath()),
+        promptFileDirectory: URL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-agent-prompts", isDirectory: true)
     ) {
         self.projectsModel = projectsModel
         self.namer = namer
         self.settings = settings
         self.shell = shell
+        self.promptFileDirectory = promptFileDirectory
     }
 
     /// The exact shell line a launch with these choices would run — the
     /// sheet's preview, built by the same code as the real launch.
     public func shellLine(command: String, model: String?, effort: String?, prompt: String) -> String {
-        SupermuxAgentLaunchCommand.shellLine(command: command, model: model, effort: effort, prompt: prompt, shell: shell)
+        launchLine(command: command, model: model, effort: effort, prompt: prompt).line
+    }
+
+    /// The launch line plus the prompt file it reads when the prompt is too
+    /// long to go inline.
+    public func launchLine(command: String, model: String?, effort: String?, prompt: String) -> SupermuxAgentLaunchLine {
+        SupermuxAgentLaunchCommand.launchLine(
+            command: command,
+            model: model,
+            effort: effort,
+            prompt: prompt,
+            shell: shell,
+            promptFileDirectory: promptFileDirectory
+        )
     }
 
     /// Whether AI naming will be attempted (a key is configured).
@@ -149,8 +178,9 @@ public final class SupermuxAgentWorktreeLauncher {
     ///   - request: What to launch.
     ///   - willCreateWorktree: Called on the main actor right before git runs
     ///     — the point of no return — so a UI can disable its Cancel button.
-    /// - Throws: ``SupermuxAgentLaunchError`` for a blank prompt or unknown
-    ///   project, otherwise ``SupermuxGitError`` from worktree creation.
+    /// - Throws: ``SupermuxAgentLaunchError`` for a blank prompt, unknown
+    ///   project, or unwritable prompt file, otherwise ``SupermuxGitError``
+    ///   from worktree creation.
     public func start(
         _ request: SupermuxAgentLaunchRequest,
         willCreateWorktree: (@MainActor () -> Void)? = nil
@@ -175,6 +205,21 @@ public final class SupermuxAgentWorktreeLauncher {
             if let typedBranch { resolved.names.branchName = typedBranch }
         }
         try Task.checkCancellation()
+        // A long prompt goes through a file (see SupermuxAgentLaunchCommand);
+        // write it before git runs so a failure cannot orphan a worktree.
+        let launchLine = launchLine(
+            command: request.command,
+            model: request.model,
+            effort: request.effort,
+            prompt: prompt
+        )
+        if let promptFile = launchLine.promptFile {
+            do {
+                try SupermuxAgentPromptFileStore.write(promptFile)
+            } catch {
+                throw SupermuxAgentLaunchError.promptFileWriteFailed(error.localizedDescription)
+            }
+        }
         willCreateWorktree?()
 
         // A blank branch lets the service pick a friendly random name — the
@@ -202,12 +247,7 @@ public final class SupermuxAgentWorktreeLauncher {
             title: names.workspaceName,
             directory: worktree.path,
             colorHex: project.colorHex,
-            initialCommand: shellLine(
-                command: request.command,
-                model: request.model,
-                effort: request.effort,
-                prompt: prompt
-            ),
+            initialCommand: launchLine.line,
             projectId: project.id,
             setupScript: setupScript,
             setupEnvironment: setupScript == nil
