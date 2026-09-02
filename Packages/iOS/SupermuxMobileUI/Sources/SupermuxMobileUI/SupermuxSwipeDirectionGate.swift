@@ -24,21 +24,23 @@ struct SupermuxSwipeDirectionGate: Equatable {
     /// Whether UIKit may start the recognizer for a touch that has moved by
     /// `translation` so far.
     ///
-    /// Never refuses a touch that has not moved. Inside a SwiftUI hosting
-    /// view the recognizer is asked to begin at touch-down as well — before
-    /// any movement — and a recognizer refused there is failed for the rest
-    /// of the touch, which is what made the phone's swipe so hard to start.
-    /// An undecided begin is harmless: the row only moves once ``tracks``
-    /// has judged the drag horizontal.
+    /// Never refuses a touch that has not moved enough to judge. Inside a
+    /// SwiftUI hosting view the recognizer is asked to begin at touch-down as
+    /// well — before any movement, or after a point of jitter — and a
+    /// recognizer refused there is failed for the rest of the touch, which
+    /// is what made the phone's swipe so hard to start. An undecided begin
+    /// is harmless: the row only moves once ``tracks`` has judged the drag
+    /// horizontal, and UIKit's own begin (after its ~10pt hysteresis) still
+    /// gets refused for a vertical drag.
     func mayBegin(translation: CGPoint) -> Bool {
-        translation == .zero || isHorizontal(translation)
+        !Self.isDecisive(translation) || isHorizontal(translation)
     }
 
     /// Whether the pan may move the row, deciding once per touch — and only
     /// once the finger has moved far enough to read a direction from.
     mutating func tracks(translation: CGPoint) -> Bool {
         if let verdict { return verdict }
-        guard abs(translation.x) + abs(translation.y) >= Self.decisionDistance else { return false }
+        guard Self.isDecisive(translation) else { return false }
         let decided = isHorizontal(translation)
         verdict = decided
         return decided
@@ -47,6 +49,11 @@ struct SupermuxSwipeDirectionGate: Equatable {
     /// Forgets this touch's verdict, ready for the next one.
     mutating func reset() {
         verdict = nil
+    }
+
+    /// Whether the finger has moved far enough for direction to mean anything.
+    static func isDecisive(_ translation: CGPoint) -> Bool {
+        abs(translation.x) + abs(translation.y) >= decisionDistance
     }
 
     /// Horizontal intent only, with ambiguous diagonals conceded to the

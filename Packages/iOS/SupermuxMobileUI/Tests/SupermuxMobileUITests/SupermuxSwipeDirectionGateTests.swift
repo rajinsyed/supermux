@@ -11,6 +11,9 @@ import Testing
     @Test func doesNotRefuseToBeginBeforeTheFingerMoves() {
         let gate = SupermuxSwipeDirectionGate()
         #expect(gate.mayBegin(translation: .zero))
+        // A point of jitter in the wrong direction is not a verdict either.
+        #expect(gate.mayBegin(translation: CGPoint(x: 0.3, y: -1.5)))
+        #expect(gate.mayBegin(translation: CGPoint(x: 1, y: 2)))
     }
 
     @Test func refusesToBeginOnVerticalMovement() {
