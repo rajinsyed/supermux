@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **495**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **497**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 89, 106, 121, 142, 213, 214, 229, 237,
   250, and 252–258** are unused; all are documented as RETIRED below except **#19**, which was
@@ -504,6 +504,8 @@ Rules for adding a touchpoint:
 | 493 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileMacBuildCompatibilityPolicy.swift` | `supermux-release-mobile-identity` | Admits the exact `mac:com.supermux.app` namespace under the official Release compatibility policy while keeping unknown namespaces fail-closed |
 | 494 | `Sources/Mobile/MobileIOSPairingTargetStore.swift` | `supermux-release-mobile-identity` | Makes the fixed Supermux Mac release target only `com.supermux.ios` for QR pairing and pushes; upstream cmux release and tagged DEV target selection remain unchanged |
 | 495 | `Sources/Mobile/Pairing/MobilePairingModel.swift` | `supermux-release-mobile-identity` | Gives the fixed Supermux iOS pairing target its localized product name in the Mac pairing window |
+| 496 | `Packages/macOS/CmuxSettings/Tests/CmuxSettingsTests/SocketControl/SocketControlSettingsTests.swift` | `socket-override-foreign-bundle-test` | Regression tests: a tagged dev build ignores a `CMUX_SOCKET_PATH` override inherited from a different cmux bundle even with `CMUX_ALLOW_SOCKET_OVERRIDE=1`, and still honors one that names its own bundle |
+| 497 | `Packages/macOS/CmuxSettings/Sources/CmuxSettings/SocketControl/SocketControlSettings.swift` | `socket-override-foreign-bundle` | `shouldHonorSocketPathOverride` checks the inherited `CMUX_BUNDLE_ID` conflict before the allow flag, so a tagged build opened from inside the Supermux release app (whose LSEnvironment bakes `CMUX_ALLOW_SOCKET_OVERRIDE=1`) keeps its own socket instead of adopting `/tmp/supermux.sock` |
 
 ## How to re-apply
 
@@ -4060,3 +4062,19 @@ Keep the exact release pair explicit and fail-closed:
 Together these cover the real Tailscale QR failure introduced when upstream made app namespaces
 exact: without any one boundary, the fixed release pair can be rejected as build-incompatible, route
 its QR to cmux, or publish pushes to the wrong iOS bundle.
+
+### 496–497. Socket override inherited from another bundle — `socket-override-foreign-bundle`
+
+`scripts/supermux-release.sh` bakes `CMUX_ALLOW_SOCKET_OVERRIDE=1` into the release app's
+LSEnvironment (isolated `/tmp/supermux.sock`), and every terminal it spawns carries that flag plus
+`CMUX_SOCKET_PATH=/tmp/supermux.sock` and `CMUX_BUNDLE_ID=com.supermux.app`. A tagged dev build
+opened from one of those terminals (the `cmux-dev-<tag>://launch` link, `open`) inherits all three
+and, upstream, honors the override: it tries to listen on the release app's socket (never succeeds)
+and its bundled CLI — the Changes panel's per-file diff opener and Open Diff Viewer — connects to the
+release app instead ("Access denied" / "Workspace not found").
+
+Re-apply: in `SocketControlSettings.shouldHonorSocketPathOverride`, move the
+`inheritedBundleIdentifierConflicts(...)` early return ABOVE the `CMUX_ALLOW_SOCKET_OVERRIDE` early
+return (fenced `socket-override-foreign-bundle`). `reload.sh` launches keep working because they set
+`CMUX_BUNDLE_ID` to the tagged bundle id. The two fenced tests in `SocketControlSettingsTests.swift`
+(`socket-override-foreign-bundle-test`) pin both directions.
