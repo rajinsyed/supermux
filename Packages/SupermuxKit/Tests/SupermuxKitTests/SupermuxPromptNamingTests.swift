@@ -48,7 +48,7 @@ struct SupermuxPromptNamingTests {
         #expect(label.branchName == "fix-bug-login-redirect-loops")
 
         let version = try #require(SupermuxPromptNaming.names(from: "Upgrade to v2.0 and fix login"))
-        #expect(version.workspaceName == "Upgrade v2.0 Fix Login", "a dot inside a word is not a terminator")
+        #expect(version.workspaceName == "Upgrade V2.0 Fix Login", "a dot inside a word is not a terminator")
     }
 
     /// Contractions stay whole (no stray "Don" / "T" words) and drop out as

@@ -72,6 +72,7 @@ extension SupermuxProjectsSectionModel {
             // connection's store, so a sheet kept open could only fail.
             resetNewWorktreeFlow()
             sessionGeneration += 1
+            sessionEpoch += 1
             let generation = sessionGeneration
             let capabilities = SupermuxMobileCapabilities(hostCapabilities: hostCapabilities)
             let freshStore = SupermuxMobileProjectsStore(
@@ -176,6 +177,7 @@ extension SupermuxProjectsSectionModel {
         endAllWorktreeSessions()
         sessionLoops?.cancel()
         sessionGeneration += 1
+        sessionEpoch += 1
         // detailProjectID / detailFallbackRow survive on purpose: a pushed
         // detail outliving a disconnect keeps rendering its last-known row
         // instead of flashing "no longer available".

@@ -27,6 +27,9 @@ public struct SupermuxProjectDetailScreen: View {
     let showsPresets: Bool
     let showsActions: Bool
     let runActions: SupermuxProjectRunActions?
+    /// The section model's connection epoch: a change means the session
+    /// behind `makeWorktreesStore` was replaced, so the store is rebuilt.
+    private let sessionEpoch: Int
 
     /// The screen-owned worktrees session for this project; `nil` while
     /// disconnected or when the host lacks `supermux.worktrees.v1` (the
@@ -78,6 +81,8 @@ public struct SupermuxProjectDetailScreen: View {
     ///     `supermux.actions.v1`).
     ///   - runActions: The run/launch/action seam; `nil` hides the Run,
     ///     Presets, and Actions sections entirely (no live session).
+    ///   - sessionEpoch: The section model's ``SupermuxProjectsSectionModel/sessionEpoch``;
+    ///     each change rebinds the worktrees store to the new connection.
     public init(
         row: SupermuxProjectRowSnapshot,
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
@@ -88,7 +93,8 @@ public struct SupermuxProjectDetailScreen: View {
         presets: [SupermuxTerminalPresetDTO] = [],
         showsPresets: Bool = false,
         showsActions: Bool = false,
-        runActions: SupermuxProjectRunActions? = nil
+        runActions: SupermuxProjectRunActions? = nil,
+        sessionEpoch: Int = 0
     ) {
         self.row = row
         self.iconPNGData = iconPNGData
@@ -100,6 +106,15 @@ public struct SupermuxProjectDetailScreen: View {
         self.showsPresets = showsPresets
         self.showsActions = showsActions
         self.runActions = runActions
+        self.sessionEpoch = sessionEpoch
+    }
+
+    /// Identity of the worktrees session task: the project AND the
+    /// connection, so a Mac reconnect while this detail stays pushed rebuilds
+    /// the store instead of leaving it on the invalidated client.
+    private struct WorktreesSessionKey: Hashable {
+        let projectID: String
+        let sessionEpoch: Int
     }
 
     public var body: some View {
@@ -167,7 +182,11 @@ public struct SupermuxProjectDetailScreen: View {
         } message: { message in
             Text(message)
         }
-        .task(id: row.id) {
+        .task(id: WorktreesSessionKey(projectID: row.id, sessionEpoch: sessionEpoch)) {
+            // A sheet or agent store built over the previous connection can
+            // only fail now; drop them with the store they belonged to.
+            showingNewWorktreeSheet = false
+            agentLaunchStore = nil
             let store = makeWorktreesStore(row.id)
             worktreesStore = store
             guard let store else { return }
@@ -473,13 +492,10 @@ public struct SupermuxProjectDetailScreen: View {
         Task {
             defer { isPreparingNewWorktree = false }
             do {
-                // Same overlap as the sidebar flow: the Claude section's
-                // options load alongside the branch snapshot.
-                let agentStore = makeAgentLaunchStore(row.id)
-                async let options: Void? = agentStore?.loadOptions()
+                // Same rule as the sidebar flow: only the branch snapshot
+                // gates presenting; the sheet loads the Claude options itself.
                 try await store.refreshBranches()
-                _ = await options
-                agentLaunchStore = agentStore
+                agentLaunchStore = makeAgentLaunchStore(row.id)
                 showingNewWorktreeSheet = true
             } catch {
                 newWorktreeErrorMessage = error.localizedDescription

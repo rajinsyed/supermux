@@ -1735,6 +1735,23 @@
         }
       }
     },
+    "supermux.newWorktree.error.workspaceNotOpened": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Mac created the worktree “%@” but couldn’t open a workspace for it. Open it from the worktree list."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac はワークツリー“%@”を作成しましたが、ワークスペースを開けませんでした。ワークツリー一覧から開いてください。"
+          }
+        }
+      }
+    },
     "supermux.newWorktree.error.suggestFailed": {
       "extractionState": "manual",
       "localizations": {

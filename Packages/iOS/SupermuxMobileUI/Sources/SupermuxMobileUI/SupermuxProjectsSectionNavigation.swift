@@ -143,7 +143,8 @@ struct SupermuxProjectDetailResolvedScreen: View {
                 presets: snapshot.showsPresets ? snapshot.presets : [],
                 showsPresets: snapshot.showsPresets,
                 showsActions: snapshot.showsActions,
-                runActions: actions.run
+                runActions: actions.run,
+                sessionEpoch: model.sessionEpoch
             )
         } else {
             Text(String(

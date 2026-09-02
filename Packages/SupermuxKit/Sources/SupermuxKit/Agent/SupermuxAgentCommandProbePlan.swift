@@ -5,10 +5,11 @@ public import Foundation
 /// The harness probe (``SupermuxHarnessModelCatalogProbe``) needs a real
 /// executable to spawn, but the user's command may be a shell alias (`cc`)
 /// or a function that only exists inside their interactive shell. So the
-/// probe runs the command THROUGH that shell — `zsh -lic '<command> "$@"'` —
-/// which sources the login profile (PATH) and the rc file (aliases), then
-/// appends Claude's stream-json flags so the process answers `initialize`
-/// and exits without ever starting a turn.
+/// probe runs the command THROUGH that shell — `zsh -lic '<command> "$@"'`
+/// (or `fish -l -i -c '<command> $argv'`) — which sources the login profile
+/// (PATH) and the rc file (aliases), then appends Claude's stream-json flags
+/// so the process answers `initialize` and exits without ever starting a
+/// turn.
 public enum SupermuxAgentCommandProbePlan {
     /// The Claude arguments that make a launch answer `initialize` over stdio.
     static let streamJSONArguments = [
@@ -45,20 +46,27 @@ public enum SupermuxAgentCommandProbePlan {
         launchEnvironment["PWD"] = workingDirectoryURL.standardizedFileURL.path
         return SupermuxHarnessLaunchPlan(
             executableURL: URL(fileURLWithPath: shellPath),
-            arguments: shellArguments(command: command),
+            arguments: shellArguments(command: command, shellPath: shellPath),
             environment: launchEnvironment,
             workingDirectoryURL: workingDirectoryURL.standardizedFileURL
         )
     }
 
-    /// `-lic '<command> "$@"' <command> <stream-json flags…>`.
+    /// POSIX: `-lic '<command> "$@"' <command> <stream-json flags…>`; fish:
+    /// `-l -i -c '<command> $argv' <stream-json flags…>`.
     ///
-    /// With `-c`, the word after the script becomes `$0` and the rest `$@`, so
-    /// the flags reach the command verbatim without a second round of shell
+    /// With `-c`, a POSIX shell makes the word after the script `$0` and the
+    /// rest `$@`; fish exposes every trailing word as `$argv`. Either way the
+    /// flags reach the command verbatim without a second round of shell
     /// parsing. The script body itself is the trimmed command text, so a
     /// command that is already a phrase (`claude --settings x`) still works.
-    static func shellArguments(command: String) -> [String] {
+    static func shellArguments(command: String, shellPath: String) -> [String] {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ["-lic", trimmed + " \"$@\"", trimmed] + streamJSONArguments
+        switch SupermuxShellFlavor.detect(shellPath: shellPath) {
+        case .fish:
+            return ["-l", "-i", "-c", trimmed + " $argv"] + streamJSONArguments
+        case .posix:
+            return ["-lic", trimmed + " \"$@\"", trimmed] + streamJSONArguments
+        }
     }
 }

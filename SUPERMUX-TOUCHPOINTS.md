@@ -1410,6 +1410,12 @@ build file `50BE0001…0143` for `SupermuxFocusedPaneNotificationPolicy.swift`, 
 `Supermux` group and the `cmux` target's Sources phase. The path may stay bare because the final
 filename contains no OpenStep-special `+` character.
 
+The phone agent-launch host (`Sources/Supermux/SupermuxMobileHost+Agent.swift`, the Mac side of
+`mobile.supermux.agent.*`) adds file reference `50BE0002…00E3` and build file `50BE0002…00E4`,
+wired into the `Supermux` group's `children` and the `cmux` target's Sources phase `files`. Its
+path MUST be quoted (`path = "SupermuxMobileHost+Agent.swift";`) because of the OpenStep-special
+`+`. It uses the `50BE0002` prefix, so it does not count toward the `50BE0001` total below.
+
 Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `229`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)

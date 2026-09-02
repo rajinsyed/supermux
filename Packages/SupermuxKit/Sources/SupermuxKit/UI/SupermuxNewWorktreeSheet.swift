@@ -148,13 +148,21 @@ public struct SupermuxNewWorktreeSheet: View {
         }
         .onChange(of: command) { _, newCommand in
             agentLaunch?.settings.setSelectedCommand(newCommand)
+            // Drop the previous command's catalog and picks synchronously: a
+            // Start pressed while the new catalog probes then launches on the
+            // CLI default instead of a model the new command may not accept.
+            models = []
+            modelsError = nil
+            selectedModel = nil
+            selectedEffort = nil
             Task { await loadModels(for: newCommand) }
         }
         .onChange(of: selectedModel) { _, _ in clampEffort() }
         // If the sheet goes away while the (possibly slow) AI-naming phase is
         // in flight, abort it so no worktree is created behind the user's
         // back. Cancel is disabled once git runs, so this only covers
-        // programmatic dismissal.
+        // programmatic dismissal — and once git has run, the created worktree
+        // is still delivered (see `startClaude` / `createPlain`).
         .onDisappear { createTask?.cancel() }
     }
 
@@ -288,8 +296,10 @@ public struct SupermuxNewWorktreeSheet: View {
         agentLaunch != nil && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Whether the primary button is enabled: not mid-create, branches known.
-    private var canCreate: Bool { phase == .idle && branchesLoaded }
+    /// Whether the primary button is enabled: not mid-create. The branch list
+    /// is optional (an untouched picker defers to the service default), so a
+    /// failed or slow branch read never blocks creating.
+    private var canCreate: Bool { phase == .idle }
 
     /// Offline preview of the names the prompt would produce (AI refines at
     /// submit when configured).
@@ -308,7 +318,8 @@ public struct SupermuxNewWorktreeSheet: View {
     }
 
     var previewLine: String {
-        SupermuxAgentLaunchCommand.shellLine(
+        guard let agentLaunch else { return "" }
+        return agentLaunch.launcher.shellLine(
             command: command,
             model: selectedModel,
             effort: selectedEffort,
@@ -425,6 +436,9 @@ public struct SupermuxNewWorktreeSheet: View {
         }
     }
 
+    /// Loads `command`'s catalog. The first load for a command applies the
+    /// remembered model/effort; a refresh (`forceRefresh`) keeps the user's
+    /// current picks, dropping only a model the new catalog no longer lists.
     func loadModels(for command: String, forceRefresh: Bool = false) async {
         guard let agentLaunch, !command.isEmpty else { return }
         modelsLoading = true
@@ -439,13 +453,19 @@ public struct SupermuxNewWorktreeSheet: View {
         guard command == self.command else { return }
         models = result.models
         modelsError = result.source == .unavailable ? result.errorDescription : nil
-        let last = agentLaunch.settings.lastChoice(for: command)
-        if let lastModel = last.model, models.selectableModels.contains(where: { $0.value == lastModel }) {
-            selectedModel = lastModel
+        if forceRefresh {
+            if let selectedModel, !models.selectableModels.contains(where: { $0.value == selectedModel }) {
+                self.selectedModel = nil
+            }
         } else {
-            selectedModel = nil
+            let last = agentLaunch.settings.lastChoice(for: command)
+            if let lastModel = last.model, models.selectableModels.contains(where: { $0.value == lastModel }) {
+                selectedModel = lastModel
+            } else {
+                selectedModel = nil
+            }
+            selectedEffort = last.effort
         }
-        selectedEffort = last.effort
         clampEffort()
     }
 
@@ -494,7 +514,8 @@ public struct SupermuxNewWorktreeSheet: View {
                     phase = .runningGit
                     statusMessage = String(localized: "supermux.agent.status.creating", defaultValue: "Creating worktree…")
                 }
-                guard !Task.isCancelled else { return }
+                // The worktree exists now: deliver it even if the sheet was
+                // dismissed meanwhile, so it is opened rather than orphaned.
                 onLaunched(launch)
                 dismiss()
             } catch is CancellationError {
@@ -542,7 +563,8 @@ public struct SupermuxNewWorktreeSheet: View {
                     branchName: branchToUse,
                     baseBranch: selectedBase
                 )
-                guard !Task.isCancelled else { return }
+                // Same rule as the Claude path: a created worktree is always
+                // delivered, dismissed sheet or not.
                 onCreated(worktree, trimmedName.isEmpty ? nil : trimmedName)
                 dismiss()
             } catch {

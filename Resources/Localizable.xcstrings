@@ -278988,6 +278988,23 @@
         }
       }
     },
+    "supermux.agent.error.startFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t start Claude on the Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac で Claude を開始できませんでした。"
+          }
+        }
+      }
+    },
     "supermux.agent.error.unknownProject" : {
       "extractionState" : "manual",
       "localizations" : {

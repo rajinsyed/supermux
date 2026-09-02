@@ -47,7 +47,9 @@ import Testing
         return (model, session)
     }
 
-    @Test func presentationCarriesLoadedAgentOptionsOnlyWithTheCapability() async throws {
+    /// The presentation carries an agent store only with the capability, and
+    /// presenting never waits on the options fetch — the sheet loads them.
+    @Test func presentationCarriesAnUnloadedAgentStoreOnlyWithTheCapability() async throws {
         let project = fixtureProject()
         let client = FakeSupermuxMacClient()
         client.listResponse = SupermuxProjectsListResponse(projects: [project])
@@ -73,6 +75,9 @@ import Testing
         await with.model.requestNewWorktree(project.id)?.value
         let presentation = try #require(with.model.newWorktreePresentation)
         let agentStore = try #require(presentation.agentStore)
+        #expect(!client.callLog.contains("agentOptions"), "presenting does not wait on the model probe")
+        #expect(!agentStore.hasLoadedOptions)
+        await agentStore.loadOptions()
         #expect(agentStore.command == "cc")
         #expect(agentStore.selectedModel == "opus")
         #expect(client.callLog.contains("agentOptions"))

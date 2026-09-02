@@ -16,9 +16,9 @@ struct SupermuxNewWorktreePresentation {
     /// event loop refetches the nested rows the moment the create lands), a
     /// freshly minted one otherwise.
     let store: SupermuxMobileWorktreesStore
-    /// The Claude section's store (options already loaded), or `nil` when the
-    /// host lacks `supermux.agent_launch.v1` — the sheet then hides the
-    /// prompt path.
+    /// The Claude section's store (the sheet loads its options), or `nil`
+    /// when the host lacks `supermux.agent_launch.v1` — the sheet then hides
+    /// the prompt path.
     let agentStore: SupermuxMobileAgentLaunchStore?
 }
 
@@ -79,20 +79,16 @@ extension SupermuxProjectsSectionModel {
                 }
             }
             do {
-                // The Claude section's options (commands + model catalog) load
-                // alongside the branch snapshot; a cold model probe can take
-                // seconds, so the two Mac calls overlap. An options failure
-                // is not fatal — the sheet still creates plain worktrees and
-                // reports the catalog as unavailable.
-                let agentStore = makeAgentLaunchStore(forProjectID: projectID)
-                async let options: Void? = agentStore?.loadOptions()
+                // Only the (fast) branch snapshot gates presenting. The Claude
+                // section's options — a cold model probe can take seconds —
+                // load behind the open sheet, so a plain worktree is never
+                // held up by the probe and the plus control never sticks.
                 try await store.refreshBranches()
-                _ = await options
                 guard sessionGeneration == generation else { return }
                 newWorktreePresentation = SupermuxNewWorktreePresentation(
                     row: row,
                     store: store,
-                    agentStore: agentStore
+                    agentStore: makeAgentLaunchStore(forProjectID: projectID)
                 )
             } catch {
                 guard sessionGeneration == generation else { return }

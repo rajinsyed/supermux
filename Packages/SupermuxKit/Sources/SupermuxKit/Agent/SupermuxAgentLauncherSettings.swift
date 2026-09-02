@@ -47,7 +47,11 @@ public struct SupermuxAgentLauncherSettings: Sendable {
         } else {
             defaults.set(normalized, forKey: Self.commandsKey)
         }
-        if !self.commands.contains(selectedCommand) {
+        // Compare the STORED pick, not `selectedCommand` (which has already
+        // fallen back to the first command), so a removed selection is
+        // forgotten instead of resurfacing when the command is re-added.
+        if let stored = defaults.string(forKey: Self.selectedCommandKey),
+           !self.commands.contains(stored) {
             defaults.removeObject(forKey: Self.selectedCommandKey)
         }
     }

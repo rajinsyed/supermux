@@ -67,7 +67,7 @@ struct SupermuxAgentWorktreeLauncherTests {
         #expect(launch.openRequest.title == "Fix Login Redirect")
         #expect(launch.openRequest.directory == launch.worktree.path)
         #expect(launch.openRequest.projectId == fixture.project.id)
-        #expect(launch.openRequest.initialCommand == "cc --model 'opus' --effort 'high' $'the login redirect is broken'")
+        #expect(launch.openRequest.initialCommand == "cc --model 'opus' --effort 'high' -- $'the login redirect is broken'")
         #expect(launch.openRequest.setupScript == "bun install")
         #expect(launch.openRequest.setupEnvironment["SUPERMUX_WORKTREE_PATH"] == launch.worktree.path)
         #expect(launch.openRequest.preservesUserFocus)
@@ -92,8 +92,25 @@ struct SupermuxAgentWorktreeLauncherTests {
         #expect(!launch.namedByAI)
         #expect(launch.names.workspaceName == "Add Retry Uploader")
         #expect(launch.worktree.branch == "add-retry-uploader")
-        #expect(launch.openRequest.initialCommand == "claude $'Add retry to the uploader'")
+        #expect(launch.openRequest.initialCommand == "claude -- $'Add retry to the uploader'")
         #expect(launch.openRequest.setupScript == nil)
+    }
+
+    /// The launch line is quoted for the shell the new terminal will run.
+    @Test func quotesTheLaunchLineForTheUsersShell() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.cleanUp() }
+        let launcher = SupermuxAgentWorktreeLauncher(
+            projectsModel: fixture.model,
+            namer: nil,
+            settings: SupermuxAgentLauncherSettings(defaults: fixture.defaults),
+            shell: .fish
+        )
+        let launch = try await launcher.start(SupermuxAgentLaunchRequest(
+            projectId: fixture.project.id, prompt: "Add retry\nit's flaky", command: "claude"
+        ))
+        #expect(launch.openRequest.initialCommand == "claude -- 'Add retry'\\n'it\\'s flaky'")
+        #expect(launcher.shellLine(command: "claude", model: nil, effort: nil, prompt: "x") == "claude -- 'x'")
     }
 
     @Test func typedNamesWinOverDerivedOnes() async throws {
