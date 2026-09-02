@@ -29,6 +29,9 @@ struct SupermuxProjectMobileRow: View {
     /// Opens the New Worktree sheet (m7 sidebar create flow); `nil` hides the
     /// menu entry (no session, or no `supermux.worktrees.v1`).
     var newWorktree: (@MainActor (_ projectID: String) -> Void)?
+    /// Opens the prompt-first "Start Claude in a New Worktree" sheet; `nil`
+    /// hides the entry (no `supermux.agent_launch.v1`).
+    var newAgentWorktree: (@MainActor (_ projectID: String) -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Not `private`: a private stored property suppresses the memberwise
@@ -88,6 +91,15 @@ struct SupermuxProjectMobileRow: View {
             openDetail(row.id)
         }
         .accessibilityActions {
+            if let newAgentWorktree {
+                Button(String(
+                    localized: "supermux.agent.row.start",
+                    defaultValue: "Start Claude in New Worktree",
+                    bundle: .module
+                )) {
+                    newAgentWorktree(row.id)
+                }
+            }
             if let newWorktree {
                 Button(String(
                     localized: "supermux.worktrees.new",
@@ -167,6 +179,21 @@ struct SupermuxProjectMobileRow: View {
                 ))
             } icon: {
                 Image(systemName: "macwindow")
+            }
+        }
+        if let newAgentWorktree {
+            Button {
+                newAgentWorktree(row.id)
+            } label: {
+                Label {
+                    Text(String(
+                        localized: "supermux.agent.row.start",
+                        defaultValue: "Start Claude in New Worktree",
+                        bundle: .module
+                    ))
+                } icon: {
+                    Image(systemName: "sparkles")
+                }
             }
         }
         if let newWorktree {
@@ -566,6 +593,9 @@ struct SupermuxNestedNewWorktreeRow: View {
     /// flight) — the row's label yields to a spinner.
     let isPreparing: Bool
     let newWorktree: @MainActor (_ projectID: String) -> Void
+    /// The row's label; defaults to "New Worktree". The agent-launch row
+    /// reuses this shape with its own title.
+    var title = String(localized: "supermux.worktrees.new", defaultValue: "New Worktree", bundle: .module)
 
     // Not `private`: see the note on SupermuxProjectMobileRow.metrics.
     var metrics = SupermuxScaledRowMetrics()
@@ -580,11 +610,7 @@ struct SupermuxNestedNewWorktreeRow: View {
                     ProgressView()
                         .controlSize(.mini)
                 }
-                Text(String(
-                    localized: "supermux.worktrees.new",
-                    defaultValue: "New Worktree",
-                    bundle: .module
-                ))
+                Text(title)
                 .font(.system(.subheadline, weight: .medium))
                 .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -636,6 +662,8 @@ struct SupermuxProjectNestedRows: View {
     /// Whether the disclosure ends in the inline New Worktree row (host
     /// advertises `supermux.worktrees.v1`).
     var showsNewWorktree = false
+    /// Whether the inline "Start Claude in New Worktree" row renders.
+    var showsAgentLaunch = false
 
     var body: some View {
         ForEach(row.openWorkspaces) { workspace in
@@ -664,6 +692,9 @@ struct SupermuxProjectNestedRows: View {
             // The create affordance does not wait for the list fetch: it
             // fetches its own branch snapshot, so it works — and can show its
             // preparing spinner — while the skeleton is still up.
+            if showsAgentLaunch {
+                agentWorktreeRow
+            }
             if showsNewWorktree {
                 newWorktreeRow
             }
@@ -706,6 +737,9 @@ struct SupermuxProjectNestedRows: View {
                     }
                 }
             }
+            if showsAgentLaunch {
+                agentWorktreeRow
+            }
             if showsNewWorktree {
                 newWorktreeRow
             }
@@ -719,6 +753,18 @@ struct SupermuxProjectNestedRows: View {
                 projectID: row.id,
                 isPreparing: actions.preparingNewWorktreeProjectID == row.id,
                 newWorktree: actions.requestNewWorktree
+            )
+        }
+    }
+
+    /// The inline "Start Claude" row (prompt-first launch), above New Worktree.
+    private var agentWorktreeRow: some View {
+        nested(symbol: "sparkles") {
+            SupermuxNestedNewWorktreeRow(
+                projectID: row.id,
+                isPreparing: actions.preparingAgentWorktreeProjectID == row.id,
+                newWorktree: actions.requestNewAgentWorktree,
+                title: String(localized: "supermux.agent.row.start", defaultValue: "Start Claude in New Worktree", bundle: .module)
             )
         }
     }

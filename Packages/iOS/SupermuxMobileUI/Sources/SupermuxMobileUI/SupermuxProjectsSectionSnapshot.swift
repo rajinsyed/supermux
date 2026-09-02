@@ -30,6 +30,10 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     /// Worktree" row, the project row's swipe action, and its menu entry).
     /// `false` unless the host advertises `supermux.worktrees.v1`.
     public let showsWorktreeCreation: Bool
+    /// Whether the sidebar offers the prompt-first "Start Claude in a New
+    /// Worktree" flow. `false` unless the host advertises
+    /// `supermux.agent_launch.v1` (alongside worktrees).
+    public let showsAgentLaunch: Bool
 
     /// The snapshot of a hidden section (no session, or capability absent).
     public static let hidden = SupermuxProjectsSectionSnapshot(
@@ -57,7 +61,8 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
         showsPresets: Bool = false,
         presets: [SupermuxTerminalPresetDTO] = [],
         showsActions: Bool = false,
-        showsWorktreeCreation: Bool = false
+        showsWorktreeCreation: Bool = false,
+        showsAgentLaunch: Bool = false
     ) {
         self.isVisible = isVisible
         self.isCollapsed = isCollapsed
@@ -67,6 +72,7 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
         self.presets = presets
         self.showsActions = showsActions
         self.showsWorktreeCreation = showsWorktreeCreation
+        self.showsAgentLaunch = showsAgentLaunch
     }
 }
 
@@ -181,6 +187,16 @@ public struct SupermuxProjectsSectionActions {
     /// The project currently fetching its branch snapshot ahead of the New
     /// Worktree sheet (its affordance shows a spinner); `nil` when idle.
     public let preparingNewWorktreeProjectID: String?
+    /// Opens the "Start Claude in a New Worktree" sheet for one project — the
+    /// prompt-first flow; every entry point (swipe, menu, inline row, detail
+    /// header) shares this path.
+    public let requestNewAgentWorktree: @MainActor (_ projectID: String) -> Void
+    /// The project currently loading its launch options ahead of the agent
+    /// sheet; `nil` when idle.
+    public let preparingAgentWorktreeProjectID: String?
+    /// Builds an agent-launch store for one project, or `nil` when the host
+    /// lacks `supermux.agent_launch.v1` (the detail screen hides the entry).
+    public let makeAgentLaunchStore: @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore?
 
     /// Memberwise initializer.
     /// - Parameters:
@@ -221,7 +237,10 @@ public struct SupermuxProjectsSectionActions {
             _ worktree: SupermuxWorktreeRowSnapshot
         ) -> Void = { _, _ in },
         requestNewWorktree: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
-        preparingNewWorktreeProjectID: String? = nil
+        preparingNewWorktreeProjectID: String? = nil,
+        requestNewAgentWorktree: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
+        preparingAgentWorktreeProjectID: String? = nil,
+        makeAgentLaunchStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore? = { _ in nil }
     ) {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
@@ -237,6 +256,9 @@ public struct SupermuxProjectsSectionActions {
         self.requestNestedWorktreeRemoval = requestNestedWorktreeRemoval
         self.requestNewWorktree = requestNewWorktree
         self.preparingNewWorktreeProjectID = preparingNewWorktreeProjectID
+        self.requestNewAgentWorktree = requestNewAgentWorktree
+        self.preparingAgentWorktreeProjectID = preparingAgentWorktreeProjectID
+        self.makeAgentLaunchStore = makeAgentLaunchStore
     }
 }
 

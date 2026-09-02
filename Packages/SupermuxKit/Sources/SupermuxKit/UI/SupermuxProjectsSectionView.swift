@@ -46,6 +46,9 @@ public struct SupermuxProjectsSectionView: View {
     /// Host-supplied gate/cadence for the worktree PR probe (mirrors cmux's
     /// own PR polling settings). Defaults to enabled at 60s.
     let pullRequestPolling: SupermuxPullRequestPollingPolicy
+    /// Launcher, model catalog, and command settings behind "Start Claude in a
+    /// New Worktree"; `nil` hides that entry point everywhere in the section.
+    private let agentLaunch: SupermuxAgentLaunchEnvironment?
 
     /// Resolves pull requests for unopened worktrees (opened ones reuse cmux's
     /// own probe via ``SupermuxOpenWorkspace/pullRequest``). Owned here at the
@@ -60,6 +63,7 @@ public struct SupermuxProjectsSectionView: View {
     @State var pullRequestClientToken = SupermuxPullRequestClientToken()
 
     @State private var newWorktreeProject: SupermuxProject?
+    @State private var agentWorktreeProject: SupermuxProject?
     @State private var editorProject: SupermuxProject?
     /// In-flight drag-reorder marker (project or nested workspace). A reference
     /// `@Observable`, not value `@State`: writing the dragged id at drag start
@@ -121,10 +125,12 @@ public struct SupermuxProjectsSectionView: View {
         onOpenPullRequest: @escaping (URL, UUID?) -> Void = { url, _ in _ = NSWorkspace.shared.open(url) },
         pullRequestPolling: SupermuxPullRequestPollingPolicy = SupermuxPullRequestPollingPolicy(),
         pullRequestModel: SupermuxWorktreePullRequestModel? = nil,
-        iconStore: SupermuxProjectIconStore? = nil
+        iconStore: SupermuxProjectIconStore? = nil,
+        agentLaunch: SupermuxAgentLaunchEnvironment? = nil
     ) {
         self.model = model
         self.opener = opener
+        self.agentLaunch = agentLaunch
         self.openWorkspaces = openWorkspaces
         self.onSelectWorkspace = onSelectWorkspace
         self.onCloseWorkspace = onCloseWorkspace
@@ -251,6 +257,11 @@ public struct SupermuxProjectsSectionView: View {
                 openWorktree(worktree, project: project, title: workspaceName, runSetup: true)
             }
         }
+        .sheet(item: $agentWorktreeProject) { project in
+            if let agentLaunch {
+                SupermuxAgentWorktreeSheet(model: model, project: project, environment: agentLaunch, opener: opener)
+            }
+        }
         .sheet(item: $editorProject) { project in
             SupermuxProjectEditorSheet(model: model, project: project)
         }
@@ -276,6 +287,7 @@ public struct SupermuxProjectsSectionView: View {
         SupermuxProjectRowActions(
             openLocal: { openLocal(project) },
             newWorktree: { newWorktreeProject = project },
+            newAgentWorktree: agentLaunch == nil ? nil : { agentWorktreeProject = project },
             openWorktree: { worktree in openWorktree(worktree, project: project) },
             deleteWorktree: { worktree, deleteBranch in
                 deleteWorktree(worktree, project: project, deleteBranch: deleteBranch)

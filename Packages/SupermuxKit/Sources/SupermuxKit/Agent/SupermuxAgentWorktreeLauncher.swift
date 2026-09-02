@@ -125,10 +125,16 @@ public final class SupermuxAgentWorktreeLauncher {
     ///
     /// Cancellation is honored only before git runs (during naming); once
     /// `createWorktree` starts, the worktree is always created and returned.
-    /// - Parameter request: What to launch.
+    /// - Parameters:
+    ///   - request: What to launch.
+    ///   - willCreateWorktree: Called on the main actor right before git runs
+    ///     — the point of no return — so a UI can disable its Cancel button.
     /// - Throws: ``SupermuxAgentLaunchError`` for a blank prompt or unknown
     ///   project, otherwise ``SupermuxGitError`` from worktree creation.
-    public func start(_ request: SupermuxAgentLaunchRequest) async throws -> SupermuxAgentWorktreeLaunch {
+    public func start(
+        _ request: SupermuxAgentLaunchRequest,
+        willCreateWorktree: (@MainActor () -> Void)? = nil
+    ) async throws -> SupermuxAgentWorktreeLaunch {
         let prompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { throw SupermuxAgentLaunchError.emptyPrompt }
         await projectsModel.loadIfNeeded()
@@ -138,6 +144,7 @@ public final class SupermuxAgentWorktreeLauncher {
         let resolved = await names(forPrompt: prompt)
             ?? (SupermuxPromptNames(workspaceName: Self.fallbackTitle(for: prompt), branchName: ""), false)
         try Task.checkCancellation()
+        willCreateWorktree?()
 
         // A blank branch lets the service pick a friendly random name — the
         // same fallback the plain sheet has for prompts made only of filler.

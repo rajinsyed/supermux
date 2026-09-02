@@ -84,6 +84,14 @@ public final class SupermuxProjectsSectionModel {
     /// snapshot (its affordance shows a spinner); `nil` when idle.
     public internal(set) var preparingNewWorktreeProjectID: String?
 
+    /// The presented "Start Claude in a New Worktree" sheet's payload, or
+    /// `nil` while none is up. Consumed by the stable navigation wrapper.
+    var agentWorktreePresentation: SupermuxAgentWorktreePresentation?
+
+    /// The project whose agent-launch request is loading its options and
+    /// branch snapshot (its affordance shows a spinner); `nil` when idle.
+    public internal(set) var preparingAgentWorktreeProjectID: String?
+
     /// Error surface for a failed New Worktree preparation (UI-03: visible,
     /// never silent). Cleared via ``dismissNewWorktreeError()``.
     public internal(set) var newWorktreeErrorMessage: String?
@@ -244,7 +252,9 @@ public final class SupermuxProjectsSectionModel {
             showsPresets: store.showsPresets,
             presets: store.showsPresets ? store.presets : [],
             showsActions: runStore?.showsActions ?? false,
-            showsWorktreeCreation: sessionCapabilities?.supportsWorktrees ?? false
+            showsWorktreeCreation: sessionCapabilities?.supportsWorktrees ?? false,
+            showsAgentLaunch: (sessionCapabilities?.supportsWorktrees ?? false)
+                && (sessionCapabilities?.supportsAgentLaunch ?? false)
         )
     }
 
@@ -318,7 +328,14 @@ public final class SupermuxProjectsSectionModel {
             requestNewWorktree: { [weak self] projectID in
                 _ = self?.requestNewWorktree(projectID)
             },
-            preparingNewWorktreeProjectID: preparingNewWorktreeProjectID
+            preparingNewWorktreeProjectID: preparingNewWorktreeProjectID,
+            requestNewAgentWorktree: { [weak self] projectID in
+                _ = self?.requestNewAgentWorktree(projectID)
+            },
+            preparingAgentWorktreeProjectID: preparingAgentWorktreeProjectID,
+            makeAgentLaunchStore: { [weak self] projectID in
+                self?.makeAgentLaunchStore(forProjectID: projectID)
+            }
         )
     }
 

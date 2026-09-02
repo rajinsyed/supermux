@@ -15,6 +15,7 @@ public struct SupermuxProjectDetailScreen: View {
     private let iconPNGData: @Sendable (_ projectID: String) async -> Data?
     let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
     private let makeWorktreesStore: @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore?
+    private let makeAgentLaunchStore: @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore?
     // Internal (not private): the presets manager entry in
     // SupermuxProjectDetailScreen+RunSections.swift needs the editing seam.
     let editing: SupermuxProjectEditingActions?
@@ -34,6 +35,10 @@ public struct SupermuxProjectDetailScreen: View {
     @State private var worktreesStore: SupermuxMobileWorktreesStore?
     @State private var showingNewWorktreeSheet = false
     @State private var isPreparingNewWorktree = false
+    /// The agent-launch store behind the presented "Start Claude" sheet;
+    /// `nil` while the sheet is closed.
+    @State private var agentLaunchStore: SupermuxMobileAgentLaunchStore?
+    @State private var isPreparingAgentWorktree = false
     @State private var newWorktreeErrorMessage: String?
     /// The row awaiting the FIRST (always-shown) destructive removal confirm.
     @State private var removalCandidate: SupermuxWorktreeRowSnapshot?
@@ -79,6 +84,7 @@ public struct SupermuxProjectDetailScreen: View {
         iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
         selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void = { _ in },
         makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore? = { _ in nil },
+        makeAgentLaunchStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore? = { _ in nil },
         editing: SupermuxProjectEditingActions? = nil,
         presets: [SupermuxTerminalPresetDTO] = [],
         showsPresets: Bool = false,
@@ -89,6 +95,7 @@ public struct SupermuxProjectDetailScreen: View {
         self.iconPNGData = iconPNGData
         self.selectWorkspace = selectWorkspace
         self.makeWorktreesStore = makeWorktreesStore
+        self.makeAgentLaunchStore = makeAgentLaunchStore
         self.editing = editing
         self.presets = presets
         self.showsPresets = showsPresets
@@ -166,6 +173,21 @@ public struct SupermuxProjectDetailScreen: View {
             worktreesStore = store
             guard let store else { return }
             await store.run()
+        }
+        .sheet(isPresented: Binding(
+            get: { agentLaunchStore != nil },
+            set: { if !$0 { agentLaunchStore = nil } }
+        )) {
+            if let agentStore = agentLaunchStore, let store = worktreesStore {
+                SupermuxAgentWorktreeSheet(
+                    projectName: row.name,
+                    store: agentStore,
+                    branches: store.branches,
+                    defaultBaseBranch: row.defaultBranch,
+                    showsBaseBranchPicker: store.supportsStartingBranchSelection,
+                    openWorkspace: selectWorkspace
+                )
+            }
         }
         .sheet(isPresented: $showingNewWorktreeSheet) {
             if let store = worktreesStore {
@@ -351,6 +373,8 @@ public struct SupermuxProjectDetailScreen: View {
                     rows: SupermuxWorktreeRowSnapshot.rows(from: store.worktrees),
                     isPreparingNewWorktree: isPreparingNewWorktree,
                     newWorktree: prepareNewWorktree,
+                    isPreparingAgentWorktree: isPreparingAgentWorktree,
+                    newAgentWorktree: makeAgentLaunchStore(row.id) == nil ? nil : prepareAgentWorktree,
                     openWorktree: { openWorktree($0) },
                     requestRemoval: { removalCandidate = $0 }
                 )
@@ -468,6 +492,31 @@ public struct SupermuxProjectDetailScreen: View {
             do {
                 try await store.refreshBranches()
                 showingNewWorktreeSheet = true
+            } catch {
+                newWorktreeErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Loads the Mac's launch options and a fresh branch snapshot, then
+    /// presents the prompt-first "Start Claude" sheet. Same one-shared-path
+    /// rule as the sidebar: the store type and RPCs are identical.
+    private func prepareAgentWorktree() {
+        guard let store = worktreesStore, !isPreparingAgentWorktree,
+              let agentStore = makeAgentLaunchStore(row.id) else { return }
+        isPreparingAgentWorktree = true
+        newWorktreeErrorMessage = nil
+        Task {
+            defer { isPreparingAgentWorktree = false }
+            do {
+                async let options: Void = agentStore.loadOptions()
+                try await store.refreshBranches()
+                await options
+                if let optionsError = agentStore.optionsError {
+                    newWorktreeErrorMessage = optionsError
+                    return
+                }
+                agentLaunchStore = agentStore
             } catch {
                 newWorktreeErrorMessage = error.localizedDescription
             }

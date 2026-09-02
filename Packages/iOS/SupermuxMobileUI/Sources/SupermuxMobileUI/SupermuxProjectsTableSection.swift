@@ -134,6 +134,9 @@ public struct SupermuxProjectsTableSection: View {
                             openDetail: actions.openProjectDetail,
                             newWorktree: section.showsWorktreeCreation
                                 ? actions.requestNewWorktree
+                                : nil,
+                            newAgentWorktree: section.showsAgentLaunch
+                                ? actions.requestNewAgentWorktree
                                 : nil
                         )
                     }
@@ -141,6 +144,7 @@ public struct SupermuxProjectsTableSection: View {
                         row: row,
                         actions: actions,
                         showsNewWorktree: section.showsWorktreeCreation,
+                        showsAgentLaunch: section.showsAgentLaunch,
                         openSwipeRowID: $openSwipeRowID
                     )
                 }
@@ -148,11 +152,12 @@ public struct SupermuxProjectsTableSection: View {
         }
     }
 
-    /// A project row's swipe tray: New Worktree revealed first (the fork's
-    /// most-used creation flow), then Project Details. The tray lays its
-    /// actions out left-to-right in array order, so the FIRST-revealed action
-    /// — the one on the trailing edge — is the LAST element. Worktree
-    /// creation swipes only on a `supermux.worktrees.v1` host.
+    /// A project row's swipe tray: Start Claude revealed first (the fork's
+    /// prompt-first creation flow), then New Worktree, then Project Details.
+    /// The tray lays its actions out left-to-right in array order, so the
+    /// FIRST-revealed action — the one on the trailing edge — is the LAST
+    /// element. Worktree creation swipes only on a `supermux.worktrees.v1`
+    /// host; the Claude launch additionally needs `supermux.agent_launch.v1`.
     private func projectSwipeActions(for row: SupermuxProjectRowSnapshot) -> [SupermuxSwipeAction] {
         var trayActions: [SupermuxSwipeAction] = [
             SupermuxSwipeAction(
@@ -180,6 +185,19 @@ public struct SupermuxProjectsTableSection: View {
                 perform: { actions.requestNewWorktree(row.id) }
             ))
         }
+        if section.showsAgentLaunch {
+            trayActions.append(SupermuxSwipeAction(
+                id: "start-claude",
+                systemImage: "sparkles",
+                title: String(
+                    localized: "supermux.agent.row.start",
+                    defaultValue: "Start Claude in New Worktree",
+                    bundle: .module
+                ),
+                tint: .purple,
+                perform: { actions.requestNewAgentWorktree(row.id) }
+            ))
+        }
         return trayActions
     }
 
@@ -196,6 +214,8 @@ struct SupermuxProjectTableNestedRows: View {
     let actions: SupermuxProjectsSectionActions
     /// Whether the disclosure ends in the inline New Worktree row.
     var showsNewWorktree = false
+    /// Whether the inline "Start Claude in New Worktree" row renders.
+    var showsAgentLaunch = false
     @Binding var openSwipeRowID: String?
 
     var body: some View {
@@ -225,6 +245,9 @@ struct SupermuxProjectTableNestedRows: View {
             // The create affordance does not wait for the list fetch: it
             // fetches its own branch snapshot, so it works — and can show its
             // preparing spinner — while the skeleton is still up.
+            if showsAgentLaunch {
+                agentWorktreeRow
+            }
             if showsNewWorktree {
                 newWorktreeRow
             }
@@ -273,6 +296,9 @@ struct SupermuxProjectTableNestedRows: View {
                 }
                 .transition(SupermuxProjectMotion.nestedTransition)
             }
+            if showsAgentLaunch {
+                agentWorktreeRow
+            }
             if showsNewWorktree {
                 newWorktreeRow
             }
@@ -286,6 +312,19 @@ struct SupermuxProjectTableNestedRows: View {
                 projectID: row.id,
                 isPreparing: actions.preparingNewWorktreeProjectID == row.id,
                 newWorktree: actions.requestNewWorktree
+            )
+        }
+        .transition(SupermuxProjectMotion.nestedTransition)
+    }
+
+    /// The inline "Start Claude" row (prompt-first launch), above New Worktree.
+    private var agentWorktreeRow: some View {
+        SupermuxNestedRowContainer(symbol: "sparkles") {
+            SupermuxNestedNewWorktreeRow(
+                projectID: row.id,
+                isPreparing: actions.preparingAgentWorktreeProjectID == row.id,
+                newWorktree: actions.requestNewAgentWorktree,
+                title: String(localized: "supermux.agent.row.start", defaultValue: "Start Claude in New Worktree", bundle: .module)
             )
         }
         .transition(SupermuxProjectMotion.nestedTransition)

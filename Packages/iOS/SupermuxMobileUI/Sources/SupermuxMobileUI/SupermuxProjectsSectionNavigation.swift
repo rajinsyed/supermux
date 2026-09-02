@@ -24,7 +24,29 @@ struct SupermuxProjectsSectionNavigation: ViewModifier {
         let openError = model.nestedOpenErrorMessage
         let newWorktreeError = model.newWorktreeErrorMessage
         let isNewWorktreePresented = model.newWorktreePresentation != nil
+        let isAgentWorktreePresented = model.agentWorktreePresentation != nil
         content
+            // The prompt-first "Start Claude" sheet: anchored on this stable
+            // wrapper for the same recycled-cell reason as the sheet below.
+            .sheet(isPresented: Binding(
+                get: { isAgentWorktreePresented },
+                set: { [weak model] presented in
+                    if !presented { model?.dismissNewAgentWorktree() }
+                }
+            )) {
+                if let presentation = model.agentWorktreePresentation {
+                    SupermuxAgentWorktreeSheet(
+                        projectName: presentation.row.name,
+                        store: presentation.agentStore,
+                        branches: presentation.worktreesStore.branches,
+                        defaultBaseBranch: presentation.row.defaultBranch,
+                        showsBaseBranchPicker: presentation.worktreesStore.supportsStartingBranchSelection,
+                        openWorkspace: { [weak model] workspaceID in
+                            model?.navigateToWorkspace(workspaceID)
+                        }
+                    )
+                }
+            }
             .modifier(SupermuxNestedWorktreeRemovalAlerts(model: model))
             // The sidebar's New Worktree sheet (m7): anchored here — on the
             // stable wrapper above the list — because the requesting row
@@ -137,6 +159,7 @@ struct SupermuxProjectDetailResolvedScreen: View {
                 iconPNGData: actions.iconPNGData,
                 selectWorkspace: actions.selectWorkspace,
                 makeWorktreesStore: actions.makeWorktreesStore,
+                makeAgentLaunchStore: actions.makeAgentLaunchStore,
                 editing: actions.editing,
                 presets: snapshot.showsPresets ? snapshot.presets : [],
                 showsPresets: snapshot.showsPresets,
