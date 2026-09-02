@@ -145,6 +145,36 @@ struct SupermuxMobileAgentLaunchStoreTests {
         ] as NSDictionary)
     }
 
+    /// Switching commands drops the previous catalog's error and source, so a
+    /// failed reload never shows the OLD command's reason under the new one.
+    @Test func selectCommandClearsThePreviousCatalogState() async {
+        let client = FakeSupermuxMacClient()
+        client.agentOptionsResponse = SupermuxAgentLaunchOptionsDTO(
+            commands: ["ccx", "claude"], selectedCommand: "ccx", models: [], modelsSource: .unavailable,
+            modelsError: "DroidProxy is not answering"
+        )
+        let store = makeStore(client: client)
+        await store.loadOptions()
+        #expect(store.modelsError == "DroidProxy is not answering")
+        client.agentOptionsError = MobileShellConnectionError.rpcError("unavailable", "offline")
+        await store.selectCommand("claude")
+        #expect(store.command == "claude")
+        #expect(store.models.isEmpty)
+        #expect(store.modelsError == nil, "the old command's catalog error is gone")
+        #expect(store.modelsSource == .unavailable)
+        #expect(store.optionsError != nil, "the reload failure itself is what surfaces")
+    }
+
+    @Test func startWithoutTheCapabilityThrowsMacUnavailable() async {
+        let client = FakeSupermuxMacClient()
+        let store = makeStore(client: client, capabilities: [])
+        await #expect(throws: SupermuxMacUnavailableError.self) {
+            _ = try await store.start(prompt: "fix it")
+        }
+        #expect(client.callLog.isEmpty, "nothing reaches the wire without supermux.agent_launch.v1")
+        #expect(!store.isStarting)
+    }
+
     @Test func inertWithoutCapability() async {
         let client = FakeSupermuxMacClient()
         let store = makeStore(client: client, capabilities: [])

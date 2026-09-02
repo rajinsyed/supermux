@@ -21,11 +21,38 @@ struct SupermuxAgentModelCatalogTests {
         ]))
     }
 
-    @Test func storagePathIsStableAndCommandSpecific() {
-        #expect(SupermuxAgentModelCatalog.storagePath(for: " cc ") == "/supermux-agent-command/cc")
-        #expect(SupermuxAgentModelCatalog.storagePath(for: "claude --settings x")
-                == "/supermux-agent-command/claude%20%2D%2Dsettings%20x")
-        #expect(SupermuxAgentModelCatalog.storagePath(for: "cc") != SupermuxAgentModelCatalog.storagePath(for: "ccx"))
+    private let projectA = URL(fileURLWithPath: "/tmp/proj-a")
+    private let projectB = URL(fileURLWithPath: "/tmp/proj-b")
+
+    @Test func storagePathIsStableAndKeyedByCommandAndDirectory() {
+        #expect(SupermuxAgentModelCatalog.storagePath(for: " cc ", workingDirectoryURL: URL(fileURLWithPath: "/tmp/proj/"))
+                == "/supermux-agent-command/cc/tmp/proj")
+        #expect(SupermuxAgentModelCatalog.storagePath(for: "claude --settings x", workingDirectoryURL: projectA)
+                == "/supermux-agent-command/claude%20%2D%2Dsettings%20x/tmp/proj-a")
+        #expect(SupermuxAgentModelCatalog.storagePath(for: "cc", workingDirectoryURL: projectA)
+                != SupermuxAgentModelCatalog.storagePath(for: "ccx", workingDirectoryURL: projectA))
+        #expect(SupermuxAgentModelCatalog.storagePath(for: "cc", workingDirectoryURL: projectA)
+                != SupermuxAgentModelCatalog.storagePath(for: "cc", workingDirectoryURL: projectB))
+    }
+
+    /// A wrapper can read per-project settings, so one command's catalog is
+    /// cached per working directory, never handed from one project to another.
+    @Test func catalogsAreKeyedByWorkingDirectory() async throws {
+        let store = try makeStore()
+        let calls = ProbeCounter()
+        let catalog = SupermuxAgentModelCatalog(store: store, shellPath: "/bin/zsh", environment: [:]) { plan in
+            await calls.record(plan.workingDirectoryURL.path)
+            return try self.catalogResponse([plan.workingDirectoryURL.lastPathComponent])
+        }
+        let a = await catalog.models(for: "ccx", workingDirectoryURL: projectA)
+        let b = await catalog.models(for: "ccx", workingDirectoryURL: projectB)
+        #expect(a.models.map(\.value) == ["proj-a"])
+        #expect(b.models.map(\.value) == ["proj-b"])
+        #expect(b.source == .probe)
+        #expect(await calls.commands == ["/tmp/proj-a", "/tmp/proj-b"])
+        let again = await catalog.models(for: "ccx", workingDirectoryURL: projectA)
+        #expect(again.source == .cache)
+        #expect(again.models.map(\.value) == ["proj-a"])
     }
 
     @Test func probesOnceThenServesFromCache() async throws {
@@ -63,7 +90,7 @@ struct SupermuxAgentModelCatalogTests {
         let refreshed = await catalog.models(for: "claude", workingDirectoryURL: URL(fileURLWithPath: "/tmp"), forceRefresh: true)
         #expect(refreshed.source == .probe)
         #expect(refreshed.models.map(\.value) == ["b"])
-        #expect(catalog.cachedModels(for: "claude")?.map(\.value) == ["b"])
+        #expect(catalog.cachedModels(for: "claude", workingDirectoryURL: URL(fileURLWithPath: "/tmp"))?.map(\.value) == ["b"])
     }
 
     @Test func concurrentCallersShareOneProbe() async throws {
@@ -90,7 +117,7 @@ struct SupermuxAgentModelCatalogTests {
         #expect(result.source == .unavailable)
         #expect(result.models.isEmpty)
         #expect(result.errorDescription?.contains("127") == true)
-        #expect(catalog.cachedModels(for: "nope") == nil)
+        #expect(catalog.cachedModels(for: "nope", workingDirectoryURL: URL(fileURLWithPath: "/tmp")) == nil)
     }
 }
 

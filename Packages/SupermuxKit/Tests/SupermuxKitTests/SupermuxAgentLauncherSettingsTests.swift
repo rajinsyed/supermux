@@ -32,6 +32,18 @@ struct SupermuxAgentLauncherSettingsTests {
         #expect(settings.commands == ["claude"], "an empty list resets to the default")
     }
 
+    /// Removing the selected command must clear its memory, not merely hide
+    /// it — otherwise re-adding the command later silently re-selects it.
+    @Test func aDroppedSelectionDoesNotResurrectWhenReAdded() throws {
+        let settings = SupermuxAgentLauncherSettings(defaults: try makeDefaults())
+        settings.setCommands(["claude", "cc"])
+        settings.setSelectedCommand("cc")
+        settings.setCommands(["claude"])
+        #expect(settings.selectedCommand == "claude")
+        settings.setCommands(["claude", "cc"])
+        #expect(settings.selectedCommand == "claude", "the stale selection was cleared when cc was removed")
+    }
+
     @Test func selectionIgnoresUnknownCommands() throws {
         let settings = SupermuxAgentLauncherSettings(defaults: try makeDefaults())
         settings.setSelectedCommand("nope")
