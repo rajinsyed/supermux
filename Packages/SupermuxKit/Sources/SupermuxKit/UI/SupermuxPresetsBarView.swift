@@ -168,6 +168,8 @@ public struct SupermuxPresetsBarView: View {
             Color.secondary.opacity(isRunHovering ? 0.12 : 0.06),
             in: RoundedRectangle(cornerRadius: 6)
         )
+        .animation(.easeOut(duration: 0.12), value: isRunHovering)
+        .animation(.easeOut(duration: 0.15), value: isRunning)
         .onHover { isRunHovering = $0 }
     }
 }
@@ -200,7 +202,8 @@ private struct SupermuxPresetChip: View {
             )
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SupermuxPressEffectButtonStyle())
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .onHover { isHovering = $0 }
         .help(String(
             localized: "supermux.presetsBar.launch.help",
