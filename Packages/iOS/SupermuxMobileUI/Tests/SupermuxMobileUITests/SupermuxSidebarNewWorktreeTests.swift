@@ -47,6 +47,37 @@ import Testing
         return (model, session)
     }
 
+    @Test func presentationCarriesLoadedAgentOptionsOnlyWithTheCapability() async throws {
+        let project = fixtureProject()
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(projects: [project])
+        client.worktreesListResponse = SupermuxWorktreesListResponse(worktrees: [], branches: ["main"])
+        client.agentOptionsResponse = SupermuxAgentLaunchOptionsDTO(
+            commands: ["claude", "cc"], selectedCommand: "cc",
+            models: [SupermuxAgentModelDTO(value: "opus", displayName: "Opus")],
+            modelsSource: .cache, lastModel: "opus"
+        )
+        let without = try await runningModel(client: client)
+        defer { without.session.cancel() }
+        await without.model.requestNewWorktree(project.id)?.value
+        let plain = try #require(without.model.newWorktreePresentation)
+        #expect(plain.agentStore == nil)
+        #expect(!client.callLog.contains("agentOptions"))
+        without.model.dismissNewWorktree()
+
+        let with = try await runningModel(
+            client: client,
+            capabilities: [Self.projectsCapability, Self.worktreesCapability, SupermuxMobileCapability.agentLaunchV1.rawValue]
+        )
+        defer { with.session.cancel() }
+        await with.model.requestNewWorktree(project.id)?.value
+        let presentation = try #require(with.model.newWorktreePresentation)
+        let agentStore = try #require(presentation.agentStore)
+        #expect(agentStore.command == "cc")
+        #expect(agentStore.selectedModel == "opus")
+        #expect(client.callLog.contains("agentOptions"))
+    }
+
     @Test func requestFetchesBranchesThenPresentsTheSheetPayload() async throws {
         let project = fixtureProject()
         let client = FakeSupermuxMacClient()

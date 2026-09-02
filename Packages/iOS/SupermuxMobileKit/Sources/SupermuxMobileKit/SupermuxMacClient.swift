@@ -58,6 +58,17 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, Sup
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func agentOptions(_ request: SupermuxAgentOptionsRequest) async throws -> SupermuxAgentLaunchOptionsDTO {
+        // A cold command probe spawns Claude through the login shell and waits
+        // on its initialize handshake (up to 15 s Mac-side).
+        try await send(method: request.wireMethod, params: request.wireParams, timeoutNanoseconds: 40_000_000_000)
+    }
+
+    public func agentStart(_ request: SupermuxAgentStartRequest) async throws -> SupermuxAgentStartResponse {
+        // AI naming plus `git worktree add` plus workspace open.
+        try await send(method: request.wireMethod, params: request.wireParams, timeoutNanoseconds: 90_000_000_000)
+    }
+
     public func projectCreate(_ request: SupermuxProjectCreateRequest) async throws -> SupermuxProjectWriteResponse {
         try await send(method: request.wireMethod, params: request.wireParams)
     }

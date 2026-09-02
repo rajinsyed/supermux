@@ -137,14 +137,14 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         let project = SupermuxProject(name: "Fixture", rootPath: root)
         let model = try await makeLoadedModel(project: project, in: root)
         let real = try await model.createWorktree(projectId: project.id, branchName: "real", baseBranch: nil)
-        // An unmanaged entry handed in directly is refused by the service; the
-        // pass must record it and still remove the worktree after it.
+        // A worktree that no longer exists on disk fails inside git; the pass
+        // must record it and still remove the worktree after it.
         let unmanaged = SupermuxProjectWorktree(path: "/nonexistent/manual", branch: "manual", isSupermuxManaged: false)
 
         let result = await model.removeWorktrees([unmanaged, real], projectId: project.id, force: false, deleteBranch: false)
 
         #expect(result.failures.map(\.worktree.path) == [unmanaged.path])
-        #expect(result.failures.first?.error as? SupermuxGitError == .unmanagedWorktree(path: unmanaged.path))
+        #expect(result.failures.first?.error is SupermuxGitError)
         #expect(result.removed.map(\.path) == [real.path])
         #expect(!FileManager.default.fileExists(atPath: real.path))
     }

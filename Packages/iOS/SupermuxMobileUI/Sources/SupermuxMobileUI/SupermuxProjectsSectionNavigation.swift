@@ -42,6 +42,7 @@ struct SupermuxProjectsSectionNavigation: ViewModifier {
                         branches: presentation.store.branches,
                         defaultBaseBranch: presentation.row.defaultBranch,
                         showsBaseBranchPicker: presentation.store.supportsStartingBranchSelection,
+                        agentStore: presentation.agentStore,
                         suggestBranch: { [store = presentation.store] workspaceName in
                             try await store.suggestBranchName(workspaceName: workspaceName).branchName
                         },
@@ -137,6 +138,7 @@ struct SupermuxProjectDetailResolvedScreen: View {
                 iconPNGData: actions.iconPNGData,
                 selectWorkspace: actions.selectWorkspace,
                 makeWorktreesStore: actions.makeWorktreesStore,
+                makeAgentLaunchStore: actions.makeAgentLaunchStore,
                 editing: actions.editing,
                 presets: snapshot.showsPresets ? snapshot.presets : [],
                 showsPresets: snapshot.showsPresets,

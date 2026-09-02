@@ -46,6 +46,9 @@ public struct SupermuxProjectsSectionView: View {
     /// Host-supplied gate/cadence for the worktree PR probe (mirrors cmux's
     /// own PR polling settings). Defaults to enabled at 60s.
     let pullRequestPolling: SupermuxPullRequestPollingPolicy
+    /// Launcher, model catalog, and command settings behind "Start Claude in a
+    /// New Worktree"; `nil` hides that entry point everywhere in the section.
+    private let agentLaunch: SupermuxAgentLaunchEnvironment?
 
     /// Resolves pull requests for unopened worktrees (opened ones reuse cmux's
     /// own probe via ``SupermuxOpenWorkspace/pullRequest``). Owned here at the
@@ -121,10 +124,12 @@ public struct SupermuxProjectsSectionView: View {
         onOpenPullRequest: @escaping (URL, UUID?) -> Void = { url, _ in _ = NSWorkspace.shared.open(url) },
         pullRequestPolling: SupermuxPullRequestPollingPolicy = SupermuxPullRequestPollingPolicy(),
         pullRequestModel: SupermuxWorktreePullRequestModel? = nil,
-        iconStore: SupermuxProjectIconStore? = nil
+        iconStore: SupermuxProjectIconStore? = nil,
+        agentLaunch: SupermuxAgentLaunchEnvironment? = nil
     ) {
         self.model = model
         self.opener = opener
+        self.agentLaunch = agentLaunch
         self.openWorkspaces = openWorkspaces
         self.onSelectWorkspace = onSelectWorkspace
         self.onCloseWorkspace = onCloseWorkspace
@@ -247,9 +252,20 @@ public struct SupermuxProjectsSectionView: View {
             await runWorktreePullRequestProbe()
         }
         .sheet(item: $newWorktreeProject) { project in
-            SupermuxNewWorktreeSheet(model: model, project: project) { worktree, workspaceName in
-                openWorktree(worktree, project: project, title: workspaceName, runSetup: true)
-            }
+            SupermuxNewWorktreeSheet(
+                model: model,
+                project: project,
+                projectIcon: iconStore.image(for: project.id),
+                agentLaunch: agentLaunch,
+                onCreated: { worktree, workspaceName in
+                    openWorktree(worktree, project: project, title: workspaceName, runSetup: true)
+                },
+                onLaunched: { launch in
+                    // The launcher already noted the project as opened and
+                    // built the full request (title, command, setup script).
+                    opener.openWorkspace(launch.openRequest)
+                }
+            )
         }
         .sheet(item: $editorProject) { project in
             SupermuxProjectEditorSheet(model: model, project: project)

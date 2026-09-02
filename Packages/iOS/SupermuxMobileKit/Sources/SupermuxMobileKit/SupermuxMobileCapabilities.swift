@@ -53,4 +53,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     public var supportsPhonePush: Bool { contains(.phonePushV1) }
     /// `supermux.usage.v1`: the read-only usage-limits snapshot is served.
     public var supportsUsage: Bool { contains(.usageV1) }
+    /// `supermux.agent_launch.v1`: prompt-first worktree creation that starts
+    /// Claude (`agent.options` / `agent.start`) is served.
+    public var supportsAgentLaunch: Bool { contains(.agentLaunchV1) }
 }

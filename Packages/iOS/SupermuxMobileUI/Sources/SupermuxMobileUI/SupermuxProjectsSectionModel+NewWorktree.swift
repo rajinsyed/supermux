@@ -1,5 +1,5 @@
 import Foundation
-import SupermuxMobileKit
+public import SupermuxMobileKit
 
 /// One presented New Worktree sheet: the project row it was opened for and
 /// the worktrees store its create/suggest calls run through.
@@ -16,6 +16,10 @@ struct SupermuxNewWorktreePresentation {
     /// event loop refetches the nested rows the moment the create lands), a
     /// freshly minted one otherwise.
     let store: SupermuxMobileWorktreesStore
+    /// The Claude section's store (options already loaded), or `nil` when the
+    /// host lacks `supermux.agent_launch.v1` — the sheet then hides the
+    /// prompt path.
+    let agentStore: SupermuxMobileAgentLaunchStore?
 }
 
 /// The sidebar's create-worktree flow (m7): the inline "New Worktree" row
@@ -28,6 +32,21 @@ struct SupermuxNewWorktreePresentation {
 /// tap its small "+"). Now it is one gesture from the list itself, using the
 /// exact same sheet and store calls the detail screen uses.
 extension SupermuxProjectsSectionModel {
+    /// Builds an agent-launch store against the live session, or `nil` when
+    /// disconnected or the host lacks `supermux.agent_launch.v1`.
+    /// - Parameter projectID: The project's UUID string.
+    public func makeAgentLaunchStore(forProjectID projectID: String) -> SupermuxMobileAgentLaunchStore? {
+        guard let sessionClient, let sessionCapabilities,
+              sessionCapabilities.supportsAgentLaunch else {
+            return nil
+        }
+        return SupermuxMobileAgentLaunchStore(
+            client: sessionClient,
+            capabilities: sessionCapabilities,
+            projectID: projectID
+        )
+    }
+
     /// Prepares and presents the New Worktree sheet for one project:
     /// fetches an authoritative branch snapshot first (branch-only git
     /// changes emit no worktree events, so a cached list is not trusted —
@@ -60,9 +79,21 @@ extension SupermuxProjectsSectionModel {
                 }
             }
             do {
+                // The Claude section's options (commands + model catalog) load
+                // alongside the branch snapshot; a cold model probe can take
+                // seconds, so the two Mac calls overlap. An options failure
+                // is not fatal — the sheet still creates plain worktrees and
+                // reports the catalog as unavailable.
+                let agentStore = makeAgentLaunchStore(forProjectID: projectID)
+                async let options: Void? = agentStore?.loadOptions()
                 try await store.refreshBranches()
+                _ = await options
                 guard sessionGeneration == generation else { return }
-                newWorktreePresentation = SupermuxNewWorktreePresentation(row: row, store: store)
+                newWorktreePresentation = SupermuxNewWorktreePresentation(
+                    row: row,
+                    store: store,
+                    agentStore: agentStore
+                )
             } catch {
                 guard sessionGeneration == generation else { return }
                 newWorktreeErrorMessage = error.localizedDescription

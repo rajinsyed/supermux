@@ -318,7 +318,10 @@ public final class SupermuxProjectsSectionModel {
             requestNewWorktree: { [weak self] projectID in
                 _ = self?.requestNewWorktree(projectID)
             },
-            preparingNewWorktreeProjectID: preparingNewWorktreeProjectID
+            preparingNewWorktreeProjectID: preparingNewWorktreeProjectID,
+            makeAgentLaunchStore: { [weak self] projectID in
+                self?.makeAgentLaunchStore(forProjectID: projectID)
+            }
         )
     }
 
