@@ -178,22 +178,41 @@ struct SupermuxAgentLaunchLineTests {
             command: "claude", model: nil, effort: nil, prompt: Self.longPrompt, shell: .fish, promptFileDirectory: directory
         )
         let file = try #require(launch.promptFile)
-        #expect(launch.line == "claude -- (cat \(SupermuxShellQuoting.fishQuoted(file.url.path)) | string collect)")
+        #expect(launch.line == "claude -- (command cat -- \(SupermuxShellQuoting.fishQuoted(file.url.path)) | string collect)")
+    }
+
+    /// A user alias like `cat=bat` must not get between the shell and the file.
+    @Test func posixLineReadsTheFileWithTheRealCat() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let launch = SupermuxAgentLaunchCommand.launchLine(
+            command: "claude", model: nil, effort: nil, prompt: Self.longPrompt, shell: .posix, promptFileDirectory: directory
+        )
+        let file = try #require(launch.promptFile)
+        #expect(launch.line == "claude -- \"$(command cat -- \(SupermuxShellQuoting.singleQuoted(file.url.path)))\"")
     }
 
     @Test func promptFileStoreWritesPrivatelyAndPrunesOldFiles() throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
+        let old = Date(timeIntervalSinceNow: -30 * 24 * 60 * 60)
         let stale = directory.appendingPathComponent("stale.txt")
         try "old".write(to: stale, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSinceNow: -30 * 24 * 60 * 60)], ofItemAtPath: stale.path
-        )
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: stale.path)
+        // Only stale `.txt` prompt files are pruned: not other files, not directories.
+        let otherFile = directory.appendingPathComponent("notes.md")
+        try "keep".write(to: otherFile, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: otherFile.path)
+        let subdirectory = directory.appendingPathComponent("nested.txt", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdirectory, withIntermediateDirectories: false)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: subdirectory.path)
         let file = SupermuxAgentPromptFile(url: directory.appendingPathComponent("fresh.txt"), contents: "hi")
         try SupermuxAgentPromptFileStore.write(file)
         #expect(try String(contentsOf: file.url, encoding: .utf8) == "hi")
         let permissions = try FileManager.default.attributesOfItem(atPath: file.url.path)[.posixPermissions] as? Int
         #expect(permissions == 0o600)
         #expect(!FileManager.default.fileExists(atPath: stale.path))
+        #expect(FileManager.default.fileExists(atPath: otherFile.path))
+        #expect(FileManager.default.fileExists(atPath: subdirectory.path))
     }
 }

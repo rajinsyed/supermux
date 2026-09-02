@@ -40,16 +40,25 @@ public enum SupermuxAgentPromptFileStore {
         prune(directory: directory, keeping: file.url, fileManager: fileManager)
     }
 
+    /// The extension every prompt file carries; pruning touches nothing else.
+    static let fileExtension = "txt"
+
+    /// Removes stale prompt files only: regular `.txt` files past
+    /// ``retentionInterval``. Directories and other files are left alone.
     private static func prune(directory: URL, keeping current: URL, fileManager: FileManager) {
         let cutoff = Date(timeIntervalSinceNow: -retentionInterval)
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
         let siblings = (try? fileManager.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: Array(keys),
             options: [.skipsHiddenFiles]
         )) ?? []
         for sibling in siblings where sibling.lastPathComponent != current.lastPathComponent {
-            let modified = (try? sibling.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            guard let modified, modified < cutoff else { continue }
+            guard sibling.pathExtension == fileExtension,
+                  let values = try? sibling.resourceValues(forKeys: keys),
+                  values.isRegularFile == true,
+                  let modified = values.contentModificationDate,
+                  modified < cutoff else { continue }
             try? fileManager.removeItem(at: sibling)
         }
     }

@@ -54,7 +54,7 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    the new shell's pty before it leaves canonical mode, where macOS drops input past 1024 bytes,
    so a prompt that would not fit inline is saved under the cmux state directory
    (`supermux-agent-prompts/<sha256>.txt`, pruned after 7 days) and the line reads it with
-   `"$(cat …)"` (`(cat … | string collect)` on fish).
+   `"$(command cat -- …)"` (`(command cat -- … | string collect)` on fish).
 
 Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
 diff viewer, per-workspace git branch/dirty tracking), supermux **extends** it rather than

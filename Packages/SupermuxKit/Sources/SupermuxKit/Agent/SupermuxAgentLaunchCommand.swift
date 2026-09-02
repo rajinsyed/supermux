@@ -128,19 +128,25 @@ public enum SupermuxAgentLaunchCommand {
     static func promptFileURL(for prompt: String, in directory: URL) -> URL {
         let digest = SHA256.hash(data: Data(prompt.utf8))
         let name = digest.prefix(12).map { String(format: "%02x", $0) }.joined()
-        return directory.appendingPathComponent("\(name).txt", isDirectory: false)
+        return directory
+            .appendingPathComponent(name, isDirectory: false)
+            .appendingPathExtension(SupermuxAgentPromptFileStore.fileExtension)
     }
 
     /// A shell expression that expands to the file's contents as ONE argument,
     /// with newlines preserved.
+    ///
+    /// `command cat` bypasses a user alias or function for `cat` (`bat`, a
+    /// pager, …) in bash, zsh, and fish alike; `--` keeps the path from being
+    /// read as an option.
     static func fileReadingArgument(path: String, shell: SupermuxShellFlavor) -> String {
         switch shell {
         case .posix:
-            return "\"$(cat \(SupermuxShellQuoting.singleQuoted(path)))\""
+            return "\"$(command cat -- \(SupermuxShellQuoting.singleQuoted(path)))\""
         case .fish:
             // Bare `(cat …)` splits its output on newlines into several
             // arguments; `string collect` keeps it whole.
-            return "(cat \(SupermuxShellQuoting.fishQuoted(path)) | string collect)"
+            return "(command cat -- \(SupermuxShellQuoting.fishQuoted(path)) | string collect)"
         }
     }
 

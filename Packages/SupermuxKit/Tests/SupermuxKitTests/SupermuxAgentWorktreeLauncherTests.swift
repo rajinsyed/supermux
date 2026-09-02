@@ -218,11 +218,20 @@ struct SupermuxAgentWorktreeLauncherLongPromptTests {
 
         let command = try #require(launch.openRequest.initialCommand)
         #expect(command.utf8.count + 1 <= SupermuxAgentLaunchCommand.maxInputUTF8Length)
-        #expect(command.hasPrefix("claude -- \"$(cat '"))
+        #expect(command.hasPrefix("claude -- \"$(command cat -- '"))
         let files = try FileManager.default.contentsOfDirectory(atPath: promptDirectory.path)
         #expect(files.count == 1)
         let written = try String(contentsOf: promptDirectory.appendingPathComponent(files[0]), encoding: .utf8)
         #expect(written == prompt.trimmingCharacters(in: .whitespacesAndNewlines))
         #expect(command == launcher.shellLine(command: "claude", model: nil, effort: nil, prompt: prompt))
+
+        // A launch that fails in git leaves no orphaned prompt file behind.
+        await #expect(throws: (any Error).self) {
+            try await launcher.start(SupermuxAgentLaunchRequest(
+                projectId: project.id, prompt: prompt + " again", command: "claude",
+                baseBranch: "no-such-branch-\(UUID().uuidString)"
+            ))
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: promptDirectory.path) == files)
     }
 }

@@ -224,11 +224,20 @@ public final class SupermuxAgentWorktreeLauncher {
 
         // A blank branch lets the service pick a friendly random name — the
         // same fallback the plain sheet has for prompts made only of filler.
-        let worktree = try await projectsModel.createWorktree(
-            projectId: request.projectId,
-            branchName: resolved.names.branchName,
-            baseBranch: request.baseBranch
-        )
+        let worktree: SupermuxProjectWorktree
+        do {
+            worktree = try await projectsModel.createWorktree(
+                projectId: request.projectId,
+                branchName: resolved.names.branchName,
+                baseBranch: request.baseBranch
+            )
+        } catch {
+            // No terminal will ever read the prompt file now.
+            if let promptFile = launchLine.promptFile {
+                try? FileManager.default.removeItem(at: promptFile.url)
+            }
+            throw error
+        }
         // The model re-imports config.json inside createWorktree, so prefer
         // the refreshed record for the setup script. Past this point nothing
         // may fail: the worktree exists, so a project removed while git ran
