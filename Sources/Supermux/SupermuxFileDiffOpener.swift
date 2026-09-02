@@ -20,6 +20,10 @@ final class SupermuxFileDiffOpener {
     private var openedSurfaces: [UUID: UUID] = [:]
     /// CLI processes still running, keyed by pid, so they are retained until exit.
     private var processes: [Int32: Process] = [:]
+    /// Workspaces with an open in flight. A second click before the first
+    /// CLI returns (a double-click) is dropped: the tab-replacement bookkeeping
+    /// runs on completion, so two concurrent opens would leave two tabs.
+    private var inFlightWorkspaces: Set<UUID> = []
 
     /// Opens `patch` for the selected workspace of `tabManager`.
     /// - Returns: `false` when there is no workspace or no bundled CLI (the
@@ -35,6 +39,7 @@ final class SupermuxFileDiffOpener {
             preferredPath: SocketControlSettings.socketPath()
         )
         let workspaceId = workspace.id
+        guard !inFlightWorkspaces.contains(workspaceId) else { return true }
         // Forget a remembered viewer the user already closed.
         let previousSurface = openedSurfaces[workspaceId].flatMap { workspace.panels[$0] != nil ? $0 : nil }
         openedSurfaces[workspaceId] = previousSurface
@@ -64,6 +69,7 @@ final class SupermuxFileDiffOpener {
         environment.removeValue(forKey: "CMUX_SURFACE_ID")
         process.environment = environment
 
+        let patchData = Data(patch.patch.utf8)
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -81,8 +87,15 @@ final class SupermuxFileDiffOpener {
         }
         let pid = process.processIdentifier
         processes[pid] = process
+        inFlightWorkspaces.insert(workspaceId)
+#if DEBUG
+        cmuxDebugLog(
+            "supermux.fileDiff.open pid=\(pid) staged=\(patch.staged ? 1 : 0) "
+                + "patchBytes=\(patchData.count) source=\(sourceSurface?.uuidString.prefix(5) ?? "nil") "
+                + "previous=\(previousSurface?.uuidString.prefix(5) ?? "nil")"
+        )
+#endif
 
-        let patchData = Data(patch.patch.utf8)
         DispatchQueue.global(qos: .userInitiated).async {
             // The CLI reads stdin to EOF before it does anything else, so the
             // write completes before any output is produced. A CLI that died
@@ -93,15 +106,19 @@ final class SupermuxFileDiffOpener {
             try? writer.write(contentsOf: patchData)
             try? writer.close()
             let stdout = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrByteCount = stderrPipe.fileHandleForReading.readDataToEndOfFile().count
+            let stderr = stderrPipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             let status = process.terminationStatus
             Task { @MainActor [weak self, weak workspace] in
                 self?.processes.removeValue(forKey: pid)
+                self?.inFlightWorkspaces.remove(workspaceId)
                 guard status == 0, let workspace, let self else {
 #if DEBUG
-                    // Metadata only: the CLI's output can echo repo paths.
-                    cmuxDebugLog("supermux.fileDiff.open exited status=\(status) stderrBytes=\(stderrByteCount)")
+                    // Debug builds log a bounded stderr prefix (it can name repo
+                    // paths, so this stays out of release logging).
+                    let stderrPrefix = String(decoding: stderr.prefix(240), as: UTF8.self)
+                        .replacingOccurrences(of: "\n", with: " ")
+                    cmuxDebugLog("supermux.fileDiff.open exited status=\(status) stderr=\(stderrPrefix)")
 #endif
                     if status != 0 { NSSound.beep() }
                     return
@@ -121,6 +138,12 @@ final class SupermuxFileDiffOpener {
     /// the two.
     private func replacePreviousViewer(in workspace: Workspace, previousSurface: UUID?, openedSurface: UUID?) {
         openedSurfaces[workspace.id] = openedSurface
+#if DEBUG
+        cmuxDebugLog(
+            "supermux.fileDiff.opened surface=\(openedSurface?.uuidString.prefix(5) ?? "nil") "
+                + "replacing=\(previousSurface?.uuidString.prefix(5) ?? "nil")"
+        )
+#endif
         guard let previousSurface, previousSurface != openedSurface,
               workspace.panels[previousSurface] != nil else { return }
         _ = workspace.closePanel(previousSurface, force: true)
