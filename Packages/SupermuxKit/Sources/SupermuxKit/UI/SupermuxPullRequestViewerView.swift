@@ -14,7 +14,7 @@ public struct SupermuxPullRequestViewerView: View {
     let onOpenURL: (URL) -> Void
 
     @State var isBodyExpanded = false
-    @State var expandedCommentIds: Set<Int> = []
+    @State var expandedCommentIds: Set<String> = []
 
     /// Creates the viewer.
     /// - Parameters:
@@ -185,7 +185,7 @@ public struct SupermuxPullRequestViewerView: View {
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             stat("doc", String(localized: "supermux.pullRequest.viewer.files", defaultValue: "\(detail.changedFileCount) files"))
             stat("checkmark.circle", String(localized: "supermux.pullRequest.viewer.commits", defaultValue: "\(detail.commitCount) commits"))
-            stat("bubble.left", String(localized: "supermux.pullRequest.viewer.comments", defaultValue: "\(detail.commentCount) comments"))
+            stat("bubble.left", String(localized: "supermux.pullRequest.viewer.comments", defaultValue: "\(detail.displayedCommentCount) comments"))
         }
         .lineLimit(1)
     }

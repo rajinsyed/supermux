@@ -14,7 +14,9 @@ import SupermuxKit
 /// 40 ms coalesce interval, main-queue delivery) and republishes the
 /// **first-in-display-order** PR — the same value the sidebar row shows —
 /// only when it actually changes, so the panel never re-renders on unrelated
-/// workspace telemetry.
+/// workspace telemetry. A pure pane reorder changes which PR is first without
+/// touching any observation field, so `paneLayoutVersionPublisher` is merged
+/// in as well (the same pair of legs the sidebar row model listens to).
 @MainActor
 final class SupermuxChangesPullRequestObserver: ObservableObject {
     /// The selected workspace's PR badge, or `nil`.
@@ -33,7 +35,12 @@ final class SupermuxChangesPullRequestObserver: ObservableObject {
         cancellable = nil
         publishIfChanged(Self.pullRequest(for: workspace))
         guard let workspace else { return }
+        let paneLayoutLeg = workspace.paneLayoutVersionPublisher
+            .removeDuplicates()
+            .map { _ in () }
+            .eraseToAnyPublisher()
         cancellable = workspace.sidebarObservationPublisher
+            .merge(with: paneLayoutLeg)
             .debounce(for: Self.coalesceInterval, scheduler: DispatchQueue.main)
             .sink { [weak self, weak workspace] in
                 guard let self, let workspace else { return }

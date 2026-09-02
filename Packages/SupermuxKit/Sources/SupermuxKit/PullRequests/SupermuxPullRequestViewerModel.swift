@@ -48,6 +48,11 @@ public final class SupermuxPullRequestViewerModel {
     /// it so two quick clicks (PR A, then PR B) both complete and the spinner
     /// stays until the last one lands.
     @ObservationIgnored private var inflightLoads = 0
+    /// Sequence number of the most recently started load. Only that load may
+    /// write ``errorMessage`` and ``lastLoadedAt``: a slower, older load that
+    /// lands afterwards still contributes its cached details but must not
+    /// attach its error to (or wipe a real error from) the PR now shown.
+    @ObservationIgnored private var latestLoadID = 0
 
     /// Creates the model.
     /// - Parameters:
@@ -81,6 +86,7 @@ public final class SupermuxPullRequestViewerModel {
         self.branch = branch
         generation += 1
         inflightLoads = 0
+        latestLoadID = 0
         pullRequests = []
         hasLoadedList = false
         selected = nil
@@ -148,6 +154,8 @@ public final class SupermuxPullRequestViewerModel {
         guard let directory else { return }
         let generation = generation
         let branch = branch
+        latestLoadID += 1
+        let loadID = latestLoadID
         inflightLoads += 1
         isLoading = true
         Task { [weak self] in
@@ -157,13 +165,20 @@ public final class SupermuxPullRequestViewerModel {
             // this pass's cache; its result is for a directory no longer shown.
             guard generation == self.generation else { return }
             self.inflightLoads -= 1
-            self.apply(outcome)
+            self.apply(outcome, isLatest: loadID == self.latestLoadID)
         }
     }
 
     private struct LoadOutcome {
+        /// The merged PR list, when one was requested.
         var list: [SupermuxPullRequestSummary]?
+        /// Whether every remote's list query succeeded. A partial list is
+        /// still shown but not marked loaded, so the next click retries it.
+        var listIsComplete = false
         var details: [String: SupermuxPullRequestDetail] = [:]
+        /// The error worth showing: a failed target detail, or a list load
+        /// that produced nothing at all. One remote failing while another
+        /// answered is not an error the user can act on.
         var error: (any Error)?
     }
 
@@ -186,17 +201,24 @@ public final class SupermuxPullRequestViewerModel {
         if reloadList, let branch {
             var list: [SupermuxPullRequestSummary] = []
             var seen: Set<URL> = []
+            var listError: (any Error)?
+            var succeededQueries = 0
             for (slug, owner) in Self.listQueries(slugs: slugs) {
                 do {
                     for summary in try await provider.pullRequests(repositorySlug: slug, headOwner: owner, branch: branch)
                     where seen.insert(summary.url).inserted {
                         list.append(summary)
                     }
+                    succeededQueries += 1
                 } catch {
-                    outcome.error = error
+                    listError = error
                 }
             }
             outcome.list = list
+            outcome.listIsComplete = listError == nil
+            if succeededQueries == 0 {
+                outcome.error = listError
+            }
         }
         for target in targets {
             do {
@@ -204,6 +226,7 @@ public final class SupermuxPullRequestViewerModel {
                     repositorySlug: target.repositorySlug, number: target.number
                 )
             } catch {
+                // What the user clicked on could not load; that always shows.
                 outcome.error = error
             }
         }
@@ -226,13 +249,17 @@ public final class SupermuxPullRequestViewerModel {
         return queries
     }
 
-    private func apply(_ outcome: LoadOutcome) {
+    /// Folds a finished load into the model. Details and the list are always
+    /// kept (they are cached data, useful whichever load fetched them); the
+    /// error banner and timestamp belong to the latest load only.
+    private func apply(_ outcome: LoadOutcome, isLatest: Bool) {
         isLoading = inflightLoads > 0
         if let list = outcome.list {
             pullRequests = list
-            hasLoadedList = true
+            hasLoadedList = outcome.listIsComplete
         }
         details.merge(outcome.details) { _, new in new }
+        guard isLatest else { return }
         if let error = outcome.error {
             errorMessage = error.localizedDescription
         } else {

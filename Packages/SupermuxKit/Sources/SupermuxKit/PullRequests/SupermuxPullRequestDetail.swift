@@ -71,7 +71,10 @@ public struct SupermuxPullRequestComment: Hashable, Sendable, Identifiable {
         case inline(path: String)
     }
 
-    public let id: Int
+    /// Source-qualified (`conversation:1`, `review:900`, `inline:2`): the
+    /// three GitHub comment endpoints number independently, so a bare integer
+    /// can collide once the sources are merged into one thread.
+    public let id: String
     public let kind: Kind
     /// The commenter's login.
     public let author: String
@@ -81,13 +84,25 @@ public struct SupermuxPullRequestComment: Hashable, Sendable, Identifiable {
     /// The comment's web URL.
     public let url: URL?
 
+    /// Creates a comment, deriving ``id`` from `kind` and GitHub's `id`.
     public init(id: Int, kind: Kind, author: String, body: String, createdAt: Date?, url: URL?) {
-        self.id = id
+        self.id = "\(kind.idPrefix):\(id)"
         self.kind = kind
         self.author = author
         self.body = body
         self.createdAt = createdAt
         self.url = url
+    }
+}
+
+extension SupermuxPullRequestComment.Kind {
+    /// The source segment of ``SupermuxPullRequestComment/id``.
+    var idPrefix: String {
+        switch self {
+        case .conversation: return "conversation"
+        case .review: return "review"
+        case .inline: return "inline"
+        }
     }
 }
 
@@ -149,7 +164,10 @@ public struct SupermuxPullRequestCheck: Hashable, Sendable, Identifiable {
         case skipped
     }
 
-    public var id: String { name }
+    /// Unique per check (`run:<id>` for a check run, `status:<context>` for a
+    /// legacy status). Matrix jobs and re-run workflows share a display name,
+    /// so `name` alone would collide in a `ForEach`.
+    public let id: String
     /// The check's display name.
     public let name: String
     /// The check's outcome.
@@ -158,7 +176,8 @@ public struct SupermuxPullRequestCheck: Hashable, Sendable, Identifiable {
     public let url: URL?
 
     /// Creates a check.
-    public init(name: String, outcome: Outcome, url: URL?) {
+    public init(id: String, name: String, outcome: Outcome, url: URL?) {
+        self.id = id
         self.name = name
         self.outcome = outcome
         self.url = url
@@ -345,6 +364,19 @@ public struct SupermuxPullRequestDetail: Hashable, Sendable, Identifiable {
     /// Pass/fail/pending counts across ``checks``.
     public var checkSummary: CheckSummary {
         Self.checkSummary(for: checks)
+    }
+
+    /// The one comment count every label shows: the loaded thread's length
+    /// (which includes review summaries with a body), falling back to
+    /// GitHub's metadata count when the comment endpoints returned nothing.
+    public var displayedCommentCount: Int {
+        comments.isEmpty ? commentCount : comments.count
+    }
+
+    /// GitHub reports comments but none could be loaded (a failed or
+    /// unauthorized comments request), as opposed to a PR nobody commented on.
+    public var commentsAreUnavailable: Bool {
+        comments.isEmpty && commentCount > 0
     }
 
     /// Whether ``state`` is open or draft (the PR can still change).

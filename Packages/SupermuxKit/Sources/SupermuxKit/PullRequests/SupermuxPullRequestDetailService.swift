@@ -19,13 +19,21 @@ public protocol SupermuxPullRequestDetailProviding: Sendable {
 /// Fetches pull-request lists and details from the GitHub REST API.
 ///
 /// Nothing here runs in the background: every call is triggered by a click
-/// on a PR button or the viewer's refresh button. A detail load is five
-/// requests (the PR, its reviews and files, and the head commit's check runs
-/// and legacy statuses), issued concurrently. Reviews, files and checks are
+/// on a PR button or the viewer's refresh button. A detail load is seven
+/// concurrent requests (the PR; its reviews, files, conversation comments and
+/// inline comments; and the head commit's check runs and legacy statuses),
+/// plus one more per extra page for any of the four lists that exceeds 100
+/// entries (see ``pageLimit``). Reviews, files, comments and checks are
 /// best-effort: a failure there degrades to an empty section (checks record
 /// the error) rather than failing the whole load, since fine-grained tokens
 /// commonly lack `checks:read`.
 public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProviding {
+    /// GitHub's maximum page size for list endpoints.
+    static let pageSize = 100
+    /// Upper bound on pages fetched per list, so a runaway thread cannot burn
+    /// the rate limit: 1,000 reviews, files or comments per PR.
+    static let pageLimit = 10
+
     private let client: any SupermuxGitHubRequesting
 
     /// Creates the service.
@@ -56,12 +64,12 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
     public func detail(repositorySlug: String, number: Int) async throws -> SupermuxPullRequestDetail {
         let base = "repos/\(repositorySlug)/pulls/\(number)"
         async let pullRequestData = client.get(path: base)
-        async let reviewsResult = attempt { try await client.get(path: "\(base)/reviews?per_page=100") }
-        async let filesResult = attempt { try await client.get(path: "\(base)/files?per_page=100") }
+        async let reviewsResult = attempt { try await allPages(RESTReview.self, path: "\(base)/reviews") }
+        async let filesResult = attempt { try await allPages(RESTFile.self, path: "\(base)/files") }
         async let issueCommentsResult = attempt {
-            try await client.get(path: "repos/\(repositorySlug)/issues/\(number)/comments?per_page=100")
+            try await allPages(RESTComment.self, path: "repos/\(repositorySlug)/issues/\(number)/comments")
         }
-        async let reviewCommentsResult = attempt { try await client.get(path: "\(base)/comments?per_page=100") }
+        async let reviewCommentsResult = attempt { try await allPages(RESTComment.self, path: "\(base)/comments") }
 
         let pullRequest = try Self.decode(RESTPullRequest.self, from: try await pullRequestData)
         let sha = pullRequest.head.sha ?? ""
@@ -72,10 +80,8 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
             try await client.get(path: "repos/\(repositorySlug)/commits/\(sha)/status")
         }
 
-        let reviews = (try? await reviewsResult.get())
-            .flatMap { try? Self.decode([RESTReview].self, from: $0) } ?? []
-        let files = (try? await filesResult.get())
-            .flatMap { try? Self.decode([RESTFile].self, from: $0) } ?? []
+        let reviews = (try? await reviewsResult.get()) ?? []
+        let files = (try? await filesResult.get()) ?? []
 
         var checks: [SupermuxPullRequestCheck] = []
         var checksError: String?
@@ -94,10 +100,8 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
                 .filter { !runNames.contains($0.name) }
         }
 
-        let issueComments = (try? await issueCommentsResult.get())
-            .flatMap { try? Self.decode([RESTComment].self, from: $0) } ?? []
-        let reviewComments = (try? await reviewCommentsResult.get())
-            .flatMap { try? Self.decode([RESTComment].self, from: $0) } ?? []
+        let issueComments = (try? await issueCommentsResult.get()) ?? []
+        let reviewComments = (try? await reviewCommentsResult.get()) ?? []
 
         return Self.detail(
             repositorySlug: repositorySlug,
@@ -109,6 +113,26 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
             issueComments: issueComments,
             reviewComments: reviewComments
         )
+    }
+
+    /// Walks a list endpoint page by page (`?per_page=100&page=N`), stopping
+    /// at the first short page or at ``pageLimit``. GitHub lists reviews and
+    /// comments oldest-first, so without this a busy PR's newest verdicts and
+    /// comments would never be seen.
+    private func allPages<Item: Decodable>(_ type: Item.Type, path: String) async throws -> [Item] {
+        var items: [Item] = []
+        for page in 1...Self.pageLimit {
+            let data = try await client.get(path: Self.pagePath(path, page: page))
+            let pageItems = try Self.decode([Item].self, from: data)
+            items += pageItems
+            if pageItems.count < Self.pageSize { break }
+        }
+        return items
+    }
+
+    /// `path?per_page=100&page=N`.
+    static func pagePath(_ path: String, page: Int) -> String {
+        "\(path)?per_page=\(pageSize)&page=\(page)"
     }
 
     // MARK: - Mapping (pure, testable)
@@ -286,6 +310,7 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
 
     private static func check(from run: RESTCheckRun) -> SupermuxPullRequestCheck {
         SupermuxPullRequestCheck(
+            id: run.id.map { "run:\($0)" } ?? "run:\(run.name)",
             name: run.name,
             outcome: checkOutcome(status: run.status, conclusion: run.conclusion),
             url: (run.htmlURL ?? run.detailsURL).flatMap(URL.init(string:))
@@ -294,6 +319,7 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
 
     private static func check(from status: RESTStatus) -> SupermuxPullRequestCheck {
         SupermuxPullRequestCheck(
+            id: "status:\(status.context)",
             name: status.context,
             outcome: statusOutcome(status.state),
             url: status.targetURL.flatMap(URL.init(string:))
@@ -312,7 +338,7 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
         }
     }
 
-    private func attempt(_ operation: @Sendable () async throws -> Data) async -> Result<Data, any Error> {
+    private func attempt<Value>(_ operation: @Sendable () async throws -> Value) async -> Result<Value, any Error> {
         do {
             return .success(try await operation())
         } catch {
@@ -420,6 +446,7 @@ struct RESTCheckRuns: Decodable, Sendable {
 }
 
 struct RESTCheckRun: Decodable, Sendable {
+    let id: Int?
     let name: String
     let status: String?
     let conclusion: String?
@@ -427,7 +454,7 @@ struct RESTCheckRun: Decodable, Sendable {
     let detailsURL: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, status, conclusion
+        case id, name, status, conclusion
         case htmlURL = "html_url"
         case detailsURL = "details_url"
     }

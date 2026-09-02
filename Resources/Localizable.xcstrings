@@ -278920,6 +278920,23 @@
         }
       }
     },
+    "supermux.pullRequest.error.invalidPath" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refused a request outside the GitHub API."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub API 以外へのリクエストを拒否しました。"
+          }
+        }
+      }
+    },
     "supermux.pullRequest.error.notAuthenticated" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -279634,19 +279651,19 @@
         }
       }
     },
-    "supermux.pullRequest.checks.inProgress" : {
+    "supermux.pullRequest.checks.pending" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld in progress"
+            "value" : "%lld pending"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 件実行中"
+            "value" : "%lld 件保留中"
           }
         }
       }
@@ -279698,6 +279715,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "コメントはまだありません"
+          }
+        }
+      }
+    },
+    "supermux.pullRequest.comments.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comments could not be loaded"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コメントを読み込めませんでした"
           }
         }
       }

@@ -60,15 +60,19 @@ extension SupermuxPullRequestViewerView {
     func checksSection(_ detail: SupermuxPullRequestDetail) -> some View {
         let summary = detail.checkSummary
         VStack(alignment: .leading, spacing: 4) {
+            // `pending` covers queued and running checks alike; each row's own
+            // label says which, so the aggregate stays honest as "pending".
             let pendingCount = summary.pending
             sectionTitle(
                 String(localized: "supermux.pullRequest.viewer.checks", defaultValue: "Checks"),
                 trailing: summary.total > 0 ? "\(summary.passed)/\(summary.total)" : nil,
                 note: pendingCount > 0
-                    ? String(localized: "supermux.pullRequest.checks.inProgress", defaultValue: "\(pendingCount) in progress")
+                    ? String(localized: "supermux.pullRequest.checks.pending", defaultValue: "\(pendingCount) pending")
                     : nil
             )
-            if let error = detail.checksError {
+            // Check runs and legacy statuses load separately; when only the
+            // former failed, the statuses that did arrive are still shown.
+            if detail.checks.isEmpty, let error = detail.checksError {
                 Text(error)
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
@@ -240,9 +244,13 @@ extension SupermuxPullRequestViewerView {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle(
                 String(localized: "supermux.pullRequest.viewer.commentsSection", defaultValue: "Comments"),
-                trailing: detail.comments.isEmpty ? nil : "\(detail.comments.count)"
+                trailing: detail.comments.isEmpty ? nil : "\(detail.displayedCommentCount)"
             )
-            if detail.comments.isEmpty {
+            if detail.commentsAreUnavailable {
+                Text(String(localized: "supermux.pullRequest.comments.unavailable", defaultValue: "Comments could not be loaded"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            } else if detail.comments.isEmpty {
                 Text(String(localized: "supermux.pullRequest.comments.none", defaultValue: "No comments yet"))
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)

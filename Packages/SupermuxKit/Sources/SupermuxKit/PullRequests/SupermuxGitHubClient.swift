@@ -13,6 +13,9 @@ public enum SupermuxGitHubError: Error, Equatable, Sendable {
     case invalidResponse
     /// The request could not be sent.
     case network(String)
+    /// The path did not resolve to a URL on the GitHub API host, so the token
+    /// was never sent.
+    case invalidPath
 }
 
 extension SupermuxGitHubError: LocalizedError {
@@ -44,6 +47,11 @@ extension SupermuxGitHubError: LocalizedError {
             )
         case .network(let detail):
             return detail
+        case .invalidPath:
+            return String(
+                localized: "supermux.pullRequest.error.invalidPath",
+                defaultValue: "Refused a request outside the GitHub API."
+            )
         }
     }
 }
@@ -90,8 +98,8 @@ public actor SupermuxGitHubClient: SupermuxGitHubRequesting {
         guard let token = await resolveToken() else {
             throw SupermuxGitHubError.notAuthenticated
         }
-        guard let url = URL(string: path, relativeTo: Self.baseURL)?.absoluteURL else {
-            throw SupermuxGitHubError.invalidResponse
+        guard let url = Self.requestURL(for: path) else {
+            throw SupermuxGitHubError.invalidPath
         }
         var request = URLRequest(url: url, timeoutInterval: Self.requestTimeout)
         request.httpMethod = "GET"
@@ -117,6 +125,20 @@ public actor SupermuxGitHubClient: SupermuxGitHubRequesting {
             throw SupermuxGitHubError.http(status: http.statusCode, message: Self.errorMessage(from: data))
         }
         return data
+    }
+
+    /// Resolves `path` against the API base and refuses anything that lands
+    /// on another scheme, host or port. The bearer token must only ever go to
+    /// `api.github.com`, so an absolute URL (or a protocol-relative `//host`)
+    /// smuggled in as a path is rejected rather than followed.
+    static func requestURL(for path: String) -> URL? {
+        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
+              url.scheme == baseURL.scheme,
+              url.host == baseURL.host,
+              url.port == baseURL.port else {
+            return nil
+        }
+        return url
     }
 
     private func resolveToken() async -> String? {
