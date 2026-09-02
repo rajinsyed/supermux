@@ -1,7 +1,7 @@
 public import Foundation
 
-/// One open pull request for the current branch, reduced to what the Changes
-/// panel's header buttons need. Produced by the on-demand list fetch in
+/// One pull request for the current branch (open, merged or closed), reduced
+/// to what the Changes panel's header buttons need. Produced by the on-demand list fetch in
 /// ``SupermuxPullRequestDetailService``; the full ``SupermuxPullRequestDetail``
 /// is loaded separately when a button is clicked.
 public struct SupermuxPullRequestSummary: Hashable, Sendable, Identifiable {
@@ -17,15 +17,21 @@ public struct SupermuxPullRequestSummary: Hashable, Sendable, Identifiable {
     public let title: String
     /// The PR's web URL.
     public let url: URL
+    /// The PR's lifecycle state (drives the chip's color).
+    public let status: SupermuxPullRequest.Status
     /// Whether the PR is a draft.
     public let isDraft: Bool
 
     /// Creates a summary.
-    public init(repositorySlug: String, number: Int, title: String, url: URL, isDraft: Bool) {
+    public init(
+        repositorySlug: String, number: Int, title: String, url: URL,
+        status: SupermuxPullRequest.Status = .open, isDraft: Bool
+    ) {
         self.repositorySlug = repositorySlug
         self.number = number
         self.title = title
         self.url = url
+        self.status = status
         self.isDraft = isDraft
     }
 
@@ -39,6 +45,7 @@ public struct SupermuxPullRequestSummary: Hashable, Sendable, Identifiable {
             number: pullRequest.number,
             title: pullRequest.title ?? "",
             url: pullRequest.url,
+            status: pullRequest.status,
             isDraft: false
         )
     }

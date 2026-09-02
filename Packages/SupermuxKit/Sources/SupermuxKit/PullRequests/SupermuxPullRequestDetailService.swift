@@ -5,10 +5,11 @@ public import Foundation
 /// Abstracted so ``SupermuxPullRequestViewerModel`` can be unit-tested with a
 /// scripted provider instead of GitHub.
 public protocol SupermuxPullRequestDetailProviding: Sendable {
-    /// The open pull requests in `repositorySlug` whose head is
-    /// `headOwner:branch` (the head owner is the fork that pushed the branch,
-    /// which for a fork-to-upstream PR differs from the slug's owner).
-    func openPullRequests(
+    /// The pull requests (any state, most recently updated first) in
+    /// `repositorySlug` whose head is `headOwner:branch` (the head owner is the
+    /// fork that pushed the branch, which for a fork-to-upstream PR differs
+    /// from the slug's owner).
+    func pullRequests(
         repositorySlug: String, headOwner: String, branch: String
     ) async throws -> [SupermuxPullRequestSummary]
     /// The full detail for one pull request.
@@ -33,10 +34,10 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
         self.client = client
     }
 
-    public func openPullRequests(
+    public func pullRequests(
         repositorySlug: String, headOwner: String, branch: String
     ) async throws -> [SupermuxPullRequestSummary] {
-        guard let path = Self.openPullRequestsPath(repositorySlug: repositorySlug, headOwner: headOwner, branch: branch) else {
+        guard let path = Self.pullRequestsPath(repositorySlug: repositorySlug, headOwner: headOwner, branch: branch) else {
             throw SupermuxGitHubError.notAGitHubRepository
         }
         let items = try Self.decode([RESTPullRequest].self, from: try await client.get(path: path))
@@ -46,7 +47,8 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
                 guard let url = URL(string: item.htmlURL) else { return nil }
                 return SupermuxPullRequestSummary(
                     repositorySlug: repositorySlug,
-                    number: item.number, title: item.title, url: url, isDraft: item.draft ?? false
+                    number: item.number, title: item.title, url: url,
+                    status: Self.status(of: item), isDraft: item.draft ?? false
                 )
             }
     }
@@ -111,14 +113,15 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
 
     // MARK: - Mapping (pure, testable)
 
-    /// `pulls?state=open&head=headOwner:branch` for the slug, or `nil` for a
-    /// malformed slug.
-    static func openPullRequestsPath(repositorySlug: String, headOwner: String, branch: String) -> String? {
+    /// `pulls?state=all&head=headOwner:branch` for the slug, or `nil` for a
+    /// malformed slug. Newest-updated first, so a long-lived branch's chips
+    /// are its most recent PRs.
+    static func pullRequestsPath(repositorySlug: String, headOwner: String, branch: String) -> String? {
         let parts = repositorySlug.split(separator: "/", maxSplits: 1).map(String.init)
         guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty, !headOwner.isEmpty else { return nil }
         var query = URLComponents()
         query.queryItems = [
-            URLQueryItem(name: "state", value: "open"),
+            URLQueryItem(name: "state", value: "all"),
             URLQueryItem(name: "head", value: "\(headOwner):\(branch)"),
             URLQueryItem(name: "sort", value: "updated"),
             URLQueryItem(name: "direction", value: "desc"),
@@ -228,6 +231,15 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
         if pullRequest.mergedAt?.isEmpty == false { return .merged }
         if pullRequest.state.lowercased() == "closed" { return .closed }
         return pullRequest.draft == true ? .draft : .open
+    }
+
+    /// The badge-level status (draft folds into open).
+    static func status(of pullRequest: RESTPullRequest) -> SupermuxPullRequest.Status {
+        switch state(of: pullRequest) {
+        case .merged: return .merged
+        case .closed: return .closed
+        case .open, .draft: return .open
+        }
     }
 
     static func reviewState(_ raw: String) -> SupermuxPullRequestReview.State {

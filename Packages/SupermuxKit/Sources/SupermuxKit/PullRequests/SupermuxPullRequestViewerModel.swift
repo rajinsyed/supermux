@@ -13,8 +13,8 @@ import CmuxGit
 ///
 /// The header's PR buttons come from two free sources merged by
 /// ``visibleButtons(known:)``: the PR cmux already tracks for the workspace
-/// (its own sidebar probe, no new background work) and the open-PR list from
-/// the last on-demand load.
+/// (its own sidebar probe, no new background work) and the branch's PR list
+/// from the last on-demand load.
 @MainActor
 @Observable
 public final class SupermuxPullRequestViewerModel {
@@ -22,9 +22,10 @@ public final class SupermuxPullRequestViewerModel {
     public private(set) var directory: String?
     /// The branch the viewer lists PRs for.
     public private(set) var branch: String?
-    /// The open PRs for ``branch`` from the last on-demand load.
-    public private(set) var openPullRequests: [SupermuxPullRequestSummary] = []
-    /// Whether ``openPullRequests`` reflects a completed load for this context.
+    /// The PRs (open, merged or closed, newest first) for ``branch`` from the
+    /// last on-demand load.
+    public private(set) var pullRequests: [SupermuxPullRequestSummary] = []
+    /// Whether ``pullRequests`` reflects a completed load for this context.
     public private(set) var hasLoadedList = false
     /// The PR the viewer is showing; `nil` shows the regular changes list.
     public private(set) var selected: SupermuxPullRequestSummary?
@@ -80,7 +81,7 @@ public final class SupermuxPullRequestViewerModel {
         self.branch = branch
         generation += 1
         inflightLoads = 0
-        openPullRequests = []
+        pullRequests = []
         hasLoadedList = false
         selected = nil
         details = [:]
@@ -89,25 +90,26 @@ public final class SupermuxPullRequestViewerModel {
         lastLoadedAt = nil
     }
 
-    /// The header buttons: the open PR cmux already knows for the workspace
-    /// plus the open PRs from the last on-demand load, de-duplicated by number.
+    /// The header buttons: the PR cmux already knows for the workspace plus
+    /// the PRs from the last on-demand load, de-duplicated by repo + number.
     /// - Parameter known: The workspace's PR from cmux's own sidebar probe.
     public func visibleButtons(known: SupermuxPullRequest?) -> [SupermuxPullRequestSummary] {
-        Self.visibleButtons(known: known, fetched: openPullRequests)
+        Self.visibleButtons(known: known, fetched: pullRequests)
     }
 
-    /// Pure merge behind ``visibleButtons(known:)``: only open PRs earn a
-    /// button; a fetched entry wins over the bare known badge for the same
-    /// repo + number (it carries the title); a known PR the fetch did not see
-    /// stays (cmux's probe may be fresher than the last on-demand load). The
-    /// known badge's repository comes from its URL, so a fork's `#49` is never
+    /// Pure merge behind ``visibleButtons(known:)``: open, merged and closed
+    /// PRs all earn a chip (colored by state, like the sidebar badge); a
+    /// fetched entry wins over the bare known badge for the same repo +
+    /// number (it carries the title); a known PR the fetch did not see stays
+    /// (cmux's probe may be fresher than the last on-demand load). The known
+    /// badge's repository comes from its URL, so a fork's `#49` is never
     /// confused with upstream's `#49`.
     nonisolated static func visibleButtons(
         known: SupermuxPullRequest?,
         fetched: [SupermuxPullRequestSummary]
     ) -> [SupermuxPullRequestSummary] {
         var buttons = fetched
-        if let known, known.status == .open,
+        if let known,
            let summary = SupermuxPullRequestSummary(known: known),
            !fetched.contains(where: { $0.id == summary.id }) {
             buttons.insert(summary, at: 0)
@@ -115,8 +117,8 @@ public final class SupermuxPullRequestViewerModel {
         return buttons
     }
 
-    /// Shows a PR in the viewer, loading it (and the open-PR list, the first
-    /// time) unless it is already cached. Clicking the selected PR's button
+    /// Shows a PR in the viewer, loading it (and the branch's PR list, the
+    /// first time) unless it is already cached. Clicking the selected PR's button
     /// again closes the viewer.
     public func open(_ pullRequest: SupermuxPullRequestSummary) {
         if selected?.id == pullRequest.id {
@@ -135,7 +137,7 @@ public final class SupermuxPullRequestViewerModel {
         selected = nil
     }
 
-    /// Re-fetches the open-PR list and the selected PR's detail.
+    /// Re-fetches the branch's PR list and the selected PR's detail.
     public func refresh() {
         startLoad(targets: selected.map { [$0] } ?? [], reloadList: true)
     }
@@ -165,8 +167,8 @@ public final class SupermuxPullRequestViewerModel {
         var error: (any Error)?
     }
 
-    /// Lists open PRs across every GitHub remote of the checkout and loads
-    /// each target from the repository its summary names.
+    /// Lists the branch's PRs across every GitHub remote of the checkout and
+    /// loads each target from the repository its summary names.
     ///
     /// The list queries each remote's repository for heads pushed by each
     /// remote's owner: a fork checkout (`origin` = `me/repo`, `upstream` =
@@ -186,7 +188,7 @@ public final class SupermuxPullRequestViewerModel {
             var seen: Set<URL> = []
             for (slug, owner) in Self.listQueries(slugs: slugs) {
                 do {
-                    for summary in try await provider.openPullRequests(repositorySlug: slug, headOwner: owner, branch: branch)
+                    for summary in try await provider.pullRequests(repositorySlug: slug, headOwner: owner, branch: branch)
                     where seen.insert(summary.url).inserted {
                         list.append(summary)
                     }
@@ -227,7 +229,7 @@ public final class SupermuxPullRequestViewerModel {
     private func apply(_ outcome: LoadOutcome) {
         isLoading = inflightLoads > 0
         if let list = outcome.list {
-            openPullRequests = list
+            pullRequests = list
             hasLoadedList = true
         }
         details.merge(outcome.details) { _, new in new }

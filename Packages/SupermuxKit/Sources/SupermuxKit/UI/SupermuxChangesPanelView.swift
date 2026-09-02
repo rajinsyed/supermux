@@ -244,8 +244,9 @@ public struct SupermuxChangesPanelView: View {
         .padding(.vertical, 6)
     }
 
-    /// One chip per open PR on the branch: cmux's already-known PR plus the
-    /// open PRs from the viewer's last on-demand load. Clicking a chip opens
+    /// One chip per PR on the branch (open, merged or closed, colored by
+    /// state): cmux's already-known PR plus the PRs from the viewer's last
+    /// on-demand load. Clicking a chip opens
     /// the viewer (loading that PR on first open); clicking the selected chip
     /// returns to the changes list.
     @ViewBuilder
