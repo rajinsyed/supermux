@@ -8,6 +8,7 @@ INT_KEYS = {
     "supermux.changes.pushCount", "supermux.changes.pullCount",
     "supermux.pullRequest.viewer.files", "supermux.pullRequest.viewer.commits",
     "supermux.pullRequest.viewer.comments", "supermux.pullRequest.files.truncated",
+    "supermux.pullRequest.checks.inProgress",
 }
 
 def to_format(key, val):

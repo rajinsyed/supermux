@@ -19,6 +19,7 @@ struct SupermuxPullRequestViewerTests {
         checks: [SupermuxPullRequestCheck] = []
     ) -> SupermuxPullRequestDetail {
         SupermuxPullRequestDetail(
+            repositorySlug: "o/r",
             number: number, title: "T", body: "", url: url("https://github.com/o/r/pull/\(number)"),
             state: state, author: "me", baseRef: "main", headRef: "feature", headSHA: "abc",
             createdAt: nil, updatedAt: nil, additions: 1, deletions: 2, changedFileCount: 1,
@@ -60,18 +61,20 @@ struct SupermuxPullRequestViewerTests {
             SupermuxPullRequestCheck(name: "c", outcome: .pending, url: nil),
             SupermuxPullRequestCheck(name: "d", outcome: .skipped, url: nil),
             SupermuxPullRequestCheck(name: "e", outcome: .success, url: nil),
+            SupermuxPullRequestCheck(name: "f", outcome: .running, url: nil),
         ]
         let summary = SupermuxPullRequestDetail.checkSummary(for: checks)
         #expect(summary.passed == 2)
         #expect(summary.failed == 1)
-        #expect(summary.pending == 1)
+        #expect(summary.pending == 2)
         #expect(summary.skipped == 1)
-        #expect(summary.total == 5)
+        #expect(summary.total == 6)
     }
 
     @Test func checkOutcomeMapping() {
-        #expect(SupermuxPullRequestDetailService.checkOutcome(status: "in_progress", conclusion: nil) == .pending)
+        #expect(SupermuxPullRequestDetailService.checkOutcome(status: "in_progress", conclusion: nil) == .running)
         #expect(SupermuxPullRequestDetailService.checkOutcome(status: "queued", conclusion: nil) == .pending)
+        #expect(SupermuxPullRequestDetailService.checkOutcome(status: "waiting", conclusion: nil) == .pending)
         #expect(SupermuxPullRequestDetailService.checkOutcome(status: "completed", conclusion: "success") == .success)
         #expect(SupermuxPullRequestDetailService.checkOutcome(status: "completed", conclusion: "skipped") == .skipped)
         #expect(SupermuxPullRequestDetailService.checkOutcome(status: "completed", conclusion: "neutral") == .skipped)
@@ -98,26 +101,47 @@ struct SupermuxPullRequestViewerTests {
     @Test func visibleButtonsMergesKnownAndFetched() {
         let known = SupermuxPullRequest(number: 5, status: .open, url: url("https://github.com/o/r/pull/5"))
         let fetched = [
-            SupermuxPullRequestSummary(number: 5, title: "five", url: known.url, isDraft: false),
-            SupermuxPullRequestSummary(number: 9, title: "nine", url: url("https://github.com/o/r/pull/9"), isDraft: true),
+            SupermuxPullRequestSummary(repositorySlug: "o/r", number: 5, title: "five", url: known.url, isDraft: false),
+            SupermuxPullRequestSummary(repositorySlug: "o/r", number: 9, title: "nine", url: url("https://github.com/o/r/pull/9"), isDraft: true),
         ]
-        // Fetched wins for the same number (it carries the title).
+        // Fetched wins for the same repo + number (it carries the title).
         let merged = SupermuxPullRequestViewerModel.visibleButtons(known: known, fetched: fetched)
         #expect(merged.map(\.number) == [5, 9])
         #expect(merged[0].title == "five")
-        // A known PR the fetch missed is prepended.
+        // A known PR the fetch missed is prepended, carrying its URL's repo.
         let extra = SupermuxPullRequestViewerModel.visibleButtons(known: known, fetched: [fetched[1]])
         #expect(extra.map(\.number) == [5, 9])
+        #expect(extra[0].repositorySlug == "o/r")
+        // The same number in ANOTHER repo (upstream's #5) is a different PR.
+        let upstream = SupermuxPullRequestSummary(
+            repositorySlug: "up/r", number: 5, title: "upstream five", url: url("https://github.com/up/r/pull/5"), isDraft: false
+        )
+        let both = SupermuxPullRequestViewerModel.visibleButtons(known: known, fetched: [upstream])
+        #expect(both.map(\.id) == ["o/r#5", "up/r#5"])
         // Only OPEN known PRs earn a button.
         let merged5 = SupermuxPullRequest(number: 5, status: .merged, url: known.url)
         #expect(SupermuxPullRequestViewerModel.visibleButtons(known: merged5, fetched: []).isEmpty)
         #expect(SupermuxPullRequestViewerModel.visibleButtons(known: nil, fetched: []).isEmpty)
     }
 
+    @Test func repositorySlugParsesFromPullRequestURL() {
+        #expect(SupermuxPullRequestSummary.repositorySlug(fromPullRequestURL: url("https://github.com/rajinsyed/supermux/pull/49")) == "rajinsyed/supermux")
+        #expect(SupermuxPullRequestSummary.repositorySlug(fromPullRequestURL: url("https://github.com/o/r/pull/1/files")) == "o/r")
+        #expect(SupermuxPullRequestSummary.repositorySlug(fromPullRequestURL: url("https://github.com/o/r")) == nil)
+        #expect(SupermuxPullRequestSummary.repositorySlug(fromPullRequestURL: url("https://github.com/o/r/issues/3")) == nil)
+    }
+
+    @Test func listQueriesCrossRemotesWithOwners() {
+        let queries = SupermuxPullRequestViewerModel.listQueries(slugs: ["me/repo", "org/repo"])
+        #expect(queries.map { "\($0.slug)<-\($0.owner)" } == ["me/repo<-me", "me/repo<-org", "org/repo<-org", "org/repo<-me"])
+        let single = SupermuxPullRequestViewerModel.listQueries(slugs: ["me/repo"])
+        #expect(single.map { "\($0.slug)<-\($0.owner)" } == ["me/repo<-me"])
+    }
+
     @Test func openPullRequestsPathEncodesHeadFilter() {
-        let path = SupermuxPullRequestDetailService.openPullRequestsPath(repositorySlug: "o/r", branch: "feat/x y")
-        #expect(path == "repos/o/r/pulls?state=open&head=o:feat/x%20y&sort=updated&direction=desc&per_page=20")
-        #expect(SupermuxPullRequestDetailService.openPullRequestsPath(repositorySlug: "broken", branch: "b") == nil)
+        let path = SupermuxPullRequestDetailService.openPullRequestsPath(repositorySlug: "org/r", headOwner: "me", branch: "feat/x y")
+        #expect(path == "repos/org/r/pulls?state=open&head=me:feat/x%20y&sort=updated&direction=desc&per_page=20")
+        #expect(SupermuxPullRequestDetailService.openPullRequestsPath(repositorySlug: "broken", headOwner: "me", branch: "b") == nil)
     }
 
     // MARK: - REST mapping
@@ -137,8 +161,17 @@ struct SupermuxPullRequestViewerTests {
         let client = ScriptedGitHubClient(responses: [
             "repos/o/r/pulls/42": Self.pullJSON,
             "repos/o/r/pulls/42/reviews?per_page=100": """
-            [{"user": {"login": "bob"}, "state": "APPROVED", "submitted_at": "2026-09-02T09:00:00Z"},
-             {"user": {"login": "me"}, "state": "COMMENTED", "submitted_at": null}]
+            [{"id": 900, "user": {"login": "bob"}, "state": "APPROVED", "submitted_at": "2026-09-02T09:00:00Z",
+              "body": "LGTM", "html_url": "https://github.com/o/r/pull/42#pullrequestreview-900"},
+             {"id": 901, "user": {"login": "me"}, "state": "COMMENTED", "submitted_at": null, "body": ""}]
+            """,
+            "repos/o/r/issues/42/comments?per_page=100": """
+            [{"id": 1, "user": {"login": "carol"}, "body": "First!", "created_at": "2026-09-01T12:00:00Z",
+              "html_url": "https://github.com/o/r/pull/42#issuecomment-1"}]
+            """,
+            "repos/o/r/pulls/42/comments?per_page=100": """
+            [{"id": 2, "user": {"login": "bob"}, "body": "nit: rename", "path": "a.swift",
+              "created_at": "2026-09-02T08:00:00Z", "html_url": "https://github.com/o/r/pull/42#discussion_r2"}]
             """,
             "repos/o/r/pulls/42/files?per_page=100": """
             [{"filename": "a.swift", "status": "modified", "additions": 8, "deletions": 3},
@@ -172,9 +205,17 @@ struct SupermuxPullRequestViewerTests {
         #expect(detail.files[1].status == .added)
         // Check runs first; a legacy status with the same context is not duplicated.
         #expect(detail.checks.map(\.name) == ["build", "lint", "vercel"])
-        #expect(detail.checks.map(\.outcome) == [.success, .pending, .failure])
+        #expect(detail.checks.map(\.outcome) == [.success, .running, .failure])
         #expect(detail.checksError == nil)
         #expect(detail.updatedAt != nil)
+        #expect(detail.repositorySlug == "o/r")
+        // Comments: conversation, inline and review summaries, oldest first;
+        // the empty review body is not a comment.
+        #expect(detail.comments.map(\.id) == [1, 2, 900])
+        #expect(detail.comments.map(\.author) == ["carol", "bob", "bob"])
+        #expect(detail.comments[1].kind == .inline(path: "a.swift"))
+        #expect(detail.comments[2].kind == .review(.approved))
+        #expect(detail.comments[2].body == "LGTM")
     }
 
     @Test func detailRecordsChecksErrorWithoutFailing() async throws {
@@ -187,6 +228,7 @@ struct SupermuxPullRequestViewerTests {
         #expect(detail.checksError?.contains("Resource not accessible") == true)
         #expect(detail.reviews.isEmpty)
         #expect(detail.files.isEmpty)
+        #expect(detail.comments.isEmpty)
     }
 
     @Test func detailStateDistinguishesDraftMergedClosed() throws {
@@ -205,7 +247,7 @@ struct SupermuxPullRequestViewerTests {
     }
 
     @Test func openPullRequestsFiltersToExactHeadRef() async throws {
-        let path = SupermuxPullRequestDetailService.openPullRequestsPath(repositorySlug: "o/r", branch: "feature")!
+        let path = SupermuxPullRequestDetailService.openPullRequestsPath(repositorySlug: "o/r", headOwner: "o", branch: "feature")!
         let client = ScriptedGitHubClient(responses: [
             path: """
             [{"number": 1, "title": "one", "state": "open", "html_url": "https://github.com/o/r/pull/1",
@@ -214,9 +256,11 @@ struct SupermuxPullRequestViewerTests {
               "head": {"ref": "feature-2"}}]
             """,
         ])
-        let list = try await SupermuxPullRequestDetailService(client: client).openPullRequests(repositorySlug: "o/r", branch: "feature")
+        let list = try await SupermuxPullRequestDetailService(client: client)
+            .openPullRequests(repositorySlug: "o/r", headOwner: "o", branch: "feature")
         #expect(list.map(\.number) == [1])
         #expect(list[0].isDraft)
+        #expect(list[0].repositorySlug == "o/r")
     }
 
     // MARK: - GitHub client
@@ -240,15 +284,20 @@ struct SupermuxPullRequestViewerTests {
 
     // MARK: - Viewer model
 
+    private func summary(_ number: Int, slug: String = "o/r") -> SupermuxPullRequestSummary {
+        SupermuxPullRequestSummary(
+            repositorySlug: slug, number: number, title: "t\(number)",
+            url: url("https://github.com/\(slug)/pull/\(number)"), isDraft: false
+        )
+    }
+
     @Test @MainActor func openLoadsListAndDetailOnceThenTogglesClosed() async throws {
-        let provider = ScriptedProvider(summaries: [
-            SupermuxPullRequestSummary(number: 7, title: "seven", url: url("https://github.com/o/r/pull/7"), isDraft: false),
-        ], details: [7: detail(number: 7)])
+        let provider = ScriptedProvider(summaries: [summary(7)], details: ["o/r#7": detail(number: 7)])
         let model = SupermuxPullRequestViewerModel(provider: provider, slugResolver: { _ in ["o/r"] })
         model.setContext(directory: "/repo", branch: "feature")
 
-        model.open(number: 7)
-        #expect(model.selectedNumber == 7)
+        model.open(summary(7))
+        #expect(model.selected?.number == 7)
         #expect(model.isLoading)
         try await model.waitForLoad()
         #expect(!model.isLoading)
@@ -261,10 +310,10 @@ struct SupermuxPullRequestViewerTests {
         #expect(await provider.detailCalls == 1)
 
         // Clicking the selected button again returns to the changes list.
-        model.open(number: 7)
-        #expect(model.selectedNumber == nil)
+        model.open(summary(7))
+        #expect(model.selected == nil)
         // Re-opening a cached PR fetches nothing.
-        model.open(number: 7)
+        model.open(summary(7))
         #expect(!model.isLoading)
         #expect(model.selectedDetail?.number == 7)
         #expect(await provider.detailCalls == 1)
@@ -276,20 +325,43 @@ struct SupermuxPullRequestViewerTests {
         #expect(await provider.detailCalls == 2)
     }
 
+    @Test @MainActor func detailLoadsFromTheSummaryRepositoryNotTheFirstRemote() async throws {
+        // Checkout has upstream first; the chip names the fork's PR.
+        let provider = ScriptedProvider(summaries: [], details: ["me/repo#49": detail(number: 49)])
+        let model = SupermuxPullRequestViewerModel(provider: provider, slugResolver: { _ in ["org/repo", "me/repo"] })
+        model.setContext(directory: "/repo", branch: "feature")
+        model.open(summary(49, slug: "me/repo"))
+        try await model.waitForLoad()
+        #expect(model.selectedDetail?.number == 49)
+        #expect(await provider.detailSlugs == ["me/repo"])
+        // The list crossed both remotes with both owners.
+        #expect(await provider.listQueries == ["org/repo<-org", "org/repo<-me", "me/repo<-me", "me/repo<-org"])
+    }
+
+    @Test @MainActor func listDeduplicatesAcrossRemotesByURL() async throws {
+        let provider = ScriptedProvider(summaries: [summary(3, slug: "me/repo")], details: [:])
+        let model = SupermuxPullRequestViewerModel(provider: provider, slugResolver: { _ in ["me/repo", "org/repo"] })
+        model.setContext(directory: "/repo", branch: "feature")
+        model.refresh()
+        try await model.waitForLoad()
+        // Every query returned the same PR; it appears once.
+        #expect(model.openPullRequests.map(\.id) == ["me/repo#3"])
+    }
+
     @Test @MainActor func contextChangeDropsCacheAndClosesViewer() async throws {
-        let provider = ScriptedProvider(summaries: [], details: [3: detail(number: 3)])
+        let provider = ScriptedProvider(summaries: [], details: ["o/r#3": detail(number: 3)])
         let model = SupermuxPullRequestViewerModel(provider: provider, slugResolver: { _ in ["o/r"] })
         model.setContext(directory: "/repo", branch: "a")
-        model.open(number: 3)
+        model.open(summary(3))
         try await model.waitForLoad()
         #expect(model.selectedDetail != nil)
 
         model.setContext(directory: "/repo", branch: "b")
-        #expect(model.selectedNumber == nil)
+        #expect(model.selected == nil)
         #expect(model.details.isEmpty)
         #expect(!model.hasLoadedList)
         // Same context again is a no-op (no reset).
-        model.open(number: 3)
+        model.open(summary(3))
         try await model.waitForLoad()
         model.setContext(directory: "/repo", branch: "b")
         #expect(model.selectedDetail?.number == 3)
@@ -299,9 +371,9 @@ struct SupermuxPullRequestViewerTests {
         let provider = ScriptedProvider(summaries: [], details: [:], error: SupermuxGitHubError.http(status: 404, message: "Not Found"))
         let model = SupermuxPullRequestViewerModel(provider: provider, slugResolver: { _ in ["o/r"] })
         model.setContext(directory: "/repo", branch: "a")
-        model.open(number: 9)
+        model.open(summary(9))
         try await model.waitForLoad()
-        #expect(model.selectedNumber == 9)
+        #expect(model.selected?.number == 9)
         #expect(model.selectedDetail == nil)
         #expect(model.errorMessage?.contains("404") == true)
     }
@@ -310,7 +382,7 @@ struct SupermuxPullRequestViewerTests {
         let provider = ScriptedProvider(summaries: [], details: [:])
         let model = SupermuxPullRequestViewerModel(provider: provider, slugResolver: { _ in [] })
         model.setContext(directory: "/repo", branch: "a")
-        model.open(number: 1)
+        model.open(summary(1))
         try await model.waitForLoad()
         #expect(model.errorMessage == SupermuxGitHubError.notAGitHubRepository.localizedDescription)
         #expect(await provider.listCalls == 0)
@@ -340,27 +412,33 @@ private struct FakeTokenRunner: CommandRunning {
 
 private actor ScriptedProvider: SupermuxPullRequestDetailProviding {
     let summaries: [SupermuxPullRequestSummary]
-    let details: [Int: SupermuxPullRequestDetail]
+    let details: [String: SupermuxPullRequestDetail]
     let error: (any Error)?
     private(set) var listCalls = 0
+    private(set) var listQueries: [String] = []
     private(set) var detailCalls = 0
+    private(set) var detailSlugs: [String] = []
 
-    init(summaries: [SupermuxPullRequestSummary], details: [Int: SupermuxPullRequestDetail], error: (any Error)? = nil) {
+    init(summaries: [SupermuxPullRequestSummary], details: [String: SupermuxPullRequestDetail], error: (any Error)? = nil) {
         self.summaries = summaries
         self.details = details
         self.error = error
     }
 
-    func openPullRequests(repositorySlug: String, branch: String) async throws -> [SupermuxPullRequestSummary] {
+    func openPullRequests(repositorySlug: String, headOwner: String, branch: String) async throws -> [SupermuxPullRequestSummary] {
         listCalls += 1
+        listQueries.append("\(repositorySlug)<-\(headOwner)")
         if let error { throw error }
         return summaries
     }
 
     func detail(repositorySlug: String, number: Int) async throws -> SupermuxPullRequestDetail {
         detailCalls += 1
+        detailSlugs.append(repositorySlug)
         if let error { throw error }
-        guard let detail = details[number] else { throw SupermuxGitHubError.http(status: 404, message: "Not Found") }
+        guard let detail = details["\(repositorySlug)#\(number)"] else {
+            throw SupermuxGitHubError.http(status: 404, message: "Not Found")
+        }
         return detail
     }
 }

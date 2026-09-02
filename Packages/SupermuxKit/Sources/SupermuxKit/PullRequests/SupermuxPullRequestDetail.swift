@@ -5,7 +5,12 @@ public import Foundation
 /// ``SupermuxPullRequestDetailService``; the full ``SupermuxPullRequestDetail``
 /// is loaded separately when a button is clicked.
 public struct SupermuxPullRequestSummary: Hashable, Sendable, Identifiable {
-    public var id: Int { number }
+    /// `owner/repo#number` — a number alone is ambiguous when a checkout has
+    /// several GitHub remotes (a fork plus its upstream), which is exactly the
+    /// setup where the same number names two unrelated PRs.
+    public var id: String { "\(repositorySlug)#\(number)" }
+    /// The `owner/repo` the PR lives in.
+    public let repositorySlug: String
     /// The PR number (`#1234`).
     public let number: Int
     /// The PR title.
@@ -16,11 +21,66 @@ public struct SupermuxPullRequestSummary: Hashable, Sendable, Identifiable {
     public let isDraft: Bool
 
     /// Creates a summary.
-    public init(number: Int, title: String, url: URL, isDraft: Bool) {
+    public init(repositorySlug: String, number: Int, title: String, url: URL, isDraft: Bool) {
+        self.repositorySlug = repositorySlug
         self.number = number
         self.title = title
         self.url = url
         self.isDraft = isDraft
+    }
+
+    /// Builds a summary from a badge cmux already resolved, taking the slug
+    /// from the PR's URL (`https://github.com/owner/repo/pull/N`). `nil` when
+    /// the URL is not a GitHub PR page.
+    public init?(known pullRequest: SupermuxPullRequest) {
+        guard let slug = Self.repositorySlug(fromPullRequestURL: pullRequest.url) else { return nil }
+        self.init(
+            repositorySlug: slug,
+            number: pullRequest.number,
+            title: pullRequest.title ?? "",
+            url: pullRequest.url,
+            isDraft: false
+        )
+    }
+
+    /// `owner/repo` from a GitHub PR URL, or `nil`.
+    public static func repositorySlug(fromPullRequestURL url: URL) -> String? {
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 4, parts[2] == "pull", !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return "\(parts[0])/\(parts[1])"
+    }
+}
+
+/// One comment on a pull request: a conversation comment, a review summary,
+/// or an inline review comment on a file.
+public struct SupermuxPullRequestComment: Hashable, Sendable, Identifiable {
+    /// Where the comment was left.
+    public enum Kind: Hashable, Sendable {
+        /// A comment on the PR conversation.
+        case conversation
+        /// The summary body of a review, with the review's state.
+        case review(SupermuxPullRequestReview.State)
+        /// An inline comment on `path`.
+        case inline(path: String)
+    }
+
+    public let id: Int
+    public let kind: Kind
+    /// The commenter's login.
+    public let author: String
+    /// The comment's markdown source (shown as plain text).
+    public let body: String
+    public let createdAt: Date?
+    /// The comment's web URL.
+    public let url: URL?
+
+    public init(id: Int, kind: Kind, author: String, body: String, createdAt: Date?, url: URL?) {
+        self.id = id
+        self.kind = kind
+        self.author = author
+        self.body = body
+        self.createdAt = createdAt
+        self.url = url
     }
 }
 
@@ -70,8 +130,10 @@ public struct SupermuxPullRequestReview: Hashable, Sendable, Identifiable {
 public struct SupermuxPullRequestCheck: Hashable, Sendable, Identifiable {
     /// A check's outcome, collapsed from GitHub's status/conclusion pairs.
     public enum Outcome: String, Hashable, Sendable {
-        /// Queued or running.
+        /// Queued, waiting, or requested but not started.
         case pending
+        /// Currently running.
+        case running
         /// Completed successfully.
         case success
         /// Failed, timed out, was cancelled, or needs action.
@@ -155,6 +217,7 @@ public struct SupermuxPullRequestDetail: Hashable, Sendable, Identifiable {
     public struct CheckSummary: Hashable, Sendable {
         public let passed: Int
         public let failed: Int
+        /// Queued plus running.
         public let pending: Int
         public let skipped: Int
 
@@ -169,7 +232,9 @@ public struct SupermuxPullRequestDetail: Hashable, Sendable, Identifiable {
         }
     }
 
-    public var id: Int { number }
+    public var id: String { "\(repositorySlug)#\(number)" }
+    /// The `owner/repo` the PR lives in.
+    public let repositorySlug: String
     public let number: Int
     public let title: String
     /// The PR description (markdown source, shown as plain text).
@@ -205,8 +270,12 @@ public struct SupermuxPullRequestDetail: Hashable, Sendable, Identifiable {
     /// `checks:read`); the checks section shows it instead of an empty list.
     public let checksError: String?
     public let files: [SupermuxPullRequestFile]
+    /// Conversation comments, review summaries and inline review comments,
+    /// oldest first.
+    public let comments: [SupermuxPullRequestComment]
 
     public init(
+        repositorySlug: String,
         number: Int,
         title: String,
         body: String,
@@ -230,8 +299,10 @@ public struct SupermuxPullRequestDetail: Hashable, Sendable, Identifiable {
         reviews: [SupermuxPullRequestReview],
         checks: [SupermuxPullRequestCheck],
         checksError: String? = nil,
-        files: [SupermuxPullRequestFile]
+        files: [SupermuxPullRequestFile],
+        comments: [SupermuxPullRequestComment] = []
     ) {
+        self.repositorySlug = repositorySlug
         self.number = number
         self.title = title
         self.body = body
@@ -256,6 +327,7 @@ public struct SupermuxPullRequestDetail: Hashable, Sendable, Identifiable {
         self.checks = checks
         self.checksError = checksError
         self.files = files
+        self.comments = comments
     }
 
     /// The review verdict derived from ``reviews`` and ``requestedReviewers``.
@@ -292,7 +364,7 @@ public struct SupermuxPullRequestDetail: Hashable, Sendable, Identifiable {
             switch check.outcome {
             case .success: passed += 1
             case .failure: failed += 1
-            case .pending: pending += 1
+            case .pending, .running: pending += 1
             case .skipped: skipped += 1
             }
         }

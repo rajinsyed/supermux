@@ -5,8 +5,12 @@ public import Foundation
 /// Abstracted so ``SupermuxPullRequestViewerModel`` can be unit-tested with a
 /// scripted provider instead of GitHub.
 public protocol SupermuxPullRequestDetailProviding: Sendable {
-    /// The open pull requests whose head is `branch` in `repositorySlug`.
-    func openPullRequests(repositorySlug: String, branch: String) async throws -> [SupermuxPullRequestSummary]
+    /// The open pull requests in `repositorySlug` whose head is
+    /// `headOwner:branch` (the head owner is the fork that pushed the branch,
+    /// which for a fork-to-upstream PR differs from the slug's owner).
+    func openPullRequests(
+        repositorySlug: String, headOwner: String, branch: String
+    ) async throws -> [SupermuxPullRequestSummary]
     /// The full detail for one pull request.
     func detail(repositorySlug: String, number: Int) async throws -> SupermuxPullRequestDetail
 }
@@ -29,8 +33,10 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
         self.client = client
     }
 
-    public func openPullRequests(repositorySlug: String, branch: String) async throws -> [SupermuxPullRequestSummary] {
-        guard let path = Self.openPullRequestsPath(repositorySlug: repositorySlug, branch: branch) else {
+    public func openPullRequests(
+        repositorySlug: String, headOwner: String, branch: String
+    ) async throws -> [SupermuxPullRequestSummary] {
+        guard let path = Self.openPullRequestsPath(repositorySlug: repositorySlug, headOwner: headOwner, branch: branch) else {
             throw SupermuxGitHubError.notAGitHubRepository
         }
         let items = try Self.decode([RESTPullRequest].self, from: try await client.get(path: path))
@@ -39,6 +45,7 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
             .compactMap { item in
                 guard let url = URL(string: item.htmlURL) else { return nil }
                 return SupermuxPullRequestSummary(
+                    repositorySlug: repositorySlug,
                     number: item.number, title: item.title, url: url, isDraft: item.draft ?? false
                 )
             }
@@ -49,6 +56,10 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
         async let pullRequestData = client.get(path: base)
         async let reviewsResult = attempt { try await client.get(path: "\(base)/reviews?per_page=100") }
         async let filesResult = attempt { try await client.get(path: "\(base)/files?per_page=100") }
+        async let issueCommentsResult = attempt {
+            try await client.get(path: "repos/\(repositorySlug)/issues/\(number)/comments?per_page=100")
+        }
+        async let reviewCommentsResult = attempt { try await client.get(path: "\(base)/comments?per_page=100") }
 
         let pullRequest = try Self.decode(RESTPullRequest.self, from: try await pullRequestData)
         let sha = pullRequest.head.sha ?? ""
@@ -81,26 +92,34 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
                 .filter { !runNames.contains($0.name) }
         }
 
+        let issueComments = (try? await issueCommentsResult.get())
+            .flatMap { try? Self.decode([RESTComment].self, from: $0) } ?? []
+        let reviewComments = (try? await reviewCommentsResult.get())
+            .flatMap { try? Self.decode([RESTComment].self, from: $0) } ?? []
+
         return Self.detail(
+            repositorySlug: repositorySlug,
             from: pullRequest,
             reviews: reviews,
             files: files,
             checks: checks,
-            checksError: checksError
+            checksError: checksError,
+            issueComments: issueComments,
+            reviewComments: reviewComments
         )
     }
 
     // MARK: - Mapping (pure, testable)
 
-    /// `pulls?state=open&head=owner:branch` for the slug, or `nil` for a
+    /// `pulls?state=open&head=headOwner:branch` for the slug, or `nil` for a
     /// malformed slug.
-    static func openPullRequestsPath(repositorySlug: String, branch: String) -> String? {
+    static func openPullRequestsPath(repositorySlug: String, headOwner: String, branch: String) -> String? {
         let parts = repositorySlug.split(separator: "/", maxSplits: 1).map(String.init)
-        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty, !headOwner.isEmpty else { return nil }
         var query = URLComponents()
         query.queryItems = [
             URLQueryItem(name: "state", value: "open"),
-            URLQueryItem(name: "head", value: "\(parts[0]):\(branch)"),
+            URLQueryItem(name: "head", value: "\(headOwner):\(branch)"),
             URLQueryItem(name: "sort", value: "updated"),
             URLQueryItem(name: "direction", value: "desc"),
             URLQueryItem(name: "per_page", value: "20"),
@@ -110,11 +129,14 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
     }
 
     static func detail(
+        repositorySlug: String,
         from pullRequest: RESTPullRequest,
         reviews: [RESTReview],
         files: [RESTFile],
         checks: [SupermuxPullRequestCheck],
-        checksError: String?
+        checksError: String?,
+        issueComments: [RESTComment] = [],
+        reviewComments: [RESTComment] = []
     ) -> SupermuxPullRequestDetail {
         let author = pullRequest.user?.login ?? ""
         let allReviews = reviews.compactMap { review -> SupermuxPullRequestReview? in
@@ -126,6 +148,7 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
             )
         }
         return SupermuxPullRequestDetail(
+            repositorySlug: repositorySlug,
             number: pullRequest.number,
             title: pullRequest.title,
             body: pullRequest.body ?? "",
@@ -158,7 +181,46 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
                     additions: $0.additions ?? 0,
                     deletions: $0.deletions ?? 0
                 )
-            }
+            },
+            comments: Self.comments(issue: issueComments, reviews: reviews, inline: reviewComments)
+        )
+    }
+
+    /// Merges the three comment sources into one oldest-first thread. Review
+    /// summaries without a body (a bare approval) are not comments.
+    static func comments(
+        issue: [RESTComment], reviews: [RESTReview], inline: [RESTComment]
+    ) -> [SupermuxPullRequestComment] {
+        var comments: [SupermuxPullRequestComment] = []
+        for comment in issue {
+            comments.append(Self.comment(from: comment, kind: .conversation))
+        }
+        for review in reviews {
+            guard let body = review.body?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty,
+                  let id = review.id else { continue }
+            comments.append(SupermuxPullRequestComment(
+                id: id,
+                kind: .review(Self.reviewState(review.state)),
+                author: review.user?.login ?? "",
+                body: body,
+                createdAt: review.submittedAt.flatMap(Self.date(from:)),
+                url: review.htmlURL.flatMap(URL.init(string:))
+            ))
+        }
+        for comment in inline {
+            comments.append(Self.comment(from: comment, kind: .inline(path: comment.path ?? "")))
+        }
+        return comments.sorted { ($0.createdAt ?? .distantPast) < ($1.createdAt ?? .distantPast) }
+    }
+
+    private static func comment(from comment: RESTComment, kind: SupermuxPullRequestComment.Kind) -> SupermuxPullRequestComment {
+        SupermuxPullRequestComment(
+            id: comment.id,
+            kind: kind,
+            author: comment.user?.login ?? "",
+            body: comment.body ?? "",
+            createdAt: comment.createdAt.flatMap(Self.date(from:)),
+            url: comment.htmlURL.flatMap(URL.init(string:))
         )
     }
 
@@ -188,8 +250,11 @@ public struct SupermuxPullRequestDetailService: SupermuxPullRequestDetailProvidi
         }
     }
 
-    /// Collapses a check run's `status` + `conclusion` into an outcome.
+    /// Collapses a check run's `status` + `conclusion` into an outcome:
+    /// `in_progress` is running; `queued`/`waiting`/`requested`/`pending` are
+    /// pending; only `completed` carries a conclusion.
     static func checkOutcome(status: String?, conclusion: String?) -> SupermuxPullRequestCheck.Outcome {
+        if status == "in_progress" { return .running }
         guard status == "completed" else { return .pending }
         switch conclusion {
         case "success": return .success
@@ -296,13 +361,34 @@ struct RESTPullRequest: Decodable, Sendable {
 }
 
 struct RESTReview: Decodable, Sendable {
+    let id: Int?
     let user: RESTPullRequest.User?
     let state: String
+    let body: String?
+    let htmlURL: String?
     let submittedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case user, state
+        case id, user, state, body
+        case htmlURL = "html_url"
         case submittedAt = "submitted_at"
+    }
+}
+
+/// An issue (conversation) comment or a pull-request review (inline) comment;
+/// the two payloads share these fields, `path` being inline-only.
+struct RESTComment: Decodable, Sendable {
+    let id: Int
+    let user: RESTPullRequest.User?
+    let body: String?
+    let path: String?
+    let htmlURL: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, user, body, path
+        case htmlURL = "html_url"
+        case createdAt = "created_at"
     }
 }
 

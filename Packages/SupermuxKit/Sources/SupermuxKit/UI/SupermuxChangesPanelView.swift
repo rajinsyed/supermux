@@ -107,7 +107,7 @@ public struct SupermuxChangesPanelView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if let pullRequests, pullRequests.selectedNumber != nil {
+            if let pullRequests, pullRequests.selected != nil {
                 // The PR viewer replaces the change list and commit area; the
                 // header (branch + PR buttons) stays so the user can switch
                 // PRs or click the selected button to come back.
@@ -254,9 +254,9 @@ public struct SupermuxChangesPanelView: View {
             ForEach(pullRequests.visibleButtons(known: knownPullRequest)) { summary in
                 SupermuxPullRequestHeaderButton(
                     pullRequest: summary,
-                    isSelected: pullRequests.selectedNumber == summary.number
+                    isSelected: pullRequests.selected?.id == summary.id
                 ) {
-                    pullRequests.open(number: summary.number)
+                    pullRequests.open(summary)
                 }
             }
         }

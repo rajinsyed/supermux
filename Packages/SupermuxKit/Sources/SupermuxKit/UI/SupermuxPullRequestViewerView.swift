@@ -14,6 +14,7 @@ public struct SupermuxPullRequestViewerView: View {
     let onOpenURL: (URL) -> Void
 
     @State var isBodyExpanded = false
+    @State var expandedCommentIds: Set<Int> = []
 
     /// Creates the viewer.
     /// - Parameters:
@@ -36,7 +37,10 @@ public struct SupermuxPullRequestViewerView: View {
                 emptyState
             }
         }
-        .onChange(of: model.selectedNumber) { _, _ in isBodyExpanded = false }
+        .onChange(of: model.selected) { _, _ in
+            isBodyExpanded = false
+            expandedCommentIds = []
+        }
     }
 
     // MARK: - Top bar
@@ -57,10 +61,12 @@ public struct SupermuxPullRequestViewerView: View {
             .buttonStyle(.plain)
             .help(String(localized: "supermux.pullRequest.viewer.back.help", defaultValue: "Back to changes"))
 
-            if let detail = model.selectedDetail {
-                Text("#\(detail.number)")
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+            if let selected = model.selected {
+                Text("\(selected.repositorySlug)#\(selected.number)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
             }
             Spacer(minLength: 4)
             if let detail = model.selectedDetail {
@@ -117,6 +123,7 @@ public struct SupermuxPullRequestViewerView: View {
                 }
                 descriptionSection(detail)
                 filesSection(detail)
+                commentsSection(detail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
@@ -210,7 +217,9 @@ public struct SupermuxPullRequestViewerView: View {
 
     // MARK: - Shared bits
 
-    func sectionTitle(_ title: String, trailing: String? = nil) -> some View {
+    /// A section header: uppercase title, optional count capsule, optional
+    /// orange note (e.g. "1 in progress") — all leading-aligned.
+    func sectionTitle(_ title: String, trailing: String? = nil, note: String? = nil) -> some View {
         HStack(spacing: 4) {
             Text(title)
                 .font(.system(size: 10, weight: .semibold))
@@ -223,6 +232,12 @@ public struct SupermuxPullRequestViewerView: View {
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
                     .background(.quaternary, in: Capsule())
+            }
+            if let note {
+                Text(note)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }

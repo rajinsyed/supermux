@@ -5,7 +5,7 @@ import CmuxGit
 /// State for the Changes panel's pull-request viewer.
 ///
 /// **Nothing loads until the user asks.** The model holds no timer and no
-/// watcher: ``open(number:)`` (a click on a header PR button) and
+/// watcher: ``open(_:)`` (a click on a header PR button) and
 /// ``refresh()`` (the viewer's refresh button) are the only entry points that
 /// touch the network, so the panel costs nothing while it sits idle. Loaded
 /// details are cached per PR number for the current directory, so re-opening
@@ -27,9 +27,9 @@ public final class SupermuxPullRequestViewerModel {
     /// Whether ``openPullRequests`` reflects a completed load for this context.
     public private(set) var hasLoadedList = false
     /// The PR the viewer is showing; `nil` shows the regular changes list.
-    public private(set) var selectedNumber: Int?
-    /// Loaded details keyed by PR number.
-    public private(set) var details: [Int: SupermuxPullRequestDetail] = [:]
+    public private(set) var selected: SupermuxPullRequestSummary?
+    /// Loaded details keyed by ``SupermuxPullRequestSummary/id`` (`owner/repo#N`).
+    public private(set) var details: [String: SupermuxPullRequestDetail] = [:]
     /// Whether a load is in flight.
     public private(set) var isLoading = false
     /// The last load's error, cleared by the next successful load.
@@ -66,9 +66,9 @@ public final class SupermuxPullRequestViewerModel {
         self.now = now
     }
 
-    /// The detail for ``selectedNumber``, once loaded.
+    /// The detail for ``selected``, once loaded.
     public var selectedDetail: SupermuxPullRequestDetail? {
-        selectedNumber.flatMap { details[$0] }
+        selected.flatMap { details[$0.id] }
     }
 
     /// Points the viewer at a workspace. A change of directory or branch
@@ -82,7 +82,7 @@ public final class SupermuxPullRequestViewerModel {
         inflightLoads = 0
         openPullRequests = []
         hasLoadedList = false
-        selectedNumber = nil
+        selected = nil
         details = [:]
         isLoading = false
         errorMessage = nil
@@ -98,52 +98,51 @@ public final class SupermuxPullRequestViewerModel {
 
     /// Pure merge behind ``visibleButtons(known:)``: only open PRs earn a
     /// button; a fetched entry wins over the bare known badge for the same
-    /// number (it carries the title); a known PR the fetch did not see stays
-    /// (cmux's probe may be fresher than the last on-demand load).
+    /// repo + number (it carries the title); a known PR the fetch did not see
+    /// stays (cmux's probe may be fresher than the last on-demand load). The
+    /// known badge's repository comes from its URL, so a fork's `#49` is never
+    /// confused with upstream's `#49`.
     nonisolated static func visibleButtons(
         known: SupermuxPullRequest?,
         fetched: [SupermuxPullRequestSummary]
     ) -> [SupermuxPullRequestSummary] {
         var buttons = fetched
-        if let known, known.status == .open, !fetched.contains(where: { $0.number == known.number }) {
-            buttons.insert(
-                SupermuxPullRequestSummary(
-                    number: known.number, title: known.title ?? "", url: known.url, isDraft: false
-                ),
-                at: 0
-            )
+        if let known, known.status == .open,
+           let summary = SupermuxPullRequestSummary(known: known),
+           !fetched.contains(where: { $0.id == summary.id }) {
+            buttons.insert(summary, at: 0)
         }
         return buttons
     }
 
-    /// Shows `number` in the viewer, loading it (and the open-PR list, the
-    /// first time) unless it is already cached. Clicking the selected PR's
-    /// button again closes the viewer.
-    public func open(number: Int) {
-        if selectedNumber == number {
+    /// Shows a PR in the viewer, loading it (and the open-PR list, the first
+    /// time) unless it is already cached. Clicking the selected PR's button
+    /// again closes the viewer.
+    public func open(_ pullRequest: SupermuxPullRequestSummary) {
+        if selected?.id == pullRequest.id {
             close()
             return
         }
-        selectedNumber = number
+        selected = pullRequest
         errorMessage = nil
-        if details[number] == nil || !hasLoadedList {
-            startLoad(numbers: [number], reloadList: !hasLoadedList)
+        if details[pullRequest.id] == nil || !hasLoadedList {
+            startLoad(targets: [pullRequest], reloadList: !hasLoadedList)
         }
     }
 
     /// Returns to the regular changes list. Cached details are kept.
     public func close() {
-        selectedNumber = nil
+        selected = nil
     }
 
     /// Re-fetches the open-PR list and the selected PR's detail.
     public func refresh() {
-        startLoad(numbers: selectedNumber.map { [$0] } ?? [], reloadList: true)
+        startLoad(targets: selected.map { [$0] } ?? [], reloadList: true)
     }
 
     // MARK: - Loading
 
-    private func startLoad(numbers: [Int], reloadList: Bool) {
+    private func startLoad(targets: [SupermuxPullRequestSummary], reloadList: Bool) {
         guard let directory else { return }
         let generation = generation
         let branch = branch
@@ -151,7 +150,7 @@ public final class SupermuxPullRequestViewerModel {
         isLoading = true
         Task { [weak self] in
             guard let self else { return }
-            let outcome = await self.load(directory: directory, branch: branch, numbers: numbers, reloadList: reloadList)
+            let outcome = await self.load(directory: directory, branch: branch, targets: targets, reloadList: reloadList)
             // A context change while suspended reset the counter and dropped
             // this pass's cache; its result is for a directory no longer shown.
             guard generation == self.generation else { return }
@@ -162,32 +161,67 @@ public final class SupermuxPullRequestViewerModel {
 
     private struct LoadOutcome {
         var list: [SupermuxPullRequestSummary]?
-        var details: [Int: SupermuxPullRequestDetail] = [:]
+        var details: [String: SupermuxPullRequestDetail] = [:]
         var error: (any Error)?
     }
 
-    private func load(directory: String, branch: String?, numbers: [Int], reloadList: Bool) async -> LoadOutcome {
+    /// Lists open PRs across every GitHub remote of the checkout and loads
+    /// each target from the repository its summary names.
+    ///
+    /// The list queries each remote's repository for heads pushed by each
+    /// remote's owner: a fork checkout (`origin` = `me/repo`, `upstream` =
+    /// `org/repo`) then finds both a same-repo PR and a fork-to-upstream PR
+    /// (`org/repo` with head `me:branch`). Results are de-duplicated by URL.
+    private func load(
+        directory: String, branch: String?, targets: [SupermuxPullRequestSummary], reloadList: Bool
+    ) async -> LoadOutcome {
         var outcome = LoadOutcome()
         let slugs = await slugResolver(directory)
-        guard let slug = slugs.first else {
+        guard !slugs.isEmpty else {
             outcome.error = SupermuxGitHubError.notAGitHubRepository
             return outcome
         }
         if reloadList, let branch {
-            do {
-                outcome.list = try await provider.openPullRequests(repositorySlug: slug, branch: branch)
-            } catch {
-                outcome.error = error
+            var list: [SupermuxPullRequestSummary] = []
+            var seen: Set<URL> = []
+            for (slug, owner) in Self.listQueries(slugs: slugs) {
+                do {
+                    for summary in try await provider.openPullRequests(repositorySlug: slug, headOwner: owner, branch: branch)
+                    where seen.insert(summary.url).inserted {
+                        list.append(summary)
+                    }
+                } catch {
+                    outcome.error = error
+                }
             }
+            outcome.list = list
         }
-        for number in numbers {
+        for target in targets {
             do {
-                outcome.details[number] = try await provider.detail(repositorySlug: slug, number: number)
+                outcome.details[target.id] = try await provider.detail(
+                    repositorySlug: target.repositorySlug, number: target.number
+                )
             } catch {
                 outcome.error = error
             }
         }
         return outcome
+    }
+
+    /// Every (repository, head owner) pair to list: each slug crossed with
+    /// each distinct owner among the slugs, the slug's own owner first.
+    nonisolated static func listQueries(slugs: [String]) -> [(slug: String, owner: String)] {
+        let owners = slugs.compactMap { $0.split(separator: "/").first.map(String.init) }
+        var seenOwners: Set<String> = []
+        let distinctOwners = owners.filter { seenOwners.insert($0).inserted }
+        var queries: [(slug: String, owner: String)] = []
+        for (slug, own) in zip(slugs, owners) {
+            queries.append((slug, own))
+            for other in distinctOwners where other != own {
+                queries.append((slug, other))
+            }
+        }
+        return queries
     }
 
     private func apply(_ outcome: LoadOutcome) {

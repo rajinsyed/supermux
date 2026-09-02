@@ -60,9 +60,13 @@ extension SupermuxPullRequestViewerView {
     func checksSection(_ detail: SupermuxPullRequestDetail) -> some View {
         let summary = detail.checkSummary
         VStack(alignment: .leading, spacing: 4) {
+            let pendingCount = summary.pending
             sectionTitle(
                 String(localized: "supermux.pullRequest.viewer.checks", defaultValue: "Checks"),
-                trailing: summary.total > 0 ? "\(summary.passed)/\(summary.total)" : nil
+                trailing: summary.total > 0 ? "\(summary.passed)/\(summary.total)" : nil,
+                note: pendingCount > 0
+                    ? String(localized: "supermux.pullRequest.checks.inProgress", defaultValue: "\(pendingCount) in progress")
+                    : nil
             )
             if let error = detail.checksError {
                 Text(error)
@@ -83,7 +87,7 @@ extension SupermuxPullRequestViewerView {
 
     private func checkRow(_ check: SupermuxPullRequestCheck) -> some View {
         HStack(spacing: 5) {
-            if check.outcome == .pending {
+            if check.outcome == .running {
                 ProgressView()
                     .controlSize(.mini)
                     .frame(width: 12, height: 12)
@@ -98,6 +102,11 @@ extension SupermuxPullRequestViewerView {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 4)
+            if let stateLabel = check.outcome.inProgressLabel {
+                Text(stateLabel)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.orange)
+            }
             if let url = check.url {
                 Button {
                     onOpenURL(url)
@@ -221,6 +230,130 @@ extension SupermuxPullRequestViewerView {
     }
 }
 
+// MARK: - Comments
+
+extension SupermuxPullRequestViewerView {
+    static let collapsedCommentLines = 6
+
+    @ViewBuilder
+    func commentsSection(_ detail: SupermuxPullRequestDetail) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionTitle(
+                String(localized: "supermux.pullRequest.viewer.commentsSection", defaultValue: "Comments"),
+                trailing: detail.comments.isEmpty ? nil : "\(detail.comments.count)"
+            )
+            if detail.comments.isEmpty {
+                Text(String(localized: "supermux.pullRequest.comments.none", defaultValue: "No comments yet"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(detail.comments) { comment in
+                    commentRow(comment)
+                }
+            }
+        }
+    }
+
+    private func commentRow(_ comment: SupermuxPullRequestComment) -> some View {
+        let body = comment.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isExpanded = expandedCommentIds.contains(comment.id)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: comment.kind.symbol)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(comment.kind.tint)
+                Text(comment.author)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .lineLimit(1)
+                if let label = comment.kind.label {
+                    Text(label)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(comment.kind.tint)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if let createdAt = comment.createdAt {
+                    Text(createdAt.formatted(.relative(presentation: .named)))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                if let url = comment.url {
+                    Button {
+                        onOpenURL(url)
+                    } label: {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(String(localized: "supermux.pullRequest.comment.open.help", defaultValue: "Open comment on GitHub"))
+                }
+            }
+            if case .inline(let path) = comment.kind, !path.isEmpty {
+                Text(path)
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+            Text(body)
+                .font(.system(size: 10.5))
+                .lineLimit(isExpanded ? nil : Self.collapsedCommentLines)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if Self.commentNeedsExpansion(body) {
+                Button(isExpanded
+                    ? String(localized: "supermux.pullRequest.description.less", defaultValue: "Show less")
+                    : String(localized: "supermux.pullRequest.description.more", defaultValue: "Show more")
+                ) {
+                    if isExpanded {
+                        expandedCommentIds.remove(comment.id)
+                    } else {
+                        expandedCommentIds.insert(comment.id)
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(7)
+        .background(RoundedRectangle(cornerRadius: 5).fill(.quaternary.opacity(0.5)))
+    }
+
+    static func commentNeedsExpansion(_ body: String) -> Bool {
+        body.split(separator: "\n", omittingEmptySubsequences: false).count > collapsedCommentLines || body.count > 400
+    }
+}
+
+extension SupermuxPullRequestComment.Kind {
+    var symbol: String {
+        switch self {
+        case .conversation: return "bubble.left"
+        case .review(let state): return state.symbol
+        case .inline: return "text.bubble"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .conversation, .inline: return .secondary
+        case .review(let state): return state.tint
+        }
+    }
+
+    /// A short tag after the author: the review verdict for review
+    /// summaries, "on a file" for inline comments, nothing for conversation.
+    var label: String? {
+        switch self {
+        case .conversation: return nil
+        case .review(let state): return state.label
+        case .inline: return String(localized: "supermux.pullRequest.comment.inline", defaultValue: "on a file")
+        }
+    }
+}
+
 // MARK: - Presentation helpers
 
 extension SupermuxPullRequestReview.State {
@@ -287,6 +420,7 @@ extension SupermuxPullRequestCheck.Outcome {
     var symbol: String {
         switch self {
         case .pending: return "clock"
+        case .running: return "circle.dotted"
         case .success: return "checkmark.circle.fill"
         case .failure: return "xmark.circle.fill"
         case .skipped: return "minus.circle"
@@ -295,10 +429,19 @@ extension SupermuxPullRequestCheck.Outcome {
 
     var tint: Color {
         switch self {
-        case .pending: return .secondary
+        case .pending, .running: return .orange
         case .success: return SupermuxPullRequest.Status.open.supermuxTint
         case .failure: return SupermuxPullRequest.Status.closed.supermuxTint
         case .skipped: return .secondary
+        }
+    }
+
+    /// Trailing state word for checks that have not finished; `nil` otherwise.
+    var inProgressLabel: String? {
+        switch self {
+        case .pending: return String(localized: "supermux.pullRequest.check.queued", defaultValue: "Queued")
+        case .running: return String(localized: "supermux.pullRequest.check.running", defaultValue: "Running")
+        case .success, .failure, .skipped: return nil
         }
     }
 }
