@@ -269,8 +269,8 @@ private struct SupermuxRowPanGesture: UIGestureRecognizerRepresentable {
     }
 
     func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        context.coordinator.isRowOpen = isOpen
-        context.coordinator.opensTowardNegativeX = opensTowardNegativeX
+        context.coordinator.gate.isRowOpen = isOpen
+        context.coordinator.gate.opensTowardNegativeX = opensTowardNegativeX
         // Re-assert ownership: SwiftUI owns this recognizer's lifetime, and
         // nothing documents that it leaves our delegate installed across
         // updates. Losing the delegate would silently disable the direction
@@ -308,46 +308,23 @@ private struct SupermuxRowPanGesture: UIGestureRecognizerRepresentable {
     /// Delegate for the direction gate, plus the per-gesture direction latch.
     @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        /// Whether the row is currently revealed — an open row must also accept
-        /// the closing swipe, which runs the other way.
-        var isRowOpen = false
+        /// The pure direction logic, configured from the row each update.
+        var gate = SupermuxSwipeDirectionGate()
 
-        /// Whether a closed row opens on a negative x translation (LTR).
-        /// Without this the gate would reject the opening drag outright in an
-        /// RTL layout, leaving no way to reveal the tray at all.
-        var opensTowardNegativeX = true
-
-        /// This gesture's direction verdict, latched on the first sample and
-        /// held until it ends. Re-deciding every frame would abandon a swipe
-        /// mid-drag the moment the finger arced downward.
-        private(set) var isTrackingHorizontally: Bool?
-
-        /// Whether this pan may move the row, deciding once per gesture.
+        /// Whether the pan may move the row, deciding once per gesture.
         func tracksHorizontally(_ pan: UIPanGestureRecognizer) -> Bool {
-            if let isTrackingHorizontally { return isTrackingHorizontally }
-            let verdict = isHorizontal(pan)
-            isTrackingHorizontally = verdict
-            return verdict
+            gate.tracks(translation: pan.translation(in: pan.view))
         }
+
+        var isTrackingHorizontally: Bool? { gate.verdict }
 
         func endTracking() {
-            isTrackingHorizontally = nil
-        }
-
-        /// Horizontal intent only, with ambiguous diagonals conceded to the
-        /// scroll view. Without the bias factor a 45° flick would open rows
-        /// during ordinary scrolling.
-        private func isHorizontal(_ pan: UIPanGestureRecognizer) -> Bool {
-            let translation = pan.translation(in: pan.view)
-            guard abs(translation.x) > abs(translation.y) * 1.15 else { return false }
-            // A closed row only opens in the reveal direction; an open one
-            // moves either way (it can be dragged shut).
-            return isRowOpen || (opensTowardNegativeX ? translation.x < 0 : translation.x > 0)
+            gate.reset()
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-            return isHorizontal(pan)
+            return gate.mayBegin(translation: pan.translation(in: pan.view))
         }
 
         /// Coexist with the table's scroll pan rather than outranking it.
