@@ -280432,6 +280432,23 @@
           }
         }
       }
+    },
+    "supermux.agent.error.promptFileWriteFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save the prompt for Claude: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude 用のプロンプトを保存できませんでした: %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

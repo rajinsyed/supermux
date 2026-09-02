@@ -58,7 +58,10 @@ enum SupermuxComposition {
     static let agentWorktreeLauncher = SupermuxAgentWorktreeLauncher(
         projectsModel: projectsModel,
         namer: aiWorktreeNamer,
-        settings: agentLauncherSettings
+        settings: agentLauncherSettings,
+        promptFileDirectory: CmuxSettings.CmuxStateDirectory.url(
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        ).appendingPathComponent("supermux-agent-prompts", isDirectory: true)
     )
 
     /// Bundle handed to every window's Projects section.

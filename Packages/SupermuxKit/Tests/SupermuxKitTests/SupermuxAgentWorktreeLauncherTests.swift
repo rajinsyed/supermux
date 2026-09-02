@@ -178,3 +178,63 @@ private struct StubWorktreeNamer: SupermuxAIWorktreeNaming {
     func isConfigured() async -> Bool { names != nil }
     func suggestNames(forPrompt prompt: String) async -> SupermuxPromptNames? { names }
 }
+
+/// A prompt too long for the pty's canonical input line is written to the
+/// launcher's prompt directory before git runs, and the open request's
+/// command reads it from there.
+@Suite(.serialized)
+@MainActor
+struct SupermuxAgentWorktreeLauncherLongPromptTests {
+    @Test func longPromptIsWrittenToAFileTheLaunchLineReads() async throws {
+        let root = try GitFixture.makeFixtureRepo(prefix: "supermux-agent-long-prompt")
+        defer { GitFixture.cleanUp(root) }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-agent-long-prompt-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let project = SupermuxProject(name: "Fixture", rootPath: root)
+        let store = SupermuxProjectStore(fileURL: directory.appendingPathComponent("projects.json"))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try await store.save(SupermuxProjectsFile(
+            version: SupermuxProjectsFile.currentVersion, projects: [project], isSectionCollapsed: false
+        ))
+        let model = SupermuxProjectsModel(store: store, worktreeService: SupermuxGitWorktreeService())
+        await model.loadIfNeeded()
+        let suite = "SupermuxAgentWorktreeLauncherLongPromptTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let promptDirectory = directory.appendingPathComponent("prompts", isDirectory: true)
+        let launcher = SupermuxAgentWorktreeLauncher(
+            projectsModel: model,
+            namer: nil,
+            settings: SupermuxAgentLauncherSettings(defaults: defaults),
+            shell: .posix,
+            promptFileDirectory: promptDirectory
+        )
+        let prompt = String(repeating: "Add retry to the uploader; it's flaky → fix it 😀\n", count: 40)
+
+        let launch = try await launcher.start(SupermuxAgentLaunchRequest(
+            projectId: project.id, prompt: prompt, command: "claude"
+        ))
+
+        let command = try #require(launch.openRequest.initialCommand)
+        #expect(command.utf8.count + 1 <= SupermuxAgentLaunchCommand.maxInputUTF8Length)
+        #expect(command.hasPrefix("claude -- \"$(command cat -- '"))
+        let files = try FileManager.default.contentsOfDirectory(atPath: promptDirectory.path)
+        #expect(files.count == 1)
+        let written = try String(contentsOf: promptDirectory.appendingPathComponent(files[0]), encoding: .utf8)
+        #expect(written == prompt.trimmingCharacters(in: .whitespacesAndNewlines))
+        #expect(command == launcher.shellLine(command: "claude", model: nil, effort: nil, prompt: prompt))
+
+        // A launch that fails in git must NOT delete the prompt file: the path
+        // is shared by every launch of the same prompt, and a concurrent one
+        // may still be reading it. The 7-day prune reclaims it instead.
+        await #expect(throws: (any Error).self) {
+            try await launcher.start(SupermuxAgentLaunchRequest(
+                projectId: project.id, prompt: prompt, command: "claude",
+                baseBranch: "no-such-branch-\(UUID().uuidString)"
+            ))
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: promptDirectory.path) == files)
+        #expect(FileManager.default.fileExists(atPath: promptDirectory.appendingPathComponent(files[0]).path))
+    }
+}
