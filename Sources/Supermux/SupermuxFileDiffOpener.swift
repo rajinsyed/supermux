@@ -119,6 +119,10 @@ final class SupermuxFileDiffOpener {
                     let stderrPrefix = String(decoding: stderr.prefix(240), as: UTF8.self)
                         .replacingOccurrences(of: "\n", with: " ")
                     cmuxDebugLog("supermux.fileDiff.open exited status=\(status) stderr=\(stderrPrefix)")
+                    Self.appendDiagnostics(
+                        "exit status=\(status) socket=\(socketPath) args=\(arguments.joined(separator: " ")) "
+                            + "stderr=\(stderrPrefix)"
+                    )
 #endif
                     if status != 0 { NSSound.beep() }
                     return
@@ -161,6 +165,24 @@ final class SupermuxFileDiffOpener {
             .first { id, panel in id != previousSurface && !(panel is BrowserPanel) }?
             .key
     }
+
+#if DEBUG
+    /// Debug-build diagnostics beside the debug event log, unredacted (the
+    /// event log masks any value containing a path, which hides the CLI's
+    /// error text). Never compiled into release builds.
+    nonisolated private static func appendDiagnostics(_ line: String) {
+        let base = ProcessInfo.processInfo.environment["CMUX_DEBUG_LOG"] ?? "/tmp/cmux-debug.log"
+        let url = URL(fileURLWithPath: base + ".filediff")
+        let text = "\(Date()) \(line)\n"
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(text.utf8))
+        } else {
+            try? Data(text.utf8).write(to: url)
+        }
+    }
+#endif
 
     /// The `surface_id` from `cmux diff --json` output; `nil` when absent or
     /// unparseable (the opener then simply stops tracking a viewer to replace).
