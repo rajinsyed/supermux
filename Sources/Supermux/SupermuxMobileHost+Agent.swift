@@ -1,6 +1,7 @@
 import Foundation
 import SupermuxKit
 import SupermuxMobileCore
+import os
 
 /// `mobile.supermux.agent.*` handlers: the Mac side of the phone's "Start
 /// Claude in a new worktree" sheet. Commands, model catalogs, naming, and
@@ -8,6 +9,8 @@ import SupermuxMobileCore
 /// uses (``SupermuxComposition/agentLaunch``); the phone only picks and
 /// types the prompt.
 extension TerminalController {
+    private static let supermuxAgentLogger = Logger(subsystem: "com.cmuxterm.app", category: "supermux.agent")
+
     /// `mobile.supermux.agent.options`: `{project_id?, command?, refresh?}` →
     /// ``SupermuxAgentLaunchOptionsDTO``. An unknown `command` falls back to
     /// the Mac's remembered selection; `refresh: true` bypasses the cached
@@ -89,7 +92,19 @@ extension TerminalController {
                 data: nil
             )
         } catch {
-            return .err(code: "unavailable", message: error.localizedDescription, data: nil)
+            // Diagnostics stay in the Mac log; the phone gets one fixed,
+            // localized sentence rather than an arbitrary underlying error.
+            Self.supermuxAgentLogger.error(
+                "agent.start failed for project \(project.id.uuidString, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            return .err(
+                code: "unavailable",
+                message: String(
+                    localized: "supermux.agent.error.startFailed",
+                    defaultValue: "Couldn’t start Claude on the Mac."
+                ),
+                data: nil
+            )
         }
         var workspaceID: UUID?
         if let tabManager = v2ResolveTabManager(params: params) {

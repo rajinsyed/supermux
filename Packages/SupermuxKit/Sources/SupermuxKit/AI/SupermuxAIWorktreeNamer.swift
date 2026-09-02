@@ -59,14 +59,11 @@ public struct SupermuxAIWorktreeNamer: SupermuxAIWorktreeNaming {
     }
 
     /// Parses the model's reply. Accepts a bare JSON object or one wrapped in
-    /// a code fence; tolerates prose around it by locating the first `{…}`.
+    /// a code fence; tolerates prose around it (braces included) by taking
+    /// the first balanced `{…}` that decodes as an object.
     static func parse(_ raw: String, naming: SupermuxBranchName) -> SupermuxPromptNames? {
         let cleaned = SupermuxAIReplyCleanup.strippingCodeFence(raw)
-        guard let open = cleaned.firstIndex(of: "{"),
-              let close = cleaned.lastIndex(of: "}"),
-              open < close else { return nil }
-        let json = cleaned[open...close]
-        guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+        guard let object = SupermuxAIJSONObjectExtraction.firstObject(in: cleaned),
               let title = (object["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else { return nil }
         let branchSource = (object["branch"] as? String) ?? title

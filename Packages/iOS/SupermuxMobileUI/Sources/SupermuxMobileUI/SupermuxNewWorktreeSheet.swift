@@ -52,8 +52,9 @@ public struct SupermuxNewWorktreeSheet: View {
     ///   - defaultBaseBranch: The project's configured starting branch, if any.
     ///   - showsBaseBranchPicker: Whether the host supports explicit starting-
     ///     branch selection.
-    ///   - agentStore: The agent-launch store (options already loaded), or
-    ///     `nil` to hide the Claude path.
+    ///   - agentStore: The agent-launch store, or `nil` to hide the Claude
+    ///     path. The sheet loads its options itself, so presenting never
+    ///     waits on the Mac's model probe.
     ///   - suggestBranch: Asks the Mac for a branch-name suggestion.
     ///   - createWorktree: Creates a plain worktree; returns the opened
     ///     workspace's id when the Mac opened one.
@@ -156,6 +157,14 @@ public struct SupermuxNewWorktreeSheet: View {
         }
         .interactiveDismissDisabled(isCreating)
         .accessibilityIdentifier("SupermuxNewWorktreeSheet")
+        // The Claude options (commands + model catalog) load behind the open
+        // sheet: a cold probe can take seconds and must never hold the sheet
+        // back from a plain worktree. Picks reset by `selectCommand` keep a
+        // Start pressed mid-load on the CLI defaults.
+        .task {
+            guard let agentStore, !agentStore.hasLoadedOptions else { return }
+            await agentStore.loadOptions()
+        }
         .onChange(of: branches, initial: true) { _, _ in updateUntouchedBaseBranch() }
         .onChange(of: defaultBaseBranch) { _, _ in updateUntouchedBaseBranch() }
     }
@@ -339,19 +348,27 @@ public struct SupermuxNewWorktreeSheet: View {
         errorMessage = nil
         Task {
             do {
-                let workspaceID: String?
                 if hasPrompt, let agentStore {
-                    workspaceID = try await agentStore.start(
+                    let result = try await agentStore.start(
                         prompt: prompt,
                         baseBranch: baseBranchForCreate,
                         workspaceName: workspaceName,
                         branchName: branchName
-                    ).workspaceId
-                } else {
-                    workspaceID = try await createWorktree(workspaceName, branchName, baseBranchForCreate, openAfterCreate)
-                }
-                if hasPrompt || openAfterCreate, let workspaceID {
+                    )
+                    // Claude only runs in an opened workspace: a reply without
+                    // one is not a success to dismiss on. The worktree exists,
+                    // so say so and stay put rather than create a second one.
+                    guard let workspaceID = result.workspaceId else {
+                        errorMessage = Self.workspaceNotOpenedMessage(branch: result.branchName)
+                        isCreating = false
+                        return
+                    }
                     openWorkspace(workspaceID)
+                } else {
+                    let workspaceID = try await createWorktree(workspaceName, branchName, baseBranchForCreate, openAfterCreate)
+                    if openAfterCreate, let workspaceID {
+                        openWorkspace(workspaceID)
+                    }
                 }
                 dismiss()
             } catch {
@@ -359,6 +376,19 @@ public struct SupermuxNewWorktreeSheet: View {
                 isCreating = false
             }
         }
+    }
+}
+
+extension SupermuxNewWorktreeSheet {
+    /// The inline error for an `agent.start` that created the worktree but
+    /// opened no workspace (the Mac had no window to open it in).
+    static func workspaceNotOpenedMessage(branch: String?) -> String {
+        let format = String(
+            localized: "supermux.newWorktree.error.workspaceNotOpened",
+            defaultValue: "The Mac created the worktree “%@” but couldn’t open a workspace for it. Open it from the worktree list.",
+            bundle: .module
+        )
+        return String(format: format, branch ?? "")
     }
 }
 

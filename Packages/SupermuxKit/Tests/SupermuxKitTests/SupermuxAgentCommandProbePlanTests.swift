@@ -26,6 +26,24 @@ struct SupermuxAgentCommandProbePlanTests {
         #expect(plan.environment["HOME"] == "/Users/x")
     }
 
+    /// fish has no `"$@"`: its `-c` script sees the trailing words as `$argv`.
+    @Test func fishProbeForwardsFlagsThroughArgv() {
+        let plan = SupermuxAgentCommandProbePlan.plan(
+            command: "cc",
+            shellPath: "/opt/homebrew/bin/fish",
+            workingDirectoryURL: URL(fileURLWithPath: "/tmp/proj"),
+            environment: [:]
+        )
+        #expect(plan.arguments == [
+            "-l", "-i", "-c", "cc $argv",
+            "-p",
+            "--input-format", "stream-json",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--permission-prompt-tool", "stdio",
+        ])
+    }
+
     @Test func shellPathFallsBackToZsh() {
         #expect(SupermuxAgentCommandProbePlan.shellPath(environment: [:]) == "/bin/zsh")
         #expect(SupermuxAgentCommandProbePlan.shellPath(environment: ["SHELL": " "]) == "/bin/zsh")

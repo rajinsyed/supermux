@@ -23,12 +23,15 @@ public struct SupermuxAgentModelCatalogResult: Equatable, Sendable {
 }
 
 /// Serves each Claude command's model catalog: cached when fresh, probed
-/// otherwise, with one in-flight probe per command shared across callers.
+/// otherwise, with one in-flight probe per (command, working directory)
+/// shared across callers.
 ///
 /// Catalogs are persisted through the harness's ``SupermuxHarnessModelCatalogStore``
-/// under a per-command pseudo-path (``storagePath(for:)``), so a `ccx` proxy
-/// catalog and the plain `claude` catalog never mix, and a catalog fetched by
-/// the Mac sheet is what the phone is served next.
+/// under a per-command, per-directory pseudo-path
+/// (``storagePath(for:workingDirectoryURL:)``), so a `ccx` proxy catalog and
+/// the plain `claude` catalog never mix, a wrapper that reads project
+/// settings is never served another project's models, and a catalog fetched
+/// by the Mac sheet is what the phone is served next.
 @MainActor
 public final class SupermuxAgentModelCatalog {
     /// Reads a catalog for a launch plan. Production wraps the harness probe;
@@ -65,19 +68,25 @@ public final class SupermuxAgentModelCatalog {
     /// The pseudo-path a command's catalog is cached under.
     ///
     /// The store keys by file path; a command is not a file, so it is filed
-    /// under a reserved directory that no real executable lives in. Stable
-    /// across working directories (the store standardizes paths against `/`).
-    /// - Parameter command: The Claude command.
-    public static func storagePath(for command: String) -> String {
+    /// under a reserved directory that no real executable lives in, with the
+    /// standardized working directory appended: a wrapper can read
+    /// per-project settings, so the probe context is part of the identity.
+    /// - Parameters:
+    ///   - command: The Claude command.
+    ///   - workingDirectoryURL: Where the probe runs.
+    public static func storagePath(for command: String, workingDirectoryURL: URL) -> String {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         let escaped = trimmed.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? trimmed
-        return "/supermux-agent-command/" + escaped
+        return "/supermux-agent-command/" + escaped + workingDirectoryURL.standardizedFileURL.path
     }
 
-    /// The cached catalog for `command`, when one is still fresh.
-    /// - Parameter command: The Claude command.
-    public func cachedModels(for command: String) -> [SupermuxAgentModelDTO]? {
-        store.snapshot(forBinaryPath: Self.storagePath(for: command))
+    /// The cached catalog for `command` in `workingDirectoryURL`, when one is
+    /// still fresh.
+    /// - Parameters:
+    ///   - command: The Claude command.
+    ///   - workingDirectoryURL: Where the probe ran.
+    public func cachedModels(for command: String, workingDirectoryURL: URL) -> [SupermuxAgentModelDTO]? {
+        store.snapshot(forBinaryPath: Self.storagePath(for: command, workingDirectoryURL: workingDirectoryURL))
             .map { $0.models.compactMap { SupermuxAgentModelDTO(initializeModel: $0.rawValue) } }
     }
 
@@ -94,7 +103,9 @@ public final class SupermuxAgentModelCatalog {
         workingDirectoryURL: URL,
         forceRefresh: Bool = false
     ) async -> SupermuxAgentModelCatalogResult {
-        if !forceRefresh, let cached = cachedModels(for: command), !cached.isEmpty {
+        if !forceRefresh,
+           let cached = cachedModels(for: command, workingDirectoryURL: workingDirectoryURL),
+           !cached.isEmpty {
             return SupermuxAgentModelCatalogResult(models: cached, source: .cache)
         }
         do {
@@ -110,7 +121,7 @@ public final class SupermuxAgentModelCatalog {
     }
 
     /// Probes `command` now and persists the result. Concurrent callers for
-    /// the same command share one probe.
+    /// the same command and working directory share one probe.
     ///
     /// - Parameters:
     ///   - command: The Claude command.
@@ -118,19 +129,19 @@ public final class SupermuxAgentModelCatalog {
     /// - Returns: The freshly read models.
     /// - Throws: The probe's failure.
     public func refresh(command: String, workingDirectoryURL: URL) async throws -> [SupermuxAgentModelDTO] {
-        let key = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = Self.storagePath(for: command, workingDirectoryURL: workingDirectoryURL)
         if let running = inFlight[key] {
             return try await running.value
         }
         let plan = SupermuxAgentCommandProbePlan.plan(
-            command: key,
+            command: command.trimmingCharacters(in: .whitespacesAndNewlines),
             shellPath: shellPath,
             workingDirectoryURL: workingDirectoryURL,
             environment: environment
         )
         let task = Task<[SupermuxAgentModelDTO], any Error> { @MainActor [store, probe] in
             let catalog = try await probe(plan)
-            try? store.store(catalog.models, forBinaryPath: Self.storagePath(for: key))
+            try? store.store(catalog.models, forBinaryPath: key)
             return catalog.models.compactMap { SupermuxAgentModelDTO(initializeModel: $0.rawValue) }
         }
         inFlight[key] = task

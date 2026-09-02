@@ -12,7 +12,7 @@ struct SupermuxAgentLaunchCommandTests {
             effort: "high",
             prompt: "Fix the login redirect"
         )
-        #expect(line == "cc --model 'opus[1m]' --effort 'high' $'Fix the login redirect'")
+        #expect(line == "cc --model 'opus[1m]' --effort 'high' -- $'Fix the login redirect'")
     }
 
     @Test func omitsBlankModelAndEffort() {
@@ -22,7 +22,7 @@ struct SupermuxAgentLaunchCommandTests {
             effort: nil,
             prompt: "do it"
         )
-        #expect(line == "claude $'do it'")
+        #expect(line == "claude -- $'do it'")
     }
 
     @Test func multiLinePromptStaysOnOneLine() {
@@ -33,7 +33,40 @@ struct SupermuxAgentLaunchCommandTests {
             prompt: "Line one\nLine 'two'\tdone\\"
         )
         #expect(!line.contains("\n"))
-        #expect(line == "ccx $'Line one\\nLine \\'two\\'\\tdone\\\\'")
+        #expect(line == "ccx -- $'Line one\\nLine \\'two\\'\\tdone\\\\'")
+    }
+
+    /// A prompt that starts with `-` is text, not a flag: the `--` terminator
+    /// keeps Claude from parsing it as an option.
+    @Test func promptStartingWithADashIsNotParsedAsAnOption() {
+        let line = SupermuxAgentLaunchCommand.shellLine(
+            command: "claude",
+            model: nil,
+            effort: nil,
+            prompt: "-v should mean verbose"
+        )
+        #expect(line == "claude -- $'-v should mean verbose'")
+    }
+
+    /// fish has no `$'…'`: the prompt is single-quoted with fish escapes and
+    /// newlines travel as unquoted `\n` between the quoted runs.
+    @Test func fishShellGetsFishQuoting() {
+        let line = SupermuxAgentLaunchCommand.shellLine(
+            command: "cc",
+            model: "opus",
+            effort: nil,
+            prompt: "Line one\nit's \\ done",
+            shell: .fish
+        )
+        #expect(line == "cc --model 'opus' -- 'Line one'\\n'it\\'s \\\\ done'")
+        #expect(!line.contains("\n"))
+    }
+
+    @Test func shellFlavorIsDetectedFromTheShellPath() {
+        #expect(SupermuxShellFlavor.detect(shellPath: "/opt/homebrew/bin/fish") == .fish)
+        #expect(SupermuxShellFlavor.detect(shellPath: "/bin/zsh") == .posix)
+        #expect(SupermuxShellFlavor.detect(shellPath: "/bin/bash") == .posix)
+        #expect(SupermuxShellFlavor.detect(shellPath: "") == .posix)
     }
 
     @Test func singleQuotingEscapesEmbeddedQuotes() {

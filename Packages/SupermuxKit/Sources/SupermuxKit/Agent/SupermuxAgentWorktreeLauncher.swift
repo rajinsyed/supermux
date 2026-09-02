@@ -97,20 +97,32 @@ public final class SupermuxAgentWorktreeLauncher {
     private let projectsModel: SupermuxProjectsModel
     private let namer: (any SupermuxAIWorktreeNaming)?
     private let settings: SupermuxAgentLauncherSettings
+    /// The dialect the new terminal's shell reads the launch line in.
+    public let shell: SupermuxShellFlavor
 
     /// Creates the launcher.
     /// - Parameters:
     ///   - projectsModel: The shared projects model that owns git work.
     ///   - namer: The AI namer, or `nil` to always use the heuristic.
     ///   - settings: Where commands and last choices are remembered.
+    ///   - shell: The quoting dialect of the user's shell (`$SHELL`); the
+    ///     new workspace's terminal runs that shell and reads the line.
     public init(
         projectsModel: SupermuxProjectsModel,
         namer: (any SupermuxAIWorktreeNaming)?,
-        settings: SupermuxAgentLauncherSettings
+        settings: SupermuxAgentLauncherSettings,
+        shell: SupermuxShellFlavor = .detect(shellPath: SupermuxAgentCommandProbePlan.shellPath())
     ) {
         self.projectsModel = projectsModel
         self.namer = namer
         self.settings = settings
+        self.shell = shell
+    }
+
+    /// The exact shell line a launch with these choices would run — the
+    /// sheet's preview, built by the same code as the real launch.
+    public func shellLine(command: String, model: String?, effort: String?, prompt: String) -> String {
+        SupermuxAgentLaunchCommand.shellLine(command: command, model: model, effort: effort, prompt: prompt, shell: shell)
     }
 
     /// Whether AI naming will be attempted (a key is configured).
@@ -146,7 +158,7 @@ public final class SupermuxAgentWorktreeLauncher {
         let prompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { throw SupermuxAgentLaunchError.emptyPrompt }
         await projectsModel.loadIfNeeded()
-        guard projectsModel.projects.contains(where: { $0.id == request.projectId }) else {
+        guard let registeredProject = projectsModel.projects.first(where: { $0.id == request.projectId }) else {
             throw SupermuxAgentLaunchError.unknownProject
         }
         // Typed names win; only the blanks are derived from the prompt (and
@@ -172,11 +184,11 @@ public final class SupermuxAgentWorktreeLauncher {
             branchName: resolved.names.branchName,
             baseBranch: request.baseBranch
         )
-        // The model re-imports config.json inside createWorktree, so read the
-        // refreshed record for the setup script.
-        guard let project = projectsModel.projects.first(where: { $0.id == request.projectId }) else {
-            throw SupermuxAgentLaunchError.unknownProject
-        }
+        // The model re-imports config.json inside createWorktree, so prefer
+        // the refreshed record for the setup script. Past this point nothing
+        // may fail: the worktree exists, so a project removed while git ran
+        // falls back to the snapshot taken above rather than orphaning it.
+        let project = projectsModel.projects.first(where: { $0.id == request.projectId }) ?? registeredProject
         projectsModel.noteOpened(id: project.id)
         settings.setSelectedCommand(request.command)
         settings.recordChoice(command: request.command, model: request.model, effort: request.effort)
@@ -190,7 +202,7 @@ public final class SupermuxAgentWorktreeLauncher {
             title: names.workspaceName,
             directory: worktree.path,
             colorHex: project.colorHex,
-            initialCommand: SupermuxAgentLaunchCommand.shellLine(
+            initialCommand: shellLine(
                 command: request.command,
                 model: request.model,
                 effort: request.effort,

@@ -123,7 +123,11 @@ public final class SupermuxMobileAgentLaunchStore {
     public func selectCommand(_ newCommand: String) async {
         guard commands.contains(newCommand), newCommand != command else { return }
         command = newCommand
+        // Everything that described the OLD catalog goes: a failed reload
+        // must not show the previous command's reason under the new one.
         models = []
+        modelsSource = .unavailable
+        modelsError = nil
         selectedModel = nil
         selectedEffort = nil
         await loadOptions(command: newCommand)
@@ -136,6 +140,8 @@ public final class SupermuxMobileAgentLaunchStore {
 
     /// `mobile.supermux.agent.start` with the current picks. Errors rethrow
     /// for the sheet to display; the store stays usable for another attempt.
+    /// Throws ``SupermuxMacUnavailableError`` without `supermux.agent_launch.v1`
+    /// — the same gate ``loadOptions(command:refresh:)`` applies.
     /// - Parameters:
     ///   - prompt: The task Claude starts on.
     ///   - baseBranch: The branch to start from, or `nil` for the default.
@@ -148,6 +154,7 @@ public final class SupermuxMobileAgentLaunchStore {
         workspaceName: String? = nil,
         branchName: String? = nil
     ) async throws -> SupermuxAgentStartResponse {
+        guard capabilities.supportsAgentLaunch else { throw SupermuxMacUnavailableError() }
         guard !isStarting else { throw SupermuxAgentLaunchStoreError.alreadyStarting }
         isStarting = true
         defer { isStarting = false }

@@ -123,6 +123,12 @@ public final class SupermuxProjectsSectionModel {
     /// or surface an obsolete error.
     @ObservationIgnored var sessionGeneration = 0
 
+    /// Observable twin of ``sessionGeneration``: bumped whenever the
+    /// connection behind the stores is replaced or ends, so a pushed screen
+    /// holding a session-bound store (the detail's worktrees store) can
+    /// rebind to the new connection instead of failing against the old one.
+    public internal(set) var sessionEpoch = 0
+
     /// Monotonic token for nested-worktree open requests (m6-f1), bumped by
     /// EVERY ``openNestedWorktree(projectID:worktree:)`` call — including
     /// the synchronous already-open navigate path. A slow `worktree.open`

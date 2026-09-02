@@ -23,6 +23,16 @@ struct SupermuxAIWorktreeNamerTests {
         #expect(names?.branchName == "Add-Dark-Mode")
     }
 
+    /// Prose with its own braces around (or inside) the object must not
+    /// widen the slice into invalid JSON.
+    @Test func extractsTheFirstDecodableObjectFromBracedProse() async {
+        let fake = FakeAICompleting(response: .success(
+            "Naming {task}: {\"title\": \"Fix {Brace} Parsing\", \"branch\": \"fix-brace-parsing\"} — see {notes}"
+        ))
+        let names = await SupermuxAIWorktreeNamer(client: fake).suggestNames(forPrompt: "x")
+        #expect(names == SupermuxPromptNames(workspaceName: "Fix {Brace} Parsing", branchName: "fix-brace-parsing"))
+    }
+
     @Test func derivesBranchFromTitleWhenMissing() async {
         let fake = FakeAICompleting(response: .success(#"{"title": "Retry Uploader"}"#))
         let names = await SupermuxAIWorktreeNamer(client: fake).suggestNames(forPrompt: "x")
