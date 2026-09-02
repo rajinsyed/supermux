@@ -34,11 +34,10 @@ public struct SupermuxProjectDetailScreen: View {
     /// event stream is structured — cancelled when the screen disappears.
     @State private var worktreesStore: SupermuxMobileWorktreesStore?
     @State private var showingNewWorktreeSheet = false
-    @State private var isPreparingNewWorktree = false
-    /// The agent-launch store behind the presented "Start Claude" sheet;
-    /// `nil` while the sheet is closed.
+    /// The Claude section's store for the presented sheet (options loaded in
+    /// `prepareNewWorktree`); `nil` when the host lacks the capability.
     @State private var agentLaunchStore: SupermuxMobileAgentLaunchStore?
-    @State private var isPreparingAgentWorktree = false
+    @State private var isPreparingNewWorktree = false
     @State private var newWorktreeErrorMessage: String?
     /// The row awaiting the FIRST (always-shown) destructive removal confirm.
     @State private var removalCandidate: SupermuxWorktreeRowSnapshot?
@@ -174,21 +173,6 @@ public struct SupermuxProjectDetailScreen: View {
             guard let store else { return }
             await store.run()
         }
-        .sheet(isPresented: Binding(
-            get: { agentLaunchStore != nil },
-            set: { if !$0 { agentLaunchStore = nil } }
-        )) {
-            if let agentStore = agentLaunchStore, let store = worktreesStore {
-                SupermuxAgentWorktreeSheet(
-                    projectName: row.name,
-                    store: agentStore,
-                    branches: store.branches,
-                    defaultBaseBranch: row.defaultBranch,
-                    showsBaseBranchPicker: store.supportsStartingBranchSelection,
-                    openWorkspace: selectWorkspace
-                )
-            }
-        }
         .sheet(isPresented: $showingNewWorktreeSheet) {
             if let store = worktreesStore {
                 SupermuxNewWorktreeSheet(
@@ -196,6 +180,7 @@ public struct SupermuxProjectDetailScreen: View {
                     branches: store.branches,
                     defaultBaseBranch: row.defaultBranch,
                     showsBaseBranchPicker: store.supportsStartingBranchSelection,
+                    agentStore: agentLaunchStore,
                     suggestBranch: { workspaceName in
                         try await store.suggestBranchName(workspaceName: workspaceName).branchName
                     },
@@ -373,8 +358,6 @@ public struct SupermuxProjectDetailScreen: View {
                     rows: SupermuxWorktreeRowSnapshot.rows(from: store.worktrees),
                     isPreparingNewWorktree: isPreparingNewWorktree,
                     newWorktree: prepareNewWorktree,
-                    isPreparingAgentWorktree: isPreparingAgentWorktree,
-                    newAgentWorktree: makeAgentLaunchStore(row.id) == nil ? nil : prepareAgentWorktree,
                     openWorktree: { openWorktree($0) },
                     requestRemoval: { removalCandidate = $0 }
                 )
@@ -490,33 +473,14 @@ public struct SupermuxProjectDetailScreen: View {
         Task {
             defer { isPreparingNewWorktree = false }
             do {
+                // Same overlap as the sidebar flow: the Claude section's
+                // options load alongside the branch snapshot.
+                let agentStore = makeAgentLaunchStore(row.id)
+                async let options: Void? = agentStore?.loadOptions()
                 try await store.refreshBranches()
-                showingNewWorktreeSheet = true
-            } catch {
-                newWorktreeErrorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    /// Loads the Mac's launch options and a fresh branch snapshot, then
-    /// presents the prompt-first "Start Claude" sheet. Same one-shared-path
-    /// rule as the sidebar: the store type and RPCs are identical.
-    private func prepareAgentWorktree() {
-        guard let store = worktreesStore, !isPreparingAgentWorktree,
-              let agentStore = makeAgentLaunchStore(row.id) else { return }
-        isPreparingAgentWorktree = true
-        newWorktreeErrorMessage = nil
-        Task {
-            defer { isPreparingAgentWorktree = false }
-            do {
-                async let options: Void = agentStore.loadOptions()
-                try await store.refreshBranches()
-                await options
-                if let optionsError = agentStore.optionsError {
-                    newWorktreeErrorMessage = optionsError
-                    return
-                }
+                _ = await options
                 agentLaunchStore = agentStore
+                showingNewWorktreeSheet = true
             } catch {
                 newWorktreeErrorMessage = error.localizedDescription
             }

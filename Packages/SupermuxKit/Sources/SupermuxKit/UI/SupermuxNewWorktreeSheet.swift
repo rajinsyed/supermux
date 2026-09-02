@@ -1,208 +1,245 @@
 public import SwiftUI
 import Foundation
+import SupermuxMobileCore
 
-/// Modal sheet for creating a git worktree (with a fresh branch) in a project.
+/// Modal sheet for creating a git worktree in a project — optionally with
+/// Claude already running in it.
 ///
-/// Kept deliberately minimal — a workspace name, an optional branch name, and
-/// a starting-branch picker — to mirror piggycode's frictionless flow. Leaving
-/// the branch blank generates a friendly random name; the starting branch
-/// defaults to the project's configured branch, otherwise `main` when available
-/// or the repository `HEAD`. The sheet is presented via `.sheet(item:)` from
-/// ``SupermuxProjectsSectionView``, so it owns no
-/// presentation binding and dismisses itself through the environment. Creation
-/// is delegated to ``SupermuxProjectsModel/createWorktree(projectId:branchName:baseBranch:)``;
-/// the new worktree and chosen workspace name are handed back through a callback
-/// so the host can open a workspace in it.
+/// One sheet, two outcomes, chosen by whether the prompt is filled in:
+///
+/// - **Prompt empty** — the classic flow: a workspace name, an optional
+///   branch (AI-named from the workspace name when a gateway key is set,
+///   friendly-random otherwise), a starting branch. "Create" opens a clean
+///   terminal.
+/// - **Prompt filled** — the prompt is the primary input: workspace name and
+///   branch default to names derived from it (typed values still win), the
+///   Claude chips (command / model / effort) appear, and "Start Claude" opens
+///   the workspace with its terminal already running the command with the
+///   prompt as the first message. That path goes through
+///   ``SupermuxAgentWorktreeLauncher`` — the same path the phone uses.
+///
+/// Presented via `.sheet(item:)` from ``SupermuxProjectsSectionView``; the
+/// host opens the resulting workspace through the callbacks.
 public struct SupermuxNewWorktreeSheet: View {
-    private let model: SupermuxProjectsModel
-    private let project: SupermuxProject
+    let model: SupermuxProjectsModel
+    let project: SupermuxProject
+    /// Launcher / catalog / commands for the Claude path; `nil` hides it.
+    let agentLaunch: SupermuxAgentLaunchEnvironment?
     private let onCreated: (SupermuxProjectWorktree, String?) -> Void
+    private let onLaunched: (SupermuxAgentWorktreeLaunch) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
+    @State var prompt = ""
     @State private var workspaceName = ""
     @State private var branchInput = ""
-    @State private var baseBranch = ""
-    @State private var localBranches: [String] = []
-    /// Distinguishes the untouched default from the user deliberately choosing
-    /// the repository `HEAD` option after branches load.
-    @State private var baseBranchWasEdited = false
-    @State private var branchesLoaded = false
+    @State var baseBranch = ""
+    @State var baseBranchWasEdited = false
+    @State var localBranches: [String] = []
+    @State var branchesLoaded = false
     @State private var isLoadingBranches = false
     @State private var branchLoadError: String?
     @State private var errorMessage: String?
-    /// Transient progress text shown while AI names the branch / git creates it.
     @State private var statusMessage: String?
-    /// Whether AI branch naming is wired and a key is configured (probed on
-    /// appear for the hint; re-checked freshly at submit time).
     @State private var aiNamingConfigured = false
-    /// The in-flight create work, retained so Cancel / dismiss can abort it
-    /// while it is still (slowly) naming a branch — before git runs.
     @State private var createTask: Task<Void, Never>?
-    /// Where the create flow currently is; drives which controls are enabled.
-    private enum CreatePhase {
-        /// No create in flight.
-        case idle
-        /// The (still cancellable) AI branch-naming step is running.
-        case naming
-        /// `git worktree add` has started. Cancelling a task cannot stop a
-        /// running git process, so in this phase the Cancel button is disabled:
-        /// creation completes (it takes seconds) and is delivered via `onCreated`
-        /// rather than silently leaving an orphaned worktree behind.
-        case runningGit
-    }
-    @State private var phase: CreatePhase = .idle
 
-    private enum Field { case workspace, branch }
+    // Claude chips state (only meaningful when `agentLaunch` is present).
+    @State var command = ""
+    @State var commands: [String] = []
+    /// `nil` = no `--model` flag (Claude Code's own default).
+    @State var selectedModel: String?
+    /// `nil` = no `--effort` flag.
+    @State var selectedEffort: String?
+    @State var models: [SupermuxAgentModelDTO] = []
+    @State var modelsLoading = false
+    @State var modelsError: String?
+    @State var showsCommandEditor = false
+
+    enum Phase { case idle, naming, runningGit }
+    @State var phase: Phase = .idle
+
+    private enum Field { case prompt, workspace, branch }
 
     /// Creates the sheet.
     /// - Parameters:
     ///   - model: Shared projects model that performs the git work.
     ///   - project: Project the worktree is created in.
-    ///   - onCreated: Called after a successful create with the new worktree and
+    ///   - agentLaunch: Claude launch collaborators; `nil` hides the prompt
+    ///     path entirely (plain worktree sheet).
+    ///   - onCreated: Called after a plain create with the new worktree and
     ///     the chosen workspace name (`nil` when left blank).
+    ///   - onLaunched: Called after a Claude launch with the launch result;
+    ///     the host opens `launch.openRequest`.
     public init(
         model: SupermuxProjectsModel,
         project: SupermuxProject,
-        onCreated: @escaping (SupermuxProjectWorktree, String?) -> Void
+        agentLaunch: SupermuxAgentLaunchEnvironment? = nil,
+        onCreated: @escaping (SupermuxProjectWorktree, String?) -> Void,
+        onLaunched: @escaping (SupermuxAgentWorktreeLaunch) -> Void = { _ in }
     ) {
         self.model = model
         self.project = project
+        self.agentLaunch = agentLaunch
         self.onCreated = onCreated
+        self.onLaunched = onLaunched
         _baseBranch = State(initialValue: Self.initialBaseBranch(
             configuredDefault: project.defaultBranch,
             branches: []
         ))
+        if let settings = agentLaunch?.settings {
+            _commands = State(initialValue: settings.commands)
+            _command = State(initialValue: settings.selectedCommand)
+        }
     }
 
     /// The sheet content.
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             header
-            workspaceField
-            branchField
-            basePicker
+            if agentLaunch != nil {
+                promptEditor
+            }
+            nameFields
+            if hasPrompt {
+                commandPreview
+            }
+            chipRow
             if let statusMessage {
                 Text(statusMessage)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
+            if let message = errorMessage ?? branchLoadError {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if branchLoadError != nil, errorMessage == nil {
+                        Spacer(minLength: 0)
+                        Button(String(localized: "common.retry", defaultValue: "Retry")) {
+                            Task { await loadBranches() }
+                        }
+                        .controlSize(.small)
+                    }
+                }
             }
             buttons
         }
         .padding(16)
-        .frame(width: 380)
+        .frame(width: agentLaunch == nil ? 380 : 460)
+        .animation(.snappy(duration: 0.18), value: hasPrompt)
         .onAppear {
-            focusedField = .workspace
+            focusedField = agentLaunch == nil ? .workspace : .prompt
             Task { await load() }
         }
         .onChange(of: configuredDefaultBranch) { _, configuredDefault in
             guard branchesLoaded, !baseBranchWasEdited else { return }
-            baseBranch = Self.initialBaseBranch(
-                configuredDefault: configuredDefault,
-                branches: localBranches
-            )
+            baseBranch = Self.initialBaseBranch(configuredDefault: configuredDefault, branches: localBranches)
         }
-        // If the sheet goes away while the (possibly slow) AI-naming phase is in
-        // flight, abort it so no worktree is created behind the user's back.
-        // Once git itself is running, cancellation can't stop it — the Cancel
-        // button is disabled for that window, so this only covers programmatic
-        // dismissal.
+        .onChange(of: command) { _, newCommand in
+            agentLaunch?.settings.setSelectedCommand(newCommand)
+            Task { await loadModels(for: newCommand) }
+        }
+        .onChange(of: selectedModel) { _, _ in clampEffort() }
+        // If the sheet goes away while the (possibly slow) AI-naming phase is
+        // in flight, abort it so no worktree is created behind the user's
+        // back. Cancel is disabled once git runs, so this only covers
+        // programmatic dismissal.
         .onDisappear { createTask?.cancel() }
     }
 
     // MARK: - Pieces
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(String(localized: "supermux.newWorktree.title", defaultValue: "New Worktree"))
-                .font(.headline)
-            Text(project.name)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            SupermuxProjectAvatarView(project: project, size: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(String(localized: "supermux.newWorktree.title", defaultValue: "New Worktree"))
+                    .font(.headline)
+                Text(project.name)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
         }
     }
 
-    private var workspaceField: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField(
-                String(localized: "supermux.newWorktree.workspace.placeholder", defaultValue: "Workspace name"),
-                text: $workspaceName
-            )
-            .textFieldStyle(.roundedBorder)
-            .focused($focusedField, equals: .workspace)
-            .onSubmit(create)
-            .disabled(phase != .idle)
+    private var promptEditor: some View {
+        ZStack(alignment: .topLeading) {
+            if prompt.isEmpty {
+                Text(String(
+                    localized: "supermux.newWorktree.prompt.placeholder",
+                    defaultValue: "What should Claude work on? Leave empty for a plain worktree."
+                ))
+                .font(.system(size: 13))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 8)
+                .allowsHitTesting(false)
+            }
+            TextEditor(text: $prompt)
+                .font(.system(size: 13))
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 3)
+                .focused($focusedField, equals: .prompt)
+                .disabled(phase != .idle)
         }
+        .frame(minHeight: 76, maxHeight: 160)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(
+                    focusedField == .prompt ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.12),
+                    lineWidth: 1
+                )
+        )
     }
 
-    private var branchField: some View {
+    /// Workspace name and branch side by side. With a prompt, their
+    /// placeholders show the names that will be derived, so leaving them
+    /// blank is the normal case and typing overrides.
+    private var nameFields: some View {
         VStack(alignment: .leading, spacing: 4) {
-            TextField(
-                String(
-                    localized: "supermux.newWorktree.branch.placeholder.optional",
-                    defaultValue: "Branch name (optional)"
-                ),
-                text: $branchInput
-            )
-            .textFieldStyle(.roundedBorder)
-            .focused($focusedField, equals: .branch)
-            .onSubmit(create)
-            .disabled(phase != .idle)
-            Text(branchHint)
+            HStack(spacing: 8) {
+                TextField(workspacePlaceholder, text: $workspaceName)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .workspace)
+                    .onSubmit(create)
+                    .disabled(phase != .idle)
+                TextField(branchPlaceholder, text: $branchInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+                    .focused($focusedField, equals: .branch)
+                    .onSubmit(create)
+                    .disabled(phase != .idle)
+                    .frame(width: hasPrompt ? 170 : 150)
+            }
+            Text(nameHint)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var basePicker: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Picker(
-                String(localized: "supermux.newWorktree.base.label", defaultValue: "Start from"),
-                selection: Binding(
-                    get: { baseBranch },
-                    set: {
-                        baseBranch = $0
-                        baseBranchWasEdited = true
-                    }
-                )
-            ) {
-                Text(String(localized: "supermux.newWorktree.base.default", defaultValue: "Repository HEAD"))
-                    .tag("")
-                ForEach(baseBranchOptions, id: \.self) { branch in
-                    Text(branch).tag(branch)
-                }
-            }
-            .disabled(phase != .idle || !branchesLoaded)
-            Text(String(
-                localized: "supermux.newWorktree.base.hint",
-                defaultValue: "Includes committed changes from the selected branch. Uncommitted changes aren’t copied."
-            ))
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            if isLoadingBranches {
-                ProgressView()
-                    .controlSize(.small)
-            } else if let branchLoadError {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(branchLoadError)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button(String(localized: "common.retry", defaultValue: "Retry")) {
-                        Task { await loadBranches() }
-                    }
-                    .controlSize(.small)
-                }
-            }
+    /// The exact shell line the new terminal will run, so what the chips
+    /// mean is never a guess.
+    private var commandPreview: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "terminal")
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text(previewLine)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 
@@ -214,38 +251,105 @@ public struct SupermuxNewWorktreeSheet: View {
                 dismiss()
             }
             .keyboardShortcut(.cancelAction)
-            // Cancelling can genuinely abort the AI-naming phase, but not a git
-            // process already creating the worktree — so it is disabled (rather
-            // than pretending, then discarding a worktree that was created).
+            // Cancelling can abort the AI-naming phase, but not a git process
+            // already creating the worktree — so it is disabled then.
             .disabled(phase == .runningGit)
             Button(action: create) {
                 HStack(spacing: 5) {
                     if phase != .idle {
-                        ProgressView()
-                            .controlSize(.small)
+                        ProgressView().controlSize(.small)
+                    } else if hasPrompt {
+                        Image(systemName: "play.fill").font(.system(size: 9, weight: .bold))
                     }
-                    Text(String(localized: "supermux.newWorktree.create", defaultValue: "Create"))
+                    Text(hasPrompt
+                        ? String(localized: "supermux.newWorktree.startClaude", defaultValue: "Start Claude")
+                        : String(localized: "supermux.newWorktree.create", defaultValue: "Create"))
+                    if hasPrompt {
+                        Text("⌘↩").font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
                 }
             }
-            .keyboardShortcut(.defaultAction)
+            .keyboardShortcut(hasPrompt ? .init(.return, modifiers: .command) : .defaultAction)
             .disabled(!canCreate)
         }
     }
 
     // MARK: - State
 
-    /// The model's current configured default, falling back to the presentation
-    /// snapshot only if the project is no longer in the model.
-    private var configuredDefaultBranch: String? {
-        if let current = model.projects.first(where: { $0.id == project.id }) {
-            return current.defaultBranch
-        }
-        return project.defaultBranch
+    var hasPrompt: Bool {
+        agentLaunch != nil && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Configured project default first, followed by every local branch, with
-    /// duplicates removed while preserving order.
-    private var baseBranchOptions: [String] {
+    /// Whether the primary button is enabled: not mid-create, branches known.
+    private var canCreate: Bool { phase == .idle && branchesLoaded }
+
+    /// Offline preview of the names the prompt would produce (AI refines at
+    /// submit when configured).
+    private var derivedNames: SupermuxPromptNames? {
+        hasPrompt ? SupermuxPromptNaming.names(from: prompt) : nil
+    }
+
+    private var workspacePlaceholder: String {
+        derivedNames?.workspaceName
+            ?? String(localized: "supermux.newWorktree.workspace.placeholder", defaultValue: "Workspace name")
+    }
+
+    private var branchPlaceholder: String {
+        derivedNames?.branchName
+            ?? String(localized: "supermux.newWorktree.branch.placeholder.optional", defaultValue: "Branch name (optional)")
+    }
+
+    var previewLine: String {
+        SupermuxAgentLaunchCommand.shellLine(
+            command: command,
+            model: selectedModel,
+            effort: selectedEffort,
+            prompt: prompt
+        )
+    }
+
+    /// Subtitle under the fields: what the names will be, or a sanitized
+    /// preview when the typed branch differs from what git will use.
+    private var nameHint: String {
+        let typedBranch = branchInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let sanitized = SupermuxBranchName().sanitize(branchInput), sanitized != typedBranch {
+            return String(
+                localized: "supermux.newWorktree.branch.preview",
+                defaultValue: "Will be created as “\(sanitized)”"
+            )
+        }
+        if hasPrompt {
+            return aiNamingConfigured
+                ? String(
+                    localized: "supermux.newWorktree.prompt.aiHint",
+                    defaultValue: "Blank fields are named from the prompt by AI; typed values are kept."
+                )
+                : String(
+                    localized: "supermux.newWorktree.prompt.hint",
+                    defaultValue: "Blank fields are named from the prompt; typed values are kept."
+                )
+        }
+        if !typedBranch.isEmpty { return "" }
+        if aiNamingConfigured, !workspaceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return String(
+                localized: "supermux.newWorktree.branch.aiHint",
+                defaultValue: "AI will suggest a branch name from the workspace name; a random name is used if that fails."
+            )
+        }
+        return String(
+            localized: "supermux.newWorktree.branch.randomHint",
+            defaultValue: "Leave blank for a random name like “cheerful-umbrella”"
+        )
+    }
+
+    /// The model's current configured default, falling back to the
+    /// presentation snapshot only if the project is no longer in the model.
+    private var configuredDefaultBranch: String? {
+        model.projects.first(where: { $0.id == project.id })?.defaultBranch ?? project.defaultBranch
+    }
+
+    /// Configured project default first, then every local branch, deduped.
+    var baseBranchOptions: [String] {
         var seen: Set<String> = []
         return ([configuredDefaultBranch].compactMap { $0 } + localBranches).filter {
             !$0.isEmpty && seen.insert($0).inserted
@@ -260,50 +364,39 @@ public struct SupermuxNewWorktreeSheet: View {
     }
 
     /// An untouched picker defers to the service's fresh default resolution;
-    /// only an explicit user choice becomes an override.
+    /// only an explicit user choice becomes an override (`HEAD` for the
+    /// repository-head option).
     static func requestedBaseBranch(selection: String, wasEdited: Bool) -> String? {
         guard wasEdited else { return nil }
         let trimmed = selection.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "HEAD" : trimmed
     }
 
-    /// The branch field is optional, but the starting-branch snapshot must be
-    /// authoritative before creation can begin.
-    private var canCreate: Bool { phase == .idle && branchesLoaded }
+    /// The effort levels the current model selection accepts.
+    var effortLevels: [String] { models.effortLevels(forSelection: selectedModel) }
 
-    /// Subtitle under the branch field: a sanitized preview when the typed name
-    /// differs from what git will use, or a note that a name will be generated.
-    private var branchHint: String {
-        if let sanitized = SupermuxBranchName().sanitize(branchInput) {
-            if sanitized != branchInput.trimmingCharacters(in: .whitespacesAndNewlines) {
-                return String(
-                    localized: "supermux.newWorktree.branch.preview",
-                    defaultValue: "Will be created as “\(sanitized)”"
-                )
-            }
-            return ""
-        }
-        // Branch field is blank: when AI naming is configured and a workspace
-        // name is present, the branch is derived from it; otherwise a friendly
-        // random name is used.
-        if aiNamingConfigured, !workspaceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return String(
-                localized: "supermux.newWorktree.branch.aiHint",
-                defaultValue: "AI will suggest a branch name from the workspace name; a random name is used if that fails."
-            )
-        }
-        return String(
-            localized: "supermux.newWorktree.branch.randomHint",
-            defaultValue: "Leave blank for a random name like “cheerful-umbrella”"
-        )
+    var selectedModelDescriptor: SupermuxAgentModelDTO? {
+        guard let selectedModel else { return nil }
+        return models.first { $0.value == selectedModel }
+    }
+
+    /// Drops an effort the newly chosen model does not accept.
+    func clampEffort() {
+        guard let effort = selectedEffort, !effortLevels.contains(effort) else { return }
+        selectedEffort = nil
     }
 
     // MARK: - Actions
 
     private func load() async {
-        async let configured = model.isAIBranchNamingConfigured()
-        await loadBranches()
+        async let configured: Bool = {
+            if let agentLaunch { return await agentLaunch.launcher.isAINamingConfigured() }
+            return await model.isAIBranchNamingConfigured()
+        }()
+        async let branches: Void = loadBranches()
+        async let catalog: Void = loadModels(for: command)
         aiNamingConfigured = await configured
+        _ = await (branches, catalog)
     }
 
     private func loadBranches() async {
@@ -316,10 +409,7 @@ public struct SupermuxNewWorktreeSheet: View {
             localBranches = branches
             branchesLoaded = true
             if !baseBranchWasEdited {
-                baseBranch = Self.initialBaseBranch(
-                    configuredDefault: configuredDefaultBranch,
-                    branches: branches
-                )
+                baseBranch = Self.initialBaseBranch(configuredDefault: configuredDefaultBranch, branches: branches)
             }
         } catch {
             branchesLoaded = false
@@ -327,22 +417,99 @@ public struct SupermuxNewWorktreeSheet: View {
         }
     }
 
+    func loadModels(for command: String, forceRefresh: Bool = false) async {
+        guard let agentLaunch, !command.isEmpty else { return }
+        modelsLoading = true
+        modelsError = nil
+        defer { modelsLoading = false }
+        let result = await agentLaunch.catalog.models(
+            for: command,
+            workingDirectoryURL: URL(fileURLWithPath: project.rootPath, isDirectory: true),
+            forceRefresh: forceRefresh
+        )
+        // The user may have switched commands while this probe ran.
+        guard command == self.command else { return }
+        models = result.models
+        modelsError = result.source == .unavailable ? result.errorDescription : nil
+        let last = agentLaunch.settings.lastChoice(for: command)
+        if let lastModel = last.model, models.selectableModels.contains(where: { $0.value == lastModel }) {
+            selectedModel = lastModel
+        } else {
+            selectedModel = nil
+        }
+        selectedEffort = last.effort
+        clampEffort()
+    }
+
+    /// Replaces the command list from the editor popover.
+    func saveCommands(_ edited: [String]) {
+        guard let settings = agentLaunch?.settings else { return }
+        settings.setCommands(edited)
+        commands = settings.commands
+        if !commands.contains(command) {
+            command = settings.selectedCommand
+        }
+    }
+
     private func create() {
         guard canCreate else { return }
+        if hasPrompt {
+            startClaude()
+        } else {
+            createPlain()
+        }
+    }
+
+    /// The Claude path: names from the prompt (typed fields win), worktree,
+    /// and an open request whose terminal runs the command — all inside the
+    /// shared launcher.
+    private func startClaude() {
+        guard let agentLaunch else { return }
+        phase = .naming
+        errorMessage = nil
+        statusMessage = aiNamingConfigured
+            ? String(localized: "supermux.agent.status.naming", defaultValue: "Naming the workspace with AI…")
+            : String(localized: "supermux.agent.status.creating", defaultValue: "Creating worktree…")
+        let request = SupermuxAgentLaunchRequest(
+            projectId: project.id,
+            prompt: prompt,
+            command: command,
+            model: selectedModel,
+            effort: selectedEffort,
+            baseBranch: Self.requestedBaseBranch(selection: baseBranch, wasEdited: baseBranchWasEdited),
+            workspaceName: workspaceName,
+            branchName: branchInput
+        )
+        createTask = Task {
+            do {
+                let launch = try await agentLaunch.launcher.start(request) {
+                    phase = .runningGit
+                    statusMessage = String(localized: "supermux.agent.status.creating", defaultValue: "Creating worktree…")
+                }
+                guard !Task.isCancelled else { return }
+                onLaunched(launch)
+                dismiss()
+            } catch is CancellationError {
+                phase = .idle
+                statusMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
+                statusMessage = nil
+                phase = .idle
+            }
+        }
+    }
+
+    /// The classic path, unchanged: AI names the branch from the workspace
+    /// name only when the branch was left blank; a typed branch is respected.
+    private func createPlain() {
         phase = .naming
         errorMessage = nil
         let trimmedName = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBranch = branchInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let selectedBase = Self.requestedBaseBranch(
-            selection: baseBranch,
-            wasEdited: baseBranchWasEdited
-        )
+        let selectedBase = Self.requestedBaseBranch(selection: baseBranch, wasEdited: baseBranchWasEdited)
         createTask = Task {
             var branchToUse = branchInput
-            // Only invoke AI when the user left the branch blank but named the
-            // workspace; a typed branch is always respected verbatim. The
-            // configured check is done freshly here (not the on-appear cache) so
-            // a key pasted after the sheet opened is still used.
             if trimmedBranch.isEmpty, !trimmedName.isEmpty,
                await model.isAIBranchNamingConfigured() {
                 statusMessage = String(
@@ -354,15 +521,12 @@ public struct SupermuxNewWorktreeSheet: View {
                 }
             }
             statusMessage = nil
-            // The user may have cancelled/dismissed during the AI await; if so,
-            // do not create a worktree behind their back.
             if Task.isCancelled {
                 phase = .idle
                 return
             }
-            // Point of no return: Cancel is disabled from here (no await sits
-            // between the check above and this write, so a cancel can't slip
-            // in), and the created worktree is always delivered via onCreated.
+            // Point of no return: Cancel is disabled from here and the created
+            // worktree is always delivered via onCreated.
             phase = .runningGit
             do {
                 let worktree = try await model.createWorktree(
@@ -370,10 +534,6 @@ public struct SupermuxNewWorktreeSheet: View {
                     branchName: branchToUse,
                     baseBranch: selectedBase
                 )
-                // Cancellation here can only come from programmatic sheet
-                // teardown (Cancel is disabled). The worktree exists either
-                // way; it stays on disk and is listed under the project's
-                // disclosure, just not opened as a workspace.
                 guard !Task.isCancelled else { return }
                 onCreated(worktree, trimmedName.isEmpty ? nil : trimmedName)
                 dismiss()

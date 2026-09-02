@@ -20,11 +20,13 @@ struct SupermuxAgentWireTests {
         let minimal = SupermuxAgentStartRequest(projectID: "p", prompt: "fix it")
         #expect(minimal.wireParams as NSDictionary == ["project_id": "p", "prompt": "fix it"] as NSDictionary)
         let full = SupermuxAgentStartRequest(
-            projectID: "p", prompt: "fix it", command: "cc", model: "opus", effort: "high", baseBranch: "main"
+            projectID: "p", prompt: "fix it", command: "cc", model: "opus", effort: "high", baseBranch: "main",
+            workspaceName: "Fix It", branchName: "fix-it"
         )
         #expect(full.wireParams as NSDictionary == [
             "project_id": "p", "prompt": "fix it", "command": "cc",
             "model": "opus", "effort": "high", "base_branch": "main",
+            "workspace_name": "Fix It", "branch_name": "fix-it",
         ] as NSDictionary)
     }
 

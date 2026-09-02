@@ -47,7 +47,7 @@ struct SupermuxMobileAgentLaunchStoreTests {
         #expect(client.recordedWireCalls.first?.1 == ["project_id": store.projectID] as NSDictionary)
     }
 
-    @Test func unknownLastModelFallsBackToDefault() async {
+    @Test func unknownLastModelFallsBackToDefaultAndKeepsEffortWhenTheDefaultRowTakesIt() async {
         let client = FakeSupermuxMacClient()
         client.agentOptionsResponse = SupermuxAgentLaunchOptionsDTO(
             commands: ["claude"], selectedCommand: "claude",
@@ -56,8 +56,21 @@ struct SupermuxMobileAgentLaunchStoreTests {
         let store = makeStore(client: client)
         await store.loadOptions()
         #expect(store.selectedModel == nil)
-        #expect(store.selectedEffort == nil)
+        // Sol takes no effort, so the default row (union of levels) has none.
         #expect(store.effortLevels.isEmpty)
+        #expect(store.selectedEffort == nil)
+
+        client.agentOptionsResponse = SupermuxAgentLaunchOptionsDTO(
+            commands: ["claude"], selectedCommand: "claude",
+            models: [SupermuxAgentModelDTO(value: "default", displayName: "Default (recommended)", supportsEffort: true, supportedEffortLevels: ["low", "high"]), opus],
+            modelsSource: .probe, lastEffort: "high"
+        )
+        await store.loadOptions()
+        #expect(store.selectedModel == nil)
+        #expect(store.defaultModelEntry?.displayName == "Default (recommended)")
+        #expect(store.selectableModels == [opus])
+        #expect(store.effortLevels == ["low", "high"], "the default row takes effort")
+        #expect(store.selectedEffort == "high", "a remembered effort survives on the default row")
     }
 
     @Test func effortIsClampedToTheSelectedModel() async {
@@ -72,7 +85,7 @@ struct SupermuxMobileAgentLaunchStoreTests {
         store.selectedModel = "gpt-5.6-sol"
         #expect(store.selectedEffort == nil, "Sol takes no effort flag")
         store.selectedModel = nil
-        #expect(store.effortLevels.isEmpty)
+        #expect(store.effortLevels == ["low", "medium", "high"], "the default row offers the union of model levels")
     }
 
     @Test func selectCommandReloadsThatCommand() async {
@@ -104,11 +117,11 @@ struct SupermuxMobileAgentLaunchStoreTests {
         let store = makeStore(client: client)
         await store.loadOptions()
         #expect(store.modelsError == "DroidProxy is not answering")
-        let result = try await store.start(prompt: "fix it", baseBranch: "  ")
+        let result = try await store.start(prompt: "fix it", baseBranch: "  ", workspaceName: " ", branchName: "typed-branch")
         #expect(result.workspaceId == "w1")
         #expect(client.recordedWireCalls.last?.0 == "mobile.supermux.agent.start")
         #expect(client.recordedWireCalls.last?.1 == [
-            "project_id": store.projectID, "prompt": "fix it", "command": "ccx",
+            "project_id": store.projectID, "prompt": "fix it", "command": "ccx", "branch_name": "typed-branch",
         ] as NSDictionary)
     }
 

@@ -63,7 +63,6 @@ public struct SupermuxProjectsSectionView: View {
     @State var pullRequestClientToken = SupermuxPullRequestClientToken()
 
     @State private var newWorktreeProject: SupermuxProject?
-    @State private var agentWorktreeProject: SupermuxProject?
     @State private var editorProject: SupermuxProject?
     /// In-flight drag-reorder marker (project or nested workspace). A reference
     /// `@Observable`, not value `@State`: writing the dragged id at drag start
@@ -253,14 +252,19 @@ public struct SupermuxProjectsSectionView: View {
             await runWorktreePullRequestProbe()
         }
         .sheet(item: $newWorktreeProject) { project in
-            SupermuxNewWorktreeSheet(model: model, project: project) { worktree, workspaceName in
-                openWorktree(worktree, project: project, title: workspaceName, runSetup: true)
-            }
-        }
-        .sheet(item: $agentWorktreeProject) { project in
-            if let agentLaunch {
-                SupermuxAgentWorktreeSheet(model: model, project: project, environment: agentLaunch, opener: opener)
-            }
+            SupermuxNewWorktreeSheet(
+                model: model,
+                project: project,
+                agentLaunch: agentLaunch,
+                onCreated: { worktree, workspaceName in
+                    openWorktree(worktree, project: project, title: workspaceName, runSetup: true)
+                },
+                onLaunched: { launch in
+                    // The launcher already noted the project as opened and
+                    // built the full request (title, command, setup script).
+                    opener.openWorkspace(launch.openRequest)
+                }
+            )
         }
         .sheet(item: $editorProject) { project in
             SupermuxProjectEditorSheet(model: model, project: project)
@@ -287,7 +291,6 @@ public struct SupermuxProjectsSectionView: View {
         SupermuxProjectRowActions(
             openLocal: { openLocal(project) },
             newWorktree: { newWorktreeProject = project },
-            newAgentWorktree: agentLaunch == nil ? nil : { agentWorktreeProject = project },
             openWorktree: { worktree in openWorktree(worktree, project: project) },
             deleteWorktree: { worktree, deleteBranch in
                 deleteWorktree(worktree, project: project, deleteBranch: deleteBranch)

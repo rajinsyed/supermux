@@ -34,7 +34,8 @@ public struct SupermuxAgentOptionsRequest: Equatable, Sendable {
 }
 
 /// `mobile.supermux.agent.start`:
-/// `{project_id, prompt, command?, model?, effort?, base_branch?}`.
+/// `{project_id, prompt, command?, model?, effort?, base_branch?,
+/// workspace_name?, branch_name?}`.
 public struct SupermuxAgentStartRequest: Equatable, Sendable {
     /// The project's UUID string.
     public let projectID: String
@@ -48,6 +49,10 @@ public struct SupermuxAgentStartRequest: Equatable, Sendable {
     public let effort: String?
     /// The branch to start from; absent uses the project default / `HEAD`.
     public let baseBranch: String?
+    /// A typed workspace title; absent means "derive from the prompt".
+    public let workspaceName: String?
+    /// A typed branch; absent means "derive from the prompt".
+    public let branchName: String?
 
     /// Creates the request.
     public init(
@@ -56,7 +61,9 @@ public struct SupermuxAgentStartRequest: Equatable, Sendable {
         command: String? = nil,
         model: String? = nil,
         effort: String? = nil,
-        baseBranch: String? = nil
+        baseBranch: String? = nil,
+        workspaceName: String? = nil,
+        branchName: String? = nil
     ) {
         self.projectID = projectID
         self.prompt = prompt
@@ -64,6 +71,8 @@ public struct SupermuxAgentStartRequest: Equatable, Sendable {
         self.model = model
         self.effort = effort
         self.baseBranch = baseBranch
+        self.workspaceName = workspaceName
+        self.branchName = branchName
     }
 
     /// The exact wire method string.
@@ -76,6 +85,8 @@ public struct SupermuxAgentStartRequest: Equatable, Sendable {
         if let model { params["model"] = model }
         if let effort { params["effort"] = effort }
         if let baseBranch { params["base_branch"] = baseBranch }
+        if let workspaceName { params["workspace_name"] = workspaceName }
+        if let branchName { params["branch_name"] = branchName }
         return params
     }
 }

@@ -71,7 +71,6 @@ extension SupermuxProjectsSectionModel {
             // Same for the create flow: its presentation holds the OLD
             // connection's store, so a sheet kept open could only fail.
             resetNewWorktreeFlow()
-            resetAgentWorktreeFlow()
             sessionGeneration += 1
             let generation = sessionGeneration
             let capabilities = SupermuxMobileCapabilities(hostCapabilities: hostCapabilities)
@@ -174,7 +173,6 @@ extension SupermuxProjectsSectionModel {
         // connection that no longer exists.
         pendingWorktreeRemoval = nil
         resetNewWorktreeFlow()
-        resetAgentWorktreeFlow()
         endAllWorktreeSessions()
         sessionLoops?.cancel()
         sessionGeneration += 1

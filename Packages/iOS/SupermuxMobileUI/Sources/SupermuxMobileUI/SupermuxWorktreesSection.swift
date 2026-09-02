@@ -11,10 +11,6 @@ struct SupermuxWorktreesSection: View {
     let rows: [SupermuxWorktreeRowSnapshot]
     let isPreparingNewWorktree: Bool
     let newWorktree: @MainActor () -> Void
-    /// Whether the agent-launch header button shows a spinner.
-    var isPreparingAgentWorktree = false
-    /// Opens the prompt-first "Start Claude" sheet; `nil` hides the button.
-    var newAgentWorktree: (@MainActor () -> Void)?
     let openWorktree: @MainActor (_ row: SupermuxWorktreeRowSnapshot) -> Void
     let requestRemoval: @MainActor (_ row: SupermuxWorktreeRowSnapshot) -> Void
 
@@ -66,25 +62,6 @@ struct SupermuxWorktreesSection: View {
                     bundle: .module
                 ))
                 Spacer(minLength: 0)
-                if let newAgentWorktree {
-                    Button(action: newAgentWorktree) {
-                        if isPreparingAgentWorktree {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "sparkles")
-                                .font(.footnote.weight(.semibold))
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(isPreparingAgentWorktree)
-                    .accessibilityLabel(String(
-                        localized: "supermux.agent.row.start",
-                        defaultValue: "Start Claude in New Worktree",
-                        bundle: .module
-                    ))
-                    .accessibilityIdentifier("SupermuxStartClaudeButton")
-                }
                 Button(action: newWorktree) {
                     if isPreparingNewWorktree {
                         ProgressView()

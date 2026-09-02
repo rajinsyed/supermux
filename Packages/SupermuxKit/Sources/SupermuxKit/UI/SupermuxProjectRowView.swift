@@ -8,9 +8,6 @@ public struct SupermuxProjectRowActions {
     public var openLocal: () -> Void
     /// Starts the "new worktree" flow.
     public var newWorktree: () -> Void
-    /// Starts the prompt-first "start Claude in a new worktree" flow, or `nil`
-    /// when the host provides no agent launcher (hides the entry points).
-    public var newAgentWorktree: (() -> Void)?
     /// Opens an existing worktree as a workspace.
     public var openWorktree: (SupermuxProjectWorktree) -> Void
     /// Deletes a worktree; the Bool requests local-branch deletion too.
@@ -49,7 +46,6 @@ public struct SupermuxProjectRowActions {
     public init(
         openLocal: @escaping () -> Void,
         newWorktree: @escaping () -> Void,
-        newAgentWorktree: (() -> Void)? = nil,
         openWorktree: @escaping (SupermuxProjectWorktree) -> Void,
         deleteWorktree: @escaping (SupermuxProjectWorktree, Bool) -> Void,
         deleteAllWorktrees: @escaping () -> Void = {},
@@ -68,7 +64,6 @@ public struct SupermuxProjectRowActions {
     ) {
         self.openLocal = openLocal
         self.newWorktree = newWorktree
-        self.newAgentWorktree = newAgentWorktree
         self.openWorktree = openWorktree
         self.deleteWorktree = deleteWorktree
         self.deleteAllWorktrees = deleteAllWorktrees
@@ -322,15 +317,6 @@ public struct SupermuxProjectRowView: View {
                 .help(String(localized: "supermux.project.worktrees.help", defaultValue: "Open another worktree"))
             }
             if isHovered {
-                if let newAgentWorktree = actions.newAgentWorktree {
-                    Button(action: newAgentWorktree) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 10 * fontScale, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help(String(localized: "supermux.project.newAgentWorktree", defaultValue: "Start Claude in New Worktree…"))
-                }
                 Button(action: actions.newWorktree) {
                     Image(systemName: "plus.square.on.square")
                         .font(.system(size: 10 * fontScale, weight: .semibold))
@@ -362,14 +348,6 @@ public struct SupermuxProjectRowView: View {
     @ViewBuilder
     private var projectMenu: some View {
         Button(String(localized: "supermux.project.openLocal", defaultValue: "Open Local Workspace"), action: actions.openLocal)
-        if let newAgentWorktree = actions.newAgentWorktree {
-            Button(action: newAgentWorktree) {
-                Label(
-                    String(localized: "supermux.project.newAgentWorktree", defaultValue: "Start Claude in New Worktree…"),
-                    systemImage: "sparkles"
-                )
-            }
-        }
         Button(String(localized: "supermux.project.newWorktree", defaultValue: "New Worktree…"), action: actions.newWorktree)
         if !worktrees.isEmpty {
             Menu(String(localized: "supermux.project.worktreesMenu", defaultValue: "Worktrees")) {

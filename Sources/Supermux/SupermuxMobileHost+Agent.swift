@@ -45,7 +45,8 @@ extension TerminalController {
     }
 
     /// `mobile.supermux.agent.start`: `{project_id, prompt, command?, model?,
-    /// effort?, base_branch?}`. Names the workspace and branch from the prompt,
+    /// effort?, base_branch?, workspace_name?, branch_name?}`. Names the
+    /// workspace and branch from the prompt (typed names win),
     /// creates the worktree, and opens a workspace whose first terminal runs
     /// the Claude command with the prompt (setup script in its own terminal,
     /// exactly like the desktop). The open preserves the Mac user's focus per
@@ -70,6 +71,8 @@ extension TerminalController {
             model: supermuxNonBlank(params["model"]),
             effort: supermuxNonBlank(params["effort"]),
             baseBranch: supermuxNonBlank(params["base_branch"]),
+            workspaceName: supermuxNonBlank(params["workspace_name"]),
+            branchName: supermuxNonBlank(params["branch_name"]),
             preservesUserFocus: true
         )
         let launch: SupermuxAgentWorktreeLaunch

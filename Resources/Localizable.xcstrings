@@ -279276,6 +279276,74 @@
           }
         }
       }
+    },
+    "supermux.newWorktree.prompt.aiHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blank fields are named from the prompt by AI; typed values are kept."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空欄は AI がプロンプトから命名します。入力した値はそのまま使われます。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.prompt.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blank fields are named from the prompt; typed values are kept."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空欄はプロンプトから命名されます。入力した値はそのまま使われます。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.prompt.placeholder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What should Claude work on? Leave empty for a plain worktree."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude に何を任せますか？空のままなら通常のワークツリーです。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.startClaude" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Claude"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude を開始"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

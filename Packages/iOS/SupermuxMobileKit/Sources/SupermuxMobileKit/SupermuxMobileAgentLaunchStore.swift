@@ -56,11 +56,18 @@ public final class SupermuxMobileAgentLaunchStore {
         return models.first { $0.value == selectedModel }
     }
 
-    /// The effort levels the selected model accepts (empty hides the picker).
-    public var effortLevels: [String] {
-        guard let descriptor = selectedModelDescriptor, descriptor.supportsEffort else { return [] }
-        return descriptor.supportedEffortLevels
-    }
+    /// The models offered as explicit picks (the CLI's `default` entry is the
+    /// default row, not a selectable model).
+    public var selectableModels: [SupermuxAgentModelDTO] { models.selectableModels }
+
+    /// Claude Code's own default entry, when the catalog has one (its display
+    /// name titles the default row).
+    public var defaultModelEntry: SupermuxAgentModelDTO? { models.defaultEntry }
+
+    /// The effort levels the current selection accepts (empty hides the
+    /// picker). The default row takes effort too — see
+    /// `Array<SupermuxAgentModelDTO>.effortLevels(forSelection:)`.
+    public var effortLevels: [String] { models.effortLevels(forSelection: selectedModel) }
 
     /// Creates the store.
     /// - Parameters:
@@ -132,8 +139,15 @@ public final class SupermuxMobileAgentLaunchStore {
     /// - Parameters:
     ///   - prompt: The task Claude starts on.
     ///   - baseBranch: The branch to start from, or `nil` for the default.
+    ///   - workspaceName: A typed workspace title; blank derives from the prompt.
+    ///   - branchName: A typed branch; blank derives from the prompt.
     /// - Returns: The Mac's result (worktree, names, opened workspace id).
-    public func start(prompt: String, baseBranch: String? = nil) async throws -> SupermuxAgentStartResponse {
+    public func start(
+        prompt: String,
+        baseBranch: String? = nil,
+        workspaceName: String? = nil,
+        branchName: String? = nil
+    ) async throws -> SupermuxAgentStartResponse {
         guard !isStarting else { throw SupermuxAgentLaunchStoreError.alreadyStarting }
         isStarting = true
         defer { isStarting = false }
@@ -143,7 +157,9 @@ public final class SupermuxMobileAgentLaunchStore {
             command: command.isEmpty ? nil : command,
             model: selectedModel,
             effort: selectedEffort,
-            baseBranch: normalized(baseBranch)
+            baseBranch: normalized(baseBranch),
+            workspaceName: normalized(workspaceName),
+            branchName: normalized(branchName)
         ))
     }
 
@@ -153,13 +169,14 @@ public final class SupermuxMobileAgentLaunchStore {
         models = options.models
         modelsSource = options.modelsSource
         modelsError = options.modelsSource == .unavailable ? options.modelsError : nil
-        if let last = options.lastModel, models.contains(where: { $0.value == last }) {
+        if let last = options.lastModel, models.selectableModels.contains(where: { $0.value == last }) {
             selectedModel = last
-            selectedEffort = options.lastEffort
         } else {
             selectedModel = nil
-            selectedEffort = nil
         }
+        // Effort applies to the default row too, so keep the remembered level
+        // and let the clamp drop it only when this selection rejects it.
+        selectedEffort = options.lastEffort
         clampEffort()
     }
 

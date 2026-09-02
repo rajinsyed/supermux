@@ -96,6 +96,32 @@ struct SupermuxAgentWorktreeLauncherTests {
         #expect(launch.openRequest.setupScript == nil)
     }
 
+    @Test func typedNamesWinOverDerivedOnes() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.cleanUp() }
+        let namer = StubWorktreeNamer(names: SupermuxPromptNames(workspaceName: "AI Title", branchName: "ai-branch"))
+        let launcher = SupermuxAgentWorktreeLauncher(
+            projectsModel: fixture.model,
+            namer: namer,
+            settings: SupermuxAgentLauncherSettings(defaults: fixture.defaults)
+        )
+        // Only the branch typed: the title still comes from AI.
+        let partial = try await launcher.start(SupermuxAgentLaunchRequest(
+            projectId: fixture.project.id, prompt: "fix the thing", command: "claude", branchName: " my-branch "
+        ))
+        #expect(partial.names == SupermuxPromptNames(workspaceName: "AI Title", branchName: "my-branch"))
+        #expect(partial.namedByAI)
+        #expect(partial.worktree.branch == "my-branch")
+        // Both typed: AI is not consulted at all.
+        let full = try await launcher.start(SupermuxAgentLaunchRequest(
+            projectId: fixture.project.id, prompt: "fix the thing", command: "claude",
+            workspaceName: "Typed Title", branchName: "typed-branch"
+        ))
+        #expect(full.names == SupermuxPromptNames(workspaceName: "Typed Title", branchName: "typed-branch"))
+        #expect(!full.namedByAI)
+        #expect(full.openRequest.title == "Typed Title")
+    }
+
     @Test func fillerOnlyPromptStillGetsAWorktree() async throws {
         let fixture = try await makeFixture()
         defer { fixture.cleanUp() }

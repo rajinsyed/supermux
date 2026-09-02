@@ -86,9 +86,6 @@ public struct SupermuxProjectsMobileSection: View {
                     openDetail: actions.openProjectDetail,
                     newWorktree: section.showsWorktreeCreation
                         ? actions.requestNewWorktree
-                        : nil,
-                    newAgentWorktree: section.showsAgentLaunch
-                        ? actions.requestNewAgentWorktree
                         : nil
                 )
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
@@ -125,22 +122,6 @@ public struct SupermuxProjectsMobileSection: View {
                         }
                         .tint(.accentColor)
                     }
-                    if section.showsAgentLaunch {
-                        Button {
-                            actions.requestNewAgentWorktree(row.id)
-                        } label: {
-                            Label {
-                                Text(String(
-                                    localized: "supermux.agent.row.start",
-                                    defaultValue: "Start Claude in New Worktree",
-                                    bundle: .module
-                                ))
-                            } icon: {
-                                Image(systemName: "sparkles")
-                            }
-                        }
-                        .tint(.purple)
-                    }
                 }
                 // Mac-sidebar shape: open workspaces are ALWAYS nested under
                 // their project; only the unopened-worktree slice (inside
@@ -148,8 +129,7 @@ public struct SupermuxProjectsMobileSection: View {
                 SupermuxProjectNestedRows(
                     row: row,
                     actions: actions,
-                    showsNewWorktree: section.showsWorktreeCreation,
-                    showsAgentLaunch: section.showsAgentLaunch
+                    showsNewWorktree: section.showsWorktreeCreation
                 )
             }
         }

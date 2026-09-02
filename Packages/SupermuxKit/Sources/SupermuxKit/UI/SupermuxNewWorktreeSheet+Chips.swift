@@ -1,16 +1,17 @@
 import SwiftUI
 import SupermuxMobileCore
 
-/// The compact chip row under the prompt: command, model, effort, and
-/// starting branch, each a small capsule menu.
-extension SupermuxAgentWorktreeSheet {
+/// The compact chip row under the fields: the starting branch always, plus
+/// command / model / effort once a prompt is present.
+extension SupermuxNewWorktreeSheet {
     var chipRow: some View {
         HStack(spacing: 6) {
-            commandChip
-            modelChip
-            if let descriptor = selectedModelDescriptor, descriptor.supportsEffort,
-               !descriptor.supportedEffortLevels.isEmpty {
-                effortChip(levels: descriptor.supportedEffortLevels, defaultLevel: descriptor.defaultEffortLevel)
+            if hasPrompt {
+                commandChip
+                modelChip
+                if !effortLevels.isEmpty {
+                    effortChip(levels: effortLevels, defaultLevel: selectedModelDescriptor?.defaultEffortLevel)
+                }
             }
             baseBranchChip
             Spacer(minLength: 0)
@@ -66,9 +67,10 @@ extension SupermuxAgentWorktreeSheet {
                     Text(defaultModelTitle)
                 }
             }
-            if !models.isEmpty {
+            let selectable = models.selectableModels
+            if !selectable.isEmpty {
                 Divider()
-                ForEach(models) { descriptor in
+                ForEach(selectable) { descriptor in
                     Button {
                         selectedModel = descriptor.value
                     } label: {
@@ -101,8 +103,11 @@ extension SupermuxAgentWorktreeSheet {
         ))
     }
 
+    /// The default row's title: Claude Code's own name for its default entry
+    /// when the catalog has one, else a generic label.
     private var defaultModelTitle: String {
-        String(localized: "supermux.agent.model.default", defaultValue: "Default model")
+        models.defaultEntry?.displayName
+            ?? String(localized: "supermux.agent.model.default", defaultValue: "Default model")
     }
 
     // MARK: Effort
@@ -144,10 +149,7 @@ extension SupermuxAgentWorktreeSheet {
 
     private func defaultEffortTitle(_ defaultLevel: String?) -> String {
         if let defaultLevel {
-            let format = String(
-                localized: "supermux.agent.effort.defaultNamed",
-                defaultValue: "Default (%@)"
-            )
+            let format = String(localized: "supermux.agent.effort.defaultNamed", defaultValue: "Default (%@)")
             return String(format: format, SupermuxAgentEffortLabel.title(for: defaultLevel))
         }
         return String(localized: "supermux.agent.effort.default", defaultValue: "Auto effort")
@@ -195,7 +197,10 @@ extension SupermuxAgentWorktreeSheet {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .help(String(localized: "supermux.newWorktree.base.label", defaultValue: "Start from"))
+        .help(String(
+            localized: "supermux.newWorktree.base.hint",
+            defaultValue: "Includes committed changes from the selected branch. Uncommitted changes aren’t copied."
+        ))
     }
 }
 

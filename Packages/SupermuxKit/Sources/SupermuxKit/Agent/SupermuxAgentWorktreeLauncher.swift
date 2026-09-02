@@ -14,6 +14,10 @@ public struct SupermuxAgentLaunchRequest: Equatable, Sendable {
     public var effort: String?
     /// The branch to start from, or `nil` for the project default / `HEAD`.
     public var baseBranch: String?
+    /// A workspace title typed by the user; blank means "derive from the prompt".
+    public var workspaceName: String?
+    /// A branch typed by the user; blank means "derive from the prompt".
+    public var branchName: String?
     /// Whether the opened workspace must not steal the Mac user's keyboard
     /// focus (remote/phone launches).
     public var preservesUserFocus: Bool
@@ -26,6 +30,8 @@ public struct SupermuxAgentLaunchRequest: Equatable, Sendable {
         model: String? = nil,
         effort: String? = nil,
         baseBranch: String? = nil,
+        workspaceName: String? = nil,
+        branchName: String? = nil,
         preservesUserFocus: Bool = false
     ) {
         self.projectId = projectId
@@ -34,6 +40,8 @@ public struct SupermuxAgentLaunchRequest: Equatable, Sendable {
         self.model = model
         self.effort = effort
         self.baseBranch = baseBranch
+        self.workspaceName = workspaceName
+        self.branchName = branchName
         self.preservesUserFocus = preservesUserFocus
     }
 }
@@ -141,8 +149,19 @@ public final class SupermuxAgentWorktreeLauncher {
         guard projectsModel.projects.contains(where: { $0.id == request.projectId }) else {
             throw SupermuxAgentLaunchError.unknownProject
         }
-        let resolved = await names(forPrompt: prompt)
-            ?? (SupermuxPromptNames(workspaceName: Self.fallbackTitle(for: prompt), branchName: ""), false)
+        // Typed names win; only the blanks are derived from the prompt (and
+        // the AI call is skipped entirely when the user typed both).
+        let typedName = Self.normalized(request.workspaceName)
+        let typedBranch = Self.normalized(request.branchName)
+        var resolved: (names: SupermuxPromptNames, fromAI: Bool)
+        if let typedName, let typedBranch {
+            resolved = (SupermuxPromptNames(workspaceName: typedName, branchName: typedBranch), false)
+        } else {
+            resolved = await names(forPrompt: prompt)
+                ?? (SupermuxPromptNames(workspaceName: Self.fallbackTitle(for: prompt), branchName: ""), false)
+            if let typedName { resolved.names.workspaceName = typedName }
+            if let typedBranch { resolved.names.branchName = typedBranch }
+        }
         try Task.checkCancellation()
         willCreateWorktree?()
 
@@ -190,6 +209,12 @@ public final class SupermuxAgentWorktreeLauncher {
             namedByAI: resolved.fromAI,
             openRequest: openRequest
         )
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     /// A last-resort title when the prompt has no nameable words: its first
