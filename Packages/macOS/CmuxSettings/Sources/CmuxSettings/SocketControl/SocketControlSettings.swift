@@ -384,12 +384,20 @@ public struct SocketControlSettings {
         bundleIdentifier: String?,
         isDebugBuild: Bool
     ) -> Bool {
-        if isTruthy(environment[allowSocketPathOverrideKey]) {
-            return true
-        }
+        // SUPERMUX:begin socket-override-foreign-bundle
+        // An override inherited from a *different* cmux bundle is never honored,
+        // even with CMUX_ALLOW_SOCKET_OVERRIDE set: the Supermux release app bakes
+        // that flag into its LSEnvironment, so a tagged dev build opened from one
+        // of its terminals (URL scheme / `open`) would otherwise adopt
+        // /tmp/supermux.sock, never listen, and point its bundled CLI at the
+        // wrong app. Launches that name this bundle (reload.sh) still win.
         if inheritedBundleIdentifierConflicts(environment: environment, bundleIdentifier: bundleIdentifier) {
             return false
         }
+        if isTruthy(environment[allowSocketPathOverrideKey]) {
+            return true
+        }
+        // SUPERMUX:end socket-override-foreign-bundle
         if isDebugLikeBundleIdentifier(bundleIdentifier) || isStagingBundleIdentifier(bundleIdentifier) {
             return true
         }

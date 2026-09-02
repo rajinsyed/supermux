@@ -498,6 +498,9 @@ private final class SupermuxChangesModelBox: ObservableObject {
         service: SupermuxGitChangesService(runner: CommandRunner()),
         commitGenerator: SupermuxComposition.aiCommitMessenger
     )
+    /// The on-demand PR viewer. Idle until a header PR button is clicked; it
+    /// owns no timer or watcher.
+    let pullRequests = SupermuxPullRequestViewerModel()
 }
 
 /// The git Changes panel mounted as the right sidebar's `changes` mode (see
@@ -518,6 +521,9 @@ struct SupermuxChangesMount: View {
     // (Swift Observation), matching every upstream call site.
     @State private var shortcutObserver = KeyboardShortcutSettingsObserver.shared
     @StateObject private var box = SupermuxChangesModelBox()
+    /// Mirrors the selected workspace's cmux-probed PR into the panel header
+    /// (no fetch of our own; see the observer).
+    @StateObject private var pullRequestObserver = SupermuxChangesPullRequestObserver()
 
     var body: some View {
         let _ = shortcutObserver.revision
@@ -531,11 +537,26 @@ struct SupermuxChangesMount: View {
                 guard let tabManager,
                       let appDelegate = NSApp.delegate as? AppDelegate else { return }
                 _ = appDelegate.openDiffViewerForFocusedWorkspace(for: tabManager)
+            },
+            pullRequests: box.pullRequests,
+            knownPullRequest: pullRequestObserver.knownPullRequest,
+            onOpenURL: { [weak tabManager] url in
+                SupermuxChangesPullRequestLinkOpener.open(url, tabManager: tabManager)
+            },
+            onOpenFileDiff: { [weak tabManager] patch in
+                guard let tabManager,
+                      SupermuxFileDiffOpener.shared.present(patch, for: tabManager) else {
+                    NSSound.beep()
+                    return
+                }
             }
         )
         .onAppear { box.model.setDirectory(workspaceDirectory) }
         .onChange(of: workspaceDirectory) { _, newDirectory in
             box.model.setDirectory(newDirectory)
+        }
+        .onChange(of: tabManager.selectedWorkspace?.id, initial: true) { _, _ in
+            pullRequestObserver.observe(workspace: tabManager.selectedWorkspace)
         }
     }
 
