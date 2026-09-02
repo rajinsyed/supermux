@@ -225,13 +225,16 @@ struct SupermuxAgentWorktreeLauncherLongPromptTests {
         #expect(written == prompt.trimmingCharacters(in: .whitespacesAndNewlines))
         #expect(command == launcher.shellLine(command: "claude", model: nil, effort: nil, prompt: prompt))
 
-        // A launch that fails in git leaves no orphaned prompt file behind.
+        // A launch that fails in git must NOT delete the prompt file: the path
+        // is shared by every launch of the same prompt, and a concurrent one
+        // may still be reading it. The 7-day prune reclaims it instead.
         await #expect(throws: (any Error).self) {
             try await launcher.start(SupermuxAgentLaunchRequest(
-                projectId: project.id, prompt: prompt + " again", command: "claude",
+                projectId: project.id, prompt: prompt, command: "claude",
                 baseBranch: "no-such-branch-\(UUID().uuidString)"
             ))
         }
         #expect(try FileManager.default.contentsOfDirectory(atPath: promptDirectory.path) == files)
+        #expect(FileManager.default.fileExists(atPath: promptDirectory.appendingPathComponent(files[0]).path))
     }
 }
