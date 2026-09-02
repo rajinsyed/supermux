@@ -57,7 +57,8 @@ extension SupermuxChangesModel {
     /// reverted or committed underneath the panel) is reported through
     /// ``lastError`` and returns `nil`; the empty case also refreshes the
     /// status so the list catches up. A result whose directory was switched
-    /// away mid-capture is discarded.
+    /// away mid-capture is discarded, and so is one superseded by a later row
+    /// click, so two quick clicks always end on the file clicked last.
     /// - Parameters:
     ///   - change: The file row that was activated.
     ///   - staged: Whether the row sits in the Staged section.
@@ -65,10 +66,12 @@ extension SupermuxChangesModel {
     public func fileDiffPatch(for change: SupermuxGitFileChange, staged: Bool) async -> SupermuxFileDiffPatch? {
         guard let directory else { return nil }
         let generation = directoryGeneration
+        fileDiffGeneration += 1
+        let request = fileDiffGeneration
         let diff = await service.fileDiff(
             repoPath: directory, path: change.path, oldPath: change.oldPath, staged: staged
         )
-        guard generation == directoryGeneration else { return nil }
+        guard generation == directoryGeneration, request == fileDiffGeneration else { return nil }
         if diff.isBinary {
             lastError = String(
                 localized: "supermux.changes.fileDiff.binary",

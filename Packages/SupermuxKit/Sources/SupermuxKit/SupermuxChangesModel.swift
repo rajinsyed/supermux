@@ -82,6 +82,10 @@ public final class SupermuxChangesModel {
     /// is discarded instead of overwriting the new directory's snapshot.
     /// Module-internal so the sync extension can guard its awaits the same way.
     @ObservationIgnored var directoryGeneration = 0
+    /// Identifies the latest file-diff capture request. Bumped on every
+    /// ``fileDiffPatch(for:staged:)`` call so a slower earlier capture is
+    /// discarded instead of being presented after the row clicked last.
+    @ObservationIgnored var fileDiffGeneration = 0
     /// True while a status read is awaiting; a request that arrives during one
     /// sets ``refreshPending`` rather than racing or being silently dropped.
     @ObservationIgnored private var isRefreshing = false

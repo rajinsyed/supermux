@@ -36,6 +36,12 @@ extension SupermuxGitChangesService {
     /// balloon one RPC response into hundreds of megabytes.
     public static let maxFileDiffBytes = 262_144
 
+    /// Keeps non-ASCII file names (a Japanese `メモ.txt`) raw in diff headers
+    /// instead of git's default octal escaping, so the viewer and the mobile
+    /// header show the name as typed. Names containing `"`, `\`, or control
+    /// characters are still C-quoted; see ``gitCQuotedBody(_:)``.
+    static let rawPaths = "-c core.quotePath=false"
+
     /// Captures the unified diff for one repo-relative path.
     ///
     /// `staged` selects the index-vs-HEAD diff (`git diff --cached`);
@@ -98,17 +104,25 @@ extension SupermuxGitChangesService {
     /// absolute operand git was handed (`a/Users/…/repo/new.txt`) to the
     /// repo-relative path (`a/new.txt`), so a viewer's file tree and the
     /// mobile diff header name the file the way the rest of the panel does.
-    /// Only the `diff --git`, `---`, and `+++` lines are touched; hunk content
-    /// is left byte-for-byte as captured.
+    /// Git C-quotes a path containing `"`, `\`, or a control character
+    /// (`"a/Users/…/say \"hi\".txt"`); that form is rewritten too, keeping
+    /// the quoting. Only the `diff --git`, `---`, and `+++` lines are touched;
+    /// hunk content is left byte-for-byte as captured.
     static func relativizedNoIndexHeaders(
         _ text: String, resolvedPath: String, relativePath: String
     ) -> String {
         // `resolvedPath` starts with "/", so git prints it as `a/Users/…` —
         // the "a" prefix directly followed by the absolute path.
-        let replacements = [
-            ("a" + resolvedPath, "a/" + relativePath),
-            ("b" + resolvedPath, "b/" + relativePath),
-        ]
+        var replacements = ["a", "b"].map { side in
+            (side + resolvedPath, side + "/" + relativePath)
+        }
+        let quotedResolved = gitCQuotedBody(resolvedPath)
+        if quotedResolved != resolvedPath {
+            let quotedRelative = gitCQuotedBody(relativePath)
+            replacements += ["a", "b"].map { side in
+                ("\"" + side + quotedResolved, "\"" + side + "/" + quotedRelative)
+            }
+        }
         let headerPrefixes = ["diff --git ", "--- ", "+++ "]
         return text
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -121,6 +135,31 @@ extension SupermuxGitChangesService {
                 return line
             }
             .joined(separator: "\n")
+    }
+
+    /// The body git prints between the quotes when it C-quotes `path`
+    /// (`quote.c`, with `core.quotePath=false` as the capture requests): `"`
+    /// and `\` are backslash-escaped, the named control characters use their
+    /// C escapes, and any other control byte is `\ooo` octal. Unchanged when
+    /// nothing needs escaping, which is also how git decides not to quote.
+    static func gitCQuotedBody(_ path: String) -> String {
+        var body = ""
+        for byte in path.utf8 {
+            switch byte {
+            case 0x22: body += "\\\""
+            case 0x5C: body += "\\\\"
+            case 0x07: body += "\\a"
+            case 0x08: body += "\\b"
+            case 0x09: body += "\\t"
+            case 0x0A: body += "\\n"
+            case 0x0B: body += "\\v"
+            case 0x0C: body += "\\f"
+            case 0x0D: body += "\\r"
+            case 0x00..<0x20, 0x7F: body += String(format: "\\%03o", byte)
+            default: body.unicodeScalars.append(Unicode.Scalar(byte))
+            }
+        }
+        return body
     }
 
     // MARK: - Internals
@@ -213,7 +252,7 @@ extension SupermuxGitChangesService {
     private func isBinaryDiff(
         repoPath: String, path: String, staged: Bool, noIndexResolvedPath: String?
     ) async -> Bool {
-        let script = "git \(Self.noOptionalLocks) "
+        let script = "git \(Self.noOptionalLocks) \(Self.rawPaths) "
             + diffArguments(staged: staged, noIndex: noIndexResolvedPath != nil, extra: "--numstat -z")
             + " \(pathspec(path: path, noIndexResolvedPath: noIndexResolvedPath)) | /usr/bin/base64"
         let result = await runShellPipeline(script, in: repoPath, shell: "/bin/bash")
@@ -230,7 +269,7 @@ extension SupermuxGitChangesService {
     private func diffText(
         repoPath: String, path: String, oldPath: String?, staged: Bool, noIndexResolvedPath: String?
     ) async -> (text: String, truncated: Bool) {
-        let script = "git \(Self.noOptionalLocks) "
+        let script = "git \(Self.noOptionalLocks) \(Self.rawPaths) "
             + diffArguments(staged: staged, noIndex: noIndexResolvedPath != nil, extra: nil)
             + " \(pathspec(path: path, oldPath: oldPath, noIndexResolvedPath: noIndexResolvedPath))"
             + " | /usr/bin/head -c \(Self.maxFileDiffBytes + 1) | /usr/bin/base64"
