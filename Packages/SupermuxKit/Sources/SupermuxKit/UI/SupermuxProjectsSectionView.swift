@@ -255,6 +255,7 @@ public struct SupermuxProjectsSectionView: View {
             SupermuxNewWorktreeSheet(
                 model: model,
                 project: project,
+                projectIcon: iconStore.image(for: project.id),
                 agentLaunch: agentLaunch,
                 onCreated: { worktree, workspaceName in
                     openWorktree(worktree, project: project, title: workspaceName, runSetup: true)

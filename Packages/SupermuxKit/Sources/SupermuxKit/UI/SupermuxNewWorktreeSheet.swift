@@ -1,4 +1,5 @@
 public import SwiftUI
+public import AppKit
 import Foundation
 import SupermuxMobileCore
 
@@ -23,6 +24,9 @@ import SupermuxMobileCore
 public struct SupermuxNewWorktreeSheet: View {
     let model: SupermuxProjectsModel
     let project: SupermuxProject
+    /// The project's resolved avatar image (custom icon or detected logo),
+    /// shared with the sidebar row so the header shows the same icon.
+    private let projectIcon: NSImage?
     /// Launcher / catalog / commands for the Claude path; `nil` hides it.
     let agentLaunch: SupermuxAgentLaunchEnvironment?
     private let onCreated: (SupermuxProjectWorktree, String?) -> Void
@@ -65,6 +69,8 @@ public struct SupermuxNewWorktreeSheet: View {
     /// - Parameters:
     ///   - model: Shared projects model that performs the git work.
     ///   - project: Project the worktree is created in.
+    ///   - projectIcon: The project's resolved avatar image, when the host has
+    ///     one cached; `nil` falls back to the symbol or initial letter.
     ///   - agentLaunch: Claude launch collaborators; `nil` hides the prompt
     ///     path entirely (plain worktree sheet).
     ///   - onCreated: Called after a plain create with the new worktree and
@@ -74,12 +80,14 @@ public struct SupermuxNewWorktreeSheet: View {
     public init(
         model: SupermuxProjectsModel,
         project: SupermuxProject,
+        projectIcon: NSImage? = nil,
         agentLaunch: SupermuxAgentLaunchEnvironment? = nil,
         onCreated: @escaping (SupermuxProjectWorktree, String?) -> Void,
         onLaunched: @escaping (SupermuxAgentWorktreeLaunch) -> Void = { _ in }
     ) {
         self.model = model
         self.project = project
+        self.projectIcon = projectIcon
         self.agentLaunch = agentLaunch
         self.onCreated = onCreated
         self.onLaunched = onLaunched
@@ -154,7 +162,7 @@ public struct SupermuxNewWorktreeSheet: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            SupermuxProjectAvatarView(project: project, size: 22)
+            SupermuxProjectAvatarView(project: project, detectedIcon: projectIcon, size: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(String(localized: "supermux.newWorktree.title", defaultValue: "New Worktree"))
                     .font(.headline)
