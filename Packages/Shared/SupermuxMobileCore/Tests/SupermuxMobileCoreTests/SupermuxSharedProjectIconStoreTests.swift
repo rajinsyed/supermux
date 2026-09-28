@@ -55,7 +55,7 @@ struct SupermuxSharedProjectIconStoreTests {
 
     @Test func groupIdentifierAndPathShapeAreTheDocumentedContract() {
         // Hardcoded on BOTH sides. Changing either without changing
-        // ios/SupermuxNotificationService/NotificationService.swift breaks the
+        // ios/SupermuxNotificationService/SupermuxNotificationDecorator.swift breaks the
         // push avatar silently.
         #expect(SupermuxSharedProjectIconStore.appGroupIdentifier == "group.com.supermux.ios")
         #expect(

@@ -70,7 +70,7 @@
 	     the ITMS-90894 rejection, and at runtime it is one of the several
 	     silent failure modes where the push still arrives but is presented as
 	     an ordinary banner with no project avatar. Paired with the
-	     SupermuxNotificationService extension, which calls
+	     notification service extension (SupermuxNotificationDecorator), which calls
 	     UNMutableNotificationContent.updating(from: INSendMessageIntent). -->
 	<key>NSUserActivityTypes</key>
 	<array>

@@ -2,60 +2,47 @@ import Intents
 import UIKit
 import UserNotifications
 
-/// Rewrites an incoming Supermux push into a **communication notification** so
-/// iOS presents it the way a message from a person is presented: a large
-/// circular avatar on the left, the small app icon badged onto its corner, and
-/// the sender's name in bold.
+/// Rewrites a Supermux push into a **communication notification** so iOS
+/// presents it the way a message from a person is presented: a large circular
+/// avatar on the left, the small app icon badged onto its corner, and the
+/// sender's name in bold.
 ///
-/// **Why an extension is required at all.** `UNNotificationContent.updating(from:)`
-/// is the only API that applies that treatment, and for a *remote* push it must
-/// be called inside `UNNotificationServiceExtension.didReceive` — the app
-/// process is not running when a banner arrives on a locked phone. There is no
-/// APNs payload key that does this.
+/// **Where it runs.** iOS runs exactly one notification service extension per
+/// app, so this is not an extension of its own: upstream's `NotificationService`
+/// (which decrypts relay pushes) calls ``decorated(_:)`` on a plaintext push
+/// before delivering it. `UNNotificationContent.updating(from:)` is the only API
+/// that applies the communication treatment, and for a *remote* push it must be
+/// called inside the extension — the app process is not running when a banner
+/// arrives on a locked phone. There is no APNs payload key that does this.
 ///
 /// **Where the avatar comes from.** A project's icon lives on the paired Mac and
-/// reaches the phone only over the app's encrypted RPC session, which this
+/// reaches the phone only over the app's encrypted RPC session, which the
 /// out-of-process, short-lived extension cannot open. It cannot ride the push
 /// either: APNs caps a notification at 4096 bytes and a real icon is an order of
 /// magnitude past that (a 15 KB favicon is ~20 KB base64). So the app mirrors
-/// every icon it fetches into the shared app-group container, and this extension
-/// reads the PNG from disk — no network, no RPC, one file read.
+/// every icon it fetches into the shared app-group container, and this reads
+/// the PNG from disk — no network, no RPC, one file read.
 ///
 /// When no icon is stored — the project has none, the app has not displayed it
 /// yet, or the build is signed without the app group — it falls back to
 /// rendering the same gradient-and-initial chip the Mac sidebar and the in-app
 /// feed draw, from the identity the payload does carry.
 ///
-/// **Failure is always graceful.** Every path — missing metadata, a render
-/// failure, a throwing `updating(from:)`, or the extension's execution budget
-/// expiring — delivers the original notification unchanged. A push must never
-/// be lost to a decoration problem.
-final class NotificationService: UNNotificationServiceExtension {
-    private var contentHandler: ((UNNotificationContent) -> Void)?
-    private var bestAttemptContent: UNNotificationContent?
-
-    override func didReceive(
-        _ request: UNNotificationRequest,
-        withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
-    ) {
-        self.contentHandler = contentHandler
-        bestAttemptContent = request.content
-
-        guard let content = request.content.mutableCopy() as? UNMutableNotificationContent,
-              let project = PushProject(userInfo: request.content.userInfo) else {
-            deliver(request.content)
-            return
-        }
-        bestAttemptContent = content
+/// **Failure is always graceful.** Missing metadata, a render failure, or a
+/// throwing `updating(from:)` returns the content unchanged. A push must never
+/// be lost to a decoration problem, and the caller's expiration handler still
+/// delivers the undecorated content if this runs out of time.
+enum SupermuxNotificationDecorator {
+    /// The communication-notification form of `content`, or `content` itself
+    /// when it carries no Supermux project or cannot be decorated.
+    static func decorated(_ content: UNMutableNotificationContent) -> UNNotificationContent {
+        guard let project = PushProject(userInfo: content.userInfo) else { return content }
 
         // The alert title is the agent ("Claude Code"), which is what should
         // read as the sender. Without one there is nothing to bold, so the
         // communication treatment would look broken rather than better.
         let senderName = content.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !senderName.isEmpty else {
-            deliver(content)
-            return
-        }
+        guard !senderName.isEmpty else { return content }
 
         // The project's real logo only when THIS notification snapshot says an
         // icon exists; stale mirrored bytes must not override an icon removal.
@@ -111,34 +98,15 @@ final class NotificationService: UNNotificationServiceExtension {
         interaction.direction = .incoming
         interaction.donate(completion: nil)
 
-        do {
-            let updated = try content.updating(from: intent)
-            // The app routes taps, replies, and dismiss-sync entirely off
-            // `userInfo["cmux"]`. If a future OS release ever rewrote or
-            // dropped it, a prettier banner that cannot open the right terminal
-            // would be a strictly worse notification — so fall back instead.
-            guard Self.cmuxPayload(in: updated.userInfo) == Self.cmuxPayload(in: content.userInfo) else {
-                deliver(content)
-                return
-            }
-            bestAttemptContent = updated
-            deliver(updated)
-        } catch {
-            deliver(content)
+        guard let updated = try? content.updating(from: intent) else { return content }
+        // The app routes taps, replies, and dismiss-sync entirely off
+        // `userInfo["cmux"]`. If a future OS release ever rewrote or dropped it,
+        // a prettier banner that cannot open the right terminal would be a
+        // strictly worse notification — so fall back instead.
+        guard cmuxPayload(in: updated.userInfo) == cmuxPayload(in: content.userInfo) else {
+            return content
         }
-    }
-
-    /// iOS is about to reclaim the extension: ship the best content we have.
-    override func serviceExtensionTimeWillExpire() {
-        guard let bestAttemptContent else { return }
-        deliver(bestAttemptContent)
-    }
-
-    /// Calls the content handler exactly once. A second call would trap.
-    private func deliver(_ content: UNNotificationContent) {
-        guard let contentHandler else { return }
-        self.contentHandler = nil
-        contentHandler(content)
+        return updated
     }
 
     private static func cmuxPayload(in userInfo: [AnyHashable: Any]) -> NSDictionary? {

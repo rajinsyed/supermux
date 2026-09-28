@@ -60,14 +60,13 @@ sign-in mark, launch logo, `mobile.signIn.title`).
 - **Empty windows no longer survive a relaunch.** Upstream #14788 drops windows with no
   workspaces on save/restore (a WindowServer hang fix). An emptied window still stays open while
   the app runs.
-- **Two iOS notification service extensions are embedded** (upstream's E2EE-decrypting
-  `NotificationService` and the fork's avatar-drawing `SupermuxNotificationService`); iOS runs
-  only one per app. Open decision — see SUPERMUX-TOUCHPOINTS.md #368–372.
-- **The CLAUDE.md phone dogfood (Release) build fails as written** until the two-extension
-  decision is made: upstream's extension keeps its Release bundle id
-  `dev.cmux.app.beta.NotificationServiceV2`. Stopgap: add
-  `CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER=com.supermux.ios.dogfood.NotificationService`
-  (signing may still reject its app-group/keychain entitlements under the personal team).
+- **One iOS notification service extension (resolved).** The fork's avatar decoration now runs
+  inside upstream's E2EE-decrypting `NotificationService`; the separate
+  `SupermuxNotificationService` target is gone — see SUPERMUX-TOUCHPOINTS.md #368–372, #514.
+- **The CLAUDE.md phone dogfood (Release) build still fails as written**: its
+  `SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` now claims upstream's
+  `group.dev.cmux.ios`, which the dogfood extension id cannot sign. The fixed-identity release
+  (`scripts/supermux-ios-release.sh`) is unaffected.
 - Upstream #13741 removed Mac-side push targeting: the Mac no longer names `com.supermux.ios` as
   the push target, so phone pushes rely on server fan-out or the fork's direct push path.
   Confirm a push reaches the Supermux iPhone app when dogfooding.
