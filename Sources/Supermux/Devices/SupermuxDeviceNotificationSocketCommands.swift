@@ -136,6 +136,7 @@ enum SupermuxDeviceNotificationSocketCommands {
                 ] as [String: Any]
             },
             "retry_pending": SupermuxComposition.deviceNotificationRetry.pendingMachineIDs,
+            "retries_fired": SupermuxComposition.deviceNotificationRetry.firedCount,
         ]
     }
 

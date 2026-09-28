@@ -19,6 +19,8 @@ final class SupermuxDeviceNotificationRetry {
 
     private var pending: [String: Task<Void, Never>] = [:]
     private var attemptsWithoutProgress: [String: Int] = [:]
+    /// Retries that have fired since launch (DEBUG introspection).
+    private(set) var firedCount = 0
 
     /// Records one delivery outcome for the provider's machine.
     func noteOutcome(_ outcome: CloudNotificationDeliveryOutcome, for provider: DeviceSurfaceProvider) {
@@ -43,6 +45,7 @@ final class SupermuxDeviceNotificationRetry {
             try? await Task.sleep(for: Self.delay)
             self?.pending[machineID] = nil
             guard !Task.isCancelled, let provider, let sync = provider.notificationSync else { return }
+            self?.firedCount += 1
             #if DEBUG
             cmuxDebugLog("supermux.device.notification.retry machine=\(machineID) attempt=\(attempts + 1)")
             #endif
