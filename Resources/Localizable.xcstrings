@@ -596754,6 +596754,23 @@
           }
         }
       }
+    },
+    "supermux.devices.loopback.name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loopback Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ループバック Mac"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

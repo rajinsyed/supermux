@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **522**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **526**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -516,6 +516,8 @@ Rules for adding a touchpoint:
 | 520 | `Sources/FeatureFlags.swift` | `supermux-release-devices-defaults` | Right after #514's fence in `CmuxFeatureFlags.init`, calls `SupermuxDevicesDefaults.seedReleaseDefaultsIfNeeded(isSupermuxRelease:defaults:)`, which for `com.supermux.app` seeds `cloud.beta.machines.enabled`, `devices.discovery.enabled` and `devices.incomingAccess.enabled` to `true` ONCE (marker `supermux.devices.releaseDefaultsSeeded.v1`), and only where no value is stored — a later user choice (on or off) is never overwritten. Direct writes skip upstream's discoverability consent sheet by design (DESIGN.md decision 11) |
 | 521 | `Sources/TerminalController+ControlSocketAsync.swift` | `supermux-devices-socket` | In `processV2CommandUsingSocketExecutionPolicyAsync`, inside the `withSocketCommandPolicyAsync` body and before the native-browser-keys branch, routes every `supermux.devices.*` v2 method to `SupermuxDevicesSocketCommands.handle(method:params:)` (awaited on the async socket lane, encoded with `Self.v2Encoder.response`). Methods: `list`, `bindings`, `local_projects`, `open`, `create_workspace`, `await_open`, and DEBUG-only `request`/`bind`/`unbind` — E2E introspection of devices, records and local mirror bindings (`cmux rpc supermux.devices.list '{}'`) |
 | 522 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 14 device-foundation files under `Sources/Supermux/Devices/` (`Devices/…` paths inside the Supermux group; ids `50BE00040000000000000001`–`…001C`, odd = file reference, even = build file) into the cmux target: `SupermuxDevice`, `SupermuxDeviceEvent`, `SupermuxDeviceError`, `SupermuxDevices` (+`+Events`, `+RPC`), `SupermuxDeviceLinkEvents`, `SupermuxRemoteWorkspaceRef+Surface`, `SupermuxDeviceWorkspaceIndex`, `SupermuxDeviceWorkspaceOpener`, `SupermuxComposition+Devices`, `SupermuxDevicesDefaults`, `SupermuxDevicesSocketPayloads`, `SupermuxDevicesSocketCommands` |
+| 525 | `Sources/Devices/DeviceLinkRuntime.swift` | `loopback-device-runtime` | **DEBUG-only.** Appends `#if DEBUG extension DeviceLinkRuntime { func supermuxReplacingTransportFactory(_:) }`, which returns a copy of the runtime whose `transportFactory` is the given factory and whose `independentEventByteStreamProvider` is nil. It has to live in this file because `transportFactory` is `private(set)`. The DEBUG loopback device harness (`Sources/Supermux/Devices/SupermuxDeviceLoopbackHarness.swift`) uses it to plug an in-process byte pipe into a real `DeviceLink`, so one tagged build acts as both the viewer Mac and the host Mac (`plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`). Release builds compile none of it |
+| 526 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the six DEBUG loopback-harness files in `Sources/Supermux/Devices/` into the cmux target. Each file gets the usual four entries: `PBXFileReference` with `path = Devices/<name>` inside the `Supermux` group, `PBXBuildFile`, a `Supermux` group child, and a line in the cmux target's Sources phase. The files are `SupermuxDeviceLoopbackPipe`, `…Transport`, `…TransportFactory`, `…HostAcceptor`, `…Identity` and `…Harness` (`.swift`). File refs are `50BE0008000000000000000{1,3,5,7,9,B}` and build files are `…{2,4,6,8,A,C}`, in that order. `grep -c 50BE0008 cmux.xcodeproj/project.pbxproj` prints 24. The code is `#if DEBUG`, so these compile to nothing in Release |
 
 ## How to re-apply
 
@@ -4552,3 +4554,24 @@ Design: `plans/supermux-remote-workspaces/DESIGN.md`; API for consumers:
 - **#522 `cmux.xcodeproj/project.pbxproj`.** Re-add the 14 `Devices/…` file references, build files, Supermux
   group children and cmux Sources-phase entries with the `50BE0004…` ids listed in the row, then run
   `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj` and `scripts/check-pbxproj.sh`.
+### 525–526. DEBUG loopback device harness — `loopback-device-runtime`
+
+Why: a real Mac-to-Mac link needs two machines running the same bundle id and build tag
+(`IrxMacPeerAuthorization`, worker SQL). The loopback harness makes one tagged DEBUG build both
+Macs. A synthetic "Loopback Mac" `DeviceSurfaceProvider` sits in `SurfaceCatalog.shared`. Its
+`DeviceLink` dials an in-memory byte pipe instead of Iroh, and the other end is admitted into this
+app's own `MobileHostService.acceptTransport` as an `.irohAdmission` Mac peer. That peer gets the
+`device.workspace.*` layout handler, so the whole viewer→host pipeline runs in one process. The
+code is fork-owned (`Sources/Supermux/Devices/SupermuxDeviceLoopback*.swift`, `#if DEBUG`) and is
+started from `SupermuxMobileHostGlue.activateIfNeeded()`. The run instructions are in
+`plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`.
+Re-apply:
+1. `loopback-device-runtime` (#525): at the end of `Sources/Devices/DeviceLinkRuntime.swift`, add
+   the fenced `#if DEBUG` extension with
+   `func supermuxReplacingTransportFactory(_ factory: any CmxByteTransportFactory) -> DeviceLinkRuntime`.
+   It copies `self`, sets `transportFactory = factory` and `independentEventByteStreamProvider = nil`,
+   and returns the copy. If upstream renames `transportFactory` or makes the runtime a protocol, keep
+   the same helper name and set whatever field the RPC client's `makeTransport` reads.
+2. pbxproj (#526): re-add the four entries per file listed in the #526 row
+   (`python3 scripts/normalize-pbxproj.py && ./scripts/check-pbxproj.sh` afterwards).
+Retire both if the harness is ever replaced by a real two-Mac CI rig.
