@@ -13,7 +13,7 @@ enum SupermuxMirrorChangesSocket {
         }
         let mounted = SupermuxComposition.mirrorChangesPanels.source(showing: workspace.id)?.remoteModel
         let model = mounted ?? SupermuxMirrorChangesSource.makeModel(for: target, devices: SupermuxComposition.devices)
-        await model.refresh()
+        await settle(model)
         var payload: [String: Any] = ["source": mounted == nil ? "transient" : "mounted_panel"]
         switch params["action"] as? String ?? "status" {
         case "status":
@@ -60,6 +60,17 @@ enum SupermuxMirrorChangesSocket {
             result["viewer_opened"] = SupermuxFileDiffOpener.shared.present(patch, for: manager)
         }
         return result
+    }
+
+    /// A just-mounted panel's model may still be on its first read (a
+    /// `refresh()` issued meanwhile only queues a follow-up), so wait briefly
+    /// for a repository snapshot before acting on it.
+    private static func settle(_ model: SupermuxChangesModel) async {
+        for _ in 0..<30 {
+            await model.refresh()
+            if model.snapshot.isRepository { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     private static func describe(_ model: SupermuxChangesModel) -> [String: Any] {

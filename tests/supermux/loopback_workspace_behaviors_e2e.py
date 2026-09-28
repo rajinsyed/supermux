@@ -53,6 +53,12 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      Mac and opens its mirror (no "Cloud VM" title ever observed).
  17. new_workspace_shortcut_on_mirror — ⌘N with a mirror selected does the
      same.
+ 18. files_panel_names_mac — the Files panel on the mirror is unavailable and
+     says the files are on the loopback Mac (screenshot).
+ 19. file_diff_viewer_opens_for_remote_diff — clicking a file row's diff
+     (the panel's path) opens the diff viewer tab in the mirror from the
+     other Mac's patch (screenshot). Last, because the viewer is a local
+     pane in the mirror.
 
 Writes tests/supermux/artifacts/loopback_workspace_behaviors_e2e-<tag>.json
 and exits non-zero on any failed check. Stdlib only.
@@ -569,6 +575,36 @@ class WorkspaceBehaviorsE2E:
         created = self.mirror("new_workspace_shortcut", {"timeout_seconds": 40}, timeout_s=50)
         return self.check_created_mirror(created)
 
+    # -- 18-19: viewers (last: they add a local pane to the mirror) ------------
+
+    def file_diff_viewer_opens(self) -> Dict[str, Any]:
+        before = set(self.surface_ids(self.mirror_id))
+        diff = self.changes("diff", path="README.md", staged=False, open_viewer=True)["diff"]
+        if not diff.get("viewer_opened"):
+            raise CheckFailure(f"the diff viewer did not open: {diff}")
+
+        def viewer() -> Optional[Dict[str, Any]]:
+            surfaces = (self.rpc("surface.list", {"workspace_id": self.mirror_id}) or {}).get("surfaces") or []
+            added = [s for s in surfaces if norm(s.get("id")) not in before and s.get("type") == "browser"]
+            if not added:
+                raise CheckFailure("no diff viewer tab in the mirror yet")
+            return added[0]
+
+        tab = wait_for("the diff viewer tab in the mirror", viewer, self.timeout_s)
+        time.sleep(1.5)
+        return {"viewer_title": tab.get("title"), "screenshot": self.screenshot("remote-file-diff-viewer")}
+
+    def files_panel_names_mac(self) -> Dict[str, Any]:
+        self.rpc("workspace.select", {"workspace_id": self.mirror_id})
+        self.cli("right-sidebar", "set", "files")
+        time.sleep(1.5)
+        files = self.inspect(self.mirror_id)["local_path_actions"]["file_explorer"]
+        if files.get("is_available") or "Loopback Mac" not in str(files.get("detail")):
+            raise CheckFailure(f"Files panel: {files}")
+        shot = self.screenshot("files-panel-mirror")
+        self.cli("right-sidebar", "set", "changes")
+        return {"file_explorer": files, "screenshot": shot}
+
     # -- run -------------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -614,6 +650,8 @@ class WorkspaceBehaviorsE2E:
             self.step("new_workspace_menu_lists_mac", self.new_workspace_menu)
             self.step("new_workspace_on_mac_from_menu", self.new_workspace_from_menu)
             self.step("new_workspace_shortcut_on_mirror", self.new_workspace_shortcut)
+            self.step("files_panel_names_mac", self.files_panel_names_mac)
+            self.step("file_diff_viewer_opens_for_remote_diff", self.file_diff_viewer_opens)
             return True
         except CheckFailure:
             return False
