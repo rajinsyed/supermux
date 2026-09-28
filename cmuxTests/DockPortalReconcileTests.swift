@@ -630,7 +630,7 @@ struct DockPortalReconcileTests {
                 focus: false
             ))
             let sourceTabId = try #require(workspace.surfaceIdFromPanelId(harness.id))
-            let dock = workspace.dockSplit
+            let dock = workspace.requiredDockSplitForTesting
             let rootPane = try #require(dock.bonsplitController.allPaneIds.first)
 
             #expect(!appDelegate.canMoveSurfaceIntoDock(

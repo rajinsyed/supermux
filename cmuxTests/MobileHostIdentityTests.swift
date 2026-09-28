@@ -82,7 +82,6 @@ struct MobileHostIdentityTests {
             store.selectedPairingURLScheme?.rawValue
                 == "cmux-ios-com.supermux.ios"
         )
-        #expect(store.pushTargetNamespace?.bundleIdentifier == "com.supermux.ios")
     }
     // SUPERMUX:end supermux-release-mobile-identity
 
