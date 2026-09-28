@@ -6559,10 +6559,9 @@ struct WebViewRepresentable: NSViewRepresentable {
             routingContext: WindowInputRoutingContext,
             pressedMouseButtons: Int = NSEvent.pressedMouseButtons,
             dragPasteboardTypes: @autoclosure () -> [NSPasteboard.PasteboardType]? = NSPasteboard(name: .drag).types,
-            hasLiveTabTransfer: @autoclosure () -> Bool = DragOverlayRoutingPolicy.hasLiveTabTransfer(
-                in: NSPasteboard(name: .drag),
-                resolver: AppDelegate.shared?.liveTabDragCapabilityResolver
-            )
+            // nil = read the live tab-drag registry in the (main-actor) body; a
+            // default-argument autoclosure is nonisolated and cannot touch it.
+            hasLiveTabTransfer: @autoclosure () -> Bool? = nil
         ) -> NSView? {
             guard routingContext.eventKind == .pointerHover else {
                 return nil
@@ -6585,7 +6584,10 @@ struct WebViewRepresentable: NSViewRepresentable {
                    pasteboardTypes: dragPasteboardTypes(),
                    eventType: routingContext.eventType,
                    pressedMouseButtons: pressedMouseButtons,
-                   hasLiveTabTransfer: hasLiveTabTransfer()
+                   hasLiveTabTransfer: hasLiveTabTransfer() ?? DragOverlayRoutingPolicy.hasLiveTabTransfer(
+                       in: NSPasteboard(name: .drag),
+                       resolver: AppDelegate.shared?.liveTabDragCapabilityResolver
+                   )
                ) {
                 return nil
             }

@@ -1,4 +1,5 @@
 import AppKit
+import CmuxSettings
 import SupermuxKit
 import UniformTypeIdentifiers
 import WebKit
