@@ -14977,7 +14977,11 @@ class TerminalController {
             )
         // SUPERMUX:begin mobile-supermux-dispatch (route the fork's mobile.supermux.* namespace; router lives in Sources/Supermux/TerminalController+SupermuxMobile.swift)
         case let method where method.hasPrefix("mobile.supermux."):
-            result = await v2MobileSupermuxDispatch(method: method, params: request.params)
+            result = await v2MobileSupermuxDispatch(
+                method: method,
+                params: request.params,
+                executionContext: executionContext
+            )
         // SUPERMUX:end mobile-supermux-dispatch
         case let method where method.hasPrefix("mobile.todo."):
             result = v2MobileTodoDispatch(method: method, params: request.params)

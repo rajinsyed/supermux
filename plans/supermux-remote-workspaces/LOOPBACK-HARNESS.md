@@ -110,6 +110,28 @@ quit + relaunch dedupe check).
 Cleanup closes the mirror first, then the source. `--keep` leaves both open, which is how to test
 restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
 
+## Notification and phone-push parity E2E
+
+`tests/supermux/loopback_notifications_e2e.py` (workstream Mb, touchpoints #545–#553) checks that
+notifications behave between Macs as they do locally: the mirror copy keeps the remote project,
+the viewer never forwards `.deviceMac` records to the phone (and leaves them out of the phone
+badge), reads travel both ways, a focused mirror pane acknowledges the host, an away host keeps a
+focused pane's notification unread, a burst over the admission budget is fully delivered, and
+`mobile.supermux.phone_push.status/share` work over the Mac link while `share` refuses non-Mac
+callers. Launch with a scratch direct-APNs directory so the run never touches real credentials:
+
+```bash
+mkdir -p /tmp/<tag>/push-state
+open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 --env SUPERMUX_PROJECTS_FILE=/tmp/<tag>/projects.json \
+  --env SUPERMUX_PHONE_PUSH_STATE_DIR=/tmp/<tag>/push-state "<App path printed by reload.sh>"
+CMUX_TAG=<tag> python3 tests/supermux/loopback_notifications_e2e.py --push-state-dir /tmp/<tag>/push-state
+```
+
+It drives DEBUG-only socket hooks (`supermux.devices.push_decisions`, `notification_records`,
+`notification_overrides`, `phone_push_debug`, `phone_push_probe`, `phone_push_share_now`; see
+`Sources/Supermux/Devices/SupermuxDeviceNotificationSocketCommands.swift`) and refuses to run the
+share steps unless the app reports the scratch directory.
+
 ## How it works
 
 ```

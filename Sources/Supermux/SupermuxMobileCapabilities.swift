@@ -56,6 +56,10 @@ enum SupermuxMobileCapabilities {
             // agent.options / agent.start are served: prompt-first worktree
             // creation that opens a workspace already running Claude.
             SupermuxMobileCapability.agentLaunchV1.rawValue,
+            // phone_push.status / phone_push.share are served: another of the
+            // user's Macs can fill this Mac's missing direct-APNs credentials
+            // and phone registrations over the device link.
+            SupermuxMobileCapability.phonePushShareV1.rawValue,
         ]
     }
 }

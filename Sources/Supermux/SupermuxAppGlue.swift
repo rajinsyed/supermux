@@ -73,8 +73,12 @@ enum SupermuxComposition {
 
     /// Personal Mac-to-APNs delivery for the fixed-identity Supermux iPhone app.
     static let phonePushService = SupermuxPhonePushService(
-        baseDirectory: CmuxSettings.CmuxStateDirectory.url(
-            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        // DEBUG builds honor SUPERMUX_PHONE_PUSH_STATE_DIR so E2E runs never
+        // touch the real credentials every build on this Mac shares.
+        baseDirectory: SupermuxPhonePushService.resolvedBaseDirectory(
+            default: CmuxSettings.CmuxStateDirectory.url(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
         )
     )
 

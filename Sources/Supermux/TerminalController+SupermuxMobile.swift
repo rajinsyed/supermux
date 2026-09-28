@@ -17,10 +17,17 @@ extension TerminalController {
     /// - Parameters:
     ///   - method: The wire method string.
     ///   - params: The request params.
+    ///   - executionContext: The caller's transport trust context (`nil` for
+    ///     in-process callers). Only methods that must know WHO is calling
+    ///     (`phone_push.share`: Mac peers only) read it.
     /// - Returns: The handler's result, or `method_not_found` for methods this
     ///   host does not serve (yet) — the phone gates each screen on the
     ///   advertised ``SupermuxMobileCapabilities`` instead of probing.
-    func v2MobileSupermuxDispatch(method: String, params: [String: Any]) async -> V2CallResult {
+    func v2MobileSupermuxDispatch(
+        method: String,
+        params: [String: Any],
+        executionContext: MobileHostRPCExecutionContext? = nil
+    ) async -> V2CallResult {
         switch SupermuxMobileMethod(rawValue: method) {
         case .projectsList:
             return await v2SupermuxProjectsList(params: params)
@@ -116,6 +123,10 @@ extension TerminalController {
             return await v2SupermuxUsageState(params: params)
         case .phonePushRegister:
             return await v2SupermuxPhonePushRegister(params: params)
+        case .phonePushStatus:
+            return await v2SupermuxPhonePushStatus()
+        case .phonePushShare:
+            return await v2SupermuxPhonePushShare(params: params, executionContext: executionContext)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method

@@ -249,7 +249,9 @@ extension TerminalController {
         let store = TerminalNotificationStore.shared
         return .ok([
             "handled_ids": store.reconcileHandledNotificationIDs(deliveredIDs: deliveredIDs),
-            "unread_count": store.unreadNotificationCount,
+            // SUPERMUX:begin device-mac-phone-badge (upstream: `store.unreadNotificationCount`; the phone badge excludes records mirrored from another Mac, which that Mac badges itself)
+            "unread_count": store.supermuxPhoneBadgeCount,
+            // SUPERMUX:end device-mac-phone-badge
         ])
     }
 

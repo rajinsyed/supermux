@@ -18,7 +18,10 @@ import SupermuxKit
 /// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
 /// export filter and restart-stable bindings without a second Mac). The device-mirror methods
 /// (`close_mirror`, `unhide`, `hidden`, `set_auto_mirror`, `reconcile`) are handled by
-/// ``SupermuxDeviceMirrorSocketCommands``.
+/// ``SupermuxDeviceMirrorSocketCommands``, plus the notification /
+/// phone-push hooks in ``SupermuxDeviceNotificationSocketCommands`` (`push_decisions`,
+/// `notification_records`, `notification_overrides`, `phone_push_debug`, `phone_push_probe`,
+/// `phone_push_share_now`).
 @MainActor
 enum SupermuxDevicesSocketCommands {
     nonisolated static let methodPrefix = "supermux.devices."
@@ -68,6 +71,10 @@ enum SupermuxDevicesSocketCommands {
                 #else
                 return unknownMethod()
                 #endif
+            #if DEBUG
+            case let name where SupermuxDeviceNotificationSocketCommands.handles(name):
+                result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
+            #endif
             default:
                 return unknownMethod()
             }
