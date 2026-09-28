@@ -1,3 +1,4 @@
+import CMUXMobileCore
 public import SupermuxMobileKit
 
 /// What the Projects section knows about one connected Mac: its pairing
@@ -62,6 +63,18 @@ public struct SupermuxMacInfo: Equatable, Sendable {
             status: seam.status,
             isForeground: seam.isForeground
         )
+    }
+
+    /// Identity-only info for a pairing id (its display facts unknown), for
+    /// a screen that outlives its Mac's session.
+    /// - Parameter pairingID: A pairing id, or empty for the legacy Mac.
+    init(pairingID: String) {
+        guard !pairingID.isEmpty else {
+            self = .legacy
+            return
+        }
+        let identity = CmxMacAppInstanceIdentity(id: pairingID)
+        self.init(macDeviceID: identity.macDeviceID, instanceTag: identity.instanceTag, displayName: "")
     }
 
     /// The single, unidentified Mac of the pre-multi-Mac API.

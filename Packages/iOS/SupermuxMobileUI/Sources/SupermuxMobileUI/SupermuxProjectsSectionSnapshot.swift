@@ -174,7 +174,9 @@ public struct SupermuxProjectRunActions {
 
 /// Closure action bundle for the Projects section — the only way row-level
 /// views reach back to the model (no store reference crosses the `List`
-/// boundary).
+/// boundary). Every `projectID` a closure takes is the project's ROW id
+/// (``SupermuxProjectRowSnapshot/id``: owning Mac + project), which the model
+/// resolves to that Mac's session before any RPC.
 public struct SupermuxProjectsSectionActions {
     /// Toggles the section's local collapse state.
     public let toggleCollapsed: @MainActor () -> Void

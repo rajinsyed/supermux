@@ -21,7 +21,7 @@ extension SupermuxProjectsSectionModel {
                 await self?.iconPNGData(forProjectID: projectID) ?? nil
             },
             selectWorkspace: { [weak self] workspaceID in
-                self?.navigateToWorkspace(workspaceID)
+                self?.selectWorkspaceRow(workspaceID)
             },
             closeWorkspace: close,
             makeWorktreesStore: { [weak self] projectID in

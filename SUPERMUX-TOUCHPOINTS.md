@@ -4542,9 +4542,9 @@ fork-owned in `Packages/iOS/SupermuxMobileUI` (`SupermuxProjectsSectionModel` +
 - **#582** restore the whole file; it only wraps
   `store.workspaceID(matchingRemoteWorkspaceID:macDeviceID:instanceTag:)`.
 - **#583** in both #97 driver fences, pass `seams: store?.supermuxConnectionSeams ?? []` and
-  `resolveWorkspace: supermuxResolveWorkspace` (the old `connection:` overload still exists and
-  treats the one Mac as unidentified, so a half-applied merge still compiles — but then every
-  navigation after a Supermux RPC uses the Mac-local id and breaks with two Macs).
+  `resolveWorkspace: supermuxResolveWorkspace`. The old single-seam `connection:` overload was
+  removed on purpose: re-applying the pre-multi-Mac line fails to compile instead of silently
+  losing background Macs and the scoped-row navigation.
 - **#584** restore the whole file. **#585/#586** replace `store.supermuxConnectionSeam` with
   `supermuxWorkspaceSeam` at the five reads listed in the rows; any new fork read of the seam in
   `WorkspaceDetailView` should use `supermuxWorkspaceSeam` too.
