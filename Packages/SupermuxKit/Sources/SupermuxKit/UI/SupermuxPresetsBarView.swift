@@ -19,6 +19,7 @@ public struct SupermuxPresetsBarView: View {
     private let runShortcutHint: String
     private let onLaunch: (SupermuxTerminalPreset) -> Void
     private let onToggleRun: () -> Void
+    private let hostLabel: String?
 
     @State private var showingEditor = false
     @State private var isRunHovering = false
@@ -32,18 +33,22 @@ public struct SupermuxPresetsBarView: View {
     ///     shown as a hint pill; empty hides the pill.
     ///   - onLaunch: Opens a preset's command in a new terminal tab.
     ///   - onToggleRun: Starts or stops the workspace run command.
+    ///   - hostLabel: For a device mirror, the localized "On <Mac>" note
+    ///     (presets and Run open on that Mac); `nil` for a local workspace.
     public init(
         model: SupermuxProjectsModel,
         isRunning: Bool,
         runShortcutHint: String,
         onLaunch: @escaping (SupermuxTerminalPreset) -> Void,
-        onToggleRun: @escaping () -> Void
+        onToggleRun: @escaping () -> Void,
+        hostLabel: String? = nil
     ) {
         self.model = model
         self.isRunning = isRunning
         self.runShortcutHint = runShortcutHint
         self.onLaunch = onLaunch
         self.onToggleRun = onToggleRun
+        self.hostLabel = hostLabel
     }
 
     public var body: some View {
@@ -52,6 +57,13 @@ public struct SupermuxPresetsBarView: View {
             Divider().frame(height: 14)
             presetChips
             Spacer(minLength: 6)
+            if let hostLabel {
+                Label(hostLabel, systemImage: "desktopcomputer")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
             runControl
         }
         .padding(.horizontal, 8)

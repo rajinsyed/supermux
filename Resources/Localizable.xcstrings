@@ -596771,6 +596771,244 @@
           }
         }
       }
+    },
+    "supermux.mirror.changes.onMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 上"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.onMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "They are on %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルは%@にあります。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.newWorkspace.connecting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続中…"
+          }
+        }
+      }
+    },
+    "supermux.mirror.newWorkspace.failed.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check that the other Mac is online, then try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一方のMacがオンラインか確認して、もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.newWorkspace.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフライン"
+          }
+        }
+      }
+    },
+    "supermux.mirror.newWorkspace.onMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Workspace on"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新規ワークスペースを作成するMac"
+          }
+        }
+      }
+    },
+    "supermux.mirror.otherMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the other Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一方のMac"
+          }
+        }
+      }
+    },
+    "supermux.mirror.preset.failed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t open the preset on %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@でプリセットを開けませんでした"
+          }
+        }
+      }
+    },
+    "supermux.mirror.preset.noTerminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The other Mac did not open a terminal."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一方のMacでターミナルが開きませんでした。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.preset.notLaunchable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This preset has no command."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプリセットにはコマンドがありません。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.presetsBar.onMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 上"
+          }
+        }
+      }
+    },
+    "supermux.mirror.run.failed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t run on %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で実行できませんでした"
+          }
+        }
+      }
+    },
+    "supermux.mirror.run.noProject.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This workspace is on %@ and is not part of a project there. Add its folder as a project on %@ to configure run commands."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースは%@にあり、そこではどのプロジェクトにも属していません。実行コマンドを設定するには、%@でそのフォルダをプロジェクトとして追加してください。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.run.noProject.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No project for this workspace"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースに対応するプロジェクトがありません"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
