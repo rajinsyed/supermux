@@ -36,6 +36,9 @@ let package = Package(
         .package(path: "../CmuxMobileTerminalKit"),
         .package(path: "../CmuxMobileTransport"),
         .package(path: "../CmuxMobileTunnel"),
+        // SUPERMUX:begin supermux-mobile-mac-seams (fork seam value type for the per-Mac Supermux seams)
+        .package(path: "../SupermuxMobileKit"),
+        // SUPERMUX:end supermux-mobile-mac-seams
     ],
     targets: [
         .target(
@@ -58,6 +61,9 @@ let package = Package(
                 "CmuxMobileTerminalKit",
                 "CmuxMobileTransport",
                 "CmuxMobileTunnel",
+                // SUPERMUX:begin supermux-mobile-mac-seams
+                "SupermuxMobileKit",
+                // SUPERMUX:end supermux-mobile-mac-seams
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
