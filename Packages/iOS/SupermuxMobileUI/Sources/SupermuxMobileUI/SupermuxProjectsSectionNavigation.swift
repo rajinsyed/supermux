@@ -1,4 +1,5 @@
 import Foundation
+import SupermuxMobileKit
 import SwiftUI
 
 /// Navigation + error dressing for the Projects section, attached by the
@@ -37,25 +38,14 @@ struct SupermuxProjectsSectionNavigation: ViewModifier {
                 }
             )) {
                 if let presentation = model.newWorktreePresentation {
-                    SupermuxNewWorktreeSheet(
-                        projectName: presentation.row.name,
-                        branches: presentation.store.branches,
-                        defaultBaseBranch: presentation.row.defaultBranch,
-                        showsBaseBranchPicker: presentation.store.supportsStartingBranchSelection,
-                        agentStore: presentation.agentStore,
-                        suggestBranch: { [store = presentation.store] workspaceName in
-                            try await store.suggestBranchName(workspaceName: workspaceName).branchName
-                        },
-                        createWorktree: { [store = presentation.store] workspaceName, branchName, baseBranch, open in
-                            try await store.createWorktree(
-                                workspaceName: workspaceName,
-                                branchName: branchName,
-                                baseBranch: baseBranch,
-                                open: open
-                            ).workspaceId
-                        },
-                        openWorkspace: { [weak model] workspaceID in
-                            model?.navigateToWorkspace(workspaceID)
+                    // The create targets the row's own Mac, or whichever Mac
+                    // with the same repository the picker switches to.
+                    SupermuxNewWorktreeFlowSheet(
+                        initialTarget: presentation.target,
+                        options: presentation.options,
+                        prepareTarget: { [weak model] option in
+                            guard let model else { throw SupermuxMacUnavailableError() }
+                            return try await model.prepareNewWorktreeTarget(option)
                         }
                     )
                 }
@@ -130,22 +120,10 @@ struct SupermuxProjectDetailResolvedScreen: View {
     let model: SupermuxProjectsSectionModel
 
     var body: some View {
-        if let row = model.detailRow {
-            let snapshot = model.snapshot
-            let actions = model.actions
-            SupermuxProjectDetailScreen(
-                row: row,
-                iconPNGData: actions.iconPNGData,
-                selectWorkspace: actions.selectWorkspace,
-                makeWorktreesStore: actions.makeWorktreesStore,
-                makeAgentLaunchStore: actions.makeAgentLaunchStore,
-                editing: actions.editing,
-                presets: snapshot.showsPresets ? snapshot.presets : [],
-                showsPresets: snapshot.showsPresets,
-                showsActions: snapshot.showsActions,
-                runActions: actions.run,
-                sessionEpoch: model.sessionEpoch
-            )
+        if let context = model.detailContext {
+            // Bound to the project's OWN Mac: every RPC the detail sends, and
+            // every workspace it opens, goes to that Mac.
+            SupermuxProjectDetailScreen(context: context)
         } else {
             Text(String(
                 localized: "supermux.projects.detail.unavailable",
