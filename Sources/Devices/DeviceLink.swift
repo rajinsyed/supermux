@@ -56,7 +56,9 @@ final class DeviceLink {
 
     /// The host's notification history moved; `notification.feed.list` has the rows.
     static let notificationFeedTopic = "notification.feed.changed"
-    static let eventTopics: Set<String> = ["mobile.sync.delta", "workspace.updated", "terminal.bytes", "terminal.updated", notificationFeedTopic, DeviceTerminalGridPublisher.eventTopic, DeviceWorkspaceLayoutHost.eventTopic]
+    // SUPERMUX:begin device-link-supermux-events (upstream's literal, wrapped in Set<String>(…) and unioned with the fork's supermux.* topics)
+    static let eventTopics: Set<String> = Set<String>(["mobile.sync.delta", "workspace.updated", "terminal.bytes", "terminal.updated", notificationFeedTopic, DeviceTerminalGridPublisher.eventTopic, DeviceWorkspaceLayoutHost.eventTopic]).union(SupermuxDeviceLinkEvents.topics)
+    // SUPERMUX:end device-link-supermux-events
 
     let instance: SurfaceDeviceInstanceID
     private(set) var record: DeviceDirectoryRecord
@@ -268,6 +270,9 @@ final class DeviceLink {
         fetchTask?.cancel()
         fetchTask = nil
         if notify { terminalEvents.broadcast(.linkLost) }
+        // SUPERMUX:begin device-link-supermux-events
+        if notify { SupermuxDeviceLinkEvents.linkLost(instance: instance) }
+        // SUPERMUX:end device-link-supermux-events
         if let client {
             self.client = nil
             Task { await client.disconnect() }
@@ -294,6 +299,9 @@ final class DeviceLink {
                 self.terminalEvents.broadcast(.linkReconnected)
                 self.onChange?()
                 self.onNotificationFeedChange?()
+                // SUPERMUX:begin device-link-supermux-events
+                SupermuxDeviceLinkEvents.linkConnected(instance: self.instance)
+                // SUPERMUX:end device-link-supermux-events
             } catch {
                 guard !Task.isCancelled, generation == self.generation else { return }
                 let classified = DeviceLinkFailure.classify(error, hostName: record.deviceName)
@@ -439,6 +447,10 @@ final class DeviceLink {
             onLayoutChange?(snapshot)
         case "mobile.sync.delta":
             applyDelta(envelope.payloadJSON)
+        // SUPERMUX:begin device-link-supermux-events
+        case let topic where SupermuxDeviceLinkEvents.topics.contains(topic):
+            SupermuxDeviceLinkEvents.receive(instance: instance, topic: topic, payload: envelope.payloadJSON)
+        // SUPERMUX:end device-link-supermux-events
         default:
             terminalEvents.receive(envelope)
         }

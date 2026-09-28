@@ -218,5 +218,6 @@ enum SupermuxMobileHostGlue {
         runObserver = SupermuxMobileRunObserver(
             readSnapshots: { SupermuxComposition.runCoordinator.mobileRunSnapshots }
         )
+        SupermuxDevicesGlue.activateIfNeeded()
     }
 }
