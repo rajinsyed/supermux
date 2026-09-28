@@ -9,6 +9,7 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
   a. every_source_has_one_mirror   each non-mirror workspace with a terminal gets exactly one mirror
   b. new_workspace_gets_mirror     a newly created workspace gets a mirror automatically
   b2. mirrors_keep_remote_order    mirrors opened together keep the remote order relative to each other
+  b3. create_on_device             supermux.devices.create_workspace ends with exactly one mirror
   c. closing_source_closes_mirror  closing a source closes its mirror (remote workspace gone)
   d. hide_and_unhide               "Hide Here" (socket close_mirror hide) is never reopened;
                                    a programmatic workspace.close of a mirror hides too;
@@ -304,6 +305,24 @@ class AutoMirrorE2E:
         wait_for("the order mirrors to close", lambda: all(not self.mirrors_of(s) for s in sources), self.timeout)
         return {"order": remote_order}
 
+    def check_create_on_device(self) -> Dict[str, Any]:
+        """A workspace created on the device through the opener (New Workspace
+        on <Mac>) ends with exactly one mirror: auto-mirror never races it."""
+        opened = self.sock.call(
+            "supermux.devices.create_workspace",
+            {"machine": self.machine, "title": f"auto-mirror-created-{self.nonce}"},
+            timeout_s=60,
+        ) or {}
+        remote_id = opened.get("remote_workspace_id")
+        if not remote_id:
+            raise Failure(f"create_workspace returned no remote_workspace_id: {opened}")
+        self.created.append(str(remote_id))
+        hold("exactly one mirror of the created workspace", lambda: len(self.mirrors_of(remote_id)) == 1, 4)
+        mirror = self.one_mirror(remote_id)
+        if up(mirror.get("workspace_id")) != up(opened.get("workspace_id")):
+            raise Failure(f"the surviving mirror {mirror.get('workspace_id')} is not the created one {opened.get('workspace_id')}")
+        return {"remote_workspace_id": remote_id, "mirror": mirror.get("workspace_id")}
+
     def check_close_source(self) -> Dict[str, Any]:
         source = self.facts["new_source"]
         mirror_id = up(self.one_mirror(source).get("workspace_id"))
@@ -540,6 +559,7 @@ class AutoMirrorE2E:
                 ("a_every_source_has_one_mirror", self.check_every_source),
                 ("b_new_workspace_gets_mirror", self.check_new_workspace),
                 ("b2_mirrors_keep_remote_order", self.check_mirror_order),
+                ("b3_create_on_device_single_mirror", self.check_create_on_device),
                 ("c_closing_source_closes_mirror", self.check_close_source),
                 ("d_hide_and_unhide", self.check_hide_unhide),
                 ("e_close_on_mac_closes_source", self.check_close_on_mac),
