@@ -76,7 +76,12 @@ In the UI, the device is listed in the right sidebar's **Cloud** tab under My De
 
 `tests/supermux/loopback_device_smoke.py` is stdlib-only and takes `--keep`, `--timeout` and
 `--report`. It talks to `/tmp/cmux-debug-<tag>.sock`. It prints a JSON report, saves it, and exits
-non-zero on any failure.
+non-zero on any failure. It pauses auto-mirror (`supermux.devices.set_auto_mirror`) for its run and
+restores it afterwards, so step 4's explicit `vm.workspace_open` is not raced by an auto-opened mirror.
+Auto-mirror, close semantics and mirror status have their own E2E:
+`CMUX_TAG=<tag> python3 tests/supermux/loopback_auto_mirror_e2e.py [--git-repo /tmp/<tag>/repo]
+[--app-path "<App path>" --projects-file /tmp/<tag>/projects.json]` (the app path enables the
+quit + relaunch dedupe check).
 
 1. `device_connected`: the loopback machine is in `surface.catalog` with `link_state: connected`.
 2. `remote_workspaces_equal_local`: the device's remote workspaces equal this app's workspaces,
@@ -160,10 +165,11 @@ DeviceSurfaceProvider ── DeviceLink ── MobileCoreRPCClient
 > `.device` machines from `SurfaceCatalog.shared.snapshot.machines`. Otherwise your code does not
 > see the loopback, and you cannot E2E-test it.
 
-- **Loop hazard.** The loopback mirrors this app's own workspaces. Until the host export filter
-  ships, every mirror is itself exported, and so could be mirrored again. **Never auto-open
-  loopback workspaces without that filter.** Step 5 of the smoke script reports which behavior is
-  live.
+- **Loop hazard.** The loopback mirrors this app's own workspaces. The host export filter (#518/#519)
+  keeps mirrors out of the device's records, so auto-mirror (on by default) opens exactly one mirror
+  per source and never a mirror of a mirror. With the loopback on, the sidebar therefore shows every
+  workspace twice (source + "Workspace on Loopback Mac" mirror). Step 5 of the smoke script reports
+  whether mirrors are re-exported.
 - **Ids collide.** Remote workspace and terminal ids *are* this app's local ids. Code that wrongly
   resolves a remote id as a local id (for example `Workspace.liveWorkspace(id: remoteID)`) finds
   the source and seems to work here, but breaks between two real Macs. Review id handling by

@@ -62,6 +62,7 @@ struct SupermuxDevicesSocketPayloads {
         payload["remote_workspace_id"] = mirror.ref.workspaceID
         payload["is_bound"] = mirror.isBound
         payload["remote_title"] = devices.record(for: mirror.ref)?.title ?? NSNull()
+        payload["status"] = mirrorStatus(mirror.workspace)
         return payload
     }
 
@@ -90,6 +91,9 @@ struct SupermuxDevicesSocketPayloads {
             }
         return [
             "mirrors": index.mirrors().map(mirror),
+            "hidden": SupermuxComposition.hiddenRemoteWorkspaces.refs
+                .sorted { $0.description < $1.description }
+                .map(SupermuxDeviceMirrorSocketCommands.refPayload),
             "stored": stored,
             "local_workspaces": live.map { workspace -> [String: Any] in
                 var payload = localWorkspace(workspace)

@@ -16,7 +16,9 @@ import SupermuxKit
 /// `local_projects {}` (this Mac's `projects.list` host payload + origin map),
 /// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`,
 /// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
-/// export filter and restart-stable bindings without a second Mac).
+/// export filter and restart-stable bindings without a second Mac). The device-mirror methods
+/// (`close_mirror`, `unhide`, `hidden`, `set_auto_mirror`, `reconcile`) are handled by
+/// ``SupermuxDeviceMirrorSocketCommands``.
 @MainActor
 enum SupermuxDevicesSocketCommands {
     nonisolated static let methodPrefix = "supermux.devices."
@@ -37,7 +39,11 @@ enum SupermuxDevicesSocketCommands {
         let payloads = SupermuxDevicesSocketPayloads(devices: devices, index: SupermuxComposition.deviceWorkspaceIndex)
         do {
             let result: [String: Any]
-            switch method.dropFirst(methodPrefix.count) {
+            let name = String(method.dropFirst(methodPrefix.count))
+            if SupermuxDeviceMirrorSocketCommands.methods.contains(name) {
+                return await SupermuxDeviceMirrorSocketCommands.handle(name, params: params, payloads: payloads)
+            }
+            switch name {
             case "list":
                 result = await list(params, devices: devices, payloads: payloads)
             case "bindings":
@@ -96,6 +102,7 @@ enum SupermuxDevicesSocketCommands {
         return [
             "revision": devices.revision,
             "auto_mirror": SupermuxComposition.devicesSettings.autoMirror,
+            "auto_mirror_state": SupermuxDeviceMirrorSocketCommands.coordinatorState(SupermuxComposition.deviceMirrorCoordinator),
             "devices": entries,
         ]
     }
