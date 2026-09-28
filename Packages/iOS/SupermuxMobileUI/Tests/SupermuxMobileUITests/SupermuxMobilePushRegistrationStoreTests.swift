@@ -126,4 +126,44 @@ private actor PhonePushRegistrationRecorder: SupermuxPhonePushRegistering {
         #expect(second.previousDeviceToken == String(repeating: "ab", count: 32))
     }
 
+    /// The phone registers with EVERY connected Mac, so what each Mac was last
+    /// told must be tracked per Mac: a Mac that registered the rotated token
+    /// first must not erase another Mac's record of the old one, or that Mac
+    /// is never told to drop it.
+    @Test func eachMacTracksTheTokenItRegisteredOnItsOwn() async throws {
+        let suiteName = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(true, forKey: "cmux.notifications.pushEnabled")
+        let store = SupermuxMobilePushRegistrationStore(
+            defaults: defaults,
+            notificationCenter: NotificationCenter(),
+            currentBundleID: SupermuxMobilePushRegistrationStore.bundleID
+        )
+        let capabilities = SupermuxMobileCapabilities(
+            hostCapabilities: [SupermuxMobileCapability.phonePushV1.rawValue]
+        )
+        store.record(deviceToken: Data(repeating: 0xAB, count: 32))
+        let macA = PhonePushRegistrationRecorder()
+        let taskA = Task { await store.run(client: macA, capabilities: capabilities, pairingID: "mac-a") }
+        _ = await macA.nextRequest()
+        taskA.cancel()
+        await taskA.value
+
+        store.record(deviceToken: Data(repeating: 0xCD, count: 32))
+        let macB = PhonePushRegistrationRecorder()
+        let taskB = Task { await store.run(client: macB, capabilities: capabilities, pairingID: "mac-b") }
+        let bookFirst = await macB.nextRequest()
+        taskB.cancel()
+        await taskB.value
+
+        let macAAgain = PhonePushRegistrationRecorder()
+        let taskAAgain = Task { await store.run(client: macAAgain, capabilities: capabilities, pairingID: "mac-a") }
+        let studioRotation = await macAAgain.nextRequest()
+        taskAAgain.cancel()
+
+        #expect(bookFirst.previousDeviceToken == nil)
+        #expect(studioRotation.deviceToken == String(repeating: "cd", count: 32))
+        #expect(studioRotation.previousDeviceToken == String(repeating: "ab", count: 32))
+    }
 }
