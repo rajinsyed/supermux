@@ -73,11 +73,17 @@ final class SupermuxRunCoordinator {
     private var handlesByWorkspaceId: [UUID: RunHandle] = [:]
     @ObservationIgnored private let matcher = SupermuxProjectMatcher()
     @ObservationIgnored private let projectsModel: SupermuxProjectsModel
+    /// Device mirrors run on the Mac that owns them; consulted first, a `nil`
+    /// answer means "local workspace" and the local path below runs unchanged.
+    @ObservationIgnored private let mirrorRuns: SupermuxMirrorRunController?
 
     /// Creates the coordinator.
-    /// - Parameter projectsModel: Source of registered projects and their run commands.
-    init(projectsModel: SupermuxProjectsModel) {
+    /// - Parameters:
+    ///   - projectsModel: Source of registered projects and their run commands.
+    ///   - mirrorRuns: The remote run path for device mirrors.
+    init(projectsModel: SupermuxProjectsModel, mirrorRuns: SupermuxMirrorRunController? = nil) {
         self.projectsModel = projectsModel
+        self.mirrorRuns = mirrorRuns
     }
 
     /// Whether the workspace's run command is currently running, validated
@@ -88,7 +94,8 @@ final class SupermuxRunCoordinator {
     /// - Parameter workspaceId: Workspace to inspect.
     /// - Returns: `true` while the launched run surface exists and is active.
     func isRunning(workspaceId: UUID) -> Bool {
-        handlesByWorkspaceId[workspaceId]?.isRunningInLivePanel ?? false
+        if let remote = mirrorRuns?.isRunning(workspaceId: workspaceId) { return remote }
+        return handlesByWorkspaceId[workspaceId]?.isRunningInLivePanel ?? false
     }
 
     /// Drops the workspace's run handle when its run surface no longer exists,
@@ -119,6 +126,7 @@ final class SupermuxRunCoordinator {
     @discardableResult
     func toggleRun(tabManager: TabManager?) -> Bool {
         guard let workspace = tabManager?.selectedWorkspace else { return false }
+        if let handled = mirrorRuns?.toggle(workspace, explainsMissingProject: false) { return handled }
         // ⌘G shares its chord with Find Next, so with no matching project the
         // event must fall through unconsumed — no feedback here (the
         // presets-bar path presents an alert instead).
@@ -131,6 +139,7 @@ final class SupermuxRunCoordinator {
     /// - Returns: `true` when the event was consumed (even to show an alert).
     @discardableResult
     func toggleRun(workspace: Workspace) -> Bool {
+        if let handled = mirrorRuns?.toggle(workspace, explainsMissingProject: true) { return handled }
         guard let project = matchedProject(for: workspace) else {
             presentMissingProject(directory: workspace.currentDirectory)
             return true

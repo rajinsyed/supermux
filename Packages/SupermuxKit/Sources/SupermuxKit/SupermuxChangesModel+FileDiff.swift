@@ -14,6 +14,9 @@ public struct SupermuxFileDiffPatch: Sendable, Equatable {
     public let patch: String
     /// Whether the text was cut at the service's byte cap.
     public let truncated: Bool
+    /// Whether ``repoPath`` is on another Mac (a device mirror's repository),
+    /// so a viewer must not resolve it against this Mac's filesystem.
+    public let isRemote: Bool
 
     /// Creates a file patch.
     /// - Parameters:
@@ -22,12 +25,21 @@ public struct SupermuxFileDiffPatch: Sendable, Equatable {
     ///   - staged: Whether this is the staged (index) side.
     ///   - patch: Unified diff text.
     ///   - truncated: Whether the text was byte-capped.
-    public init(repoPath: String, change: SupermuxGitFileChange, staged: Bool, patch: String, truncated: Bool) {
+    ///   - isRemote: Whether the repository is on another Mac.
+    public init(
+        repoPath: String,
+        change: SupermuxGitFileChange,
+        staged: Bool,
+        patch: String,
+        truncated: Bool,
+        isRemote: Bool = false
+    ) {
         self.repoPath = repoPath
         self.change = change
         self.staged = staged
         self.patch = patch
         self.truncated = truncated
+        self.isRemote = isRemote
     }
 
     /// A viewer title: the repo-relative path, suffixed for the staged side so
@@ -90,7 +102,8 @@ extension SupermuxChangesModel {
         }
         if lastError != nil { lastError = nil }
         return SupermuxFileDiffPatch(
-            repoPath: directory, change: change, staged: staged, patch: text, truncated: diff.truncated
+            repoPath: directory, change: change, staged: staged, patch: text, truncated: diff.truncated,
+            isRemote: service.isRemote
         )
     }
 }

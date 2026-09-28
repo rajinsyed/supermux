@@ -105,7 +105,7 @@ enum SupermuxComposition {
     }()
 
     /// App-wide run-action coordinator behind the ⌘G shortcut.
-    static let runCoordinator = SupermuxRunCoordinator(projectsModel: projectsModel)
+    static let runCoordinator = SupermuxRunCoordinator(projectsModel: projectsModel, mirrorRuns: mirrorRuns)
 
     /// Tracks which workspaces were explicitly opened from a project, so only
     /// those (plus worktrees, matched by directory) nest under a project —
@@ -526,6 +526,16 @@ private final class SupermuxChangesModelBox: ObservableObject {
     /// The on-demand PR viewer. Idle until a header PR button is clicked; it
     /// owns no timer or watcher.
     let pullRequests = SupermuxPullRequestViewerModel()
+    /// Swaps in a remote model (the owning Mac's repository) while a device
+    /// mirror is selected; the local model above is untouched otherwise.
+    let mirror: SupermuxMirrorChangesSource = {
+        let source = SupermuxMirrorChangesSource(
+            resolver: SupermuxComposition.mirrorResolver,
+            devices: SupermuxComposition.devices
+        )
+        SupermuxComposition.mirrorChangesPanels.insert(source)
+        return source
+    }()
 }
 
 /// The git Changes panel mounted as the right sidebar's `changes` mode (see
@@ -552,6 +562,42 @@ struct SupermuxChangesMount: View {
 
     var body: some View {
         let _ = shortcutObserver.revision
+        Group {
+            if let target = box.mirror.target, let remote = box.mirror.remoteModel {
+                SupermuxMirrorChangesPanel(
+                    model: remote,
+                    target: target,
+                    isVisible: isVisible,
+                    commitShortcut: Self.keyboardShortcut(for: .supermuxCommit),
+                    commitAcceleratorShortcut: Self.keyboardShortcut(for: .supermuxCommitAccelerator),
+                    commitShortcutHint: KeyboardShortcutSettings.shortcut(for: .supermuxCommit).displayString
+                )
+                .id(target.ref)
+            } else {
+                localPanel
+            }
+        }
+        .onAppear { box.model.setDirectory(localDirectory) }
+        .onChange(of: workspaceDirectory) { _, _ in
+            box.model.setDirectory(localDirectory)
+        }
+        .onChange(of: tabManager.selectedWorkspace?.id, initial: true) { _, _ in
+            pullRequestObserver.observe(workspace: tabManager.selectedWorkspace)
+            box.mirror.track(tabManager.selectedWorkspace)
+            box.model.setDirectory(localDirectory)
+        }
+        .onChange(of: box.mirror.target?.ref) { _, _ in
+            box.model.setDirectory(localDirectory)
+        }
+    }
+
+    /// The local model's directory: the selected workspace's, or none while a
+    /// device mirror (whose local directory means nothing) is selected.
+    private var localDirectory: String? {
+        box.mirror.target == nil ? workspaceDirectory : nil
+    }
+
+    private var localPanel: some View {
         SupermuxChangesPanelView(
             model: box.model,
             isVisible: isVisible,
@@ -576,13 +622,6 @@ struct SupermuxChangesMount: View {
                 }
             }
         )
-        .onAppear { box.model.setDirectory(workspaceDirectory) }
-        .onChange(of: workspaceDirectory) { _, newDirectory in
-            box.model.setDirectory(newDirectory)
-        }
-        .onChange(of: tabManager.selectedWorkspace?.id, initial: true) { _, _ in
-            pullRequestObserver.observe(workspace: tabManager.selectedWorkspace)
-        }
     }
 
     /// Resolves a configured shortcut into a SwiftUI ``KeyboardShortcut`` the
@@ -642,6 +681,8 @@ struct SupermuxPresetsBarMount: View {
         // rebinds; preset edits invalidate inside the bar view, not here.
         let _ = shortcutObserver.revision
         let runCoordinator = SupermuxComposition.runCoordinator
+        // A device mirror's chips and Run act on the Mac that owns it.
+        let mirror = SupermuxComposition.mirrorResolver.target(for: workspace)
         SupermuxPresetsBarView(
             model: SupermuxComposition.projectsModel,
             isRunning: runCoordinator.isRunning(workspaceId: workspace.id),
@@ -650,6 +691,10 @@ struct SupermuxPresetsBarMount: View {
             runShortcutHint: KeyboardShortcutSettings.shortcutIfBound(for: .supermuxToggleRun)?.displayString ?? "",
             onLaunch: { [weak workspace] preset in
                 guard let workspace, preset.isLaunchable else { return }
+                if let target = SupermuxComposition.mirrorResolver.target(for: workspace) {
+                    SupermuxComposition.mirrorPresets.launchFromBar(preset, in: target)
+                    return
+                }
                 guard let paneId = workspace.bonsplitController.focusedPaneId
                     ?? workspace.bonsplitController.allPaneIds.first else { return }
                 // Submit through the ordered input queue: aliases/functions
@@ -666,6 +711,9 @@ struct SupermuxPresetsBarMount: View {
             onToggleRun: { [weak workspace] in
                 guard let workspace else { return }
                 _ = SupermuxComposition.runCoordinator.toggleRun(workspace: workspace)
+            },
+            hostLabel: mirror.map {
+                String(localized: "supermux.mirror.presetsBar.onMac", defaultValue: "On \($0.deviceName)")
             }
         )
         // The bar deliberately does not observe the workspace, so a closed run
