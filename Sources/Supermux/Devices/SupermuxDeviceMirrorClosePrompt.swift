@@ -13,9 +13,18 @@ enum SupermuxDeviceMirrorClosePrompt {
         let isConnected: Bool
     }
 
+    /// Guards against a second prompt while one is up. Deliberately neither
+    /// `TabManager.beginCloseConfirmationSession()` nor its in-flight flag:
+    /// that session ends a runloop turn late, so upstream's batch "Close
+    /// workspaces?" prompt (which follows this one synchronously in a mixed
+    /// multi-close) would silently cancel the batch, and this prompt would
+    /// refuse to follow upstream's "Close pinned workspace?" one.
+    private static var isPresenting = false
+
     static func ask(_ items: [Item], in manager: TabManager) -> SupermuxDeviceMirrorCloser.Decision {
-        guard !items.isEmpty, manager.beginCloseConfirmationSession() else { return .cancel }
-        defer { manager.endCloseConfirmationSession() }
+        guard !items.isEmpty, !isPresenting else { return .cancel }
+        isPresenting = true
+        defer { isPresenting = false }
         let alert = makeAlert(items)
         switch alert.runCmuxModal(presentingWindow: manager.window) {
         case .alertFirstButtonReturn: return .closeOnMac
