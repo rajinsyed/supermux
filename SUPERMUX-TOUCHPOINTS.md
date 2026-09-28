@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **516**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **522**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -510,6 +510,12 @@ Rules for adding a touchpoint:
 | 514 | `Sources/FeatureFlags.swift` | `supermux-release-cloud-override` | In `CmuxFeatureFlags.init`, seeds the Cloud override to `true` once for the Supermux release identity (only when no override value is stored, so a later explicit choice in the Feature Flags window sticks). The Beta Features Cloud Machines toggle is still required. Server-side entitlements are unchanged: Cloud VM creation may still be refused; My Devices is the intended use |
 | 515 | `Sources/GhosttyTerminalView.swift` | `release-clear-selection-seam` | **Release-build compiler-crash workaround.** `sendSyntheticGhosttyMouseRelease` calls `GhosttyRuntimeCInterop.clearSelection(surface)` instead of the header-imported `ghostty_surface_clear_selection`. The ghostty pin now exports that symbol in `ghostty.h` as `(ghostty_surface_t)` (Optional pointer) while `CmuxTerminalCore` still binds it via `@_silgen_name` with a non-optional pointer; with both in the Release SIL link, swift-frontend 6.2.4 aborts with `SILFunction type mismatch for 'ghostty_surface_clear_selection'` (DESERIALIZATION FAILURE) and `scripts/supermux-release.sh` fails |
 | 516 | `ios/NotificationService/NotificationService.swift` | `ios-nse-supermux-decoration` | Upstream's extension is the app's only notification service extension. When a push carries no `encryptedPayloads` (the fork's direct Mac→APNs push, #332), it delivers `SupermuxNotificationDecorator.decorated(content)` (#383) instead of the raw content. Encrypted relay pushes keep upstream's decrypt path untouched, and the expiration handler still delivers the undecorated content |
+| 517 | `Sources/Devices/DeviceLink.swift` | `device-link-supermux-events` | Remote Macs as first-class workspaces (plans/supermux-remote-workspaces). Four small fenced sites: (1) `static let eventTopics` wraps upstream's literal in `Set<String>(…)` and unions `SupermuxDeviceLinkEvents.topics` (the four `SupermuxMobileTopic` values `supermux.projects/worktrees/changes/run.updated`; the host accepts any topic set); (2) in `handle(_:)`, a `case let topic where SupermuxDeviceLinkEvents.topics.contains(topic)` arm before `default` forwards the envelope to `SupermuxDeviceLinkEvents.receive(instance:topic:payload:)`; (3) in `startConnect`, after the post-connect fetch and `onNotificationFeedChange`, `SupermuxDeviceLinkEvents.linkConnected(instance:)`; (4) in `tearDownClient(notify:)`, `if notify { SupermuxDeviceLinkEvents.linkLost(instance:) }`. All land on `SupermuxComposition.devices` (`Sources/Supermux/Devices/`), which tracks "records fetched since the last connect", refetch-on-reconnect and host-capability cache resets |
+| 518 | `Sources/Mobile/MobileStateSync.swift` | `device-mirror-export-filter` | Loop guard: `buildRows` skips a workspace for which `SupermuxDeviceWorkspaceIndex.isDeviceMirror(_:)` is true (bound by the fork's mirror binding store, or every pane projects a device terminal, live or pending restore), so state sync v2 never re-exports another Mac's workspace to the phone or to other Macs (no mirror-of-mirror chains, no phone duplicates). One `continue` line at the top of the per-workspace loop body |
+| 519 | `Sources/TerminalController+MobileWorkspaceList.swift` | `device-mirror-export-filter` | The same loop guard for the legacy `mobile.workspace.list`: the all-windows branch `continue`s past device mirrors, and the single-window branch's whole-window listing (`} ?? tabManager.tabs`) filters them out (an explicit `workspace_id` lookup still resolves). The notification feed already excludes `.deviceMac` rows upstream (`TerminalController+MobileNotificationSync.swift`, `isMirroredFromDevice`), so no fence is needed there |
+| 520 | `Sources/FeatureFlags.swift` | `supermux-release-devices-defaults` | Right after #514's fence in `CmuxFeatureFlags.init`, calls `SupermuxDevicesDefaults.seedReleaseDefaultsIfNeeded(isSupermuxRelease:defaults:)`, which for `com.supermux.app` seeds `cloud.beta.machines.enabled`, `devices.discovery.enabled` and `devices.incomingAccess.enabled` to `true` ONCE (marker `supermux.devices.releaseDefaultsSeeded.v1`), and only where no value is stored — a later user choice (on or off) is never overwritten. Direct writes skip upstream's discoverability consent sheet by design (DESIGN.md decision 11) |
+| 521 | `Sources/TerminalController+ControlSocketAsync.swift` | `supermux-devices-socket` | In `processV2CommandUsingSocketExecutionPolicyAsync`, inside the `withSocketCommandPolicyAsync` body and before the native-browser-keys branch, routes every `supermux.devices.*` v2 method to `SupermuxDevicesSocketCommands.handle(method:params:)` (awaited on the async socket lane, encoded with `Self.v2Encoder.response`). Methods: `list`, `bindings`, `local_projects`, `open`, `create_workspace`, `await_open`, and DEBUG-only `request` — E2E introspection of devices, records and local mirror bindings (`cmux rpc supermux.devices.list '{}'`) |
+| 522 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 14 device-foundation files under `Sources/Supermux/Devices/` (`Devices/…` paths inside the Supermux group; ids `50BE00040000000000000001`–`…001C`, odd = file reference, even = build file) into the cmux target: `SupermuxDevice`, `SupermuxDeviceEvent`, `SupermuxDeviceError`, `SupermuxDevices` (+`+Events`, `+RPC`), `SupermuxDeviceLinkEvents`, `SupermuxRemoteWorkspaceRef+Surface`, `SupermuxDeviceWorkspaceIndex`, `SupermuxDeviceWorkspaceOpener`, `SupermuxComposition+Devices`, `SupermuxDevicesDefaults`, `SupermuxDevicesSocketPayloads`, `SupermuxDevicesSocketCommands` |
 
 ## How to re-apply
 
@@ -4509,3 +4515,40 @@ crashes swift-frontend in `MandatorySILLinker` with `SILFunction type mismatch`.
 one call through `GhosttyRuntimeCInterop.clearSelection(surface)` like every other call site in the
 file. Retire this row once upstream drops the `@_silgen_name` shim (the header now exports the
 symbol) or stops calling the header function directly — then take upstream's line.
+
+### 517–522. Remote Macs foundation (F1) — `device-link-supermux-events`, `device-mirror-export-filter`, `supermux-release-devices-defaults`, `supermux-devices-socket`
+
+Design: `plans/supermux-remote-workspaces/DESIGN.md`; API for consumers:
+`plans/supermux-remote-workspaces/FOUNDATION-API.md`. All logic lives in `Sources/Supermux/Devices/` and
+`Packages/SupermuxKit/Sources/SupermuxKit/Devices/`; the upstream edits only call into it.
+
+- **#517 `Sources/Devices/DeviceLink.swift`.** (1) Replace the `static let eventTopics` line with upstream's
+  literal wrapped as `Set<String>([…]).union(SupermuxDeviceLinkEvents.topics)` (keep every upstream topic;
+  upstream tests only assert `contains`). (2) In `handle(_:)`, insert before `default:` the arm
+  `case let topic where SupermuxDeviceLinkEvents.topics.contains(topic): SupermuxDeviceLinkEvents.receive(instance: instance, topic: topic, payload: envelope.payloadJSON)`.
+  (3) In `startConnect`'s success path, after `self.onNotificationFeedChange?()`, call
+  `SupermuxDeviceLinkEvents.linkConnected(instance: self.instance)` — it must stay AFTER the post-connect
+  `performFetch`, because consumers read it as "records fetched since this connect". (4) In
+  `tearDownClient(notify:)`, right after upstream's `if notify { terminalEvents.broadcast(.linkLost) }`, add
+  `if notify { SupermuxDeviceLinkEvents.linkLost(instance: instance) }`. If upstream renames these methods,
+  put the hooks where the link becomes connected-with-fetched-state and where a connected link is torn down.
+- **#518 `Sources/Mobile/MobileStateSync.swift`.** In `buildRows`, first line inside
+  `for workspace in tabs where seenWorkspaceIDs.insert(workspace.id).inserted {`:
+  `if SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) { continue }`. This is the loop guard — never
+  drop it while device mirrors exist, or two Macs with auto-mirror re-export each other's mirrors forever.
+- **#519 `Sources/TerminalController+MobileWorkspaceList.swift`.** In `v2MobileWorkspaceList`: (a) the
+  single-window branch's `} ?? tabManager.tabs` becomes
+  `} ?? tabManager.tabs.filter { !SupermuxDeviceWorkspaceIndex.isDeviceMirror($0) }`; (b) the all-windows loop
+  body starts with `if SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) { continue }`. The notification
+  feed needs nothing: upstream's `isMirroredFromDevice` already drops `.deviceMac` rows.
+- **#520 `Sources/FeatureFlags.swift`.** Immediately after `// SUPERMUX:end supermux-release-cloud-override`
+  (#514), add `SupermuxDevicesDefaults.seedReleaseDefaultsIfNeeded(isSupermuxRelease: overrideCapability.isSupermuxRelease, defaults: defaults)`.
+  Retire together with #513/#514 if upstream ever turns Devices on for everyone.
+- **#521 `Sources/TerminalController+ControlSocketAsync.swift`.** In
+  `processV2CommandUsingSocketExecutionPolicyAsync`, first statement inside the
+  `withSocketCommandPolicyAsync { … }` body: `if SupermuxDevicesSocketCommands.handles(authorizedRequest.method) { let result = await SupermuxDevicesSocketCommands.handle(method: authorizedRequest.method, params: authorizedRequest.params); return Self.v2Encoder.response(id: authorizedRequest.id, result) }`.
+  It must stay on the async lane (the handler awaits RPCs and opens workspaces on the main actor without
+  blocking it); never move it into the synchronous main-actor switch.
+- **#522 `cmux.xcodeproj/project.pbxproj`.** Re-add the 14 `Devices/…` file references, build files, Supermux
+  group children and cmux Sources-phase entries with the `50BE0004…` ids listed in the row, then run
+  `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj` and `scripts/check-pbxproj.sh`.
