@@ -62,6 +62,11 @@ final class SupermuxProjectSyncCoordinator {
     /// Starts following both sides' projects. Idempotent.
     func start() {
         guard task == nil else { return }
+        // Removals are recorded where they happen, so an add-then-remove
+        // between two passes is never missed.
+        projectsModel.onRemoveProject = { [suppression] project in
+            suppression.suppress(rootPath: project.rootPath)
+        }
         task = Task { @MainActor [weak self] in
             guard let model = self?.projectsModel else { return }
             await model.loadIfNeeded()
