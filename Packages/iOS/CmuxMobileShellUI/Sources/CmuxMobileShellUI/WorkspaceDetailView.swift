@@ -257,7 +257,7 @@ struct WorkspaceDetailView: View {
         // parse workspace_id as a bare UUID. Sending the scoped row id fails
         // every request with invalid_params. rpcWorkspaceID is the Mac-local id.
         .supermuxWorkspaceTools(
-            connection: store.supermuxConnectionSeam,
+            connection: supermuxWorkspaceSeam,
             workspaceID: workspace.rpcWorkspaceID.rawValue,
             workspaceName: workspace.name,
             projectID: workspace.supermuxProjectID,
@@ -597,7 +597,7 @@ struct WorkspaceDetailView: View {
     @ViewBuilder
     private var workspaceTitleToolMenuEntries: some View {
         SupermuxWorkspaceToolsMenuEntries(
-            hostCapabilities: store.supermuxConnectionSeam?.hostCapabilities,
+            hostCapabilities: supermuxWorkspaceSeam?.hostCapabilities,
             projectID: workspace.supermuxProjectID,
             runSession: supermuxWorkspaceRunSession,
             canClosePane: canCloseActivePane,
@@ -609,7 +609,7 @@ struct WorkspaceDetailView: View {
 
     /// Fingerprint of the fork entries captured by the equatable title menu.
     private var workspaceTitleToolEntriesFingerprint: String {
-        let seam = store.supermuxConnectionSeam
+        let seam = supermuxWorkspaceSeam
         let changes = SupermuxWorkspaceTools.showsChangesEntry(
             hostCapabilities: seam?.hostCapabilities
         )
@@ -657,7 +657,7 @@ struct WorkspaceDetailView: View {
                     forProjectID: workspace.supermuxProjectID
                 )
                 || SupermuxWorkspaceTools.showsAnyEntry(
-                    hostCapabilities: store.supermuxConnectionSeam?.hostCapabilities
+                    hostCapabilities: supermuxWorkspaceSeam?.hostCapabilities
                 ),
                 // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             workspaceName: workspace.name,

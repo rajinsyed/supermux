@@ -1,57 +1,51 @@
-public import CmuxMobileRPC
 public import CmuxMobileShellModel
-import SupermuxMobileKit
+public import SupermuxMobileKit
 public import SwiftUI
 
 extension View {
-    /// Drives a ``SupermuxProjectsSectionModel`` from the shell's connection
-    /// seam. Attach OUTSIDE the `List` (on the list itself), so the session's
-    /// structured `.task` is owned by a stable view, not a lazily recycled
-    /// row.
+    /// Drives a ``SupermuxProjectsSectionModel`` from the shell's per-Mac
+    /// seams. Attach OUTSIDE the `List` (on the list itself), so the
+    /// sessions' structured `.task` is owned by a stable view, not a lazily
+    /// recycled row.
     ///
-    /// One session runs per `(connection identity, capability snapshot)`
-    /// pair: a reconnect — or the capability set arriving after the
-    /// `mobile.host.status` round-trip — changes the task id, which cancels
-    /// the old session and builds a fresh ``SupermuxMacClient`` + store, so
-    /// capabilities are re-snapshotted per connection instead of mutated.
-    ///
-    /// The same key doubles as the model's resume identity (m6-f3): when the
-    /// `.task` re-runs WITHOUT the key changing — a navigation push covered
-    /// the list and was popped — the model resumes its retained session
-    /// (stale-while-revalidate) instead of rebuilding, so the section never
-    /// flashes a loading state and the `List` keeps its scroll position.
-    ///
-    /// An `.onChange(of:initial:)` keyed on the projected workspace rows
-    /// feeds the §6 join into the model (open-workspace counts, the detail
-    /// screen's nested rows, and the shell's open-workspace closure) — state
-    /// flows into the model from an event handler, never from a view body,
-    /// and everything stays MainActor-isolated (no `@Sendable` requirement on
-    /// the shell's navigation closure).
+    /// - Every seam except an unavailable one runs its own session: the
+    ///   section shows every connected Mac's projects, and it stays visible
+    ///   while ANY Mac is connected — not only the foreground one.
+    /// - The task restarts whenever a Mac's connection identity (client or
+    ///   capability snapshot) changes. Unchanged Macs resume their retained
+    ///   sessions (m6-f3 stale-while-revalidate); a changed Mac rebuilds; a
+    ///   Mac that left is ended by ``SupermuxProjectsSectionModel/updateMacs(_:)``.
+    /// - Every Mac advertising `supermux.phone_push.v1` gets the phone's APNs
+    ///   token, so a Mac that is never the foreground can still push.
+    /// - Mac-local workspace ids from Supermux RPCs are resolved through
+    ///   `resolveWorkspace` to the owning Mac's row before navigating.
     ///
     /// - Parameters:
     ///   - model: The section model the fence's `@State` owns.
-    ///   - connection: The live RPC client + host-capability snapshot, or
-    ///     `nil` while disconnected (section hides).
-    ///   - workspaces: The shell's current workspace previews (carrying the
-    ///     additive `supermux_*` fields). Defaults to none.
-    ///   - selectWorkspace: Opens a workspace row — the same closure the
-    ///     shell's flat workspace rows navigate through. Defaults to a no-op.
-    ///   - closeWorkspace: Closes a workspace row — the same closure the flat
-    ///     rows' swipe-to-delete uses, so the shell keeps owning the
-    ///     confirmation and there is one close path. `nil` (the default) when
-    ///     the Mac can't close workspaces; the nested rows then offer no close.
+    ///   - seams: One seam per live Mac pairing, foreground first.
+    ///   - workspaces: The shell's current workspace previews.
+    ///   - selectWorkspace: Opens a workspace row by its row id.
+    ///   - resolveWorkspace: The shell's Mac-local id → row id resolver
+    ///     (`store.workspaceID(matchingRemoteWorkspaceID:macDeviceID:instanceTag:)`).
+    ///   - closeWorkspace: Closes a workspace row through the shell's own
+    ///     confirmation, or `nil` when unsupported.
     @MainActor
     public func supermuxProjectsSectionDriver(
         model: SupermuxProjectsSectionModel,
-        connection: (rpcClient: MobileCoreRPCClient, hostCapabilities: Set<String>)?,
+        seams: [SupermuxMacSeam],
         workspaces: [MobileWorkspacePreview] = [],
         selectWorkspace: @escaping @MainActor (MobileWorkspacePreview.ID) -> Void = { _ in },
+        resolveWorkspace: SupermuxWorkspaceResolver? = nil,
         closeWorkspace: (@MainActor (MobileWorkspacePreview.ID) -> Void)? = nil
     ) -> some View {
-        let connectionKey = SupermuxProjectsConnectionKey(connection: connection)
+        let macs = seams.map(SupermuxMacInfo.init(seam:))
+        let runnable = seams.filter { $0.status != .unavailable }
+        let pushing = seams.filter {
+            $0.status == .connected
+                && SupermuxMobileCapabilities(hostCapabilities: $0.hostCapabilities).supportsPhonePush
+        }
         // Bound outside the `.onChange` closure, with both closure types
-        // spelled out: a `.map` over an optional closure that RETURNS another
-        // closure gives the type checker nothing to anchor either signature to.
+        // spelled out, so the type checker has an anchor.
         var closeByRowID: (@MainActor (String) -> Void)?
         if let closeWorkspace {
             let close: @MainActor (String) -> Void = { rowID in
@@ -59,26 +53,16 @@ extension View {
             }
             closeByRowID = close
         }
-        return task(id: connectionKey) {
-            guard let connection else {
-                model.endSession()
-                return
-            }
-            await model.runSession(
-                client: SupermuxMacClient(client: connection.rpcClient),
-                hostCapabilities: connection.hostCapabilities,
-                connectionID: connectionKey
-            )
+        return task(id: Set(runnable.map(SupermuxProjectsConnectionKey.init(seam:)))) {
+            model.updateMacs(macs)
+            await model.runSessions(runnable)
         }
-        .task(id: connectionKey) {
-            guard let connection else { return }
-            let capabilities = SupermuxMobileCapabilities(
-                hostCapabilities: connection.hostCapabilities
-            )
-            await SupermuxMobilePushRegistrationStore().run(
-                client: SupermuxMacClient(client: connection.rpcClient),
-                capabilities: capabilities
-            )
+        // Names, colors, status and order change without restarting sessions.
+        .onChange(of: macs, initial: true) { _, macs in
+            model.updateMacs(macs)
+        }
+        .task(id: Set(pushing.map(SupermuxProjectsConnectionKey.init(seam:)))) {
+            await SupermuxPhonePushRegistrations.run(pushing)
         }
         .onChange(of: SupermuxProjectWorkspaceRowSnapshot.rows(from: workspaces), initial: true) { _, rows in
             model.updateWorkspaces(
@@ -86,24 +70,33 @@ extension View {
                 selectWorkspace: { workspaceID in
                     selectWorkspace(MobileWorkspacePreview.ID(rawValue: workspaceID))
                 },
-                closeWorkspace: closeByRowID
+                closeWorkspace: closeByRowID,
+                resolveWorkspace: resolveWorkspace
             )
         }
-        // Detail-route destination + nested-open error alert (m6-f1): lives
-        // on the stable wrapper above the `List`, never inside a lazy row.
+        // A freshly created workspace's row lands with the owning Mac's next
+        // list refresh: retry any navigation parked waiting for it.
+        .onChange(of: workspaces.map(\.id)) { _, _ in
+            model.workspaceListDidChange()
+        }
+        // Detail-route destination, New Worktree sheet and error alerts: on
+        // the stable wrapper above the `List`, never inside a lazy row.
         .modifier(SupermuxProjectsSectionNavigation(model: model))
     }
 }
 
-/// Hashable identity for one connection session: the RPC client's object
-/// identity plus the capability snapshot it arrived with. Used both as the
-/// driver's `.task(id:)` key and as the model's resume identity.
-struct SupermuxProjectsConnectionKey: Hashable {
+/// Hashable identity for one Mac's connection session: the pairing, the RPC
+/// client's object identity, and the capability snapshot it arrived with.
+/// Used both in the driver's `.task(id:)` key and as the session's resume
+/// identity.
+struct SupermuxProjectsConnectionKey: Hashable, Sendable {
+    let pairingID: String
     let clientID: ObjectIdentifier?
     let hostCapabilities: Set<String>?
 
-    init(connection: (rpcClient: MobileCoreRPCClient, hostCapabilities: Set<String>)?) {
-        self.clientID = connection.map { ObjectIdentifier($0.rpcClient) }
-        self.hostCapabilities = connection?.hostCapabilities
+    init(seam: SupermuxMacSeam) {
+        self.pairingID = seam.pairingID
+        self.clientID = ObjectIdentifier(seam.client)
+        self.hostCapabilities = seam.hostCapabilities
     }
 }

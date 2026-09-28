@@ -68,8 +68,14 @@ public enum SupermuxProjectNestedWorktrees: Equatable, Sendable {
 /// closure action bundles) — never a store reference — per the repo's
 /// snapshot-boundary rule.
 public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
-    /// Stable project identity (UUID string, from the DTO).
+    /// Stable row identity: the owning Mac plus the project
+    /// (``SupermuxProjectKey/rawValue``). Equal to ``projectID`` when no
+    /// pairing is known (a single legacy session).
     public let id: String
+    /// The project's Mac-local UUID string (from the DTO) — what RPCs take.
+    public let projectID: String
+    /// The owning Mac pairing, or empty when unknown.
+    public let pairingID: String
     /// User-visible display name.
     public let name: String
     /// Absolute path to the project root on the Mac.
@@ -140,6 +146,8 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     ///     collapsed.
     ///   - nestedWorktrees: The nested unopened-worktree slice. Defaults to
     ///     ``SupermuxProjectNestedWorktrees/unavailable``.
+    ///   - pairingID: The owning Mac pairing. Defaults to none (the row id is
+    ///     then the plain project id).
     public init(
         project: SupermuxProjectDTO,
         openWorkspaces: [SupermuxProjectWorkspaceRowSnapshot] = [],
@@ -147,9 +155,12 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         iconETag: String? = nil,
         run: SupermuxProjectRunState? = nil,
         isExpanded: Bool = false,
-        nestedWorktrees: SupermuxProjectNestedWorktrees = .unavailable
+        nestedWorktrees: SupermuxProjectNestedWorktrees = .unavailable,
+        pairingID: String = ""
     ) {
-        self.id = project.id
+        self.id = SupermuxProjectKey(pairingID: pairingID, projectID: project.id).rawValue
+        self.projectID = project.id
+        self.pairingID = pairingID
         self.name = project.name
         self.rootPath = project.rootPath
         self.iconSymbol = project.iconSymbol

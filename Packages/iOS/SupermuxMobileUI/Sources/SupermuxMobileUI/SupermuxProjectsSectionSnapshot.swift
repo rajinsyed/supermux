@@ -5,15 +5,21 @@ public import SupermuxMobileKit
 /// Immutable value snapshot of the whole Projects section, computed by
 /// ``SupermuxProjectsSectionModel`` and passed across the shell's `List`
 /// boundary. The section view renders exclusively from this value.
+///
+/// With several Macs connected the section is a list of per-Mac ``groups``;
+/// ``rows`` is the flat concatenation of the groups that have projects to
+/// show, and the per-Mac headers render only when more than one Mac does
+/// (``showsMacHeaders``), so a single Mac keeps the familiar look.
 public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     /// Whether the section renders at all. `false` unless a live session
     /// exists AND the host advertises `supermux.projects.v1` (UI-02).
     public let isVisible: Bool
     /// Whether the rows are folded away (header stays visible).
     public let isCollapsed: Bool
-    /// Whether at least one fetch succeeded (drives loading vs empty vs rows).
+    /// Whether there is something definite to show: rows from some Mac, or
+    /// every Mac's list loaded (drives loading vs empty vs rows).
     public let hasLoaded: Bool
-    /// The project rows, in the Mac sidebar's order.
+    /// The project rows of every displayed Mac, foreground Mac first.
     public let rows: [SupermuxProjectRowSnapshot]
     /// Whether the global Presets entry renders. `false` unless the host
     /// advertises `supermux.presets.v1` (an upstream or older fork Mac shows
@@ -30,6 +36,8 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
     /// Worktree" row, the project row's swipe action, and its menu entry).
     /// `false` unless the host advertises `supermux.worktrees.v1`.
     public let showsWorktreeCreation: Bool
+    /// Every visible Mac's slice, in display order (foreground first).
+    public let groups: [SupermuxProjectsMacGroupSnapshot]
 
     /// The snapshot of a hidden section (no session, or capability absent).
     public static let hidden = SupermuxProjectsSectionSnapshot(
@@ -39,7 +47,7 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
         rows: []
     )
 
-    /// Memberwise initializer.
+    /// A single-Mac snapshot (the layout before per-Mac groups).
     /// - Parameters:
     ///   - isVisible: Whether the section renders at all.
     ///   - isCollapsed: Whether the rows are folded away.
@@ -67,6 +75,50 @@ public struct SupermuxProjectsSectionSnapshot: Equatable, Sendable {
         self.presets = presets
         self.showsActions = showsActions
         self.showsWorktreeCreation = showsWorktreeCreation
+        self.groups = [SupermuxProjectsMacGroupSnapshot(
+            header: SupermuxProjectsMacHeader(mac: .legacy),
+            hasLoaded: hasLoaded,
+            rows: rows,
+            showsPresets: showsPresets,
+            presets: presets,
+            showsActions: showsActions,
+            showsWorktreeCreation: showsWorktreeCreation
+        )]
+    }
+
+    /// A visible snapshot over per-Mac groups.
+    /// - Parameters:
+    ///   - isCollapsed: Whether the rows are folded away.
+    ///   - groups: Every visible Mac's slice, in display order.
+    public init(isCollapsed: Bool, groups: [SupermuxProjectsMacGroupSnapshot]) {
+        let displayed = groups.filter(\.isDisplayed)
+        let lead = displayed.first ?? groups.first
+        self.isVisible = true
+        self.isCollapsed = isCollapsed
+        self.rows = displayed.flatMap(\.rows)
+        self.hasLoaded = !displayed.isEmpty || groups.allSatisfy(\.hasLoaded)
+        self.showsPresets = lead?.showsPresets ?? false
+        self.presets = lead?.presets ?? []
+        self.showsActions = lead?.showsActions ?? false
+        self.showsWorktreeCreation = lead?.showsWorktreeCreation ?? false
+        self.groups = groups
+    }
+
+    /// The Macs that have projects to show, in display order.
+    public var displayedGroups: [SupermuxProjectsMacGroupSnapshot] {
+        groups.filter(\.isDisplayed)
+    }
+
+    /// Whether per-Mac headers render: only when more than one Mac has
+    /// projects to show.
+    public var showsMacHeaders: Bool {
+        displayedGroups.count > 1
+    }
+
+    /// The group that owns a row id, if any.
+    /// - Parameter rowID: A ``SupermuxProjectRowSnapshot/id``.
+    public func group(forRowID rowID: String) -> SupermuxProjectsMacGroupSnapshot? {
+        groups.first { group in group.rows.contains { $0.id == rowID } }
     }
 }
 
@@ -122,7 +174,9 @@ public struct SupermuxProjectRunActions {
 
 /// Closure action bundle for the Projects section — the only way row-level
 /// views reach back to the model (no store reference crosses the `List`
-/// boundary).
+/// boundary). Every `projectID` a closure takes is the project's ROW id
+/// (``SupermuxProjectRowSnapshot/id``: owning Mac + project), which the model
+/// resolves to that Mac's session before any RPC.
 public struct SupermuxProjectsSectionActions {
     /// Toggles the section's local collapse state.
     public let toggleCollapsed: @MainActor () -> Void
