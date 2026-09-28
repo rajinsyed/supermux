@@ -15,9 +15,13 @@ struct NotificationsPage: View {
     @EnvironmentObject var tabManager: TabManager
     @FocusState private var focusedNotificationId: UUID?
     @State private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
+    @State private var ghosttyBackgroundColor = Color(nsColor: GhosttyBackgroundTheme.currentColor())
     @State private var phonePushConfigurationState =
         PhonePushClient.shared.configurationState
     // SUPERMUX:begin notifications-panel-redesign
+    /// The resolved cmux accent (upstream #14988 replaced the global
+    /// `cmuxAccentColor()` helper with this environment value).
+    @Environment(\.cmuxAccentColor) private var cmuxAccent
     /// Unread-only filter. Off by default: the panel's job on open is "what
     /// happened", and hiding read rows by default makes the list appear to lose
     /// history.
@@ -54,8 +58,17 @@ struct NotificationsPage: View {
             // SUPERMUX:end notifications-panel-redesign
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear(perform: setInitialFocus)
+        .background(ghosttyBackgroundColor)
+        .onAppear {
+            refreshGhosttyBackground()
+            setInitialFocus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ghosttyConfigDidReload)) { _ in
+            refreshGhosttyBackground()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ghosttyDefaultBackgroundDidChange)) { _ in
+            refreshGhosttyBackground()
+        }
         .onChange(of: notificationStore.notifications.first?.id) {
             setInitialFocus()
         }
@@ -73,6 +86,10 @@ struct NotificationsPage: View {
         .onChange(of: isVisibleInUI) {
             setInitialFocus()
         }
+    }
+
+    private func refreshGhosttyBackground() {
+        ghosttyBackgroundColor = Color(nsColor: GhosttyBackgroundTheme.currentColor())
     }
 
     // SUPERMUX:begin notifications-panel-redesign
@@ -195,8 +212,7 @@ struct NotificationsPage: View {
     /// ever arrived", which would otherwise read as lost history.
     private var filteredEmptyState: some View {
         VStack(spacing: 6) {
-            CmuxSystemSymbolImage(magnified: "checkmark.circle", pointSize: 22)
-                .foregroundStyle(.secondary)
+            CmuxSystemSymbolImage(magnified: "checkmark.circle", pointSize: 22, tint: .secondary)
             Text(String(localized: "supermux.notifications.allCaughtUp", defaultValue: "You're all caught up"))
                 .cmuxFont(.subheadline, weight: .medium)
             Text(String(
@@ -240,7 +256,7 @@ struct NotificationsPage: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(cmuxAccentColor()))
+                        .background(Capsule().fill(cmuxAccent.color))
                         .accessibilityLabel(Text(String(
                             localized: "supermux.notifications.unreadCount",
                             defaultValue: "\(unreadCount) unread"
@@ -289,7 +305,8 @@ struct NotificationsPage: View {
                     systemName: groupsByProject
                         ? "rectangle.3.group.fill"
                         : "list.bullet",
-                    pointSize: 12
+                    pointSize: 12,
+                    tint: .primary
                 )
             }
             .buttonStyle(.accessoryBar)
@@ -338,9 +355,9 @@ struct NotificationsPage: View {
                 HStack(spacing: 6) {
                     CmuxSystemSymbolImage(
                         systemName: showsDeliverySettings ? "chevron.down" : "chevron.right",
-                        pointSize: 9
+                        pointSize: 9,
+                        tint: .secondary
                     )
-                    .foregroundStyle(.secondary)
                     Text(String(
                         localized: "supermux.notifications.delivery.title",
                         defaultValue: "Delivery"
@@ -478,8 +495,7 @@ struct NotificationsPage: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            CmuxSystemSymbolImage(magnified: "bell.slash", pointSize: 32)
-                .foregroundColor(.secondary)
+            CmuxSystemSymbolImage(magnified: "bell.slash", pointSize: 32, tint: .secondary)
             Text(String(localized: "notifications.empty.title", defaultValue: "No notifications yet"))
                 .cmuxFont(.headline)
             Text(String(localized: "notifications.empty.description", defaultValue: "Desktop notifications will appear here for quick review."))
@@ -491,8 +507,7 @@ struct NotificationsPage: View {
 
     private var workspaceUnreadIndicatorState: some View {
         VStack(spacing: 8) {
-            CmuxSystemSymbolImage(magnified: "bell.badge", pointSize: 32)
-                .foregroundColor(.secondary)
+            CmuxSystemSymbolImage(magnified: "bell.badge", pointSize: 32, tint: .secondary)
             Text(notificationStore.notificationMenuSnapshot.stateHintTitle)
                 .cmuxFont(.headline)
         }
@@ -574,6 +589,7 @@ struct ShortcutAnnotation: View {
 /// counts. Takes immutable values only — it renders below the panel's list
 /// boundary and must never hold a store reference.
 struct SupermuxNotificationSectionHeader: View, Equatable {
+    @Environment(\.cmuxAccentColor) private var cmuxAccent
     let project: SupermuxNotificationProject?
     let icon: NSImage?
     let count: Int
@@ -595,8 +611,7 @@ struct SupermuxNotificationSectionHeader: View, Equatable {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             } else {
-                CmuxSystemSymbolImage(systemName: "square.stack", pointSize: 11)
-                    .foregroundStyle(.secondary)
+                CmuxSystemSymbolImage(systemName: "square.stack", pointSize: 11, tint: .secondary)
                     .frame(width: 20)
                 Text(String(
                     localized: "supermux.notifications.otherProjects",
@@ -609,7 +624,7 @@ struct SupermuxNotificationSectionHeader: View, Equatable {
 
             if unreadCount > 0 {
                 Circle()
-                    .fill(cmuxAccentColor())
+                    .fill(cmuxAccent.color)
                     .frame(width: 5, height: 5)
             }
 
@@ -625,6 +640,7 @@ struct SupermuxNotificationSectionHeader: View, Equatable {
 // SUPERMUX:end notifications-panel-redesign
 
 struct NotificationRow: View, Equatable {
+    @Environment(\.cmuxAccentColor) private var cmuxAccent
     // Closures and the focus binding are recreated by the parent on every render
     // and excluded from ==. Equality compares only the value snapshot the row
     // actually renders, so `.equatable()` can suppress body re-evaluation for
@@ -685,10 +701,10 @@ struct NotificationRow: View, Equatable {
 
             // Hover-only, so the resting row is content rather than chrome.
             Button(action: onClear) {
-                CmuxSystemSymbolImage(systemName: "xmark.circle.fill", pointSize: 13)
-                    .foregroundStyle(.secondary)
+                CmuxSystemSymbolImage(systemName: "xmark.circle.fill", pointSize: 13, tint: .secondary)
             }
             .buttonStyle(.plain)
+            .safeHelp(String(localized: "notifications.row.clear", defaultValue: "Clear notification"))
             .padding(8)
             .opacity(isHovering ? 1 : 0)
             .allowsHitTesting(isHovering)
@@ -702,6 +718,9 @@ struct NotificationRow: View, Equatable {
         }
         .contextMenu {
             Button(String(localized: "notifications.open", defaultValue: "Open"), action: onOpen)
+            Button(String(localized: "notifications.copy", defaultValue: "Copy")) {
+                TerminalNotificationClipboard.copy(notification, workspaceTitle: tabTitle)
+            }
             Button(notification.isRead
                 ? String(localized: "notifications.markAsUnread", defaultValue: "Mark as Unread")
                 : String(localized: "notifications.markAsRead", defaultValue: "Mark as Read"),

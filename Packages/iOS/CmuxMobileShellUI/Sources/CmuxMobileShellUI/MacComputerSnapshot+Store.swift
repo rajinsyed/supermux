@@ -45,7 +45,12 @@ extension MacComputerSnapshot {
                     rowMacDeviceID: mac.macDeviceID,
                     rowInstanceTag: mac.instanceTag
                 )
-            return MacComputerSnapshot(
+            // The Computer's own method decides its section and which route's
+            // endpoint the row leads with (generic fallback when the method
+            // has no advertised route yet).
+            let method = store.connectionMethod(for: mac)
+            let directEndpoint = mac.directAddresses.first(where: \.enabled).map(\.id)
+            var snapshot = MacComputerSnapshot(
                 deviceId: mac.macDeviceID,
                 instanceTag: mac.instanceTag,
                 title: buildScope?.computerDisplayName(mac.resolvedName) ?? mac.resolvedName,
@@ -63,7 +68,12 @@ extension MacComputerSnapshot {
                 presence: presence,
                 buildLabel: summary?.buildLabel
                     ?? MacBuildChannel().label(bundleID: nil, tag: mac.instanceTag),
-                routeDescription: CmxAttachRoute.deviceTreeRouteDescription(for: mac.routes),
+                routeDescription: method == .direct
+                    ? directEndpoint
+                    : method.routeKind.flatMap {
+                        CmxAttachRoute.deviceTreeRouteDescription(for: mac.routes, kind: $0)
+                    } ?? CmxAttachRoute.deviceTreeRouteDescription(for: mac.routes),
+                routes: mac.routes,
                 lastSeenAt: mac.lastSeenAt,
                 workspaceCount: store.workspaceCount(
                     for: mac.macDeviceID,
@@ -71,12 +81,29 @@ extension MacComputerSnapshot {
                 ),
                 aliasIDs: aliases
             )
+            snapshot.connectionMethod = method
+            snapshot.routeKind = method.routeKind
+            // Keep-awake is trusted only over a live connection: a stale
+            // "caffeinated" cup on an unreachable Mac would be a lie.
+            if exactConnectionStatus == .connected {
+                snapshot.supportsCaffeineControl = store.supportsCaffeineControl(
+                    macDeviceID: mac.macDeviceID,
+                    instanceTag: mac.instanceTag
+                )
+                snapshot.caffeineEnabled = snapshot.supportsCaffeineControl
+                    ? store.caffeineStatus(
+                        macDeviceID: mac.macDeviceID,
+                        instanceTag: mac.instanceTag
+                    )?.enabled
+                    : nil
+            }
+            return snapshot
         }
         markOlderDuplicates(&snapshots)
         return snapshots
     }
 
-    /// Flag rows that share a fresher row's name and are not online.
+    /// Flag rows that share a fresher row's name and are confirmed offline.
     ///
     /// A Mac that re-paired across dev builds before the shared device id
     /// (cmux PR https://github.com/manaflow-ai/cmux/pull/6772) left one stored
@@ -84,16 +111,20 @@ extension MacComputerSnapshot {
     /// not coalesce (each dials a different port), so without a marker the
     /// list reads as interchangeable duplicates. `displayPairedMacs` arrives
     /// last-seen-newest-first, so the first occurrence of a name is the live
-    /// record and later non-online occurrences get labeled "Older pairing".
-    /// An online row is never labeled: a running instance is not stale even
-    /// if a fresher same-named record exists.
-    private static func markOlderDuplicates(_ snapshots: inout [MacComputerSnapshot]) {
+    /// record and later offline occurrences get labeled "Older pairing".
+    /// Unknown presence is left unlabeled because it is the normal startup
+    /// state while the first presence snapshot is still loading. An online row
+    /// is never labeled: a running instance is not stale even if a fresher
+    /// same-named record exists.
+    static func markOlderDuplicates(_ snapshots: inout [MacComputerSnapshot]) {
         var seenNames: Set<String> = []
         for index in snapshots.indices {
             let name = snapshots[index].title
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .lowercased()
-            if seenNames.contains(name), snapshots[index].presence != .online {
+            if seenNames.contains(name),
+               let presence = snapshots[index].presence,
+               case .offline = presence {
                 snapshots[index].isOlderDuplicate = true
             } else {
                 seenNames.insert(name)

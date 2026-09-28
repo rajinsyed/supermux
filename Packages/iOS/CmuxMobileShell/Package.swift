@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "CmuxMobileShell",
     platforms: [
-        .iOS(.v18),
+        .iOS(.v17),
         .macOS(.v14),
     ],
     products: [
@@ -20,6 +20,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../Shared/CMUXMobileCore"),
+        .package(path: "../../Shared/CmuxWorkspacePresence"),
         // SUPERMUX:begin supermux-mobile-selection-sync (typed capability/method constants for bidirectional workspace + terminal selection)
         .package(path: "../../Shared/SupermuxMobileCore"),
         // SUPERMUX:end supermux-mobile-selection-sync
@@ -29,15 +30,19 @@ let package = Package(
         .package(path: "../CmuxMobileBrowserStream"),
         .package(path: "../CmuxMobilePairedMac"),
         .package(path: "../CmuxMobileRPC"),
+        .package(path: "../CmuxMobileSSH"),
         .package(path: "../CmuxMobileShellModel"),
         .package(path: "../CmuxMobileSupport"),
+        .package(path: "../CmuxMobileTerminalKit"),
         .package(path: "../CmuxMobileTransport"),
+        .package(path: "../CmuxMobileTunnel"),
     ],
     targets: [
         .target(
             name: "CmuxMobileShell",
             dependencies: [
                 "CMUXMobileCore",
+                "CmuxWorkspacePresence",
                 // SUPERMUX:begin supermux-mobile-selection-sync
                 "SupermuxMobileCore",
                 // SUPERMUX:end supermux-mobile-selection-sync
@@ -47,9 +52,12 @@ let package = Package(
                 "CmuxMobileBrowserStream",
                 "CmuxMobilePairedMac",
                 "CmuxMobileRPC",
+                "CmuxMobileSSH",
                 "CmuxMobileShellModel",
                 "CmuxMobileSupport",
+                "CmuxMobileTerminalKit",
                 "CmuxMobileTransport",
+                "CmuxMobileTunnel",
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
@@ -78,6 +86,7 @@ let package = Package(
                 "CmuxMobileShell",
                 "CmuxMobileShellReleaseGateSupport",
                 "CMUXMobileCore",
+                "CmuxWorkspacePresence",
                 "CmuxAgentChat",
                 "CmuxMobileBrowserStream",
                 "CmuxMobileChanges",
@@ -85,6 +94,7 @@ let package = Package(
                 "CmuxMobileRPC",
                 "CmuxMobileShellModel",
                 "CmuxMobileTransport",
+                "CmuxMobileTunnel",
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

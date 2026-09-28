@@ -23,6 +23,7 @@ enum WorkspaceListChromeKind: Hashable {
 enum WorkspaceListTableItem: Hashable, Identifiable {
     case chrome(WorkspaceListChromeKind)
     case filterEmpty
+    case emptyWorkspaceList
     case groupHeader(MobileWorkspaceGroupPreview.ID)
     case groupFooter(MobileWorkspaceGroupPreview.ID)
     case workspace(MobileWorkspacePreview.ID, indented: Bool)
@@ -39,6 +40,8 @@ enum WorkspaceListTableItem: Hashable, Identifiable {
         // SUPERMUX:end supermux-mobile-projects-table-row
         case .filterEmpty:
             "filter.empty"
+        case .emptyWorkspaceList:
+            "workspace.empty"
         case .groupHeader(let groupID):
             "groupHeader.\(groupID.rawValue)"
         case .groupFooter(let groupID):

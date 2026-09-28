@@ -19,11 +19,16 @@ import Testing
         .filePreview: "filePreview",
         .rightSidebarTool: "rightSidebarTool",
         .customSidebar: "customSidebar",
+        .simulator: "simulator",
         .agentSession: "agentSession",
         .project: "project",
         .extensionBrowser: "extensionBrowser",
         .workspaceTodo: "todo",
+        .notifications: "notifications",
         .cloudVMLoading: "cloudVMLoading",
+        .mobilePairing: "mobilePairing",
+        .accountSignIn: "accountSignIn",
+        .cloudVPNSetup: "cloudVPNSetup",
         // SUPERMUX:begin claude-harness-mobile-surface-kind
         .claudeHarness: "claudeHarness",
         // SUPERMUX:end claude-harness-mobile-surface-kind

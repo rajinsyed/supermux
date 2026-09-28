@@ -213,6 +213,7 @@ public enum MobilePushReadiness: Equatable, Sendable {
         case macCurrentlyActive
         case macAdmissionUnavailable
         case apiOriginMismatch
+        case securePushSetupFailed
     }
 
     /// The concrete next action that repairs the current blocker.
@@ -230,6 +231,7 @@ public enum MobilePushReadiness: Equatable, Sendable {
         case enableOnMac
         case leaveMacOrUseAlwaysMode
         case rebuildMatchingApps
+        case retrySecurePushSetup
     }
 
     /// The repair action for a blocked state, or `nil` when already ready.
@@ -269,6 +271,8 @@ public enum MobilePushReadiness: Equatable, Sendable {
             .retryRegistration
         case .invalidConfiguration, .apiOriginMismatch:
             .rebuildMatchingApps
+        case .securePushSetupFailed:
+            .retrySecurePushSetup
         case .macStatusUnavailable:
             .connectMac
         case .macAccountMismatch:
@@ -289,7 +293,8 @@ public enum MobilePushReadiness: Equatable, Sendable {
         mac: MacStatus?,
         macAccountMismatch: Bool = false,
         systemSettings: MobilePushSystemSettings? = nil,
-        phoneAPIOrigin: String
+        phoneAPIOrigin: String,
+        securePushSetupFailed: Bool = false
     ) -> MobilePushReadiness {
         let liveAuthorization = systemSettings?.authorization ?? authorization
         switch liveAuthorization {
@@ -359,6 +364,9 @@ public enum MobilePushReadiness: Equatable, Sendable {
             return .blocked(.macForwardingDisabled)
         case .unknown:
             return .blocked(.macAdmissionUnavailable)
+        }
+        guard !securePushSetupFailed else {
+            return .blocked(.securePushSetupFailed)
         }
         switch liveAuthorization {
         case .provisional, .ephemeral:

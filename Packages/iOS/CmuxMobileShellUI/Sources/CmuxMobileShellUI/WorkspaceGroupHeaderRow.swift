@@ -18,11 +18,12 @@ struct WorkspaceGroupHeaderRow: View, Equatable {
     }
 
     private var group: MobileWorkspaceGroupPreview { value.group }
-    /// Aggregate unread state for the header dot, computed by
+    /// Aggregate unread state for the header indicator, computed by
     /// `MobileWorkspaceListItem.items`: the anchor's unread while expanded,
-    /// the whole group's (anchor included) while collapsed, mirroring the Mac
-    /// sidebar header badge so collapsing a group never hides activity.
-    private var hasUnread: Bool { value.hasUnread }
+    /// the whole group's (anchor included, counts summed) while collapsed,
+    /// mirroring the Mac sidebar header badge so collapsing a group never
+    /// hides activity.
+    private var unread: MobileWorkspaceUnreadState { value.unread }
     private var navigationStyle: WorkspaceNavigationStyle { value.navigationStyle }
     /// Whether the anchor workspace is the current selection (sidebar style only).
     private var isAnchorSelected: Bool { value.isAnchorSelected }
@@ -30,6 +31,21 @@ struct WorkspaceGroupHeaderRow: View, Equatable {
     @State private var isRenaming = false
     @State private var renameDraft = ""
     @State private var pendingDestructiveAction: WorkspaceGroupHeaderPendingDestructiveAction?
+
+    /// Daylight between the unread badge's trailing edge and the chevron's
+    /// hit frame. Internal (not private) so layout tests can assert the
+    /// reservation math against the shipped constant.
+    static let indicatorChevronVisualGap: CGFloat = 3
+
+    /// Width reserved between the unread gutter and the chevron so the badge's
+    /// gutter overflow never reaches the chevron.
+    private var chevronLayoutGap: CGFloat {
+        WorkspaceUnreadDot.layoutGap(
+            afterGutterForDiameter: value.unreadBadgeDiameter,
+            leftShift: value.unreadIndicatorLeftShift,
+            visualGap: Self.indicatorChevronVisualGap
+        )
+    }
 
     /// The leading disclosure chevron. Its own hit target, so tapping it only
     /// collapses/expands and never opens the anchor.
@@ -80,9 +96,10 @@ struct WorkspaceGroupHeaderRow: View, Equatable {
             // SUPERMUX:begin supermux-mobile-unread-badge (upstream drew this in
             // a reserved leading gutter — see SUPERMUX-TOUCHPOINTS.md)
             // Trails the group name, exactly where the Mac sidebar's group
-            // header puts its badge. Countless by construction: the header
-            // rolls its members up to a boolean, never a sum.
-            WorkspaceUnreadDot(isUnread: hasUnread)
+            // header puts its badge. The count is upstream's aggregate (summed
+            // while collapsed; the countless dot when any member's count is
+            // unknown).
+            WorkspaceUnreadDot(unread: unread)
             // SUPERMUX:end supermux-mobile-unread-badge
             if group.isPinned {
                 Image(systemName: "pin.fill")
@@ -97,39 +114,34 @@ struct WorkspaceGroupHeaderRow: View, Equatable {
 
     @ViewBuilder
     private var anchorTarget: some View {
-        switch navigationStyle {
-        case .push:
-            Button {
-                actions.selectWorkspace(group.anchorWorkspaceID)
-            } label: {
-                nameLabel
+        if let anchorWorkspaceID = group.liveAnchorWorkspaceID {
+            switch navigationStyle {
+            case .push, .sidebar:
+                Button {
+                    actions.selectWorkspace(anchorWorkspaceID)
+                } label: {
+                    nameLabel
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-        case .sidebar:
-            Button {
-                actions.selectWorkspace(group.anchorWorkspaceID)
-            } label: {
-                nameLabel
-            }
-            .buttonStyle(.plain)
+        } else {
+            nameLabel
         }
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             // SUPERMUX:begin supermux-mobile-unread-badge
             // The leading unread gutter is gone (the badge moved beside the
             // group name, above), so the chevron starts the row.
             // SUPERMUX:end supermux-mobile-unread-badge
             chevron
+            Spacer()
+                .frame(width: 6)
             anchorTarget
-                // The dot itself is accessibility-hidden; VoiceOver hears the
-                // unread state on the anchor target, like workspace rows.
-                .accessibilityValue(
-                    hasUnread
-                        ? L10n.string("mobile.workspace.unread", defaultValue: "Unread")
-                        : ""
-                )
+                // The indicator itself is accessibility-hidden; VoiceOver hears
+                // the unread state on the anchor target, like workspace rows.
+                .accessibilityValue(unread.isUnread ? L10n.unreadLabel(count: unread.count) : "")
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 4)

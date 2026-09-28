@@ -15,6 +15,9 @@ struct MobileNotificationFeedWireItem: Sendable {
     let retargetsToLiveSurfaceOwner: Bool
     let workspaceTitle: String?
     let surfaceTitle: String?
+    /// `TerminalNotificationOrigin.kind` of the record; peer Macs skip origins
+    /// they receive through their own sync (see `DeviceNotificationFeedRows`).
+    let originKind: String
     // SUPERMUX:begin notification-feed-project-wire
     /// The owning project snapshot, so the phone's feed can render the same
     /// avatar, name, and accent the Mac shows. Optional and additive: an
@@ -33,6 +36,7 @@ struct MobileNotificationFeedWireItem: Sendable {
             "created_at": createdAt,
             "is_read": isRead,
             "retargets_to_live_surface_owner": retargetsToLiveSurfaceOwner,
+            "origin_kind": originKind,
         ]
         if let surfaceID {
             payload["surface_id"] = surfaceID

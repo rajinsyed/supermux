@@ -252,7 +252,7 @@ git log --oneline HEAD..upstream/main | head -50   # eyeball the incoming change
 #    Which touchpoint files did upstream touch? Those need attention.
 #    (The old one-liner here was broken: its /^\| `/ pattern matched ZERO registry rows — rows
 #     start "| 17 | `path`" — and $2 is the row NUMBER, so it printed pbxproj hex UUIDs. This
-#     form reads the path out of field 3 of every numbered row; ~116 unique paths today.)
+#     form reads the path out of field 3 of every numbered row; ~350 unique paths today.)
 git diff --stat HEAD...upstream/main -- \
   $(awk -F'|' '/^\| *[0-9]/{gsub(/[ `]/,"",$3); if ($3 != "") print $3}' SUPERMUX-TOUCHPOINTS.md | sort -u)
 
@@ -267,8 +267,9 @@ git merge upstream/main
 #      fenced SUPERMUX block per SUPERMUX-TOUCHPOINTS.md instructions.
 #    - git grep -n "SUPERMUX:begin" -- ':!SUPERMUX*.md' — verify every registered fence still
 #      exists. Do NOT scope this to Sources/ Packages/ cmux.xcodeproj/ (the old advice): live
-#      fences also sit in CLI/, cmuxTests/, cmuxUITests/, web/data/, .github/workflows/,
-#      scripts/, ios/, .gitignore, CLAUDE.md and every README.<lang>.md.
+#      fences also sit in CLI/, cmuxTests/, cmuxCLITestSupport/, cmuxUITests/, web/data/,
+#      .github/workflows/ (ci.yml, ci-macos.yml, ci-guards.yml, …), scripts/ (incl. scripts/ci/),
+#      ios/, docs/, skills/, tests/, .gitignore, CLAUDE.md and every README.<lang>.md.
 
 # 4. Verify integrity
 ./scripts/supermux-check-touchpoints.sh    # all fences present + manifest in sync
@@ -294,10 +295,12 @@ Conflict heuristics:
   pbxproj additions are registered as touchpoints. Re-run `scripts/normalize-pbxproj.py` and
   `scripts/check-pbxproj.sh` after resolving.
 - `Resources/Localizable.xcstrings` conflicts: it's JSON; union both sides' keys. Fork keys almost
-  all start with `supermux.`, but there are TWO deliberate exceptions the fork rewrites in place —
-  `settings.app.workspaceInheritWorkingDirectory.subtitleOff` and
-  `settings.search.alias.setting.app.workspace-inherit-working-directory` (touchpoints #82/#84,
-  registered under #4b). Take the fork side for those two; union everything else.
+  all start with `supermux.`, but there is ONE deliberate exception the fork rewrites in place —
+  `settings.search.alias.setting.app.workspace-inherit-working-directory` (touchpoint #84,
+  registered under #4b). Take the fork side for that one; union everything else. (The former second
+  exception, `…workspaceInheritWorkingDirectory.subtitleOff`, retired with #82 at the 2026-09-30
+  merge — upstream deleted the key.) Never keep a fork-side deletion of a key upstream code still
+  reads.
 - If upstream added a feature that overlaps a supermux feature (e.g. they build their own
   projects concept), STOP and present options to the user instead of auto-resolving.
 
@@ -369,7 +372,8 @@ Constraints inherited from upstream that supermux code MUST follow:
   removed the whole Swift file-length budget system at the 0.65 merge
   (`.github/swift-file-length-budget.tsv` and `scripts/swift_file_length_budget.py` are both
   deleted — see SUPERMUX-TOUCHPOINTS.md #4, RETIRED). The only remaining budget gate in
-  `.github/workflows/ci.yml` is `scripts/swift_warning_budget.py`, which caps Swift **warnings**,
+  `.github/workflows/` (`ci-macos.yml` / `ci-guards.yml` since upstream split `ci.yml` at the
+  2026-09-30 merge) is `scripts/swift_warning_budget.py`, which caps Swift **warnings**,
   not file length (CI runs the script itself plus its regression wrapper
   `./tests/test_ci_swift_warning_budget.sh`).
 - All user-facing strings localized via `String(localized:)` with keys in
@@ -403,9 +407,11 @@ Constraints inherited from upstream that supermux code MUST follow:
   entitlement, since iOS would otherwise keep delivering the push at the active level and only the
   Focus/Scheduled Summary bypass would disappear.
 - The local Mac Release is Developer ID-signed without a provisioning profile, so
-  `scripts/supermux-release.sh` defines `SUPERMUX_LOCAL_RELEASE` and reuses Iroh's bundle-scoped
-  `0600` file stores. Without that condition the data-protection Keychain rejects identity creation
-  with `errSecMissingEntitlement`, leaving the mobile host offline even though the app launches.
+  `scripts/supermux-release.sh` defines `SUPERMUX_LOCAL_RELEASE` and reuses upstream's DEBUG
+  bundle-scoped `0600` file store for the mobile host's v2 identity (`MobileHostV2Installation`,
+  touchpoint #334; the old `MobileHostIrohRuntime` files are gone upstream). Without that condition
+  the data-protection Keychain rejects identity creation with `errSecMissingEntitlement`, leaving the
+  mobile host offline even though the app launches.
 
 ## Known limitations / deliberate deviations
 

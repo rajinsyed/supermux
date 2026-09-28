@@ -76,6 +76,34 @@ extension MobileShellComposite {
         )
     }
 
+    /// Adopts the tab upstream's per-workspace last-tab restore just reopened
+    /// as the effective focused panel, so the open path sends that same panel
+    /// to the Mac instead of a stale terminal selection. Without this, a
+    /// restored browser or Simulator stream never passes the Mac-focus stream
+    /// gate. Mac surfaces and the phone-local browser keep the existing
+    /// terminal fallback.
+    func adoptRestoredTabAsSupermuxFocusedPanel(in workspace: MobileWorkspacePreview) {
+        guard supportsSupermuxSelectionSync,
+              let restored = lastTabStore.lastTab(for: workspace.lastTabStateID) else {
+            return
+        }
+        let kind: String
+        switch restored.kind {
+        case .terminal:
+            kind = MobileWorkspaceFocusedPanel.terminalKind
+        case .browserStream:
+            kind = MobileWorkspaceFocusedPanel.browserKind
+        case .simulatorStream:
+            kind = MobileWorkspaceFocusedPanel.simulatorKind
+        case .macSurface, .localBrowser:
+            return
+        }
+        selectedWorkspaceFocusedPanel = MobileWorkspaceFocusedPanel(
+            panelID: restored.tabID,
+            kind: kind
+        )
+    }
+
     /// Whether an authoritative Mac frame already confirmed this exact intent.
     ///
     /// The Mac pushes its updated state after applying a focus mutation, and
@@ -120,8 +148,11 @@ extension MobileShellComposite {
         workspaceID: MobileWorkspacePreview.ID,
         focusedPanel: MobileWorkspaceFocusedPanel?
     ) -> Task<Bool, Never>? {
+        // Demonstration and SSH rows are served on the phone; the paired Mac
+        // has no such workspace, so a focus mutation could only fail.
         guard supportsSupermuxSelectionSync,
               connectionState == .connected,
+              !locallyServedOwnsWorkspaceRow(workspaceID),
               let client = remoteClient else {
             return nil
         }

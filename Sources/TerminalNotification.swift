@@ -1,4 +1,5 @@
 import CmuxNotifications
+import CmuxSettings
 import Foundation
 // SUPERMUX:begin notification-project-identity
 import SupermuxMobileCore
@@ -20,6 +21,10 @@ struct TerminalNotification: Identifiable, Hashable, Sendable {
     var scrollPosition: TerminalNotificationScrollPosition?
     var clickAction: TerminalNotificationClickAction?
     var replyShape: TerminalNotificationReplyShape = .none
+    var soundContext: NotificationSoundOverrideContext?
+    /// Who emitted the text. Remote origins are clamped to display-only side effects by
+    /// the store and surface to hooks as `CMUX_NOTIFICATION_ORIGIN`.
+    var origin: TerminalNotificationOrigin = .local
     // SUPERMUX:begin notification-project-identity
     /// The supermux project that owned this notification's workspace when it
     /// fired, or `nil` for a workspace belonging to no project. A frozen
@@ -46,6 +51,8 @@ struct TerminalNotification: Identifiable, Hashable, Sendable {
         scrollPosition: TerminalNotificationScrollPosition? = nil,
         clickAction: TerminalNotificationClickAction? = nil,
         replyShape: TerminalNotificationReplyShape = .none,
+        soundContext: NotificationSoundOverrideContext? = nil,
+        origin: TerminalNotificationOrigin = .local,
         // SUPERMUX:begin notification-project-identity
         // Defaulted so no upstream construction site changes; supermux's
         // delivery path is the only caller that passes a value.
@@ -67,6 +74,8 @@ struct TerminalNotification: Identifiable, Hashable, Sendable {
         self.scrollPosition = scrollPosition
         self.clickAction = clickAction
         self.replyShape = replyShape
+        self.soundContext = soundContext
+        self.origin = origin
         // SUPERMUX:begin notification-project-identity
         self.project = project
         // SUPERMUX:end notification-project-identity
@@ -82,7 +91,17 @@ struct TerminalNotification: Identifiable, Hashable, Sendable {
 
     /// Matches a clear without letting live-owner expansion cross a confined notification's workspace boundary.
     func matchesClear(tabId targetTabId: UUID, liveTabId: UUID, surfaceId targetSurfaceId: UUID?) -> Bool {
-        let matchesWorkspace = tabId == targetTabId || (retargetsToLiveSurfaceOwner && tabId == liveTabId)
-        return matchesWorkspace && matches(tabId: tabId, surfaceId: targetSurfaceId)
+        guard let targetSurfaceId else {
+            let matchesWorkspace = tabId == targetTabId || (retargetsToLiveSurfaceOwner && tabId == liveTabId)
+            return matchesWorkspace && surfaceId == nil && panelId == nil
+        }
+        guard surfaceId == targetSurfaceId || panelId == targetSurfaceId else {
+            return false
+        }
+        // A retargetable notification is owned by the globally unique surface,
+        // not by the workspace in which it happened to be stored when it was
+        // delivered. This lets a completion clear a banner that was recorded
+        // under the pane's previous workspace after a move.
+        return retargetsToLiveSurfaceOwner || tabId == targetTabId
     }
 }

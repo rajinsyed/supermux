@@ -131,7 +131,7 @@ final class MainWindowFocusController {
         case .find:
             fileSearchHost = host
         // SUPERMUX:begin right-sidebar-changes-mode-explorerhost
-        case .sessions, .feed, .dock, .changes, .customSidebar:
+        case .sessions, .feed, .dock, .machines, .changes, .customSidebar:
         // SUPERMUX:end right-sidebar-changes-mode-explorerhost
             break
         }
@@ -767,7 +767,7 @@ final class MainWindowFocusController {
             return .outline
         case .find:
             return .searchField
-        case .sessions, .customSidebar:
+        case .sessions, .machines, .customSidebar:
             return .host
         case .feed:
             return focusFirstItem ? .firstItem : .host
@@ -791,6 +791,8 @@ final class MainWindowFocusController {
             return fileSearchHost?.focusSearchField() == true
         case .sessions, .customSidebar:
             return mode == .customSidebar ? focusFallbackRightSidebarHost() : false
+        case .machines:
+            return focusFallbackRightSidebarHost()
         case .feed:
             if target == .firstItem {
                 feedHost?.focusFirstItemFromCoordinator()

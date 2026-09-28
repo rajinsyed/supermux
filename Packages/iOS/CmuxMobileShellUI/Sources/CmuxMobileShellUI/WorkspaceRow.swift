@@ -3,38 +3,108 @@ import CmuxMobileShellModel
 import CmuxMobileSupport
 import SwiftUI
 
+/// Everything a workspace row draws, and nothing else.
+///
+/// ``WorkspaceRow`` reads only this value, so two equal contents render the
+/// same pixels. The workspace table compares contents to decide whether a
+/// relay update touches a row: fields the row never draws (surfaces,
+/// simulators, directories) and sub-minute activity restamps cannot wake it.
+struct WorkspaceRowContent: Equatable {
+    let rpcWorkspaceID: String
+    let name: String
+    let isPinned: Bool
+    let unreadState: MobileWorkspaceUnreadState
+    let accentColorHex: String?
+    /// The trailing label: a connection problem, or the activity time at the
+    /// minute precision the row shows.
+    let timestampText: String
+    let description: String?
+    let previewLine: String
+    let changesChip: MobileWorkspaceChangesChip?
+    /// Whether the changes chip is a button rather than a passive label.
+    let opensChanges: Bool
+    let isSelected: Bool
+    let wrapWorkspaceTitles: Bool
+    let previewLineLimit: Int
+    let unreadIndicatorLeftShift: Double
+    let unreadBadgeDiameter: Double
+
+    init(
+        workspace: MobileWorkspacePreview,
+        connectionStatus: MobileMacConnectionStatus,
+        isSelected: Bool,
+        changesChip: MobileWorkspaceChangesChip?,
+        opensChanges: Bool,
+        wrapWorkspaceTitles: Bool,
+        previewLineLimit: Int,
+        unreadIndicatorLeftShift: Double,
+        unreadBadgeDiameter: Double
+    ) {
+        let visibleChip = (changesChip?.filesChanged ?? 0) > 0 ? changesChip : nil
+        rpcWorkspaceID = workspace.rpcWorkspaceID.rawValue
+        name = workspace.name
+        isPinned = workspace.isPinned
+        unreadState = workspace.unreadState
+        accentColorHex = workspace.customColorHex
+        timestampText = workspace.timestampOrStatus(connectionStatus: connectionStatus)
+        description = workspace.displayDescription
+        previewLine = workspace.previewLine
+        self.changesChip = visibleChip
+        self.opensChanges = opensChanges && visibleChip != nil
+        self.isSelected = isSelected
+        self.wrapWorkspaceTitles = wrapWorkspaceTitles
+        self.previewLineLimit = previewLineLimit
+        self.unreadIndicatorLeftShift = unreadIndicatorLeftShift
+        self.unreadBadgeDiameter = unreadBadgeDiameter
+    }
+}
+
 struct WorkspaceRow: View {
+    /// Daylight between the unread badge's trailing edge and the color rail.
+    /// Internal (not private) so layout tests can assert the reservation math
+    /// against the shipped constant.
+    static let unreadDotRailVisualGap: CGFloat = 8
     private static let railTextVisualGap: CGFloat = 10
     private static let railVerticalInset: CGFloat = 5
 
-    let workspace: MobileWorkspacePreview
-    let connectionStatus: MobileMacConnectionStatus
-    let isSelected: Bool
-    /// The workspace's compact changes summary, when the connected Mac supports
-    /// workspace changes and the repository is dirty. Rendered here
-    /// (not in a wrapper) so every list pipeline that shows a workspace row
-    /// (SwiftUI List and the UIKit table) carries the same signifier.
-    var changesChip: MobileWorkspaceChangesChip? = nil
-    /// Opens this workspace's changes without selecting the row. When absent,
-    /// the changes capsule remains a passive label.
-    var onOpenChanges: (@MainActor () -> Void)? = nil
-    /// When `true`, the workspace title wraps onto multiple lines instead of
-    /// truncating to one (driven by the "Wrap Workspace Titles" setting).
-    let wrapWorkspaceTitles: Bool
-    /// How many lines the activity preview shows (1 or 2, driven by the
-    /// "Preview Lines" setting; 2 is the default). Space is reserved so rows
-    /// with short previews keep the same height as their neighbors.
-    var previewLineLimit: Int = MobileDisplaySettings.defaultWorkspacePreviewLineCount
-    // SUPERMUX:begin supermux-mobile-unread-badge
-    /// Retained but INERT. This DEBUG-only developer slider nudged the unread
-    /// dot leftward inside its reserved gutter; the gutter is gone and the
-    /// badge is laid out inline, so there is nothing left to shift. Kept as an
-    /// accepted parameter so upstream's whole settings→table→row plumbing (ten
-    /// files, none of which the fork otherwise touches) stays byte-identical
-    /// and merges cleanly. Removing the setting is upstream's call, not a
-    /// reason for the fork to rewrite its pipeline.
-    var unreadIndicatorLeftShift: Double = MobileDisplaySettings.defaultUnreadIndicatorLeftShift
-    // SUPERMUX:end supermux-mobile-unread-badge
+    let content: WorkspaceRowContent
+    /// Opens this workspace's changes without selecting the row. Ignored unless
+    /// ``WorkspaceRowContent/opensChanges`` is set.
+    let onOpenChanges: (@MainActor () -> Void)?
+
+    init(content: WorkspaceRowContent, onOpenChanges: (@MainActor () -> Void)? = nil) {
+        self.content = content
+        self.onOpenChanges = onOpenChanges
+    }
+
+    /// `previewLineLimit` is the "Preview Lines" setting (1 or 2). Space is
+    /// reserved so rows with short previews keep their neighbors' height.
+    init(
+        workspace: MobileWorkspacePreview,
+        connectionStatus: MobileMacConnectionStatus,
+        isSelected: Bool,
+        changesChip: MobileWorkspaceChangesChip? = nil,
+        onOpenChanges: (@MainActor () -> Void)? = nil,
+        wrapWorkspaceTitles: Bool,
+        previewLineLimit: Int = MobileDisplaySettings.defaultWorkspacePreviewLineCount,
+        unreadIndicatorLeftShift: Double = MobileDisplaySettings.defaultUnreadIndicatorLeftShift,
+        unreadBadgeDiameter: Double = MobileDisplaySettings.defaultUnreadBadgeDiameter
+    ) {
+        self.init(
+            content: WorkspaceRowContent(
+                workspace: workspace,
+                connectionStatus: connectionStatus,
+                isSelected: isSelected,
+                changesChip: changesChip,
+                opensChanges: onOpenChanges != nil,
+                wrapWorkspaceTitles: wrapWorkspaceTitles,
+                previewLineLimit: previewLineLimit,
+                unreadIndicatorLeftShift: unreadIndicatorLeftShift,
+                unreadBadgeDiameter: unreadBadgeDiameter
+            ),
+            onOpenChanges: onOpenChanges
+        )
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
@@ -44,47 +114,45 @@ struct WorkspaceRow: View {
             // reserved left column. Upstream's gutter kept every row's text
             // indented past an empty slot most rows never filled, which is the
             // blank space that showed up on global workspace rows.
+            // SUPERMUX:end supermux-mobile-unread-badge
+
             Color.clear
                 .frame(width: WorkspaceColorRail.width)
-            // SUPERMUX:end supermux-mobile-unread-badge
 
             Spacer()
                 .frame(width: Self.railTextVisualGap)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if workspace.isPinned {
+                    if content.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
                     }
 
-                    Text(workspace.name)
+                    Text(content.name)
                         .font(.headline)
-                        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
-                        .lineLimit(wrapWorkspaceTitles ? nil : 1)
+                        .foregroundStyle(content.isSelected ? Color.accentColor : Color.primary)
+                        .lineLimit(content.wrapWorkspaceTitles ? nil : 1)
 
                     // SUPERMUX:begin supermux-mobile-unread-badge
                     // Trails the name, the way Mail and Messages badge a row:
                     // it reads as belonging to this workspace rather than to
                     // the column of dots it used to sit in.
-                    WorkspaceUnreadDot(
-                        isUnread: workspace.hasUnread,
-                        unreadCount: workspace.supermuxUnreadCount
-                    )
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                    WorkspaceUnreadDot(unread: content.unreadState)
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     // SUPERMUX:end supermux-mobile-unread-badge
 
                     Spacer(minLength: 8)
 
-                    Text(workspace.timestampOrStatus(connectionStatus: connectionStatus))
+                    Text(content.timestampText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
-                if let description = workspace.displayDescription {
+                if let description = content.description {
                     Text(description)
                         .font(.subheadline)
                         .foregroundStyle(.primary)
@@ -92,12 +160,12 @@ struct WorkspaceRow: View {
                 }
 
                 HStack(alignment: .top, spacing: 8) {
-                    Text(workspace.previewLine)
+                    Text(content.previewLine)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(previewLineLimit, reservesSpace: true)
+                        .lineLimit(content.previewLineLimit, reservesSpace: true)
 
-                    if let changesChip, changesChip.filesChanged > 0 {
+                    if let changesChip = content.changesChip {
                         Spacer(minLength: 8)
                         changesChipView(changesChip)
                     }
@@ -109,7 +177,7 @@ struct WorkspaceRow: View {
                 Spacer()
                     .frame(width: railLeadingOffset)
 
-                WorkspaceColorRail(color: workspace.workspaceAccentColor)
+                WorkspaceColorRail(color: content.accentColorHex.flatMap { Color(hexString: $0) })
                     .padding(.vertical, Self.railVerticalInset)
 
                 Spacer(minLength: 0)
@@ -118,9 +186,9 @@ struct WorkspaceRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
-        .padding(.horizontal, isSelected ? 10 : 0)
+        .padding(.horizontal, content.isSelected ? 10 : 0)
         .background {
-            if isSelected {
+            if content.isSelected {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.accentColor.opacity(0.14))
             }
@@ -130,11 +198,11 @@ struct WorkspaceRow: View {
 
     @ViewBuilder
     private func changesChipView(_ chip: MobileWorkspaceChangesChip) -> some View {
-        if let onOpenChanges {
+        if content.opensChanges, let onOpenChanges {
             Button(action: onOpenChanges) {
                 WorkspaceChangesChipLabel(
                     chip: chip,
-                    workspaceID: workspace.rpcWorkspaceID.rawValue
+                    workspaceID: content.rpcWorkspaceID
                 )
             }
             .buttonStyle(.plain)
@@ -143,9 +211,19 @@ struct WorkspaceRow: View {
         } else {
             WorkspaceChangesChipLabel(
                 chip: chip,
-                workspaceID: workspace.rpcWorkspaceID.rawValue
+                workspaceID: content.rpcWorkspaceID
             )
         }
+    }
+
+    private var unreadDotRailLayoutGap: CGFloat {
+        // Reserving the badge's gutter overflow keeps the visual gap promise
+        // for badge rows and one uniform rail column for every row.
+        WorkspaceUnreadDot.layoutGap(
+            afterGutterForDiameter: content.unreadBadgeDiameter,
+            leftShift: content.unreadIndicatorLeftShift,
+            visualGap: Self.unreadDotRailVisualGap
+        )
     }
 
     // SUPERMUX:begin supermux-mobile-unread-badge
