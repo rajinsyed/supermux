@@ -235,10 +235,7 @@ enum SupermuxWorkspaceRow {
         // Reuse cmux's own per-workspace PR probe for opened worktrees: the first
         // display-ordered PR is the representative one (cmux prioritizes
         // open > merged > closed and freshness). No supermux probe runs here.
-        let pullRequest = includePullRequest
-            ? workspace.sidebarPullRequestsInDisplayOrder().first
-                .flatMap(SupermuxPullRequest.init(sidebarState:))
-            : nil
+        let pullRequest = includePullRequest ? workspace.supermuxSidebarPullRequest : nil
         return SupermuxOpenWorkspace(
             id: workspace.id,
             title: workspace.customTitle ?? workspace.title,
@@ -292,6 +289,21 @@ extension Workspace {
     /// so this stays stable; it falls back to `gitBranch` only when no panel
     /// reports a branch.
     var supermuxSidebarBranch: String? {
-        sidebarGitBranchesInDisplayOrder().first?.branch
+        // A device mirror shows its remote workspace's branch (the remote
+        // record's `supermux_branch`); git never probes a mirror's panes.
+        if let mirror = SupermuxComposition.deviceStatusProjector.status(forLocal: id) {
+            return mirror.branch
+        }
+        return sidebarGitBranchesInDisplayOrder().first?.branch
+    }
+
+    /// The pull request shown on a supermux project-nested workspace row: the
+    /// first display-ordered PR from cmux's own per-workspace probe, or, for a
+    /// device mirror, the remote record's `supermux_pull_request`.
+    var supermuxSidebarPullRequest: SupermuxPullRequest? {
+        if let mirror = SupermuxComposition.deviceStatusProjector.status(forLocal: id) {
+            return mirror.pullRequest
+        }
+        return sidebarPullRequestsInDisplayOrder().first.flatMap(SupermuxPullRequest.init(sidebarState:))
     }
 }

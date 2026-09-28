@@ -596653,6 +596653,193 @@
         }
       }
     },
+    "supermux.devices.close.single.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close “%@” on %@?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” を %@ で閉じますか？"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.single.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This workspace runs on %@. Close it there, or hide it from this Mac only (it keeps running there)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースは %@ で実行されています。そちらで閉じるか、このMacでのみ非表示にできます（そちらでは実行が続きます）。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.multi.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close %lld workspaces on other Macs?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のMacで %lld 個のワークスペースを閉じますか？"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.multi.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These workspaces run on other Macs. Close them there, or hide them from this Mac only (they keep running there).\n%@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "これらのワークスペースは他のMacで実行されています。そちらで閉じるか、このMacでのみ非表示にできます（そちらでは実行が続きます）。\n%@"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is offline right now, so the workspace can only be hidden here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は現在オフラインのため、このMacで非表示にすることしかできません。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.button.closeOnMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close on %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で閉じる"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.button.closeOnMacs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close on Their Macs"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "それぞれのMacで閉じる"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.button.hideHere" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Here"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacで非表示"
+          }
+        }
+      }
+    },
+    "supermux.devices.command.unhide.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Hidden Remote Workspaces"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非表示にしたリモートワークスペースを表示"
+          }
+        }
+      }
+    },
+    "supermux.devices.command.unhide.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other Macs"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のMac"
+          }
+        }
+      }
+    },
+    "supermux.devices.mirror.pullRequestLabel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PR"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PR"
+          }
+        }
+      }
+    },
     "supermux.devices.error.malformed" : {
       "extractionState" : "manual",
       "localizations" : {

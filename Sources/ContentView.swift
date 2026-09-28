@@ -7648,6 +7648,9 @@ struct ContentView: View {
         // SUPERMUX:begin claude-harness-palette-contribution
         contributions.append(.newClaudeHarnessPane)
         // SUPERMUX:end claude-harness-palette-contribution
+        // SUPERMUX:begin device-mirror-unhide-palette
+        contributions.append(.supermuxUnhideRemoteWorkspaces)
+        // SUPERMUX:end device-mirror-unhide-palette
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeTab",
@@ -8953,6 +8956,9 @@ struct ContentView: View {
         // SUPERMUX:begin claude-harness-palette-contribution
         registry.registerNewClaudeHarnessPane(tabManager: tabManager, windowId: windowId)
         // SUPERMUX:end claude-harness-palette-contribution
+        // SUPERMUX:begin device-mirror-unhide-palette
+        registry.registerSupermuxDeviceMirrorCommands()
+        // SUPERMUX:end device-mirror-unhide-palette
         registry.register(commandId: "palette.closeTab") {
             if let dockBrowserStore, let browserTarget {
                 guard dockBrowserStore.containsPanel(
@@ -12242,6 +12248,14 @@ struct VerticalTabsSidebar: View, Equatable {
             guard isPresented else { return }
             scheduleWorkspaceSnapshotRefresh(workspaceId: workspaceId)
         }
+        // SUPERMUX:begin device-mirror-flatrow-refresh
+        // A device mirror's activity/branch/PR are fork overlays with no
+        // workspace publisher; the fork relay announces their changes.
+        .onReceive(SupermuxWorkspaceLifecycleRelay.lifecycleDidChange) { workspaceId in
+            guard isPresented, renderContext.workspaceIds.contains(workspaceId) else { return }
+            scheduleWorkspaceSnapshotRefresh(workspaceId: workspaceId)
+        }
+        // SUPERMUX:end device-mirror-flatrow-refresh
         // The compact status tooltip reads agent profiles from the live index,
         // which is not observable; rebuild the rows it reports as changed.
         .onReceive(NotificationCenter.default.publisher(for: .sharedLiveAgentIndexDidChange)) { notification in

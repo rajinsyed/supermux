@@ -2527,6 +2527,9 @@ class TabManager: ObservableObject {
         // manager may close its own live workspaces; stale or foreign objects must
         // never tear down terminals or publish a second close.
         guard tabs.contains(where: { $0.id == workspace.id }) else { return }
+        // SUPERMUX:begin device-mirror-close
+        SupermuxDeviceMirrorCloseGate.workspaceWillClose(workspace, recordHistory: recordHistory)
+        // SUPERMUX:end device-mirror-close
         MachineCreateCoordinator.shared.cancelOperations(forPresentationWorkspace: workspace.id)
         panelTitleUpdateCoalescer.flushNow()
         sentryBreadcrumb("workspace.close", data: ["tabCount": tabs.count - 1])
@@ -2886,6 +2889,11 @@ class TabManager: ObservableObject {
     func closeWorkspacesWithConfirmation(_ workspaceIds: [UUID], allowPinned: Bool) {
         let workspaces = orderedClosableWorkspaces(workspaceIds, allowPinned: allowPinned)
         guard !workspaces.isEmpty else { return }
+        // SUPERMUX:begin device-mirror-close
+        let supermuxMirrorBatch = SupermuxDeviceMirrorCloseGate.beginBatch(workspaces, in: self)
+        defer { supermuxMirrorBatch.end() }
+        guard !supermuxMirrorBatch.handledAll else { return }
+        // SUPERMUX:end device-mirror-close
         guard workspaces.count > 1 else {
             closeWorkspaceFromCloseTabGesture(workspaces[0])
             return
@@ -3192,6 +3200,9 @@ class TabManager: ObservableObject {
         source: CloseConfirmationSource = .workspace,
         closeAlreadyConfirmed: Bool = false
     ) -> Bool {
+        // SUPERMUX:begin device-mirror-close
+        if let handled = SupermuxDeviceMirrorCloseGate.interceptUserClose(workspace, in: self) { return handled }
+        // SUPERMUX:end device-mirror-close
         // Closing a group's anchor is non-destructive to the group: its next
         // member is promoted to anchor in closeWorkspace, so the members stay
         // grouped instead of scattering to root. No special anchor prompt is
