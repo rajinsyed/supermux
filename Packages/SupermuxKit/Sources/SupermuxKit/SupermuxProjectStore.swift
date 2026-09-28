@@ -199,11 +199,22 @@ public actor SupermuxProjectStore {
 
 /// Well-known file locations for supermux state.
 public enum SupermuxPaths {
+    /// DEBUG-only environment variable that points the projects document at a
+    /// scratch file for end-to-end tests.
+    public static let projectsFileOverrideKey = "SUPERMUX_PROJECTS_FILE"
+
     /// The default projects document: `~/Library/Application Support/cmux/supermux-projects.json`.
     ///
     /// Lives next to (not inside) cmux's session snapshot so projects survive
     /// session resets and are shared by stable, nightly, and DEV builds.
     public static var defaultProjectsFileURL: URL {
+        #if DEBUG
+        // E2E runs of tagged builds must not edit the user's real project list,
+        // which every build on this Mac shares.
+        if let override = ProcessInfo.processInfo.environment[projectsFileOverrideKey], !override.isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
+        }
+        #endif
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("cmux/supermux-projects.json")
