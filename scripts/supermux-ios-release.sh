@@ -35,11 +35,13 @@ BASE_APP_NAME="cmux"
 DEVELOPMENT_TEAM="${SUPERMUX_IOS_DEVELOPMENT_TEAM:-NRGUG8GVV4}"
 DEV_PROFILE_SPECIFIER="${SUPERMUX_IOS_DEV_PROFILE_SPECIFIER:-Supermux iPhone Development}"
 ADHOC_PROFILE_NAME="${SUPERMUX_IOS_PROVISIONING_PROFILE_SPECIFIER:-Supermux iPhone Ad Hoc}"
-# The notification service extension that renders the project avatar on push
-# banners. It is a separate App ID with its own two profiles: an extension is
-# signed independently of its container, and iOS rejects the whole app if the
-# nested .appex signature or profile is wrong.
-NSE_PRODUCT_NAME="SupermuxNotificationService"
+# The app's single notification service extension: upstream's
+# NotificationService target (decrypts relay pushes), which also renders the
+# project avatar on push banners (ios/SupermuxNotificationService). It is a
+# separate App ID with its own two profiles: an extension is signed
+# independently of its container, and iOS rejects the whole app if the nested
+# .appex signature or profile is wrong.
+NSE_PRODUCT_NAME="NotificationService"
 NSE_BUNDLE_ID="${BUNDLE_ID}.notification-service"
 NSE_DEV_PROFILE_SPECIFIER="${SUPERMUX_IOS_NSE_DEV_PROFILE_SPECIFIER:-Supermux Notification Service Development}"
 NSE_ADHOC_PROFILE_NAME="${SUPERMUX_IOS_NSE_PROVISIONING_PROFILE_SPECIFIER:-Supermux Notification Service Ad Hoc}"
