@@ -11,6 +11,7 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
   b2. mirrors_keep_remote_order    mirrors opened together keep the remote order relative to each other
   b3. create_on_device             supermux.devices.create_workspace ends with exactly one mirror
   c. closing_source_closes_mirror  closing a source closes its mirror (remote workspace gone)
+  c2. orphan_is_closed             a bound mirror without projections (DEBUG bind hook) is closed; one mirror remains
   d. hide_and_unhide               "Hide Here" (socket close_mirror hide) is never reopened;
                                    a programmatic workspace.close of a mirror hides too;
                                    supermux.devices.unhide brings the mirror back
@@ -333,6 +334,23 @@ class AutoMirrorE2E:
             raise Failure("a coordinator close hid the remote workspace")
         return {"source": source, "closed_mirror": mirror_id}
 
+    def check_orphan(self) -> Dict[str, Any]:
+        """A bound "mirror" with no projection of its remote workspace (what a
+        dropped catalog projection leaves behind) is closed by the coordinator,
+        and the remote workspace keeps exactly one real mirror. Simulated with
+        the DEBUG supermux.devices.bind hook on a plain local workspace."""
+        source = self.create_source("orphan")
+        mirror = self.wait_one_mirror(source)
+        orphan = self.create_source("orphan-local")
+        self.sock.call("supermux.devices.bind", {"workspace_id": orphan, "machine": self.machine, "remote_workspace_id": source})
+        wait_for("the coordinator to close the orphan", lambda: up(orphan) not in self.local_ids(), self.timeout)
+        hold("the real mirror stays the only one", lambda: len(self.mirrors_of(source)) == 1, 3)
+        remaining = self.one_mirror(source)
+        if up(remaining.get("workspace_id")) != up(mirror.get("workspace_id")):
+            raise Failure(f"expected the original mirror {mirror.get('workspace_id')} to remain, found {remaining}")
+        state = self.sock.call("supermux.devices.list", {}).get("auto_mirror_state") or {}
+        return {"source": source, "orphan": orphan, "mirror": remaining.get("workspace_id"), "hidden_untouched": up(source) not in self.hidden(), "coordinator": state.get("reconcile_count")}
+
     def check_hide_unhide(self) -> Dict[str, Any]:
         source = self.create_source("hide")
         mirror = self.wait_one_mirror(source)
@@ -561,6 +579,7 @@ class AutoMirrorE2E:
                 ("b2_mirrors_keep_remote_order", self.check_mirror_order),
                 ("b3_create_on_device_single_mirror", self.check_create_on_device),
                 ("c_closing_source_closes_mirror", self.check_close_source),
+                ("c2_orphan_is_closed", self.check_orphan),
                 ("d_hide_and_unhide", self.check_hide_unhide),
                 ("e_close_on_mac_closes_source", self.check_close_on_mac),
                 ("f_agent_activity", self.check_agent_activity),
