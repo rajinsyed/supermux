@@ -49,7 +49,8 @@ public actor SupermuxPhonePushService {
 
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
 
-    let baseDirectory: URL
+    /// The directory holding the configuration, key and registrations.
+    public nonisolated let baseDirectory: URL
     private let transport: Transport
     let fileManager: FileManager
     private let now: @Sendable () -> Date
