@@ -214,6 +214,38 @@ public struct IOSBuildScopedPairedMacStore: MobilePairedMacStoring {
         }
     }
 
+    @discardableResult
+    public func removeRouteIfAuthorized(
+        macDeviceID: String,
+        route: CmxAttachRoute,
+        condition: MobilePairedMacRouteWriteCondition,
+        stackUserID: String?,
+        teamID: String?,
+        now: Date
+    ) async throws -> Bool {
+        try await mutationGate.withLock {
+            let selectedTeam = normalizedTeamID(teamID)
+            let instanceTag = condition.instanceTag
+            let selected = try await scopedRows(stackUserID: stackUserID, teamID: teamID)
+                .first { matches($0, macDeviceID: macDeviceID, instanceTag: instanceTag) }
+            let fallback = selectedTeam == nil
+                ? nil
+                : try await scopedRows(stackUserID: stackUserID, teamID: nil)
+                    .first { matches($0, macDeviceID: macDeviceID, instanceTag: instanceTag) }
+            let targetsFallback = fallback.map {
+                selected == nil || (selected?.lastSeenAt ?? .distantPast) < $0.lastSeenAt
+            } ?? false
+            return try await inner.removeRouteIfAuthorized(
+                macDeviceID: macDeviceID,
+                route: route,
+                condition: condition,
+                stackUserID: stackUserID,
+                teamID: scopedTeamID(targetsFallback ? nil : teamID),
+                now: now
+            )
+        }
+    }
+
     public func loadAll(stackUserID: String?, teamID: String?) async throws -> [MobilePairedMac] {
         var byID: [String: MobilePairedMac] = [:]
         for mac in try await scopedRows(stackUserID: stackUserID, teamID: teamID) {
@@ -342,6 +374,76 @@ public struct IOSBuildScopedPairedMacStore: MobilePairedMacStoring {
             teamID: teamID,
             now: now
         )
+    }
+
+    /// Device-local per-Computer Direct addresses; same build-scoped owner
+    /// key rule as `setConnectionMethod`.
+    public func setDirectAddresses(
+        macDeviceID: String,
+        instanceTag: String?,
+        rawJSON: String?,
+        stackUserID: String?,
+        teamID: String?
+    ) async throws {
+        try await mutationGate.withLock {
+            if normalizedTeamID(teamID) != nil {
+                let selectedRows = try await scopedRows(stackUserID: stackUserID, teamID: teamID)
+                let targetTeamID = selectedRows.contains {
+                    matches($0, macDeviceID: macDeviceID, instanceTag: instanceTag)
+                } ? teamID : nil
+                try await inner.setDirectAddresses(
+                    macDeviceID: macDeviceID,
+                    instanceTag: instanceTag,
+                    rawJSON: rawJSON,
+                    stackUserID: stackUserID,
+                    teamID: scopedTeamID(targetTeamID)
+                )
+                return
+            }
+            try await inner.setDirectAddresses(
+                macDeviceID: macDeviceID,
+                instanceTag: instanceTag,
+                rawJSON: rawJSON,
+                stackUserID: stackUserID,
+                teamID: scopedTeamID(teamID)
+            )
+        }
+    }
+
+    /// Device-local per-Computer connection method. The stored row's owner
+    /// key embeds this store's BUILD-SCOPED team id, so the team must go
+    /// through `scopedTeamID` exactly like `setCustomizationUnlocked` — a
+    /// verbatim team id updates zero rows.
+    public func setConnectionMethod(
+        macDeviceID: String,
+        instanceTag: String?,
+        rawValue: String?,
+        stackUserID: String?,
+        teamID: String?
+    ) async throws {
+        try await mutationGate.withLock {
+            if normalizedTeamID(teamID) != nil {
+                let selectedRows = try await scopedRows(stackUserID: stackUserID, teamID: teamID)
+                let targetTeamID = selectedRows.contains {
+                    matches($0, macDeviceID: macDeviceID, instanceTag: instanceTag)
+                } ? teamID : nil
+                try await inner.setConnectionMethod(
+                    macDeviceID: macDeviceID,
+                    instanceTag: instanceTag,
+                    rawValue: rawValue,
+                    stackUserID: stackUserID,
+                    teamID: scopedTeamID(targetTeamID)
+                )
+                return
+            }
+            try await inner.setConnectionMethod(
+                macDeviceID: macDeviceID,
+                instanceTag: instanceTag,
+                rawValue: rawValue,
+                stackUserID: stackUserID,
+                teamID: scopedTeamID(teamID)
+            )
+        }
     }
 
     public func setCustomization(

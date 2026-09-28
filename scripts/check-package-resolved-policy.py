@@ -39,6 +39,9 @@ XCODE_PACKAGE_REFERENCE_TOKENS = (
     "branch",
     "requirement =",
 )
+XCODE_PRODUCT_PACKAGE_LINK_RE = re.compile(
+    r"\bpackage\s*=\s*[^;]*\bXCRemoteSwiftPackageReference\b"
+)
 
 
 class PackageNode(NamedTuple):
@@ -380,6 +383,12 @@ def xcode_package_reference_changed(
     for line in diff.splitlines():
         if not line.startswith(("+", "-")) or line.startswith(("+++", "---")):
             continue
+        # A product dependency's `package = ... XCRemoteSwiftPackageReference`
+        # field only links a product to an already-declared package. Adding or
+        # removing that linkage does not change Xcode's resolved package graph,
+        # so it must not require a Package.resolved diff.
+        if XCODE_PRODUCT_PACKAGE_LINK_RE.search(line):
+            continue
         if any(token in line for token in XCODE_PACKAGE_REFERENCE_TOKENS):
             return True
     return False
@@ -529,25 +538,20 @@ def main() -> int:
         )
         & changed_dependency_roots
     )
-    # SUPERMUX:begin fix-resolved-policy-path-deps
-    # Same unsatisfiable case as the per-package gate below: the workspace
-    # lockfile records REMOTE pins, so a graph change that leaves the union of
-    # remote dependency calls across workspace members identical gives Xcode
-    # nothing to rewrite (verified: pins and originHash byte-identical after a
-    # real `-resolvePackageDependencies`). Only demand a diff when the
-    # workspace's own remote closure actually moved.
-    if ios_workspace_dependencies_changed:
-        current_ios_remote_calls: set[str] = set()
-        for member in current_ios_workspace_roots:
-            current_ios_remote_calls |= closure_remote_dependency_calls(member, graph)
-        previous_ios_remote_calls: set[str] = set()
-        for member in previous_ios_workspace_roots:
-            previous_ios_remote_calls |= closure_remote_dependency_calls(
-                member, previous_graph
+    if ios_workspace_dependencies_changed and merge_base is not None:
+        # Same dependent-closure escape as per-root lockfiles: if the union of
+        # remote dependency calls reachable from the workspace's roots is
+        # unchanged, resolution is byte-identical and no diff can exist.
+        current_ws_calls = set()
+        for ws_root in current_ios_workspace_roots:
+            current_ws_calls |= closure_remote_dependency_calls(ws_root, graph)
+        previous_ws_calls = set()
+        for ws_root in previous_ios_workspace_roots:
+            previous_ws_calls |= closure_remote_dependency_calls(
+                ws_root, previous_graph
             )
-        if current_ios_remote_calls == previous_ios_remote_calls:
+        if current_ws_calls == previous_ws_calls:
             ios_workspace_dependencies_changed = False
-    # SUPERMUX:end fix-resolved-policy-path-deps
     changed_ios_workspace_members = (
         current_ios_workspace_roots ^ previous_ios_workspace_roots
     )
@@ -618,19 +622,15 @@ def main() -> int:
             continue
         if expected_lockfile in changed_files:
             continue
-        # SUPERMUX:begin fix-resolved-policy-path-deps
-        # A dependency change further down the graph only reaches THIS root's
-        # lockfile if it changes the set of remote pins this root resolves.
-        # Adding a path dep onto a package whose remote pins this root already
-        # resolved leaves `swift package resolve` with nothing to write here —
-        # the pins and the originHash come back byte-identical — so demanding a
-        # diff is unsatisfiable. The root whose OWN closure grew is still
-        # caught: it lands in `changed_dependency_roots` above.
-        if closure_remote_dependency_calls(root, graph) == closure_remote_dependency_calls(
-            root, previous_graph
-        ):
+        # A dependent whose own reachable `.package(url:)` set is unchanged
+        # resolves to byte-identical pins, so demanding a lockfile diff is
+        # unsatisfiable (the issue #8871 case, extended to dependents: e.g.
+        # adding a leaf local package whose only remote dependency is already
+        # pinned identically elsewhere in this root's closure).
+        if merge_base is not None and closure_remote_dependency_calls(
+            root, graph
+        ) == closure_remote_dependency_calls(root, previous_graph):
             continue
-        # SUPERMUX:end fix-resolved-policy-path-deps
         changed_manifests = ", ".join(
             all_manifests[changed_root].as_posix()
             for changed_root in sorted(affected_dependency_roots)

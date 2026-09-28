@@ -6,7 +6,7 @@ let package = Package(
     name: "CmuxMobileShellUI",
     defaultLocalization: "en",
     platforms: [
-        .iOS(.v18),
+        .iOS(.v17),
     ],
     products: [
         .library(
@@ -19,6 +19,7 @@ let package = Package(
         .package(path: "../../Shared/CmuxAgentChat"),
         .package(path: "../CmuxAgentChatUI"),
         .package(path: "../../Shared/CmuxAuthRuntime"),
+        .package(path: "../../macOS/CmuxPhonePush"),
         .package(path: "../CmuxMobileBrowser"),
         .package(path: "../CmuxMobileBrowserStream"),
         .package(path: "../CmuxMobileCamera"),
@@ -26,6 +27,7 @@ let package = Package(
         .package(path: "../CmuxMobileDiagnostics"),
         .package(path: "../CmuxMobilePairedMac"),
         .package(path: "../CmuxMobileRPC"),
+        .package(path: "../CmuxMobileSSH"),
         .package(path: "../CmuxMobileShell"),
         .package(path: "../CmuxMobileShellModel"),
         .package(path: "../CmuxMobileSimulatorStream"),
@@ -51,6 +53,7 @@ let package = Package(
                 "CmuxAgentChat",
                 "CmuxAgentChatUI",
                 "CmuxAuthRuntime",
+                "CmuxPhonePush",
                 "CmuxMobileBrowser",
                 "CmuxMobileBrowserStream",
                 "CmuxMobileCamera",
@@ -58,6 +61,7 @@ let package = Package(
                 "CmuxMobileDiagnostics",
                 "CmuxMobilePairedMac",
                 "CmuxMobileRPC",
+                "CmuxMobileSSH",
                 "CmuxMobileShell",
                 "CmuxMobileShellModel",
                 "CmuxMobileSimulatorStream",
@@ -84,6 +88,7 @@ let package = Package(
             dependencies: [
                 "CMUXMobileCore",
                 "CmuxAuthRuntime",
+                "CmuxPhonePush",
                 "CmuxMobilePairedMac",
                 "CmuxMobileRPC",
                 "CmuxMobileShellUI",

@@ -1,22 +1,49 @@
 import CMUXMobileCore
+import CmuxMobileShellModel
 import Testing
 @testable import CmuxMobileShellUI
 
 @Suite struct WorkspaceTitleMenuValueTests {
     @Test func labelBranchChangesInvalidateTheMenuValue() {
         let standard = menuValue(
-            labelToken: .standard(title: "Workspace", subtitle: "Terminal")
+            labelToken: .standard(title: "Workspace", subtitle: "Terminal", connectionStatus: .connected)
         )
         let browser = menuValue(
-            labelToken: .browser(title: "Workspace")
+            labelToken: .standard(title: "Workspace", subtitle: "GitHub - cmux", connectionStatus: .connected)
         )
         #expect(menuValue(labelToken: standard.labelToken) == standard)
         #expect(browser != standard)
     }
 
+    @Test func connectionStatusTransitionsInvalidateTheMenuValue() {
+        let connected = menuValue(
+            labelToken: .standard(title: "Workspace", subtitle: "Terminal", connectionStatus: .connected)
+        )
+        let reconnecting = menuValue(
+            labelToken: .standard(title: "Workspace", subtitle: "Terminal", connectionStatus: .reconnecting)
+        )
+        let unavailable = menuValue(
+            labelToken: .standard(title: "Workspace", subtitle: "Terminal", connectionStatus: .unavailable)
+        )
+        #expect(reconnecting != connected)
+        #expect(unavailable != connected)
+        #expect(unavailable != reconnecting)
+    }
+
+    @Test func reconnectCapabilityInvalidatesTheMenuValue() {
+        let token = WorkspaceTitleMenuLabelToken.standard(
+            title: "Workspace",
+            subtitle: "Terminal",
+            connectionStatus: .unavailable
+        )
+        let withReconnect = menuValue(labelToken: token, canReconnect: true)
+        let withoutReconnect = menuValue(labelToken: token, canReconnect: false)
+        #expect(withReconnect != withoutReconnect)
+    }
+
     @Test func customizationCapabilityInvalidatesTheMenuValue() {
         let available = menuValue(
-            labelToken: .standard(title: "Workspace", subtitle: "Terminal"),
+            labelToken: .standard(title: "Workspace", subtitle: "Terminal", connectionStatus: .connected),
             canCustomizeWorkspace: true
         )
         let unavailable = menuValue(
@@ -27,9 +54,20 @@ import Testing
         #expect(available != unavailable)
     }
 
+    @Test func browseFilesAvailabilityInvalidatesTheMenuValue() {
+        var ssh = menuValue(
+            labelToken: .standard(title: "Shell 1", subtitle: "Shell 1", connectionStatus: .connected)
+        )
+        let mac = ssh
+        ssh.canBrowseFiles = true
+        #expect(!mac.canBrowseFiles)
+        #expect(ssh != mac)
+    }
+
+    // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
     @Test func forkMenuFingerprintInvalidatesTheMenuValue() {
         let stopped = menuValue(
-            labelToken: .standard(title: "Workspace", subtitle: "Terminal"),
+            labelToken: .standard(title: "Workspace", subtitle: "Terminal", connectionStatus: .connected),
             toolEntriesFingerprint: "run:false|close:true"
         )
         let running = menuValue(
@@ -39,11 +77,15 @@ import Testing
 
         #expect(stopped != running)
     }
+    // SUPERMUX:end ios-workspace-toolbar-persistent-actions
 
     private func menuValue(
         labelToken: WorkspaceTitleMenuLabelToken,
         canCustomizeWorkspace: Bool = true,
+        canReconnect: Bool = false,
+        // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
         toolEntriesFingerprint: String = ""
+        // SUPERMUX:end ios-workspace-toolbar-persistent-actions
     ) -> WorkspaceTitleMenuValue {
         WorkspaceTitleMenuValue(
             contentWidth: 390,
@@ -52,6 +94,7 @@ import Testing
             measuredTrailingItemsWidth: 0,
             measuredTrailingItemCount: 0,
             trailingItemCount: 0,
+            hadTrailingCollapse: false,
             isEnabled: true,
             workspaceName: "Workspace",
             hasUnread: false,
@@ -59,7 +102,10 @@ import Testing
             canRenameWorkspace: true,
             canToggleReadState: true,
             canCloseWorkspace: true,
+            canReconnect: canReconnect,
+            // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
             toolEntriesFingerprint: toolEntriesFingerprint,
+            // SUPERMUX:end ios-workspace-toolbar-persistent-actions
             labelToken: labelToken,
             terminalTheme: .monokai
         )

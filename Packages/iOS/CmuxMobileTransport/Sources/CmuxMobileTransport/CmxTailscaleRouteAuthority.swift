@@ -34,9 +34,8 @@ final class CmxSystemTailscaleRouteAuthority: CmxTailscaleRouteAuthorizing, Send
 
     private let monitor: NWPathMonitor
     private let readiness: CmxTailscaleRouteReadiness<NWInterface>
-    // SUPERMUX:begin lint-allow-upstream-debt — lint:allow lock: Network.framework's synchronous callback needs capture-order sequence stamping.
+    // Carve-out: stamp NWPath callbacks synchronously before actor hops can reorder delivery.
     private let observationSequence: OSAllocatedUnfairLock<UInt64>
-    // SUPERMUX:end lint-allow-upstream-debt
 
     init(
         clock: any Clock<Duration> = ContinuousClock(),
@@ -46,9 +45,8 @@ final class CmxSystemTailscaleRouteAuthority: CmxTailscaleRouteAuthorizing, Send
             clock: clock,
             readinessDeadline: readinessDeadline
         )
-        // SUPERMUX:begin lint-allow-upstream-debt — lint:allow lock: shared sequence storage is captured by the synchronous path callback.
+        // Carve-out: this counter orders monitor callbacks and synchronous current-path captures.
         let sequence = OSAllocatedUnfairLock<UInt64>(initialState: 0)
-        // SUPERMUX:end lint-allow-upstream-debt
         let monitor = NWPathMonitor()
         self.readiness = readiness
         self.observationSequence = sequence
@@ -109,9 +107,8 @@ final class CmxSystemTailscaleRouteAuthority: CmxTailscaleRouteAuthorizing, Send
     }
 
     private static func nextSequence(
-        // SUPERMUX:begin lint-allow-upstream-debt — lint:allow lock: helper preserves synchronous callback capture order.
+        // Carve-out: stamp the synchronous Network.framework observation before scheduling ingestion.
         _ lock: OSAllocatedUnfairLock<UInt64>
-        // SUPERMUX:end lint-allow-upstream-debt
     ) -> UInt64 {
         lock.withLock { sequence in
             sequence += 1

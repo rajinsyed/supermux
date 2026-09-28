@@ -99,6 +99,31 @@ struct MobileMacCompatiblePairedMacStore: MobilePairedMacStoring {
         )
     }
 
+    @discardableResult
+    func removeRouteIfAuthorized(
+        macDeviceID: String,
+        route: CmxAttachRoute,
+        condition: MobilePairedMacRouteWriteCondition,
+        stackUserID: String?,
+        teamID: String?,
+        now: Date
+    ) async throws -> Bool {
+        let instanceTag: String?
+        switch condition {
+        case .matchingInstanceTag(let tag): instanceTag = tag
+        case .unclaimed: instanceTag = nil
+        }
+        guard isCompatible(instanceTag: instanceTag) else { return false }
+        return try await inner.removeRouteIfAuthorized(
+            macDeviceID: macDeviceID,
+            route: route,
+            condition: condition,
+            stackUserID: stackUserID,
+            teamID: teamID,
+            now: now
+        )
+    }
+
     func loadAll(
         stackUserID: String?,
         teamID: String?
@@ -204,6 +229,40 @@ struct MobileMacCompatiblePairedMacStore: MobilePairedMacStoring {
         )
     }
 
+    func setDirectAddresses(
+        macDeviceID: String,
+        instanceTag: String?,
+        rawJSON: String?,
+        stackUserID: String?,
+        teamID: String?
+    ) async throws {
+        guard isCompatible(instanceTag: instanceTag) else { return }
+        try await inner.setDirectAddresses(
+            macDeviceID: macDeviceID,
+            instanceTag: instanceTag,
+            rawJSON: rawJSON,
+            stackUserID: stackUserID,
+            teamID: teamID
+        )
+    }
+
+    func setConnectionMethod(
+        macDeviceID: String,
+        instanceTag: String?,
+        rawValue: String?,
+        stackUserID: String?,
+        teamID: String?
+    ) async throws {
+        guard isCompatible(instanceTag: instanceTag) else { return }
+        try await inner.setConnectionMethod(
+            macDeviceID: macDeviceID,
+            instanceTag: instanceTag,
+            rawValue: rawValue,
+            stackUserID: stackUserID,
+            teamID: teamID
+        )
+    }
+
     func remove(
         macDeviceID: String,
         stackUserID: String?,
@@ -280,15 +339,14 @@ struct MobileMacCompatiblePairedMacStore: MobilePairedMacStoring {
         )
     }
 
+    /// Forward the sign-out wipe down the rail TAG-BLIND, like
+    /// `removeExactScope`. Enumerating this store's own compatibility-filtered
+    /// view would strand rows a since-revoked allowlist grant persisted: they
+    /// are invisible to this build until re-granted, and a sign-out that
+    /// reports success while another account's pairings survive on disk is a
+    /// broken wipe.
     func removeAll() async throws {
-        for mac in try await loadAll(stackUserID: nil, teamID: nil) {
-            try await inner.remove(
-                macDeviceID: mac.macDeviceID,
-                instanceTag: mac.instanceTag,
-                stackUserID: mac.stackUserID,
-                teamID: mac.teamID
-            )
-        }
+        try await inner.removeAll()
     }
 
     func authorizeUserTailscaleRoutes(

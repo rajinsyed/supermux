@@ -3,6 +3,7 @@ import AppKit
 import Bonsplit
 import CmuxAppKitSupportUI
 import CmuxCanvasUI
+import CmuxFoundation
 import CmuxSettings
 import CmuxSettingsUI
 
@@ -22,7 +23,9 @@ struct WorkspaceCanvasHostView: View {
     let appearance: PanelAppearance
     let windowAppearance: WindowAppearanceSnapshot
     @Environment(\.settingsRuntime) private var settingsRuntime
+    @Environment(BrowserDataImportCoordinator.self) private var browserDataImportCoordinator: BrowserDataImportCoordinator?
     @Environment(\.workspaceAttentionColor) private var workspaceAttentionColor
+    @Environment(\.cmuxAccentColor) private var accentColor
     @AppStorage(SessionContentWidthSettings.maxWidthKey)
     private var storedSessionContentMaximumWidth = SessionContentWidthSettings.noMaximumWidth
     @AppStorage(SessionContentWidthSettings.alignmentKey)
@@ -33,7 +36,8 @@ struct WorkspaceCanvasHostView: View {
             workspace: workspace,
             descriptors: descriptors,
             focusedPanelId: workspace.focusedPanelId,
-            isWorkspaceVisible: isWorkspaceVisible
+            isWorkspaceVisible: isWorkspaceVisible,
+            accentColor: accentColor
         )
     }
 
@@ -50,6 +54,7 @@ struct WorkspaceCanvasHostView: View {
             let isFocused = isWorkspaceInputActive && focusedPanelId == panelId
             return CanvasPaneDescriptor(
                 id: panelId,
+                contentIdentity: ObjectIdentifier(panel),
                 tab: CanvasTabChrome(
                     id: panelId,
                     title: panel.displayTitle,
@@ -70,6 +75,7 @@ struct WorkspaceCanvasHostView: View {
                             appearance: appearance,
                             windowAppearance: windowAppearance,
                             settingsRuntime: settingsRuntime,
+                            browserDataImportCoordinator: browserDataImportCoordinator,
                             workspaceAttentionColor: workspaceAttentionColor,
                             sessionContentWidthPresentation: sessionContentWidthPresentation
                         ),
@@ -114,6 +120,7 @@ struct WorkspaceCanvasHostView: View {
         case .cloudVMLoading: return "cloud.fill"
         case .mobilePairing: return "iphone"
         case .accountSignIn: return "person.crop.circle"
+        case .cloudVPNSetup: return "network"
         // SUPERMUX:begin claude-harness-canvas-icon
         case .claudeHarness: return "sparkles"
         // SUPERMUX:end claude-harness-canvas-icon
@@ -132,6 +139,7 @@ struct WorkspaceCanvasHostView: View {
         appearance: PanelAppearance,
         windowAppearance: WindowAppearanceSnapshot,
         settingsRuntime: SettingsRuntime?,
+        browserDataImportCoordinator: BrowserDataImportCoordinator?,
         workspaceAttentionColor: WorkspaceAttentionColor,
         sessionContentWidthPresentation: SessionContentWidthPresentation
     ) -> CanvasPaneContent {
@@ -156,9 +164,16 @@ struct WorkspaceCanvasHostView: View {
             appearance: appearance,
             windowAppearance: windowAppearance,
             settingsRuntime: settingsRuntime,
+            browserDataImportCoordinator: browserDataImportCoordinator,
             customSidebarTabManager: workspace?.owningTabManager,
             onRequestPanelFocus: { [weak workspace] in
                 workspace?.focusPanel(panel.id)
+            },
+            onRequestDeferredBrowserMaterialization: { [weak workspace] in
+                workspace?.requestDeferredBrowserMaterialization(
+                    panelId: panel.id,
+                    isVisibleInUI: isWorkspaceVisible
+                )
             }
         )
         let hosted = NSHostingView(rootView: AnyView(content))
@@ -177,6 +192,7 @@ private struct CanvasRootRepresentable: NSViewRepresentable {
     let descriptors: [CanvasPaneDescriptor]
     let focusedPanelId: UUID?
     let isWorkspaceVisible: Bool
+    let accentColor: CmuxAccentColor
 
     func makeNSView(context: Context) -> CanvasRootView {
         let workspace = workspace
@@ -262,6 +278,7 @@ private struct CanvasRootRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: CanvasRootView, context: Context) {
+        nsView.accentColor = accentColor
         nsView.sync(
             descriptors: descriptors,
             focusedPanelId: focusedPanelId,

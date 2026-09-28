@@ -10,6 +10,8 @@ final class PaneDropTargetView: NSView {
         didSet {
             if dropContext != oldValue {
                 transferDropRouter.clear()
+                dropRoutingRegistration.clear()
+                clearDragPresentationForContextChange()
             }
         }
     }
@@ -44,6 +46,7 @@ final class PaneDropTargetView: NSView {
         if newSuperview == nil {
             dropRoutingRegistration.clear()
             transferDropRouter.clear()
+            clearDragPresentationForContextChange()
         }
         super.viewWillMove(toSuperview: newSuperview)
     }
@@ -56,6 +59,8 @@ final class PaneDropTargetView: NSView {
     static func shouldCaptureHitTesting(
         pasteboardTypes: [NSPasteboard.PasteboardType]?,
         eventType: NSEvent.EventType?,
+        hasLiveTabTransfer: Bool = false,
+        hasLiveFileDropPayload: Bool = false,
         // SUPERMUX:begin claude-harness-file-drop-passthrough
         capturesFileDrops: Bool = true
         // SUPERMUX:end claude-harness-file-drop-passthrough
@@ -63,8 +68,13 @@ final class PaneDropTargetView: NSView {
         let routingContext = WindowInputRoutingContext(eventType: eventType)
         guard routingContext.allowsPaneDropHitTesting else { return false }
 
+        let hasFilePreviewTransfer = DragOverlayRoutingPolicy.hasFilePreviewTransfer(pasteboardTypes)
         let hasTabTransfer = DragOverlayRoutingPolicy.hasBonsplitTabTransfer(pasteboardTypes)
-        let hasFileDropPayload = DragOverlayRoutingPolicy.hasFileDropPayload(pasteboardTypes)
+            && hasLiveTabTransfer
+            && (!hasFilePreviewTransfer || hasLiveFileDropPayload)
+        let hasFileDropPayload = hasFilePreviewTransfer
+            ? hasLiveFileDropPayload
+            : DragOverlayRoutingPolicy.hasFileURL(pasteboardTypes)
         guard hasTabTransfer || hasFileDropPayload else { return false }
 
         if hasFileDropPayload, !hasTabTransfer {
@@ -88,10 +98,23 @@ final class PaneDropTargetView: NSView {
             return nil
         }
 
-        let pasteboardTypes = NSPasteboard(name: .drag).types
+        let dragPasteboard = NSPasteboard(name: .drag)
+        let pasteboardTypes = dragPasteboard.types
+        let hasLiveTabTransfer = DragOverlayRoutingPolicy.hasLiveTabTransfer(
+            in: dragPasteboard,
+            pasteboardTypes: pasteboardTypes,
+            resolver: AppDelegate.shared?.liveTabDragCapabilityResolver
+        )
+        let hasLiveFileDropPayload = DragOverlayRoutingPolicy.hasLiveFileDropPayload(
+            from: dragPasteboard,
+            pasteboardTypes: pasteboardTypes,
+            resolver: AppDelegate.shared?.liveTabDragCapabilityResolver
+        )
         let capture = Self.shouldCaptureHitTesting(
             pasteboardTypes: pasteboardTypes,
             eventType: eventType,
+            hasLiveTabTransfer: hasLiveTabTransfer,
+            hasLiveFileDropPayload: hasLiveFileDropPayload,
             // SUPERMUX:begin claude-harness-file-drop-passthrough
             capturesFileDrops: capturesFileDrops
             // SUPERMUX:end claude-harness-file-drop-passthrough
@@ -203,7 +226,8 @@ final class PaneDropTargetView: NSView {
                 urls,
                 context: dropContext,
                 hostedView: hostedView,
-                window: window
+                window: window,
+                pasteboard: sender.draggingPasteboard
             )
 #if DEBUG
             cmuxDebugLog(
@@ -214,7 +238,6 @@ final class PaneDropTargetView: NSView {
 #endif
             return handled
         }
-
         let transferResolution = transferDropRouter.resolve(
             pasteboard: sender.draggingPasteboard,
             context: dropContext,
@@ -330,7 +353,8 @@ final class PaneDropTargetView: NSView {
 #endif
             return .move
         case .rejected:
-            clearDragState(phase: "\(phase).reject")
+            setActiveDropZone(nil)
+            transferDropRouter.feedback.update(transferDropRouter.rejection, over: self)
             return []
         case .notTransfer:
             break
@@ -396,10 +420,21 @@ final class PaneDropTargetView: NSView {
     private func setActiveDropZone(_ zone: DropZone?) {
         activeZone = zone
         if let hostedView {
-            hostedView.setDropZoneOverlay(zone: zone)
+            hostedView.setDropZoneOverlay(zone: zone, fromPaneDrag: true)
             dropZoneOverlayView.isHidden = true
+        } else if zone == nil {
+            dropZoneOverlayAnimator.hideImmediately()
         } else {
             updateStandaloneDropZoneOverlay()
+        }
+    }
+    /// Clears a preview whose pane identity is no longer current.
+    private func clearDragPresentationForContextChange() {
+        activeZone = nil
+        if let hostedView {
+            hostedView.clearPaneDropOverlayForContextChange()
+        } else {
+            dropZoneOverlayAnimator.hideImmediately()
         }
     }
 
@@ -431,6 +466,7 @@ final class PaneDropTargetView: NSView {
     }
 
     private func clearDragState(phase: String) {
+        transferDropRouter.feedback.clear()
         guard activeZone != nil else { return }
         setActiveDropZone(nil)
 #if DEBUG
@@ -474,25 +510,3 @@ final class PaneDropTargetView: NSView {
 }
 
 typealias TerminalPaneDropTargetView = PaneDropTargetView
-
-struct PaneDropTargetRepresentable: NSViewRepresentable {
-    let dropContext: PaneDropContext?
-    // SUPERMUX:begin claude-harness-file-drop-passthrough
-    var capturesFileDrops = true
-    // SUPERMUX:end claude-harness-file-drop-passthrough
-
-    func makeNSView(context: Context) -> PaneDropTargetView {
-        PaneDropTargetView(frame: .zero)
-    }
-
-    func updateNSView(_ nsView: PaneDropTargetView, context: Context) {
-        nsView.dropContext = dropContext
-        nsView.hostedView = nil
-        // SUPERMUX:begin claude-harness-file-drop-passthrough
-        nsView.capturesFileDrops = capturesFileDrops
-        // SUPERMUX:end claude-harness-file-drop-passthrough
-        if dropContext == nil {
-            nsView.draggingExited(nil)
-        }
-    }
-}

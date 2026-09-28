@@ -6,6 +6,7 @@ import SupermuxKit
 import SwiftUI
 
 struct NotificationPopoverRow: View, Equatable {
+    @Environment(\.cmuxAccentColor) private var cmuxAccent
     // Closures excluded from ==; equality is the rendered snapshot only (#2586).
     nonisolated static func == (lhs: NotificationPopoverRow, rhs: NotificationPopoverRow) -> Bool {
         lhs.notification == rhs.notification && lhs.workspaceTitle == rhs.workspaceTitle
@@ -85,6 +86,9 @@ struct NotificationPopoverRow: View, Equatable {
                 Button(String(localized: "notifications.open", defaultValue: "Open")) {
                     onOpen()
                 }
+                Button(String(localized: "notifications.copy", defaultValue: "Copy")) {
+                    TerminalNotificationClipboard.copy(notification, workspaceTitle: workspaceTitle)
+                }
                 if notification.isRead {
                     Button(String(localized: "notifications.markAsUnread", defaultValue: "Mark as Unread")) {
                         onToggleRead()
@@ -156,12 +160,13 @@ struct NotificationPopoverRow: View, Equatable {
             ZStack {
                 Circle()
                     .fill(Color.primary.opacity(0.1))
-                CmuxSystemSymbolImage(systemName: "xmark", pointSize: 9, weight: .bold)
-                    .foregroundColor(.primary.opacity(0.7))
+                CmuxSystemSymbolImage(systemName: "xmark", pointSize: 9, weight: .bold, tint: .primary.opacity(0.7))
             }
             .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
         .padding(8)
+        .safeHelp(String(localized: "notifications.row.clear", defaultValue: "Clear notification"))
+        .accessibilityLabel(String(localized: "notifications.row.clear", defaultValue: "Clear notification"))
     }
 }

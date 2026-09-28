@@ -4,11 +4,12 @@ import Foundation
 /// Pure geometry for touch forwarding: where the aspect-fit video actually
 /// sits inside the view, and how a view point maps to the normalized [0,1]
 /// coordinates the simulator HID expects.
-// SUPERMUX:begin lint-allow-upstream-debt — lint:allow namespace-enum: upstream's pure simulator touch geometry.
-public enum SimStreamTouchMapping {
+public struct SimStreamTouchMapping: Sendable {
+    public init() {}
+
     /// The aspect-fit rect of a video with `pixelSize` inside `bounds`
     /// (mirrors AVSampleBufferDisplayLayer's `.resizeAspect`).
-    public static func videoRect(pixelSize: CGSize, in bounds: CGRect) -> CGRect {
+    public func videoRect(pixelSize: CGSize, in bounds: CGRect) -> CGRect {
         guard pixelSize.width > 0, pixelSize.height > 0,
             bounds.width > 0, bounds.height > 0
         else { return .zero }
@@ -26,7 +27,7 @@ public enum SimStreamTouchMapping {
 
     /// Maps a view-space point into normalized video coordinates, or nil for
     /// touches in the letterbox area outside the video.
-    public static func normalizedPoint(
+    public func normalizedPoint(
         _ point: CGPoint, pixelSize: CGSize, in bounds: CGRect
     ) -> CGPoint? {
         let rect = videoRect(pixelSize: pixelSize, in: bounds)
@@ -40,7 +41,7 @@ public enum SimStreamTouchMapping {
     /// Like `normalizedPoint` but clamps outside points to the nearest video
     /// edge, so a drag that leaves the letterbox tracks the edge instead of
     /// freezing. Returns nil only for degenerate geometry.
-    public static func clampedNormalizedPoint(
+    public func clampedNormalizedPoint(
         _ point: CGPoint, pixelSize: CGSize, in bounds: CGRect
     ) -> CGPoint? {
         let rect = videoRect(pixelSize: pixelSize, in: bounds)
@@ -51,4 +52,3 @@ public enum SimStreamTouchMapping {
         )
     }
 }
-// SUPERMUX:end lint-allow-upstream-debt

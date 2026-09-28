@@ -1,8 +1,13 @@
+#if canImport(UIKit)
 import Foundation
-public import SwiftUI
+public import UIKit
 
 /// Capability-gated pane creation mounted inside the workspace surface picker.
-public struct SupermuxPaneMenuControls: View {
+///
+/// The picker is a native `UIMenu` built only when UIKit presents it, so this
+/// contributes an immutable inline section rather than a SwiftUI view.
+@MainActor
+public struct SupermuxPaneMenuControls {
     private let canCreateSimulator: Bool
     private let createSimulator: () -> Void
 
@@ -18,21 +23,23 @@ public struct SupermuxPaneMenuControls: View {
         self.createSimulator = createSimulator
     }
 
-    public var body: some View {
-        if canCreateSimulator {
-            Section {
-                Button(action: createSimulator) {
-                    Label(
-                        String(
-                            localized: "supermux.panes.newSimulator",
-                            defaultValue: "New Simulator",
-                            bundle: .module
-                        ),
-                        systemImage: "iphone"
-                    )
-                }
-                .accessibilityIdentifier("MobileNewSimulatorMenuItem")
-            }
-        }
+    /// The inline "New Simulator" section, or `nil` when the connected Mac
+    /// cannot create a Simulator pane.
+    public func makeMenuElement() -> UIMenuElement? {
+        guard canCreateSimulator else { return nil }
+        let identifier = "MobileNewSimulatorMenuItem"
+        let createSimulator = createSimulator
+        let action = UIAction(
+            title: String(
+                localized: "supermux.panes.newSimulator",
+                defaultValue: "New Simulator",
+                bundle: .module
+            ),
+            image: UIImage(systemName: "iphone"),
+            identifier: UIAction.Identifier(identifier)
+        ) { _ in createSimulator() }
+        action.accessibilityIdentifier = identifier
+        return UIMenu(options: .displayInline, children: [action])
     }
 }
+#endif
