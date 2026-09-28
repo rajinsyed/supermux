@@ -251,12 +251,19 @@ private struct SupermuxSidebarSwipePanGesture: ViewModifier {
 
     func body(content: Content) -> some View {
         #if os(iOS)
-        content.gesture(SupermuxRowPanGesture(
-            isOpen: isOpen,
-            opensTowardNegativeX: opensTowardNegativeX,
-            onChanged: onChanged,
-            onEnded: onEnded
-        ))
+        // `UIGestureRecognizerRepresentable` is iOS 18+. On iOS 17 (the app's
+        // deployment floor) the row has no swipe tray; every swipe action is
+        // also in the row's context menu, so nothing becomes unreachable.
+        if #available(iOS 18.0, *) {
+            content.gesture(SupermuxRowPanGesture(
+                isOpen: isOpen,
+                opensTowardNegativeX: opensTowardNegativeX,
+                onChanged: onChanged,
+                onEnded: onEnded
+            ))
+        } else {
+            content
+        }
         #else
         content
         #endif
@@ -272,6 +279,7 @@ private struct SupermuxSidebarSwipePanGesture: ViewModifier {
 /// (`UIGestureRecognizerSubclass.h`), so a `UIPanGestureRecognizer` subclass
 /// must not fail itself. The direction gate belongs in the delegate's
 /// `gestureRecognizerShouldBegin(_:)`, which is exactly what it is for.
+@available(iOS 18.0, *)
 private struct SupermuxRowPanGesture: UIGestureRecognizerRepresentable {
     let isOpen: Bool
     /// See ``SupermuxSidebarSwipePanGesture/opensTowardNegativeX``.

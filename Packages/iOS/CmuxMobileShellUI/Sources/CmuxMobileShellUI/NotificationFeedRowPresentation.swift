@@ -56,8 +56,10 @@ struct NotificationFeedRowPresentation: Equatable, Sendable {
         // SUPERMUX:begin notification-feed-project-row
         project = item.project
         let normalizedProject = notificationFeedRowNormalized(item.project?.name)
+        // Hoisted so the closure below captures a local, not `self` mid-init.
+        let projectRedundantNames = [headline] + [sourceName].compactMap { $0 }
         projectName = normalizedProject.flatMap { name in
-            notificationFeedRowMatchesAny(name, [headline] + [sourceName].compactMap { $0 }) ? nil : name
+            notificationFeedRowMatchesAny(name, projectRedundantNames) ? nil : name
         }
         // SUPERMUX:end notification-feed-project-row
         computerName = normalizedComputer

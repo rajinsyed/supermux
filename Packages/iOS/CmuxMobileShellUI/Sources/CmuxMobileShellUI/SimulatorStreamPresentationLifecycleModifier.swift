@@ -5,7 +5,10 @@ import SwiftUI
 
 /// Gives each mounted Simulator stream view a distinct lifecycle identity.
 private struct SimulatorStreamPresentationLifecycleModifier: ViewModifier {
-    @Environment(MobileSimulatorStreamStore.self) private var simulatorStreamStore
+    /// Optional so a host that never injects the store (upstream's
+    /// `SimulatorStreamSurfaceLifecycleTests` harness, previews) renders the
+    /// content unchanged instead of trapping. The app always injects it.
+    @Environment(MobileSimulatorStreamStore.self) private var simulatorStreamStore: MobileSimulatorStreamStore?
     @State private var presentationID = UUID()
 
     let panelID: String
@@ -17,6 +20,7 @@ private struct SimulatorStreamPresentationLifecycleModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear {
+                guard let simulatorStreamStore else { return }
                 let shouldStart = simulatorStreamStore.presentationDidAppear(
                     id: presentationID,
                     panelID: panelID,
@@ -27,6 +31,7 @@ private struct SimulatorStreamPresentationLifecycleModifier: ViewModifier {
                 Task { @MainActor in await startStream() }
             }
             .onDisappear {
+                guard let simulatorStreamStore else { return }
                 let shouldStop = simulatorStreamStore.presentationDidDisappear(
                     id: presentationID,
                     panelID: panelID,
