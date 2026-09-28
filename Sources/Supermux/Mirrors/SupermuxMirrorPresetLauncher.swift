@@ -61,15 +61,26 @@ final class SupermuxMirrorPresetLauncher {
         if remoteState.presets(on: target.machine).isEmpty {
             await remoteState.refreshProjects(on: target.machine)
         }
+        let outcome: Outcome
         if let match = Self.match(preset, in: remoteState.presets(on: target.machine)) {
             let result = try await devices.request(
                 .presetLaunch,
                 params: ["preset_id": match.id, "workspace_id": target.remoteWorkspaceID],
                 on: target.machine
             )
-            return .remotePreset(id: match.id, terminalID: result["terminal_id"] as? String)
+            outcome = .remotePreset(id: match.id, terminalID: result["terminal_id"] as? String)
+        } else {
+            outcome = .typedCommand(terminalID: try await typeCommand(preset.command, in: target))
         }
-        return .typedCommand(terminalID: try await typeCommand(preset.command, in: target))
+        await pullLayout(of: target)
+        return outcome
+    }
+
+    /// The owning Mac announces layout changes only on pane-geometry changes,
+    /// which a background tab added to a workspace it is not showing does not
+    /// produce; pull the layout so the new terminal appears in the mirror now.
+    private func pullLayout(of target: SupermuxMirrorTarget) async {
+        await devices.provider(for: target.machine)?.refresh(force: true)
     }
 
     /// The other Mac's preset for a local chip: identical command, else the
