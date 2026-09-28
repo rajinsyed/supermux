@@ -29,13 +29,14 @@ final class SupermuxDeviceNewWorkspaceAction {
     }
 
     /// Starts creating a workspace on `machine` in `manager`'s window.
-    /// - Returns: `false` when the fork does not own `machine` (the caller
-    ///   falls back to upstream), otherwise `true` (the event is consumed).
+    /// - Returns: `false` when the fork does not own `machine`, or when a
+    ///   create for this window and Mac is already running (upstream's ⌘N
+    ///   contract for a repeat press); otherwise `true`.
     @discardableResult
     func start(on machine: SurfaceMachineID, in manager: TabManager) -> Bool {
         guard handles(machine) else { return false }
         let key = "\(ObjectIdentifier(manager).hashValue)|\(machine.rawValue)"
-        guard inFlight.insert(key).inserted else { return true }
+        guard inFlight.insert(key).inserted else { return false }
         let origin = manager.selectedWorkspace
         Task { @MainActor [weak self, weak manager, weak origin] in
             defer { self?.inFlight.remove(key) }
