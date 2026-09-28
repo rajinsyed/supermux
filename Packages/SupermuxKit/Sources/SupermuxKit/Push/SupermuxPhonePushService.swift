@@ -30,31 +30,13 @@ public actor SupermuxPhonePushService {
         }
     }
 
-    private struct Configuration: Codable, Sendable, Equatable {
-        let teamID: String
-        let keyID: String
+    /// The on-disk `supermux-apns.json` shape (shared with Mac-to-Mac sharing).
+    typealias Configuration = SupermuxPhonePushConfiguration
 
-        enum CodingKeys: String, CodingKey {
-            case teamID = "team_id"
-            case keyID = "key_id"
-        }
-    }
+    /// One stored phone registration (shared with Mac-to-Mac sharing).
+    typealias Registration = SupermuxPhonePushRegistration
 
-    private struct Registration: Codable, Sendable, Equatable {
-        let deviceID: String?
-        let deviceToken: String
-        let bundleID: String
-        let environment: Environment
-
-        enum CodingKeys: String, CodingKey {
-            case deviceID = "device_id"
-            case deviceToken = "device_token"
-            case bundleID = "bundle_id"
-            case environment
-        }
-    }
-
-    private struct RegistrationsDocument: Codable, Sendable {
+    struct RegistrationsDocument: Codable, Sendable {
         var devices: [Registration]
     }
 
@@ -67,9 +49,9 @@ public actor SupermuxPhonePushService {
 
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
 
-    private let baseDirectory: URL
+    let baseDirectory: URL
     private let transport: Transport
-    private let fileManager: FileManager
+    let fileManager: FileManager
     private let now: @Sendable () -> Date
     private let logger: Logger
     private var providerTokenCache: ProviderTokenCache?
@@ -230,19 +212,19 @@ public actor SupermuxPhonePushService {
         loadConfiguration() != nil && fileManager.fileExists(atPath: privateKeyURL.path)
     }
 
-    private var configurationURL: URL {
+    var configurationURL: URL {
         baseDirectory.appendingPathComponent(Self.configurationFileName, isDirectory: false)
     }
 
-    private var privateKeyURL: URL {
+    var privateKeyURL: URL {
         baseDirectory.appendingPathComponent(Self.privateKeyFileName, isDirectory: false)
     }
 
-    private var registrationsURL: URL {
+    var registrationsURL: URL {
         baseDirectory.appendingPathComponent(Self.registrationsFileName, isDirectory: false)
     }
 
-    private func loadConfiguration() -> Configuration? {
+    func loadConfiguration() -> Configuration? {
         guard let data = try? Data(contentsOf: configurationURL),
               let configuration = try? JSONDecoder().decode(Configuration.self, from: data),
               Self.isValidIdentifier(configuration.teamID),
@@ -250,7 +232,7 @@ public actor SupermuxPhonePushService {
         return configuration
     }
 
-    private func loadRegistrations() -> [Registration] {
+    func loadRegistrations() -> [Registration] {
         guard let data = try? Data(contentsOf: registrationsURL),
               let document = try? JSONDecoder().decode(RegistrationsDocument.self, from: data) else {
             return []
@@ -262,7 +244,7 @@ public actor SupermuxPhonePushService {
         }
     }
 
-    private func persist(registrations: [Registration]) throws {
+    func persist(registrations: [Registration]) throws {
         try fileManager.createDirectory(
             at: baseDirectory,
             withIntermediateDirectories: true,
@@ -528,6 +510,10 @@ public actor SupermuxPhonePushService {
         if let workspaceID = message.workspaceID { cmux["workspaceId"] = workspaceID }
         if let surfaceID = message.surfaceID { cmux["surfaceId"] = surfaceID }
         if let macDeviceID = message.macDeviceID { cmux["macDeviceId"] = macDeviceID }
+        // The phone stamps each row with its Mac's instance tag ("default" for
+        // a stable build) and only routes a tap whose payload names the same
+        // tag, so a push without it could never open its terminal.
+        if let macInstanceTag = message.macInstanceTag { cmux["macInstanceTag"] = macInstanceTag }
         if let notificationID = message.notificationID { cmux["notificationId"] = notificationID }
         // Project identity rides beside the routing ids so the phone can draw
         // the project's avatar and name on the banner without a round trip to
@@ -600,13 +586,11 @@ public actor SupermuxPhonePushService {
     }
 
     private static func isValidDeviceToken(_ value: String) -> Bool {
-        (64 ... 200).contains(value.count) && value.allSatisfy(\.isHexDigit)
+        Registration.isValidDeviceToken(value)
     }
 
     private static func isValidIdentifier(_ value: String) -> Bool {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (6 ... 32).contains(trimmed.count)
-            && trimmed.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        Configuration.isValidIdentifier(value)
     }
 
     /// A malformed or unauthorized phone registration.
