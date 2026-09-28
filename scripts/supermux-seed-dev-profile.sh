@@ -74,11 +74,11 @@ done
   || die "target bundle id equals source bundle id ($SOURCE_BUNDLE_ID)"
 
 # The production Stack project id, kept in sync with productionStackProjectID
-# in Sources/Auth/AuthEnvironment.swift (grepped so the two can't drift; the
+# in Packages/macOS/CmuxCloud/Sources/CmuxCloud/Environment/AuthEnvironment.swift (grepped so the two can't drift; the
 # literal is the last-resort fallback).
 PRODUCTION_STACK_PROJECT_ID="$(sed -n \
   's/.*productionStackProjectID = "\([^"]*\)".*/\1/p' \
-  "$REPO_ROOT/Sources/Auth/AuthEnvironment.swift" 2>/dev/null | head -1)"
+  "$REPO_ROOT/Packages/macOS/CmuxCloud/Sources/CmuxCloud/Environment/AuthEnvironment.swift" 2>/dev/null | head -1 || true)"
 PRODUCTION_STACK_PROJECT_ID="${PRODUCTION_STACK_PROJECT_ID:-9790718f-14cd-4f7e-824d-eaf527a82b82}"
 
 APP_SUPPORT_CMUX="$HOME/Library/Application Support/cmux"
