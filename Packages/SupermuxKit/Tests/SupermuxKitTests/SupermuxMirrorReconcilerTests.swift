@@ -249,7 +249,8 @@ struct SupermuxMirrorReconcilerTests {
         let plan = reconciler.plan(input(devices: [device([])], mirrors: [mirror("A")], at: 0))
         let followUp = try? #require(plan.followUpAfter)
         #expect((followUp ?? 0) >= reconciler.confirmationInterval)
-        let idle = Reconciler().plan(input(devices: [device([remote("A")])], mirrors: [mirror("A")]))
+        var fresh = Reconciler()
+        let idle = fresh.plan(input(devices: [device([remote("A")])], mirrors: [mirror("A")]))
         #expect(idle.followUpAfter == nil)
     }
 }
