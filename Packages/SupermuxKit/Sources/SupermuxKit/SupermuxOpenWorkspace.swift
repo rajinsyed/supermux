@@ -40,6 +40,10 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     /// manual/panel-derived/restored indicator), so a workspace shows one
     /// number whether it renders flat or nested under a project.
     public let unreadCount: Int
+    /// The Mac this workspace mirrors when it is a device mirror (a local
+    /// workspace showing another Mac's workspace), for the row's device chip;
+    /// `nil` for this Mac's own workspaces.
+    public let device: SupermuxProjectDevice?
 
     /// Creates a snapshot.
     /// - Parameters:
@@ -53,6 +57,7 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     ///   - isRunning: Whether the project run command is active for this workspace.
     ///   - pullRequest: The workspace branch's pull request, if cmux probed one.
     ///   - unreadCount: The row's displayed unread count (0 hides the badge).
+    ///   - device: The Mac a device mirror shows, or `nil` for a local workspace.
     public init(
         id: UUID,
         title: String,
@@ -63,7 +68,8 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         activity: SupermuxWorkspaceActivity = .idle,
         isRunning: Bool = false,
         pullRequest: SupermuxPullRequest? = nil,
-        unreadCount: Int = 0
+        unreadCount: Int = 0,
+        device: SupermuxProjectDevice? = nil
     ) {
         self.id = id
         self.title = title
@@ -75,5 +81,6 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         self.isRunning = isRunning
         self.pullRequest = pullRequest
         self.unreadCount = unreadCount
+        self.device = device
     }
 }

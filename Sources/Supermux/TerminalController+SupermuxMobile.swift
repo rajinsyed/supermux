@@ -43,6 +43,10 @@ extension TerminalController {
             return await v2SupermuxProjectIcon(params: params)
         case .projectOpen:
             return await v2SupermuxProjectOpen(params: params)
+        case .projectProbe:
+            return await v2SupermuxProjectProbe(params: params)
+        case .projectClone:
+            return await v2SupermuxProjectClone(params: params)
         case .presetCreate:
             return await v2SupermuxPresetCreate(params: params)
         case .presetUpdate:

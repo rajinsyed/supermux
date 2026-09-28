@@ -38,17 +38,27 @@ public struct SupermuxProjectsSectionView: View {
     @Bindable var model: SupermuxProjectsModel
     private let opener: any SupermuxWorkspaceOpening
     let openWorkspaces: [SupermuxOpenWorkspace]
-    private let onSelectWorkspace: (UUID) -> Void
-    private let onCloseWorkspace: (UUID) -> Void
+    let onSelectWorkspace: (UUID) -> Void
+    let onCloseWorkspace: (UUID) -> Void
     private let onRenameWorkspace: (UUID, String) -> Void
     private let onReorderWorkspace: (UUID, UUID) -> Void
-    private let onOpenPullRequest: (URL, UUID?) -> Void
+    let onOpenPullRequest: (URL, UUID?) -> Void
     /// Host-supplied gate/cadence for the worktree PR probe (mirrors cmux's
     /// own PR polling settings). Defaults to enabled at 60s.
     let pullRequestPolling: SupermuxPullRequestPollingPolicy
     /// Launcher, model catalog, and command settings behind "Start Claude in a
     /// New Worktree"; `nil` hides that entry point everywhere in the section.
     private let agentLaunch: SupermuxAgentLaunchEnvironment?
+    /// Other Macs' copies of projects: remote-only rows, device extras for
+    /// local rows, and the host's remote callbacks (see
+    /// `SupermuxProjectsSectionView+Remote.swift`).
+    let remote: SupermuxRemoteProjectsPresentation
+    /// Remote-only projects whose worktree disclosure is open (session only).
+    @State var expandedRemoteProjectIds: Set<UUID> = []
+    /// Presents the minimal New Worktree sheet for a copy on another Mac.
+    @State var remoteNewWorktreeTarget: SupermuxRemoteNewWorktreeTarget?
+    /// Presents "Set Up on <Mac>…".
+    @State var projectSetupTarget: SupermuxProjectSetupTarget?
 
     /// Resolves pull requests for unopened worktrees (opened ones reuse cmux's
     /// own probe via ``SupermuxOpenWorkspace/pullRequest``). Owned here at the
@@ -125,11 +135,13 @@ public struct SupermuxProjectsSectionView: View {
         pullRequestPolling: SupermuxPullRequestPollingPolicy = SupermuxPullRequestPollingPolicy(),
         pullRequestModel: SupermuxWorktreePullRequestModel? = nil,
         iconStore: SupermuxProjectIconStore? = nil,
-        agentLaunch: SupermuxAgentLaunchEnvironment? = nil
+        agentLaunch: SupermuxAgentLaunchEnvironment? = nil,
+        remote: SupermuxRemoteProjectsPresentation = .empty
     ) {
         self.model = model
         self.opener = opener
         self.agentLaunch = agentLaunch
+        self.remote = remote
         self.openWorkspaces = openWorkspaces
         self.onSelectWorkspace = onSelectWorkspace
         self.onCloseWorkspace = onCloseWorkspace
@@ -192,10 +204,14 @@ public struct SupermuxProjectsSectionView: View {
                             end: { dragState.clear() }
                         ),
                         draggingProjectId: $dragState.draggingProjectId,
-                        draggingWorkspaceId: $dragState.draggingWorkspaceId
+                        draggingWorkspaceId: $dragState.draggingWorkspaceId,
+                        remoteExtras: remote.extrasByLocalProjectID[project.id],
+                        remoteActions: remote.actions,
+                        setUp: { destination in presentSetUp(project: project, destination: destination) }
                     )
                 }
-                if model.projects.isEmpty {
+                remoteProjectRows(grouped: grouped)
+                if model.projects.isEmpty && remote.rows.isEmpty {
                     emptyHint
                 }
             }
@@ -270,6 +286,7 @@ public struct SupermuxProjectsSectionView: View {
         .sheet(item: $editorProject) { project in
             SupermuxProjectEditorSheet(model: model, project: project)
         }
+        .background { remoteSheetsAnchor }
     }
 
     // MARK: - Pieces
@@ -303,6 +320,7 @@ public struct SupermuxProjectsSectionView: View {
                 } else {
                     model.expandedProjectIds.insert(project.id)
                     Task { await model.refreshWorktrees(for: project.id) }
+                    loadRemoteWorktrees(forLocalProject: project.id)
                 }
             },
             edit: { editorProject = project },
@@ -467,7 +485,7 @@ public struct SupermuxProjectsSectionView: View {
     /// result to the host (which sets it via cmux's `TabManager.setCustomTitle`).
     /// Mirrors cmux's own rename dialog; an empty value clears the custom title.
     @MainActor
-    private func promptRenameWorkspace(id: UUID) {
+    func promptRenameWorkspace(id: UUID) {
         guard let workspace = openWorkspaces.first(where: { $0.id == id }) else { return }
         let alert = NSAlert()
         alert.messageText = String(localized: "supermux.workspace.rename.title", defaultValue: "Rename Workspace")

@@ -34,11 +34,12 @@ import Testing
         #expect(SupermuxMobileCapability.usageV1.rawValue == "supermux.usage.v1")
         #expect(SupermuxMobileCapability.agentLaunchV1.rawValue == "supermux.agent_launch.v1")
         #expect(SupermuxMobileCapability.phonePushShareV1.rawValue == "supermux.phone_push_share.v1")
+        #expect(SupermuxMobileCapability.projectSetupV1.rawValue == "supermux.project_setup.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 15)
-        #expect(Set(SupermuxMobileCapability.all).count == 15)
+        #expect(SupermuxMobileCapability.all.count == 16)
+        #expect(Set(SupermuxMobileCapability.all).count == 16)
     }
 }

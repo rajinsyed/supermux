@@ -158,7 +158,7 @@ private struct SupermuxProjectReorderDrop: ViewModifier {
 /// One project in the sidebar Projects section, with an optional indented
 /// list of its worktrees when expanded.
 public struct SupermuxProjectRowView: View {
-    private let project: SupermuxProject
+    let project: SupermuxProject
     private let detectedIcon: NSImage?
     private let worktrees: [SupermuxProjectWorktree]
     /// Resolved pull requests for this project's unopened worktrees, keyed by
@@ -167,7 +167,7 @@ public struct SupermuxProjectRowView: View {
     private let worktreePullRequests: [String: SupermuxPullRequest]
     private let openWorkspaces: [SupermuxOpenWorkspace]
     private let isExpanded: Bool
-    private let actions: SupermuxProjectRowActions
+    let actions: SupermuxProjectRowActions
     /// Shared marker for the project being dragged for reorder. Read here (not
     /// in the parent section's `ForEach`) so a drag-start write re-renders only
     /// this row's opacity in place — re-running the section's `ForEach` would
@@ -184,6 +184,12 @@ public struct SupermuxProjectRowView: View {
     /// straight to the child rows (which read it) — never read in this row's
     /// body, so a workspace-drag-start does not re-run the nested `ForEach`.
     @Binding private var draggingWorkspaceId: UUID?
+    /// Other Macs' copies of this project (worktrees, "Open on ▸",
+    /// "Set Up on <Mac>…"); `nil` when only this Mac has it. Rendered by
+    /// `SupermuxProjectRowView+Remote.swift`.
+    let remoteExtras: SupermuxProjectRemoteExtras?
+    let remoteActions: SupermuxRemoteProjectActions
+    let setUp: (SupermuxProjectSetupDestination) -> Void
 
     /// Sidebar font scale (cmux's `sidebar-font-size`); `1` at the default size.
     /// Multiplies the row's text and avatar so projects track the same setting
@@ -223,8 +229,14 @@ public struct SupermuxProjectRowView: View {
         beginDrag: @escaping () -> NSItemProvider = { NSItemProvider() },
         dropDelegate: SupermuxProjectDropDelegate? = nil,
         draggingProjectId: Binding<UUID?> = .constant(nil),
-        draggingWorkspaceId: Binding<UUID?> = .constant(nil)
+        draggingWorkspaceId: Binding<UUID?> = .constant(nil),
+        remoteExtras: SupermuxProjectRemoteExtras? = nil,
+        remoteActions: SupermuxRemoteProjectActions = .inert,
+        setUp: @escaping (SupermuxProjectSetupDestination) -> Void = { _ in }
     ) {
+        self.remoteExtras = remoteExtras
+        self.remoteActions = remoteActions
+        self.setUp = setUp
         self.project = project
         self.detectedIcon = detectedIcon
         self.worktrees = worktrees
@@ -281,6 +293,7 @@ public struct SupermuxProjectRowView: View {
                     worktreeRow(worktree)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
+                remoteWorktreeRows
             }
         }
         .animation(.easeOut(duration: 0.16), value: isExpanded)
@@ -288,7 +301,7 @@ public struct SupermuxProjectRowView: View {
 
     /// Worktrees on disk that do not already have an open workspace, so the
     /// disclosure never duplicates a nested workspace row. Precomputed in init.
-    private let unopenedWorktrees: [SupermuxProjectWorktree]
+    let unopenedWorktrees: [SupermuxProjectWorktree]
 
     private var projectRow: some View {
         HStack(spacing: 7) {
@@ -298,7 +311,7 @@ public struct SupermuxProjectRowView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 2)
-            if !unopenedWorktrees.isEmpty {
+            if showsWorktreeDisclosure {
                 worktreeCountToggle
             }
             // Hover-only, so the count pill sits flush right when idle.
@@ -341,8 +354,11 @@ public struct SupermuxProjectRowView: View {
             HStack(spacing: 3 * fontScale) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 8 * fontScale, weight: .semibold))
-                Text("\(unopenedWorktrees.count)")
-                    .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
+                // Before another Mac's worktrees load, the pill is just a chevron.
+                if worktreeDisclosureCount > 0 {
+                    Text("\(worktreeDisclosureCount)")
+                        .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
+                }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 6.5 * fontScale, weight: .bold))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
@@ -363,12 +379,14 @@ public struct SupermuxProjectRowView: View {
     @ViewBuilder
     private var projectMenu: some View {
         Button(String(localized: "supermux.project.openLocal", defaultValue: "Open Local Workspace"), action: actions.openLocal)
+        openOnMenu
         Button(String(localized: "supermux.project.newWorktree", defaultValue: "New Worktree…"), action: actions.newWorktree)
-        if !worktrees.isEmpty {
+        if !worktrees.isEmpty || !(remoteExtras?.worktrees.isEmpty ?? true) {
             Menu(String(localized: "supermux.project.worktreesMenu", defaultValue: "Worktrees")) {
                 ForEach(worktrees) { worktree in
                     Button(worktree.displayName) { actions.openWorktree(worktree) }
                 }
+                remoteWorktreeMenuItems
             }
         }
         // Only supermux-managed worktrees are ever bulk-deleted, so hide the
@@ -401,6 +419,7 @@ public struct SupermuxProjectRowView: View {
         Divider()
         Button(String(localized: "supermux.project.revealInFinder", defaultValue: "Reveal in Finder"), action: actions.revealInFinder)
         Button(String(localized: "supermux.project.edit", defaultValue: "Edit Project…"), action: actions.edit)
+        setUpMenuItems
         Divider()
         Button(String(localized: "supermux.project.remove", defaultValue: "Remove from Projects"), role: .destructive, action: actions.remove)
     }
