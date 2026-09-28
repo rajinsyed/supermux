@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 public import SupermuxMobileKit
 
 /// The per-Mac session lifecycle of ``SupermuxProjectsSectionModel``: which

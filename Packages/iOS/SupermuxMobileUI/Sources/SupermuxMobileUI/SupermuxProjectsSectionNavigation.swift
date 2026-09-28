@@ -43,9 +43,8 @@ struct SupermuxProjectsSectionNavigation: ViewModifier {
                     SupermuxNewWorktreeFlowSheet(
                         initialTarget: presentation.target,
                         options: presentation.options,
-                        prepareTarget: { [weak model] option in
-                            guard let model else { throw SupermuxMacUnavailableError() }
-                            return try await model.prepareNewWorktreeTarget(option)
+                        prepareTarget: { option in
+                            try await model.prepareNewWorktreeTarget(option)
                         }
                     )
                 }
