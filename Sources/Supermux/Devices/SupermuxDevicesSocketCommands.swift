@@ -14,7 +14,9 @@ import SupermuxKit
 /// `create_workspace {machine, title?, cwd?, focus?, window_id?}`,
 /// `await_open {machine, remote_workspace_id, timeout_seconds?, focus?, window_id?}`,
 /// `local_projects {}` (this Mac's `projects.list` host payload + origin map),
-/// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`.
+/// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`,
+/// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
+/// export filter and restart-stable bindings without a second Mac).
 @MainActor
 enum SupermuxDevicesSocketCommands {
     nonisolated static let methodPrefix = "supermux.devices."
@@ -51,6 +53,12 @@ enum SupermuxDevicesSocketCommands {
             case "request":
                 #if DEBUG
                 result = try await request(params, devices: devices)
+                #else
+                return unknownMethod()
+                #endif
+            case "bind", "unbind":
+                #if DEBUG
+                result = try setBinding(params, bound: method.hasSuffix(".bind"), payloads: payloads)
                 #else
                 return unknownMethod()
                 #endif
@@ -163,6 +171,29 @@ enum SupermuxDevicesSocketCommands {
             timeout: timeout
         )
         return ["result": result]
+    }
+
+    private static func setBinding(
+        _ params: [String: Any],
+        bound: Bool,
+        payloads: SupermuxDevicesSocketPayloads
+    ) throws -> [String: Any] {
+        guard let id = UUID(uuidString: try required(params, "workspace_id")),
+              let workspace = Workspace.liveWorkspace(id: id) else {
+            throw InvalidParams(message: "workspace_id does not name an open workspace")
+        }
+        let index = SupermuxComposition.deviceWorkspaceIndex
+        if bound {
+            index.bind(workspace, to: SupermuxRemoteWorkspaceRef(
+                machine: try machine(params),
+                workspaceID: try required(params, "remote_workspace_id")
+            ))
+        } else {
+            index.unbind(workspace)
+        }
+        var payload = payloads.localWorkspace(workspace)
+        payload["is_device_mirror"] = index.isDeviceMirror(workspace)
+        return payload
     }
     #endif
 
