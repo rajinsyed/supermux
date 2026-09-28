@@ -630,6 +630,8 @@ class WorkspaceBehaviorsE2E:
                 except CheckFailure as error:
                     self.facts.setdefault("cleanup_errors", []).append(str(error))
         shutil.rmtree(self.repo, ignore_errors=True)
+        for marker in (self.workdir / f"preset-{self.nonce}", self.workdir / f"typed-{self.nonce}"):
+            marker.unlink(missing_ok=True)
 
     def run(self) -> bool:
         try:
