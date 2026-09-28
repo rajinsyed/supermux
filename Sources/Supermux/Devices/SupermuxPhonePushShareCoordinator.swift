@@ -52,6 +52,19 @@ final class SupermuxPhonePushShareCoordinator {
         }
     }
 
+    /// Offers this Mac's push state to every connected device, e.g. after the
+    /// phone registered or rotated its token here, so the other Macs learn it
+    /// without waiting for their next reconnect.
+    func shareWithConnectedDevices() {
+        let machines = devices.devices.filter(\.isConnected).map(\.machine)
+        guard !machines.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            for machine in machines {
+                await self?.share(with: machine)
+            }
+        }
+    }
+
     /// Offers this Mac's push state to one connected device.
     @discardableResult
     func share(with machine: SurfaceMachineID) async -> String {

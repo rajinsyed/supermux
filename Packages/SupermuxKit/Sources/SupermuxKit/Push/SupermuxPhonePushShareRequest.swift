@@ -75,6 +75,7 @@ public struct SupermuxPhonePushShareRequest: Sendable, Equatable {
                     "environment": registration.environment.rawValue,
                 ]
                 if let deviceID = registration.deviceID { object["device_id"] = deviceID }
+                if let registeredAt = registration.registeredAt { object["registered_at"] = registeredAt }
                 return object
             },
         ]

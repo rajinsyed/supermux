@@ -34,13 +34,16 @@ public enum SupermuxPhonePushShareMerger {
         return existing.isSameKey(as: incoming) ? .unchanged : .conflict
     }
 
-    /// Adds incoming registrations for phones this Mac does not know yet.
+    /// Adds incoming registrations for phones this Mac does not know yet, and
+    /// replaces a known phone's token only with a strictly newer one.
     ///
-    /// A phone this Mac already has (same device id, or same token) keeps its
-    /// local entry: a direct `phone_push.register` here is at least as fresh as
-    /// anything relayed, and a stale local token self-heals when APNs rejects it
-    /// (pruned) and the next share re-adds the current one. Undeliverable
-    /// entries are dropped and the total is capped at ``registrationLimit``.
+    /// A known token is never duplicated. For a phone this Mac already has
+    /// (same device id) with a different token, the incoming entry wins only
+    /// when its ``SupermuxPhonePushRegistration/registeredAt`` is later than the
+    /// local entry's (an entry without a timestamp counts as oldest; a tie keeps
+    /// the local entry). That carries a rotated token from the Mac the phone
+    /// reached to the Macs it could not. Undeliverable entries are dropped and
+    /// the total is capped at ``registrationLimit``.
     public static func mergeRegistrations(
         existing: [SupermuxPhonePushRegistration],
         incoming: [SupermuxPhonePushRegistration]
@@ -48,13 +51,16 @@ public enum SupermuxPhonePushShareMerger {
         var merged = existing
         var added = 0
         for candidate in incoming {
-            guard merged.count < registrationLimit,
-                  let registration = candidate.normalized() else { continue }
-            let known = merged.contains { entry in
-                entry.deviceToken == registration.deviceToken
-                    || (registration.deviceID != nil && entry.deviceID == registration.deviceID)
+            guard let registration = candidate.normalized(),
+                  !merged.contains(where: { $0.deviceToken == registration.deviceToken }) else { continue }
+            if let deviceID = registration.deviceID,
+               let index = merged.firstIndex(where: { $0.deviceID == deviceID }) {
+                guard (registration.registeredAt ?? 0) > (merged[index].registeredAt ?? 0) else { continue }
+                merged[index] = registration
+                added += 1
+                continue
             }
-            guard !known else { continue }
+            guard merged.count < registrationLimit else { continue }
             merged.append(registration)
             added += 1
         }

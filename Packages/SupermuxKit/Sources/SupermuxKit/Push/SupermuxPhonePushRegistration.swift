@@ -14,18 +14,24 @@ public struct SupermuxPhonePushRegistration: Codable, Sendable, Equatable {
     public var bundleID: String
     /// APNs host that issued the token.
     public var environment: SupermuxPhonePushService.Environment
+    /// When the phone registered this token with a Mac (seconds since 1970),
+    /// so a Mac that learns a phone's rotated token from another Mac can tell
+    /// the newer token from its own. `nil` for entries written before this field.
+    public var registeredAt: Double?
 
     /// Creates a registration.
     public init(
         deviceID: String?,
         deviceToken: String,
         bundleID: String,
-        environment: SupermuxPhonePushService.Environment
+        environment: SupermuxPhonePushService.Environment,
+        registeredAt: Double? = nil
     ) {
         self.deviceID = deviceID
         self.deviceToken = deviceToken
         self.bundleID = bundleID
         self.environment = environment
+        self.registeredAt = registeredAt
     }
 
     enum CodingKeys: String, CodingKey {
@@ -33,6 +39,7 @@ public struct SupermuxPhonePushRegistration: Codable, Sendable, Equatable {
         case deviceToken = "device_token"
         case bundleID = "bundle_id"
         case environment
+        case registeredAt = "registered_at"
     }
 
     /// The registration with trimmed, lowercased identifiers, or `nil` when it
@@ -48,7 +55,8 @@ public struct SupermuxPhonePushRegistration: Codable, Sendable, Equatable {
             deviceID: device,
             deviceToken: token,
             bundleID: bundleID,
-            environment: environment
+            environment: environment,
+            registeredAt: registeredAt.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
         )
     }
 

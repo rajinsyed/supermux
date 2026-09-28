@@ -4,7 +4,7 @@ public import Foundation
 public struct SupermuxPhonePushShareResult: Sendable, Equatable {
     /// What happened to the incoming provider identity.
     public var credentials: SupermuxPhonePushShareMerger.CredentialOutcome
-    /// How many new phone registrations were stored.
+    /// How many phone registrations were stored (new phones, or newer tokens for known ones).
     public var registrationsAdded: Int
     /// Registrations held after the merge.
     public var registrationCount: Int
