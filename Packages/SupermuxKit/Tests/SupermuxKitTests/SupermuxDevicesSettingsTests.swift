@@ -13,6 +13,9 @@ import Testing
 /// 6. Seeding runs again on a later launch, re-enabling something the user removed.
 /// 7. The marker is not written when every key was already set, so a later removal re-seeds.
 /// 8. A different marker (a future seed version) is blocked by an older marker.
+/// Push sharing setting (`supermux.devices.sharePush`):
+/// 9. A fresh install reads OFF (the design says default ON), an explicit OFF does not
+///    persist, or the key drifts from the documented `supermux.devices.sharePush`.
 struct SupermuxDevicesSettingsTests {
     private func makeDefaults() throws -> UserDefaults {
         let suite = "SupermuxDevicesSettingsTests.\(UUID().uuidString)"
@@ -31,6 +34,17 @@ struct SupermuxDevicesSettingsTests {
         #expect(defaults.object(forKey: SupermuxDevicesSettings.autoMirrorKey) as? Bool == false)
         settings.autoMirror = true
         #expect(SupermuxDevicesSettings(defaults: defaults).autoMirror)
+    }
+
+    @Test func sharePushDefaultsOnAndPersistsExplicitChoices() throws {
+        let defaults = try makeDefaults()
+        #expect(SupermuxDevicesSettings.sharePushKey == "supermux.devices.sharePush")
+        let settings = SupermuxDevicesSettings(defaults: defaults)
+        #expect(settings.sharePush)
+        settings.sharePush = false
+        #expect(SupermuxDevicesSettings(defaults: defaults).sharePush == false)
+        settings.sharePush = true
+        #expect(SupermuxDevicesSettings(defaults: defaults).sharePush)
     }
 
     @Test func seedsOnlyUnsetKeys() throws {
