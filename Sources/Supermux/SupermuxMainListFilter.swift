@@ -57,7 +57,8 @@ enum SupermuxMainListFilter {
         return resolutionCache(for: tabManager).filter(
             tabs,
             projects: SupermuxComposition.projectsModel.projects,
-            associations: SupermuxComposition.workspaceAssociations
+            associations: SupermuxComposition.workspaceAssociations,
+            ownership: .current()
         )
     }
 
@@ -122,14 +123,17 @@ final class SupermuxProjectResolutionCache {
     /// The association-store revision the cache entries were computed at.
     private var validatedRevision = -1
 
-    /// Returns `tabs` minus the ungrouped workspaces a project owns.
+    /// Returns `tabs` minus the ungrouped workspaces a project owns. Device
+    /// mirrors are owned only through their remote record's project
+    /// (`ownership`), never through local path association.
     func filter(
         _ tabs: [Workspace],
         projects: [SupermuxProject],
-        associations: SupermuxWorkspaceAssociationStore
+        associations: SupermuxWorkspaceAssociationStore,
+        ownership: SupermuxMirrorOwnership = .none
     ) -> [Workspace] {
         validate(projects: projects, associations: associations)
-        guard !projects.isEmpty else {
+        guard !projects.isEmpty || ownership.hasRemoteOnlyProjects else {
             if !entryByWorkspaceId.isEmpty { entryByWorkspaceId = [:] }
             return tabs
         }
@@ -149,6 +153,10 @@ final class SupermuxProjectResolutionCache {
                 visible.append(workspace)
                 continue
             }
+            if ownership.isMirror(workspace) {
+                if ownership.owner(of: workspace) == nil { visible.append(workspace) }
+                continue
+            }
             if resolvedProjectId(for: workspace, projects: projects, associations: associations) == nil {
                 visible.append(workspace)
             }
@@ -162,12 +170,16 @@ final class SupermuxProjectResolutionCache {
     /// The project owning `workspace`, or `nil` when it is standalone —
     /// memoized under the same validity keys as ``filter(_:projects:associations:)``
     /// (the flat list hides a workspace exactly when this returns non-`nil`).
+    /// For a device mirror this is the owning unified project (a local
+    /// project's id when the project also exists here).
     func projectId(
         forWorkspace workspace: Workspace,
         projects: [SupermuxProject],
-        associations: SupermuxWorkspaceAssociationStore
+        associations: SupermuxWorkspaceAssociationStore,
+        ownership: SupermuxMirrorOwnership = .none
     ) -> UUID? {
         validate(projects: projects, associations: associations)
+        if ownership.isMirror(workspace) { return ownership.owner(of: workspace) }
         guard !projects.isEmpty else { return nil }
         return resolvedProjectId(for: workspace, projects: projects, associations: associations)
     }

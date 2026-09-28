@@ -156,7 +156,7 @@ extension TerminalController {
 
     /// The `{project: SupermuxProjectDTO}` result for one record, built off
     /// the main actor (icon and config probes are file I/O).
-    private func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {
+    func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {
         let gitRemoteURL = await SupermuxComposition.gitRemoteResolver.remoteURL(forRoot: project.rootPath)
         do {
             let payload = try await Task.detached(priority: .userInitiated) {

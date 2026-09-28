@@ -55,6 +55,7 @@ enum SupermuxDevicesGlue {
     static func activateIfNeeded() {
         guard projectRemotesTask == nil else { return }
         _ = SupermuxComposition.devices
+        SupermuxProjectsGlue.activateIfNeeded()
         projectRemotesTask = Task { @MainActor in
             let model = SupermuxComposition.projectsModel
             await model.loadIfNeeded()
