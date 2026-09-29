@@ -288,19 +288,28 @@ public final class SupermuxMobileProjectsStore {
         await refetch()
     }
 
-    /// Project ids whose mirrored icon files must survive a list refresh.
+    /// Mirrored icon files one refresh may delete: this Mac's projects that
+    /// left its list, and live ones whose host explicitly reports no custom
+    /// icon.
     ///
-    /// `nil` is an older host's "unknown", not proof that no icon exists. Only
-    /// an explicit `false` authorizes deleting a live project's mirrored bytes.
-    static func mirroredIconProjectIDsToKeep(
-        from projects: [SupermuxProjectDTO]
+    /// The mirror directory is shared by every connected Mac, so a refresh
+    /// only ever deletes ids it reported itself: another Mac's ids are simply
+    /// absent from this list, and a banner cannot re-fetch a deleted logo.
+    /// `nil` is an older host's "unknown", not proof that no icon exists.
+    static func mirroredIconProjectIDsToRemove(
+        previous: [SupermuxProjectDTO],
+        current: [SupermuxProjectDTO]
     ) -> Set<String> {
-        Set(projects.lazy.filter { $0.hasCustomIcon != false }.map(\.id))
+        let currentIDs = Set(current.map(\.id))
+        let removed = previous.lazy.map(\.id).filter { !currentIDs.contains($0) }
+        let iconless = current.lazy.filter { $0.hasCustomIcon == false }.map(\.id)
+        return Set(removed).union(iconless)
     }
 
     private func refetch() async {
         do {
             let response = try await client.projectsList()
+            let previousProjects = projects
             projects = response.projects
             presets = response.presets ?? []
             listCarriesPresets = response.presets != nil
@@ -309,13 +318,9 @@ public final class SupermuxMobileProjectsStore {
             }
             hasLoaded = true
             lastErrorDescription = nil
-            // Drop mirrored icons for deleted projects and live projects whose
-            // current host explicitly reports no custom icon. Preserve `nil`:
-            // older hosts omit the optional field, and a banner cannot re-fetch.
-            SupermuxSharedProjectIconStore.pruneIcons(
-                keeping: Self.mirroredIconProjectIDsToKeep(from: projects),
-                fileManager: iconMirrorFiles
-            )
+            for projectID in Self.mirroredIconProjectIDsToRemove(previous: previousProjects, current: projects) {
+                SupermuxSharedProjectIconStore.removeIcon(forProjectID: projectID, fileManager: iconMirrorFiles)
+            }
             onProjectsChanged?(projects)
         } catch {
             lastErrorDescription = error.localizedDescription
