@@ -166,4 +166,45 @@ private actor PhonePushRegistrationRecorder: SupermuxPhonePushRegistering {
         #expect(studioRotation.deviceToken == String(repeating: "cd", count: 32))
         #expect(studioRotation.previousDeviceToken == String(repeating: "ab", count: 32))
     }
+
+    /// An upgraded install still holds the single-Mac key from before per-Mac
+    /// registration. After APNs rotates the token and every Mac has the new
+    /// one, turning push off must tell each Mac ONCE: a disabled send must not
+    /// re-expose that stale key as a "previous" token, or the loop re-sends
+    /// back-to-back forever (each call rewriting the Mac's registry file).
+    @Test func disablingPushWithAStaleSingleMacKeySendsOnce() async throws {
+        let suiteName = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let rotated = String(repeating: "cd", count: 32)
+        defaults.set(String(repeating: "ab", count: 32), forKey: "supermux.apns.registeredDeviceToken")
+        defaults.set(rotated, forKey: "supermux.apns.registeredDeviceToken.mac-a")
+        defaults.set(false, forKey: "cmux.notifications.pushEnabled")
+        let notificationCenter = NotificationCenter()
+        let store = SupermuxMobilePushRegistrationStore(
+            defaults: defaults,
+            notificationCenter: notificationCenter,
+            currentBundleID: SupermuxMobilePushRegistrationStore.bundleID
+        )
+        store.record(deviceToken: Data(repeating: 0xCD, count: 32))
+        let recorder = PhonePushRegistrationRecorder()
+        let capabilities = SupermuxMobileCapabilities(
+            hostCapabilities: [SupermuxMobileCapability.phonePushV1.rawValue]
+        )
+        let task = Task { await store.run(client: recorder, capabilities: capabilities, pairingID: "mac-a") }
+
+        let disabled = await recorder.nextRequest()
+        // The next registration must be the one THIS change causes, not a
+        // repeat of the disabled send.
+        store.record(deviceToken: Data(repeating: 0xEF, count: 32))
+        notificationCenter.post(name: UserDefaults.didChangeNotification, object: defaults)
+        let next = await recorder.nextRequest()
+        task.cancel()
+
+        #expect(!disabled.enabled)
+        #expect(disabled.deviceToken == rotated)
+        #expect(disabled.previousDeviceToken == nil)
+        #expect(next.deviceToken == String(repeating: "ef", count: 32))
+        #expect(next.previousDeviceToken == rotated)
+    }
 }
