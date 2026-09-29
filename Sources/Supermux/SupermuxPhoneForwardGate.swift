@@ -8,8 +8,9 @@ import Foundation
 /// unread, Dock badge), but it never forwards that record to the phone and
 /// leaves it out of every phone-facing badge. Otherwise the phone gets two
 /// banners with different ids (so `apns-collapse-id` cannot fold them), a tap
-/// that opens a mirror of a mirror, and two Macs fighting over one absolute
-/// badge.
+/// that opens a mirror of a mirror, and a badge that counts one notification
+/// once per Mac: every Mac reports only its OWN unread count, and the phone
+/// badges the total over every Mac (`SupermuxPhoneBadgeLedger`).
 @MainActor
 enum SupermuxPhoneForwardGate {
     /// The direct-APNs lane's decision for one notification.
@@ -53,8 +54,9 @@ enum SupermuxPhoneForwardGate {
         }
     }
 
-    /// The unread count a phone should see: every unread record except those
-    /// mirrored from another Mac (that Mac badges them itself).
+    /// This Mac's share of the phone badge: every unread record except those
+    /// mirrored from another Mac (that Mac reports them itself; the phone
+    /// adds every Mac's share up).
     static func phoneBadgeCount(unreadCount: Int, notifications: [TerminalNotification]) -> Int {
         let mirroredUnread = notifications.reduce(into: 0) { count, notification in
             if !notification.isRead, isMirroredFromDevice(notification.origin) { count += 1 }
