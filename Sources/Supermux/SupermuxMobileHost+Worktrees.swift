@@ -308,6 +308,8 @@ extension TerminalController {
     /// Light snapshots of every open workspace across all main windows, for
     /// worktree open-state matching and the opened-worktree PR fold (cmux's
     /// own per-workspace probe — the same source the desktop rows use).
+    /// Device mirrors are left out: their directory is the other Mac's path,
+    /// and their ids never reach the phone or other Macs (host export filter).
     @MainActor
     private func supermuxOpenWorkspaceSnapshots() -> [SupermuxOpenWorkspace] {
         guard let app = AppDelegate.shared else { return [] }
@@ -318,6 +320,7 @@ extension TerminalController {
             guard seenWindowIDs.insert(summary.windowId).inserted,
                   let windowTabManager = app.tabManagerFor(windowId: summary.windowId) else { continue }
             for workspace in windowTabManager.tabs where seenWorkspaceIDs.insert(workspace.id).inserted {
+                if SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) { continue }
                 snapshots.append(SupermuxOpenWorkspace(
                     id: workspace.id,
                     title: workspace.customTitle ?? workspace.title,

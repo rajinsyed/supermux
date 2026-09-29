@@ -13,9 +13,17 @@ import SupermuxKit
 /// - `hidden {}` — the hidden set.
 /// - `set_auto_mirror {enabled}` — the `supermux.devices.autoMirror` setting.
 /// - `reconcile {}` — run an auto-mirror pass now and report its state.
+/// - `fail_next_open {machine, remote_workspace_id}` (DEBUG builds only) — the
+///   next auto-mirror open of that ref fails, as a dropped link would.
 @MainActor
 enum SupermuxDeviceMirrorSocketCommands {
-    static let methods: Set<String> = ["close_mirror", "unhide", "hidden", "set_auto_mirror", "reconcile"]
+    static let methods: Set<String> = {
+        var methods: Set<String> = ["close_mirror", "unhide", "hidden", "set_auto_mirror", "reconcile"]
+        #if DEBUG
+        methods.insert("fail_next_open")
+        #endif
+        return methods
+    }()
 
     static func handle(_ name: String, params: [String: Any], payloads: SupermuxDevicesSocketPayloads) async -> ControlCallResult {
         do {
@@ -25,6 +33,9 @@ enum SupermuxDeviceMirrorSocketCommands {
             case "unhide": result = unhide(params)
             case "hidden": result = hidden()
             case "set_auto_mirror": result = try setAutoMirror(params)
+            #if DEBUG
+            case "fail_next_open": result = try failNextOpen(params)
+            #endif
             default: result = reconcile()
             }
             guard let value = JSONValue(foundationObject: result) else {
@@ -85,6 +96,18 @@ enum SupermuxDeviceMirrorSocketCommands {
         SupermuxComposition.deviceMirrorCoordinator.scheduleReconcile()
         return ["auto_mirror": SupermuxComposition.devicesSettings.autoMirror]
     }
+
+    #if DEBUG
+    private static func failNextOpen(_ params: [String: Any]) throws -> [String: Any] {
+        guard let machine = (params["machine"] as? String).flatMap({ $0.isEmpty ? nil : $0 }),
+              let workspaceID = params["remote_workspace_id"] as? String, !workspaceID.isEmpty else {
+            throw invalid("machine and remote_workspace_id are required")
+        }
+        let ref = SupermuxRemoteWorkspaceRef(machineID: machine, workspaceID: workspaceID)
+        SupermuxComposition.deviceMirrorCoordinator.debugFailNextOpen(of: ref)
+        return refPayload(ref)
+    }
+    #endif
 
     private static func reconcile() -> [String: Any] {
         let coordinator = SupermuxComposition.deviceMirrorCoordinator

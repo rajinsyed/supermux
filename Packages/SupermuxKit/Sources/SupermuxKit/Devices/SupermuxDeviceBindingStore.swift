@@ -28,11 +28,15 @@ public final class SupermuxDeviceBindingStore {
         public let workspaceID: UUID
         /// When the binding was last written (eviction order).
         public let boundAt: Date
+        /// The remote customization last applied to the mirror (nil until the
+        /// first status projection, or for bindings stored before it existed).
+        public var appliedCustomization: SupermuxMirrorCustomization?
 
         private enum CodingKeys: String, CodingKey {
             case ref
             case workspaceID = "workspace_id"
             case boundAt = "bound_at"
+            case appliedCustomization = "applied_customization"
         }
     }
 
@@ -71,12 +75,19 @@ public final class SupermuxDeviceBindingStore {
     }
 
     /// Binds a local workspace to a remote workspace, replacing any previous
-    /// binding of either side.
+    /// binding of either side. The applied customization carries over only
+    /// when the same pair is bound again.
     public func bind(stableID: UUID, workspaceID: UUID, to ref: SupermuxRemoteWorkspaceRef) {
         if let previousOwner = stableIDsByRef[ref], previousOwner != stableID {
             bindings[previousOwner] = nil
         }
-        bindings[stableID] = Binding(ref: ref, workspaceID: workspaceID, boundAt: now())
+        let previous = bindings[stableID]
+        bindings[stableID] = Binding(
+            ref: ref,
+            workspaceID: workspaceID,
+            boundAt: now(),
+            appliedCustomization: previous?.ref == ref ? previous?.appliedCustomization : nil
+        )
         evictOverflow()
         rebuildReverseIndex()
         save()
@@ -108,6 +119,20 @@ public final class SupermuxDeviceBindingStore {
     /// The local workspace's stable id bound to a remote workspace.
     public func stableID(for ref: SupermuxRemoteWorkspaceRef) -> UUID? {
         stableIDsByRef[ref]
+    }
+
+    /// The remote customization last applied to the mirror bound under `stableID`.
+    public func appliedCustomization(forStableID stableID: UUID) -> SupermuxMirrorCustomization? {
+        bindings[stableID]?.appliedCustomization
+    }
+
+    /// Remembers the remote customization just applied to the mirror bound
+    /// under `stableID` (ignored when nothing is bound there).
+    public func recordAppliedCustomization(_ customization: SupermuxMirrorCustomization, forStableID stableID: UUID) {
+        guard var binding = bindings[stableID], binding.appliedCustomization != customization else { return }
+        binding.appliedCustomization = customization
+        bindings[stableID] = binding
+        save()
     }
 
     /// Drops every binding whose local workspace is gone. Call only once the

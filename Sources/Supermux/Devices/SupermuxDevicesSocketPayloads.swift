@@ -98,6 +98,7 @@ struct SupermuxDevicesSocketPayloads {
             "local_workspaces": live.map { workspace -> [String: Any] in
                 var payload = localWorkspace(workspace)
                 payload["is_device_mirror"] = index.isDeviceMirror(workspace)
+                payload["projected_remote_status"] = projectedRemoteStatus(workspace)
                 return payload
             },
         ]

@@ -42,6 +42,7 @@ final class SupermuxDeviceMirrorCoordinator {
     private var reconciler = SupermuxMirrorReconciler()
     private var started = false
     private var scheduled: Task<Void, Never>?
+    private var scheduledDeadline: ContinuousClock.Instant?
     private var observers: [any NSObjectProtocol] = []
     private var eventsTask: Task<Void, Never>?
     private var revisionTask: Task<Void, Never>?
@@ -99,13 +100,19 @@ final class SupermuxDeviceMirrorCoordinator {
         scheduleReconcile()
     }
 
-    /// Runs a reconcile pass after `delay` (coalesced with pending passes).
+    /// Runs a reconcile pass after `delay`, coalesced with a pending pass:
+    /// the earlier deadline wins, so a long wait (an open's retry backoff, a
+    /// close confirmation) never delays a sooner trigger.
     func scheduleReconcile(after delay: Duration = SupermuxDeviceMirrorCoordinator.debounce) {
-        guard scheduled == nil else { return }
+        let deadline = ContinuousClock.now + delay
+        if let pending = scheduledDeadline, pending <= deadline { return }
+        scheduled?.cancel()
+        scheduledDeadline = deadline
         scheduled = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: delay)
+            try? await Task.sleep(until: deadline, clock: .continuous)
             guard let self, !Task.isCancelled else { return }
             self.scheduled = nil
+            self.scheduledDeadline = nil
             self.reconcile()
         }
     }
@@ -114,11 +121,23 @@ final class SupermuxDeviceMirrorCoordinator {
     func reconcileNow() {
         scheduled?.cancel()
         scheduled = nil
+        scheduledDeadline = nil
         reconcile()
     }
 
     /// Whether an open is queued or running.
     var isOpening: Bool { openTask != nil || !openQueue.isEmpty }
+
+    #if DEBUG
+    /// Refs whose next auto-mirror open fails (E2E hook behind the
+    /// `supermux.devices.fail_next_open` socket method).
+    private var debugFailingOpens: Set<SupermuxRemoteWorkspaceRef> = []
+
+    /// Makes the next auto-mirror open of `ref` fail, as a dropped link would.
+    func debugFailNextOpen(of ref: SupermuxRemoteWorkspaceRef) {
+        debugFailingOpens.insert(ref)
+    }
+    #endif
 
     /// Refs whose open is queued, in flight (here or from any other opener
     /// caller), backing off, or whose remote close is in flight.
@@ -174,6 +193,19 @@ final class SupermuxDeviceMirrorCoordinator {
         if let followUp = plan.followUpAfter {
             scheduleReconcile(after: .milliseconds(Int(followUp * 1000)))
         }
+        if let retry = nextRetryDelay() {
+            scheduleReconcile(after: retry)
+        }
+    }
+
+    /// How long until the earliest backing-off ref may be opened again (nil
+    /// when none is backing off). Every pass re-arms this, so a retry is never
+    /// lost when a sooner pass replaced the pending one.
+    private func nextRetryDelay() -> Duration? {
+        let now = Date()
+        retryAfter = retryAfter.filter { $0.value > now }
+        guard let next = retryAfter.values.min() else { return nil }
+        return .milliseconds(Int((next.timeIntervalSince(now) + 0.05) * 1000))
     }
 
     private func makeInput() -> SupermuxMirrorReconciler.Input {
@@ -235,6 +267,9 @@ final class SupermuxDeviceMirrorCoordinator {
             }
             inFlight.insert(ref)
             do {
+                #if DEBUG
+                if debugFailingOpens.remove(ref) != nil { throw SupermuxDeviceError.nothingToMirror(ref.description) }
+                #endif
                 let opened = try await opener.openMirror(of: ref, in: tabManager, focus: false)
                 if !opened.reused { placeAmongSiblings(opened.workspace, ref: ref) }
                 #if DEBUG
@@ -246,9 +281,9 @@ final class SupermuxDeviceMirrorCoordinator {
                 #if DEBUG
                 cmuxDebugLog("supermux.autoMirror open failed \(ref): \(error.localizedDescription)")
                 #endif
+                // The pass after this drain re-arms a reconcile for the retry.
                 retryAfter[ref] = Date().addingTimeInterval(Self.openRetryDelay)
                 lastOpenError = "\(ref): \(error.localizedDescription)"
-                scheduleReconcile(after: .seconds(Self.openRetryDelay + 0.5))
             }
             inFlight.remove(ref)
         }

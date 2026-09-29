@@ -4,8 +4,10 @@ import SupermuxKit
 
 /// Builds the nested Projects-section row for a device mirror: the local
 /// workspace's own snapshot, plus what only the other Mac knows — its device
-/// chip, and branch / PR / activity / run state from the remote record when
-/// the mirror has none of its own.
+/// chip, run state, and branch / PR from the remote record when the mirror has
+/// none of its own. Activity comes only from the snapshot, whose resolver reads
+/// the status projection: it shows no live activity for an offline Mac, while
+/// the record still holds the last synced value.
 @MainActor
 enum SupermuxMirrorRowSnapshot {
     static func snapshot(
@@ -37,7 +39,7 @@ enum SupermuxMirrorRowSnapshot {
             isSelected: base.isSelected,
             branch: base.branch ?? record?.supermuxBranch,
             projectId: projectId,
-            activity: base.activity != .idle ? base.activity : activity(record?.supermuxActivity),
+            activity: base.activity,
             isRunning: remote?.isRunning(remoteWorkspaceID: ref.workspaceID) ?? false,
             pullRequest: base.pullRequest ?? (includePullRequest ? pullRequest(record?.supermuxPullRequest) : nil),
             unreadCount: base.unreadCount,
@@ -47,16 +49,6 @@ enum SupermuxMirrorRowSnapshot {
                 isOnline: device?.isConnected ?? false
             )
         )
-    }
-
-    /// The wire activity (`working` / `needs_input` / `ready`).
-    private static func activity(_ raw: String?) -> SupermuxWorkspaceActivity {
-        switch raw {
-        case "working": return .working
-        case "needs_input": return .needsInput
-        case "ready": return .ready
-        default: return .idle
-        }
     }
 
     private static func pullRequest(_ wire: WorkspaceSyncRecord.SupermuxPullRequest?) -> SupermuxPullRequest? {
