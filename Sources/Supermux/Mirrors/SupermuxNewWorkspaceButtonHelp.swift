@@ -4,8 +4,10 @@ import SwiftUI
 
 /// The titlebar `+` button's tooltip: upstream's "New workspace (⌘N)", or
 /// "New Workspace on <Mac> (⌘N)" while its window's selected workspace makes
-/// + create on another Mac (``SupermuxNewWorkspaceTarget``). Applied by the
-/// `new-workspace-target-help` fence in `TitlebarNewWorkspaceSplitButton`.
+/// + create on another Mac (``SupermuxNewWorkspaceTarget/device(_:)``). Since
+/// + and ⌘N create on this Mac even with a mirror selected (touchpoint #571),
+/// that target is no longer produced and the tooltip is upstream's. Applied by
+/// the `new-workspace-target-help` fence in `TitlebarNewWorkspaceSplitButton`.
 ///
 /// Follows the window's selection (the tab manager's change signal) and
 /// re-checks on hover, which also covers a focus change inside a workspace.
