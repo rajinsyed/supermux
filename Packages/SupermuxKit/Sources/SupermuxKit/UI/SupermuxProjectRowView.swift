@@ -319,8 +319,9 @@ public struct SupermuxProjectRowView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 2)
-            if showsWorktreeDisclosure {
-                worktreeCountToggle
+            let disclosure = worktreeDisclosure
+            if disclosure.isShown {
+                worktreeCountToggle(count: disclosure.count)
             }
             // Hover-only, so the count pill sits flush right when idle.
             if isHovered {
@@ -357,14 +358,14 @@ public struct SupermuxProjectRowView: View {
     /// The "⑂ N ›" pill: unopened-worktree count plus a chevron that rotates
     /// open. Tinted a little stronger while expanded so the open state reads
     /// at a glance.
-    private var worktreeCountToggle: some View {
+    private func worktreeCountToggle(count: Int) -> some View {
         Button(action: actions.toggleExpanded) {
             HStack(spacing: 3 * fontScale) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 8 * fontScale, weight: .semibold))
                 // Before another Mac's worktrees load, the pill is just a chevron.
-                if worktreeDisclosureCount > 0 {
-                    Text("\(worktreeDisclosureCount)")
+                if count > 0 {
+                    Text("\(count)")
                         .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
                 }
                 Image(systemName: "chevron.right")
