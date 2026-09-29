@@ -26,6 +26,10 @@ Steps:
      project stays in the flat list (mirrors are never claimed by local path).
   7. remote_worktrees_listed: worktrees.list over the device includes the new
      worktree, open.
+ 7b. root_worktree_ignores_mirrors: with a device mirror of the project-root
+     workspace listed first and selected (so its cwd is the remote path),
+     worktrees.list still reports the root open in the LOCAL workspace, never
+     in the mirror (whose id the phone and other Macs never receive).
   8. presentation_has_device_extras: the window's Projects presentation hands
      the local row its device location.
   9. probe_reports_repo_identity: project.probe over the device reports the
@@ -293,6 +297,41 @@ class ProjectsE2E:
         self.worktree_path = created[0]["path"]
         return {"worktree": created[0]}
 
+    def check_root_worktree_ignores_mirrors(self) -> Dict[str, Any]:
+        created = self.client.call(
+            "workspace.create", {"title": f"root-{self.nonce}", "cwd": str(self.repo), "focus": False}
+        ) or {}
+        source_id = created.get("workspace_id") or created.get("id")
+        if not source_id:
+            raise SmokeFailure(f"workspace.create returned {created}")
+        self.opened_workspaces.append(source_id)
+
+        def mirror() -> Optional[Dict[str, Any]]:
+            rows = (self.client.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
+            mine = [m for m in rows if m.get("machine") == self.machine and norm(m.get("remote_workspace_id")) == norm(source_id)]
+            return mine[0] if len(mine) == 1 else None
+
+        mirror_id = wait_for("the auto-mirror of the root workspace", mirror, self.timeout_s)["workspace_id"]
+        self.opened_workspaces.insert(0, mirror_id)
+        # First in the window and selected: its cwd becomes the remote terminal's path.
+        self.client.call("workspace.reorder", {"workspace_id": mirror_id, "index": 0})
+        self.client.call("workspace.select", {"workspace_id": mirror_id})
+
+        def mirror_at_root() -> Optional[str]:
+            rows = (self.client.call("workspace.list", {}) or {}).get("workspaces") or []
+            row = next((w for w in rows if norm(w.get("id")) == norm(mirror_id)), None)
+            directory = (row or {}).get("current_directory") or ""
+            return directory if directory and os.path.realpath(directory) == os.path.realpath(self.repo) else None
+
+        mirror_cwd = wait_for("the mirror's cwd to be the (remote) project root", mirror_at_root, self.timeout_s)
+        worktrees = (self.client.call(
+            "supermux.devices.remote_worktrees", {"machine": self.machine, "project_id": self.project_id}
+        ) or {}).get("worktrees") or []
+        root = next((w for w in worktrees if os.path.realpath(w.get("path") or "") == os.path.realpath(self.repo)), None)
+        if not root or not root.get("is_open") or norm(root.get("workspace_id")) != norm(source_id):
+            raise SmokeFailure(f"the root worktree is not open in the local workspace {source_id} (mirror {mirror_id}): {root}")
+        return {"root": root, "mirror": mirror_id, "mirror_cwd": mirror_cwd}
+
     def check_presentation(self) -> Dict[str, Any]:
         result = self.client.call("supermux.devices.projects_presentation", {}) or {}
         row = next(
@@ -410,6 +449,7 @@ class ProjectsE2E:
             self.step("remote_worktree_create_nests_mirror", self.create_remote_worktree)
             self.step("projectless_mirror_stays_flat", self.check_projectless_mirror)
             self.step("remote_worktrees_listed", self.check_remote_worktrees)
+            self.step("root_worktree_ignores_mirrors", self.check_root_worktree_ignores_mirrors)
             self.step("presentation_has_device_extras", self.check_presentation)
             self.step("probe_reports_repo_identity", self.check_probe)
             self.step("clone_registers_project", self.check_clone)

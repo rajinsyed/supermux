@@ -120,6 +120,17 @@ final class SupermuxDeviceMirrorCoordinator {
     /// Whether an open is queued or running.
     var isOpening: Bool { openTask != nil || !openQueue.isEmpty }
 
+    #if DEBUG
+    /// Refs whose next auto-mirror open fails (E2E hook behind the
+    /// `supermux.devices.fail_next_open` socket method).
+    private var debugFailingOpens: Set<SupermuxRemoteWorkspaceRef> = []
+
+    /// Makes the next auto-mirror open of `ref` fail, as a dropped link would.
+    func debugFailNextOpen(of ref: SupermuxRemoteWorkspaceRef) {
+        debugFailingOpens.insert(ref)
+    }
+    #endif
+
     /// Refs whose open is queued, in flight (here or from any other opener
     /// caller), backing off, or whose remote close is in flight.
     var busyRefs: Set<SupermuxRemoteWorkspaceRef> {
@@ -235,6 +246,9 @@ final class SupermuxDeviceMirrorCoordinator {
             }
             inFlight.insert(ref)
             do {
+                #if DEBUG
+                if debugFailingOpens.remove(ref) != nil { throw SupermuxDeviceError.nothingToMirror(ref.description) }
+                #endif
                 let opened = try await opener.openMirror(of: ref, in: tabManager, focus: false)
                 if !opened.reused { placeAmongSiblings(opened.workspace, ref: ref) }
                 #if DEBUG
