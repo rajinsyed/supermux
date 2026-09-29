@@ -122,6 +122,22 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   + Show Hidden Workspaces, the other toggles, and the flat-row chip's state for the Loopback Mac.
   `--screenshot` also opens Settings on Automation and captures the window.
 
+## Mirror rendering E2E
+
+`tests/supermux/loopback_mirror_render_e2e.py` checks what the user sees, not the buffer: it selects
+a terminal and pixel-samples its pane in a `debug.window.screenshot` (a pane counts as drawn when
+`--min-ink`, default 200, pixels differ clearly from the pane fill). Steps: a plain background
+workspace draws (the detector's control); its auto-mirror, opened in the background, draws; a
+background local terminal that set OSC 11 draws; and with `--app-path`, after a quit and relaunch,
+the restored mirror draws. Each sampled screenshot is copied next to the JSON report. It guards
+touchpoint #538: a terminal whose pane-local OSC 11 fill arrived off screen used to stay blank when
+shown, and mirrors always hit that because the owning Mac's replay carries its colors.
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_render_e2e.py \
+  --app-path "<App path>" --projects-file /tmp/<tag>/projects.json
+```
+
 ## Notification and phone-push parity E2E
 
 `tests/supermux/loopback_notifications_e2e.py` (workstream Mb, touchpoints #545–#553) checks that
