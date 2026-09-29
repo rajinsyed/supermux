@@ -9,11 +9,12 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 /// Close semantics for device mirrors (DESIGN.md decision 3).
 ///
 /// - **User closes** (sidebar ×, context menu Close / Close Others / Below /
-///   Above, ⌘⇧W, closing the last tab): one prompt — "Close “X” on <Mac>?" with
-///   **Close on <Mac>** (closes the remote workspace over the device link, then
-///   the mirror), **Hide Here** (remembers the ref in the hidden set so
-///   auto-mirror never reopens it, then closes the mirror locally) and
-///   **Cancel**. A multi-close holding several mirrors asks once for all of them.
+///   Above, ⌘⇧W, closing the last tab): one prompt — "Close “X”?" with
+///   **Close on <Mac>** (destructive: closes the remote workspace over the
+///   device link, then the mirror), **Hide Here** (remembers the ref in the
+///   hidden set so auto-mirror never reopens it, then closes the mirror
+///   locally) and **Cancel** (the Return and Esc default). A multi-close
+///   holding several mirrors asks once for all of them.
 /// - **Programmatic closes** of a mirror (socket, AppleScript, scripts): no
 ///   prompt, treated as Hide Here.
 /// - **Coordinator closes** (remote gone, orphan): no prompt, nothing hidden,
