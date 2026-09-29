@@ -11,4 +11,14 @@ extension SupermuxPaths {
             .deletingLastPathComponent()
             .appendingPathComponent("supermux-remote-projects.json")
     }
+
+    /// Project roots a user removed, which project sync never registers again
+    /// (``SupermuxProjectSyncSuppression``):
+    /// `supermux-project-sync-suppressed.json` next to the projects document,
+    /// so every build that shares that document shares the removals too.
+    public static var projectSyncSuppressionFileURL: URL {
+        defaultProjectsFileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("supermux-project-sync-suppressed.json")
+    }
 }

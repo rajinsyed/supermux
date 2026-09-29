@@ -24,8 +24,11 @@ extension SupermuxComposition {
     /// Folder probe and `git clone` for cross-Mac project setup.
     static let projectSetupService = SupermuxProjectSetupService()
 
-    /// Roots this Mac's user removed, which project sync never re-adds.
-    static let projectSyncSuppression = SupermuxProjectSyncSuppression(defaults: .standard)
+    /// Roots this Mac's user removed, which project sync never re-adds
+    /// (shared by every build next to the projects document).
+    static let projectSyncSuppression = SupermuxProjectSyncSuppression(
+        fileURL: SupermuxPaths.projectSyncSuppressionFileURL
+    )
 
     /// Registers each Mac's projects on the other where the repo already exists.
     static let projectSync = SupermuxProjectSyncCoordinator(

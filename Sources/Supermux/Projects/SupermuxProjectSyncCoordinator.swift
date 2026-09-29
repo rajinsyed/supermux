@@ -11,8 +11,10 @@ import SupermuxMobileCore
 /// (register on the other Mac) goes through `project.probe` → `project.create`
 /// → `project.update`; pull registers here through the projects model. Sync
 /// never clones, never deletes, and skips roots a user removed
-/// (``SupermuxProjectSyncSuppression``). The loopback device is skipped: it
-/// shares this app's own project list.
+/// (``SupermuxProjectSyncSuppression``, shared by every build on this Mac).
+/// Only a registration on this Mac lifts a suppression, never a project
+/// another build re-added to the shared projects file. The loopback device is
+/// skipped: it shares this app's own project list.
 @MainActor
 final class SupermuxProjectSyncCoordinator {
     /// What the last pass registered, for introspection.
@@ -39,6 +41,9 @@ final class SupermuxProjectSyncCoordinator {
     private var isSyncing = false
     private var syncAgain = false
     private var knownRoots: [UUID: String]?
+    /// The latest suppression write; each waits for it, so a removal and a
+    /// quick re-add of one root land in that order.
+    private var suppressionWrite: Task<Void, Never>?
     private var lastSignature: [String] = []
 
     init(
@@ -62,10 +67,15 @@ final class SupermuxProjectSyncCoordinator {
     /// Starts following both sides' projects. Idempotent.
     func start() {
         guard task == nil else { return }
-        // Removals are recorded where they happen, so an add-then-remove
-        // between two passes is never missed.
-        projectsModel.onRemoveProject = { [suppression] project in
-            suppression.suppress(rootPath: project.rootPath)
+        // Removals and registrations are recorded where they happen, so an
+        // add-then-remove between two passes is never missed.
+        projectsModel.onRemoveProject = { [weak self] project in
+            let root = project.rootPath
+            self?.writeSuppression { try await $0.suppress(rootPath: root) }
+        }
+        projectsModel.onAddProject = { [weak self] project in
+            let root = project.rootPath
+            self?.writeSuppression { try await $0.clear(rootPath: root) }
         }
         task = Task { @MainActor [weak self] in
             guard let model = self?.projectsModel else { return }
@@ -179,7 +189,8 @@ final class SupermuxProjectSyncCoordinator {
         var registered: [String] = []
         for candidate in SupermuxProjectSyncPlanner.candidates(source: device.projects, destination: local) {
             let root = candidate.rootPath
-            let probe = await setupService.probe(rootPath: root, isSuppressed: suppression.isSuppressed(rootPath: root))
+            let suppressed = await isSuppressed(rootPath: root)
+            let probe = await setupService.probe(rootPath: root, isSuppressed: suppressed)
             guard SupermuxProjectSyncPlanner.shouldRegister(candidate, probe: probe) else { continue }
             let project = await projectsModel.addProject(rootPath: probe.rootPath)
             let rootPath = project.rootPath
@@ -191,7 +202,6 @@ final class SupermuxProjectSyncCoordinator {
                let updated = try? SupermuxMobileProjectPatch(wire: patch).applied(to: current, isConfigManaged: configManaged) {
                 projectsModel.updateProject(updated)
             }
-            knownRoots?[project.id] = project.rootPath
             registered.append(probe.rootPath)
         }
         return registered
@@ -203,10 +213,28 @@ final class SupermuxProjectSyncCoordinator {
         }
     }
 
-    // MARK: - Removal tracking
+    // MARK: - Suppression
 
-    /// Records roots the user removed (suppressed from sync) and clears
-    /// roots added again.
+    /// Whether sync must skip `rootPath`, after this app's pending
+    /// suppression writes (the `project.probe` host reads it here too).
+    func isSuppressed(rootPath: String) async -> Bool {
+        await suppressionWrite?.value
+        return await suppression.isSuppressed(rootPath: rootPath)
+    }
+
+    private func writeSuppression(_ write: @escaping @Sendable (SupermuxProjectSyncSuppression) async throws -> Void) {
+        let previous = suppressionWrite
+        let suppression = self.suppression
+        suppressionWrite = Task {
+            await previous?.value
+            try? await write(suppression)
+        }
+    }
+
+    /// Suppresses roots that left the list without an `onRemoveProject` here:
+    /// removed by another build sharing the projects file. Roots that appear
+    /// never lift a suppression (they may be another build's re-add); only a
+    /// registration here does (`onAddProject`).
     private func trackRemovals() {
         let current = Dictionary(
             projectsModel.projects.map { ($0.id, $0.rootPath) },
@@ -214,11 +242,9 @@ final class SupermuxProjectSyncCoordinator {
         )
         defer { knownRoots = current }
         guard let known = knownRoots else { return }
-        for (id, root) in known where current[id] == nil {
-            suppression.suppress(rootPath: root)
-        }
-        for (id, root) in current where known[id] == nil {
-            suppression.clear(rootPath: root)
+        let currentRoots = Set(current.values)
+        for (id, root) in known where current[id] == nil && !currentRoots.contains(root) {
+            writeSuppression { try await $0.suppress(rootPath: root) }
         }
     }
 

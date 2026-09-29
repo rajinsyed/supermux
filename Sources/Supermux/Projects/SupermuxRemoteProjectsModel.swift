@@ -38,6 +38,8 @@ final class SupermuxRemoteProjectsModel {
     @ObservationIgnored let facade: SupermuxDevices
     @ObservationIgnored private let cache: SupermuxRemoteProjectsCache
     @ObservationIgnored private var cachedEntries: [String: SupermuxRemoteProjectsCache.Entry] = [:]
+    /// The latest offline-cache write; each save waits for it, so writes land in call order.
+    @ObservationIgnored private var cacheWrite: Task<Void, Never>?
     @ObservationIgnored private var iconETags: [String: String] = [:]
     /// `machine|projectID` keys whose worktree list a row asked for.
     @ObservationIgnored private var wantedWorktrees: Set<String> = []
@@ -303,8 +305,10 @@ final class SupermuxRemoteProjectsModel {
         guard cachedEntries[machine.rawValue]?.projects != projects || cachedEntries[machine.rawValue]?.name != name else { return }
         cachedEntries[machine.rawValue] = entry
         let cache = self.cache
-        Task.detached(priority: .utility) {
-            try? cache.save(entry, forMachine: machine.rawValue)
+        let previous = cacheWrite
+        cacheWrite = Task.detached(priority: .utility) {
+            await previous?.value
+            try? await cache.save(entry, forMachine: machine.rawValue)
         }
     }
 
