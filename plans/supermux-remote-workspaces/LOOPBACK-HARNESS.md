@@ -110,6 +110,18 @@ quit + relaunch dedupe check).
 Cleanup closes the mirror first, then the source. `--keep` leaves both open, which is how to test
 restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
 
+## Background tab sync and Remote Macs settings E2E
+
+- `tests/supermux/loopback_tab_sync_e2e.py` (workstream X) creates a terminal in a background
+  source workspace through the socket (`surface.create`) and through the device link
+  (`mobile.terminal.create`, the phone's path), closes one and reorders the tabs, and times how fast
+  the source's auto-mirror follows (limit `--latency`, default 1 s). It also checks that the source
+  was never selected, so no geometry path could have carried the change.
+- `tests/supermux/loopback_remote_macs_settings_e2e.py` drives the Settings "Remote Macs" card's own
+  actions over `supermux.devices.remote_macs_settings_set`: auto-mirror off then on (live), Hide Here
+  + Show Hidden Workspaces, the other toggles, and the flat-row chip's state for the Loopback Mac.
+  `--screenshot` also opens Settings on Automation and captures the window.
+
 ## Notification and phone-push parity E2E
 
 `tests/supermux/loopback_notifications_e2e.py` (workstream Mb, touchpoints #545–#553) checks that
