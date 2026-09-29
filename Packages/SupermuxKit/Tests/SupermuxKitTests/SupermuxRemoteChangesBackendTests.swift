@@ -277,6 +277,29 @@ import SupermuxKit
         #expect(enables.allSatisfy { $0.params["client_id"] as? String != nil })
     }
 
+    @Test func theLeaseIsReleasedEvenWhenTheBackendIsGone() async throws {
+        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
+        var backend: SupermuxRemoteChangesBackend? = SupermuxRemoteChangesBackend(transport: transport)
+        weak var released = backend
+        let signals = try #require(backend).changeSignals(repoPath: "/r")
+        let consumer = Task { @MainActor in
+            for await _ in signals {}
+        }
+        await pollUntil { transport.calls.contains { $0.method == "mobile.supermux.changes.watch" && $0.params["enable"] as? Bool == true } }
+
+        // Switching away from a mirror drops its model, the backend's last owner.
+        backend = nil
+        consumer.cancel()
+        await pollUntil { transport.calls.contains { $0.method == "mobile.supermux.changes.watch" && $0.params["enable"] as? Bool == false } }
+
+        let release = transport.calls.first { $0.method == "mobile.supermux.changes.watch" && $0.params["enable"] as? Bool == false }
+        #expect(release != nil, "the owning Mac keeps watching until its lease expires")
+        #expect(release?.params["client_id"] as? String != nil)
+        #expect(release?.params["workspace_id"] as? String == Self.remoteID)
+        await pollUntil { released == nil }
+        #expect(released == nil)
+    }
+
     // MARK: - AI commit staleness input
 
     @Test func uncommittedFingerprintTracksTheStatus() async {
