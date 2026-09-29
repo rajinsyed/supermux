@@ -255,7 +255,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   window never switches under whoever is using it. A link that drops after the create went out says
   the outcome is unknown and to check that Mac's worktrees, instead of inviting a duplicate. The
   submenu starts with This Mac (a local workspace even while a mirror is selected) and checks the Mac
-  a plain + / ⌘N would use; the + tooltip names the other Mac while + creates there.
+  a plain + / ⌘N would use; the + tooltip names the other Mac while + creates there. A local
+  workspace never inherits a selected mirror's directory (a path on the other Mac, #577).
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
   over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
   file-explorer actions and the full diff view, which need a local path, are disabled with an

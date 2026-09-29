@@ -295,10 +295,8 @@ class ProjectsE2E:
         return {"mirror": row, "remote_workspace_id": remote_id, "branch": branch}
 
     def check_projectless_mirror(self) -> Dict[str, Any]:
-        # At the project's root path (so its mirror is exactly what path
-        # matching would wrongly claim), not inheriting the selected mirror's
-        # cwd: that would put a second local workspace at the e2e worktree and
-        # make step 7b depend on tab order.
+        # At the project's root path, so its mirror is exactly what path
+        # matching would wrongly claim.
         source = self.client.call(
             "workspace.create",
             {"title": f"plain-{self.nonce}", "focus": False, "working_directory": str(self.repo)},
