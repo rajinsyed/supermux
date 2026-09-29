@@ -126,6 +126,8 @@ enum SupermuxProjectsSocketPayloads {
         let flat = SupermuxMainListFilter.tabsForMainList(tabManager.tabs, tabManager: tabManager)
         return [
             "window_id": AppDelegate.shared?.windowId(for: tabManager)?.uuidString ?? NSNull(),
+            // The sidebar font scale both row kinds draw at (`supermuxSidebarFontScale`).
+            "font_scale": SidebarTabItemFontScale.scale(for: GhosttyConfig.load().sidebarFontSize),
             "projects": projectOrder.map { id -> [String: Any] in
                 ["project_id": id.uuidString, "rows": (rowsByProject[id] ?? []).map(nestedRow)]
             },
@@ -142,6 +144,7 @@ enum SupermuxProjectsSocketPayloads {
             "unread_count": row.unreadCount,
             // What `SupermuxOpenWorkspaceRowView` labels the row with.
             "accessibility_label": row.accessibilityLabel,
+            "activity": row.activity.rawValue,
             "status_pills": row.statusPills.map { pill -> [String: Any] in
                 ["key": pill.key, "text": pill.text, "icon": pill.icon ?? NSNull(), "color": pill.colorHex ?? NSNull()]
             },
@@ -162,6 +165,7 @@ enum SupermuxProjectsSocketPayloads {
             "device_label": snapshot.deviceWorkspaceLabel ?? NSNull(),
             "subtitle_candidates": snapshot.compactBranchDirectoryCandidates,
             "branch_directory_lines": snapshot.branchDirectoryLines.map(\.directoryCandidates),
+            "activity": snapshot.supermuxActivity.rawValue,
         ]
     }
 
