@@ -597934,13 +597934,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Every workspace on your other Macs appears here under its project and stays in sync."
+            "value" : "Every workspace on your other Macs appears in the sidebar under its project and stays in sync."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ほかのMacのすべてのワークスペースがプロジェクトの下に表示され、同期され続けます。"
+            "value" : "ほかのMacのすべてのワークスペースがサイドバーのプロジェクトの下に表示され、同期され続けます。"
           }
         }
       }
@@ -598036,13 +598036,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Needed to show your other Macs' workspaces here."
+            "value" : "Needed to show your other Macs' workspaces in the sidebar."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ほかのMacのワークスペースをここに表示するために必要です。"
+            "value" : "ほかのMacのワークスペースをサイドバーに表示するために必要です。"
           }
         }
       }
@@ -598332,6 +598332,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "この Mac"
+          }
+        }
+      }
+    },
+    "supermux.settings.remoteMacs.access.change" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change in Devices…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスで変更…"
           }
         }
       }
