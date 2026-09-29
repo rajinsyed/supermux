@@ -21,6 +21,9 @@ import Testing
 /// 9. The plain path asks for an AI branch although the branch was typed.
 /// 10. A create on another Mac shows no "Creating on <Mac>…" progress, and a
 ///     failure there leaves the sheet stuck busy.
+/// 11. A create on a Mac the sheet fell back to (the remembered Mac lacks the
+///     project or cannot create now, and the user picked no row) replaces the
+///     remembered Mac, so the user's choice no longer reaches other projects.
 @MainActor
 struct SupermuxNewWorktreeSheetModelTests {
     private let studio = SupermuxProjectDevice(machineID: "device:aaaa@default", name: "Studio", isOnline: true)
@@ -223,6 +226,35 @@ struct SupermuxNewWorktreeSheetModelTests {
         #expect(model.phase == .idle)
         #expect(model.errorMessage == "Studio is offline.")
         #expect(fixture.store.deviceKey() == nil)
+    }
+
+    @Test func aMacTheSheetFellBackToIsNotRemembered() async throws {
+        // Air is remembered but offline, so the sheet falls back to This Mac.
+        let fixture = try makeFixture(lastUsed: "device:cccc@default")
+        let model = fixture.model
+        #expect(model.selectedEntryID == SupermuxWorktreeDeviceEntry.thisMacKey)
+        var finished = false
+        await finish(model.submit { finished = true })
+        #expect(finished)
+        #expect(fixture.local.createdRequests.count == 1)
+        #expect(fixture.store.deviceKey() == "device:cccc@default")
+    }
+
+    @Test func aFallbackMacTheUserPicksIsRemembered() async throws {
+        let fixture = try makeFixture(lastUsed: "device:cccc@default")
+        let model = fixture.model
+        model.selectEntry(id: "device:aaaa@default")
+        model.selectEntry(id: SupermuxWorktreeDeviceEntry.thisMacKey)
+        await finish(model.submit {})
+        #expect(fixture.local.createdRequests.count == 1)
+        #expect(fixture.store.deviceKey() == SupermuxWorktreeDeviceEntry.thisMacKey)
+    }
+
+    @Test func withNothingRememberedTheFirstCreateIsRemembered() async throws {
+        let fixture = try makeFixture()
+        await finish(fixture.model.submit {})
+        #expect(fixture.local.createdRequests.count == 1)
+        #expect(fixture.store.deviceKey() == SupermuxWorktreeDeviceEntry.thisMacKey)
     }
 
     @Test func thisMacOnlyProjectHidesThePicker() throws {
