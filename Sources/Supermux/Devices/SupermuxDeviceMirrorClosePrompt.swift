@@ -33,6 +33,38 @@ enum SupermuxDeviceMirrorClosePrompt {
         }
     }
 
+    /// What the prompt for `items` shows, built but never presented (the
+    /// `supermux.devices.close_prompt` socket method): its text, and per
+    /// button the role, title, key equivalent, destructive flag and
+    /// enablement, plus which button Esc answers.
+    static func describe(_ items: [Item]) -> [String: Any] {
+        let alert = makeAlert(items)
+        let roles = Array(zip(buttonRoles, alert.buttons))
+        let escape = escapeButton(of: alert)
+        return [
+            "message_text": alert.messageText,
+            "informative_text": alert.informativeText,
+            "buttons": roles.map { role, button -> [String: Any] in
+                [
+                    "role": role,
+                    "title": button.title,
+                    "key_equivalent": button.keyEquivalent,
+                    "destructive": button.hasDestructiveAction,
+                    "enabled": button.isEnabled,
+                ]
+            },
+            "escape_role": roles.first { $0.1 === escape }?.0 ?? NSNull(),
+        ]
+    }
+
+    /// The roles of the alert's buttons, in the order they are added.
+    private static let buttonRoles = ["close_on_mac", "hide", "cancel"]
+
+    /// The button Esc presses.
+    private static func escapeButton(of alert: NSAlert) -> NSButton? {
+        alert.buttons.first { $0.keyEquivalent == "\u{1b}" }
+    }
+
     private static func makeAlert(_ items: [Item]) -> NSAlert {
         let deviceNames = orderedUnique(items.map(\.deviceName))
         let anyConnected = items.contains(where: \.isConnected)
