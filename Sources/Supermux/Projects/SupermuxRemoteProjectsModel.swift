@@ -10,8 +10,9 @@ import SupermuxMobileCore
 /// written to `supermux-projects.json`).
 ///
 /// For each device whose host serves `supermux.projects.v1` it keeps
-/// `projects.list` (projects and terminal presets), `run.state`, and — lazily,
-/// once a row needs them — `worktrees.list` per project. It is the single
+/// `projects.list` (projects and terminal presets), `run.state`, and
+/// `worktrees.list` for every listed project (so a project row knows whether
+/// it has a worktree to reveal without being expanded). It is the single
 /// source of each Mac's Supermux state: the sidebar and the device-mirror
 /// behaviors (⌘G / Run, presets bar) all read it, so each Mac is polled once. It refreshes on the matching `supermux.*`
 /// topics, on every link (re)connect, and on a slow safety-net timer. The last
@@ -22,7 +23,7 @@ import SupermuxMobileCore
 /// ```swift
 /// let remote = SupermuxComposition.remoteProjects
 /// for device in remote.devices where device.isOnline { … device.projects … }
-/// remote.ensureWorktrees(on: machine, projectID: id)   // when a row expands
+/// remote.ensureWorktrees(on: machine, projectID: id)   // a row expanded before any refresh
 /// ```
 @MainActor
 @Observable
@@ -41,7 +42,9 @@ final class SupermuxRemoteProjectsModel {
     /// The latest offline-cache write; each save waits for it, so writes land in call order.
     @ObservationIgnored private var cacheWrite: Task<Void, Never>?
     @ObservationIgnored private var iconETags: [String: String] = [:]
-    /// `machine|projectID` keys whose worktree list a row asked for.
+    /// `machine|projectID` keys whose worktree list is kept fresh: every
+    /// project each Mac listed at its last refresh (and any a row or socket
+    /// asked for since).
     @ObservationIgnored private var wantedWorktrees: Set<String> = []
     @ObservationIgnored private var refreshing: Set<SurfaceMachineID> = []
     @ObservationIgnored private var refreshAgain: Set<SurfaceMachineID> = []
@@ -103,8 +106,8 @@ final class SupermuxRemoteProjectsModel {
         }
     }
 
-    /// Refetches one Mac's projects, run states, icons and the worktree lists
-    /// rows asked for. Concurrent calls coalesce into one extra pass.
+    /// Refetches one Mac's projects, run states, icons and every listed
+    /// project's worktree list. Concurrent calls coalesce into one extra pass.
     func refresh(_ machine: SurfaceMachineID) async {
         guard refreshing.insert(machine).inserted else {
             refreshAgain.insert(machine)
@@ -117,8 +120,8 @@ final class SupermuxRemoteProjectsModel {
         refreshing.remove(machine)
     }
 
-    /// Loads a project's worktrees the first time a row needs them; later
-    /// changes arrive through `supermux.worktrees.updated`.
+    /// Loads a project's worktrees if no refresh has yet (every refresh
+    /// loads them all); later changes arrive through `supermux.worktrees.updated`.
     func ensureWorktrees(on machine: SurfaceMachineID, projectID: UUID) {
         let key = Self.projectKey(machine: machine, projectID: projectID)
         let isLoaded = device(machine)?.worktreesByProjectID[projectID] != nil
@@ -256,6 +259,7 @@ final class SupermuxRemoteProjectsModel {
                 runs = (try? await fetchRuns(on: machine)) ?? .none
             }
             let listed = Set(projects.compactMap { UUID(uuidString: $0.id) })
+            wantWorktrees(of: listed, on: machine)
             update(machine) { entry in
                 entry.projects = projects
                 entry.presets = listing.presets ?? []
@@ -270,6 +274,14 @@ final class SupermuxRemoteProjectsModel {
         } catch {
             update(machine) { $0.lastError = error.localizedDescription }
         }
+    }
+
+    /// Keeps exactly the listed projects' worktree lists wanted for one Mac,
+    /// so each project row's pill counts that Mac's worktrees unexpanded.
+    private func wantWorktrees(of listed: Set<UUID>, on machine: SurfaceMachineID) {
+        let prefix = "\(machine.rawValue)|"
+        wantedWorktrees = wantedWorktrees.filter { !$0.hasPrefix(prefix) }
+            .union(listed.map { Self.projectKey(machine: machine, projectID: $0) })
     }
 
     private func refreshIcons(on machine: SurfaceMachineID, projects: [SupermuxProjectDTO]) async {

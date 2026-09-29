@@ -95,7 +95,7 @@ func refresh(_ machine) async                         // projects.list (projects
 func refreshAll()
 func refreshRuns(_ machine) async                     // run.state only (after a mirror's Run / Stop)
 func apply(run: SupermuxRunStateDTO, on machine)      // fold a run.start/stop result in before the poke lands
-func ensureWorktrees(on machine, projectID:)          // lazy first load (rows call it on expand)
+func ensureWorktrees(on machine, projectID:)          // backstop load on expand (every refresh already loads every listed project's list)
 func refreshWorktrees(on machine, projectID:) async   // worktrees.list {include_branches: false}
 
 struct SupermuxDeviceProjects {                       // ids are that Mac's ids
@@ -205,9 +205,15 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   room, truncated only when not, full name in the tooltip.
 - A mirror row's menu (nested and flat, #574) offers **Hide Here** and **Close on <Mac>…** (the
   mirror close prompt); a local row keeps Close Workspace.
-- Local project rows: device worktrees (chips) in the disclosure (pill shows a bare chevron until they
-  load), "Open on ▸" when several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…".
-  Edit/Reveal/Move stay local-only.
+- Local project rows: device worktrees (chips) in the disclosure, "Open on ▸" when several Macs have
+  it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…". Edit/Reveal/Move stay local-only.
+- The worktree pill ("⑂ N ›", `SupermuxWorktreeDisclosure`) shows only when the project has an
+  unopened worktree, always with its number: this Mac's worktrees with no open workspace here plus
+  the other Macs' worktrees that are not open there and mirrored here. The main checkout never
+  counts. Every refresh of a Mac (link connect, `projects.updated` / `run.updated`, the 120 s safety
+  net, `remote_projects {refresh}`) loads `worktrees.list` for every project it lists, so the pill
+  is right without expanding the row; `supermux.worktrees.updated` refreshes them in between.
+  Remote-only rows follow the same rule while their Mac is online.
 - Remote-only rows: device chip, run indicator, dimmed + "offline" tooltip while the Mac is offline;
   tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…
   (incl. This Mac), Remove from Projects on <Mac>….
@@ -224,14 +230,15 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.unified_projects '
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_projects '{"refresh":true}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktrees '{"machine":"device:…","project_id":"<that Mac's id>"}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktree_create '{"machine":"device:…","project_id":"…","workspace_name":"x","branch_name":"y","focus":false}'
-CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.projects_presentation '{}'   # what the window's Projects section receives
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.projects_presentation '{}'   # what the window's Projects section receives; every local_rows / remote_only_rows entry has worktree_disclosure {shown, count} as the row draws its pill
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {projects:[{project_id, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,status_pills,progress}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines}]} as drawn
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}'            # run a sync pass now → report
 ```
 
 All take an optional `window_id`. E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_projects_e2e.py
 --projects-file <scratch projects.json>` (launch the build with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` and
-`SUPERMUX_PROJECTS_FILE` set to that file; the suite edits it as another build would).
+`SUPERMUX_PROJECTS_FILE` set to that file; the suite edits it as another build would), and
+`tests/supermux/loopback_worktree_disclosure_e2e.py` for the worktree pill.
 
 ## New Worktree on any Mac (P2)
 

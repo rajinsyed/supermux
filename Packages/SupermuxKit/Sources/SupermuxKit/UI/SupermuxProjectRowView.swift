@@ -363,11 +363,8 @@ public struct SupermuxProjectRowView: View {
             HStack(spacing: 3 * fontScale) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 8 * fontScale, weight: .semibold))
-                // Before another Mac's worktrees load, the pill is just a chevron.
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
-                }
+                Text("\(count)")
+                    .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
                 Image(systemName: "chevron.right")
                     .font(.system(size: 6.5 * fontScale, weight: .bold))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
