@@ -187,16 +187,31 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   confirm → force, remove-project confirm).
 - Nested mirror rows come from `SupermuxMirrorRowSnapshot` (device chip; branch/PR/activity/run state
   from the remote record when the mirror has none; empty directory so a same-path local worktree row
-  is not hidden).
+  is not hidden). The mount builds every nested row through `SupermuxNestedWorkspaceRows` (shared
+  with `supermux.devices.sidebar_rows`), which orders a project's rows with
+  `SupermuxNestedWorkspaceOrder`: this Mac's workspaces first (tab order), then one group per Mac
+  (device order, each in its own order); a nested drag reorders within its group.
+- Every nested row (local or mirror) shows the flat rows' `cmux set-status` pills (at most three
+  lines) and `set-progress` bar under its title, honoring the flat rows' custom-metadata / progress /
+  hide-all-details settings; a mirror's are its Mac's. A mirror's VoiceOver label adds "on <Mac>".
+- Row layout (`SupermuxOpenWorkspaceRowView`, the worktree rows): PR, run and unread badges, then
+  the device chip, then one fixed-width trailing slot (`SupermuxRowTrailingSlot`: the working
+  spinner, faded under the hover close button, or a worktree row's hover arrow), so chips line up.
+  `SupermuxDeviceChip` competes with the row title at layout priority 1: full name when there is
+  room, truncated only when not, full name in the tooltip.
+- A mirror row's menu (nested and flat, #574) offers **Hide Here** and **Close on <Mac>…** (the
+  mirror close prompt); a local row keeps Close Workspace.
 - Local project rows: device worktrees (chips) in the disclosure (pill shows a bare chevron until they
   load), "Open on ▸" when several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…".
   Edit/Reveal/Move stay local-only.
 - Remote-only rows: device chip, run indicator, dimmed + "offline" tooltip while the Mac is offline;
   tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…
   (incl. This Mac), Remove from Projects on <Mac>….
-- Flat rows (touchpoint #561): device mirrors always show `SupermuxFlatRowDeviceChip`. The chip
-  looks its Mac up in the device facade by name (`SupermuxDeviceChipState.resolve`, SupermuxKit) and
-  dims while that Mac is offline or connecting; an unknown name is never dimmed.
+- Flat rows (touchpoint #561): device mirrors always show `SupermuxFlatRowDeviceChip`, after the
+  title and right before the trailing slot. The chip looks its Mac up in the device facade by name
+  (`SupermuxDeviceChipState.resolve`, SupermuxKit) and dims while that Mac is offline or connecting;
+  an unknown name is never dimmed. The row's directory line drops upstream's "<Mac> · " prefix
+  (`SupermuxDeviceMirrorSidebar.directoryCandidates`, #532); remote paths are never abbreviated.
 
 ## Socket introspection (`supermux.devices.*`, served by `SupermuxProjectsSocketCommands`)
 
@@ -206,6 +221,7 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_projects '{
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktrees '{"machine":"device:…","project_id":"<that Mac's id>"}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktree_create '{"machine":"device:…","project_id":"…","workspace_name":"x","branch_name":"y","focus":false}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.projects_presentation '{}'   # what the window's Projects section receives
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {projects:[{project_id, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,status_pills,progress}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines}]} as drawn
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}'            # run a sync pass now → report
 ```
 
