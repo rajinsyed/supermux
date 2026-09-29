@@ -597492,13 +597492,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On %@"
+            "value" : "Presets and Run open on %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 上"
+            "value" : "プリセットと実行は%@で開きます"
           }
         }
       }
