@@ -146,10 +146,11 @@ final class SupermuxNewWorkspaceDeviceMenuTarget: NSObject {
 /// `sidebar-empty-area-device-menu` touchpoint in
 /// `VerticalTabsSidebar+EmptyAreasAndFooter.swift`): the `+` menu's rows
 /// (``SupermuxNewWorkspaceDeviceMenu/entries(devices:target:)``), a Mac that
-/// is not connected disabled with its state after the name. This Mac does
-/// what a double-click on the empty area does (a local workspace after every
-/// row); a Mac creates a global workspace there, in that Mac's home folder,
-/// and opens its mirror in this window. Absent when no other Mac is known.
+/// is not connected disabled with its state after the name. This Mac creates
+/// a local workspace after every row, whatever is selected (what a
+/// double-click on the empty area does while that creates here); a Mac
+/// creates a global workspace there, in that Mac's home folder, and opens its
+/// mirror in this window. Absent when no other Mac is known.
 ///
 /// Its own view so the read of the observable device list stays inside it
 /// (snapshot-boundary rule) instead of invalidating the whole empty area.
@@ -187,18 +188,32 @@ struct SupermuxEmptyAreaNewWorkspaceMenu: View {
         return SupermuxNewWorkspaceDeviceMenu.entries(devices: devices, target: .thisMac)
     }
 
-    /// One row's action: on `machine`, or on this Mac (`nil`) exactly like the
-    /// empty area's double-click. Beeps when nothing could start.
+    /// One row's action: on `machine`, or on this Mac (`nil`). Beeps when
+    /// nothing could start.
     @MainActor
     @discardableResult
     static func create(on machine: SurfaceMachineID?, in tabManager: TabManager) -> Bool {
         let started = if let machine {
             SupermuxComposition.deviceNewWorkspace.start(on: machine, in: tabManager)
         } else {
-            AppDelegate.shared?.performSidebarEmptyAreaNewWorkspaceAction(tabManager: tabManager)
-                ?? (tabManager.addWorkspaceIfActive(placementOverride: .end) != nil)
+            createOnThisMac(in: tabManager)
         }
         if !started { NSSound.beep() }
         return started
+    }
+
+    /// This Mac, after every row: the empty area's double-click while that
+    /// creates here. While a Cloud VM workspace (or one of a Mac only
+    /// upstream handles) is selected the double-click follows it there, so
+    /// the row takes the `+` menu's local path instead (#591).
+    @MainActor
+    private static func createOnThisMac(in tabManager: TabManager) -> Bool {
+        guard let app = AppDelegate.shared else {
+            return tabManager.addWorkspaceIfActive(placementOverride: .end) != nil
+        }
+        if SupermuxNewWorkspaceTarget.current(in: tabManager) == .thisMac {
+            return app.performSidebarEmptyAreaNewWorkspaceAction(tabManager: tabManager)
+        }
+        return app.supermuxPerformLocalNewWorkspaceAction(tabManager: tabManager, placementOverride: .end)
     }
 }
