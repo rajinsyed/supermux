@@ -15,7 +15,8 @@ extension TerminalController {
     /// `mobile.supermux.run.state`: `{runs: [SupermuxRunStateDTO]}` — one row
     /// per registered project (so the phone can paint run dots on every
     /// project row), folding in the live command/workspace/start time for
-    /// running projects.
+    /// running projects — plus the additive `workspace_runs`, one row per
+    /// live run (a viewer Mac's mirrors read their own workspace's run there).
     @MainActor
     func v2SupermuxRunState(params: [String: Any]) async -> V2CallResult {
         let model = SupermuxComposition.projectsModel

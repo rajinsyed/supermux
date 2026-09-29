@@ -23,8 +23,11 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
     var isFromCache: Bool
     /// Whether the Mac serves `supermux.projects.v1`; `nil` until asked.
     var supportsProjects: Bool?
-    /// The Mac's run states (`run.state`).
+    /// The Mac's run states, one per project (`run.state`'s `runs`).
     var runs: [SupermuxRunStateDTO]
+    /// The Mac's live runs, one per running workspace (`run.state`'s
+    /// `workspace_runs`); `nil` from a Mac that sends only ``runs``.
+    var workspaceRuns: [SupermuxRunStateDTO]?
     /// Worktree lists loaded so far, keyed by that Mac's project id.
     var worktreesByProjectID: [UUID: [SupermuxWorktreeDTO]]
     /// The last refresh failure, if the latest refresh failed.
@@ -49,6 +52,7 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
             isFromCache: false,
             supportsProjects: nil,
             runs: [],
+            workspaceRuns: nil,
             worktreesByProjectID: [:],
             lastError: nil
         )
@@ -66,21 +70,60 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
 
     /// Whether a run command runs in that Mac's workspace `remoteWorkspaceID`.
     func isRunning(remoteWorkspaceID: String) -> Bool {
-        let wanted = SupermuxRemoteWorkspaceRef.canonicalWorkspaceID(remoteWorkspaceID)
-        return runs.contains { run in
-            run.isRunning == true
-                && run.workspaceId.map(SupermuxRemoteWorkspaceRef.canonicalWorkspaceID) == wanted
-        }
+        runsByWorkspace.contains { $0.isRunning == true && Self.runs($0, in: remoteWorkspaceID) }
     }
 
     /// Whether project `projectID`'s run command runs in that Mac's workspace
     /// `remoteWorkspaceID` (a mirror's Run button).
     func isRunning(projectID: String, remoteWorkspaceID: String) -> Bool {
-        let wanted = SupermuxRemoteWorkspaceRef.canonicalWorkspaceID(remoteWorkspaceID)
-        return runs.contains { run in
+        runsByWorkspace.contains { run in
             run.isRunning == true
                 && run.projectId.caseInsensitiveCompare(projectID) == .orderedSame
-                && run.workspaceId.map(SupermuxRemoteWorkspaceRef.canonicalWorkspaceID) == wanted
+                && Self.runs(run, in: remoteWorkspaceID)
         }
+    }
+
+    /// The `run.state` result.
+    struct RunState: Decodable {
+        let runs: [SupermuxRunStateDTO]
+        let workspaceRuns: [SupermuxRunStateDTO]?
+
+        /// Nothing runs (a Mac without the run capability).
+        static let none = RunState(runs: [], workspaceRuns: nil)
+
+        private enum CodingKeys: String, CodingKey {
+            case runs
+            case workspaceRuns = "workspace_runs"
+        }
+    }
+
+    /// Replaces the Mac's run states with a fresh `run.state`.
+    mutating func setRuns(_ state: RunState) {
+        runs = state.runs
+        workspaceRuns = state.workspaceRuns
+    }
+
+    /// Folds in a `run.start` / `run.stop` reply for that Mac's workspace
+    /// `remoteWorkspaceID` before the next `run.state` lands. Only that
+    /// workspace's run changes (the project may still run elsewhere there);
+    /// the per-project rows follow with that refresh.
+    mutating func apply(run: SupermuxRunStateDTO, remoteWorkspaceID: String) {
+        guard workspaceRuns != nil else {
+            // A Mac without per-workspace runs: its one row per project.
+            runs.removeAll { $0.projectId.caseInsensitiveCompare(run.projectId) == .orderedSame }
+            runs.append(run)
+            return
+        }
+        workspaceRuns?.removeAll { Self.runs($0, in: remoteWorkspaceID) }
+        if run.isRunning == true { workspaceRuns?.append(run) }
+    }
+
+    /// Rows that name their workspace: every live run when the Mac sends
+    /// them, else its one (oldest) run per project.
+    private var runsByWorkspace: [SupermuxRunStateDTO] { workspaceRuns ?? runs }
+
+    private static func runs(_ run: SupermuxRunStateDTO, in remoteWorkspaceID: String) -> Bool {
+        run.workspaceId.map(SupermuxRemoteWorkspaceRef.canonicalWorkspaceID)
+            == SupermuxRemoteWorkspaceRef.canonicalWorkspaceID(remoteWorkspaceID)
     }
 }
