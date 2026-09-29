@@ -49,9 +49,9 @@ enum SupermuxMobileWorkspaceStatusFields {
         workspace.progress.map { WorkspaceSyncRecord.SupermuxProgress(value: $0.value, label: $0.label) }
     }
 
-    /// The row's latest log line, if any.
+    /// The row's latest log line, if any, never a projected remote one.
     static func log(for workspace: Workspace) -> WorkspaceSyncRecord.SupermuxLog? {
-        workspace.logEntries.last.map {
+        workspace.logEntries.last { $0.source != SupermuxDeviceStatusProjector.remoteLogSource }.map {
             WorkspaceSyncRecord.SupermuxLog(message: String($0.message.prefix(maximumTextLength)), level: $0.level.rawValue)
         }
     }

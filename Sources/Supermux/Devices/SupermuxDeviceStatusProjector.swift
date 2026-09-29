@@ -22,6 +22,10 @@ import SupermuxKit
 /// workspace's own sidebar publishers; activity/branch/PR changes fire
 /// ``SupermuxWorkspaceLifecycleRelay`` (nested project rows observe it, the flat
 /// list via the `device-mirror-flatrow-refresh` touchpoint).
+///
+/// A live workspace that stops being a mirror (an unbound mirror that got a
+/// local pane) loses the remote pills, log line and projected progress, so
+/// they neither linger on it nor get exported as its own.
 @MainActor
 final class SupermuxDeviceStatusProjector {
     /// Status keys of remote pills on a mirror start with this.
@@ -72,6 +76,11 @@ final class SupermuxDeviceStatusProjector {
             }
             next[workspace.id] = status
             if Self.overlayDiffers(previous, status) { overlayChanged.append(workspace.id) }
+        }
+        for (id, projected) in statusByWorkspaceID where next[id] == nil {
+            guard let workspace = Workspace.liveWorkspace(id: id), !index.isDeviceMirror(workspace) else { continue }
+            SupermuxDeviceMirrorStatusWriter(workspace: workspace).clear(projected)
+            overlayChanged.append(id)
         }
         statusByWorkspaceID = next
         // After the store update, so every observer reads the new overlay.
