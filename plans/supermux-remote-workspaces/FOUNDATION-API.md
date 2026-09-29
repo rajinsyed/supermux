@@ -174,7 +174,8 @@ func openWhenAvailable(_ ref:, in tabManager:, focus:, timeout: Duration = .seco
   (auto-mirror should pass `false`; explicit user opens `true`). Browsers in the remote workspace are
   refused by upstream's `materialize` and simply skipped.
 - `createWorkspace` sends `workspace.create {focus:false, title?, working_directory?}` fork-side (the host
-  validates the directory), re-syncs, then opens through upstream's
+  validates the directory; without one it sends `supermux_root_directory: true` and a fork host starts the
+  workspace in its home folder, #621, instead of inheriting whatever it has selected), re-syncs, then opens through upstream's
   `CloudTreeNodeActions.createWorkspaceAndOpenLocally(… existingWorkspace:, existingTerminal:, host:
   CloudWorkspaceCreationHost(manager:))`. Passing the already-created workspace means the reservation's
   provisional **"Cloud VM" title is replaced in the same main-actor turn** and never renders. (Upstream's own
