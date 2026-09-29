@@ -4,6 +4,10 @@ public import Foundation
 /// fails: a translation of the wire / link error code, or the other Mac's own
 /// (already localized) sentence when it is specific.
 public enum SupermuxRemoteWorktreeFailure {
+    /// The code for a create whose link dropped after the request went out:
+    /// that Mac may still have created the worktree.
+    public static let outcomeUnknownCode = "outcome_unknown"
+
     /// A user-facing message for a failed remote worktree operation.
     ///
     /// - Parameters:
@@ -14,6 +18,11 @@ public enum SupermuxRemoteWorktreeFailure {
     public static func message(code: String?, hostMessage: String?, deviceName: String) -> String {
         let host = hostMessage?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         switch code {
+        case outcomeUnknownCode:
+            return String(
+                localized: "supermux.newWorktree.remoteError.outcomeUnknown",
+                defaultValue: "The connection to \(deviceName) dropped while it was creating the worktree. Check its worktrees before trying again."
+            )
         case "not_connected", "unknown_device", "timeout":
             return String(
                 localized: "supermux.newWorktree.remoteError.offline",
