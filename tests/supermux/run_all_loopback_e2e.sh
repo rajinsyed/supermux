@@ -17,9 +17,16 @@ SCRATCH="/tmp/${TAG}-e2e"
 SOCKET="/tmp/cmux-debug-${TAG}.sock"
 REPORTS="$SCRATCH/reports"
 
+app_running() {
+  [[ "$(osascript -e "application id \"$BUNDLE_ID\" is running" 2>/dev/null)" == "true" ]]
+}
+
 quit_app() {
   osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
-  for _ in $(seq 1 50); do [[ -S "$SOCKET" ]] || return 0; sleep 0.2; done
+  # Quit defers for the session save and agent-process scan (often ~10 s), and
+  # the socket goes before the process: relaunching then makes `open` reuse the
+  # dying app without the environment. Wait for the process itself.
+  for _ in $(seq 1 150); do app_running || [[ -S "$SOCKET" ]] || return 0; sleep 0.2; done
 }
 
 launch_app() {
