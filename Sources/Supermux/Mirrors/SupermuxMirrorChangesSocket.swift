@@ -4,7 +4,8 @@ import SupermuxKit
 /// `supermux.devices.mirror.changes`: drives the Changes model a mirror's
 /// panel uses. When a window's Changes panel is showing the mirror, its own
 /// (mounted) model is used; otherwise one is built by the same factory the
-/// panel uses. Either way git runs on the owning Mac.
+/// panel uses. Either way git runs on the owning Mac. `compare_local: true`
+/// adds `local_model`: this Mac's own panel for the same directory.
 @MainActor
 enum SupermuxMirrorChangesSocket {
     static func handle(_ params: [String: Any], workspace: Workspace) async throws -> [String: Any] {
@@ -39,7 +40,26 @@ enum SupermuxMirrorChangesSocket {
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "action must be status, stage, unstage, diff or fetch")
         }
         payload["model"] = describe(model)
+        if params["compare_local"] as? Bool == true {
+            payload["local_model"] = try await describeLocalPanel(at: model.directory)
+        }
         return payload
+    }
+
+    /// What THIS Mac's own Changes panel shows for `directory` (the loopback
+    /// device's repository is on this disk too), built like the window's
+    /// local model: the reference a mirror's panel must match.
+    private static func describeLocalPanel(at directory: String?) async throws -> [String: Any] {
+        guard let directory else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "the mirror's model has no directory")
+        }
+        let local = SupermuxChangesModel(
+            service: SupermuxGitChangesService(runner: CommandRunner()),
+            commitGenerator: SupermuxComposition.aiCommitMessenger
+        )
+        local.setDirectory(directory)
+        await settle(local)
+        return describe(local)
     }
 
     private static func diff(_ params: [String: Any], model: SupermuxChangesModel, workspace: Workspace) async throws -> [String: Any] {
@@ -91,6 +111,9 @@ enum SupermuxMirrorChangesSocket {
             "untracked": files(snapshot.untracked),
             "last_error": model.lastError ?? NSNull(),
             "ai_commit_configured": model.aiCommitConfigured,
+            "is_ai_commit_mode": model.isAICommitMode,
+            "can_commit": model.canCommit,
+            "commit_button_title": model.commitButtonTitle,
         ]
     }
 }
