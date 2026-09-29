@@ -120,7 +120,7 @@ struct SupermuxOpenWorkspaceRowView: View {
         .onDrag(beginDrag)
         .modifier(SupermuxWorkspaceReorderDrop(delegate: dropDelegate))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(workspace.title)
+        .accessibilityLabel(workspace.accessibilityLabel)
         .accessibilityAddTraits(workspace.isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }

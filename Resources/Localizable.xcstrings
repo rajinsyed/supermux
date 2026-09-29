@@ -598284,6 +598284,23 @@
           }
         }
       }
+    },
+    "supermux.workspace.accessibility.onMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ on %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ 上の %1$@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

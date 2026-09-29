@@ -140,8 +140,8 @@ enum SupermuxProjectsSocketPayloads {
             "device_name": row.device?.name ?? NSNull(),
             "branch": row.branch ?? NSNull(),
             "unread_count": row.unreadCount,
-            // `SupermuxOpenWorkspaceRowView` labels the row with its title.
-            "accessibility_label": row.title,
+            // What `SupermuxOpenWorkspaceRowView` labels the row with.
+            "accessibility_label": row.accessibilityLabel,
         ]
     }
 
