@@ -110,6 +110,7 @@ public struct AutomationSection: View {
             portCard
             // SUPERMUX:begin ai-settings
             SupermuxAISettingsCard(secretStore: supermuxSecretStore, errorLog: supermuxErrorLog)
+            SupermuxRemoteMacsSettingsCard(hostActions: hostActions)
             // SUPERMUX:end ai-settings
         }
         .confirmationDialog(

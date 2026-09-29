@@ -295,6 +295,27 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   `list` gains `auto_mirror_state`; `bindings` gains `hidden` and a per-mirror `status` object.
   Palette: "Show Hidden Remote Workspaces".
 
+## Sync gaps and user controls (workstream X, touchpoints #595–#599)
+
+- **Background tab changes reach mirrors.** The owning Mac's `DeviceWorkspaceLayoutHost` captures
+  through `SupermuxDeviceLayoutChangeObserver` (#595): the capture is observation-tracked (bonsplit's
+  split tree and the pane registry are `@Observable`), so any tab add/close/move/reorder/selection in
+  a workspace a viewer asked about triggers a re-capture 40 ms later, whether or not the workspace is
+  on screen; `device.workspace.layout.changed` goes out only when the arrangement changed. Nothing
+  needs to force a layout pull after a remote launch any more. E2E:
+  `tests/supermux/loopback_tab_sync_e2e.py` (socket and phone tab creation, close, reorder, each
+  under 1 s).
+- **Settings › Automation › Remote Macs** (`SupermuxRemoteMacsSettingsCard`, #596–#598; app side
+  `SupermuxComposition.remoteMacsSettings`): the `autoMirror` / `syncProjects` / `sharePush` toggles
+  (auto-mirror reconciles at once), discoverable / discovering status with Turn On through upstream's
+  `ComputersSettingsActions` (consent sheet included), the known Macs with link state and workspace
+  counts, and Show Hidden Workspaces.
+- **Socket** (`supermux.devices.*`, all builds): `remote_macs_settings {}` (the card's snapshot plus
+  `discovery_enabled` / `incoming_access_enabled`), `remote_macs_settings_set {setting:
+  auto_mirror|sync_projects|share_push, enabled}` or `{action: show_hidden}` (the card's own
+  actions), `flat_chips {}` (per mirror: `label`, `mac_name`, `chip_state`, `dimmed`). E2E:
+  `tests/supermux/loopback_remote_macs_settings_e2e.py [--screenshot]`.
+
 ## Not done here (owned by later workstreams)
 
 - Notification read mirroring / phone push (Mb).

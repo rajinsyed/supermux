@@ -2,10 +2,11 @@ public import SwiftUI
 
 /// A compact "which Mac" chip (`desktopcomputer` + the Mac's name) for rows
 /// that live on another Mac: device mirrors, remote-only projects and remote
-/// worktrees. Dimmed, with an "Offline" tooltip, while the Mac is unreachable.
+/// worktrees. Dimmed, with an "Offline" (or "Connecting…") tooltip, while the
+/// Mac is unreachable.
 public struct SupermuxDeviceChip: View {
     private let name: String
-    private let isOnline: Bool
+    private let state: SupermuxDeviceChipState
     private let fontScale: CGFloat
 
     /// Creates a chip.
@@ -14,8 +15,17 @@ public struct SupermuxDeviceChip: View {
     ///   - isOnline: Whether its link is live.
     ///   - fontScale: Sidebar font scale (`1` at the default size).
     public init(name: String, isOnline: Bool, fontScale: CGFloat = 1) {
+        self.init(name: name, state: isOnline ? .online : .offline, fontScale: fontScale)
+    }
+
+    /// Creates a chip for a Mac whose link may be dialing.
+    /// - Parameters:
+    ///   - name: The Mac's name.
+    ///   - state: Its link state (dimmed unless ``SupermuxDeviceChipState/online``).
+    ///   - fontScale: Sidebar font scale (`1` at the default size).
+    public init(name: String, state: SupermuxDeviceChipState, fontScale: CGFloat = 1) {
         self.name = name
-        self.isOnline = isOnline
+        self.state = state
         self.fontScale = fontScale
     }
 
@@ -40,15 +50,20 @@ public struct SupermuxDeviceChip: View {
         .padding(.horizontal, 5 * fontScale)
         .frame(height: 15 * fontScale)
         .background(Capsule().fill(Color.primary.opacity(0.07)))
-        .opacity(isOnline ? 1 : 0.45)
+        .opacity(state.isDimmed ? 0.45 : 1)
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(helpText)
     }
 
     private var helpText: String {
-        isOnline
-            ? String(localized: "supermux.devices.chip.online", defaultValue: "On \(name)")
-            : String(localized: "supermux.devices.chip.offline", defaultValue: "On \(name) — Offline")
+        switch state {
+        case .online:
+            return String(localized: "supermux.devices.chip.online", defaultValue: "On \(name)")
+        case .connecting:
+            return String(localized: "supermux.devices.chip.connecting", defaultValue: "On \(name) — Connecting…")
+        case .offline:
+            return String(localized: "supermux.devices.chip.offline", defaultValue: "On \(name) — Offline")
+        }
     }
 }
