@@ -56,6 +56,10 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      source workspace, the mirror gains no local pane).
  14. preset_without_remote_match_types_command — a chip the other Mac lacks
      types its command into a new remote terminal (same checks).
+ 14b. project_action_runs_where_the_user_looks — the remote project row's
+     Actions menu runs the command in the workspace over there whose mirror
+     is selected here, and at the project's own workspace there when nothing
+     of that Mac is selected (never in whatever that Mac has selected).
  15. new_workspace_menu_lists_mac — the + menu has "New Workspace on ▸" with
      the loopback Mac enabled.
  16. new_workspace_on_mac_from_menu — clicking it creates a workspace on the
@@ -681,6 +685,71 @@ class WorkspaceBehaviorsE2E:
         projection = self.assert_terminal_on_source(result.get("terminal_id"))
         return {"launch": result, "marker": str(marker), **projection}
 
+    # -- 14b: a remote project's action ----------------------------------------
+
+    def open_second_mirror(self, cwd: Path, title: str) -> Dict[str, str]:
+        """A workspace over there at `cwd`, and its mirror here."""
+        created = self.rpc("workspace.create", {"title": title, "cwd": str(cwd), "focus": False}) or {}
+        remote_id = norm(created.get("workspace_id"))
+        if not remote_id:
+            raise CheckFailure(f"workspace.create returned {created}")
+        self.created_local.append(remote_id)
+        opened = self.rpc("supermux.devices.await_open", {
+            "machine": self.machine, "remote_workspace_id": remote_id, "timeout_seconds": 60, "focus": False,
+        }, timeout_s=70) or {}
+        mirror_id = norm(opened.get("workspace_id"))
+        if not mirror_id or mirror_id == remote_id:
+            raise CheckFailure(f"await_open returned {opened}")
+        self.created_local.insert(0, mirror_id)
+        return {"remote": remote_id, "mirror": mirror_id}
+
+    def run_remote_action(self, action_id: str, marker: Path) -> str:
+        """Runs the action from the remote project row's Actions menu; returns
+        the directory its command ran in (it writes `pwd` to `marker`)."""
+        marker.unlink(missing_ok=True)
+        result = self.rpc("supermux.devices.remote_action_run", {
+            "machine": self.machine, "project_id": self.project_id, "action_id": action_id,
+        }, timeout_s=90) or {}
+        if result.get("outcome") != "command":
+            raise CheckFailure(f"remote_action_run returned {result}")
+        wait_for(f"{marker} to be written", lambda: marker.exists() and marker.read_text(encoding="utf-8").strip(), 30)
+        return os.path.realpath(marker.read_text(encoding="utf-8").strip())
+
+    def project_action_runs_where_the_user_looks(self) -> Dict[str, Any]:
+        marker = self.workdir / f"action-{self.nonce}"
+        action_id = str(uuid.uuid4()).upper()
+        self.remote("mobile.supermux.project.update", {"project_id": self.project_id, "patch": {"actions": [
+            {"id": action_id, "name": f"rws where {self.nonce}", "command": f"pwd > {marker}"},
+        ]}})
+        wait_for("the project's action to reach this Mac", lambda: any(
+            norm(listed) == action_id
+            for d in (self.rpc("supermux.devices.remote_projects", {"refresh": True}) or {}).get("devices") or []
+            for p in d.get("projects") or [] if norm(p.get("id")) == norm(self.project_id)
+            for listed in p.get("action_ids") or []
+        ), self.timeout_s)
+        try:
+            # Looking at a mirror of a workspace over there (a subfolder of the project):
+            # the action runs in that workspace, like a local project action.
+            sub = self.repo / "sub"
+            sub.mkdir(exist_ok=True)
+            looking = self.open_second_mirror(sub, f"rws action {self.nonce}")
+            self.rpc("workspace.select", {"workspace_id": looking["mirror"]})
+            in_mirror = self.run_remote_action(action_id, marker)
+            if in_mirror != os.path.realpath(sub):
+                raise CheckFailure(f"with the mirror of {sub} selected, the action ran in {in_mirror}")
+            # Looking at nothing on that Mac: the project's own workspace over there, never
+            # whichever workspace that Mac happens to have selected.
+            elsewhere = self.rpc("workspace.create", {"title": f"rws elsewhere {self.nonce}", "cwd": str(self.workdir), "focus": False}) or {}
+            elsewhere_id = norm(elsewhere.get("workspace_id"))
+            self.created_local.append(elsewhere_id)
+            self.rpc("workspace.select", {"workspace_id": elsewhere_id})
+            elsewhere_ran_in = self.run_remote_action(action_id, marker)
+            if elsewhere_ran_in != os.path.realpath(self.repo):
+                raise CheckFailure(f"looking at no workspace of that Mac, the action ran in {elsewhere_ran_in}, not the project root")
+        finally:
+            marker.unlink(missing_ok=True)
+        return {"ran_in_selected_mirror": in_mirror, "ran_at_project_root": elsewhere_ran_in}
+
     # -- 15-17: New Workspace on ▸ <Mac> ---------------------------------------
 
     def new_workspace_menu(self) -> Dict[str, Any]:
@@ -798,6 +867,7 @@ class WorkspaceBehaviorsE2E:
             self.step("changes_panel_mounted", self.changes_panel_mounted)
             self.step("preset_matches_remote_preset", self.preset_matches_remote)
             self.step("preset_without_remote_match_types_command", self.preset_types_command)
+            self.step("project_action_runs_where_the_user_looks", self.project_action_runs_where_the_user_looks)
             self.step("new_workspace_menu_lists_mac", self.new_workspace_menu)
             self.step("new_workspace_on_mac_from_menu", self.new_workspace_from_menu)
             self.step("new_workspace_shortcut_on_mirror", self.new_workspace_shortcut)
