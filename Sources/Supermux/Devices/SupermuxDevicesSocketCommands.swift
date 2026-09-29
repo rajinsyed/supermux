@@ -17,7 +17,8 @@ import SupermuxKit
 /// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`,
 /// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
 /// export filter and restart-stable bindings without a second Mac), and `link {machine, action:
-/// stop|restore}` (holds a link down, then redials it). The device-mirror methods
+/// stop|restore}` (holds a link down, then redials it), and `terminal_mouse_drag {surface_id, from, to}`
+/// (a real Ghostty mouse drag across a terminal, for the mirror input E2E). The device-mirror methods
 /// (`close_mirror`, `unhide`, `hidden`, `set_auto_mirror`, `reconcile`) are handled by
 /// ``SupermuxDeviceMirrorSocketCommands``, plus the notification /
 /// phone-push hooks in ``SupermuxDeviceNotificationSocketCommands`` (`push_decisions`,
@@ -71,6 +72,12 @@ enum SupermuxDevicesSocketCommands {
             case "bind", "unbind":
                 #if DEBUG
                 result = try setBinding(params, bound: method.hasSuffix(".bind"), payloads: payloads)
+                #else
+                return unknownMethod()
+                #endif
+            case "terminal_mouse_drag":
+                #if DEBUG
+                result = try terminalMouseDrag(params)
                 #else
                 return unknownMethod()
                 #endif
@@ -247,6 +254,27 @@ enum SupermuxDevicesSocketCommands {
         var payload = payloads.localWorkspace(workspace)
         payload["is_device_mirror"] = index.isDeviceMirror(workspace)
         return payload
+    }
+
+    /// Drags the mouse across a terminal through its real Ghostty view (the
+    /// path a trackpad drag takes), from and to fractions of the view's size.
+    /// With mouse tracking on, the terminal reports the drag to its program;
+    /// on a device mirror those reports cross to the other Mac.
+    private static func terminalMouseDrag(_ params: [String: Any]) throws -> [String: Any] {
+        guard let raw = params["surface_id"] as? String, let surfaceID = UUID(uuidString: raw),
+              let surface = TerminalController.shared.terminalSocketTarget(surfaceID: surfaceID)?.surface else {
+            throw InvalidParams(message: "surface_id must name a terminal")
+        }
+        let view = surface.hostedView
+        func point(_ key: String) throws -> NSPoint {
+            guard let pair = params[key] as? [Any], pair.count == 2,
+                  let x = (pair[0] as? NSNumber)?.doubleValue, let y = (pair[1] as? NSNumber)?.doubleValue else {
+                throw InvalidParams(message: "\(key) must be [x, y] fractions of the terminal")
+            }
+            return NSPoint(x: view.bounds.width * x, y: view.bounds.height * y)
+        }
+        let selected = view.debugSimulateSelection(from: try point("from"), to: try point("to"))
+        return ["surface_id": surfaceID.uuidString, "has_selection": selected]
     }
 
     /// `link {machine, action: "stop" | "restore"}`: holds a device link down
