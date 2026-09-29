@@ -16684,8 +16684,12 @@ struct TabItemView: View, Equatable {
                         .padding(.trailing, SidebarCompactStatusGlyph.titleSpacing - titleRowSpacing)
                 }
 
-                // SUPERMUX:begin sidebar-flatrow-device-chip (a device mirror shows the fork's named Mac chip after the title instead of the icon-only badge)
+                // SUPERMUX:begin sidebar-flatrow-device-chip (a device mirror shows the fork's Mac icon instead of the icon-only badge: first on its branch/directory line, or here before the title when the row draws no such line)
                 SidebarCloudWorkspaceBadgeView(label: detailVisibility.showsBranchDirectory && workspaceSnapshot.deviceWorkspaceLabel == nil ? workspaceSnapshot.remoteWorkspaceBadgeLabel : nil, pointSize: scaledFontSize(10), tint: activeSecondaryColor(0.7), symbol: workspaceSnapshot.remoteWorkspaceBadgeSymbol)
+                if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel,
+                   !SupermuxFlatRowDeviceChip.drawsOnBranchLine(workspaceSnapshot, settings: settings) {
+                    SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, pointSize: GlobalFontMagnification.scaledSize(scaledFontSize(10), percent: globalFontMagnificationPercent), tint: activeSecondaryColor(0.7))
+                }
                 // SUPERMUX:end sidebar-flatrow-device-chip
 
                 if isEditing {
@@ -16745,14 +16749,6 @@ struct TabItemView: View, Equatable {
                     )
                 }
                 // SUPERMUX:end sidebar-flatrow-activity
-
-                // SUPERMUX:begin sidebar-flatrow-device-chip
-                // Right of the title, just before the trailing slot, as in the
-                // nested project rows, so chips line up down the list.
-                if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
-                    SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, fontScale: fontScale)
-                }
-                // SUPERMUX:end sidebar-flatrow-device-chip
 
                 if trailingStatusActive || canCloseWorkspace {
                     // SUPERMUX:begin supermux-unread-badge-capsule
@@ -16873,6 +16869,11 @@ struct TabItemView: View, Equatable {
                 if sidebarBranchLayout == .vertical {
                     if !workspaceSnapshot.branchDirectoryLines.isEmpty {
                         HStack(alignment: .top, spacing: 3) {
+                            // SUPERMUX:begin sidebar-flatrow-device-chip
+                            if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+                                SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, pointSize: GlobalFontMagnification.scaledSize(scaledFontSize(9), percent: globalFontMagnificationPercent), tint: activeSecondaryColor(0.6))
+                            }
+                            // SUPERMUX:end sidebar-flatrow-device-chip
                             if sidebarShowGitBranchIcon, workspaceSnapshot.branchLinesContainBranch {
                                 CmuxSystemSymbolImage(magnified: "arrow.triangle.branch", pointSize: scaledFontSize(9), tint: activeSecondaryColor(0.6))
                             }
@@ -16923,6 +16924,11 @@ struct TabItemView: View, Equatable {
                           (workspaceSnapshot.compactGitBranchSummaryText != nil
                            || !workspaceSnapshot.compactDirectoryCandidates.isEmpty) {
                     HStack(alignment: .top, spacing: 3) {
+                        // SUPERMUX:begin sidebar-flatrow-device-chip
+                        if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+                            SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, pointSize: GlobalFontMagnification.scaledSize(scaledFontSize(9), percent: globalFontMagnificationPercent), tint: activeSecondaryColor(0.6))
+                        }
+                        // SUPERMUX:end sidebar-flatrow-device-chip
                         if sidebarShowGitBranchIcon, workspaceSnapshot.compactGitBranchSummaryText != nil {
                             CmuxSystemSymbolImage(magnified: "arrow.triangle.branch", pointSize: scaledFontSize(9), tint: activeSecondaryColor(0.6))
                         }
@@ -16945,6 +16951,11 @@ struct TabItemView: View, Equatable {
                     }
                 } else if !workspaceSnapshot.compactBranchDirectoryCandidates.isEmpty {
                     HStack(spacing: 3) {
+                        // SUPERMUX:begin sidebar-flatrow-device-chip
+                        if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+                            SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, pointSize: GlobalFontMagnification.scaledSize(scaledFontSize(9), percent: globalFontMagnificationPercent), tint: activeSecondaryColor(0.6))
+                        }
+                        // SUPERMUX:end sidebar-flatrow-device-chip
                         if sidebarShowGitBranchIcon, workspaceSnapshot.compactGitBranchSummaryText != nil {
                             CmuxSystemSymbolImage(magnified: "arrow.triangle.branch", pointSize: scaledFontSize(9), tint: activeSecondaryColor(0.6))
                         }
