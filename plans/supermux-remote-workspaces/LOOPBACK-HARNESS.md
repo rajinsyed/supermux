@@ -132,6 +132,24 @@ It drives DEBUG-only socket hooks (`supermux.devices.push_decisions`, `notificat
 `Sources/Supermux/Devices/SupermuxDeviceNotificationSocketCommands.swift`) and refuses to run the
 share steps unless the app reports the scratch directory.
 
+## New Worktree device picker E2E
+
+`tests/supermux/loopback_new_worktree_picker_e2e.py` (workstream P2) drives the DEBUG
+`supermux.devices.new_worktree.*` socket methods, which build the real New Worktree sheet model the
+way a project row does. On a scratch repo it checks: the rows are This Mac then the Loopback Mac;
+the Loopback Mac's branches and Claude commands load; a failing create shows the other Mac's
+sentence and is not remembered; Create on the Loopback Mac ends with exactly one bound mirror,
+selected in the window; the Mac is remembered and preselected next time; and Start Claude runs
+`agent.start` (with a temporary `echo` command, restored afterwards) and its mirror opens selected.
+
+```bash
+open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 --env SUPERMUX_PROJECTS_FILE=/tmp/<tag>/projects.json "<App path>"
+CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py --scratch /tmp/<tag>
+```
+
+Every suite at once: `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (launches, runs and
+quits the tagged app per suite; scratch state in `/tmp/<tag>-e2e`).
+
 ## How it works
 
 ```
