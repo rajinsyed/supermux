@@ -11,6 +11,10 @@ extension SupermuxComposition {
     /// Short-timer retry of rate-limited device notification rows.
     static let deviceNotificationRetry = SupermuxDeviceNotificationRetry()
 
+    /// The feed rows each other Mac last reported read (persisted), so a host
+    /// read reaches a mirrored copy once and a Mark as Unread holds.
+    static let notificationReadBaseline = SupermuxNotificationReadBaseline(defaults: .standard)
+
     /// Shares direct-APNs credentials and phone registrations with other Macs.
     static let phonePushShareCoordinator = SupermuxPhonePushShareCoordinator(
         devices: devices,
