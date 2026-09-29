@@ -30,6 +30,9 @@ Steps:
      listed first and selected (so its cwd is the same path on the other Mac),
      worktrees.list still reports the worktree open in the LOCAL workspace,
      never in the mirror (whose id the phone and other Macs never receive).
+ 7c. local_workspace_ignores_mirror_cwd: with that mirror still selected, a
+     local workspace created without a working_directory does not start in
+     the mirror's directory (a path on the other Mac).
   8. presentation_has_device_extras: the window's Projects presentation hands
      the local row its device location.
   9. probe_reports_repo_identity: project.probe over the device reports the
@@ -354,6 +357,7 @@ class ProjectsE2E:
             return directory if same else None
 
         mirror_cwd = wait_for("the mirror's cwd to be the worktree path", mirror_at_worktree, self.timeout_s)
+        self.facts["mirror_cwd"] = mirror_cwd
         worktrees = (self.client.call(
             "supermux.devices.remote_worktrees", {"machine": self.machine, "project_id": self.project_id}
         ) or {}).get("worktrees") or []
@@ -361,6 +365,29 @@ class ProjectsE2E:
         if not row or not row.get("is_open") or norm(row.get("workspace_id")) != norm(source_id):
             raise SmokeFailure(f"the worktree is not open in the local workspace {source_id} (mirror {mirror_id}): {row}")
         return {"worktree": row, "mirror": mirror_id, "mirror_cwd": mirror_cwd}
+
+    def check_local_workspace_ignores_mirror_cwd(self) -> Dict[str, Any]:
+        """A local workspace created while the mirror is selected, with no
+        working_directory (so "inherit the selected workspace's directory"
+        applies), never starts in the mirror's directory: that path is on the
+        other Mac."""
+        mirror_id = self.facts["mirror_workspace_id"]
+        self.client.call("workspace.select", {"workspace_id": mirror_id})
+        created = self.client.call("workspace.create", {"title": f"local-{self.nonce}", "focus": False}) or {}
+        workspace_id = created.get("workspace_id")
+        if not workspace_id:
+            raise SmokeFailure(f"workspace.create returned {created}")
+        self.opened_workspaces.append(workspace_id)
+
+        def new_directory() -> Optional[str]:
+            rows = (self.client.call("workspace.list", {}) or {}).get("workspaces") or []
+            row = next((w for w in rows if norm(w.get("id")) == norm(workspace_id)), None)
+            return (row or {}).get("current_directory")
+
+        directory = wait_for("the new local workspace's directory", new_directory, self.timeout_s)
+        if os.path.realpath(directory) == os.path.realpath(self.facts["mirror_cwd"]):
+            raise SmokeFailure(f"the local workspace inherited the selected mirror's directory {directory}")
+        return {"workspace_id": workspace_id, "current_directory": directory, "mirror_cwd": self.facts["mirror_cwd"]}
 
     def check_presentation(self) -> Dict[str, Any]:
         result = self.client.call("supermux.devices.projects_presentation", {}) or {}
@@ -523,6 +550,7 @@ class ProjectsE2E:
             self.step("projectless_mirror_stays_flat", self.check_projectless_mirror)
             self.step("remote_worktrees_listed", self.check_remote_worktrees)
             self.step("worktree_open_state_ignores_mirrors", self.check_worktree_open_state_ignores_mirrors)
+            self.step("local_workspace_ignores_mirror_cwd", self.check_local_workspace_ignores_mirror_cwd)
             self.step("presentation_has_device_extras", self.check_presentation)
             self.step("probe_reports_repo_identity", self.check_probe)
             self.step("clone_registers_project", self.check_clone)
