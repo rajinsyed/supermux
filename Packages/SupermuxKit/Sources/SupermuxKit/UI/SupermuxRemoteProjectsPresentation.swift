@@ -85,8 +85,10 @@ public struct SupermuxRemoteProjectsPresentation {
     public var extrasByLocalProjectID: [UUID: SupermuxProjectRemoteExtras]
     /// The host's remote callbacks.
     public var actions: SupermuxRemoteProjectActions
-    /// Each known Mac's link state by machine id (the New Worktree picker's dots).
-    public var deviceAvailability: [String: SupermuxWorktreeDeviceAvailability]
+    /// Each known Mac's link state by machine id, read when called (the New
+    /// Worktree picker's dots follow a Mac that connects or drops while the
+    /// sheet is open).
+    public var deviceAvailability: @MainActor () -> [String: SupermuxWorktreeDeviceAvailability]
     /// Where the New Worktree sheet remembers the last Mac per project.
     public var lastWorktreeDevices: SupermuxWorktreeLastDeviceStore
 
@@ -95,7 +97,7 @@ public struct SupermuxRemoteProjectsPresentation {
         rows: [SupermuxRemoteProjectRow],
         extrasByLocalProjectID: [UUID: SupermuxProjectRemoteExtras],
         actions: SupermuxRemoteProjectActions,
-        deviceAvailability: [String: SupermuxWorktreeDeviceAvailability] = [:],
+        deviceAvailability: @escaping @MainActor () -> [String: SupermuxWorktreeDeviceAvailability] = { [:] },
         lastWorktreeDevices: SupermuxWorktreeLastDeviceStore = SupermuxWorktreeLastDeviceStore()
     ) {
         self.rows = rows
