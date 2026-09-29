@@ -73,10 +73,8 @@ enum SupermuxMirrorSocketCommands {
                 "remote_directory": target.remoteDirectory ?? NSNull(),
                 "remote_project_id": target.remoteProjectID ?? NSNull(),
             ] as [String: Any]
-            payload["presets_bar_host_label"] = String(
-                localized: "supermux.mirror.presetsBar.onMac",
-                defaultValue: "On \(target.deviceName)"
-            )
+            payload["presets_bar_host_label"] = target.presetsBarHostLabel
+            payload["changes_open_diff_hint"] = SupermuxMirrorChangesPanel.openDiffUnavailableHelp(for: target)
         }
         return payload
     }

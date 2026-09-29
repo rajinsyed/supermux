@@ -66,7 +66,8 @@ extension TerminalController {
 
     /// `mobile.supermux.changes.status`: the workspace repository's status
     /// snapshot as a `SupermuxChangesStatusDTO` payload (branch, upstream,
-    /// ahead/behind, staged/unstaged/untracked arrays, stash_count).
+    /// ahead/behind, staged/unstaged/untracked arrays, stash_count), plus
+    /// whether this Mac can write commit messages (`ai_commit_configured`).
     @MainActor
     func v2SupermuxChangesStatus(params: [String: Any]) async -> V2CallResult {
         let target: (workspaceId: String, directory: String)
@@ -75,11 +76,13 @@ extension TerminalController {
         case let .success(resolved): target = resolved
         }
         let snapshot = await Self.supermuxMobileChangesService.status(repoPath: target.directory)
+        let aiCommitConfigured = await SupermuxComposition.aiCommitMessenger.isConfigured()
         do {
             return .ok(try SupermuxMobileChangesPayloadBuilder().status(
                 workspaceId: target.workspaceId,
                 snapshot: snapshot,
-                root: target.directory
+                root: target.directory,
+                aiCommitConfigured: aiCommitConfigured
             ))
         } catch {
             return .err(code: "unavailable", message: "Failed to encode changes status", data: nil)
