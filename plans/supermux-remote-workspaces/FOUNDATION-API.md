@@ -327,8 +327,10 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 - **Settings › Automation › Remote Macs** (`SupermuxRemoteMacsSettingsCard`, #596–#598; app side
   `SupermuxComposition.remoteMacsSettings`): the `autoMirror` / `syncProjects` / `sharePush` toggles
   (auto-mirror reconciles at once), discoverable / discovering status with Turn On through upstream's
-  `ComputersSettingsActions` (consent sheet included), the known Macs with link state and workspace
-  counts, and Show Hidden Workspaces.
+  `ComputersSettingsActions` (consent sheet included) and, once on, a "Change in Devices…" link to
+  Settings › Remote & Devices › Devices (where both switches live), the known Macs with link state
+  and workspace counts (laid out like the Devices page's rows; that page lists only Macs upstream's
+  registry knows, so never the DEBUG loopback), and Show Hidden Workspaces.
 - **Socket** (`supermux.devices.*`, all builds): `remote_macs_settings {}` (the card's snapshot plus
   `discovery_enabled` / `incoming_access_enabled`), `remote_macs_settings_set {setting:
   auto_mirror|sync_projects|share_push, enabled}` or `{action: show_hidden}` (the card's own
