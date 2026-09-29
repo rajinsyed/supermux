@@ -33,6 +33,9 @@ final class SupermuxDeviceWorkspaceOpener {
     private let devices: SupermuxDevices
     private let index: SupermuxDeviceWorkspaceIndex
     private var inFlight: [SupermuxRemoteWorkspaceRef: (id: UUID, task: Task<Workspace, any Error>)] = [:]
+    /// The local workspace an in-flight open created, per ref, so a failed
+    /// open can close it again.
+    private var createdByOpen: [SupermuxRemoteWorkspaceRef: UUID] = [:]
 
     init(catalog: SurfaceCatalog, devices: SupermuxDevices, index: SupermuxDeviceWorkspaceIndex) {
         self.catalog = catalog
@@ -111,11 +114,13 @@ final class SupermuxDeviceWorkspaceOpener {
         // filter never publishes it as a local workspace while panes attach.
         host.create = { [weak self, weak tabManager] title, focus in
             let created = try create(title, focus)
+            self?.createdByOpen[ref] = created.workspaceID
             if let workspace = tabManager?.tabs.first(where: { $0.id == created.workspaceID }) {
                 self?.index.bind(workspace, to: ref)
             }
             return created
         }
+        defer { createdByOpen[ref] = nil }
         do {
             let opened = try await catalog.projectGroupAsNewLocalWorkspace(
                 group, title: title, focus: false, host: host, layout: layout
@@ -132,8 +137,14 @@ final class SupermuxDeviceWorkspaceOpener {
             index.bind(workspace, to: ref)
             return workspace
         } catch {
-            // Drop the early binding; upstream closes the empty workspace.
+            // Drop the early binding, then close the workspace this open
+            // created: upstream only closes its starter pane, which the
+            // last-surface rule refuses, so it would stay behind empty (e.g.
+            // the remote workspace closed while this open was running).
             index.unbind(ref: ref)
+            if let id = createdByOpen[ref], let workspace = tabManager.tabs.first(where: { $0.id == id }) {
+                tabManager.closeWorkspace(workspace, recordHistory: false)
+            }
             throw error
         }
     }
