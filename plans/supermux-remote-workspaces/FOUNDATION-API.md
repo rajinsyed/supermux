@@ -280,8 +280,11 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   is absent in two passes ≥1 s apart while the device is authoritative (also with auto-mirror off); a bound
   mirror with no live or pending projection while its remote workspace exists (orphan; reopened fresh);
   every mirror but one of a remote workspace shown twice (duplicate, e.g. a reopened closed window next to
-  auto-mirror's replacement; the projected one survives first, then the bound one, then the lowest local
-  id; only with auto-mirror on, never while an open of the ref is in flight).
+  auto-mirror's replacement; the one the user keeps survives: a projected one first, then the one selected
+  in its window, then one the user opened, reopened or restored over a copy auto-mirror opened in this
+  session, then the bound one, then the lowest local id; an unbound survivor takes over the binding and its
+  applied-customization baseline before the copy closes, so its local edits hold; only with auto-mirror
+  on, never while an open of the ref is in flight).
 - **Scheduling**: passes coalesce to the earliest pending deadline, so a failed open's 10 s backoff never
   delays the 200 ms triggers (status, new or closed remote workspaces); every pass re-arms a pass for the
   earliest backoff expiry.
