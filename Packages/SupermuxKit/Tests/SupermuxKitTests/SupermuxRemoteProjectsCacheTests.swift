@@ -9,7 +9,8 @@ import Testing
 /// 2. A corrupt or missing file breaks loading instead of reading as empty.
 /// 3. The cache is written to (or replaces) the local projects document.
 /// 4. Forgetting a Mac leaves its entry behind.
-/// 5. A project-sync suppression is lost, or matches a different spelling of the root.
+/// 5. A project-sync suppression is lost, is not seen by another build sharing
+///    the file, or matches a different spelling of the root.
 /// 6. Saves running at the same time (several Macs refreshed together, or two
 ///    builds sharing the file) drop each other's entries.
 struct SupermuxRemoteProjectsCacheTests {
@@ -67,17 +68,17 @@ struct SupermuxRemoteProjectsCacheTests {
     }
 
     // 5
-    @Test func suppressionsPersistAndMatchStandardizedRoots() throws {
-        let suite = "supermux.tests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = SupermuxProjectSyncSuppression(defaults: defaults)
-        #expect(!store.isSuppressed(rootPath: "/r/app"))
-        store.suppress(rootPath: "/r/app/")
-        #expect(store.isSuppressed(rootPath: "/r/app"))
-        #expect(SupermuxProjectSyncSuppression(defaults: defaults).isSuppressed(rootPath: "/r/./app"))
-        store.clear(rootPath: "/r/app")
-        #expect(!store.isSuppressed(rootPath: "/r/app"))
+    @Test func suppressionsPersistAndMatchStandardizedRoots() async throws {
+        let url = tempURL().deletingLastPathComponent().appendingPathComponent("supermux-project-sync-suppressed.json")
+        let store = SupermuxProjectSyncSuppression(fileURL: url)
+        // A second instance over the same file stands in for another build.
+        let otherBuild = SupermuxProjectSyncSuppression(fileURL: url)
+        #expect(!(await store.isSuppressed(rootPath: "/r/app")))
+        try await store.suppress(rootPath: "/r/app/")
+        #expect(await store.isSuppressed(rootPath: "/r/app"))
+        #expect(await otherBuild.isSuppressed(rootPath: "/r/./app"))
+        try await otherBuild.clear(rootPath: "/r/app")
+        #expect(!(await store.isSuppressed(rootPath: "/r/app")))
     }
 
     // 6

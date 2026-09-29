@@ -204,6 +204,7 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
             guard !file.projects.contains(where: { $0.id == record.id || $0.rootPath == record.rootPath }) else { return }
             file.projects.append(record)
         }
+        onAddProject?(record)
         // Pull in a repo-shipped config.json, if any, before opening anything so
         // the project's setup/teardown/run/actions are populated from the start.
         await importConfig(into: project.id)
@@ -293,6 +294,13 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     /// Mac), just before it is dropped. Cross-Mac project sync uses it to
     /// never register that root again.
     @ObservationIgnored public var onRemoveProject: (@MainActor (SupermuxProject) -> Void)?
+
+    /// Called with each project ``addProject(rootPath:)`` newly registers
+    /// (desktop, phone, another Mac, or project sync). Projects another build
+    /// registered arrive by re-reading the shared file and never pass through
+    /// here. Cross-Mac project sync uses it to lift a removal's suppression
+    /// once the folder is registered on this Mac again.
+    @ObservationIgnored public var onAddProject: (@MainActor (SupermuxProject) -> Void)?
 
     /// Unregisters a project. Worktrees and the repository are left on disk.
     /// - Parameter id: Project to remove.

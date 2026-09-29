@@ -10,18 +10,17 @@ extension TerminalController {
     /// `mobile.supermux.project.probe {root_path}` →
     /// `{root_path, exists, is_directory, is_git_repo, git_remote_url?, is_suppressed}`
     /// (``SupermuxProjectProbeDTO``). `is_suppressed` is true when this Mac's
-    /// user removed a project at that root, so sync must not re-add it.
+    /// user removed a project at that root (in any build on this Mac), so
+    /// sync must not re-add it.
     func v2SupermuxProjectProbe(params: [String: Any]) async -> V2CallResult {
         guard let raw = params["root_path"] as? String,
               let root = SupermuxProjectSetupService.standardizedRoot(raw) else {
             return .err(code: "invalid_params", message: "root_path must be an absolute folder path", data: nil)
         }
-        let (service, suppressed) = await MainActor.run {
-            (
-                SupermuxComposition.projectSetupService,
-                SupermuxComposition.projectSyncSuppression.isSuppressed(rootPath: root)
-            )
+        let (service, sync) = await MainActor.run {
+            (SupermuxComposition.projectSetupService, SupermuxComposition.projectSync)
         }
+        let suppressed = await sync.isSuppressed(rootPath: root)
         let probe = await service.probe(rootPath: root, isSuppressed: suppressed)
         do {
             return .ok(try SupermuxWireJSON().dictionary(from: probe))
