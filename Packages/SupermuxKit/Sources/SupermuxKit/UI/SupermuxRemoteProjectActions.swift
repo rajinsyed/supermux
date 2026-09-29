@@ -1,7 +1,7 @@
 public import Foundation
 public import SupermuxMobileCore
 
-/// The fields of the minimal remote New Worktree sheet.
+/// The fields of a worktree create on another Mac.
 public struct SupermuxRemoteWorktreeRequest: Hashable, Sendable {
     /// Workspace title; blank lets the other Mac name it from the branch.
     public var workspaceName: String
@@ -37,7 +37,7 @@ public enum SupermuxProjectSetupDestination: Hashable, Sendable {
 /// Callbacks the Projects section needs for copies of projects on other
 /// Macs. The host app implements them over the device link (RPC to the other
 /// Mac, then opening the local mirror of whatever workspace it returns).
-/// Every callback handles its own errors except the two `async throws` ones,
+/// Every callback handles its own errors except the `async throws` ones,
 /// whose errors the calling sheet shows inline.
 public struct SupermuxRemoteProjectActions {
     /// Opens the project root on that Mac (`project.open`) and focuses the mirror.
@@ -53,9 +53,10 @@ public struct SupermuxRemoteProjectActions {
     public var removeProject: (SupermuxProjectLocation, String) -> Void
     /// Loads (or refreshes) that copy's worktrees for the disclosure.
     public var loadWorktrees: (SupermuxProjectLocation) -> Void
-    /// Creates a worktree on that Mac (`worktree.create {open: true}`), then
-    /// opens and selects its mirror.
-    public var createWorktree: (SupermuxProjectLocation, SupermuxRemoteWorktreeRequest) async throws -> Void
+    /// The New Worktree sheet's target for that Mac's copy (branches, AI
+    /// names, Claude options, `worktree.create` / `agent.start`, then the
+    /// mirror opens and is selected in this window); `nil` when unavailable.
+    public var makeWorktreeTarget: @MainActor (SupermuxProjectLocation) -> (any SupermuxWorktreeCreationTarget)?
     /// Registers an existing folder as the project on a Mac.
     public var addExistingFolder: (SupermuxProjectSetupDestination, String) async throws -> Void
     /// Clones the repository into a folder on a Mac and registers it.
@@ -69,7 +70,7 @@ public struct SupermuxRemoteProjectActions {
         runAction: @escaping (SupermuxProjectLocation, SupermuxProjectActionDTO) -> Void,
         removeProject: @escaping (SupermuxProjectLocation, String) -> Void,
         loadWorktrees: @escaping (SupermuxProjectLocation) -> Void,
-        createWorktree: @escaping (SupermuxProjectLocation, SupermuxRemoteWorktreeRequest) async throws -> Void,
+        makeWorktreeTarget: @escaping @MainActor (SupermuxProjectLocation) -> (any SupermuxWorktreeCreationTarget)?,
         addExistingFolder: @escaping (SupermuxProjectSetupDestination, String) async throws -> Void,
         cloneRepository: @escaping (SupermuxProjectSetupDestination, String, String) async throws -> Void
     ) {
@@ -79,7 +80,7 @@ public struct SupermuxRemoteProjectActions {
         self.runAction = runAction
         self.removeProject = removeProject
         self.loadWorktrees = loadWorktrees
-        self.createWorktree = createWorktree
+        self.makeWorktreeTarget = makeWorktreeTarget
         self.addExistingFolder = addExistingFolder
         self.cloneRepository = cloneRepository
     }
@@ -93,7 +94,7 @@ public struct SupermuxRemoteProjectActions {
             runAction: { _, _ in },
             removeProject: { _, _ in },
             loadWorktrees: { _ in },
-            createWorktree: { _, _ in },
+            makeWorktreeTarget: { _ in nil },
             addExistingFolder: { _, _ in },
             cloneRepository: { _, _, _ in }
         )

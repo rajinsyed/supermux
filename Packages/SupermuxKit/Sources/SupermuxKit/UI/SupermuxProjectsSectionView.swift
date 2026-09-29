@@ -36,7 +36,7 @@ public struct SupermuxProjectsSectionView: View {
     // Internal (not private) where the PR-probe extension in
     // `SupermuxProjectsSectionView+PullRequests.swift` needs access.
     @Bindable var model: SupermuxProjectsModel
-    private let opener: any SupermuxWorkspaceOpening
+    let opener: any SupermuxWorkspaceOpening
     let openWorkspaces: [SupermuxOpenWorkspace]
     let onSelectWorkspace: (UUID) -> Void
     let onCloseWorkspace: (UUID) -> Void
@@ -48,15 +48,15 @@ public struct SupermuxProjectsSectionView: View {
     let pullRequestPolling: SupermuxPullRequestPollingPolicy
     /// Launcher, model catalog, and command settings behind "Start Claude in a
     /// New Worktree"; `nil` hides that entry point everywhere in the section.
-    private let agentLaunch: SupermuxAgentLaunchEnvironment?
+    let agentLaunch: SupermuxAgentLaunchEnvironment?
     /// Other Macs' copies of projects: remote-only rows, device extras for
     /// local rows, and the host's remote callbacks (see
     /// `SupermuxProjectsSectionView+Remote.swift`).
     let remote: SupermuxRemoteProjectsPresentation
     /// Remote-only projects whose worktree disclosure is open (session only).
     @State var expandedRemoteProjectIds: Set<UUID> = []
-    /// Presents the minimal New Worktree sheet for a copy on another Mac.
-    @State var remoteNewWorktreeTarget: SupermuxRemoteNewWorktreeTarget?
+    /// Presents the New Worktree sheet (any project, any Mac).
+    @State var newWorktreeSheet: SupermuxNewWorktreeSheetItem?
     /// Presents "Set Up on <Mac>…".
     @State var projectSetupTarget: SupermuxProjectSetupTarget?
 
@@ -72,7 +72,6 @@ public struct SupermuxProjectsSectionView: View {
     /// skips `onDisappear`) still deregisters the client.
     @State var pullRequestClientToken = SupermuxPullRequestClientToken()
 
-    @State private var newWorktreeProject: SupermuxProject?
     @State private var editorProject: SupermuxProject?
     /// In-flight drag-reorder marker (project or nested workspace). A reference
     /// `@Observable`, not value `@State`: writing the dragged id at drag start
@@ -86,7 +85,7 @@ public struct SupermuxProjectsSectionView: View {
     /// project list so rows receive only an immutable `NSImage?` snapshot. May
     /// be a shared, host-injected instance (see `init`) so every window — and
     /// the workspace switcher — reuses one decoded-logo cache.
-    @State private var iconStore: SupermuxProjectIconStore
+    @State var iconStore: SupermuxProjectIconStore
     /// Sidebar font scale (cmux's `sidebar-font-size`); scales the section
     /// header alongside the project rows. `1` at the default size. Internal
     /// (not private) for the header extension in
@@ -207,7 +206,8 @@ public struct SupermuxProjectsSectionView: View {
                         draggingWorkspaceId: $dragState.draggingWorkspaceId,
                         remoteExtras: remote.extrasByLocalProjectID[project.id],
                         remoteActions: remote.actions,
-                        setUp: { destination in presentSetUp(project: project, destination: destination) }
+                        setUp: { destination in presentSetUp(project: project, destination: destination) },
+                        newWorktreeOn: { deviceKey in presentNewWorktree(forLocal: project, preferredDeviceKey: deviceKey) }
                     )
                 }
                 remoteProjectRows(grouped: grouped)
@@ -267,21 +267,8 @@ public struct SupermuxProjectsSectionView: View {
         .task(id: worktreePullRequestProbeToken) {
             await runWorktreePullRequestProbe()
         }
-        .sheet(item: $newWorktreeProject) { project in
-            SupermuxNewWorktreeSheet(
-                model: model,
-                project: project,
-                projectIcon: iconStore.image(for: project.id),
-                agentLaunch: agentLaunch,
-                onCreated: { worktree, workspaceName in
-                    openWorktree(worktree, project: project, title: workspaceName, runSetup: true)
-                },
-                onLaunched: { launch in
-                    // The launcher already noted the project as opened and
-                    // built the full request (title, command, setup script).
-                    opener.openWorkspace(launch.openRequest)
-                }
-            )
+        .sheet(item: $newWorktreeSheet) { item in
+            SupermuxNewWorktreeSheet(model: item.model, avatar: item.avatar, projectIcon: item.icon)
         }
         .sheet(item: $editorProject) { project in
             SupermuxProjectEditorSheet(model: model, project: project)
@@ -308,7 +295,7 @@ public struct SupermuxProjectsSectionView: View {
     private func rowActions(for project: SupermuxProject) -> SupermuxProjectRowActions {
         SupermuxProjectRowActions(
             openLocal: { openLocal(project) },
-            newWorktree: { newWorktreeProject = project },
+            newWorktree: { presentNewWorktree(forLocal: project) },
             openWorktree: { worktree in openWorktree(worktree, project: project) },
             deleteWorktree: { worktree, deleteBranch in
                 deleteWorktree(worktree, project: project, deleteBranch: deleteBranch)
@@ -416,7 +403,7 @@ public struct SupermuxProjectsSectionView: View {
     /// just-created path), the project's setup script runs in a dedicated setup
     /// terminal of the new workspace; re-opening an existing worktree never
     /// re-runs setup.
-    private func openWorktree(
+    func openWorktree(
         _ worktree: SupermuxProjectWorktree,
         project rawProject: SupermuxProject,
         title: String? = nil,

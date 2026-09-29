@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// A local project row's other-Mac parts: device copies' unopened worktrees
-/// (with device chips), "Open on ▸ <Mac>" when the project lives on more than
-/// one Mac, remote worktrees in the Worktrees menu, and "Set Up on <Mac>…".
+/// (with device chips), "Open on ▸ <Mac>" and "New Worktree on ▸ <Mac>" when
+/// the project lives on more than one Mac, remote worktrees in the Worktrees
+/// menu, and "Set Up on <Mac>…".
 extension SupermuxProjectRowView {
     /// Unopened worktrees of the device copies (loaded when the row expands).
     var remoteWorktrees: [SupermuxRemoteWorktree] { remoteExtras?.worktrees ?? [] }
@@ -42,6 +43,22 @@ extension SupermuxProjectRowView {
                     } else {
                         Button(String(localized: "supermux.devices.thisMac", defaultValue: "This Mac"), action: actions.openLocal)
                     }
+                }
+            }
+        }
+    }
+
+    /// "New Worktree on ▸" listing every Mac with a copy (only when there are
+    /// several); each opens the sheet with that Mac preselected.
+    @ViewBuilder
+    var newWorktreeOnMenu: some View {
+        if let extras = remoteExtras, extras.project.locations.count > 1 {
+            Menu(String(localized: "supermux.project.newWorktreeOnMenu", defaultValue: "New Worktree on")) {
+                ForEach(extras.project.locations) { location in
+                    Button(location.device?.name ?? String(localized: "supermux.devices.thisMac", defaultValue: "This Mac")) {
+                        newWorktreeOn(SupermuxWorktreeDeviceEntry.deviceKey(of: location))
+                    }
+                    .disabled(!location.isOnline)
                 }
             }
         }
