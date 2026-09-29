@@ -294,13 +294,14 @@ class SidebarRowsE2E:
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
+        # Close the sources only: auto-mirror closes each mirror once its
+        # remote workspace is gone. (Hiding the mirrors and unhiding them
+        # afterwards raced that removal and could reopen a mirror.)
         try:
             for workspace_id in self.created:
-                mirror = self.mirror_of(workspace_id)
-                if mirror:
-                    self.sock.call("supermux.devices.close_mirror", {"workspace_id": mirror, "action": "hide"})
                 self.sock.call("workspace.close", {"workspace_id": workspace_id})
-            self.sock.call("supermux.devices.unhide", {})
+            wait_for("the mirrors to close with their sources",
+                     lambda: not any(self.mirror_of(w) for w in self.created), self.timeout)
             if self.project_id:
                 self.request("mobile.supermux.project.delete", {"project_id": self.project_id})
             if self.initial_auto_mirror is False:
