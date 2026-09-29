@@ -49,6 +49,17 @@ import Testing
 /// 26. Closes a duplicate while auto-mirror is off: without auto-mirror only
 ///     explicit opens (e.g. `cmux vm workspace open`) make mirrors, so a second
 ///     one was asked for.
+/// 27. Closes the mirror the user is looking at (selected in its window) and
+///     keeps auto-mirror's background copy: the reopened window empties itself
+///     and its layout and local color/description/pin edits are lost.
+/// 28. With nothing selected, keeps auto-mirror's replacement over the mirror
+///     the user reopened or restored (not auto-opened in this session).
+/// 29. Lets selection or user intent keep an unprojected mirror over a
+///     projected copy (the orphan rule would then close the survivor too — 23).
+/// 30. Leaves an unbound survivor unbound once the bound copy closes, so every
+///     entry point resolves the ref to nothing and auto-mirror opens a third.
+/// 31. Asks to rebind before the duplicate's close is confirmed, or rebinds a
+///     survivor that already holds the binding.
 struct SupermuxMirrorReconcilerTests {
     private typealias Reconciler = SupermuxMirrorReconciler
     private let machine = "device:5E1F10B0-0000-4000-8000-000000000001@dev"
@@ -76,9 +87,18 @@ struct SupermuxMirrorReconcilerTests {
         local: UUID = UUID(),
         bound: Bool = true,
         projected: Bool = true,
+        selected: Bool = false,
+        autoOpened: Bool = false,
         on machine: String? = nil
     ) -> Reconciler.Mirror {
-        Reconciler.Mirror(ref: ref(id, on: machine), localWorkspaceID: local, isBound: bound, isProjected: projected)
+        Reconciler.Mirror(
+            ref: ref(id, on: machine),
+            localWorkspaceID: local,
+            isBound: bound,
+            isProjected: projected,
+            isSelected: selected,
+            isAutoOpened: autoOpened
+        )
     }
 
     private func input(
@@ -316,6 +336,77 @@ struct SupermuxMirrorReconcilerTests {
         _ = reconciler.plan(input(autoMirror: false, devices: devices, mirrors: mirrors, at: 0))
         let later = reconciler.plan(input(autoMirror: false, devices: devices, mirrors: mirrors, at: 5))
         #expect(later.closes.isEmpty, "with auto-mirror off every mirror was opened on purpose")
+    }
+
+    // MARK: - Duplicates: which one the user keeps
+
+    /// Confirms a duplicate pass and returns the confirmed plan.
+    private func confirmedDuplicatePlan(_ mirrors: [Reconciler.Mirror]) -> (first: Reconciler.Plan, confirmed: Reconciler.Plan) {
+        var reconciler = Reconciler()
+        let devices = [device([remote("A")])]
+        let first = reconciler.plan(input(devices: devices, mirrors: mirrors, at: 0))
+        let confirmed = reconciler.plan(input(devices: devices, mirrors: mirrors, at: 1.2))
+        return (first, confirmed)
+    }
+
+    @Test func keepsTheSelectedReopenedMirrorOverAutoMirrorsBackgroundCopy() {
+        let reopened = UUID()
+        let replacement = UUID()
+        let plan = confirmedDuplicatePlan([
+            mirror("A", local: reopened, bound: false, selected: true),
+            mirror("A", local: replacement, bound: true, autoOpened: true),
+        ]).confirmed
+        #expect(plan.closes == [Reconciler.Close(localWorkspaceID: replacement, ref: ref("A"), reason: .duplicate)])
+        #expect(plan.rebinds == [Reconciler.Rebind(localWorkspaceID: reopened, ref: ref("A"))])
+    }
+
+    @Test func keepsTheSelectedMirrorWhateverOpenedEither() {
+        let looking = UUID()
+        let background = UUID()
+        let plan = confirmedDuplicatePlan([
+            mirror("A", local: background, bound: true),
+            mirror("A", local: looking, bound: false, selected: true, autoOpened: true),
+        ]).confirmed
+        #expect(plan.closes.map(\.localWorkspaceID) == [background])
+        #expect(plan.rebinds == [Reconciler.Rebind(localWorkspaceID: looking, ref: ref("A"))])
+    }
+
+    @Test func withNothingSelectedKeepsTheMirrorTheUserReopened() {
+        let reopened = UUID()
+        let replacement = UUID()
+        let plan = confirmedDuplicatePlan([
+            mirror("A", local: replacement, bound: true, autoOpened: true),
+            mirror("A", local: reopened, bound: false),
+        ]).confirmed
+        #expect(plan.closes.map(\.localWorkspaceID) == [replacement])
+        #expect(plan.rebinds == [Reconciler.Rebind(localWorkspaceID: reopened, ref: ref("A"))])
+    }
+
+    @Test func projectionStillOutranksSelectionAndUserIntent() {
+        let selectedOrphan = UUID()
+        let projectedCopy = UUID()
+        let plan = confirmedDuplicatePlan([
+            mirror("A", local: selectedOrphan, bound: true, projected: false, selected: true),
+            mirror("A", local: projectedCopy, bound: false, projected: true, autoOpened: true),
+        ]).confirmed
+        #expect(plan.closes.map(\.localWorkspaceID) == [selectedOrphan], "an unprojected survivor would close as an orphan too")
+        #expect(plan.rebinds == [Reconciler.Rebind(localWorkspaceID: projectedCopy, ref: ref("A"))])
+    }
+
+    @Test func rebindsOnlyAnUnboundSurvivorAndOnlyOnceTheCloseIsConfirmed() {
+        let reopened = UUID()
+        let passes = confirmedDuplicatePlan([
+            mirror("A", local: reopened, bound: false, selected: true),
+            mirror("A", bound: true, autoOpened: true),
+        ])
+        #expect(passes.first.rebinds.isEmpty, "nothing closes yet, so the binding must stay put")
+        #expect(passes.confirmed.rebinds.map(\.localWorkspaceID) == [reopened])
+        let alreadyBound = confirmedDuplicatePlan([
+            mirror("A", bound: true, selected: true),
+            mirror("A", bound: false, autoOpened: true),
+        ]).confirmed
+        #expect(alreadyBound.closes.count == 1)
+        #expect(alreadyBound.rebinds.isEmpty)
     }
 
     // MARK: - Scheduling

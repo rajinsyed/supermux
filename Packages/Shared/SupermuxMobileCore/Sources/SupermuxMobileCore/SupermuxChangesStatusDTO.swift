@@ -28,6 +28,10 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
     /// reject a stale-view mutation when the workspace has since cd-ed to a
     /// different repo. Optional: old Macs omit it (no pin, legacy behavior).
     public var root: String?
+    /// Whether this Mac can write commit messages (an AI key is configured
+    /// there), so a remote Changes panel offers Generate & Commit exactly
+    /// when the Mac's own panel would. Optional: old Macs omit it.
+    public var aiCommitConfigured: Bool?
 
     /// Creates a changes-status DTO.
     /// - Parameters:
@@ -42,6 +46,7 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
     ///   - untracked: Optional untracked files.
     ///   - stashCount: Optional stash entry count.
     ///   - root: Optional live repository root for stale-view pinning.
+    ///   - aiCommitConfigured: Optional "this Mac can write commit messages".
     public init(
         workspaceId: String? = nil,
         isRepository: Bool? = nil,
@@ -53,7 +58,8 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         unstaged: [SupermuxChangedFileDTO]? = nil,
         untracked: [SupermuxChangedFileDTO]? = nil,
         stashCount: Int? = nil,
-        root: String? = nil
+        root: String? = nil,
+        aiCommitConfigured: Bool? = nil
     ) {
         self.workspaceId = workspaceId
         self.isRepository = isRepository
@@ -66,6 +72,7 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         self.untracked = untracked
         self.stashCount = stashCount
         self.root = root
+        self.aiCommitConfigured = aiCommitConfigured
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -80,5 +87,6 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         case untracked
         case stashCount = "stash_count"
         case root
+        case aiCommitConfigured = "ai_commit_configured"
     }
 }

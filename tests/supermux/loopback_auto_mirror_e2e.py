@@ -12,8 +12,11 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
   b3. create_on_device             supermux.devices.create_workspace ends with exactly one mirror
   c. closing_source_closes_mirror  closing a source closes its mirror (remote workspace gone)
   c2. orphan_is_closed             a bound mirror without projections (DEBUG bind hook) is closed; one mirror remains
-  c3. duplicate_is_closed          a second local mirror of a mirrored workspace (vm.workspace_open) is closed;
-                                   the bound mirror stays the only one
+  c3. duplicate_keeps_users_mirror a second local mirror of a mirrored workspace that the user opened
+                                   (vm.workspace_open, like a reopened closed window) survives and takes
+                                   the binding; auto-mirror's background copy is the one that closes
+  c3b. duplicate_keeps_selected    when the auto-opened mirror is the one selected in its window, it
+                                   survives and the other copy closes
   d. hide_and_unhide               "Hide Here" (socket close_mirror hide) is never reopened;
                                    a programmatic workspace.close of a mirror hides too;
                                    supermux.devices.unhide brings the mirror back
@@ -33,7 +36,11 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
   h. restart_dedupe                (with --app-path) quit + relaunch: still exactly one mirror per
                                    source, no duplicates, no orphaned bindings; a local color /
                                    description / pin edit on a mirror survives the relaunch, and a
-                                   later remote change still reaches the mirror
+                                   later remote change still reaches the mirror; a mirrored
+                                   notification the user marked unread (read on its Mac) stays
+                                   unread through the other Mac's first feeds after the relaunch,
+                                   and an unread mirrored notification survives the relaunch
+                                   unread (still that Mac's) without being read on that Mac
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_auto_mirror_e2e-<tag>.json) and
 exits non-zero on any failure. Stdlib only.
@@ -360,13 +367,10 @@ class AutoMirrorE2E:
         state = self.sock.call("supermux.devices.list", {}).get("auto_mirror_state") or {}
         return {"source": source, "orphan": orphan, "mirror": remaining.get("workspace_id"), "hidden_untouched": up(source) not in self.hidden(), "coordinator": state.get("reconcile_count")}
 
-    def check_duplicate(self) -> Dict[str, Any]:
-        """A second local mirror of a mirrored remote workspace (what reopening
-        a closed window restores next to auto-mirror's replacement; here the
-        upstream vm.workspace_open, which never reuses) is closed, and the bound
-        mirror stays the only one."""
-        source = self.create_source("duplicate")
-        mirror = self.wait_one_mirror(source)
+    def open_duplicate(self, source: str, mirror: Dict[str, Any]) -> str:
+        """A second local mirror of `source`, opened the way a user reopens one
+        (upstream vm.workspace_open never reuses; like Reopen Closed Window it
+        leaves auto-mirror's copy in place)."""
         opened = self.sock.call(
             "vm.workspace_open", {"id": self.machine, "workspace_id": source, "focus": False}, timeout_s=60
         ) or {}
@@ -374,12 +378,33 @@ class AutoMirrorE2E:
         if not duplicate or up(duplicate) == up(mirror.get("workspace_id")):
             raise Failure(f"vm.workspace_open did not open a second local workspace: {opened}")
         self.created.append(str(duplicate))
-        wait_for("the duplicate mirror to close", lambda: up(duplicate) not in self.local_ids(), self.timeout)
-        hold("the bound mirror stays the only one", lambda: len(self.mirrors_of(source)) == 1, 3)
+        return str(duplicate)
+
+    def expect_survivor(self, source: str, survivor: str, closed: str) -> Dict[str, Any]:
+        wait_for(f"the copy {closed} to close", lambda: up(closed) not in self.local_ids(), self.timeout)
+        hold("one mirror stays", lambda: len(self.mirrors_of(source)) == 1, 3)
         remaining = self.one_mirror(source)
-        if up(remaining.get("workspace_id")) != up(mirror.get("workspace_id")) or not remaining.get("is_bound"):
-            raise Failure(f"expected the bound mirror {mirror.get('workspace_id')} to remain, found {remaining}")
-        return {"source": source, "mirror": remaining.get("workspace_id"), "closed_duplicate": duplicate}
+        if up(remaining.get("workspace_id")) != up(survivor) or not remaining.get("is_bound"):
+            raise Failure(f"expected {survivor} to remain and hold the binding, found {remaining}")
+        return {"source": source, "survivor": remaining.get("workspace_id"), "closed": closed}
+
+    def check_duplicate(self) -> Dict[str, Any]:
+        """Reopening a mirror the user had (a closed window, next to the copy
+        auto-mirror opened to replace it) keeps the user's mirror: the
+        background auto-opened copy closes and the binding moves over."""
+        source = self.create_source("duplicate")
+        mirror = self.wait_one_mirror(source)
+        duplicate = self.open_duplicate(source, mirror)
+        return self.expect_survivor(source, survivor=duplicate, closed=str(mirror.get("workspace_id")))
+
+    def check_duplicate_keeps_selected(self) -> Dict[str, Any]:
+        """The mirror selected in its window survives whichever copy the user
+        opened later."""
+        source = self.create_source("duplicate-selected")
+        mirror = self.wait_one_mirror(source)
+        self.sock.call("workspace.select", {"workspace_id": mirror.get("workspace_id")})
+        duplicate = self.open_duplicate(source, mirror)
+        return self.expect_survivor(source, survivor=str(mirror.get("workspace_id")), closed=duplicate)
 
     def check_hide_unhide(self) -> Dict[str, Any]:
         source = self.create_source("hide")
@@ -673,10 +698,69 @@ class AutoMirrorE2E:
         self.mirror_field(source, "description", lambda v: v == remote, "to follow a remote change after the relaunch")
         return {"kept": edits["wanted"], "remote_change_followed": remote}
 
+    def notification_record(self, title: str, workspace_id: str, read: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+        records = (self.sock.call("supermux.devices.notification_records", {}) or {}).get("records") or []
+        for record in records:
+            if record.get("title") == title and up(record.get("workspace_id")) == up(workspace_id):
+                if read is None or bool(record.get("is_read")) == read:
+                    return record
+        return None
+
+    def notify_source(self, source: str, title: str) -> None:
+        surface = self.terminal_ids(source)[0]
+        self.sock.call("notification.create_for_surface", {
+            "workspace_id": source, "surface_id": surface, "title": title, "body": "unread across a relaunch",
+        })
+
+    def mark_mirror_copy_unread(self) -> Dict[str, Any]:
+        """A source notification read on the source (so the other Mac's feed
+        row is read), whose mirror copy the user then marks unread."""
+        source = self.create_source("unread")
+        mirror_id = str(self.wait_one_mirror(source)["workspace_id"])
+        title = f"unread-across-relaunch-{self.nonce}"
+        self.notify_source(source, title)
+        original = wait_for("the source notification", lambda: self.notification_record(title, source), self.timeout)
+        wait_for("its mirror copy", lambda: self.notification_record(title, mirror_id), self.timeout)
+        self.sock.call("notification.mark_read", {"id": original["id"]})
+        copy = wait_for("the mirror copy to follow the host read", lambda: self.notification_record(title, mirror_id, read=True), self.timeout)
+        marked = self.sock.call("supermux.devices.notification_mark_unread", {"id": copy["id"]}) or {}
+        if marked.get("is_read") is not False:
+            raise Failure(f"Mark as Unread did not take: {marked}")
+        # A second source, left unread everywhere (its own pane, so the first
+        # source's later notification cannot supersede it).
+        plain_source = self.create_source("plain-unread")
+        plain_mirror = str(self.wait_one_mirror(plain_source)["workspace_id"])
+        plain_title = f"plain-unread-{self.nonce}"
+        self.notify_source(plain_source, plain_title)
+        wait_for("the plain notification's mirror copy", lambda: self.notification_record(plain_title, plain_mirror, read=False), self.timeout)
+        return {
+            "source": source, "mirror": mirror_id, "title": title,
+            "plain_source": plain_source, "plain_mirror": plain_mirror, "plain_title": plain_title,
+        }
+
+    def check_unread_copy_survived(self, unread: Dict[str, Any]) -> Dict[str, Any]:
+        """After the relaunch, once the link is back: the user's Mark as Unread
+        copy is still there and unread through the other Mac's first feeds (one
+        forced by a new notification), and an unread mirrored notification is
+        still there, unread, still that Mac's (never counted as this Mac's own),
+        and was not read on the other Mac by the relaunch."""
+        after = f"after-relaunch-{self.nonce}"
+        self.notify_source(unread["source"], after)
+        wait_for("a new notification's mirror copy", lambda: self.notification_record(after, unread["mirror"]), self.timeout)
+        hold("the unread mirror copy", lambda: self.notification_record(unread["title"], unread["mirror"], read=False), 3)
+        plain = self.notification_record(unread["plain_title"], unread["plain_mirror"], read=False)
+        if not plain or not str(plain.get("origin", "")).startswith("device-mac:"):
+            raise Failure(f"the unread mirrored notification did not survive the relaunch as the other Mac's: {plain}")
+        source = self.notification_record(unread["plain_title"], unread["plain_source"])
+        if not source or source.get("is_read"):
+            raise Failure(f"the relaunch read the notification on the other Mac: {source}")
+        return {"copy_still_unread": True, "plain_copy_origin": plain.get("origin"), "plain_source_unread": True}
+
     def check_restart(self) -> Dict[str, Any]:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
         edits = self.make_local_edits()
+        unread = self.mark_mirror_copy_unread()
         before = self.snapshot_pairs()
         self.sock.close()
         subprocess.run(["osascript", "-e", f'tell application id "{bundle_id}" to quit'], check=False, capture_output=True)
@@ -703,6 +787,7 @@ class AutoMirrorE2E:
             raise Failure(f"duplicate mirrors after restore: {dupes}")
         after_pairs = self.snapshot_pairs()
         local_edits = self.check_local_edits_survived(edits)
+        unread_copy = self.check_unread_copy_survived(unread)
         return {
             "bundle_id": bundle_id,
             "sources_before": len(before),
@@ -710,6 +795,7 @@ class AutoMirrorE2E:
             "same_mirror_workspaces": sum(1 for k, v in before.items() if after_pairs.get(k) == v),
             "state": after,
             "local_edits": local_edits,
+            "unread_copy": unread_copy,
         }
 
     def snapshot_pairs(self) -> Dict[str, str]:
@@ -752,7 +838,8 @@ class AutoMirrorE2E:
                 ("b3_create_on_device_single_mirror", self.check_create_on_device),
                 ("c_closing_source_closes_mirror", self.check_close_source),
                 ("c2_orphan_is_closed", self.check_orphan),
-                ("c3_duplicate_is_closed", self.check_duplicate),
+                ("c3_duplicate_keeps_users_mirror", self.check_duplicate),
+                ("c3b_duplicate_keeps_selected", self.check_duplicate_keeps_selected),
                 ("d_hide_and_unhide", self.check_hide_unhide),
                 ("e_close_on_mac_closes_source", self.check_close_on_mac),
                 ("f_agent_activity", self.check_agent_activity),

@@ -21,12 +21,15 @@ public struct SupermuxMobileChangesPayloadBuilder: Sendable {
     ///   - snapshot: The parsed `git status` snapshot.
     ///   - root: The workspace's live repository root, echoed so the phone can
     ///     pin `expected_root` on mutations against a stale view.
+    ///   - aiCommitConfigured: Whether this Mac can write commit messages
+    ///     (`ai_commit_configured`); `nil` omits the field.
     /// - Returns: The RPC result object (`SupermuxChangesStatusDTO` shape).
     /// - Throws: Any encoding failure from the shared wire bridge.
     public func status(
         workspaceId: String,
         snapshot: SupermuxGitStatusSnapshot,
-        root: String? = nil
+        root: String? = nil,
+        aiCommitConfigured: Bool? = nil
     ) throws -> [String: Any] {
         try SupermuxWireJSON().dictionary(from: SupermuxChangesStatusDTO(
             workspaceId: workspaceId,
@@ -39,7 +42,8 @@ public struct SupermuxMobileChangesPayloadBuilder: Sendable {
             unstaged: snapshot.unstaged.map(Self.changedFile),
             untracked: snapshot.untracked.map(Self.changedFile),
             stashCount: snapshot.stashEntryCount,
-            root: root
+            root: root,
+            aiCommitConfigured: aiCommitConfigured
         ))
     }
 

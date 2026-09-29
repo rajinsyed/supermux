@@ -283,8 +283,11 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   is absent in two passes ≥1 s apart while the device is authoritative (also with auto-mirror off); a bound
   mirror with no live or pending projection while its remote workspace exists (orphan; reopened fresh);
   every mirror but one of a remote workspace shown twice (duplicate, e.g. a reopened closed window next to
-  auto-mirror's replacement; the projected one survives first, then the bound one, then the lowest local
-  id; only with auto-mirror on, never while an open of the ref is in flight).
+  auto-mirror's replacement; the one the user keeps survives: a projected one first, then the one selected
+  in its window, then one the user opened, reopened or restored over a copy auto-mirror opened in this
+  session, then the bound one, then the lowest local id; an unbound survivor takes over the binding and its
+  applied-customization baseline before the copy closes, so its local edits hold; only with auto-mirror
+  on, never while an open of the ref is in flight).
 - **Scheduling**: passes coalesce to the earliest pending deadline, so a failed open's 10 s backoff never
   delays the 200 ms triggers (status, new or closed remote workspaces); every pass re-arms a pass for the
   earliest backoff expiry.
@@ -331,8 +334,10 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 - **Settings › Automation › Remote Macs** (`SupermuxRemoteMacsSettingsCard`, #596–#598; app side
   `SupermuxComposition.remoteMacsSettings`): the `autoMirror` / `syncProjects` / `sharePush` toggles
   (auto-mirror reconciles at once), discoverable / discovering status with Turn On through upstream's
-  `ComputersSettingsActions` (consent sheet included), the known Macs with link state and workspace
-  counts, and Show Hidden Workspaces.
+  `ComputersSettingsActions` (consent sheet included) and, once on, a "Change in Devices…" link to
+  Settings › Remote & Devices › Devices (where both switches live), the known Macs with link state
+  and workspace counts (laid out like the Devices page's rows; that page lists only Macs upstream's
+  registry knows, so never the DEBUG loopback), and Show Hidden Workspaces.
 - **Socket** (`supermux.devices.*`, all builds): `remote_macs_settings {}` (the card's snapshot plus
   `discovery_enabled` / `incoming_access_enabled`), `remote_macs_settings_set {setting:
   auto_mirror|sync_projects|share_push, enabled}` or `{action: show_hidden}` (the card's own

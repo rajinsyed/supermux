@@ -37,8 +37,8 @@ public struct SupermuxRemoteMacsSettingsCard: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "supermux.settings.remoteMacs.title", defaultValue: "Remote Macs"))
-                .font(.headline)
+            // The settings' own header style, 2 pt right of the card like every other.
+            SettingsSectionHeader(String(localized: "supermux.settings.remoteMacs.title", defaultValue: "Remote Macs"))
                 .padding(.top, 6)
                 .accessibilityIdentifier("SupermuxRemoteMacsHeading")
             SettingsCard {
@@ -91,7 +91,7 @@ public struct SupermuxRemoteMacsSettingsCard: View {
         toggleRow(
             .autoMirror,
             String(localized: "supermux.settings.remoteMacs.autoMirror", defaultValue: "Show other Macs' workspaces in the sidebar"),
-            subtitle: String(localized: "supermux.settings.remoteMacs.autoMirror.subtitle", defaultValue: "Every workspace on your other Macs appears here under its project and stays in sync."),
+            subtitle: String(localized: "supermux.settings.remoteMacs.autoMirror.subtitle", defaultValue: "Every workspace on your other Macs appears in the sidebar under its project and stays in sync."),
             identifier: "SupermuxRemoteMacsAutoMirrorToggle"
         )
         SettingsCardDivider()
@@ -157,10 +157,19 @@ public struct SupermuxRemoteMacsSettingsCard: View {
             subtitle: accessSubtitle(isIncoming: isIncoming, control: control, managed: managed)
         ) {
             if control.isOn {
-                Label(String(localized: "supermux.settings.remoteMacs.access.on", defaultValue: "On"), systemImage: "checkmark.circle.fill")
-                    .labelStyle(.titleAndIcon)
+                HStack(spacing: 10) {
+                    Label(String(localized: "supermux.settings.remoteMacs.access.on", defaultValue: "On"), systemImage: "checkmark.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.green)
+                    // Read-only here: Settings › Devices is where it is switched.
+                    Button(String(localized: "supermux.settings.remoteMacs.access.change", defaultValue: "Change in Devices…")) {
+                        Self.openDevicesSettings()
+                    }
+                    .buttonStyle(.link)
                     .font(.system(size: 12))
-                    .foregroundStyle(.green)
+                    .accessibilityIdentifier(isIncoming ? "SupermuxRemoteMacsDiscoverableChange" : "SupermuxRemoteMacsDiscoveryChange")
+                }
             } else {
                 Button(String(localized: "supermux.settings.remoteMacs.access.turnOn", defaultValue: "Turn On")) {
                     Task {
@@ -173,6 +182,15 @@ public struct SupermuxRemoteMacsSettingsCard: View {
                 .accessibilityIdentifier(isIncoming ? "SupermuxRemoteMacsDiscoverableTurnOn" : "SupermuxRemoteMacsDiscoveryTurnOn")
             }
         }
+    }
+
+    /// Shows Settings › Remote & Devices › Devices, where both switches live.
+    private static func openDevicesSettings() {
+        NotificationCenter.default.post(
+            name: SettingsWindowRoot.navigationRequestName,
+            object: nil,
+            userInfo: ["target": SettingsSectionID.computers.rawValue]
+        )
     }
 
     private func accessTitle(isIncoming: Bool, isOn: Bool) -> String {
@@ -189,7 +207,7 @@ public struct SupermuxRemoteMacsSettingsCard: View {
         if let unavailable = accessSnapshot.unavailableMessage { return unavailable }
         return isIncoming
             ? String(localized: "supermux.settings.remoteMacs.discoverable.subtitle", defaultValue: "Needed for your other Macs to show this Mac's workspaces.")
-            : String(localized: "supermux.settings.remoteMacs.discovery.subtitle", defaultValue: "Needed to show your other Macs' workspaces here.")
+            : String(localized: "supermux.settings.remoteMacs.discovery.subtitle", defaultValue: "Needed to show your other Macs' workspaces in the sidebar.")
     }
 
     // MARK: - Macs and hidden workspaces
@@ -226,39 +244,45 @@ public struct SupermuxRemoteMacsSettingsCard: View {
     }
 }
 
-/// One known Mac in the Remote Macs card: its name, how many of
-/// its workspaces this Mac sees, and its link state.
+/// One known Mac in the Remote Macs card, laid out like a row of the
+/// Settings › Devices list (``ComputersSettingsRow``): its name, then its
+/// link state and how many of its workspaces this Mac sees (or why the link
+/// is down).
 private struct SupermuxRemoteMacRow: View {
     let mac: SupermuxRemoteMacsSettingsSnapshot.Mac
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "desktopcomputer")
-                .font(.system(size: 13))
+                .font(.system(size: 23, weight: .light))
                 .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 2) {
+                .frame(width: 30)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
                 Text(mac.name)
-                    .font(.system(size: 13, weight: .medium))
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                    .help(mac.name)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(linkColor)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                    Text(linkText)
+                    Text(verbatim: "·")
+                    Text(detail).lineLimit(2)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 12)
-            HStack(spacing: 5) {
-                Circle().fill(linkColor).frame(width: 7, height: 7)
-                Text(linkText)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+            Spacer(minLength: 8)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(14)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("SupermuxRemoteMacRow")
     }
 
-    private var subtitle: String {
+    private var detail: String {
         if mac.link != .connected, let detail = mac.detail, !detail.isEmpty { return detail }
         return String(localized: "supermux.settings.remoteMacs.mac.workspaces", defaultValue: "Workspaces: \(mac.workspaceCount)")
     }

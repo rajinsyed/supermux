@@ -93,6 +93,16 @@ public final class SupermuxDeviceBindingStore {
         save()
     }
 
+    /// Hands `ref`'s binding to another local workspace that already shows it
+    /// (the duplicate mirror that survives), keeping the remote customization
+    /// last applied: that mirror carries the user's local color, description
+    /// and pin, which a first sight would overwrite with the remote values.
+    public func handOver(_ ref: SupermuxRemoteWorkspaceRef, toStableID stableID: UUID, workspaceID: UUID) {
+        let applied = stableIDsByRef[ref].flatMap { bindings[$0]?.appliedCustomization }
+        bind(stableID: stableID, workspaceID: workspaceID, to: ref)
+        if let applied { recordAppliedCustomization(applied, forStableID: stableID) }
+    }
+
     /// Removes the binding of a local workspace.
     public func unbind(stableID: UUID) {
         guard bindings.removeValue(forKey: stableID) != nil else { return }
