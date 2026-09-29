@@ -31,29 +31,16 @@ public struct SupermuxForwardedKeyEvent: Codable, Equatable, Sendable {
 
     // MARK: Which keys travel as events
 
-    private static let ctrl: UInt32 = 1 << 1
-    private static let alt: UInt32 = 1 << 2
-    private static let superKey: UInt32 = 1 << 3
+    private static let releaseAction: UInt32 = 0
 
-    /// Whether a key event goes to the other Mac as an event. Plain text
-    /// (including Shift, Caps Lock and Option-composed characters) stays a
-    /// local byte stream so local echo prediction keeps working; everything
-    /// whose encoding depends on terminal state is forwarded: control and
-    /// function keys, keys with an unconsumed Control, Option or Command, and
-    /// modifier-only presses. IME preedit never leaves the mirror.
-    public static func shouldForward(text: String?, mods: UInt32, consumedMods: UInt32, composing: Bool) -> Bool {
-        guard !composing else { return false }
-        if mods & ~consumedMods & (ctrl | alt | superKey) != 0 { return true }
-        guard let text, !text.isEmpty else { return true }
-        return !text.unicodeScalars.allSatisfy(isPrintable)
-    }
-
-    private static func isPrintable(_ scalar: Unicode.Scalar) -> Bool {
-        switch scalar.value {
-        case 0x00..<0x20, 0x7F...0x9F: return false // C0, DEL, C1
-        case 0xF700...0xF8FF: return false // AppKit function-key characters
-        default: return true
-        }
+    /// Whether a key event goes to the other Mac as an event: every press and
+    /// repeat, plain text included. Forwarded keys take a different queue
+    /// than bytes Ghostty encodes locally, so forwarding only some keys would
+    /// let a character overtake the Escape typed before it. IME preedit never
+    /// leaves the mirror, and a release stays local (Ghostty swallows the
+    /// release of a forwarded press).
+    public static func shouldForward(action: UInt32, composing: Bool) -> Bool {
+        !composing && action != releaseAction
     }
 
     // MARK: Named-key encoding

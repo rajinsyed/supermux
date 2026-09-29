@@ -26,10 +26,10 @@ struct SupermuxTerminalInputBatchTests {
 
     @Test func keepsOrderAndMergesAdjacentBytes() {
         var batch = SupermuxTerminalInputBatch()
-        #expect(batch.append(bytes: Data("ab".utf8)))
-        #expect(batch.append(bytes: Data("c".utf8)))
-        #expect(batch.append(key: escape))
-        #expect(batch.append(bytes: Data("d".utf8)))
+        do { let appended = batch.append(bytes: Data("ab".utf8)); #expect(appended) }
+        do { let appended = batch.append(bytes: Data("c".utf8)); #expect(appended) }
+        do { let appended = batch.append(key: escape); #expect(appended) }
+        do { let appended = batch.append(bytes: Data("d".utf8)); #expect(appended) }
         #expect(batch.items == [.bytes(Data("abc".utf8)), .key(escape), .bytes(Data("d".utf8))])
         #expect(!batch.isEmpty)
         #expect(batch.containsKeys)
@@ -37,18 +37,18 @@ struct SupermuxTerminalInputBatchTests {
 
     @Test func emptyBytesAddNothing() {
         var batch = SupermuxTerminalInputBatch()
-        #expect(batch.append(bytes: Data()))
+        do { let appended = batch.append(bytes: Data()); #expect(appended) }
         #expect(batch.isEmpty)
         #expect(!batch.containsKeys)
     }
 
     @Test func refusesInputPastTheLimitWithoutChangingTheBatch() {
         var batch = SupermuxTerminalInputBatch(byteLimit: 4)
-        #expect(batch.append(bytes: Data("abc".utf8)))
-        #expect(!batch.append(bytes: Data("de".utf8)))
+        do { let appended = batch.append(bytes: Data("abc".utf8)); #expect(appended) }
+        do { let appended = batch.append(bytes: Data("de".utf8)); #expect(!appended) }
         #expect(batch.items == [.bytes(Data("abc".utf8))])
-        #expect(batch.append(bytes: Data("d".utf8)))
-        #expect(!batch.append(key: escape))
+        do { let appended = batch.append(bytes: Data("d".utf8)); #expect(appended) }
+        do { let appended = batch.append(key: escape); #expect(!appended) }
         #expect(batch.items == [.bytes(Data("abcd".utf8))])
     }
 
