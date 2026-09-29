@@ -262,12 +262,15 @@ enum SupermuxWorkspaceRow {
     /// `SupermuxProjectsSectionView` consumes only their `directory` (to
     /// exclude already-open worktrees from the unopened-worktree PR probe) —
     /// so this skips the branch/PR/activity resolution ``snapshot(for:isSelected:projectId:isRunning:)``
-    /// pays, each leg of which walks the bonsplit pane tree.
+    /// pays, each leg of which walks the bonsplit pane tree. A device mirror's
+    /// directory is the other Mac's path, so it reports none (as
+    /// ``SupermuxMirrorRowSnapshot`` does) and never excludes a same-path
+    /// local worktree.
     static func standaloneSnapshot(for workspace: Workspace, isSelected: Bool) -> SupermuxOpenWorkspace {
         SupermuxOpenWorkspace(
             id: workspace.id,
             title: workspace.customTitle ?? workspace.title,
-            directory: workspace.currentDirectory,
+            directory: SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) ? "" : workspace.currentDirectory,
             isSelected: isSelected
         )
     }
