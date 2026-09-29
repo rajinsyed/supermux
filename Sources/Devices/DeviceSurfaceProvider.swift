@@ -293,7 +293,10 @@ final class DeviceSurfaceProvider: SurfaceProvider {
                 created = try workspace.performRemoteTmuxMirrorMutation {
                     try SurfacePaneFactory.makeCloudManualMirrorPane(
                         at: destination, focus: false,
-                        onInput: { input in router.enqueue(input) }, keyNameResolver: nil,
+                        // SUPERMUX:begin device-mirror-key-resolver
+                        onInput: { input in router.enqueue(input) },
+                        keyNameResolver: SupermuxDeviceTerminalInput.keyResolver(for: machine),
+                        // SUPERMUX:end device-mirror-key-resolver
                         onResize: { _ in }, onRuntimeReady: {}, onFocus: {}
                     )
                 }

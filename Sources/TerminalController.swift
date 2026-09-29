@@ -15995,9 +15995,12 @@ class TerminalController {
     }
 
     func v2MobileTerminalInput(params: [String: Any]) -> V2CallResult {
-        guard let text = v2RawString(params, "text"), !text.isEmpty else {
+        // SUPERMUX:begin device-mirror-input-host (another Mac's device mirror sends an ordered batch; its text may be empty)
+        let supermuxInput = SupermuxDeviceTerminalInput.batch(in: params)
+        guard let text = v2RawString(params, "text"), !text.isEmpty || supermuxInput != nil else {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
+        // SUPERMUX:end device-mirror-input-host
         if let error = mobileWorkspaceIDValidationError(params: params) {
             return error
         }
@@ -16039,7 +16042,11 @@ class TerminalController {
         let sendResult = MobileTerminalByteTee.shared.performMobileInput(
             surfaceID: surfaceId,
             sequence: (params["input_sequence"] as? String).flatMap(UInt64.init)
-        ) { terminalTarget.sendInputResult(text) }
+        ) {
+            // SUPERMUX:begin device-mirror-input-host
+            supermuxInput.map { SupermuxDeviceTerminalInput.deliver($0, to: terminalTarget) } ?? terminalTarget.sendInputResult(text)
+            // SUPERMUX:end device-mirror-input-host
+        }
         let acknowledgement = MobileHostTerminalInputApplier.shared.complete(delivery, result: sendResult)
         switch sendResult {
         case .sent:

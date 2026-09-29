@@ -38,6 +38,20 @@ public struct SupermuxTerminalInputBatch: Equatable, Sendable {
         return true
     }
 
+    /// Appends one item; false (and nothing appended) past the limit.
+    public mutating func append(_ item: Item) -> Bool {
+        switch item {
+        case .bytes(let data): append(bytes: data)
+        case .key(let key): append(key: key)
+        }
+    }
+
+    /// Empties the batch, keeping its limit.
+    public mutating func removeAll() {
+        items.removeAll()
+        byteCount = 0
+    }
+
     /// Appends a key, which counts as its text's length (at least one byte).
     public mutating func append(key: SupermuxForwardedKeyEvent) -> Bool {
         let cost = max(1, key.text?.utf8.count ?? 0)

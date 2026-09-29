@@ -5,6 +5,9 @@ import CmuxTerminalSharing
 import CmuxTerminalSizing
 import Foundation
 import OSLog
+// SUPERMUX:begin device-mirror-input-batch
+import SupermuxKit
+// SUPERMUX:end device-mirror-input-batch
 
 nonisolated private let deviceMirrorLog = Logger(subsystem: "dev.cmux", category: "device-terminal-mirror")
 
@@ -67,6 +70,15 @@ final class DeviceTerminalMirrorSession {
     /// Consecutive `viewport_transition` answers, bounded so a host that never
     /// settles cannot spin the attach loop.
     private var viewportTransitionRetries = 0
+    // SUPERMUX:begin device-mirror-hidden-counts
+    /// Set while this mirror's pane is off screen here: it then reports
+    /// `counts_override: false`, so a pane nobody looks at never sizes the
+    /// other Mac's terminal (SupermuxTerminalSizingVisibility).
+    private(set) var supermuxHidden = false
+    /// Whether the host holds this mirror's `counts_override: false`, so
+    /// coming back on screen must clear it (now, or with the next replay).
+    private var supermuxHostHoldsHiddenCounts = false
+    // SUPERMUX:end device-mirror-hidden-counts
 
     convenience init(link: DeviceLink, remoteWorkspaceID: String, remoteSurfaceID: UUID) {
         self.init(
@@ -77,7 +89,12 @@ final class DeviceTerminalMirrorSession {
             viewer: RemoteMacTerminalViewer(
                 clientID: link.clientID,
                 identity: TerminalController.shared.localSizingIdentity()
-            )
+            ),
+            // SUPERMUX:begin device-mirror-input-batch
+            supportsSupermuxInput: { [instance = link.instance] in
+                SupermuxDeviceTerminalInput.supportsForwardedInput(on: .device(instance))
+            }
+            // SUPERMUX:end device-mirror-input-batch
         )
     }
 
@@ -87,7 +104,10 @@ final class DeviceTerminalMirrorSession {
         events: DeviceLinkTerminalEvents,
         isConnected: @escaping @MainActor @Sendable () -> Bool,
         requestData: @escaping @MainActor @Sendable (String, [String: Any]) async throws -> Data,
-        viewer: RemoteMacTerminalViewer? = nil
+        viewer: RemoteMacTerminalViewer? = nil,
+        // SUPERMUX:begin device-mirror-input-batch
+        supportsSupermuxInput: @escaping @MainActor @Sendable () -> Bool = { false }
+        // SUPERMUX:end device-mirror-input-batch
     ) {
         self.remoteWorkspaceID = remoteWorkspaceID
         self.remoteSurfaceID = remoteSurfaceID
@@ -99,14 +119,15 @@ final class DeviceTerminalMirrorSession {
         self.attachment = attachment
         let clientID = viewer?.clientID
         inputRouter = DeviceTerminalInputRouter(
-            send: { @MainActor data in
+            // SUPERMUX:begin device-mirror-input-batch (an ordered batch: forwarded keys and exact bytes when the host takes them, else text)
+            sendBatch: { @MainActor batch in
                 guard attachment.isConnected, isConnected() else { throw DeviceLinkError.notConnected }
-                guard let text = String(data: data, encoding: .utf8) else { throw DeviceTerminalInputRouter.InputError.invalidEncoding }
                 var input: [String: Any] = [
                     "workspace_id": remoteWorkspaceID,
                     "surface_id": remoteSurfaceID.uuidString,
-                    "text": text
                 ]
+                input = try SupermuxDeviceTerminalInput.inputParams(batch, base: input, hostTakesBatches: supportsSupermuxInput())
+            // SUPERMUX:end device-mirror-input-batch
                 // The client id makes input sizing activity on the host and
                 // lets the host refuse it while this Mac is disconnected.
                 if let clientID { input["client_id"] = clientID }
@@ -146,6 +167,9 @@ final class DeviceTerminalMirrorSession {
             Task { @MainActor [weak self] in self?.paneGridChanged() }
         }
         measurePaneGrid()
+        // SUPERMUX:begin device-mirror-hidden-counts
+        SupermuxTerminalSizingVisibility.shared.track(self, surface: surface)
+        // SUPERMUX:end device-mirror-hidden-counts
     }
 
     func start() {
@@ -169,6 +193,9 @@ final class DeviceTerminalMirrorSession {
         adoptedRelay?.discard()
         adoptedRelay = nil
         leaveSharing()
+        // SUPERMUX:begin device-mirror-hidden-counts
+        if let surface { SupermuxTerminalSizingVisibility.shared.untrack(surfaceID: surface.id) }
+        // SUPERMUX:end device-mirror-hidden-counts
         surface?.clearAssignedGrid()
         surface = nil
     }
@@ -302,6 +329,12 @@ final class DeviceTerminalMirrorSession {
             if let viewer, viewer.detachment == nil {
                 // Register this Mac with its pane grid before the host captures.
                 params.merge(viewer.replayParams()) { _, new in new }
+                // SUPERMUX:begin device-mirror-hidden-counts
+                if params["viewport_columns"] != nil, supermuxHidden || supermuxHostHoldsHiddenCounts {
+                    params["counts_override"] = supermuxHidden ? false : NSNull()
+                    supermuxHostHoldsHiddenCounts = supermuxHidden
+                }
+                // SUPERMUX:end device-mirror-hidden-counts
             }
             let response = try await requestData("mobile.terminal.replay", params)
             let replay = try await Self.decodeReplay(response)
@@ -443,6 +476,20 @@ final class DeviceTerminalMirrorSession {
         if viewer.viewport != nil, isConnected() { sendSizing("mobile.terminal.viewport", viewer.clearParams()) }
         sharingSurfaceID = nil
     }
+
+    // SUPERMUX:begin device-mirror-hidden-counts
+    /// Off screen, this mirror stops counting toward the other Mac's grid;
+    /// back on screen, it counts by the automatic rule again.
+    func supermuxSetHidden(_ hidden: Bool) {
+        guard hidden != supermuxHidden else { return }
+        supermuxHidden = hidden
+        // Not attached yet: the next replay carries it.
+        guard phase == .attached, hidden != supermuxHostHoldsHiddenCounts,
+              let report = viewer?.countsParams(hidden ? false : nil) else { return }
+        supermuxHostHoldsHiddenCounts = hidden
+        sendSizing("mobile.terminal.viewport", report)
+    }
+    // SUPERMUX:end device-mirror-hidden-counts
 
     /// Pins only the mirror to the source grid; local resizing clips or letterboxes it.
     private func pin(columns: Int, rows: Int) {

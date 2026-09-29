@@ -27,6 +27,9 @@ extension SupermuxDevices {
     func linkDidConnect(_ instance: SurfaceDeviceInstanceID) {
         fetchedInstances.insert(instance)
         resetCapabilities(instance)
+        // Learn the capabilities now: a mirror's key resolver reads them
+        // synchronously on every key press.
+        Task { [weak self] in _ = await self?.hostCapabilities(on: .device(instance)) }
         emit(.linkConnected(.device(instance)))
         scheduleRefresh()
     }

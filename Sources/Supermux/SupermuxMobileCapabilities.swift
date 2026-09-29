@@ -63,6 +63,10 @@ enum SupermuxMobileCapabilities {
             // project.probe / project.clone are served: other Macs register
             // their copy of a repo here (project sync) and "Set Up on <Mac>…".
             SupermuxMobileCapability.projectSetupV1.rawValue,
+            // mobile.terminal.input takes `supermux_input`: another Mac's
+            // device mirror sends its keys as key events and its other input
+            // as exact bytes, so typing there behaves as typing here.
+            SupermuxMobileCapability.terminalInputV1.rawValue,
         ]
     }
 }
