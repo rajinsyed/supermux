@@ -163,7 +163,7 @@ public actor SupermuxPhonePushService {
         guard let configuration = loadConfiguration(),
               let privateKeyData = try? Data(contentsOf: privateKeyURL),
               !privateKeyData.isEmpty else { return }
-        var registrations = loadRegistrations()
+        let registrations = loadRegistrations()
         guard !registrations.isEmpty else { return }
 
         let providerToken: String
@@ -205,8 +205,13 @@ public actor SupermuxPhonePushService {
             }
         }
         guard !invalidTokens.isEmpty else { return }
-        registrations.removeAll { invalidTokens.contains($0.deviceToken) }
-        try? persist(registrations: registrations)
+        // Re-read rather than reuse the list the sends started from: every
+        // await above lets `register` or `acceptShare` persist new tokens on
+        // this actor, and writing back the old snapshot would drop them. No
+        // await between this read and the write, so nothing can interleave.
+        var current = loadRegistrations()
+        current.removeAll { invalidTokens.contains($0.deviceToken) }
+        try? persist(registrations: current)
     }
 
     /// Whether the local team/key configuration and private key are present.
