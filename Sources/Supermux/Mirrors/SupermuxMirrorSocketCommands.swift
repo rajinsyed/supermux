@@ -17,7 +17,7 @@ import SupermuxKit
 /// - `run_toggle {workspace_id, via: "shortcut"|"presets_bar"}` — ⌘G / Run.
 /// - `preset_launch {workspace_id, name, command}` — a presets-bar chip.
 /// - `action_run {workspace_id, action_id}` — a remote project action.
-/// - `changes {workspace_id, action: status|stage|unstage|diff, path?, staged?, open_viewer?}`.
+/// - `changes {workspace_id, action: status|stage|unstage|diff|fetch, path?, staged?, open_viewer?}`.
 @MainActor
 enum SupermuxMirrorSocketCommands {
     static let methodPrefix = "mirror."

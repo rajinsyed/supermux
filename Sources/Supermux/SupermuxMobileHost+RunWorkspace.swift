@@ -16,7 +16,7 @@ extension TerminalController {
         params: [String: Any]
     ) -> V2CallResult {
         let workspace: Workspace
-        switch supermuxRunNamedWorkspace(params: params) {
+        switch supermuxNamedLocalWorkspace(params: params) {
         case let .failure(error): return error
         case let .success(resolved): workspace = resolved
         }
@@ -44,7 +44,7 @@ extension TerminalController {
     @MainActor
     func supermuxRunStopInNamedWorkspace(project: SupermuxProject, params: [String: Any]) -> V2CallResult {
         let workspace: Workspace
-        switch supermuxRunNamedWorkspace(params: params) {
+        switch supermuxNamedLocalWorkspace(params: params) {
         case let .failure(error): return error
         case let .success(resolved): workspace = resolved
         }
@@ -60,9 +60,11 @@ extension TerminalController {
         }
     }
 
-    /// The named workspace: open here and not itself a device mirror.
+    /// The workspace another Mac names by `workspace_id` (the one its mirror
+    /// shows): open here and not itself a device mirror. Shared by `run.*`
+    /// and `action.run`.
     @MainActor
-    private func supermuxRunNamedWorkspace(params: [String: Any]) -> SupermuxParamResolution<Workspace> {
+    func supermuxNamedLocalWorkspace(params: [String: Any]) -> SupermuxParamResolution<Workspace> {
         guard let raw = params["workspace_id"] as? String, let id = UUID(uuidString: raw) else {
             return .failure(.err(code: "invalid_params", message: "workspace_id must be a workspace UUID", data: nil))
         }

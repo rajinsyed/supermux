@@ -91,6 +91,50 @@ import SupermuxKit
         #expect(transport.calls.last?.params["expected_root"] as? String == "/host/root")
     }
 
+    @Test func discardAllNeverFollowsTheShellIntoARootThePanelDidNotShow() async {
+        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
+        transport.respond("mobile.supermux.changes.status", with: Self.status(
+            root: "/wt-a", unstaged: [["path": "a.txt", "kind": "modified"]]
+        ))
+        let backend = SupermuxRemoteChangesBackend(transport: transport)
+        _ = await backend.status(repoPath: "/wt-a")
+
+        // Over there the workspace's shell `cd`s to another worktree before
+        // this panel refreshes; the user confirms Discard All for wt-a.
+        Self.moveHost(transport, to: "/wt-b", unstaged: "b.txt")
+        await #expect(throws: (any Error).self) {
+            try await backend.discardAll(repoPath: "/wt-a")
+        }
+        #expect(!transport.accepted.contains { $0.method == "mobile.supermux.changes.discard" })
+    }
+
+    @Test func anAICommitNeverFollowsTheShellIntoAnotherRoot() async {
+        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
+        transport.currentRoot = "/wt-a"
+        transport.respond("mobile.supermux.changes.status", with: Self.status(
+            root: "/wt-a", unstaged: [["path": "a.txt", "kind": "modified"]]
+        ))
+        transport.respond("mobile.supermux.changes.generate_commit_message", with: ["message": "feat: a"])
+        let backend = SupermuxRemoteChangesBackend(transport: transport)
+        let model = SupermuxChangesModel(backend: backend, commitGenerator: SupermuxRemoteCommitMessenger(backend: backend))
+        model.setDirectory("/wt-a")
+        await pollUntil { model.snapshot.unstaged.map(\.path) == ["a.txt"] && model.aiCommitConfigured }
+
+        // The shell `cd`s to another worktree while the message is written.
+        transport.afterReply = { method in
+            guard method == "mobile.supermux.changes.generate_commit_message" else { return }
+            transport.afterReply = nil
+            Self.moveHost(transport, to: "/wt-b", unstaged: "b.txt")
+        }
+        await model.performCommit()
+
+        let committed = transport.accepted.filter {
+            $0.method == "mobile.supermux.changes.stage" || $0.method == "mobile.supermux.changes.commit"
+        }
+        #expect(committed.isEmpty, "staged or committed in the other worktree: \(committed.map(\.method))")
+        #expect(model.lastError != nil)
+    }
+
     // MARK: - Mutations
 
     @Test func stageAndUnstageSendPathsOrAll() async throws {
@@ -137,17 +181,6 @@ import SupermuxKit
         #expect(transport.calls.filter { $0.method == "mobile.supermux.changes.discard" }.count == before)
     }
 
-    @Test func networkMutationsGetTheLongDeadline() async throws {
-        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
-        let backend = SupermuxRemoteChangesBackend(transport: transport)
-
-        try await backend.push(repoPath: "/r", hasUpstream: false)
-        try await backend.pull(repoPath: "/r")
-        for call in transport.calls {
-            #expect((call.timeout ?? .zero) >= .seconds(130), "\(call.method)")
-        }
-    }
-
     // MARK: - Diff
 
     @Test func fileDiffMapsBinaryTextAndFailure() async {
@@ -186,6 +219,28 @@ import SupermuxKit
         #expect(await backend.incomingCommits(repoPath: "/r", limit: 1).map(\.hash) == ["i2"])
     }
 
+    @Test func countAndFeedReadsNeverWaitOnAHostFetch() async {
+        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
+        transport.respond("mobile.supermux.changes.history", with: [
+            "commits": [Self.commit("c1", pushed: false)], "incoming": [],
+        ])
+        let backend = SupermuxRemoteChangesBackend(transport: transport)
+
+        _ = await backend.unpushedCountWithoutUpstream(repoPath: "/r")
+        _ = await backend.unpushedCommits(repoPath: "/r", hasUpstream: true, limit: 5)
+        _ = await backend.incomingCommits(repoPath: "/r", limit: 5)
+        let reads = transport.calls.filter { $0.method == "mobile.supermux.changes.history" }
+        // Like the local engine, counts come from the last fetch: a refresh on
+        // a branch without an upstream must not run `git fetch` over there.
+        #expect(!reads.isEmpty)
+        #expect(reads.allSatisfy { $0.params["fetch"] as? Bool == false })
+
+        // Only the panel's Fetch (and its auto-fetch) asks the host to fetch.
+        #expect(await backend.fetch(repoPath: "/r"))
+        #expect(transport.calls.last?.method == "mobile.supermux.changes.history")
+        #expect(transport.calls.last?.params["fetch"] as? Bool != false)
+    }
+
     // MARK: - Change signals
 
     @Test func changeSignalsLeaseTheWatcherYieldOnEventsAndReleaseOnCancel() async {
@@ -209,6 +264,29 @@ import SupermuxKit
         // A reconnect re-arms the lease (the host forgot it with the link).
         #expect(enables.count >= 2)
         #expect(enables.allSatisfy { $0.params["client_id"] as? String != nil })
+    }
+
+    @Test func theLeaseIsReleasedEvenWhenTheBackendIsGone() async throws {
+        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
+        var backend: SupermuxRemoteChangesBackend? = SupermuxRemoteChangesBackend(transport: transport)
+        weak var released = backend
+        let signals = try #require(backend).changeSignals(repoPath: "/r")
+        let consumer = Task { @MainActor in
+            for await _ in signals {}
+        }
+        await pollUntil { transport.calls.contains { $0.method == "mobile.supermux.changes.watch" && $0.params["enable"] as? Bool == true } }
+
+        // Switching away from a mirror drops its model, the backend's last owner.
+        backend = nil
+        consumer.cancel()
+        await pollUntil { transport.calls.contains { $0.method == "mobile.supermux.changes.watch" && $0.params["enable"] as? Bool == false } }
+
+        let release = transport.calls.first { $0.method == "mobile.supermux.changes.watch" && $0.params["enable"] as? Bool == false }
+        #expect(release != nil, "the owning Mac keeps watching until its lease expires")
+        #expect(release?.params["client_id"] as? String != nil)
+        #expect(release?.params["workspace_id"] as? String == Self.remoteID)
+        await pollUntil { released == nil }
+        #expect(released == nil)
     }
 
     // MARK: - AI commit staleness input
@@ -280,6 +358,14 @@ import SupermuxKit
         ]
     }
 
+    /// The workspace's directory over there moves (a `cd` in its shell).
+    private static func moveHost(_ transport: FakeRemoteChangesTransport, to root: String, unstaged path: String) {
+        transport.currentRoot = root
+        transport.respond("mobile.supermux.changes.status", with: status(
+            root: root, unstaged: [["path": path, "kind": "modified"]]
+        ))
+    }
+
     private static func commit(_ sha: String, pushed: Bool) -> [String: Any] {
         ["sha": sha, "short_sha": sha, "author": "a", "relative_date": "now", "subject": sha, "is_pushed": pushed]
     }
@@ -292,13 +378,16 @@ import SupermuxKit
 }
 
 /// Scripted stand-in for the device link: canned replies per method, recorded
-/// calls, and a manual event feed.
+/// calls, and a manual event feed. With ``currentRoot`` set it also applies
+/// the host's stale-view guard: a call whose `expected_root` differs is
+/// refused with `stale_root`, exactly as the owning Mac refuses it.
 @MainActor
 final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
     struct Call {
         let method: String
         let params: [String: Any]
-        let timeout: Duration?
+        /// Whether the host carried the call out (not refused).
+        let accepted: Bool
     }
 
     struct Rejected: Error {
@@ -307,6 +396,10 @@ final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
 
     let remoteWorkspaceID: String
     private(set) var calls: [Call] = []
+    /// The workspace's directory over there, when the test models it.
+    var currentRoot: String?
+    /// Runs after each call is answered (e.g. the shell `cd`s meanwhile).
+    var afterReply: ((String) -> Void)?
     private var replies: [String: [String: Any]] = [:]
     private var failures: [String: String] = [:]
     private var continuations: [AsyncStream<SupermuxRemoteChangesEvent>.Continuation] = []
@@ -314,6 +407,9 @@ final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
     init(remoteWorkspaceID: String) {
         self.remoteWorkspaceID = remoteWorkspaceID
     }
+
+    /// The calls the host carried out.
+    var accepted: [Call] { calls.filter(\.accepted) }
 
     func respond(_ method: String, with reply: [String: Any]) {
         failures[method] = nil
@@ -328,9 +424,12 @@ final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
         for continuation in continuations { continuation.yield(event) }
     }
 
-    func request(_ method: String, params: [String: Any], timeout: Duration?) async throws -> [String: Any] {
-        calls.append(Call(method: method, params: params, timeout: timeout))
-        if let code = failures[method] { throw Rejected(code: code) }
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        defer { afterReply?(method) }
+        let expected = params["expected_root"] as? String
+        let refusal = failures[method] ?? (expected != nil && currentRoot != nil && expected != currentRoot ? "stale_root" : nil)
+        calls.append(Call(method: method, params: params, accepted: refusal == nil))
+        if let refusal { throw Rejected(code: refusal) }
         return replies[method] ?? ["ok": true]
     }
 

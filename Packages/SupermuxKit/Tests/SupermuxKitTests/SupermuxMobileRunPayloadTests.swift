@@ -119,6 +119,32 @@ struct SupermuxMobileRunPayloadTests {
         #expect(runs[0]["workspace_id"] as? String == older.workspaceId.uuidString)
     }
 
+    /// Runs are per workspace: a viewer Mac mirroring the NEWER run's
+    /// workspace must see that run (or it can neither show nor stop it),
+    /// while `runs` keeps its one row per project for the phone.
+    @Test func everyRunningWorkspaceIsListedNotOnlyTheOldest() throws {
+        let project = SupermuxProject(name: "A", rootPath: "/tmp/a")
+        let other = SupermuxProject(name: "B", rootPath: "/tmp/b")
+        let older = SupermuxMobileRunSnapshot(
+            projectId: project.id, workspaceId: UUID(), command: "sleep 5", startedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newer = SupermuxMobileRunSnapshot(
+            projectId: project.id, workspaceId: UUID(), command: "sleep 9", startedAt: Date(timeIntervalSince1970: 200)
+        )
+        let orphan = SupermuxMobileRunSnapshot(
+            projectId: nil, workspaceId: UUID(), command: "sleep 1", startedAt: Date(timeIntervalSince1970: 50)
+        )
+        let state = try builder.runState(projects: [project, other], snapshots: [newer, older, orphan])
+
+        #expect((state["runs"] as? [[String: Any]])?.count == 2)
+        let wire = SupermuxWireJSON()
+        let rows = try #require(state["workspace_runs"] as? [[String: Any]])
+            .map { try wire.decode(SupermuxRunStateDTO.self, from: $0) }
+        #expect(Set(rows.compactMap(\.workspaceId)) == [older.workspaceId.uuidString, newer.workspaceId.uuidString])
+        #expect(rows.allSatisfy { $0.projectId == project.id.uuidString && $0.isRunning == true })
+        #expect(rows.first { $0.workspaceId == newer.workspaceId.uuidString }?.command == "sleep 9")
+    }
+
     @Test func runPayloadWithoutASnapshotReportsNotRunning() throws {
         let projectId = UUID()
         let payload = try builder.runPayload(projectId: projectId, snapshot: nil)

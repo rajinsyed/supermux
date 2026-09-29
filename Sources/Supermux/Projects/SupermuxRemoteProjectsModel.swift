@@ -146,24 +146,21 @@ final class SupermuxRemoteProjectsModel {
 
     /// Refetches only one Mac's `run.state` (after a mirror's Run / Stop).
     func refreshRuns(_ machine: SurfaceMachineID) async {
-        guard device(machine)?.isOnline == true, let runs = try? await fetchRuns(on: machine) else { return }
-        update(machine) { $0.runs = runs }
+        guard device(machine)?.isOnline == true, let state = try? await fetchRuns(on: machine) else { return }
+        update(machine) { $0.setRuns(state) }
     }
 
-    /// Folds a `run.start` / `run.stop` result in before the host's poke lands.
-    func apply(run: SupermuxRunStateDTO, on machine: SurfaceMachineID) {
-        update(machine) { entry in
-            entry.runs.removeAll { $0.projectId.caseInsensitiveCompare(run.projectId) == .orderedSame }
-            entry.runs.append(run)
-        }
+    /// Folds a `run.start` / `run.stop` result for that Mac's workspace
+    /// `remoteWorkspaceID` in before the host's poke lands.
+    func apply(run: SupermuxRunStateDTO, on machine: SurfaceMachineID, remoteWorkspaceID: String) {
+        update(machine) { $0.apply(run: run, remoteWorkspaceID: remoteWorkspaceID) }
     }
 
-    private func fetchRuns(on machine: SurfaceMachineID) async throws -> [SupermuxRunStateDTO] {
+    private func fetchRuns(on machine: SurfaceMachineID) async throws -> SupermuxDeviceProjects.RunState {
         try await facade.request(
             SupermuxMobileMethod.runState.rawValue,
             on: machine,
-            resultKey: "runs",
-            as: [SupermuxRunStateDTO].self
+            as: SupermuxDeviceProjects.RunState.self
         )
     }
 
@@ -254,15 +251,15 @@ final class SupermuxRemoteProjectsModel {
                 as: ProjectsListing.self
             )
             let projects = listing.projects
-            var runs: [SupermuxRunStateDTO] = []
+            var runs = SupermuxDeviceProjects.RunState.none
             if capabilities.contains(SupermuxMobileCapability.runV1.rawValue) {
-                runs = (try? await fetchRuns(on: machine)) ?? []
+                runs = (try? await fetchRuns(on: machine)) ?? .none
             }
             let listed = Set(projects.compactMap { UUID(uuidString: $0.id) })
             update(machine) { entry in
                 entry.projects = projects
                 entry.presets = listing.presets ?? []
-                entry.runs = runs
+                entry.setRuns(runs)
                 entry.isFromCache = false
                 entry.lastError = nil
                 entry.worktreesByProjectID = entry.worktreesByProjectID.filter { listed.contains($0.key) }

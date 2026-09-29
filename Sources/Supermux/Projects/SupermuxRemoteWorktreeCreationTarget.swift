@@ -25,10 +25,6 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         var errorDescription: String? { message }
     }
 
-    /// `agent.options` may probe a Claude command's catalog on that Mac; a
-    /// link timeout reconnects the link, so allow the probe's own deadline.
-    static let optionsTimeout: Duration = .seconds(120)
-
     let location: SupermuxProjectLocation
     let machine: SurfaceMachineID
     private let deviceName: String
@@ -152,7 +148,6 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
                     SupermuxMobileMethod.agentOptions.rawValue,
                     params: params,
                     on: machine,
-                    timeout: Self.optionsTimeout,
                     as: SupermuxAgentLaunchOptionsDTO.self
                 )
             } catch {
