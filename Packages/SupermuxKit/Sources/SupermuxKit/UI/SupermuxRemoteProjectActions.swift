@@ -61,6 +61,10 @@ public struct SupermuxRemoteProjectActions {
     public var addExistingFolder: (SupermuxProjectSetupDestination, String) async throws -> Void
     /// Clones the repository into a folder on a Mac and registers it.
     public var cloneRepository: (SupermuxProjectSetupDestination, String, String) async throws -> Void
+    /// "Hide Here" for a nested device mirror (by local workspace id): it
+    /// keeps running on its Mac, leaves this sidebar, and auto-mirror leaves
+    /// it closed until "Show Hidden Remote Workspaces".
+    public var hideMirror: (UUID) -> Void
 
     /// Creates the bundle.
     public init(
@@ -72,7 +76,8 @@ public struct SupermuxRemoteProjectActions {
         loadWorktrees: @escaping (SupermuxProjectLocation) -> Void,
         makeWorktreeTarget: @escaping @MainActor (SupermuxProjectLocation) -> (any SupermuxWorktreeCreationTarget)?,
         addExistingFolder: @escaping (SupermuxProjectSetupDestination, String) async throws -> Void,
-        cloneRepository: @escaping (SupermuxProjectSetupDestination, String, String) async throws -> Void
+        cloneRepository: @escaping (SupermuxProjectSetupDestination, String, String) async throws -> Void,
+        hideMirror: @escaping (UUID) -> Void = { _ in }
     ) {
         self.openProject = openProject
         self.openWorktree = openWorktree
@@ -83,6 +88,7 @@ public struct SupermuxRemoteProjectActions {
         self.makeWorktreeTarget = makeWorktreeTarget
         self.addExistingFolder = addExistingFolder
         self.cloneRepository = cloneRepository
+        self.hideMirror = hideMirror
     }
 
     /// No-op callbacks (previews, and hosts without devices).

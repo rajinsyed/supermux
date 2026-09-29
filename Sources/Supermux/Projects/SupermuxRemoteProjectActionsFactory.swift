@@ -63,6 +63,9 @@ enum SupermuxRemoteProjectActionsFactory {
             },
             cloneRepository: { destination, remoteURL, path in
                 try await commands.cloneRepository(destination, remoteURL: remoteURL, path: path)
+            },
+            hideMirror: { workspaceID in
+                SupermuxComposition.deviceMirrorCloser.hideHere(workspaceID: workspaceID)
             }
         )
     }

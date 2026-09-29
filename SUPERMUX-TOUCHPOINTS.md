@@ -13,8 +13,8 @@ Rules for adding a touchpoint:
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
 - Numbering: the highest number in use is **599**. The remote-workspaces work (#517–#599) left
-  unassigned gaps it may still grow into: **523–524, 527–529, 538–544, 558–559, 562–569, 574–579,
-  588–589 and 591–594** (never assigned, not retired). Number **351** is unused (the notifications
+  unassigned gaps it may still grow into: **523–524, 527–529, 538–544, 558–559, 562–569, 575,
+  577–579, 588–589 and 591–594** (never assigned, not retired). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -547,6 +547,8 @@ Rules for adding a touchpoint:
 | 571 | `Sources/AppDelegate.swift` | `device-new-workspace-opener` | In `performNewWorkspaceAction`, inside upstream's `deviceMachineForNewWorkspace` branch and before its `deviceWorkspaceCreationCoordinator?.start(on:in:)`, `if SupermuxComposition.deviceNewWorkspace.handles(machine) { return SupermuxComposition.deviceNewWorkspace.start(on: machine, in: manager) }`: ⌘N on a device-backed workspace creates on that Mac through the fork's opener (remote `workspace.create` first, mirror opens already titled and bound), so upstream's provisional "Cloud VM" reservation title never renders and the create does not depend on the Cloud Machines operation controller. Keeps upstream's contract (a repeat press while one create runs returns `false`); a machine the fork's device facade does not know falls through to upstream's coordinator |
 | 572 | `Sources/FileExplorerWorkspaceRootResolver.swift` | `mirror-file-explorer-hint` | At the top of `resolve(_:)`'s `usesRemoteDirectoryProvenance` branch, `if let mirrorRoot = SupermuxMirrorFileExplorerRoot.root(for: workspace) { return mirrorRoot }`: for a device mirror the Files panel stays unavailable (as upstream already makes it) but names the owning Mac (`displayTarget` = Mac name, detail "They are on <Mac>.") instead of an anonymous "Remote files unavailable". The fork's file operations stay hidden with it (they attach only to `LocalFileExplorerProvider`) |
 | 573 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 18 workstream-W files into the cmux target (19 originally; `SupermuxMirrorRemoteState` — ids `…05`/`…06` — was folded into P1's `SupermuxRemoteProjectsModel` by workstream X and removed): 17 under `Sources/Supermux/Mirrors/` (`Mirrors/…` paths inside the `Supermux` group: `SupermuxMirrorTarget`, `…Resolver`, `…RunController`, `…Alerts`, `…PresetLauncher`, `…ProjectActions`, `SupermuxDeviceChangesTransport`, `SupermuxMirrorChangesSource`, `…ChangesPanel`, `…ChangesPanels`, `SupermuxComposition+Mirrors`, `SupermuxDeviceNewWorkspaceAction`, `SupermuxNewWorkspaceDeviceMenu`, `SupermuxMirrorFileExplorerRoot`, `SupermuxMirrorSocketCommands`, `SupermuxMirrorLocalPathActions`, `SupermuxMirrorChangesSocket`) plus `SupermuxMobileHost+RunWorkspace.swift` in the `Supermux` group root. Ids `50BE000A0000000000000001`–`…0026` (odd = file reference, even = build file, in that order); `grep -c 50BE000A cmux.xcodeproj/project.pbxproj` prints 72 |
+| 574 | `Sources/TabItemView+WorkspaceContextMenu.swift` | `device-mirror-row-menu` | Sidebar polish (A3): right after upstream's Close Workspace item(s), `if !isMulti, let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel { SupermuxMirrorRowMenuItems(workspaceId: workspaceId, deviceWorkspaceLabel: deviceWorkspaceLabel) { actions.closeTargets(targetIds, true) } }`: a flat device-mirror row's menu gains **Hide Here** (the closer's `hideHere(workspaceID:)`, no prompt) and **Close on <Mac>…** (the row's own close, which asks the mirror close prompt; disabled while that Mac is not connected) — the same two items the nested project rows offer (`Sources/Supermux/Mirrors/SupermuxMirrorRowMenuItems.swift`). Upstream's disabled Show in Finder is untouched |
+| 576 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the sidebar-polish (A3) files into the cmux target, four entries each: `Projects/SupermuxNestedWorkspaceRows.swift` (the Projects mount's row builder, shared with the `supermux.devices.sidebar_rows` socket method; file ref `50BE00130000000000000001`, build file `…02`) and `Mirrors/SupermuxMirrorRowMenuItems.swift` (#574; `…03` / `…04`), in the `Supermux` group's `Projects/` and `Mirrors/` paths; `grep -c 50BE0013 cmux.xcodeproj/project.pbxproj` prints 8 |
 | 580 | `Packages/iOS/CmuxMobileShell/Package.swift` | `supermux-mobile-mac-seams` | Two fences: the package + target dependency on the fork's `SupermuxMobileKit`, which defines the `SupermuxMacSeam` value type the shell publishes (#581). No cycle: `SupermuxMobileKit` depends only on `SupermuxMobileCore`, `CMUXMobileCore` and `CmuxMobileRPC` |
 | 581 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+SupermuxMacSeams.swift` | `supermux-mobile-mac-seams` | Whole new file (fenced top to bottom). Public `supermuxConnectionSeams: [SupermuxMacSeam]` — one seam per live Mac pairing: the foreground (`remoteClient` + `supportedHostCapabilities`, only while `.connected`, exactly like #96) plus every control subscription (`client` + `supportedHostCapabilities`), with pairing id, display name, color slot, custom color, status (from `workspacesByMac`) and `isForeground`; mirrors `captureTaskModelRequestContext`. Also public `supermuxConnectionSeam(forMacDeviceID:instanceTag:)`, the owning Mac's `(client, capabilities)` for a workspace row (exact pairing, else the only seam on that device whose tag or the row's is missing — a legacy untagged pairing; never a sibling build with a different explicit tag, whose workspace and pane ids mean nothing to the row's build; unowned rows → foreground). Pinned by #587. The #96 single seam is unchanged |
 | 582 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+SupermuxMacSeams.swift` | `supermux-mobile-mac-seams` | Whole new file. `supermuxResolveWorkspace`, a `SupermuxWorkspaceResolver` over upstream's public `store.workspaceID(matchingRemoteWorkspaceID:macDeviceID:instanceTag:)`, so the Projects section maps the Mac-local ids Supermux RPCs answer with to the owning Mac's (scoped) row id. A property, not an inline closure, because `WorkspaceListView.body` is at the type checker's limit |
@@ -4794,6 +4796,27 @@ Changes panel's remote model over `mobile.supermux.changes.*` via the SupermuxKi
 Verify: `swift test --filter SupermuxRemoteChangesBackendTests` in `Packages/SupermuxKit`, then
 `CMUX_TAG=<tag> python3 tests/supermux/loopback_workspace_behaviors_e2e.py` against a tagged build
 launched with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` (see the script's docstring).
+### 574–576. Sidebar rows, chips and close UX for device mirrors (A3) — `device-mirror-row-menu`
+
+Why: rows that show other Macs' workspaces had to read the same everywhere — chips on the right and
+lined up, nested rows grouped by Mac with the flat rows' status pills, a flat mirror row's menu with
+the same Hide Here / Close on <Mac>… items as a nested one. All logic is fork-owned
+(`Packages/SupermuxKit/Sources/SupermuxKit/UI/`, `…/Devices/SupermuxNestedWorkspaceOrder.swift`,
+`Sources/Supermux/Projects/SupermuxNestedWorkspaceRows.swift`, `Sources/Supermux/Mirrors/SupermuxMirrorRowMenuItems.swift`);
+E2E: `tests/supermux/loopback_sidebar_rows_e2e.py`. Re-apply:
+
+- **#574 `Sources/TabItemView+WorkspaceContextMenu.swift`.** In `workspaceContextMenu`, after the
+  `if let key = closeWorkspaceShortcut.keyEquivalent { … } else { … }` Close Workspace block and
+  before Close Other Workspaces, add the fenced
+  `if !isMulti, let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel { SupermuxMirrorRowMenuItems(workspaceId: workspaceId, deviceWorkspaceLabel: deviceWorkspaceLabel) { actions.closeTargets(targetIds, true) } }`.
+  If upstream renames `deviceWorkspaceLabel` or `closeTargets`, pass whatever carries the row's
+  device label and its user close (it must reach `TabManager.closeWorkspacesWithConfirmation`, so
+  the mirror close prompt still asks).
+- **#576 pbxproj.** Re-add the four entries for each file in the #576 row with the `50BE0013…`
+  ids, then `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj && scripts/check-pbxproj.sh`.
+
+Verify: a tagged build launched with the loopback device, then
+`CMUX_TAG=<tag> python3 tests/supermux/loopback_sidebar_rows_e2e.py` (also in `run_all_loopback_e2e.sh`).
 ### 580–586. iOS multi-Mac Supermux — `supermux-mobile-mac-seams` + `supermux-mobile-workspace-mac-seam`
 
 Why: upstream iOS aggregates workspaces from every paired Mac (foreground + background control

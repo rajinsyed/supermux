@@ -130,6 +130,14 @@ final class SupermuxDeviceMirrorCloser {
         return perform(.hideHere, on: workspace, ref: ref, in: manager)
     }
 
+    /// "Hide Here" from a sidebar row's menu (by local workspace id): hides
+    /// and closes that mirror, no prompt. False when it is not an open mirror.
+    @discardableResult
+    func hideHere(workspaceID: UUID) -> Bool {
+        guard let workspace = Workspace.liveWorkspace(id: workspaceID) else { return false }
+        return hideHere(workspace)
+    }
+
     /// A coordinator close: local only, nothing hidden, nothing closed remotely.
     func closeForCoordinator(_ workspace: Workspace) {
         guard let manager = workspace.owningTabManager else { return }
