@@ -419,17 +419,21 @@ class NotificationsE2E(LoopbackSmoke):
             title = f"e2e-app-focused-{self.nonce}"
             self.notify_socket(self.facts["source_surface_id"], title, "a pane nobody is looking at")
             source = self.source_record(title)
-            copy = self.mirror_copy(title)
             decision = wait_for("the source decision", lambda: self.decision_for(source["id"]), self.timeout_s)
+            # A source recorded read never reaches the mirror (read rows are
+            # not delivered), so check it before waiting for the copy.
+            if source.get("is_read"):
+                raise SmokeFailure("suppressWhenAppFocused recorded a background pane's notification read")
+            if decision.get("direct") == "skip_focused_pane":
+                raise SmokeFailure("the direct lane skipped a background pane as the focused pane")
+            self.mirror_copy(title)
             time.sleep(1.5)
             source = self.record_titled(title, self.source_workspace_id or "") or {}
             copy = self.record_titled(title, self.mirror_workspace_id or "") or {}
-            if source.get("is_read"):
-                raise SmokeFailure("suppressWhenAppFocused recorded a background pane's notification read")
             if copy.get("is_read"):
                 raise SmokeFailure("suppressWhenAppFocused recorded a background mirror pane's copy read")
-            if decision.get("direct") == "skip_focused_pane":
-                raise SmokeFailure("the direct lane skipped a background pane as the focused pane")
+            if source.get("is_read"):
+                raise SmokeFailure("the mirror acknowledged a background pane's notification to the host")
             return {
                 "selected_workspaces": selected,
                 "source_is_read": source.get("is_read"),
