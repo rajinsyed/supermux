@@ -429,10 +429,8 @@ class PickerE2E:
 
     def check_last_device_is_global(self) -> Dict[str, Any]:
         """The Mac the first project's worktree was just created on is the
-        default for another project too."""
-        stored = self.call("last_device", {}).get("device_key")
-        if stored != self.machine:
-            raise SmokeFailure(f"the remembered Mac (no project given) is {stored!r}, want {self.machine}")
+        default for another project too. The sheet is checked first, so a
+        build that remembers per project fails on what the user sees."""
         state = self.probe_sheet(self.ensure_other_project())
         entries = state.get("entries") or []
         if len(entries) < 2 or entries[1].get("device_key") != self.machine or not entries[1].get("can_create"):
@@ -442,6 +440,9 @@ class PickerE2E:
                 f"the second project's new sheet preselected {state.get('selected_entry_id')}, "
                 f"want the Mac remembered from the first project ({self.machine})"
             )
+        stored = self.call("last_device", {}).get("device_key")
+        if stored != self.machine:
+            raise SmokeFailure(f"the remembered Mac (no project given) is {stored!r}, want {self.machine}")
         return {"last_device": stored, "other_project_id": self.other_project_id,
                 "other_sheet_default": state.get("selected_entry_id")}
 
