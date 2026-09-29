@@ -626,6 +626,10 @@ class NotificationsE2E(LoopbackSmoke):
             return run_action
 
         try:
+            # Like the smoke: auto-mirror would give the source a second mirror
+            # beside the explicit vm.workspace_open, and rows for new terminals
+            # (the burst) would land on whichever mirror projects them first.
+            self.pause_auto_mirror()
             for name, action in steps:
                 try:
                     self.step(name, guarded(action))
@@ -640,6 +644,7 @@ class NotificationsE2E(LoopbackSmoke):
             return False
         finally:
             self.cleanup()
+            self.restore_auto_mirror()
 
 
 def mint_p256_key() -> str:
