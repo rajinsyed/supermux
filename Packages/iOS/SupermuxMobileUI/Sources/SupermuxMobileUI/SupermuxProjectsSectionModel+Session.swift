@@ -137,8 +137,10 @@ extension SupermuxProjectsSectionModel {
            SupermuxProjectKey(rawValue: pending.projectID).pairingID == pairingID {
             pendingWorktreeRemoval = nil
         }
-        // The create flow's stores belong to the dead connection.
-        if newWorktreePresentation?.pairingIDs.contains(pairingID) == true
+        // The create flow's stores belong to the dead connection. Only the
+        // Mac the sheet creates on holds any: other offered Macs re-resolve
+        // when picked, and closing the sheet would lose the typed prompt.
+        if newWorktreePresentation?.activePairingID == pairingID
             || preparingNewWorktreeProjectID.map({ SupermuxProjectKey(rawValue: $0).pairingID }) == pairingID
             || (newWorktreeErrorMessage != nil && newWorktreeErrorPairingID == pairingID) {
             resetNewWorktreeFlow()
