@@ -8,80 +8,56 @@ import Testing
 /// key pressed on that Mac.
 ///
 /// Ways it could fail, each covered below:
-/// 1. A plain typed character is forwarded, losing local echo prediction, or
-///    an Option-composed character ("å") is forwarded as Alt+a.
+/// 1. Keys reach the other Mac out of order. Forwarded keys travel through a
+///    different queue than locally encoded bytes, so a plain character typed
+///    right after Escape could overtake it: every key press is forwarded,
+///    plain text included.
 /// 2. A key whose encoding depends on terminal state stays local: Escape,
-///    Return, Tab, Backspace, arrows and other function keys, any key with an
-///    unconsumed Control, Option or Command, a modifier-only press.
-/// 3. IME preedit (composing) text is forwarded.
+///    Return, Tab, Backspace, arrows and other function keys, any key with
+///    Control, Option or Command, a modifier-only press.
+/// 3. IME preedit (composing) text is forwarded, or a key release is
+///    forwarded (Ghostty never forwards a release of a forwarded press).
 /// 4. Encoding and decoding lose a field: action, modifiers, consumed
 ///    modifiers, key code, text (Unicode, separators, newlines), unshifted
 ///    code point.
 /// 5. A name that is not ours (a remote-tmux key such as "Up") or a malformed
 ///    payload decodes to a key, or crashes.
 struct SupermuxForwardedKeyEventTests {
-    private let shift: UInt32 = 1 << 0
     private let ctrl: UInt32 = 1 << 1
     private let alt: UInt32 = 1 << 2
-    private let command: UInt32 = 1 << 3
-    private let caps: UInt32 = 1 << 4
 
-    private func forwards(
-        text: String?, mods: UInt32 = 0, consumed: UInt32 = 0, composing: Bool = false
-    ) -> Bool {
-        SupermuxForwardedKeyEvent.shouldForward(text: text, mods: mods, consumedMods: consumed, composing: composing)
+    private let press: UInt32 = 1
+    private let release: UInt32 = 0
+    private let `repeat`: UInt32 = 2
+
+    private func forwards(action: UInt32 = 1, composing: Bool = false) -> Bool {
+        SupermuxForwardedKeyEvent.shouldForward(action: action, composing: composing)
     }
 
-    // MARK: 1. Plain text stays local
+    // MARK: 1. Every press travels, plain text included
 
-    @Test(arguments: ["a", "A", " ", "1", "é", "日", "🎉", "/"])
-    func plainTextStaysLocal(_ text: String) {
-        #expect(!forwards(text: text))
-        #expect(!forwards(text: text, mods: shift, consumed: shift))
-        #expect(!forwards(text: text, mods: caps))
-    }
-
-    @Test func optionComposedCharacterStaysLocal() {
-        #expect(!forwards(text: "å", mods: alt, consumed: alt))
-        #expect(!forwards(text: "Å", mods: alt | shift, consumed: alt | shift))
+    @Test func pressesAndRepeatsAreForwarded() {
+        #expect(forwards(action: press))
+        #expect(forwards(action: `repeat`))
     }
 
     // MARK: 2. State-dependent keys are forwarded
 
-    @Test(arguments: [
-        "\u{1B}",   // Escape
-        "\r",       // Return
-        "\t",       // Tab
-        "\u{7F}",   // Backspace
-        "\u{08}",   // Ctrl+H style backspace
-        "\u{F700}", // Up arrow (AppKit function-key range)
-        "\u{F704}", // F1
-        "\u{F729}", // Home
-    ])
-    func controlAndFunctionKeysAreForwarded(_ text: String) {
-        #expect(forwards(text: text))
+    @Test(arguments: ["\u{1B}", "\r", "\t", "\u{7F}", "\u{F700}", "\u{F704}", "a", "é", ""])
+    func keysOfEveryKindAreForwarded(_ text: String) {
+        let event = SupermuxForwardedKeyEvent(action: press, mods: ctrl | alt, consumedMods: 0, keycode: 0, text: text, unshiftedCodepoint: 0)
+        #expect(forwards(action: event.action))
     }
 
-    @Test func keysWithoutTextAreForwarded() {
-        #expect(forwards(text: nil))
-        #expect(forwards(text: ""))
-        #expect(forwards(text: nil, mods: shift)) // modifier-only press
-    }
-
-    @Test func unconsumedModifiersAreForwarded() {
-        #expect(forwards(text: "c", mods: ctrl))
-        #expect(forwards(text: "b", mods: alt))
-        #expect(forwards(text: "k", mods: command))
-        #expect(forwards(text: "C", mods: ctrl | shift, consumed: shift))
-        #expect(forwards(text: "\r", mods: shift))
-        #expect(forwards(text: " ", mods: ctrl))
-    }
-
-    // MARK: 3. Preedit stays local
+    // MARK: 3. Preedit and releases stay local
 
     @Test func composingTextStaysLocal() {
-        #expect(!forwards(text: "に", composing: true))
-        #expect(!forwards(text: nil, composing: true))
+        #expect(!forwards(composing: true))
+        #expect(!forwards(action: `repeat`, composing: true))
+    }
+
+    @Test func releasesStayLocal() {
+        #expect(!forwards(action: release))
     }
 
     // MARK: 4. Round trip
