@@ -65,15 +65,26 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      is selected here, and at the project's own workspace there when nothing
      of that Mac is selected (never in whatever that Mac has selected).
  15. new_workspace_menu_lists_mac — the + menu has "New Workspace on ▸" with
-     This Mac first and the loopback Mac enabled; the Mac a plain + / ⌘N uses
-     right now is checked (This Mac on a local workspace, the loopback Mac on
-     its mirror), and the + tooltip names the other Mac only on the mirror.
- 16. new_workspace_on_mac_from_menu — clicking it creates a workspace on the
-     Mac and opens its mirror (no "Cloud VM" title ever observed).
- 17. new_workspace_shortcut_on_mirror — ⌘N with a mirror selected does the
-     same.
+     This Mac first and the loopback Mac enabled; This Mac is checked (a
+     plain + / ⌘N creates here) whether a local workspace or a mirror is
+     selected, and the + tooltip never names the other Mac.
+ 16. new_workspace_on_mac_from_menu — clicking the Mac creates a workspace on
+     it and opens its mirror (no "Cloud VM" title ever observed).
+ 17. new_workspace_shortcut_on_mirror — ⌘N with a mirror selected creates a
+     LOCAL workspace and selects it (it creates on another Mac only from
+     "New Workspace on ▸").
  17b. new_workspace_this_mac_from_mirror — This Mac, clicked while the
      mirror is selected, creates a local workspace (not a mirror).
+ 17c. empty_area_on_mirror_creates_local_root — a double-click on the
+     sidebar's empty area with a mirror selected creates a local workspace,
+     selected, after every existing row, at the root of the list (no
+     project), and not in the mirror's directory (a path on the other Mac).
+ 17d. empty_area_menu_lists_macs — the empty area's context menu has "New
+     Workspace on ▸" with This Mac first and the loopback Mac enabled.
+ 17e. empty_area_menu_creates_on_mac_in_home — its loopback Mac row, clicked
+     while a workspace in the repository is selected, creates a workspace on
+     that Mac in its home folder (not the selected workspace's directory)
+     and opens its mirror here.
  18. files_panel_names_mac — the Files panel on the mirror is unavailable and
      says the files are on the loopback Mac (screenshot).
  19. file_diff_viewer_opens_for_remote_diff — clicking a file row's diff
@@ -783,9 +794,10 @@ class WorkspaceBehaviorsE2E:
         return self.mirror("new_workspace_menu", {})
 
     def new_workspace_menu(self) -> Dict[str, Any]:
-        """"New Workspace on ▸" starts with This Mac, lists the loopback Mac,
-        and checks the Mac a plain + / ⌘N would use right now; the + tooltip
-        names another Mac when that is where + goes."""
+        """"New Workspace on ▸" starts with This Mac and lists the loopback
+        Mac. A plain + / ⌘N always creates on this Mac, so This Mac is the
+        checked row and the + tooltip is upstream's, with a local workspace
+        or a mirror selected."""
         on_source = self.new_workspace_menu_while(self.source_id)
         rows = on_source.get("rows") or []
         this_mac = rows[0] if rows else {}
@@ -794,19 +806,19 @@ class WorkspaceBehaviorsE2E:
             raise CheckFailure(f"the first row is not an enabled This Mac: {rows}")
         if not mac_row or not mac_row.get("is_enabled") or mac_row.get("badge"):
             raise CheckFailure(f"menu rows: {rows}")
-        checked = [r.get("row_id") for r in rows if r.get("is_checked")]
-        if checked != ["this_mac"]:
-            raise CheckFailure(f"with a local workspace selected, checked rows are {checked}")
-        if "Loopback Mac" in str(on_source.get("plus_tooltip")) or not on_source.get("plus_tooltip"):
-            raise CheckFailure(f"+ tooltip on a local workspace: {on_source.get('plus_tooltip')!r}")
         on_mirror = self.new_workspace_menu_while(self.mirror_id)
-        checked = [r.get("row_id") for r in on_mirror.get("rows") or [] if r.get("is_checked")]
-        if checked != [self.machine]:
-            raise CheckFailure(f"with the mirror selected, checked rows are {checked}")
-        tooltip = str(on_mirror.get("plus_tooltip"))
-        if not tooltip.startswith("New Workspace on ") or "Loopback Mac" not in tooltip:
-            raise CheckFailure(f"+ tooltip on the mirror: {tooltip!r}")
-        return {"rows": rows, "plus_tooltip_local": on_source.get("plus_tooltip"), "plus_tooltip_mirror": tooltip}
+        tooltips = {}
+        for selected, menu in (("a local workspace", on_source), ("the mirror", on_mirror)):
+            checked = [r.get("row_id") for r in menu.get("rows") or [] if r.get("is_checked")]
+            if checked != ["this_mac"]:
+                raise CheckFailure(f"with {selected} selected, checked rows are {checked}")
+            tooltip = str(menu.get("plus_tooltip") or "")
+            if not tooltip or "Loopback Mac" in tooltip or tooltip.startswith("New Workspace on "):
+                raise CheckFailure(f"+ tooltip with {selected} selected: {tooltip!r}")
+            tooltips[selected] = tooltip
+        if tooltips["a local workspace"] != tooltips["the mirror"]:
+            raise CheckFailure(f"the + tooltip changes with the selection: {tooltips}")
+        return {"rows": rows, "plus_tooltip": tooltips["the mirror"]}
 
     def new_workspace_this_mac_from_mirror(self) -> Dict[str, Any]:
         """This Mac in the menu creates a LOCAL workspace even while a mirror
@@ -849,9 +861,109 @@ class WorkspaceBehaviorsE2E:
         return self.check_created_mirror(created)
 
     def new_workspace_shortcut(self) -> Dict[str, Any]:
+        """⌘N with a mirror selected creates on this Mac, like + (another Mac
+        is an explicit "New Workspace on ▸" choice)."""
         self.rpc("workspace.select", {"workspace_id": self.mirror_id})
-        created = self.mirror("new_workspace_shortcut", {"timeout_seconds": 40}, timeout_s=50)
-        return self.check_created_mirror(created)
+        created = self.mirror("new_workspace_shortcut", {"expect": "local", "timeout_seconds": 20}, timeout_s=30)
+        return self.check_created_local(created)
+
+    # -- 17c-17e: the sidebar's empty area --------------------------------------
+
+    def workspace_rows(self, window_id: Optional[str]) -> List[Dict[str, Any]]:
+        """`workspace.list` of a window (the preferred one without an id), in sidebar order."""
+        params = {"window_id": window_id} if window_id else {}
+        return (self.rpc("workspace.list", params) or {}).get("workspaces") or []
+
+    def window_of(self, workspace_id: str) -> Optional[str]:
+        rows = self.bindings().get("local_workspaces") or []
+        return next((w.get("window_id") for w in rows if norm(w.get("workspace_id")) == workspace_id), None)
+
+    def check_created_local(self, created: Dict[str, Any]) -> Dict[str, Any]:
+        """A workspace an entry point created on THIS Mac: not a mirror, and
+        selected in its window, staying selected. A create on another Mac
+        selects the mirror it opens instead (on the loopback the workspace it
+        makes "over there" lands in this app too, but is never selected)."""
+        if created.get("timed_out") or not created.get("workspace_id"):
+            raise CheckFailure(f"no local workspace appeared: {created}")
+        workspace_id = norm(created["workspace_id"])
+        self.created_local.insert(0, workspace_id)
+        if created.get("is_device_mirror") or created.get("remote_workspace_id"):
+            raise CheckFailure(f"created a mirror: {created}")
+        window_id = created.get("window_id")
+
+        def selected() -> bool:
+            return any(norm(w.get("id")) == workspace_id and w.get("selected") for w in self.workspace_rows(window_id))
+
+        wait_for("the new local workspace to be selected", selected, 5)
+        self.holds("the new local workspace staying selected", selected, 2.0)
+        return {"workspace_id": workspace_id, "window_id": window_id, "title": created.get("title")}
+
+    def empty_area_on_mirror_creates_local_root(self) -> Dict[str, Any]:
+        """A double-click on the empty area creates what it did before device
+        mirrors existed, even with a mirror selected: a local workspace after
+        every row, at the root of the list, not in the mirror's directory."""
+        self.rpc("workspace.select", {"workspace_id": self.mirror_id})
+        window_id = self.window_of(self.mirror_id)
+        before = {norm(w.get("id")) for w in self.workspace_rows(window_id)}
+        created = self.mirror("sidebar_empty_area", {
+            "window_id": window_id, "expect": "local", "timeout_seconds": 20,
+        }, timeout_s=30)
+        result = self.check_created_local(created)
+        workspace_id = result["workspace_id"]
+
+        order = [norm(w.get("id")) for w in self.workspace_rows(window_id)]
+        last_existing = max((i for i, w in enumerate(order) if w in before), default=-1)
+        if order.index(workspace_id) < last_existing:
+            raise CheckFailure(f"the new workspace is not after every existing row: {order}")
+
+        rows = self.rpc("supermux.devices.sidebar_rows", {"window_id": window_id}) or {}
+        flat = {norm(r.get("workspace_id")) for r in rows.get("flat") or []}
+        nested = {norm(r.get("workspace_id")) for p in rows.get("projects") or [] for r in p.get("rows") or []}
+        if workspace_id not in flat or workspace_id in nested:
+            raise CheckFailure(f"the new workspace is not a root row (flat={workspace_id in flat}, nested={workspace_id in nested})")
+
+        def directory() -> Optional[str]:
+            row = next((w for w in self.workspace_rows(window_id) if norm(w.get("id")) == workspace_id), None)
+            return (row or {}).get("current_directory")
+
+        cwd = wait_for("the new workspace's directory", directory, self.timeout_s)
+        real, repo = os.path.realpath(os.path.expanduser(cwd)), os.path.realpath(self.repo)
+        if real == repo or real.startswith(repo + os.sep):
+            raise CheckFailure(f"the new workspace starts in the mirror's directory {cwd}")
+        return {**result, "current_directory": cwd, "is_home": real == os.path.realpath(Path.home())}
+
+    def empty_area_menu_lists_macs(self) -> Dict[str, Any]:
+        rows = self.mirror("empty_area_menu", {}).get("rows") or []
+        first = rows[0] if rows else {}
+        if first.get("row_id") != "this_mac" or first.get("machine") is not None or not first.get("is_enabled"):
+            raise CheckFailure(f"the first row is not an enabled This Mac: {rows}")
+        mac_row = next((r for r in rows if r.get("machine") == self.machine), None)
+        if not mac_row or not mac_row.get("is_enabled") or mac_row.get("title") != self.facts.get("device_name"):
+            raise CheckFailure(f"no enabled row titled {self.facts.get('device_name')!r} for the loopback Mac: {rows}")
+        return {"rows": rows}
+
+    def empty_area_menu_creates_on_mac_in_home(self) -> Dict[str, Any]:
+        """The loopback Mac's row creates over there in that Mac's home folder.
+        On the loopback "that Mac" is this app, so selecting the source (a
+        workspace in the repository) here is what that Mac has selected: the
+        directory a create without one used to inherit."""
+        self.rpc("workspace.select", {"workspace_id": self.source_id})
+        created = self.mirror("empty_area_menu_invoke", {"machine": self.machine, "timeout_seconds": 40}, timeout_s=50)
+        result = self.check_created_mirror(created)
+        remote_id = norm(result.get("remote_workspace_id"))
+        if not remote_id:
+            raise CheckFailure(f"no remote workspace id: {created}")
+
+        def remote_directory() -> Optional[str]:
+            listed = self.remote("workspace.list").get("workspaces") or []
+            row = next((w for w in listed if norm(w.get("id")) == remote_id), None)
+            return (row or {}).get("current_directory")
+
+        cwd = wait_for("the remote workspace's directory", remote_directory, self.timeout_s)
+        home = os.path.realpath(Path.home())
+        if os.path.realpath(os.path.expanduser(cwd)) != home:
+            raise CheckFailure(f"the workspace on the other Mac starts in {cwd}, not its home folder {home}")
+        return {**result, "remote_directory": cwd}
 
     # -- 18-19: viewers (last: they add a local pane to the mirror) ------------
 
@@ -935,6 +1047,9 @@ class WorkspaceBehaviorsE2E:
             self.step("new_workspace_on_mac_from_menu", self.new_workspace_from_menu)
             self.step("new_workspace_shortcut_on_mirror", self.new_workspace_shortcut)
             self.step("new_workspace_this_mac_from_mirror", self.new_workspace_this_mac_from_mirror)
+            self.step("empty_area_on_mirror_creates_local_root", self.empty_area_on_mirror_creates_local_root)
+            self.step("empty_area_menu_lists_macs", self.empty_area_menu_lists_macs)
+            self.step("empty_area_menu_creates_on_mac_in_home", self.empty_area_menu_creates_on_mac_in_home)
             self.step("files_panel_names_mac", self.files_panel_names_mac)
             self.step("file_diff_viewer_opens_for_remote_diff", self.file_diff_viewer_opens)
             return True

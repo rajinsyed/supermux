@@ -15,7 +15,10 @@ import SupermuxKit
 ///   (`is_checked`: where a plain `+` goes now) and the `+` button's `plus_tooltip`.
 /// - `new_workspace_menu_invoke {machine, window_id?, timeout_seconds?}` — clicks the
 ///   row whose `row_id` is `machine` (a Mac's machine id, or `this_mac`).
-/// - `new_workspace_shortcut {window_id?, timeout_seconds?}` — ⌘N's action.
+/// - `new_workspace_shortcut {window_id?, expect?, timeout_seconds?}` — ⌘N's action;
+///   waits for a new workspace of the `expect`ed kind (`mirror`, the default, or `local`).
+/// - `sidebar_empty_area {window_id?, expect?, timeout_seconds?}` — a double-click on
+///   the sidebar's empty area; waits like `new_workspace_shortcut` (default `local`).
 /// - `run_toggle {workspace_id, via: "shortcut"|"presets_bar"}` — ⌘G / Run.
 /// - `preset_launch {workspace_id, name, command}` — a presets-bar chip.
 /// - `action_run {workspace_id, action_id}` — a remote project action.
@@ -47,6 +50,8 @@ enum SupermuxMirrorSocketCommands {
             return try await invokeMenuRow(params)
         case "new_workspace_shortcut":
             return try await newWorkspaceShortcut(params)
+        case "sidebar_empty_area":
+            return try await sidebarEmptyArea(params)
         case "run_toggle":
             return try runToggle(params)
         case "preset_launch":
@@ -139,17 +144,33 @@ enum SupermuxMirrorSocketCommands {
 
     private static func newWorkspaceShortcut(_ params: [String: Any]) async throws -> [String: Any] {
         let manager = try tabManager(params)
-        return try await awaitingNewWorkspace(.mirror, in: manager, timeout: timeout(params)) {
+        return try await awaitingNewWorkspace(try expectedKind(params, default: .mirror), in: manager, timeout: timeout(params)) {
             AppDelegate.shared?.performNewWorkspaceAction(tabManager: manager, debugSource: "supermux.socket.newWorkspace") ?? false
         }
     }
 
+    /// The sidebar empty area's double-click (`SidebarEmptyArea`'s handler).
+    private static func sidebarEmptyArea(_ params: [String: Any]) async throws -> [String: Any] {
+        let manager = try tabManager(params)
+        return try await awaitingNewWorkspace(try expectedKind(params, default: .local), in: manager, timeout: timeout(params)) {
+            AppDelegate.shared?.performSidebarEmptyAreaNewWorkspaceAction(tabManager: manager) ?? false
+        }
+    }
+
     /// What a New Workspace entry point is expected to create.
-    private enum NewWorkspaceKind {
+    private enum NewWorkspaceKind: String {
         /// A mirror of a workspace created on another Mac.
         case mirror
         /// A workspace on this Mac.
         case local
+    }
+
+    private static func expectedKind(_ params: [String: Any], default kind: NewWorkspaceKind) throws -> NewWorkspaceKind {
+        guard let raw = params["expect"] as? String else { return kind }
+        guard let expected = NewWorkspaceKind(rawValue: raw) else {
+            throw InvalidParams(message: "expect must be \"mirror\" or \"local\"")
+        }
+        return expected
     }
 
     /// Runs `trigger`, then waits for a new workspace of `kind` in `manager`'s
