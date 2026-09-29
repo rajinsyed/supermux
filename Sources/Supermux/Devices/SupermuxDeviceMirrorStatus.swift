@@ -19,9 +19,7 @@ struct SupermuxDeviceMirrorStatus: Equatable {
     var statusEntries: [WorkspaceSyncRecord.SupermuxStatusEntry] = []
     var progress: WorkspaceSyncRecord.SupermuxProgress?
     var log: WorkspaceSyncRecord.SupermuxLog?
-    var customColorHex: String?
-    var customDescription: String?
-    var isPinned = false
+    var customization = SupermuxMirrorCustomization(colorHex: nil, description: nil, isPinned: false)
 
     /// The status the record reports. An offline device reports no live
     /// activity (a stale spinner would claim work nobody can see); everything
@@ -35,9 +33,11 @@ struct SupermuxDeviceMirrorStatus: Equatable {
         statusEntries = record.supermuxStatusEntries ?? []
         progress = record.supermuxProgress
         log = record.supermuxLog
-        customColorHex = record.customColorHex
-        customDescription = record.customDescription
-        isPinned = record.isPinned
+        customization = SupermuxMirrorCustomization(
+            colorHex: record.customColorHex,
+            description: record.customDescription,
+            isPinned: record.isPinned
+        )
     }
 
     /// Maps the `supermux_activity` wire value (`working` / `needs_input` /

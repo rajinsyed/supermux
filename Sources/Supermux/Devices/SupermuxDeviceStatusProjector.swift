@@ -55,7 +55,12 @@ final class SupermuxDeviceStatusProjector {
                 let isConnected = devices.device(for: mirror.ref.machine)?.isConnected ?? false
                 status = SupermuxDeviceMirrorStatus(record: record, isConnected: isConnected)
                 if status != previous {
-                    SupermuxDeviceMirrorStatusWriter(workspace: workspace).apply(status, previous: previous)
+                    // After a relaunch `previous` is nil: the persisted baseline
+                    // keeps a restored mirror's local color/description/pin edits.
+                    let baseline = previous?.customization ?? index.appliedCustomization(for: workspace)
+                    SupermuxDeviceMirrorStatusWriter(workspace: workspace)
+                        .apply(status, previous: previous, customizationBaseline: baseline)
+                    index.recordAppliedCustomization(status.customization, for: workspace)
                 }
             } else if var kept = previous {
                 // Record gone (device offline or workspace closing): keep what
