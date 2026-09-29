@@ -19,6 +19,11 @@ private actor APNsRequestRecorder {
     }
 }
 
+/// Lets a transport closure call back into the service it was built for.
+private final class ServiceBox: @unchecked Sendable {
+    var service: SupermuxPhonePushService?
+}
+
 @Suite(.serialized) struct SupermuxPhonePushServiceTests {
     @Test func visibleNotificationUsesSandboxTopicAndCmuxDeepLinkPayload() async throws {
         let directory = try temporaryDirectory()
@@ -153,6 +158,54 @@ private actor APNsRequestRecorder {
         await service.forward(message)
 
         #expect(await recorder.snapshot().count == 1)
+    }
+
+    /// A share or a phone registration can land while `forward` waits on APNs
+    /// (actor reentrancy). Pruning the stale token that APNs rejected must not
+    /// write back the list read before the sends, or the new token is lost and
+    /// this Mac stops reaching the phone.
+    @Test func pruningAfterTheSendsKeepsATokenRegisteredMeanwhile() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeCredentials(to: directory)
+        let staleToken = String(repeating: "ef", count: 32)
+        let rotatedToken = String(repeating: "cd", count: 32)
+        let serviceBox = ServiceBox()
+        let service = SupermuxPhonePushService(
+            baseDirectory: directory,
+            transport: { request in
+                // While APNs "answers" for the stale token, the rotated token
+                // is registered on the same actor (a share or `register`).
+                _ = try await serviceBox.service?.register(
+                    deviceID: "00000000-0000-0000-0000-000000000009",
+                    deviceToken: rotatedToken,
+                    bundleID: SupermuxPhonePushService.supportedBundleID,
+                    environment: .sandbox,
+                    enabled: true
+                )
+                guard let url = request.url,
+                      let response = HTTPURLResponse(
+                          url: url,
+                          statusCode: 410,
+                          httpVersion: "HTTP/2",
+                          headerFields: nil
+                      ) else { throw PhonePushTestError.invalidResponse }
+                return (Data(#"{"reason":"Unregistered"}"#.utf8), response)
+            }
+        )
+        serviceBox.service = service
+        _ = try await service.register(
+            deviceID: "00000000-0000-0000-0000-000000000008",
+            deviceToken: staleToken,
+            bundleID: SupermuxPhonePushService.supportedBundleID,
+            environment: .sandbox,
+            enabled: true
+        )
+
+        await service.forward(SupermuxPhonePushMessage(kind: .dismiss, dismissedIDs: ["id"], badgeCount: 0))
+
+        let tokens = await service.loadRegistrations().map(\.deviceToken)
+        #expect(tokens == [rotatedToken])
     }
 
     @Test func tokenRotationReplacesALegacyRegistrationForTheSameDevice() async throws {
