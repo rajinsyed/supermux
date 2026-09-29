@@ -40,9 +40,19 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     /// ON the Mac makes the new terminal the first responder. Remote (mobile)
     /// opens set `true` — per the cmux socket/focus policy, a command arriving
     /// from the phone must not yank keyboard focus out from under whatever the
-    /// Mac user is doing. The workspace still opens and is selected; only the
-    /// terminal-surface first-responder grab is suppressed.
+    /// Mac user is doing. The workspace still opens and is selected (see
+    /// ``selectsWorkspace``); only the terminal-surface first-responder grab
+    /// is suppressed.
     public var preservesUserFocus: Bool
+
+    /// Whether the opened (or reused) workspace becomes its window's selected
+    /// workspace.
+    ///
+    /// `true` (default) for the desktop and the phone. `false` when another
+    /// Mac asks: its user watches the workspace through a mirror there, so
+    /// this Mac opens it in the background instead of switching the window
+    /// under whoever is using it (its terminals still start).
+    public var selectsWorkspace: Bool
 
     /// The pull request badge the worktree row was showing when the user opened
     /// it, or `nil` when it had none (or the open is not a worktree open).
@@ -66,6 +76,7 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     ///   - setupScript: Setup script for a dedicated setup terminal, or `nil`.
     ///   - setupEnvironment: Variables exported into the setup terminal.
     ///   - preservesUserFocus: Suppress the keyboard-focus grab (remote opens).
+    ///   - selectsWorkspace: Select the workspace (`false` when another Mac asks).
     ///   - pullRequest: The worktree row's current PR badge to hand off, if any.
     public init(
         title: String,
@@ -76,6 +87,7 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         setupScript: String? = nil,
         setupEnvironment: [String: String] = [:],
         preservesUserFocus: Bool = false,
+        selectsWorkspace: Bool = true,
         pullRequest: SupermuxPullRequest? = nil
     ) {
         self.title = title
@@ -86,6 +98,7 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         self.setupScript = setupScript
         self.setupEnvironment = setupEnvironment
         self.preservesUserFocus = preservesUserFocus
+        self.selectsWorkspace = selectsWorkspace
         self.pullRequest = pullRequest
     }
 }
