@@ -122,15 +122,21 @@ enum SupermuxNotificationDecorator {
         userInfo["cmux"] as? NSDictionary
     }
 
-    /// Replaces the pushing Mac's own count with the badge over every Mac.
-    /// Left alone without a count, a Mac id or the shared app group (a build
-    /// signed without it badges one Mac's count, as before).
+    /// Replaces the pushing build's own count with the badge over every Mac
+    /// build (one slot per Mac and instance tag). Left alone without a count,
+    /// a Mac id or the shared app group (a build signed without it badges one
+    /// Mac's count, as before).
     private static func applyBadgeTotal(to content: UNMutableNotificationContent) {
         guard let count = content.badge?.intValue,
               let cmux = content.userInfo["cmux"] as? [String: Any],
               let macDeviceID = cmux["macDeviceId"] as? String,
               let ledger = SupermuxPhoneBadgeLedger.shared() else { return }
-        content.badge = NSNumber(value: ledger.total(recording: count, forMacDeviceID: macDeviceID))
+        let total = ledger.total(
+            recording: count,
+            forMacDeviceID: macDeviceID,
+            instanceTag: cmux["macInstanceTag"] as? String
+        )
+        content.badge = NSNumber(value: total)
     }
 }
 
