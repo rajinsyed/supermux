@@ -148,13 +148,17 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     /// command runs through the workspace's interactive shell (see
     /// ``SupermuxCommandLaunch``). With no focused workspace, falls back to
     /// opening a fresh workspace.
-    func runAction(_ request: SupermuxOpenWorkspaceRequest) {
+    /// - Parameters:
+    ///   - request: The action's command, title and project.
+    ///   - target: Where to run instead of the selected workspace (another
+    ///     Mac names the one its user is looking at through its mirror).
+    func runAction(_ request: SupermuxOpenWorkspaceRequest, in target: Workspace? = nil) {
         // A device mirror's terminals run on another Mac: a local project's
         // action must not open a local shell inside it, so it gets its own
         // workspace (the no-focused-workspace fallback).
         guard let tabManager,
               let command = request.initialCommand,
-              let workspace = tabManager.selectedWorkspace,
+              let workspace = target ?? tabManager.selectedWorkspace,
               !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace),
               let paneId = workspace.bonsplitController.focusedPaneId
                 ?? workspace.bonsplitController.allPaneIds.first else {

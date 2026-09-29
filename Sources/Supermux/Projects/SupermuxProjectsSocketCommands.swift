@@ -106,7 +106,7 @@ enum SupermuxProjectsSocketCommands {
         guard let action = project?.actions?.first(where: { UUID(uuidString: $0.id) == actionID }) else {
             throw invalid("action_id does not name an action of that project")
         }
-        let url = try await SupermuxRemoteProjectCommands.shared.runAction(location, actionID: action.id)
+        let url = try await SupermuxRemoteProjectCommands.shared.runAction(location, action: action, in: try tabManager(params))
         return ["outcome": url == nil ? "command" : "open_url", "url": url?.absoluteString ?? NSNull()]
     }
 

@@ -17,11 +17,12 @@ struct SupermuxMirrorProjectActions {
     /// Opens an `open_url` action's URL locally.
     var openURL: @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) }
 
-    /// Runs `actionID` of the remote project `projectID` on `target`'s Mac.
+    /// Runs `actionID` of the remote project `projectID` on `target`'s Mac,
+    /// in the workspace the mirror shows.
     func run(actionID: String, projectID: String, on target: SupermuxMirrorTarget) async throws -> Outcome {
         let result = try await devices.request(
             .actionRun,
-            params: ["project_id": projectID, "action_id": actionID],
+            params: ["project_id": projectID, "action_id": actionID, "workspace_id": target.remoteWorkspaceID],
             on: target.machine
         )
         if result["kind"] as? String == "open_url",
