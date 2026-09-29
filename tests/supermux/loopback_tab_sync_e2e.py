@@ -274,7 +274,9 @@ class TabSyncE2E:
         return {"terminal": terminal, "latency_seconds": result["latency_seconds"]}
 
     def closed_tab(self) -> Dict[str, Any]:
-        terminal = self.facts["socket_tab"]
+        terminal = self.facts.get("socket_tab")
+        if not terminal or up(terminal) not in self.mirror_projections().values():
+            raise Failure("precondition: the mirror never showed the socket-created tab, so a close proves nothing")
         self.sock.call("surface.close", {"workspace_id": self.source_id, "surface_id": terminal})
 
         def dropped() -> bool:
@@ -289,11 +291,17 @@ class TabSyncE2E:
         before = self.ordered_surfaces(self.source_id)
         if len(before) < 2:
             raise Failure(f"need two source tabs to reorder, have {before}")
+        if self.mirror_order_as_source_ids() != before:
+            raise Failure(f"precondition: the mirror order {self.mirror_order_as_source_ids()} != source order {before}")
         moved = before[-1]
         self.sock.call("surface.reorder", {"workspace_id": self.source_id, "surface_id": moved, "index": 0})
-        after = self.ordered_surfaces(self.source_id)
-        if after == before or after[0] != moved:
-            raise Failure(f"surface.reorder did not move {moved} first: {before} -> {after}")
+        # The reorder lands on the source on the next main-actor turn.
+
+        def reordered() -> Optional[List[str]]:
+            after = self.ordered_surfaces(self.source_id)
+            return after if after != before and after[0] == moved else None
+
+        after = wait_for(f"the source to move {moved} first", reordered, 5.0, interval_s=0.05)
 
         def follows() -> bool:
             mirror = self.mirror_order_as_source_ids()
