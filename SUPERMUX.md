@@ -56,6 +56,16 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    (`supermux-agent-prompts/<sha256>.txt`, pruned after 7 days) and the line reads it with
    `"$(command cat -- …)"` (`(command cat -- … | string collect)` on fish).
 
+9. **Remote Macs as first-class workspaces (Superset-style).** Every workspace on every one of the
+   user's other Macs appears in the LEFT sidebar automatically, as a real local "mirror" workspace
+   (terminals, tabs and splits stream from the owning Mac), nested under its project or loose in the
+   list with a device chip. Projects merge across Macs by git origin; the New Worktree sheet has a
+   **device picker**; "New Workspace on ▸ <Mac>" creates project-less workspaces remotely. Activity
+   spinners, status pills, progress, logs, branch/PR, unread and notification banners mirror the
+   owning Mac; closing a mirror asks "Close on <Mac>" vs "Hide Here". The phone gets pushes from the
+   Mac that runs the agent, so the main Mac can be closed. Details: "Remote Macs (devices)" below and
+   `plans/supermux-remote-workspaces/`.
+
 Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
 diff viewer, per-workspace git branch/dirty tracking), supermux **extends** it rather than
 building a parallel system.
@@ -76,6 +86,14 @@ building a parallel system.
 | AI integration (Vercel AI Gateway key + branch names + commit messages) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/AI/` (`SupermuxAIConfig`, `SupermuxAIGatewayClient`, `SupermuxAIBranchNamer`, `SupermuxAICommitMessenger`); key UI via the `ai-settings` touchpoint (#18) → `SupermuxAISettingsCard`; wired in `SupermuxComposition`. Key in a `0600` secret file under the cmux state dir; model id (default `openai/gpt-5.4-mini`) editable in Settings, persisted in UserDefaults (`supermux.ai.model`). |
 | Start Claude in a new worktree (prompt-first, per-command model catalog) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/Agent/` (`SupermuxAgentLauncherSettings`, `SupermuxAgentModelCatalog` + `SupermuxAgentCommandProbePlan`, `SupermuxPromptNaming`, `SupermuxAgentLaunchCommand`, `SupermuxAgentWorktreeLauncher` — the one shared path), `AI/SupermuxAIWorktreeNamer`; Mac UI: the prompt path lives inside `UI/SupermuxNewWorktreeSheet(+Chips)` (shown when the selected Mac's target offers it), whose state and flow are `UI/SupermuxNewWorktreeSheetModel` over one `SupermuxWorktreeCreationTarget` per Mac (device picker: create on This Mac or another Mac with the project — `plans/supermux-remote-workspaces/PROJECTS-API.md`); wired in `SupermuxComposition.agentLaunch`. Catalogs cache in the harness `SupermuxHarnessModelCatalogStore` under `/supermux-agent-command/<cmd>` pseudo-paths |
 | Localization (en + ja) | ✅ | macOS/app-target `supermux.*` keys in `Resources/Localizable.xcstrings`; the iOS screens package owns a SECOND catalog, `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/Resources/Localizable.xcstrings` (~207 keys). Regenerate with the scripts under "Localization" below |
+| Remote Macs in the left sidebar (auto-mirror, close/hide, restart-stable bindings) | ✅ loopback-E2E | `Sources/Supermux/Devices/` (`SupermuxDevices` facade, `SupermuxDeviceWorkspaceIndex`, `SupermuxDeviceWorkspaceOpener`, `SupermuxDeviceMirrorCoordinator` + `SupermuxMirrorReconciler`), loop guard #518/#519, close hook #530 |
+| Status parity on mirrors (activity, pills, progress, log, branch/PR, color/description/pin) | ✅ loopback-E2E | `SupermuxDeviceStatusProjector`, additive `supermux_status_entries/progress/log` record fields (#535/#536), flat-row fences #532/#533 |
+| Projects across Macs (merge by git origin, remote-only rows, project sync, Set Up on <Mac>) | ✅ loopback-E2E | `Sources/Supermux/Projects/`, `SupermuxUnifiedProjects`, host RPCs `project.probe`/`project.clone`, `plans/supermux-remote-workspaces/PROJECTS-API.md` |
+| New Worktree device picker + New Workspace on ▸ <Mac> | ✅ loopback-E2E | `SupermuxNewWorktreeSheetModel` over `SupermuxWorktreeCreationTarget` (local / remote), #570/#571 |
+| Mirror workspace behaviors (⌘G run, presets, Changes panel, file tools) | ✅ loopback-E2E | `Sources/Supermux/Mirrors/`, `SupermuxChangesBackend` (local / remote over `changes.*`), #572 |
+| Background tab sync (tabs added/closed/reordered on the owning Mac reach mirrors) | ✅ loopback-E2E | `SupermuxDeviceLayoutChangeObserver`, #595 |
+| Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
+| Remote Macs settings card (Settings › Automation) | ✅ | `SupermuxRemoteMacsSettingsCard` (#596–#598) |
 
 Both phases are verified against a live tagged build (worktree creation, the Changes panel on
 real git status, and the full ⌘G run→stop→restart cycle confirmed by an actually-listening dev
@@ -129,6 +147,7 @@ Status per fork feature area:
 
 | 19 | Usage limits (Claude Code + Codex) | ✅ on iOS, read-only by design | a gauge ring in the workspace-list toolbar, filled to the tightest limit across both providers, opening `SupermuxUsageScreen`: window meters with reset countdowns and the ahead-of-pace marker, the other cswap accounts, provider notes (not configured / re-login / offline session log), and the honest oldest-measurement footer. The Mac projects its EXISTING `SupermuxUsageModel` — the same one the sidebar popover renders — over `mobile.supermux.usage.state`; credentials, polling, and the rate-limit floor all stay Mac-side. **cswap account switching is deliberately not ported**: it mutates which account Claude Code is logged in as, and that decision belongs at the machine doing the work. Touchpoints #340–#341 |
 | 20 | Start Claude from the New Worktree sheet | ✅ on iOS | the iOS `SupermuxNewWorktreeSheet` gains a prompt field and a Claude section (`SupermuxNewWorktreeClaudeSection`) over `mobile.supermux.agent.options` / `agent.start`, gated on `supermux.agent_launch.v1`; store `SupermuxMobileAgentLaunchStore` (MobileKit), loaded alongside the branch snapshot in `requestNewWorktree` / the detail screen's prepare. No extra entry points: every existing New Worktree affordance reaches it. Commands, catalogs, naming, git, and the terminal launch stay Mac-side (the phone cannot edit the command list; do that in the Mac sheet) |
+| 21 | Projects and worktrees on every connected Mac | ✅ on iOS | per-Mac seams (`supermuxConnectionSeams`, #580–#586), one Supermux session per Mac, Mac headers when more than one Mac has projects, a Mac picker in New Worktree for Macs with the same repo, navigation that maps Mac-local ids to the right Mac's row, push registration with every Mac |
 
 **Recorded non-goals** (deliberate, may be revisited later):
 
@@ -206,6 +225,43 @@ points at the file). Config shape:
 Action `icon` accepts superset keywords (`bolt`, `build`, `deploy`, …) mapped to SF Symbols, or a
 raw SF Symbol; action `id` keeps a valid UUID, otherwise derives a deterministic one so re-imports
 stay idempotent. All of this lives in supermux-owned files — no new upstream touchpoints.
+
+### Remote Macs (devices)
+
+The user's other Macs (same account, same app identity) are linked by upstream's Mac-to-Mac
+Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class workspaces:
+
+- **Auto-mirror.** `SupermuxDeviceMirrorCoordinator` keeps exactly one local mirror workspace per
+  remote workspace (setting "Show other Macs' workspaces in the sidebar"). Mirrors land in the
+  window already holding that Mac's mirrors, survive restarts (bindings keyed by
+  `Workspace.stableId`), close by themselves when the remote workspace closes, and are never
+  re-exported by this Mac's mobile host (the loop guard; the phone talks to every Mac directly).
+- **Closing a mirror** asks **Close on <Mac>** (closes the real workspace there) or **Hide Here**
+  (keeps it running there; "Show Hidden Remote Workspaces" brings it back). Closing a single
+  mirrored tab closes that terminal on the owning Mac, like a local tab.
+- **Projects** merge across Macs by normalized git origin (`SupermuxGitRemoteIdentity`), else by
+  identical name + path. Project sync (setting) registers a Mac's projects on the other Mac when the
+  same repo already exists at the same path; it never clones or deletes. "Set Up on <Mac>…" adds an
+  existing folder or clones there.
+- **Creating remotely:** the New Worktree sheet's device picker (last device remembered per
+  project), "New Workspace on ▸ <Mac>" in every New Workspace menu, and ⌘N inside a mirror. The new
+  workspace's mirror opens and is selected in the clicking window.
+- **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
+  over `mobile.supermux.*`; Finder/editor/file-explorer actions that need a local path are disabled
+  with an "On <Mac>" hint.
+- **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
+  rows, so no duplicates); read state flows both ways; an unattended Mac (away/locked) never
+  swallows a notification as "already visible"; Macs share the direct-APNs setup and phone tokens
+  with each other (setting, default on; the key only travels to a same-account Mac over the
+  authenticated link and never overwrites a different key).
+- **Enablement:** the Supermux release identity seeds Beta › Cloud Machines, "Discover other Macs"
+  and "Make this Mac discoverable" on once (#520). Both Macs must run the same app identity
+  (`com.supermux.app`, tag `default`), be signed in to the same account and team, and stay awake
+  with Supermux running on the Mac that hosts the work.
+- **Testing:** real links need two machines, so DEBUG builds have a loopback device
+  (`SUPERMUX_DEBUG_LOOPBACK_DEVICE=1`) whose link talks in-process to the same app's host. Run
+  `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` against a `--supermux-profile` tagged
+  build; see `plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`.
 
 ## Fork management — THE RULES
 
@@ -318,6 +374,9 @@ Conflict heuristics:
 | `Packages/iOS/SupermuxMobileUI/` | iOS screens + its own `Localizable.xcstrings` |
 | `scripts/supermux-check-touchpoints.sh` | CI/manual check that fences and manifest agree |
 | `cmuxTests/Supermux*` | Unit tests for supermux code |
+| `Sources/Supermux/Devices/`, `Mirrors/`, `Projects/` | Remote Macs: device facade, auto-mirror, mirror behaviors, projects across Macs |
+| `tests/supermux/` | Loopback-device E2E suites + `run_all_loopback_e2e.sh` (reports under `tests/supermux/artifacts/`, gitignored) |
+| `plans/supermux-remote-workspaces/` | Design and API notes for remote Macs (DESIGN, FOUNDATION-API, PROJECTS-API, LOOPBACK-HARNESS) |
 
 ## Building
 
@@ -425,7 +484,13 @@ Constraints inherited from upstream that supermux code MUST follow:
   `Localizable.xcstrings` key and editing a non-`supermux.*` catalog key would add upstream merge
   surface for a cosmetic gain. Tracked as a known low-priority gap.
 - **Changes panel is single-window-active-workspace.** Each window's mount owns its own
-  `SupermuxChangesModel` tracking that window's selected workspace directory.
+  `SupermuxChangesModel` tracking that window's selected workspace directory. In a device mirror it
+  talks to the owning Mac (`mobile.supermux.changes.*`); the full-diff and PR viewers stay local-only.
+- **Remote Macs were verified with the loopback device, not two physical Macs.** The loopback
+  exercises the whole viewer + host pipeline in one process, but not iroh admission, real network
+  loss, two filesystems, or pushes from the remote Mac. Mirrors pin the remote terminal's grid
+  size (upstream never resizes the owning Mac's terminal), remote browser/markdown panels are not
+  mirrored, and the Mac name on the flat-row chip comes from upstream's "Workspace on %@" label.
 
 ### Open decisions from the 0.64.21 (v0.65) upstream merge
 
