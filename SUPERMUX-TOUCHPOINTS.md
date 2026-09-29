@@ -13,8 +13,8 @@ Rules for adding a touchpoint:
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
 - Numbering: the highest number in use is **599**. The remote-workspaces work (#517–#599) left
-  unassigned gaps it may still grow into: **523–524, 527–529, 538–544, 558–559, 562–569, 574–579,
-  588–589 and 594** (never assigned, not retired). Number **351** is unused (the notifications
+  unassigned gaps it may still grow into: **523–524, 527–529, 538–544, 558–559, 562–569, 574–579
+  and 588–589** (never assigned, not retired). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -558,7 +558,8 @@ Rules for adding a touchpoint:
 | 590 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Device picker in the New Worktree sheet (workstream P2, `plans/supermux-remote-workspaces/PROJECTS-API.md` § New Worktree on any Mac): wires the 2 files under `Sources/Supermux/Projects/` (`Projects/…` paths inside the Supermux group) into the cmux target — `SupermuxRemoteWorktreeCreationTarget`, `SupermuxNewWorktreeSocketCommands` (`.swift`), in that order. File refs are `50BE000B0000000000000001` / `…03`, build files `…02` / `…04`; `grep -c 50BE000B cmux.xcodeproj/project.pbxproj` prints 8. P2 needed nothing else (everything else is fork-owned); #591–#593 went to the New Workspace target polish |
 | 591 | `Sources/AppDelegate.swift` | `device-new-workspace-this-mac` | Right after `performNewWorkspaceAction(…)`, a new internal method `supermuxPerformLocalNewWorkspaceAction(tabManager:)` that calls upstream's private `performNewWorkspaceCreationAction(initialSurface: .terminal, preferredTabManager: tabManager, event: nil, debugSource: "supermux.newWorkspace.thisMac")`: the plain local New Workspace (configured `ui.newWorkspace.action`, group placement and all), skipping `performNewWorkspaceAction`'s routing to the selected workspace's Mac or VM. Only "New Workspace on ▸ This Mac" (`SupermuxNewWorkspaceDeviceMenuTarget`) calls it, so a local workspace can be made while a mirror is selected |
 | 592 | `Sources/Update/TitlebarNewWorkspaceSplitButton.swift` | `new-workspace-target-help` | On the primary `+` segment, upstream's `.safeHelp(KeyboardShortcutSettings.Action.newTab.tooltip(String(localized: "titlebar.newWorkspace.tooltip", defaultValue: "New workspace")))` becomes `.supermuxNewWorkspaceButtonHelp(<the same string>)` (`Sources/Supermux/Mirrors/SupermuxNewWorkspaceButtonHelp.swift`): the same tooltip, or "New Workspace on <Mac> (⌘N)" while the window's selected workspace makes `+` create on another Mac (`SupermuxNewWorkspaceTarget`, which follows `performNewWorkspaceAction`'s routing) |
-| 593 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 2 New Workspace target files under `Sources/Supermux/Mirrors/` (`Mirrors/…` paths inside the Supermux group) into the cmux target — `SupermuxNewWorkspaceTarget`, `SupermuxNewWorkspaceButtonHelp` (`.swift`), in that order. File refs `50BE00140000000000000001` / `…03`, build files `…02` / `…04`; `grep -c 50BE0014 cmux.xcodeproj/project.pbxproj` prints 8 |
+| 593 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 3 polish files into the cmux target: `Sources/Supermux/Mirrors/SupermuxNewWorkspaceTarget.swift`, `Mirrors/SupermuxNewWorkspaceButtonHelp.swift` (#591/#592) and `Devices/SupermuxRestoredMirrorNotifications.swift` (#594), `Mirrors/…` / `Devices/…` paths inside the Supermux group. File refs `50BE00140000000000000001` / `…03` / `…05`, build files `…02` / `…04` / `…06`; `grep -c 50BE0014 cmux.xcodeproj/project.pbxproj` prints 12 |
+| 594 | `Sources/Devices/DeviceSurfaceProvider.swift` | `device-restored-pane-notifications` | In `reconnectRestoredPanes`, between `catalog.replaceProjection(projection, withPanel: created.panelID, …)` and `SurfacePaneFactory.close(panelID: projection.panelID, …)`: `SupermuxRestoredMirrorNotifications.carry(fromPanel: projection.panelID, toPanel: created.panelID, inWorkspace: projection.workspaceID)`. Closing the restored placeholder pane cleared its notifications, which the device sync then acknowledged to the owning Mac as read, so a relaunch dropped every mirrored notification (and a Mark as Unread) and read it on the other Mac; they now move to the live pane with their read state, and get back the `.deviceMac` origin session restore does not keep (from the correlation key), so the viewer never counts them as its own or forwards them to the phone |
 | 595 | `Sources/Devices/DeviceWorkspaceLayoutHost.swift` | `device-layout-tab-changes` | Remote Macs, workstream X: the owning Mac announces BACKGROUND tab changes to mirrors. Upstream re-captured a workspace's layout only on `.workspacePaneGeometryDidChange`, which a workspace posts only while on screen, so a tab added/closed/reordered in a workspace nobody is looking at (an agent's terminal, the phone's `mobile.terminal.create`, a preset, a CLI `new-surface`) never reached another Mac's mirror. Two fenced sites: (1) a `private lazy var supermuxTabChanges = SupermuxDeviceLayoutChangeObserver { [weak self] id in … _ = self.snapshot(for: id) }` after `receiptOrder`; (2) in `snapshot(for:)` upstream's first `guard let layout = capture(workspaceID), …` becomes `guard let layout = supermuxTabChanges.capture(workspaceID, { capture(workspaceID) }), …` (observation-tracked capture; the observer asks for a re-capture after any change to what it read, coalesced 40 ms per workspace; upstream's unchanged-arrangement check still decides whether to publish) |
 | 596 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxRemoteMacsSettingsCard.swift` | `unfenced` | Whole fork-owned file inside the upstream `CmuxSettingsUI` package (the #143 precedent: the section stack has no app injection seam and the package cannot import `SupermuxKit`): the Settings "Remote Macs" card (auto-mirror / project sync / push-sharing toggles, discoverable + discovery status with Turn On through upstream's `ComputersSettingsActions`, known Macs with link state, Show Hidden Workspaces), plus its private Mac row view. Mounted inside the #18 `ai-settings` body fence in `AutomationSection.swift` |
 | 597 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Environment/SupermuxRemoteMacsSettingsActions.swift` | `unfenced` | Whole fork-owned file in the upstream package: `SupermuxRemoteMacsSettingsActions` (the card's app services) and the `SupermuxRemoteMacsSettingsHosting` protocol the app's `HostSettingsActions` adopts in the fork file `Sources/Supermux/Devices/HostSettingsActions+SupermuxRemoteMacs.swift`; the card finds it with a dynamic cast, so upstream's `SettingsHostActions` gains no requirement |
@@ -4885,6 +4886,28 @@ entry point and the tooltip. Re-apply:
 
 Verify: `CMUX_TAG=<tag> python3 tests/supermux/loopback_workspace_behaviors_e2e.py` (steps
 `new_workspace_menu_lists_mac` and `new_workspace_this_mac_from_mirror`).
+
+### 594. Restored mirror panes keep their notifications — `device-restored-pane-notifications`
+
+Why: a relaunch restores a device mirror with placeholder panes that carry the mirror's
+notifications. When the link returns, `DeviceSurfaceProvider.reconnectRestoredPanes` materializes a
+live pane and closes the placeholder; closing a pane clears its notifications, and the device sync
+acknowledges each cleared mirrored notification to the owning Mac as read. So every relaunch of
+the viewer silently dropped its mirrored notifications and read them on the other Mac (which then
+also cleared them on the phone), and a Mark as Unread never survived one. The fork helper
+(`Sources/Supermux/Devices/SupermuxRestoredMirrorNotifications.swift`) moves the placeholder's
+notifications to the live pane through the store's own `restoreSessionNotifications`, keeping ids
+and read state and restoring the `.deviceMac` origin from the correlation key. Re-apply:
+
+- **#594** in `reconnectRestoredPanes`, right before the placeholder's
+  `SurfacePaneFactory.close(panelID: projection.panelID, in: projection.workspaceID)`, re-add the
+  fenced `SupermuxRestoredMirrorNotifications.carry(fromPanel: projection.panelID, toPanel:
+  created.panelID, inWorkspace: projection.workspaceID)`. If upstream stops closing the placeholder
+  (reusing its panel id for the live pane), drop the fence. If `TerminalNotification` gains stored
+  fields, copy them in the helper's `supermuxMoved(from:to:)`.
+
+Verify: `CMUX_TAG=<tag> python3 tests/supermux/loopback_auto_mirror_e2e.py --app-path "<App path>"`
+(step `h_restart_one_mirror_per_source`).
 
 ### 595–599. Remote Macs sync gaps and user controls (workstream X) — `device-layout-tab-changes`
 

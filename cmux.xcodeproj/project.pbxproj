@@ -3446,6 +3446,7 @@
 		50BE00060000000000000010 /* SupermuxRemoteProjectsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0006000000000000000F /* SupermuxRemoteProjectsPresenter.swift */; };
 		50BE00040000000000000010 /* SupermuxRemoteWorkspaceRef+Surface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0004000000000000000F /* SupermuxRemoteWorkspaceRef+Surface.swift */; };
 		50BE000B0000000000000002 /* SupermuxRemoteWorktreeCreationTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000B0000000000000001 /* SupermuxRemoteWorktreeCreationTarget.swift */; };
+		50BE00140000000000000006 /* SupermuxRestoredMirrorNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00140000000000000005 /* SupermuxRestoredMirrorNotifications.swift */; };
 		50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */; };
 		50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B4 /* SupermuxRunSupport.swift */; };
 		50BE000100000000000000F8 /* SupermuxSidebarAgentStatusRowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */; };
@@ -7734,6 +7735,7 @@
 		50BE0006000000000000000F /* SupermuxRemoteProjectsPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxRemoteProjectsPresenter.swift; sourceTree = "<group>"; };
 		50BE0004000000000000000F /* SupermuxRemoteWorkspaceRef+Surface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Devices/SupermuxRemoteWorkspaceRef+Surface.swift"; sourceTree = "<group>"; };
 		50BE000B0000000000000001 /* SupermuxRemoteWorktreeCreationTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxRemoteWorktreeCreationTarget.swift; sourceTree = "<group>"; };
+		50BE00140000000000000005 /* SupermuxRestoredMirrorNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxRestoredMirrorNotifications.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRowMenuVisibility.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B4 /* SupermuxRunSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRunSupport.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarAgentStatusRowsTests.swift; sourceTree = "<group>"; };
@@ -9092,6 +9094,7 @@
 				50BE000C0000000000000007 /* SupermuxRemoteMacsSocketCommands.swift */,
 				50BE000C0000000000000005 /* HostSettingsActions+SupermuxRemoteMacs.swift */,
 				50BE000C0000000000000003 /* SupermuxRemoteMacsSettingsFeed.swift */,
+				50BE00140000000000000005 /* SupermuxRestoredMirrorNotifications.swift */,
 				50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */,
 				50BE0005000000000000001B /* SupermuxDeviceMirrorSocketCommands.swift */,
 				50BE0005000000000000001D /* SupermuxDevicesSocketPayloads+MirrorStatus.swift */,
@@ -15855,6 +15858,7 @@
 				50BE00060000000000000010 /* SupermuxRemoteProjectsPresenter.swift in Sources */,
 				50BE00040000000000000010 /* SupermuxRemoteWorkspaceRef+Surface.swift in Sources */,
 				50BE000B0000000000000002 /* SupermuxRemoteWorktreeCreationTarget.swift in Sources */,
+				50BE00140000000000000006 /* SupermuxRestoredMirrorNotifications.swift in Sources */,
 				50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */,
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
