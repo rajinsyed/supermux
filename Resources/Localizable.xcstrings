@@ -598301,6 +598301,40 @@
           }
         }
       }
+    },
+    "supermux.mirror.newWorkspace.plusHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Workspace on %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に新規ワークスペースを作成"
+          }
+        }
+      }
+    },
+    "supermux.mirror.newWorkspace.thisMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

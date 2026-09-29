@@ -11,7 +11,8 @@ import SupermuxKit
 ///
 /// Methods (params in braces; `window_id` defaults to the preferred window):
 /// - `inspect {workspace_id}` — mirror target, run state, local-path actions.
-/// - `new_workspace_menu {window_id?}` — the `+` menu's "New Workspace on ▸" rows.
+/// - `new_workspace_menu {window_id?}` — the `+` menu's "New Workspace on ▸" rows
+///   (`is_checked`: where a plain `+` goes now) and the `+` button's `plus_tooltip`.
 /// - `new_workspace_menu_invoke {machine, window_id?, timeout_seconds?}` — clicks the
 ///   row whose `row_id` is `machine` (a Mac's machine id, or `this_mac`).
 /// - `new_workspace_shortcut {window_id?, timeout_seconds?}` — ⌘N's action.
@@ -33,7 +34,15 @@ enum SupermuxMirrorSocketCommands {
         case "inspect":
             return inspect(try mirrorWorkspace(params))
         case "new_workspace_menu":
-            return ["rows": try menuRows(params).map(row)]
+            return [
+                "rows": try menuRows(params).map(row),
+                "plus_tooltip": SupermuxNewWorkspaceTarget.plusButtonHelp(
+                    in: try tabManager(params),
+                    default: KeyboardShortcutSettings.Action.newTab.tooltip(
+                        String(localized: "titlebar.newWorkspace.tooltip", defaultValue: "New workspace")
+                    )
+                ),
+            ]
         case "new_workspace_menu_invoke":
             return try await invokeMenuRow(params)
         case "new_workspace_shortcut":
@@ -89,11 +98,11 @@ enum SupermuxMirrorSocketCommands {
             return []
         }
         let parent = menu.items.first { $0.identifier?.rawValue == SupermuxNewWorkspaceDeviceMenu.parentIdentifier }
-        return parent?.submenu?.items ?? []
+        return parent?.submenu?.items.filter { !$0.isSeparatorItem } ?? []
     }
 
     private static func row(_ item: NSMenuItem) -> [String: Any] {
-        let machine = (item.representedObject as? SupermuxNewWorkspaceDeviceMenuTarget.Request)?.machine.rawValue
+        let machine = (item.representedObject as? SupermuxNewWorkspaceDeviceMenuTarget.Request)?.machine?.rawValue
         return [
             "row_id": rowID(item) ?? NSNull(),
             "machine": machine ?? NSNull(),
@@ -122,7 +131,7 @@ enum SupermuxMirrorSocketCommands {
         guard item.isEnabled, let action = item.action else {
             return ["invoked": false, "reason": "row is disabled"]
         }
-        let isMacRow = item.representedObject is SupermuxNewWorkspaceDeviceMenuTarget.Request
+        let isMacRow = (item.representedObject as? SupermuxNewWorkspaceDeviceMenuTarget.Request)?.machine != nil
         return try await awaitingNewWorkspace(isMacRow ? .mirror : .local, in: manager, timeout: timeout(params)) {
             NSApp.sendAction(action, to: item.target, from: item)
         }
