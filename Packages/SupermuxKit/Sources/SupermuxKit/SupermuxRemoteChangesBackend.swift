@@ -9,7 +9,8 @@ internal import SupermuxMobileCore
 /// and mutations carry `expected_root` — the root the last status reported —
 /// so a remote `cd` can never make a stale panel stage or discard in another
 /// repository (the host answers `stale_root`; the model's follow-up refresh
-/// picks up the new root).
+/// picks up the new root). Reply deadlines are the device facade's
+/// per-method table (``SupermuxDeviceReplyDeadline``), never set here.
 ///
 /// ```swift
 /// let backend = SupermuxRemoteChangesBackend(transport: transport)
@@ -18,10 +19,8 @@ internal import SupermuxMobileCore
 /// ```
 @MainActor
 public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
-    /// Deadline for push/pull (the host's git network timeout is 120 s).
-    public static let networkTimeout: Duration = .seconds(150)
-    /// How long one history page answers the Unpushed/Incoming reads; the
-    /// host fetches on every first page, so each refresh must not re-read it.
+    /// How long one history page answers the Unpushed/Incoming reads: a page
+    /// is several git reads over there, so watcher-driven refreshes reuse it.
     static let historyLifetime: Duration = .seconds(15)
     /// The host's watch lease lasts 120 s; renew well inside it.
     static let leaseRenewal: Duration = .seconds(60)
@@ -105,11 +104,11 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
     }
 
     public func push(repoPath: String, hasUpstream: Bool) async throws {
-        try await mutate(.changesPush, [:], repoPath: repoPath, timeout: Self.networkTimeout)
+        try await mutate(.changesPush, [:], repoPath: repoPath)
     }
 
     public func pull(repoPath: String) async throws {
-        try await mutate(.changesPull, [:], repoPath: repoPath, timeout: Self.networkTimeout)
+        try await mutate(.changesPull, [:], repoPath: repoPath)
     }
 
     public func stash(repoPath: String, includeUntracked: Bool) async throws {
@@ -122,11 +121,11 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
 
     // MARK: - History and fetch
 
-    /// The host's first history page runs its own `git fetch`, so a fetch is
-    /// one fresh page.
+    /// The host's first history page runs its own `git fetch` unless told
+    /// not to, so a fetch is one fresh fetching page.
     public func fetch(repoPath: String) async -> Bool {
         history = nil
-        return await historyPage(repoPath: repoPath) != nil
+        return await historyPage(repoPath: repoPath, fetching: true) != nil
     }
 
     public func unpushedCountWithoutUpstream(repoPath: String) async -> Int {
@@ -143,10 +142,15 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
         return Array((await historyPage(repoPath: repoPath)?.incoming ?? []).prefix(limit))
     }
 
-    private func historyPage(repoPath: String) async -> HistoryPage? {
+    /// One history page. Only ``fetch(repoPath:)`` lets the host fetch first:
+    /// like the local engine, counts and feeds read what the last fetch left,
+    /// so a refresh never waits on (or starts) network work over there.
+    private func historyPage(repoPath: String, fetching: Bool = false) async -> HistoryPage? {
         if let history, clock.now - history.readAt < Self.historyLifetime { return history.page }
         do {
-            let result = try await call(.changesHistory, ["limit": Self.historyPageSize], repoPath: repoPath)
+            var params: [String: Any] = ["limit": Self.historyPageSize]
+            if !fetching { params["fetch"] = false }
+            let result = try await call(.changesHistory, params, repoPath: repoPath)
             let wire = SupermuxWireJSON()
             let commits = try (result["commits"] as? [[String: Any]] ?? []).map { try wire.decode(SupermuxCommitDTO.self, from: $0) }
             let incoming = try (result["incoming"] as? [[String: Any]] ?? []).map { try wire.decode(SupermuxCommitDTO.self, from: $0) }
@@ -241,14 +245,9 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
 
     // MARK: - Calls
 
-    private func mutate(
-        _ method: SupermuxMobileMethod,
-        _ params: [String: Any],
-        repoPath: String,
-        timeout: Duration? = nil
-    ) async throws {
+    private func mutate(_ method: SupermuxMobileMethod, _ params: [String: Any], repoPath: String) async throws {
         history = nil
-        _ = try await call(method, params, repoPath: repoPath, timeout: timeout)
+        _ = try await call(method, params, repoPath: repoPath)
     }
 
     /// One call keyed by the owner's workspace id; `repoPath` (when given)
@@ -256,14 +255,13 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
     private func call(
         _ method: SupermuxMobileMethod,
         _ params: [String: Any] = [:],
-        repoPath: String? = nil,
-        timeout: Duration? = nil
+        repoPath: String? = nil
     ) async throws -> [String: Any] {
         var params = params
         params["workspace_id"] = transport.remoteWorkspaceID
         if let repoPath, let root = lastRoot ?? (repoPath.isEmpty ? nil : repoPath) {
             params["expected_root"] = root
         }
-        return try await transport.request(method.rawValue, params: params, timeout: timeout)
+        return try await transport.request(method.rawValue, params: params)
     }
 }

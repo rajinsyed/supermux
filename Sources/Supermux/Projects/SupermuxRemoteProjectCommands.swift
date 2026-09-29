@@ -28,10 +28,6 @@ struct SupermuxRemoteProjectCommands {
         )
     }
 
-    /// `git clone` on the other Mac can take long; its host deadline is
-    /// ``SupermuxProjectSetupService/cloneTimeout``.
-    static let cloneTimeout: Duration = .seconds(Int(SupermuxProjectSetupService.cloneTimeout) + 60)
-
     // MARK: - Workspaces on the other Mac
 
     /// `project.open` there, then open and focus its mirror here.
@@ -97,12 +93,7 @@ struct SupermuxRemoteProjectCommands {
         if let name = Self.nonEmpty(request.workspaceName) { params["workspace_name"] = name }
         if let branch = Self.nonEmpty(request.branchName) { params["branch_name"] = branch }
         if let base = Self.nonEmpty(request.baseBranch) { params["base_branch"] = base }
-        let result = try await devices.request(
-            .worktreeCreate,
-            params: params,
-            on: machine,
-            timeout: SupermuxDevices.longOperationTimeout
-        )
+        let result = try await devices.request(.worktreeCreate, params: params, on: machine)
         Task { await remoteProjects.refreshWorktrees(on: machine, projectID: location.projectID) }
         return try Self.workspaceRef(in: result, on: machine)
     }
@@ -124,12 +115,7 @@ struct SupermuxRemoteProjectCommands {
         for (key, value) in optional {
             if let value = value.flatMap(Self.nonEmpty) { params[key] = value }
         }
-        let result = try await devices.request(
-            .agentStart,
-            params: params,
-            on: machine,
-            timeout: SupermuxDevices.longOperationTimeout
-        )
+        let result = try await devices.request(.agentStart, params: params, on: machine)
         Task { await remoteProjects.refreshWorktrees(on: machine, projectID: location.projectID) }
         return try Self.workspaceRef(in: result, on: machine)
     }
@@ -148,8 +134,7 @@ struct SupermuxRemoteProjectCommands {
                 "force": force,
                 "delete_branch": deleteBranch,
             ],
-            on: machine,
-            timeout: SupermuxDevices.longOperationTimeout
+            on: machine
         )
         await remoteProjects.refreshWorktrees(on: machine, projectID: worktree.location.projectID)
     }
@@ -215,8 +200,7 @@ struct SupermuxRemoteProjectCommands {
             let result = try await devices.request(
                 .projectClone,
                 params: ["remote_url": remoteURL, "root_path": path],
-                on: machine,
-                timeout: Self.cloneTimeout
+                on: machine
             )
             await remoteProjects.refresh(machine)
             return (result["project"] as? [String: Any])?["id"] as? String ?? ""
