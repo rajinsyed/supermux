@@ -195,9 +195,10 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   with `supermux.devices.sidebar_rows`), which orders a project's rows with
   `SupermuxNestedWorkspaceOrder`: this Mac's workspaces first (tab order), then one group per Mac
   (device order, each in its own order); a nested drag reorders within its group.
-- Every nested row (local or mirror) shows the flat rows' `cmux set-status` pills (at most three
-  lines) and `set-progress` bar under its title, honoring the flat rows' custom-metadata / progress /
-  hide-all-details settings; a mirror's are its Mac's. A mirror's VoiceOver label adds "on <Mac>".
+- Nested rows (local or mirror) draw no `cmux set-status` pills and no `set-progress` bar, as on
+  main: the amber working spinner is their only agent status (an "Idle" or "Running" line under the
+  branch would duplicate it). Flat rows, local and mirror, keep their pills and progress. A mirror's
+  VoiceOver label adds "on <Mac>".
 - Row layout (`SupermuxOpenWorkspaceRowView`, the worktree rows): PR, run and unread badges, then
   the device chip, then one fixed-width trailing slot (`SupermuxRowTrailingSlot`: the working
   spinner, faded under the hover close button, or a worktree row's hover arrow), so chips line up.
@@ -225,7 +226,7 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_projects '{
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktrees '{"machine":"device:…","project_id":"<that Mac's id>"}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktree_create '{"machine":"device:…","project_id":"…","workspace_name":"x","branch_name":"y","focus":false}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.projects_presentation '{}'   # what the window's Projects section receives
-CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {projects:[{project_id, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,status_pills,progress}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines}]} as drawn
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {projects:[{project_id, font_scale, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,activity}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines,activity}]} as drawn
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}'            # run a sync pass now → report
 ```
 

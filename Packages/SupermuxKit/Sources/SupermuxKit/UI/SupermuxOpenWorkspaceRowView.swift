@@ -28,7 +28,7 @@ struct SupermuxOpenWorkspaceRowView: View {
     @Environment(\.supermuxUnreadBadgeFillColor) private var unreadBadgeFillColor
     @State private var isHovered = false
 
-    private var titleLine: some View {
+    var body: some View {
         HStack(spacing: 6) {
             // Empty leading placeholder matching the project avatar's width so
             // the title aligns under the project name (activity sits on the right).
@@ -105,16 +105,6 @@ struct SupermuxOpenWorkspaceRowView: View {
                     }
                 }
             }
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            titleLine
-            // `cmux set-status` pills and `set-progress`, under the title
-            // column like a flat row's (a mirror shows its Mac's).
-            SupermuxRowStatusLines(pills: workspace.statusPills, progress: workspace.progress, fontScale: fontScale)
-                .padding(.leading, 20 * fontScale + 6)
         }
         // 7 + slot(20·s) + 6 == project row's 6 + avatar(20·s) + 7 → title aligns under the project name.
         .padding(.leading, 7)

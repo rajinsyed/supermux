@@ -4846,7 +4846,7 @@ launched with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` (see the script's docstring).
 ### 574–576. Sidebar rows, chips and close UX for device mirrors (A3) — `device-mirror-row-menu`, `sidebar-footer-clearance`
 
 Why: rows that show other Macs' workspaces had to read the same everywhere — chips on the right and
-lined up, nested rows grouped by Mac with the flat rows' status pills, a flat mirror row's menu with
+lined up, nested rows grouped by Mac, a flat mirror row's menu with
 the same Hide Here / Close on <Mac>… items as a nested one. All logic is fork-owned
 (`Packages/SupermuxKit/Sources/SupermuxKit/UI/`, `…/Devices/SupermuxNestedWorkspaceOrder.swift`,
 `Sources/Supermux/Projects/SupermuxNestedWorkspaceRows.swift`, `Sources/Supermux/Mirrors/SupermuxMirrorRowMenuItems.swift`);
