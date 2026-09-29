@@ -51,6 +51,8 @@ public final class SupermuxMobileProjectsStore {
     @ObservationIgnored private let capabilities: SupermuxMobileCapabilities
     @ObservationIgnored private let iconCache: SupermuxProjectIconCache
     @ObservationIgnored private let onProjectsChanged: (@MainActor (_ projects: [SupermuxProjectDTO]) -> Void)?
+    /// Where the app-group icon mirror lives; injectable for tests.
+    @ObservationIgnored private let iconMirrorFiles: FileManager
     @ObservationIgnored private let now: @Sendable () -> Date
     /// Cancellable reconnect-backoff sleep; injectable for deterministic tests.
     @ObservationIgnored private let idleSleep: (Duration) async -> Void
@@ -74,6 +76,8 @@ public final class SupermuxMobileProjectsStore {
     ///   - onProjectsChanged: Called after every successful list fetch with
     ///     the authoritative project set — the owner's hook for pruning
     ///     per-project state (e.g. worktree sessions of deleted projects).
+    ///   - iconMirrorFiles: File access for the app-group icon mirror the
+    ///     notification extension reads; defaults to `FileManager.default`.
     ///   - now: Clock seam for the reconnect-health check; defaults to the
     ///     wall clock.
     ///   - idleSleep: Backoff sleep seam; defaults to `Task.sleep`.
@@ -82,6 +86,7 @@ public final class SupermuxMobileProjectsStore {
         capabilities: SupermuxMobileCapabilities,
         iconCache: SupermuxProjectIconCache = SupermuxProjectIconCache(),
         onProjectsChanged: (@MainActor (_ projects: [SupermuxProjectDTO]) -> Void)? = nil,
+        iconMirrorFiles: FileManager = .default,
         now: @escaping @Sendable () -> Date = { Date() },
         idleSleep: @escaping (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     ) {
@@ -89,6 +94,7 @@ public final class SupermuxMobileProjectsStore {
         self.capabilities = capabilities
         self.iconCache = iconCache
         self.onProjectsChanged = onProjectsChanged
+        self.iconMirrorFiles = iconMirrorFiles
         self.now = now
         self.idleSleep = idleSleep
     }
@@ -307,7 +313,8 @@ public final class SupermuxMobileProjectsStore {
             // current host explicitly reports no custom icon. Preserve `nil`:
             // older hosts omit the optional field, and a banner cannot re-fetch.
             SupermuxSharedProjectIconStore.pruneIcons(
-                keeping: Self.mirroredIconProjectIDsToKeep(from: projects)
+                keeping: Self.mirroredIconProjectIDsToKeep(from: projects),
+                fileManager: iconMirrorFiles
             )
             onProjectsChanged?(projects)
         } catch {
