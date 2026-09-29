@@ -86,8 +86,11 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         return aiNaming ?? false
     }
 
+    /// Only when that Mac already said it AI-names (never waits for it):
+    /// otherwise the blank branch goes to `worktree.create`, which AI-names it
+    /// there itself when it can.
     func isAIBranchNamingConfigured() async -> Bool {
-        await isAINamingConfigured()
+        aiNaming == true
     }
 
     /// That Mac's AI suggestion; a random suggestion is dropped so the create
