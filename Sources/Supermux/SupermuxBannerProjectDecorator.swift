@@ -42,10 +42,17 @@ enum SupermuxBannerProjectDecorator {
 
     private struct AvatarKey: Hashable {
         let projectID: String
+        /// This Mac's or another Mac's project: one id on two Macs never
+        /// shares a chip.
+        let iconSource: SupermuxNotificationIconSource?
         let colorHex: String?
         let iconSymbol: String?
         let iconETag: String?
         let avatarLetter: String
+        /// A letter chip rendered before the logo was in memory (another
+        /// Mac's icons arrive asynchronously) must not stand in for the logo
+        /// once it is.
+        let hasImage: Bool
     }
 
     /// Decorates `content` in place.
@@ -57,11 +64,14 @@ enum SupermuxBannerProjectDecorator {
     /// - Parameters:
     ///   - content: The banner content upstream already built.
     ///   - project: The notification's owning project, or `nil`.
+    ///   - origin: Where the notification came from; a record mirrored from
+    ///     another Mac takes its logo from that Mac's icons.
     ///   - tabName: The workspace title, for the provenance subtitle.
     @MainActor
     static func decorate(
         _ content: UNMutableNotificationContent,
         project: SupermuxNotificationProject?,
+        origin: TerminalNotificationOrigin,
         tabName: String?
     ) {
         let decoration = SupermuxBannerDecoration.resolve(
@@ -77,16 +87,17 @@ enum SupermuxBannerProjectDecorator {
         }
         guard decoration.rendersAvatar,
               let project,
-              let attachment = attachment(for: project) else { return }
+              let attachment = attachment(for: project, origin: origin) else { return }
         content.attachments = [attachment]
     }
 
     /// Builds the avatar attachment, or `nil` when it cannot be produced.
     @MainActor
     private static func attachment(
-        for project: SupermuxNotificationProject
+        for project: SupermuxNotificationProject,
+        origin: TerminalNotificationOrigin
     ) -> UNNotificationAttachment? {
-        guard let data = avatarData(for: project) else { return nil }
+        guard let data = avatarData(for: project, origin: origin) else { return nil }
         let fileManager = FileManager.default
         let url = avatarDirectory.appendingPathComponent("\(UUID().uuidString).png")
         do {
@@ -110,11 +121,15 @@ enum SupermuxBannerProjectDecorator {
 
     /// The project's rendered avatar bytes, memoized.
     @MainActor
-    private static func avatarData(for project: SupermuxNotificationProject) -> Data? {
-        let uuid = UUID(uuidString: project.id)
-        let image = uuid.flatMap { SupermuxComposition.projectIconStore.image(for: $0) }
+    private static func avatarData(
+        for project: SupermuxNotificationProject,
+        origin: TerminalNotificationOrigin
+    ) -> Data? {
+        let iconSource = SupermuxNotificationProjectBridge.iconSource(for: project, origin: origin)
+        let image = iconSource.flatMap(SupermuxNotificationProjectBridge.iconImage(for:))
         let key = AvatarKey(
             projectID: project.id,
+            iconSource: iconSource,
             colorHex: project.colorHex,
             iconSymbol: project.iconSymbol,
             // Included so replacing a project's icon file re-renders instead of
@@ -122,7 +137,8 @@ enum SupermuxBannerProjectDecorator {
             iconETag: project.iconETag,
             // The generated letter path rasterizes this glyph. A rename that
             // changes the initial must not reuse the old banner chip.
-            avatarLetter: project.avatarLetter
+            avatarLetter: project.avatarLetter,
+            hasImage: image != nil
         )
         if let cached = avatarCache[key] { return cached }
         guard let data = renderer.pngData(for: project, image: image) else { return nil }

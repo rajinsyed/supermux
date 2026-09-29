@@ -519,8 +519,8 @@ struct NotificationRowSnapshotBoundaryTests {
                 Self.makeNotification(project: project),
                 Self.makeNotification(project: invalidProject),
             ],
-            imageForProject: {
-                requestedIDs.append($0)
+            imageForSource: { source in
+                if case .local(let id) = source { requestedIDs.append(id) }
                 return image
             }
         )
