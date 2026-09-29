@@ -542,6 +542,10 @@ class AutoMirrorE2E:
         try:
             failing = self.create_source("failopen")
             self.sock.call("supermux.devices.fail_next_open", {"machine": self.machine, "remote_workspace_id": failing})
+            # Let the new workspace's sync deltas settle, so the failure is the
+            # only thing scheduling a pass when auto-mirror comes back on.
+            wait_for("the new source on the device", lambda: up(failing) in self.sources_with_terminals(), self.timeout)
+            time.sleep(1.5)
         finally:
             self.sock.call("supermux.devices.set_auto_mirror", {"enabled": True})
 
