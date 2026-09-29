@@ -1,4 +1,3 @@
-import Darwin
 public import Foundation
 
 /// Repository mediating the supermux projects JSON file on disk.
@@ -124,7 +123,7 @@ public actor SupermuxProjectStore {
     ///
     /// The current file is re-read from disk first (bypassing the in-memory
     /// cache) and the whole read-modify-write runs under an exclusive
-    /// cross-process file lock, so a concurrent process — the projects file is
+    /// cross-process file lock (``SupermuxFileLock``), so a concurrent process — the projects file is
     /// intentionally shared across stable/nightly/DEV builds — does not get
     /// its writes silently clobbered by an interleaved read-modify-write.
     /// Mutations must therefore be *semantic* (edit the freshly-read document)
@@ -141,59 +140,14 @@ public actor SupermuxProjectStore {
     @discardableResult
     public func update(_ mutate: @Sendable (inout SupermuxProjectsFile) -> Void) async throws -> SupermuxProjectsFile {
         cached = nil
-        let lockFD = try await acquireExclusiveFileLock()
-        defer { releaseExclusiveFileLock(lockFD) }
+        let lock = SupermuxFileLock(documentURL: fileURL)
+        let held = try await lock.acquire()
+        defer { lock.release(held) }
         var file = try loadFromDisk()
         mutate(&file)
         file.version = max(file.version, SupermuxProjectsFile.currentVersion)
         try save(file)
         return file
-    }
-
-    /// Takes an exclusive cross-process lock for the read-modify-write cycle.
-    ///
-    /// The lock lives on a sidecar `.lock` file (never renamed) because the
-    /// document itself is replaced by an atomic rename on every save, so an
-    /// flock on the document's fd would reference a dead inode after the first
-    /// write. The lock is taken non-blockingly with a backoff retry loop, so a
-    /// contended wait suspends the actor instead of pinning a cooperative-pool
-    /// thread; holders only ever perform one small read-decode-encode-write
-    /// cycle, so contention is brief. Cancellation during the wait surfaces
-    /// through the caller (the model's persist catch path).
-    private func acquireExclusiveFileLock() async throws -> Int32 {
-        let directory = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let fd = open(fileURL.path + ".lock", O_CREAT | O_RDWR | O_CLOEXEC, 0o644)
-        guard fd >= 0 else { throw Self.posixError("open", code: errno) }
-        var delay: UInt64 = 10_000_000
-        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
-            let code = errno
-            guard code == EWOULDBLOCK || code == EINTR else {
-                close(fd)
-                throw Self.posixError("flock", code: code)
-            }
-            do {
-                try await Task.sleep(nanoseconds: delay)
-            } catch {
-                close(fd)
-                throw error
-            }
-            delay = min(delay * 2, 250_000_000)
-        }
-        return fd
-    }
-
-    private func releaseExclusiveFileLock(_ fd: Int32) {
-        flock(fd, LOCK_UN)
-        close(fd)
-    }
-
-    private static func posixError(_ operation: String, code: Int32) -> any Error {
-        NSError(
-            domain: NSPOSIXErrorDomain,
-            code: Int(code),
-            userInfo: [NSLocalizedDescriptionKey: "\(operation): \(String(cString: strerror(code)))"]
-        )
     }
 }
 
