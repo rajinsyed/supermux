@@ -277,7 +277,7 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   mirror with no live or pending projection while its remote workspace exists (orphan; reopened fresh);
   every mirror but one of a remote workspace shown twice (duplicate, e.g. a reopened closed window next to
   auto-mirror's replacement; the projected one survives first, then the bound one, then the lowest local
-  id; also with auto-mirror off, never while an open of the ref is in flight).
+  id; only with auto-mirror on, never while an open of the ref is in flight).
 - **Scheduling**: passes coalesce to the earliest pending deadline, so a failed open's 10 s backoff never
   delays the 200 ms triggers (status, new or closed remote workspaces); every pass re-arms a pass for the
   earliest backoff expiry.
