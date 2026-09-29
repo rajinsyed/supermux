@@ -233,18 +233,25 @@ extension Workspace {
 /// depend on app-wide composition the caller already holds.
 @MainActor
 enum SupermuxWorkspaceRow {
-    /// - Parameter includePullRequest: Pass `false` when cmux's PR polling /
-    ///   visibility settings are off, so the row hides any briefly-lingering
-    ///   badge just like cmux's own rows do (cmux clears the underlying state
-    ///   when polling is disabled; this closes the stale window). Defaulted so
-    ///   existing call sites and tests keep compiling.
+    /// - Parameters:
+    ///   - includePullRequest: Pass `false` when cmux's PR polling /
+    ///     visibility settings are off, so the row hides any briefly-lingering
+    ///     badge just like cmux's own rows do (cmux clears the underlying state
+    ///     when polling is disabled; this closes the stale window). Defaulted so
+    ///     existing call sites and tests keep compiling.
+    ///   - showsStatus: Whether the row shows `cmux set-status` pills (the
+    ///     flat rows' custom-metadata detail setting).
+    ///   - showsProgress: Whether the row shows `cmux set-progress` (the flat
+    ///     rows' progress detail setting).
     static func snapshot(
         for workspace: Workspace,
         isSelected: Bool,
         projectId: UUID?,
         isRunning: Bool,
         includePullRequest: Bool = true,
-        unreadCount: Int = 0
+        unreadCount: Int = 0,
+        showsStatus: Bool = false,
+        showsProgress: Bool = false
     ) -> SupermuxOpenWorkspace {
         // Reuse cmux's own per-workspace PR probe for opened worktrees: the first
         // display-ordered PR is the representative one (cmux prioritizes
@@ -260,8 +267,34 @@ enum SupermuxWorkspaceRow {
             activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
             isRunning: isRunning,
             pullRequest: pullRequest,
-            unreadCount: unreadCount
+            unreadCount: unreadCount,
+            statusPills: showsStatus ? statusPills(for: workspace) : [],
+            progress: showsProgress ? progress(for: workspace) : nil
         )
+    }
+
+    /// The workspace's `cmux set-status` pills in display order, without the
+    /// agent pills its activity indicator already shows — the flat rows' own
+    /// filter, so a workspace shows the same pills flat or nested. A device
+    /// mirror's include its Mac's pills (the status projection wrote them in).
+    static func statusPills(for workspace: Workspace) -> [SupermuxRowStatusPill] {
+        SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(
+            from: workspace.sidebarStatusEntriesInDisplayOrder(),
+            duplicatedBy: SupermuxWorkspaceActivityResolver.activityByAgentKey(for: workspace)
+        ).map { entry in
+            SupermuxRowStatusPill(
+                key: entry.key,
+                text: entry.sidebarDisplayText,
+                icon: entry.icon,
+                colorHex: entry.color,
+                isMarkdown: entry.format == .markdown
+            )
+        }
+    }
+
+    /// The workspace's `cmux set-progress` bar, if any.
+    static func progress(for workspace: Workspace) -> SupermuxRowProgress? {
+        workspace.progress.map { SupermuxRowProgress(value: $0.value, label: $0.label) }
     }
 
     /// The cheap snapshot for a workspace no project owns. Standalone

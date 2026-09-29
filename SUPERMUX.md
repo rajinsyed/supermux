@@ -237,8 +237,13 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   `Workspace.stableId`), close by themselves when the remote workspace closes, and are never
   re-exported by this Mac's mobile host (the loop guard; the phone talks to every Mac directly).
 - **Closing a mirror** asks **Close on <Mac>** (closes the real workspace there) or **Hide Here**
-  (keeps it running there; "Show Hidden Remote Workspaces" brings it back). Closing a single
-  mirrored tab closes that terminal on the owning Mac, like a local tab.
+  (keeps it running there; "Show Hidden Remote Workspaces" brings it back). Cancel is the prompt's
+  Return/Esc default and Close on <Mac> is marked destructive; mirror rows' menus offer Hide Here
+  and Close on <Mac>… directly. Closing a single mirrored tab closes that terminal on the owning
+  Mac, like a local tab.
+- **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
+  every mirror row (nested or flat) carries its Mac's chip on the right, lined up; nested rows show
+  the same `cmux set-status` pills and progress as flat rows.
 - **Projects** merge across Macs by normalized git origin (`SupermuxGitRemoteIdentity`), else by
   identical name + path. Project sync (setting) registers a Mac's projects on the other Mac when the
   same repo already exists at the same path; it never clones or deletes. "Set Up on <Mac>…" adds an

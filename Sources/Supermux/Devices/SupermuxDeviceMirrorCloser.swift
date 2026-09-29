@@ -9,11 +9,12 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 /// Close semantics for device mirrors (DESIGN.md decision 3).
 ///
 /// - **User closes** (sidebar ×, context menu Close / Close Others / Below /
-///   Above, ⌘⇧W, closing the last tab): one prompt — "Close “X” on <Mac>?" with
-///   **Close on <Mac>** (closes the remote workspace over the device link, then
-///   the mirror), **Hide Here** (remembers the ref in the hidden set so
-///   auto-mirror never reopens it, then closes the mirror locally) and
-///   **Cancel**. A multi-close holding several mirrors asks once for all of them.
+///   Above, ⌘⇧W, closing the last tab): one prompt — "Close “X”?" with
+///   **Close on <Mac>** (destructive: closes the remote workspace over the
+///   device link, then the mirror), **Hide Here** (remembers the ref in the
+///   hidden set so auto-mirror never reopens it, then closes the mirror
+///   locally) and **Cancel** (the Return and Esc default). A multi-close
+///   holding several mirrors asks once for all of them.
 /// - **Programmatic closes** of a mirror (socket, AppleScript, scripts): no
 ///   prompt, treated as Hide Here.
 /// - **Coordinator closes** (remote gone, orphan): no prompt, nothing hidden,
@@ -129,6 +130,14 @@ final class SupermuxDeviceMirrorCloser {
         return perform(.hideHere, on: workspace, ref: ref, in: manager)
     }
 
+    /// "Hide Here" from a sidebar row's menu (by local workspace id): hides
+    /// and closes that mirror, no prompt. False when it is not an open mirror.
+    @discardableResult
+    func hideHere(workspaceID: UUID) -> Bool {
+        guard let workspace = Workspace.liveWorkspace(id: workspaceID) else { return false }
+        return hideHere(workspace)
+    }
+
     /// A coordinator close: local only, nothing hidden, nothing closed remotely.
     func closeForCoordinator(_ workspace: Workspace) {
         guard let manager = workspace.owningTabManager else { return }
@@ -144,7 +153,13 @@ final class SupermuxDeviceMirrorCloser {
     }
 
     private func prompt(_ workspaces: [Workspace], in manager: TabManager) -> Decision {
-        let items = workspaces.compactMap { workspace -> SupermuxDeviceMirrorClosePrompt.Item? in
+        ask(promptItems(for: workspaces), manager)
+    }
+
+    /// The close prompt's rows for `workspaces` (also what the
+    /// `supermux.devices.close_prompt` socket method describes).
+    func promptItems(for workspaces: [Workspace]) -> [SupermuxDeviceMirrorClosePrompt.Item] {
+        workspaces.compactMap { workspace -> SupermuxDeviceMirrorClosePrompt.Item? in
             guard let ref = index.ref(forLocal: workspace) else { return nil }
             let device = devices.device(for: ref.machine)
             return SupermuxDeviceMirrorClosePrompt.Item(
@@ -153,7 +168,6 @@ final class SupermuxDeviceMirrorCloser {
                 isConnected: device?.isConnected ?? false
             )
         }
-        return ask(items, manager)
     }
 
     private func perform(_ decision: Decision, on workspace: Workspace, ref: SupermuxRemoteWorkspaceRef, in manager: TabManager) -> Bool {

@@ -288,8 +288,10 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 - **Scheduling**: passes coalesce to the earliest pending deadline, so a failed open's 10 s backoff never
   delays the 200 ms triggers (status, new or closed remote workspaces); every pass re-arms a pass for the
   earliest backoff expiry.
-- **User closes** of a mirror prompt "Close “X” on <Mac>?" (Close on <Mac> / Hide Here / Cancel; one prompt
-  per multi-close). Programmatic closes (`closeWorkspace(recordHistory: true)`: socket, AppleScript) hide.
+- **User closes** of a mirror prompt "Close “X”?" (Close on <Mac>, destructive / Hide Here / Cancel, the
+  Return and Esc default; the message names the Mac once, says the files, worktree and branch stay, and
+  explains Hide Here; one prompt per multi-close). The sidebar rows' menus also offer Hide Here (no
+  prompt) and Close on <Mac>… (this prompt). Programmatic closes (`closeWorkspace(recordHistory: true)`: socket, AppleScript) hide.
   Every close unbinds. Window close, quit and restore never hide or close remotely. Route any new user
   close UI through `TabManager.closeWorkspaceWithConfirmation` (or the batch variant) to get the prompt.
 - **Status**: `deviceStatusProjector.status(forLocal:)` → `SupermuxDeviceMirrorStatus` (activity, branch,
@@ -309,6 +311,8 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   (`SupermuxMobileSidebarStatusObserver`).
 - **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531).
 - **Socket** (`supermux.devices.*`): `close_mirror {workspace_id, action: close_on_mac|hide}`,
+  `close_prompt {workspace_id}` (the prompt a user close would show, never shown: `message_text`,
+  `informative_text`, `buttons [{role, title, key_equivalent, destructive, enabled}]`, `escape_role`),
   `unhide {machine?, remote_workspace_id?}`, `hidden {}`, `set_auto_mirror {enabled}`, `reconcile {}`,
   `fail_next_open {machine, remote_workspace_id}` (DEBUG: the next auto-mirror open of that ref fails);
   `list` gains `auto_mirror_state`; `bindings` gains `hidden` and a per-mirror `status` object.

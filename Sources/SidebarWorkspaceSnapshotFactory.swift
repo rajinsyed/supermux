@@ -44,7 +44,13 @@ struct SidebarWorkspaceSnapshotFactory {
                   settings.branchDirectory.branchLayout == .inline else {
                 return []
             }
-            return cloud?.directoryCandidates ?? compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds)
+            // SUPERMUX:begin device-mirror-flatrow-status
+            // (upstream: `return cloud?.directoryCandidates ?? …` — a device
+            // mirror's line drops the Mac name its chip already shows)
+            return SupermuxDeviceMirrorSidebar.directoryCandidates(
+                for: workspace, orderedPanelIds: orderedPanelIds, usesLastSegmentPath: settings.usesLastSegmentPath
+            ) ?? cloud?.directoryCandidates ?? compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds)
+            // SUPERMUX:end device-mirror-flatrow-status
         }()
         let compactBranchDirectoryCandidates = compactBranchDirectoryCandidatesList(
             gitSummary: compactGitBranchSummaryText,
@@ -56,10 +62,14 @@ struct SidebarWorkspaceSnapshotFactory {
                 return []
             }
             // SUPERMUX:begin device-mirror-flatrow-status
-            // (upstream: `branch: nil` — a device mirror shows its remote branch)
+            // (upstream: `branch: nil` — a device mirror shows its remote branch,
+            // and its directory without the Mac name its chip already shows)
             if let cloud {
                 let branch = settings.showsGitBranch ? SupermuxDeviceMirrorSidebar.branch(for: workspace) : nil
-                return [.init(branch: branch, directoryCandidates: cloud.directoryCandidates)]
+                let directories = SupermuxDeviceMirrorSidebar.directoryCandidates(
+                    for: workspace, orderedPanelIds: orderedPanelIds, usesLastSegmentPath: settings.usesLastSegmentPath
+                ) ?? cloud.directoryCandidates
+                return [.init(branch: branch, directoryCandidates: directories)]
             }
             // SUPERMUX:end device-mirror-flatrow-status
             return verticalBranchDirectoryLines(orderedPanelIds: orderedPanelIds)

@@ -271,6 +271,15 @@ extension TabItemView {
             .disabled(targetIds.isEmpty)
         }
 
+        // SUPERMUX:begin device-mirror-row-menu
+        // A device mirror's Hide Here / Close on <Mac>… (the nested project rows offer the same).
+        if !isMulti, let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+            SupermuxMirrorRowMenuItems(workspaceId: workspaceId, deviceWorkspaceLabel: deviceWorkspaceLabel) {
+                actions.closeTargets(targetIds, true)
+            }
+        }
+        // SUPERMUX:end device-mirror-row-menu
+
         Button(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")) {
             actions.closeOtherTargets(targetIds)
         }

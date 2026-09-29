@@ -596670,40 +596670,6 @@
         }
       }
     },
-    "supermux.devices.close.single.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close “%@” on %@?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@” を %@ で閉じますか？"
-          }
-        }
-      }
-    },
-    "supermux.devices.close.single.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This workspace runs on %@. Close it there, or hide it from this Mac only (it keeps running there)."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このワークスペースは %@ で実行されています。そちらで閉じるか、このMacでのみ非表示にできます（そちらでは実行が続きます）。"
-          }
-        }
-      }
-    },
     "supermux.devices.close.multi.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -596717,40 +596683,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "他のMacで %lld 個のワークスペースを閉じますか？"
-          }
-        }
-      }
-    },
-    "supermux.devices.close.multi.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "These workspaces run on other Macs. Close them there, or hide them from this Mac only (they keep running there).\n%@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "これらのワークスペースは他のMacで実行されています。そちらで閉じるか、このMacでのみ非表示にできます（そちらでは実行が続きます）。\n%@"
-          }
-        }
-      }
-    },
-    "supermux.devices.close.offline" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is offline right now, so the workspace can only be hidden here."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ は現在オフラインのため、このMacで非表示にすることしかできません。"
           }
         }
       }
@@ -598315,6 +598247,193 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "リモート Mac"
+          }
+        }
+      }
+    },
+    "supermux.workspace.accessibility.onMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ on %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ 上の %1$@"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.hideHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Here keeps it running there and only removes it from this Mac's sidebar."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「このMacで非表示」を選ぶと、そちらでは実行を続けたまま、このMacのサイドバーからだけ外します。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This closes the workspace and its terminals on %@. Its files, worktree and branch stay."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 上のワークスペースとそのターミナルを閉じます。ファイル、ワークツリー、ブランチはそのまま残ります。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.multiHideHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Here keeps them running there and only removes them from this Mac's sidebar."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「このMacで非表示」を選ぶと、そちらでは実行を続けたまま、このMacのサイドバーからだけ外します。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.multiMessage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This closes the workspaces and their terminals on %@. Their files, worktrees and branches stay."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 上のワークスペースとそのターミナルを閉じます。ファイル、ワークツリー、ブランチはそのまま残ります。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.multiMessageMacs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This closes the workspaces and their terminals on the Macs they run on. Their files, worktrees and branches stay."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "それぞれのMac上のワークスペースとそのターミナルを閉じます。ファイル、ワークツリー、ブランチはそのまま残ります。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.multiTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close %lld workspaces?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個のワークスペースを閉じますか？"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That Mac is offline right now, so you can only hide the workspace here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのMacは現在オフラインのため、このMacで非表示にすることしかできません。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.offlineMulti" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Those Macs are offline right now, so you can only hide the workspaces here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "それらのMacは現在オフラインのため、このMacで非表示にすることしかできません。"
+          }
+        }
+      }
+    },
+    "supermux.devices.close.prompt.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close “%@”?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” を閉じますか？"
+          }
+        }
+      }
+    },
+    "supermux.devices.menu.closeOnMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close on %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で閉じる…"
           }
         }
       }

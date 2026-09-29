@@ -121,6 +121,14 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   actions over `supermux.devices.remote_macs_settings_set`: auto-mirror off then on (live), Hide Here
   + Show Hidden Workspaces, the other toggles, and the flat-row chip's state for the Loopback Mac.
   `--screenshot` also opens Settings on Automation and captures the window.
+- `tests/supermux/loopback_sidebar_rows_e2e.py` reads the sidebar rows as drawn
+  (`supermux.devices.sidebar_rows`) and the mirror close prompt without showing it
+  (`supermux.devices.close_prompt`): nested rows list this Mac's workspaces before each Mac's
+  mirrors, a nested mirror's accessibility label names its Mac, `set_status` / `set_progress` show on
+  nested rows (local and mirror), a flat mirror's directory line omits the Mac name, and the prompt
+  is safe (destructive Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the
+  worktree outcome and Hide Here explained). Layout (chip placement and alignment, spinner size,
+  the footer) is checked visually.
 
 ## Mirror rendering E2E
 
