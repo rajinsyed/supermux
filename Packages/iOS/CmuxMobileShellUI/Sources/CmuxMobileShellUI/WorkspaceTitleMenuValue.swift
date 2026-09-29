@@ -1,4 +1,5 @@
 import CMUXMobileCore
+import CmuxMobileShellModel
 import CoreGraphics
 
 struct WorkspaceTitleMenuValue: Equatable {
@@ -25,6 +26,9 @@ struct WorkspaceTitleMenuValue: Equatable {
     /// same command as the terminal's Files chip, so it stays reachable in
     /// the title (document) menu whatever the chip does.
     var canBrowseFiles = false
+    /// The Connected Devices… item: present whenever the terminal's Mac
+    /// supports shared sizing. Opens the size sheet, like the size chip.
+    var connectedDevices: MobileTerminalConnectedDevicesMenuItem?
     // SUPERMUX:begin ios-workspace-toolbar-persistent-actions
     /// Fingerprint of the fork workspace-tool menu rows (run/tools/close pane).
     /// Hosted in the title menu, so `.equatable()` re-accepts the menu

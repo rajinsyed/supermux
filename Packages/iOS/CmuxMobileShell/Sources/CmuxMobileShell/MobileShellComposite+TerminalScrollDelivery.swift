@@ -34,6 +34,7 @@ extension MobileShellComposite {
     /// stale scroll packets.
     // SUPERMUX:end ios-terminal-alt-scroll-budget
     public func scrollTerminal(surfaceID: String, lines: Double, col: Int, row: Int) async {
+        guard terminalAllowsTraffic(surfaceID: surfaceID) else { return }
         // Screen-anchored sessions own primary-screen scrolling: the gesture
         // already moved the local mirror's viewport over locally accumulated
         // scrollback, the Mac's viewport is not shared, and no prefetch window
