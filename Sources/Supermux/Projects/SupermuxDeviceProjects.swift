@@ -4,8 +4,9 @@ import SupermuxKit
 import SupermuxMobileCore
 
 /// One other Mac's project state, as ``SupermuxRemoteProjectsModel`` holds it:
-/// its `projects.list` (live, or from the offline cache), `run.state`, and the
-/// worktree lists loaded so far.
+/// its `projects.list` projects (live, or from the offline cache) and terminal
+/// presets, `run.state`, and the worktree lists loaded so far. The sidebar and
+/// the device-mirror behaviors (⌘G, presets bar) both read this one copy.
 ///
 /// Project ids here are that Mac's ids. Use them only in RPCs to ``machine``.
 struct SupermuxDeviceProjects: Identifiable, Equatable {
@@ -15,6 +16,8 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
     var isLoopback: Bool
     /// The Mac's projects.
     var projects: [SupermuxProjectDTO]
+    /// The Mac's terminal presets (from the same `projects.list`; never cached).
+    var presets: [SupermuxTerminalPresetDTO]
     /// Whether ``projects`` came from the offline cache and has not been
     /// refreshed on this connection.
     var isFromCache: Bool
@@ -42,6 +45,7 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
             isOnline: device.isConnected,
             isLoopback: device.isLoopback,
             projects: [],
+            presets: [],
             isFromCache: false,
             supportsProjects: nil,
             runs: [],
@@ -65,6 +69,17 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
         let wanted = SupermuxRemoteWorkspaceRef.canonicalWorkspaceID(remoteWorkspaceID)
         return runs.contains { run in
             run.isRunning == true
+                && run.workspaceId.map(SupermuxRemoteWorkspaceRef.canonicalWorkspaceID) == wanted
+        }
+    }
+
+    /// Whether project `projectID`'s run command runs in that Mac's workspace
+    /// `remoteWorkspaceID` (a mirror's Run button).
+    func isRunning(projectID: String, remoteWorkspaceID: String) -> Bool {
+        let wanted = SupermuxRemoteWorkspaceRef.canonicalWorkspaceID(remoteWorkspaceID)
+        return runs.contains { run in
+            run.isRunning == true
+                && run.projectId.caseInsensitiveCompare(projectID) == .orderedSame
                 && run.workspaceId.map(SupermuxRemoteWorkspaceRef.canonicalWorkspaceID) == wanted
         }
     }
