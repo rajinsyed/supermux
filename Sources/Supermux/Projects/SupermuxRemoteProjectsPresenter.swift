@@ -57,11 +57,12 @@ enum SupermuxRemoteProjectsPresenter {
             rows: rows,
             extrasByLocalProjectID: extras,
             actions: SupermuxRemoteProjectActionsFactory.actions(for: tabManager),
-            deviceAvailability: deviceAvailability()
+            deviceAvailability: { deviceAvailability() }
         )
     }
 
-    /// Each device's link state for the New Worktree picker's dots.
+    /// Each device's link state for the New Worktree picker's dots. Reads the
+    /// observable device list, so an open sheet re-renders on a link change.
     static func deviceAvailability() -> [String: SupermuxWorktreeDeviceAvailability] {
         Dictionary(
             SupermuxComposition.devices.devices.map { device in

@@ -16,7 +16,8 @@ import SupermuxKit
 /// `local_projects {}` (this Mac's `projects.list` host payload + origin map),
 /// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`,
 /// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
-/// export filter and restart-stable bindings without a second Mac). The device-mirror methods
+/// export filter and restart-stable bindings without a second Mac), and `link {machine, action:
+/// stop|restore}` (holds a link down, then redials it). The device-mirror methods
 /// (`close_mirror`, `unhide`, `hidden`, `set_auto_mirror`, `reconcile`) are handled by
 /// ``SupermuxDeviceMirrorSocketCommands``, plus the notification /
 /// phone-push hooks in ``SupermuxDeviceNotificationSocketCommands`` (`push_decisions`,
@@ -70,6 +71,12 @@ enum SupermuxDevicesSocketCommands {
             case "bind", "unbind":
                 #if DEBUG
                 result = try setBinding(params, bound: method.hasSuffix(".bind"), payloads: payloads)
+                #else
+                return unknownMethod()
+                #endif
+            case "link":
+                #if DEBUG
+                result = try setLink(params, devices: devices)
                 #else
                 return unknownMethod()
                 #endif
@@ -240,6 +247,23 @@ enum SupermuxDevicesSocketCommands {
         var payload = payloads.localWorkspace(workspace)
         payload["is_device_mirror"] = index.isDeviceMirror(workspace)
         return payload
+    }
+
+    /// `link {machine, action: "stop" | "restore"}`: holds a device link down
+    /// (tearing down its client like a transport loss, but without the
+    /// immediate redial) or dials it again, so E2E can drop the link under an
+    /// in-flight request and watch availability change live.
+    private static func setLink(_ params: [String: Any], devices: SupermuxDevices) throws -> [String: Any] {
+        let machine = try machine(params)
+        guard let link = devices.provider(for: machine)?.link else {
+            throw SupermuxDeviceError.unknownDevice(machine.rawValue)
+        }
+        switch try required(params, "action") {
+        case "stop": link.stop()
+        case "restore": link.refresh()
+        default: throw InvalidParams(message: "action must be stop or restore")
+        }
+        return ["machine": machine.rawValue, "phase": String(describing: link.phase)]
     }
     #endif
 

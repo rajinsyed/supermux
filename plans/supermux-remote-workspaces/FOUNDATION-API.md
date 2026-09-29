@@ -179,7 +179,10 @@ func openWhenAvailable(_ ref:, in tabManager:, focus:, timeout: Duration = .seco
   ⌘N-on-a-device path still shows it during the round trip; route UI through this opener instead.)
 - After a remote RPC that returns `workspace_id` (`mobile.supermux.worktree.create {open:true}`,
   `agent.start`, `project.open`, `worktree.open`): `openWhenAvailable(ref, in:, focus: true)` waits for the
-  record (with a terminal), nudging `mobile.sync.fetch` every 2 s, then opens.
+  record (with a terminal), nudging `mobile.sync.fetch` every 2 s, then opens. Those four RPCs are sent
+  with `select: false`, so the owning Mac opens the workspace in the background (its window never switches
+  under whoever is using it; the terminal still starts) and only the mirror here is selected. The phone
+  sends no `select` and keeps the old behavior.
 
 ## Settings and defaults
 

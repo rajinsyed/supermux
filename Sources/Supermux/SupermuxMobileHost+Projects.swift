@@ -172,7 +172,8 @@ extension TerminalController {
     /// project root through the same ``SupermuxTabManagerOpener`` path the
     /// desktop uses — which records the workspace→project association via
     /// ``SupermuxWorkspaceAssociationStore`` so the workspace nests under the
-    /// project in the Mac sidebar. Result: `{workspace_id, project_id}`.
+    /// project in the Mac sidebar. `select: false` (another Mac asking) opens
+    /// it without selecting it. Result: `{workspace_id, project_id}`.
     @MainActor
     func v2SupermuxProjectOpen(params: [String: Any]) async -> V2CallResult {
         let project: SupermuxProject
@@ -190,7 +191,8 @@ extension TerminalController {
                 directory: project.rootPath,
                 colorHex: project.colorHex,
                 projectId: project.id,
-                preservesUserFocus: true
+                preservesUserFocus: true,
+                selectsWorkspace: supermuxSelectsWorkspace(params: params)
             )) else {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
         }

@@ -6,8 +6,9 @@ import SupermuxMobileCore
 
 /// Another Mac's copy of a project as a New Worktree target, over its device
 /// link: `worktrees.list {include_branches}` for the starting branches,
-/// `agent.options` for Claude commands / models (and whether that Mac
-/// AI-names), `worktree.suggest_branch` for AI branch names, and
+/// `agent.options` for Claude commands / models (whether that Mac AI-names,
+/// and its shell's dialect for the launch-line preview),
+/// `worktree.suggest_branch` for AI branch names, and
 /// `worktree.create {open: true}` / `agent.start` with the long deadline.
 ///
 /// After a create the other Mac has opened a workspace there; its mirror is
@@ -15,7 +16,9 @@ import SupermuxMobileCore
 /// ``SupermuxDeviceWorkspaceOpener/openWhenAvailable(_:in:focus:timeout:)``,
 /// which reuses a mirror the auto-mirror coordinator is already opening. The
 /// open runs after the sheet has gone (like the local flow, which dismisses
-/// once git returns); a failure is shown in an alert.
+/// once git returns); a failure is shown in an alert. A link that drops after
+/// a create went out fails with an "outcome unknown" sentence, never a silent
+/// cancel (see `sendCreate`).
 @MainActor
 final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget {
     /// A failed remote operation, with a sentence naming the Mac.
@@ -34,6 +37,7 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
     private let opener: SupermuxDeviceWorkspaceOpener
     private weak var tabManager: TabManager?
     private var aiNaming: Bool?
+    private var shellFlavor: SupermuxShellFlavor?
     private var knownCommands: SupermuxAgentCommandList?
     private var optionsInFlight: [String: Task<SupermuxAgentLaunchOptionsDTO, Never>] = [:]
 
@@ -107,11 +111,8 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
             branchName: branchName,
             baseBranch: baseBranch ?? ""
         )
-        let ref: SupermuxRemoteWorkspaceRef
-        do {
-            ref = try await commands.requestWorktreeCreate(location, request: request)
-        } catch {
-            throw failure(error)
+        let ref = try await sendCreate {
+            try await self.commands.requestWorktreeCreate(self.location, request: request)
         }
         openMirror(of: ref)
     }
@@ -164,14 +165,28 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         let options = await task.value
         optionsInFlight[key] = nil
         if let known = options.aiNamingConfigured { aiNaming = known }
+        if let name = options.shellFlavor, let flavor = SupermuxShellFlavor(wireName: name) { shellFlavor = flavor }
         if !options.commands.isEmpty {
             knownCommands = SupermuxAgentCommandList(commands: options.commands, selected: options.selectedCommand)
         }
         return options
     }
 
-    /// That Mac's shell builds the line, so it is not previewed here.
-    func shellLinePreview(command: String, model: String?, effort: String?, prompt: String) -> String? { nil }
+    /// The line that Mac's shell will run, built by the same code once
+    /// `agent.options` named its shell's dialect; `nil` before that (or from
+    /// an older Mac), and for a prompt too long to go inline (that Mac then
+    /// reads it from a file of its own).
+    func shellLinePreview(command: String, model: String?, effort: String?, prompt: String) -> String? {
+        guard let shellFlavor, !command.isEmpty else { return nil }
+        let line = SupermuxAgentLaunchCommand.shellLine(
+            command: command,
+            model: model,
+            effort: effort,
+            prompt: prompt,
+            shell: shellFlavor
+        )
+        return line.utf8.count + 1 > SupermuxAgentLaunchCommand.maxInputUTF8Length ? nil : line
+    }
 
     func startAgent(
         _ request: SupermuxAgentLaunchRequest,
@@ -180,16 +195,48 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         // Naming and git both run on that Mac inside one call; once it is
         // sent there is no taking it back.
         willCreateWorktree()
-        let ref: SupermuxRemoteWorkspaceRef
-        do {
-            ref = try await commands.requestAgentStart(location, request: request)
-        } catch {
-            throw failure(error)
+        let ref = try await sendCreate {
+            try await self.commands.requestAgentStart(self.location, request: request)
         }
         openMirror(of: ref)
     }
 
     // MARK: - Helpers
+
+    /// Sends a create, which cannot be taken back once it is out.
+    ///
+    /// When the link drops after that, the pending reply ends as a
+    /// `CancellationError` (the link reconnected under it) or `not_connected`
+    /// (its own transport closed first), yet that Mac may have created the
+    /// worktree anyway. The failure then says the outcome is unknown instead
+    /// of inviting a duplicate, and that Mac's worktree list is refreshed
+    /// (again once the link is back). Only a cancelled flow (the sheet went
+    /// away) still ends as a cancel.
+    private func sendCreate(
+        _ send: () async throws -> SupermuxRemoteWorkspaceRef
+    ) async throws -> SupermuxRemoteWorkspaceRef {
+        let wasConnected = devices.provider(for: machine)?.link.isConnected == true
+        do {
+            return try await send()
+        } catch let error as CancellationError where Task.isCancelled {
+            throw error
+        } catch {
+            // A reconnect under the request cancels it only after it was sent;
+            // `not_connected` is also thrown before sending, when the link was
+            // already down.
+            let droppedAfterSending = error is CancellationError
+                || (wasConnected && (error as? SupermuxDeviceError)?.code == "not_connected")
+            guard droppedAfterSending else { throw failure(error) }
+            Task { [remoteProjects, machine, location] in
+                await remoteProjects.refreshWorktrees(on: machine, projectID: location.projectID)
+            }
+            let code = SupermuxRemoteWorktreeFailure.outcomeUnknownCode
+            throw Failure(
+                code: code,
+                message: SupermuxRemoteWorktreeFailure.message(code: code, hostMessage: nil, deviceName: deviceName)
+            )
+        }
+    }
 
     /// Opens the new workspace's mirror in this window and selects it; runs
     /// on after the sheet is gone.
@@ -214,10 +261,13 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         Self.failure(error, deviceName: deviceName)
     }
 
-    /// Maps a device / host error onto a sentence naming the Mac.
+    /// Maps a device / host error onto a sentence naming the Mac. A read the
+    /// link dropped under (`CancellationError`: it reconnected, or the sheet
+    /// stopped the load because that Mac went away) reads as that Mac being
+    /// unreachable, never as the raw error; creates sort that case out first
+    /// (see `sendCreate`).
     static func failure(_ error: any Error, deviceName: String) -> any Error {
-        if error is CancellationError { return error }
-        let code = (error as? SupermuxDeviceError)?.code
+        let code = error is CancellationError ? "not_connected" : (error as? SupermuxDeviceError)?.code
         return Failure(
             code: code,
             message: SupermuxRemoteWorktreeFailure.message(

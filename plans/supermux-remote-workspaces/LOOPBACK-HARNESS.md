@@ -174,6 +174,17 @@ the Loopback Mac's branches and Claude commands load; a failing create shows the
 sentence and is not remembered; Create on the Loopback Mac ends with exactly one bound mirror,
 selected in the window; the Mac is remembered and preselected next time; and Start Claude runs
 `agent.start` (with a temporary `echo` command, restored afterwards) and its mirror opens selected.
+It then drops the loopback link on purpose (DEBUG `supermux.devices.link {machine, action:
+stop|restore}`): an open sheet disables the dropped Mac and re-enables it after the redial without
+losing the typed fields; a Create and a Start Claude whose link drops after the request went out (a
+`post-checkout` hook slows `git worktree add` there, and `new_worktree.submit
+{stop_link_after_seconds}` drops the link mid-call) end with "The connection to <Mac> dropped…",
+never silently or with a raw `CancellationError`. Last, `worktree.create {open}`, `worktree.open`,
+`project.open` and `agent.start` with `select: false` (what another Mac sends) leave every window's
+selection alone, the phone's default still selects, and a remote create whose mirror opens unfocused
+changes no selection. Because the loopback's two Macs share one window list, selection is checked
+per workspace (`workspace.list`), and the sheet path checks the source workspace is not selected
+while its mirror is. `--only a,b` runs a subset of steps.
 
 ```bash
 open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 --env SUPERMUX_PROJECTS_FILE=/tmp/<tag>/projects.json "<App path>"

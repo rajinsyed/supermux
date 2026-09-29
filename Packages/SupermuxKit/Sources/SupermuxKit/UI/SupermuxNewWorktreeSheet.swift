@@ -146,8 +146,8 @@ public struct SupermuxNewWorktreeSheet: View {
             focusedField = sheet.showsPromptEditor ? .prompt : .workspace
         }
         // Loads the selected Mac's branches and Claude options, again after
-        // every device switch.
-        .task(id: sheet.selectedEntryID) { await sheet.load() }
+        // every device switch and when that Mac (re)connects.
+        .task(id: sheet.loadKey) { await sheet.load() }
         .onChange(of: sheet.configuredDefaultBranch) { _, _ in
             sheet.configuredDefaultBranchChanged()
         }
@@ -212,9 +212,10 @@ public struct SupermuxNewWorktreeSheet: View {
         )
     }
 
-    /// Workspace name and branch side by side. With a prompt, their
-    /// placeholders show the names that will be derived, so leaving them
-    /// blank is the normal case and typing overrides.
+    /// Workspace name and branch side by side, equal width and in one font
+    /// (so they line up and the branch placeholder fits). With a prompt,
+    /// their placeholders show the names that will be derived, so leaving
+    /// them blank is the normal case and typing overrides.
     private var nameFields: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -223,13 +224,13 @@ public struct SupermuxNewWorktreeSheet: View {
                     .focused($focusedField, equals: .workspace)
                     .onSubmit(create)
                     .disabled(sheet.phase != .idle)
+                    .frame(maxWidth: .infinity)
                 TextField(branchPlaceholder, text: $sheet.branchInput)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12, design: .monospaced))
                     .focused($focusedField, equals: .branch)
                     .onSubmit(create)
                     .disabled(sheet.phase != .idle)
-                    .frame(width: sheet.hasPrompt ? 170 : 150)
+                    .frame(maxWidth: .infinity)
             }
             Text(nameHint)
                 .font(.system(size: 11))
@@ -239,7 +240,7 @@ public struct SupermuxNewWorktreeSheet: View {
     }
 
     /// The exact shell line the new terminal will run, so what the chips
-    /// mean is never a guess (hidden for another Mac, whose shell builds it).
+    /// mean is never a guess (hidden when it is not known here).
     private func commandPreview(_ line: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "terminal")
