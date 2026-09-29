@@ -112,7 +112,7 @@ enum SupermuxProjectsSocketPayloads {
         let unread = TerminalNotificationStore.shared.sidebarUnread
         let rows = SupermuxNestedWorkspaceRows.rows(
             for: tabManager,
-            includePullRequest: true,
+            details: .current(),
             unreadCount: { unread.unreadCount(forWorkspaceId: $0) }
         )
         var projectOrder: [UUID] = []
@@ -142,6 +142,10 @@ enum SupermuxProjectsSocketPayloads {
             "unread_count": row.unreadCount,
             // What `SupermuxOpenWorkspaceRowView` labels the row with.
             "accessibility_label": row.accessibilityLabel,
+            "status_pills": row.statusPills.map { pill -> [String: Any] in
+                ["key": pill.key, "text": pill.text, "icon": pill.icon ?? NSNull(), "color": pill.colorHex ?? NSNull()]
+            },
+            "progress": row.progress.map { ["value": $0.value, "label": $0.label ?? NSNull()] as [String: Any] } ?? NSNull(),
         ]
     }
 
