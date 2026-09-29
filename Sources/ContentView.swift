@@ -16737,11 +16737,11 @@ struct TabItemView: View, Equatable {
                 // Inline fallback for rows without a trailing slot to host the
                 // working spinner (sole workspace, unread badge occupying the
                 // slot). Size matches the nested project-workspace rows
-                // (`SupermuxAgentActivityIndicator.rowSize`·scale).
+                // (6·scale).
                 if workspaceSnapshot.supermuxActivity == .working, !supermuxIndicatorInTrailingSlot {
                     SupermuxAgentActivityIndicator(
                         activity: workspaceSnapshot.supermuxActivity,
-                        size: scaledFontSize(SupermuxAgentActivityIndicator.rowSize)
+                        size: scaledFontSize(6)
                     )
                 }
                 // SUPERMUX:end sidebar-flatrow-activity
@@ -16763,13 +16763,12 @@ struct TabItemView: View, Equatable {
                     // slot and yields to the close button on hover via opacity
                     // — kept mounted, exactly like the slot fades its own
                     // spinner/badge, so hover doesn't churn the AppKit-backed
-                    // spinner. Size matches the nested rows
-                    // (`SupermuxAgentActivityIndicator.rowSize`·scale).
+                    // spinner. Size matches the nested rows (6·scale).
                     .overlay {
                         if supermuxIndicatorInTrailingSlot {
                             SupermuxAgentActivityIndicator(
                                 activity: workspaceSnapshot.supermuxActivity,
-                                size: scaledFontSize(SupermuxAgentActivityIndicator.rowSize)
+                                size: scaledFontSize(6)
                             )
                             .opacity(showCloseButton ? 0 : 1)
                             .allowsHitTesting(false)

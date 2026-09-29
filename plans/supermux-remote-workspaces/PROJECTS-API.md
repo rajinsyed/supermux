@@ -199,11 +199,10 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   main: the amber working spinner is their only agent status (an "Idle" or "Running" line under the
   branch would duplicate it). Flat rows, local and mirror, keep their pills and progress. A mirror's
   VoiceOver label adds "on <Mac>".
-- Row layout (`SupermuxOpenWorkspaceRowView`, the worktree rows): PR, run and unread badges, then
-  the device chip, then one fixed-width trailing slot (`SupermuxRowTrailingSlot`: the working
-  spinner, faded under the hover close button, or a worktree row's hover arrow), so chips line up.
-  `SupermuxDeviceChip` competes with the row title at layout priority 1: full name when there is
-  room, truncated only when not, full name in the tooltip.
+- Row layout (`SupermuxOpenWorkspaceRowView`), as on main and the same for local and mirror rows:
+  the device chip, PR and run badges, the amber working spinner (6·scale, always visible, hover
+  included), the unread badge, then the close button while hovered. Remote worktree rows: the
+  device chip, the PR badge, then the hover arrow.
 - A mirror row's menu (nested and flat, #574) offers **Hide Here** and **Close on <Mac>…** (the
   mirror close prompt); a local row keeps Close Workspace.
 - Local project rows: device worktrees (chips) in the disclosure (pill shows a bare chevron until they
