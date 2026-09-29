@@ -57,7 +57,12 @@ final class DeviceLink {
     /// The host's notification history moved; `notification.feed.list` has the rows.
     static let notificationFeedTopic = "notification.feed.changed"
     // SUPERMUX:begin device-link-supermux-events (upstream's literal, wrapped in Set<String>(…) and unioned with the fork's supermux.* topics)
-    static let eventTopics: Set<String> = Set<String>(["mobile.sync.delta", "workspace.updated", "terminal.bytes", "terminal.updated", notificationFeedTopic, DeviceTerminalGridPublisher.eventTopic, DeviceWorkspaceLayoutHost.eventTopic]).union(SupermuxDeviceLinkEvents.topics)
+    static let eventTopics: Set<String> = Set<String>([
+        "mobile.sync.delta", "workspace.updated", "terminal.bytes", "terminal.updated", notificationFeedTopic,
+        DeviceTerminalGridPublisher.eventTopic, DeviceWorkspaceLayoutHost.eventTopic,
+        // Shared sizing: this Mac is a participant of the host's terminals.
+        DeviceTerminalEvent.sizeStateTopic, DeviceTerminalEvent.detachedTopic,
+    ]).union(SupermuxDeviceLinkEvents.topics)
     // SUPERMUX:end device-link-supermux-events
 
     let instance: SurfaceDeviceInstanceID

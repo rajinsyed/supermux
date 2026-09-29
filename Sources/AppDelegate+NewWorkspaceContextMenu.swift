@@ -123,7 +123,8 @@ extension AppDelegate {
             return CmuxFeatureFlags.shared.isSimulatorEnabled
         case .mobileConnect:
             return !MobileRemoteControlPolicy.isDisabled
-        case .newWorkspace, .newTerminal, .splitRight, .splitDown:
+        case .newWorkspace, .newTerminal, .splitRight, .splitDown,
+             .copyWorkingDirectory, .copyProjectRoot, .copyScreen:
             return true
         // SUPERMUX:begin claude-harness-builtin-action
         case .newClaudeHarness:

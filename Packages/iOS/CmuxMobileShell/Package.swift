@@ -20,6 +20,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../Shared/CMUXMobileCore"),
+        .package(path: "../../Shared/CmuxTerminalSizing"),
         .package(path: "../../Shared/CmuxWorkspacePresence"),
         // SUPERMUX:begin supermux-mobile-selection-sync (typed capability/method constants for bidirectional workspace + terminal selection)
         .package(path: "../../Shared/SupermuxMobileCore"),
@@ -45,6 +46,7 @@ let package = Package(
             name: "CmuxMobileShell",
             dependencies: [
                 "CMUXMobileCore",
+                "CmuxTerminalSizing",
                 "CmuxWorkspacePresence",
                 // SUPERMUX:begin supermux-mobile-selection-sync
                 "SupermuxMobileCore",
@@ -100,6 +102,7 @@ let package = Package(
                 "CmuxMobileRPC",
                 "CmuxMobileShellModel",
                 "CmuxMobileTransport",
+                "CmuxTerminalSizing",
                 "CmuxMobileTunnel",
             ],
             swiftSettings: [

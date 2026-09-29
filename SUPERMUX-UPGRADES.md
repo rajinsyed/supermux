@@ -14,6 +14,92 @@ Add a section here as the last step of every upstream merge.
 
 ---
 
+## cmux main @ `64a1765fcc` → main @ `4e9d779888` (2026-10-01)
+
+Merged 259 first-parent upstream commits (upstream main 2026-09-29 → 2026-09-30). 25 files
+conflicted; no fork feature was dropped. Two touchpoints were added (#600, #601).
+
+### Shared terminal sizing (Mac, iPhone, Devices mirrors)
+
+The headline change. A terminal has one grid, and everyone viewing it now agrees on it.
+
+- **The default policy is "Fit everyone".** Opening a Mac terminal on the iPhone, or viewing it
+  from another Mac through Devices, sizes the grid to the smallest viewer. Before, a Devices
+  mirror never resized the source terminal; now a smaller Mac viewing it shrinks it, the same
+  way a phone does.
+- A pane larger than the shared grid shows a hatched margin, and a smaller one shows the cut
+  edge. Both are drawn in the split divider's color, with a size chip naming the device that
+  owns the size (for example `200×60 · Lawrence's Mac Studio`).
+- The size panel lists every participant and lets you change the policy or disconnect a viewer.
+  A disconnected pane shows a Detached card with Reattach and Reattach as Viewer (which rejoins
+  without changing the size).
+- New shortcut **⌃⌥⌘=**, Size Terminal to My Window.
+- **iPhone:** the workspace title menu gains **Connected Devices…** ("2 others" / "Only this
+  device"), which opens the same size sheet as the chip. When the shared grid is larger than the
+  phone, the terminal is scaled to fit; pinch to magnify.
+
+### Other upstream changes you will notice (Mac)
+
+- **Closing a busy workspace from the CLI, socket or phone needs `--force`.** When a process is
+  running, `cmux workspace close` and the phone's close now reply "retry with --force" instead
+  of closing. The fork's empty-home behavior still applies once the close goes through: the last
+  workspace leaves an empty window, not a closed one.
+- Panes that become visible now clear their own unread notification, including non-focused
+  split panes. This complements the fork's focused-pane suppression, which already records a
+  notification as read when it arrives for the pane you are looking at.
+- Copy built-ins for the working directory, git project root and visible screen (tab bar
+  buttons, shortcuts, Command Palette); setting actions, setting presets and `cmux config set`;
+  native discovery for configured actions; right-click a terminal link to choose where it opens
+  (Command-click still follows the fork's new-tab routing).
+- Diff viewer: mark files Viewed with **V**, filter files, and generated or large diffs start
+  collapsed. The Changes panel's file diffs open in this viewer.
+- A Themes settings page lists every terminal theme; TextBox leaves beta; View → Focus TextBox
+  Input.
+- Agents: hibernate and wake, `cmux agent message`, auto-resume after retryable provider failures,
+  and an opt-in multi-provider Conversations sidebar.
+- Predictive local echo is on by default for remote terminals (`terminal.predictiveLocalEcho:
+  false` turns it off). Terminal scrollback is checkpointed, so a crash no longer loses it. New
+  windows honor the configured sidebar width.
+
+### Other upstream changes you will notice (iOS)
+
+- A new **Feed** tab collects agent events, with replies and full-text reading. Upstream hides the
+  Notifications tab when the Feed is on; **Supermux keeps both tabs** by default, because the
+  fork's project avatars and grouping render only in Notifications (see the open decision below).
+  Settings → Legacy Notifications Tab still hides or shows it.
+- The terminal arrow pad is easier to find, pinned group members stay above unpinned rows, and the
+  computer picker no longer clips its status.
+
+### What stays the same (fork features)
+
+Projects (Mac and iPhone), the Changes panel and PR viewer, Claude harness panes (now also absent
+from the copy actions, as intended), project-aware notifications and phone push, focused-pane
+suppression, empty-home windows, the ⌘G run toggle and every other fork shortcut, iOS
+Projects/Changes/Files, Mac↔phone selection sync and the scroll-speed setting.
+
+### Watch-outs
+
+- **iPhone scrolling on a scaled-to-fit grid.** The fork's native-scroll path now converts finger
+  travel through upstream's displayed cell size, but its bounded scrollback geometry still uses
+  the unscaled cell height. Check scrollback on a phone viewing a Mac terminal larger than the
+  phone, with and without pinch magnification.
+- **A Devices mirror can resize the source terminal.** Under Fit everyone, a smaller viewing Mac
+  shrinks the host's grid. If the remote-workspaces work assumes mirrors are passive, expect
+  host-side reflow while a mirror is open.
+- The fork's persisted notification history now also stores upstream's agent-event flag. Records
+  written by the previous build decode as "unknown", which upstream treats as kept.
+- The previous merge had left 18 upstream-owned strings at older wording (for example "Couldn't
+  reach Stack" on sign-in errors) and 21 strings upstream had deleted. They now match upstream;
+  only the fork's one deliberate rewrite (#84) differs.
+
+### Open decisions surfaced by this merge
+
+1. **iOS Feed vs. the fork's project-aware Notifications tab.** Supermux currently shows both
+  (#601 flips upstream's default). Options: keep both; move the project avatar and grouping into
+  upstream's Feed rows and then drop #601; or hide the Feed.
+
+---
+
 ## cmux main @ `91b991496d` → main @ `64a1765fcc` (2026-09-30)
 
 Merged ~2,700 first-parent upstream commits (upstream main 2026-08-23 → 2026-09-30). 141 files

@@ -53,6 +53,9 @@
          location = "group:CmuxTerminalPrediction">
       </FileRef>
       <FileRef
+         location = "group:CmuxTerminalSizing">
+      </FileRef>
+      <FileRef
          location = "group:CmuxWorkspacePresence">
       </FileRef>
       <FileRef
@@ -287,6 +290,9 @@
       </FileRef>
       <FileRef
          location = "group:CmuxTerminalImport">
+      </FileRef>
+      <FileRef
+         location = "group:CmuxTerminalSharing">
       </FileRef>
       <FileRef
          location = "group:CmuxTestSupport">
