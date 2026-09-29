@@ -10,6 +10,8 @@ import Testing
 /// 3. The cache is written to (or replaces) the local projects document.
 /// 4. Forgetting a Mac leaves its entry behind.
 /// 5. A project-sync suppression is lost, or matches a different spelling of the root.
+/// 6. Saves running at the same time (several Macs refreshed together, or two
+///    builds sharing the file) drop each other's entries.
 struct SupermuxRemoteProjectsCacheTests {
     private func tempURL() -> URL {
         FileManager.default.temporaryDirectory
@@ -76,5 +78,22 @@ struct SupermuxRemoteProjectsCacheTests {
         #expect(SupermuxProjectSyncSuppression(defaults: defaults).isSuppressed(rootPath: "/r/./app"))
         store.clear(rootPath: "/r/app")
         #expect(!store.isSuppressed(rootPath: "/r/app"))
+    }
+
+    // 6
+    @Test func concurrentSavesForDifferentMacsKeepEveryEntry() async throws {
+        let url = tempURL()
+        // Two instances over one file stand in for two builds sharing it.
+        let builds = [SupermuxRemoteProjectsCache(fileURL: url), SupermuxRemoteProjectsCache(fileURL: url)]
+        let machines = (0..<32).map { "device:\($0)@default" }
+        let entries = machines.map { entry($0, projects: ["app"]) }
+        await withTaskGroup(of: Void.self) { group in
+            for (index, machine) in machines.enumerated() {
+                let cache = builds[index % builds.count]
+                let entry = entries[index]
+                group.addTask { try? await cache.save(entry, forMachine: machine) }
+            }
+        }
+        #expect(Set(builds[0].load().keys) == Set(machines))
     }
 }
