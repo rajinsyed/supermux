@@ -12,6 +12,10 @@ import QuartzCore
 /// - ``SupermuxWorkspaceActivity/ready``: a steady green dot.
 /// - ``SupermuxWorkspaceActivity/idle``: renders nothing.
 public struct SupermuxAgentActivityIndicator: View {
+    /// The size sidebar rows (flat and nested) draw the working spinner at,
+    /// before the sidebar font scale: the braille dots fill about this height.
+    public static let rowSize: CGFloat = 10
+
     private let activity: SupermuxWorkspaceActivity
     private let size: CGFloat
 
@@ -321,18 +325,25 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
         renderedForScale = scale
 
         let font = NSFont.monospacedSystemFont(ofSize: glyphPointSize, weight: .semibold)
-        let color = NSColor(SupermuxActivityPalette.working)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        // Monospaced font: every glyph shares the same cell, so the layer's
-        // size stays constant across frames and nothing ever re-layouts.
-        let cell = Self.frames.reduce(CGSize.zero) { acc, glyph in
-            let size = NSAttributedString(string: glyph, attributes: attributes).size()
-            return CGSize(width: max(acc.width, ceil(size.width)), height: max(acc.height, ceil(size.height)))
+        let color = NSColor(SupermuxActivityPalette.working).cgColor
+        let lines = Self.frames.map { glyph in
+            CTLineCreateWithAttributedString(NSAttributedString(string: glyph, attributes: [
+                .font: font,
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
+            ]))
         }
+        // Every frame is cropped to the union of the glyphs' ink, not the
+        // font's line box, whose descender pushed the dots above the view's
+        // center; one shared box keeps each dot in place from frame to frame,
+        // so the layer's size stays constant and nothing ever re-layouts.
+        let ink = lines.reduce(CGRect.null) { $0.union(CTLineGetImageBounds($1, nil)) }
+        guard !ink.isNull else { return }
+        let cell = CGSize(width: ceil(ink.width) + 2, height: ceil(ink.height) + 2)
+        let origin = CGPoint(x: (cell.width - ink.width) / 2 - ink.minX, y: (cell.height - ink.height) / 2 - ink.minY)
         glyphCellSize = cell
         glyphLayer.contentsScale = scale
-        frameImages = Self.frames.compactMap { glyph in
-            Self.renderGlyph(glyph, attributes: attributes, cell: cell, scale: scale)
+        frameImages = lines.compactMap { line in
+            Self.renderGlyph(line, at: origin, cell: cell, scale: scale)
         }
         glyphLayer.contents = frameImages.first
         needsLayout = true
@@ -345,39 +356,22 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
         }
     }
 
-    private static func renderGlyph(
-        _ glyph: String,
-        attributes: [NSAttributedString.Key: Any],
-        cell: CGSize,
-        scale: CGFloat
-    ) -> CGImage? {
-        let pixelWide = max(1, Int(ceil(cell.width * scale)))
-        let pixelHigh = max(1, Int(ceil(cell.height * scale)))
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: pixelWide,
-            pixelsHigh: pixelHigh,
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
+    /// One frame: `line` drawn with its baseline origin at `origin` (cell
+    /// points, y up) into a `cell`-sized bitmap at `scale`.
+    private static func renderGlyph(_ line: CTLine, at origin: CGPoint, cell: CGSize, scale: CGFloat) -> CGImage? {
+        guard let context = CGContext(
+            data: nil,
+            width: max(1, Int(ceil(cell.width * scale))),
+            height: max(1, Int(ceil(cell.height * scale))),
+            bitsPerComponent: 8,
             bytesPerRow: 0,
-            bitsPerPixel: 0
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
-        rep.size = cell
-        NSGraphicsContext.saveGraphicsState()
-        defer { NSGraphicsContext.restoreGraphicsState() }
-        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
-        NSGraphicsContext.current = context
-        let attributed = NSAttributedString(string: glyph, attributes: attributes)
-        let glyphSize = attributed.size()
-        attributed.draw(at: NSPoint(
-            x: (cell.width - glyphSize.width) / 2,
-            y: (cell.height - glyphSize.height) / 2
-        ))
-        context.flushGraphics()
-        return rep.cgImage
+        context.scaleBy(x: scale, y: scale)
+        context.textPosition = origin
+        CTLineDraw(line, context)
+        return context.makeImage()
     }
 }
 

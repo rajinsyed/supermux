@@ -1399,7 +1399,7 @@ switcher cards), and the spinner always sits at the row's right edge:
    `supermuxIndicatorInTrailingSlot = workspaceSnapshot.supermuxActivity == .working
    && canCloseWorkspace && !badgeOnTrailing && !spinnerOnTrailing`.
 5. In the row's title `HStack`: when `supermuxIndicatorInTrailingSlot`, render
-   `SupermuxAgentActivityIndicator(activity:size:)` (size 6·scale, matching the nested rows) as
+   `SupermuxAgentActivityIndicator(activity:size:)` (size `scaledFontSize(SupermuxAgentActivityIndicator.rowSize)`, matching the nested rows) as
    an `.overlay` on `SidebarWorkspaceTrailingStatusSlot` (faded to opacity 0 while
    `showCloseButton` — kept mounted so hover never remounts the AppKit spinner — hit-testing
    off) so it occupies the reserved close-button slot instead of leaving an empty gutter at the
