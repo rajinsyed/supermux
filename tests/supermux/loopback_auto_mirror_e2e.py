@@ -38,7 +38,9 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
                                    description / pin edit on a mirror survives the relaunch, and a
                                    later remote change still reaches the mirror; a mirrored
                                    notification the user marked unread (read on its Mac) stays
-                                   unread through the other Mac's first feeds after the relaunch
+                                   unread through the other Mac's first feeds after the relaunch,
+                                   and an unread mirrored notification survives the relaunch
+                                   unread (still that Mac's) without being read on that Mac
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_auto_mirror_e2e-<tag>.json) and
 exits non-zero on any failure. Stdlib only.
@@ -724,16 +726,35 @@ class AutoMirrorE2E:
         marked = self.sock.call("supermux.devices.notification_mark_unread", {"id": copy["id"]}) or {}
         if marked.get("is_read") is not False:
             raise Failure(f"Mark as Unread did not take: {marked}")
-        return {"source": source, "mirror": mirror_id, "title": title}
+        # A second source, left unread everywhere (its own pane, so the first
+        # source's later notification cannot supersede it).
+        plain_source = self.create_source("plain-unread")
+        plain_mirror = str(self.wait_one_mirror(plain_source)["workspace_id"])
+        plain_title = f"plain-unread-{self.nonce}"
+        self.notify_source(plain_source, plain_title)
+        wait_for("the plain notification's mirror copy", lambda: self.notification_record(plain_title, plain_mirror, read=False), self.timeout)
+        return {
+            "source": source, "mirror": mirror_id, "title": title,
+            "plain_source": plain_source, "plain_mirror": plain_mirror, "plain_title": plain_title,
+        }
 
     def check_unread_copy_survived(self, unread: Dict[str, Any]) -> Dict[str, Any]:
-        """The other Mac's first feeds after the relaunch (one forced by a new
-        notification) leave the user's Mark as Unread alone."""
+        """After the relaunch, once the link is back: the user's Mark as Unread
+        copy is still there and unread through the other Mac's first feeds (one
+        forced by a new notification), and an unread mirrored notification is
+        still there, unread, still that Mac's (never counted as this Mac's own),
+        and was not read on the other Mac by the relaunch."""
         after = f"after-relaunch-{self.nonce}"
         self.notify_source(unread["source"], after)
         wait_for("a new notification's mirror copy", lambda: self.notification_record(after, unread["mirror"]), self.timeout)
         hold("the unread mirror copy", lambda: self.notification_record(unread["title"], unread["mirror"], read=False), 3)
-        return {"copy_still_unread": True}
+        plain = self.notification_record(unread["plain_title"], unread["plain_mirror"], read=False)
+        if not plain or not str(plain.get("origin", "")).startswith("device-mac:"):
+            raise Failure(f"the unread mirrored notification did not survive the relaunch as the other Mac's: {plain}")
+        source = self.notification_record(unread["plain_title"], unread["plain_source"])
+        if not source or source.get("is_read"):
+            raise Failure(f"the relaunch read the notification on the other Mac: {source}")
+        return {"copy_still_unread": True, "plain_copy_origin": plain.get("origin"), "plain_source_unread": True}
 
     def check_restart(self) -> Dict[str, Any]:
         app = self.args.app_path
