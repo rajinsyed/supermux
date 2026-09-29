@@ -53,9 +53,9 @@ enum SupermuxRemoteProjectActionsFactory {
                     projectID: location.projectID
                 )
             },
-            createWorktree: { location, request in
-                guard let manager = window.tabManager else { throw SupermuxDeviceError.windowUnavailable }
-                _ = try await commands.createWorktree(location, request: request, in: manager)
+            makeWorktreeTarget: { location in
+                guard let manager = window.tabManager else { return nil }
+                return SupermuxRemoteWorktreeCreationTarget(location: location, tabManager: manager, commands: commands)
             },
             addExistingFolder: { destination, path in
                 try await commands.addExistingFolder(destination, path: path)

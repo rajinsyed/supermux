@@ -12,7 +12,8 @@ extension TerminalController {
     private static let supermuxAgentLogger = Logger(subsystem: "com.cmuxterm.app", category: "supermux.agent")
 
     /// `mobile.supermux.agent.options`: `{project_id?, command?, refresh?}` →
-    /// ``SupermuxAgentLaunchOptionsDTO``. An unknown `command` falls back to
+    /// ``SupermuxAgentLaunchOptionsDTO`` (with the additive
+    /// `ai_naming_configured`). An unknown `command` falls back to
     /// the Mac's remembered selection; `refresh: true` bypasses the cached
     /// catalog. Never fails on an unreadable catalog — that is reported as
     /// `models_source: unavailable` so the phone can still launch on the CLI
@@ -38,7 +39,10 @@ extension TerminalController {
             modelsSource: catalog.source,
             modelsError: catalog.errorDescription,
             lastModel: last.model,
-            lastEffort: last.effort
+            lastEffort: last.effort,
+            // Lets another Mac's New Worktree sheet say whether blank names
+            // are AI-named here (the key itself never leaves this Mac).
+            aiNamingConfigured: await environment.launcher.isAINamingConfigured()
         )
         do {
             return .ok(try SupermuxWireJSON().dictionary(from: payload))

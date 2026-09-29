@@ -1,0 +1,452 @@
+#!/usr/bin/env python3
+"""End-to-end test for the New Worktree sheet's device picker, on the loopback device.
+
+Talks to a tagged DEBUG build launched with SUPERMUX_DEBUG_LOOPBACK_DEVICE=1
+and a scratch SUPERMUX_PROJECTS_FILE (see
+plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md). It drives the DEBUG
+socket methods `supermux.devices.new_worktree.*`, which build a real
+SupermuxNewWorktreeSheetModel exactly the way a project row does (same device
+rows, default Mac, targets, create flow and mirror open); only the SwiftUI view
+is absent. The loopback device is this same app, so "Loopback Mac" has the same
+projects, and the workspace it creates is also a local workspace here (its id
+is the remote workspace id).
+
+Steps:
+  1. device_connected: the loopback device is connected and serves
+     supermux.worktrees.v1 and supermux.agent_launch.v1.
+  2. project_registered: a scratch git repo (main + a second branch, fake
+     origin) is registered and the unified list has it on This Mac and the
+     loopback device.
+  3. picker_lists_this_mac_and_loopback: the sheet's rows for the project are
+     This Mac first, then the Loopback Mac, both able to create, and the picker
+     shows.
+  4. remote_branches_load: selecting the Loopback Mac makes it the target and
+     loads its branches (worktrees.list include_branches) and Claude commands
+     (agent.options).
+  5. remote_error_is_localized: a create with an unknown starting branch fails
+     with the other Mac's sentence (no raw code), the sheet is editable again,
+     and nothing is remembered.
+  6. plain_create_selects_mirror: Create on the Loopback Mac runs
+     worktree.create over the device; the returned workspace's mirror opens,
+     is bound to it, and is the selected workspace of the window, with no
+     second mirror from the auto-mirror coordinator; the worktree is listed on
+     the device.
+  7. last_device_persisted: the project's last device is the Loopback Mac, and a
+     new sheet preselects it.
+  8. prompt_start_runs_agent_start: with a harmless Claude command ("echo")
+     configured, Start Claude on the Loopback Mac runs agent.start; its
+     workspace's terminal echoes the prompt, and its mirror opens selected.
+     The command list is restored afterwards.
+
+Prints a JSON report, writes it to tests/supermux/artifacts/ (or --report),
+exits non-zero on any failed check. Stdlib only.
+
+Usage:
+  CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py [--keep] [--scratch /tmp/<tag>]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from loopback_device_smoke import (  # noqa: E402
+    ARTIFACTS_DIR,
+    LOOPBACK_MACHINE_PREFIX,
+    SmokeFailure,
+    SocketClient,
+    norm,
+    socket_path_for_tag,
+    wait_for,
+)
+
+FAKE_ORIGIN = "git@github.com:supermux-e2e/picker-app.git"
+FAKE_IDENTITY = "github.com/supermux-e2e/picker-app"
+THIS_MAC = "this-mac"
+PREFIX = "supermux.devices.new_worktree."
+
+
+def git(*args: str, cwd: Optional[Path] = None) -> str:
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        raise SmokeFailure(f"git {' '.join(args)}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+class PickerE2E:
+    def __init__(self, client: SocketClient, scratch: Path, timeout_s: float, keep: bool) -> None:
+        self.client = client
+        self.timeout_s = timeout_s
+        self.keep = keep
+        self.nonce = uuid.uuid4().hex[:8]
+        self.root = scratch / f"picker-{self.nonce}"
+        self.repo = self.root / "repo"
+        self.steps: List[Dict[str, Any]] = []
+        self.facts: Dict[str, Any] = {"nonce": self.nonce, "scratch": str(self.root)}
+        self.machine: Optional[str] = None
+        self.project_id: Optional[str] = None
+        self.unified_id: Optional[str] = None
+        self.window_id: Optional[str] = None
+        self.sessions: List[str] = []
+        self.created: List[Dict[str, Any]] = []  # {mirror, remote}
+        self.previous_commands: Optional[Dict[str, Any]] = None
+
+    # -- helpers -------------------------------------------------------------
+
+    def call(self, name: str, params: Dict[str, Any], timeout_s: float = 60) -> Dict[str, Any]:
+        return self.client.call(PREFIX + name, params, timeout_s=timeout_s) or {}
+
+    def request(self, method: str, params: Dict[str, Any], timeout_s: float = 60) -> Dict[str, Any]:
+        result = self.client.call(
+            "supermux.devices.request",
+            {"machine": self.machine, "method": method, "params": params, "timeout_seconds": timeout_s},
+            timeout_s=timeout_s + 5,
+        ) or {}
+        return result.get("result") or {}
+
+    def open_session(self, **extra: Any) -> Dict[str, Any]:
+        state = self.call("open", {"project_id": self.project_id, **extra})
+        self.sessions.append(state["session_id"])
+        return state
+
+    def step(self, name: str, action: Callable[[], Dict[str, Any]]) -> None:
+        started = time.monotonic()
+        record: Dict[str, Any] = {"name": name}
+        try:
+            record.update(action() or {})
+            record["ok"] = True
+        except SmokeFailure as error:
+            record["ok"] = False
+            record["error"] = str(error)
+        record["seconds"] = round(time.monotonic() - started, 2)
+        self.steps.append(record)
+        if not record["ok"]:
+            raise SmokeFailure(f"{name}: {record['error']}")
+
+    def remote_worktrees(self) -> List[Dict[str, Any]]:
+        listed = self.request("mobile.supermux.worktrees.list", {"project_id": self.project_id})
+        return listed.get("worktrees") or []
+
+    def check_mirror_selected(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        mirror = result.get("mirror") or {}
+        remote_id = result.get("remote_workspace_id")
+        if not result.get("finished") or not remote_id or not mirror.get("workspace_id"):
+            raise SmokeFailure(f"create did not finish with a mirror: {result}")
+        self.created.append({"mirror": mirror["workspace_id"], "remote": remote_id})
+        if norm(mirror.get("remote_workspace_id")) != norm(remote_id) or mirror.get("machine") != self.machine:
+            raise SmokeFailure(f"the mirror shows another workspace: {mirror}")
+        if norm(mirror.get("window_id")) != norm(self.window_id):
+            raise SmokeFailure(f"the mirror opened in another window: {mirror}")
+
+        def selected() -> Optional[Dict[str, Any]]:
+            bindings = self.client.call("supermux.devices.bindings", {}) or {}
+            row = next(
+                (m for m in bindings.get("mirrors") or [] if norm(m.get("workspace_id")) == norm(mirror["workspace_id"])),
+                None,
+            )
+            if row and row.get("is_bound") and row.get("is_selected") and norm(row.get("remote_workspace_id")) == norm(remote_id):
+                return row
+            return None
+
+        row = wait_for("the new mirror to be bound and selected", selected, self.timeout_s)
+        time.sleep(2.0)  # let auto-mirror run: nothing may steal the selection or open a second mirror
+        if not selected():
+            raise SmokeFailure("the mirror lost the selection right after opening")
+        bindings = self.client.call("supermux.devices.bindings", {}) or {}
+        copies = [m for m in bindings.get("mirrors") or [] if norm(m.get("remote_workspace_id")) == norm(remote_id)]
+        if len(copies) != 1:
+            raise SmokeFailure(f"{len(copies)} mirrors of one remote workspace (auto-mirror raced the open): {copies}")
+        return {"mirror_workspace_id": mirror["workspace_id"], "remote_workspace_id": remote_id,
+                "mirror_title": row.get("title"), "reused_in_flight_or_existing": mirror.get("reused")}
+
+    # -- steps ---------------------------------------------------------------
+
+    def check_device(self) -> Dict[str, Any]:
+        def probe() -> Optional[Dict[str, Any]]:
+            devices = (self.client.call("supermux.devices.list", {"include_capabilities": True}) or {}).get("devices") or []
+            for device in devices:
+                if str(device.get("machine", "")).startswith(LOOPBACK_MACHINE_PREFIX) and device.get("link_state") == "connected":
+                    return device
+            raise SmokeFailure("no connected loopback device (is SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 set?)")
+
+        device = wait_for("the loopback device", probe, self.timeout_s)
+        missing = {"supermux.worktrees.v1", "supermux.agent_launch.v1"} - set(device.get("capabilities") or [])
+        if missing:
+            raise SmokeFailure(f"host does not advertise {sorted(missing)}")
+        self.machine = device["machine"]
+        windows = (self.client.call("window.list", {}) or {}).get("windows") or []
+        if not windows:
+            raise SmokeFailure("no window")
+        key = next((w for w in windows if w.get("key") or w.get("is_key")), windows[0])
+        self.window_id = key.get("id") or key.get("window_id")
+        return {"machine": self.machine, "device_name": device.get("name"), "window_id": self.window_id}
+
+    def register_project(self) -> Dict[str, Any]:
+        self.repo.mkdir(parents=True)
+        git("init", "-q", "-b", "main", cwd=self.repo)
+        git("config", "user.email", "e2e@example.com", cwd=self.repo)
+        git("config", "user.name", "Supermux E2E", cwd=self.repo)
+        (self.repo / "README.md").write_text(f"picker e2e {self.nonce}\n")
+        git("add", "README.md", cwd=self.repo)
+        git("commit", "-q", "-m", "init", cwd=self.repo)
+        git("branch", f"feature-{self.nonce}", cwd=self.repo)
+        git("remote", "add", "origin", FAKE_ORIGIN, cwd=self.repo)
+        project = self.request("mobile.supermux.project.create", {"root_path": str(self.repo)}).get("project") or {}
+        self.project_id = project.get("id")
+        if not self.project_id:
+            raise SmokeFailure(f"project.create returned no project: {project}")
+
+        def merged() -> Optional[Dict[str, Any]]:
+            unified = self.client.call("supermux.devices.unified_projects", {}) or {}
+            for candidate in unified.get("projects") or []:
+                if candidate.get("git_remote_identity") == FAKE_IDENTITY and len(candidate.get("locations") or []) == 2:
+                    return candidate
+            return None
+
+        unified = wait_for("the project on This Mac and the loopback device", merged, self.timeout_s)
+        self.unified_id = unified["id"]
+        return {"project_id": self.project_id, "unified_id": self.unified_id}
+
+    def check_rows(self) -> Dict[str, Any]:
+        state = self.open_session()
+        entries = state.get("entries") or []
+        keys = [e.get("device_key") for e in entries]
+        if keys[:2] != [THIS_MAC, self.machine]:
+            raise SmokeFailure(f"rows are {keys}, want This Mac then {self.machine}")
+        if not all(e.get("kind") == "create" and e.get("can_create") for e in entries[:2]):
+            raise SmokeFailure(f"a row cannot create: {entries}")
+        if not state.get("shows_picker"):
+            raise SmokeFailure("the picker is hidden for a project on two Macs")
+        if norm(state.get("unified_project_id")) != norm(self.unified_id):
+            raise SmokeFailure(f"sheet keyed to {state.get('unified_project_id')}, want {self.unified_id}")
+        loopback = entries[1]
+        if "Loopback" not in str(loopback.get("name")):
+            raise SmokeFailure(f"loopback row name {loopback.get('name')!r}")
+        return {"rows": [{k: e.get(k) for k in ("device_key", "name", "availability", "kind")} for e in entries],
+                "default_row": state.get("selected_entry_id")}
+
+    def check_remote_branches(self) -> Dict[str, Any]:
+        session = self.sessions[-1]
+        state = self.call("select", {"session_id": session, "entry_id": self.machine})
+        target = state.get("target") or {}
+        if state.get("selected_entry_id") != self.machine or target.get("remote_device_name") is None:
+            raise SmokeFailure(f"the Loopback Mac did not become the target: {state}")
+        if norm(target.get("project_id")) != norm(self.project_id):
+            raise SmokeFailure(f"remote target uses project {target.get('project_id')}")
+        state = self.call("load", {"session_id": session}, timeout_s=180)
+        branches = state.get("branches") or []
+        if not state.get("branches_loaded") or "main" not in branches or f"feature-{self.nonce}" not in branches:
+            raise SmokeFailure(f"remote branches did not load: {state}")
+        if state.get("base_branch") != "main":
+            raise SmokeFailure(f"base branch {state.get('base_branch')!r}, want main")
+        if not state.get("commands"):
+            raise SmokeFailure(f"no Claude commands from agent.options: {state}")
+        if state.get("preview_line") is not None:
+            raise SmokeFailure("a remote target must not preview a local shell line")
+        return {"branches": branches, "commands": state.get("commands"), "command": state.get("command"),
+                "ai_naming_configured": state.get("ai_naming_configured")}
+
+    def check_remote_error(self) -> Dict[str, Any]:
+        session = self.sessions[-1]
+        before = self.call("last_device", {"project_id": self.unified_id}).get("device_key")
+        result = self.call(
+            "submit",
+            {"session_id": session, "workspace_name": f"bad-{self.nonce}", "branch_name": f"bad-{self.nonce}",
+             "base_branch": f"no-such-base-{self.nonce}"},
+            timeout_s=180,
+        )
+        message = result.get("error_message") or ""
+        if result.get("finished") or not message:
+            raise SmokeFailure(f"an unknown base branch did not fail: {result}")
+        if "invalid_params" in message or result.get("phase") != "idle" or not result.get("can_create"):
+            raise SmokeFailure(f"failure left the sheet unusable or shows a raw code: {result}")
+        after = self.call("last_device", {"project_id": self.unified_id}).get("device_key")
+        if after != before:
+            raise SmokeFailure(f"a failed create was remembered: {before} -> {after}")
+        return {"error_message": message}
+
+    def check_plain_create(self) -> Dict[str, Any]:
+        session = self.sessions[-1]
+        branch = f"picker-plain-{self.nonce}"
+        # Undo the previous step's starting-branch pick: reopen on the same Mac.
+        self.call("close", {"session_id": session})
+        state = self.open_session(preferred_device=self.machine)
+        session = state["session_id"]
+        if state.get("selected_entry_id") != self.machine:
+            raise SmokeFailure(f"preferred device ignored: {state.get('selected_entry_id')}")
+        self.call("load", {"session_id": session}, timeout_s=180)
+        result = self.call(
+            "submit",
+            {"session_id": session, "workspace_name": f"picker plain {self.nonce}", "branch_name": branch},
+            timeout_s=240,
+        )
+        facts = self.check_mirror_selected(result)
+        listed = [w for w in self.remote_worktrees() if w.get("branch") == branch]
+        if len(listed) != 1 or norm(listed[0].get("workspace_id")) != norm(facts["remote_workspace_id"]):
+            raise SmokeFailure(f"worktrees.list lacks {branch} opened in the returned workspace: {listed}")
+        facts["worktree_path"] = listed[0].get("path")
+        return facts
+
+    def check_last_device(self) -> Dict[str, Any]:
+        stored = self.call("last_device", {"project_id": self.unified_id}).get("device_key")
+        if stored != self.machine:
+            raise SmokeFailure(f"last device {stored!r}, want {self.machine}")
+        state = self.open_session()
+        if state.get("selected_entry_id") != self.machine:
+            raise SmokeFailure(f"a new sheet preselected {state.get('selected_entry_id')}, want the last device")
+        return {"last_device": stored, "new_sheet_default": state.get("selected_entry_id")}
+
+    def check_prompt_start(self) -> Dict[str, Any]:
+        self.previous_commands = self.call("set_agent_commands", {})
+        previous = self.previous_commands.get("previous") or []
+        self.call("set_agent_commands", {"commands": ["echo", *[c for c in previous if c != "echo"]],
+                                         "selected": self.previous_commands.get("previous_selected")})
+        session = self.sessions[-1]
+        state = self.call("load", {"session_id": session}, timeout_s=180)
+        if "echo" not in (state.get("commands") or []):
+            raise SmokeFailure(f"the Loopback Mac does not offer the test command: {state.get('commands')}")
+        marker = f"picker-agent-{self.nonce}"
+        result = self.call(
+            "submit",
+            {"session_id": session, "prompt": f"say {marker}", "command": "echo"},
+            timeout_s=300,
+        )
+        facts = self.check_mirror_selected(result)
+        source_id = facts["remote_workspace_id"]  # loopback: the remote workspace is local too
+
+        def echoed() -> Optional[str]:
+            surfaces = (self.client.call("surface.list", {"workspace_id": source_id}) or {}).get("surfaces") or []
+            for surface in surfaces:
+                surface_id = surface.get("id") or surface.get("surface_id")
+                text = str((self.client.call(
+                    "surface.read_text",
+                    {"workspace_id": source_id, "surface_id": surface_id, "scrollback": True},
+                ) or {}).get("text") or "")
+                if f"say {marker}" in text and "echo" in text:
+                    return surface_id
+            return None
+
+        surface = wait_for("the agent.start terminal to echo the prompt", echoed, self.timeout_s)
+        worktree = next((w for w in self.remote_worktrees() if norm(w.get("workspace_id")) == norm(source_id)), None)
+        if worktree is None:
+            raise SmokeFailure("agent.start created no worktree for its workspace")
+        facts.update({"echo_surface_id": surface, "agent_worktree_branch": worktree.get("branch"),
+                      "agent_worktree_path": worktree.get("path")})
+        return facts
+
+    # -- cleanup -------------------------------------------------------------
+
+    def cleanup(self) -> None:
+        errors: List[str] = []
+
+        def attempt(action: Callable[[], Any]) -> None:
+            try:
+                action()
+            except SmokeFailure as error:
+                errors.append(str(error))
+
+        if self.previous_commands is not None:
+            attempt(lambda: self.call("set_agent_commands", {
+                "commands": self.previous_commands.get("previous"),
+                "selected": self.previous_commands.get("previous_selected"),
+            }))
+        for session in self.sessions:
+            attempt(lambda session=session: self.call("close", {"session_id": session}))
+        if not self.keep:
+            for created in self.created:
+                attempt(lambda c=created: self.client.call("workspace.close", {"workspace_id": c["mirror"]}))
+                attempt(lambda c=created: self.client.call("workspace.close", {"workspace_id": c["remote"]}))
+                attempt(lambda c=created: self.client.call(
+                    "supermux.devices.unhide", {"machine": self.machine, "remote_workspace_id": c["remote"]}))
+            if self.project_id and self.machine:
+                for worktree in self.remote_worktrees_safe():
+                    if worktree.get("path") != str(self.repo):
+                        attempt(lambda w=worktree: self.request(
+                            "mobile.supermux.worktree.remove",
+                            {"project_id": self.project_id, "worktree_path": w["path"], "force": True, "delete_branch": True},
+                            timeout_s=120,
+                        ))
+                attempt(lambda: self.request("mobile.supermux.project.delete", {"project_id": self.project_id}))
+            shutil.rmtree(self.root, ignore_errors=True)
+        if errors:
+            self.facts["cleanup_errors"] = errors
+
+    def remote_worktrees_safe(self) -> List[Dict[str, Any]]:
+        try:
+            return self.remote_worktrees()
+        except SmokeFailure:
+            return []
+
+    def run(self) -> bool:
+        try:
+            self.step("device_connected", self.check_device)
+            self.step("project_registered", self.register_project)
+            self.step("picker_lists_this_mac_and_loopback", self.check_rows)
+            self.step("remote_branches_load", self.check_remote_branches)
+            self.step("remote_error_is_localized", self.check_remote_error)
+            self.step("plain_create_selects_mirror", self.check_plain_create)
+            self.step("last_device_persisted", self.check_last_device)
+            self.step("prompt_start_runs_agent_start", self.check_prompt_start)
+            return True
+        except SmokeFailure:
+            return False
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            self.steps.append({"name": "transport", "ok": False, "error": repr(error)})
+            return False
+        finally:
+            self.cleanup()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--tag", default=os.environ.get("CMUX_TAG"), help="tagged build (default: $CMUX_TAG)")
+    parser.add_argument("--socket", default=os.environ.get("CMUX_SOCKET_PATH"), help="override the control socket path")
+    parser.add_argument("--scratch", help="scratch folder for the test repo (default: /tmp/<tag>)")
+    parser.add_argument("--timeout", type=float, default=45.0, help="seconds to wait for each check")
+    parser.add_argument("--keep", action="store_true", help="leave the workspaces, worktrees and project in place")
+    parser.add_argument("--report", help="report path (default: tests/supermux/artifacts/loopback_new_worktree_picker_e2e-<tag>.json)")
+    args = parser.parse_args()
+    if not args.tag and not args.socket:
+        parser.error("set CMUX_TAG (or pass --tag / --socket)")
+    socket_path = args.socket or socket_path_for_tag(args.tag)
+    scratch = Path(args.scratch or f"/tmp/{args.tag or 'supermux-e2e'}")
+
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        with SocketClient(socket_path, timeout_s=60) as client:
+            e2e = PickerE2E(client, scratch, timeout_s=args.timeout, keep=args.keep)
+            passed = e2e.run()
+            steps, facts = e2e.steps, e2e.facts
+    except OSError as error:
+        passed, steps, facts = False, [{"name": "connect", "ok": False, "error": f"{socket_path}: {error}"}], {}
+
+    report = {
+        "suite": "supermux-loopback-new-worktree-picker-e2e",
+        "tag": args.tag,
+        "socket": socket_path,
+        "started_at": started_at,
+        "passed": passed,
+        "steps": steps,
+        "facts": facts,
+    }
+    default_report = ARTIFACTS_DIR / f"loopback_new_worktree_picker_e2e-{args.tag or 'socket'}.json"
+    report_path = Path(args.report) if args.report else default_report
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(report, indent=2))
+    print(f"report: {report_path}", file=sys.stderr)
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
