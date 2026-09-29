@@ -52,6 +52,14 @@ class Failure(Exception):
     """A check failed; the message says which and why."""
 
 
+class RateLimited(Exception):
+    """The socket's polling limiter refused a read; retry after the hint."""
+
+    def __init__(self, retry_after_s: float) -> None:
+        super().__init__(f"rate limited for {retry_after_s}s")
+        self.retry_after_s = max(0.05, retry_after_s)
+
+
 class Socket:
     """Newline-delimited JSON client for the cmux v2 control socket."""
 
@@ -75,6 +83,15 @@ class Socket:
             self._sock = None
 
     def call(self, method: str, params: Optional[Dict[str, Any]] = None, timeout_s: Optional[float] = None) -> Any:
+        """One request; waits out the socket's per-connection polling limit."""
+        for _ in range(20):
+            try:
+                return self._call_once(method, params, timeout_s)
+            except RateLimited as limited:
+                time.sleep(limited.retry_after_s)
+        return self._call_once(method, params, timeout_s)
+
+    def _call_once(self, method: str, params: Optional[Dict[str, Any]], timeout_s: Optional[float]) -> Any:
         assert self._sock is not None, "not connected"
         request_id = self._next_id
         self._next_id += 1
@@ -86,6 +103,8 @@ class Socket:
         if response.get("ok") is True:
             return response.get("result")
         error = response.get("error") or {}
+        if error.get("code") == "rate_limited":
+            raise RateLimited(((error.get("data") or {}).get("retry_after_ms") or 100) / 1000.0)
         raise Failure(f"{method}: {error.get('code', 'error')}: {error.get('message', 'unknown error')}")
 
     def _read_line(self, timeout_s: float) -> str:
@@ -187,7 +206,7 @@ class TabSyncE2E:
     def timed(self, description: str, probe: Callable[[], Any]) -> Dict[str, Any]:
         """Polls fast, returns the latency, and fails when it exceeds the limit."""
         started = time.monotonic()
-        value = wait_for(description, probe, self.timeout, interval_s=0.05)
+        value = wait_for(description, probe, self.timeout, interval_s=0.1)
         latency = round(time.monotonic() - started, 3)
         self.sample_selection()
         if latency > self.latency_limit:
@@ -301,7 +320,7 @@ class TabSyncE2E:
             after = self.ordered_surfaces(self.source_id)
             return after if after != before and after[0] == moved else None
 
-        after = wait_for(f"the source to move {moved} first", reordered, 5.0, interval_s=0.05)
+        after = wait_for(f"the source to move {moved} first", reordered, 5.0, interval_s=0.1)
 
         def follows() -> bool:
             mirror = self.mirror_order_as_source_ids()
