@@ -58,8 +58,10 @@ the main Mac is closed), and the same on iOS.
    remote record's `supermux_project_id`. Local path association (`SupermuxWorkspaceAssociationStore`)
    must never claim a mirror.
 6. **Device picker** in the Mac New Worktree sheet (and iOS sheet): the devices where the unified
-   project exists; default = last device used for that project. Remote create runs on the remote
-   (`worktree.create{open:true}` / `agent.start`), then the local mirror appears and is selected.
+   project exists; default = the last device any worktree was created on (one choice for every
+   project; This Mac, else the first Mac that can create, when that device lacks the project or is
+   offline). Remote create runs on the remote (`worktree.create{open:true}` / `agent.start`), then
+   the local mirror appears and is selected.
    "New Workspace on ▸ <Mac>" for global (project-less) workspaces.
 7. **Status parity on mirrors** from the remote record: activity (working / needs input / ready) via
    the fork `SupermuxWorkspaceActivityResolver` overlay; branch/PR in nested rows; additive

@@ -196,7 +196,9 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_worktree_disclosure_e2e.py --scra
 way a project row does. On a scratch repo it checks: the rows are This Mac then the Loopback Mac;
 the Loopback Mac's branches and Claude commands load; a failing create shows the other Mac's
 sentence and is not remembered; Create on the Loopback Mac ends with exactly one bound mirror,
-selected in the window; the Mac is remembered and preselected next time; and Start Claude runs
+selected in the window; the Mac is remembered and preselected next time, for a second project too
+(one choice for every project), with This Mac preselected instead while that Mac's link is down
+(the remembered Mac is cleared at the start and restored at the end); and Start Claude runs
 `agent.start` (with a temporary `echo` command, restored afterwards) and its mirror opens selected.
 It then drops the loopback link on purpose (DEBUG `supermux.devices.link {machine, action:
 stop|restore}`): an open sheet disables the dropped Mac and re-enables it after the redial without

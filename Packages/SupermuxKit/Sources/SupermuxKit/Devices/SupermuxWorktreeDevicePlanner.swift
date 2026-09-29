@@ -54,9 +54,10 @@ public enum SupermuxWorktreeDevicePlanner {
     }
 
     /// The row to preselect: an explicit choice (the row menu's "New Worktree
-    /// on ▸ <Mac>") when that Mac can create, else the last Mac used for this
-    /// project when it still can, else the first Mac that can, else the first
-    /// project copy (an offline-only project still opens, and says why).
+    /// on ▸ <Mac>") when that Mac can create, else the last Mac any worktree
+    /// was created on when it can create this project now, else the first Mac
+    /// that can (This Mac first when it has a copy), else the first project
+    /// copy (an offline-only project still opens, and says why).
     public static func defaultEntryID(
         in entries: [SupermuxWorktreeDeviceEntry],
         preferredDeviceKey: String?,

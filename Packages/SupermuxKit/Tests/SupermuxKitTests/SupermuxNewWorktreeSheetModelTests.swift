@@ -46,7 +46,7 @@ struct SupermuxNewWorktreeSheetModelTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
         let store = SupermuxWorktreeLastDeviceStore(defaults: defaults)
-        if let lastUsed { store.record(deviceKey: lastUsed, forProject: unifiedID) }
+        if let lastUsed { store.record(deviceKey: lastUsed) }
         let project = SupermuxUnifiedProject(
             id: unifiedID,
             name: "app",
@@ -80,7 +80,7 @@ struct SupermuxNewWorktreeSheetModelTests {
             initialEntryID: SupermuxWorktreeDevicePlanner.defaultEntryID(
                 in: entries,
                 preferredDeviceKey: nil,
-                lastUsedDeviceKey: store.deviceKey(forProject: unifiedID)
+                lastUsedDeviceKey: store.deviceKey()
             ),
             makeTarget: { location in location.isThisMac ? local : (location.machineID == "device:aaaa@default" ? remote : nil) },
             lastDevices: store,
@@ -173,7 +173,7 @@ struct SupermuxNewWorktreeSheetModelTests {
         #expect(request.baseBranch == nil)
         #expect(request.workspaceName == "login")
         #expect(fixture.remote.suggestCalls == 0)
-        #expect(fixture.store.deviceKey(forProject: unifiedID) == "device:aaaa@default")
+        #expect(fixture.store.deviceKey() == "device:aaaa@default")
     }
 
     @Test func blankBranchAsksThatMacForAnAIName() async throws {
@@ -222,7 +222,7 @@ struct SupermuxNewWorktreeSheetModelTests {
         #expect(!finished)
         #expect(model.phase == .idle)
         #expect(model.errorMessage == "Studio is offline.")
-        #expect(fixture.store.deviceKey(forProject: unifiedID) == nil)
+        #expect(fixture.store.deviceKey() == nil)
     }
 
     @Test func thisMacOnlyProjectHidesThePicker() throws {
