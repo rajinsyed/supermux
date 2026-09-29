@@ -124,7 +124,8 @@ enum SupermuxProjectsSocketCommands {
         return id
     }
 
-    private static func tabManager(_ params: [String: Any]) throws -> TabManager {
+    /// The window named by `window_id`, else the preferred main window.
+    static func tabManager(_ params: [String: Any]) throws -> TabManager {
         guard let app = AppDelegate.shared else { throw SupermuxDeviceError.windowUnavailable }
         if let raw = params["window_id"] as? String {
             guard let id = UUID(uuidString: raw), let manager = app.tabManagerFor(windowId: id) else {

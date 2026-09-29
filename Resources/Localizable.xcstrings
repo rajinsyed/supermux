@@ -597027,40 +597027,6 @@
         }
       }
     },
-    "supermux.newWorktree.branch" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Branch"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブランチ"
-          }
-        }
-      }
-    },
-    "supermux.newWorktree.workspaceName" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Workspace name"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークスペース名"
-          }
-        }
-      }
-    },
     "supermux.project.openOnMenu" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -597350,108 +597316,6 @@
         }
       }
     },
-    "supermux.remoteWorktree.baseBranch" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starting branch"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始ブランチ"
-          }
-        }
-      }
-    },
-    "supermux.remoteWorktree.basePlaceholder" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The project's default branch"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロジェクトのデフォルトブランチ"
-          }
-        }
-      }
-    },
-    "supermux.remoteWorktree.branchPlaceholder" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Leave empty to generate one"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空欄にすると自動で生成します"
-          }
-        }
-      }
-    },
-    "supermux.remoteWorktree.create" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Create"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作成"
-          }
-        }
-      }
-    },
-    "supermux.remoteWorktree.hint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The worktree is created on %@ and opens here."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークツリーは %@ 上に作成され、ここで開きます。"
-          }
-        }
-      }
-    },
-    "supermux.remoteWorktree.workspacePlaceholder" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Named after the branch"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブランチ名から命名"
-          }
-        }
-      }
-    },
     "supermux.mirror.changes.onMac" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -597686,6 +597550,312 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このワークスペースに対応するプロジェクトがありません"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.accessibility" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create on %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で作成"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.connecting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続中…"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.connectingHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is still connecting. Try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はまだ接続中です。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create on"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成先"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフライン"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.offlineHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is offline. Worktrees can be created there once it reconnects."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はオフラインです。再接続すると、そこでワークツリーを作成できます。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.remoteHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Created in %@’s copy of the project; its workspace opens here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 上のプロジェクトに作成され、そのワークスペースがここで開きます。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.setUp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set Up on…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セットアップ…"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.device.setUpHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Register this project on another Mac first."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先にこのプロジェクトを別の Mac に登録します。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.openFailed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The worktree was created on %@, but it could not be opened here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ でワークツリーを作成しましたが、ここでは開けませんでした。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.remoteError.aiUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI naming is not set up on %@. Type a branch name, or leave it blank for a random one."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ では AI による命名が設定されていません。ブランチ名を入力するか、空欄のままにしてランダムな名前を使ってください。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.remoteError.dirty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The worktree on %@ has uncommitted changes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ のワークツリーにコミットされていない変更があります。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.remoteError.generic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not create the worktree."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ でワークツリーを作成できませんでした。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.remoteError.notFound" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This project is no longer registered on %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロジェクトは %@ に登録されていません。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.remoteError.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is not reachable right now. Choose another Mac, or try again when it reconnects."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に現在接続できません。別の Mac を選ぶか、再接続してからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.remoteError.outdated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ runs an older Supermux that cannot do this. Update Supermux there and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ の Supermux は古いため、この操作を実行できません。その Mac の Supermux をアップデートしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "supermux.newWorktree.status.creatingOn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating on %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で作成中…"
+          }
+        }
+      }
+    },
+    "supermux.project.newWorktreeOnMenu" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Worktree on"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新規ワークツリーの作成先"
           }
         }
       }

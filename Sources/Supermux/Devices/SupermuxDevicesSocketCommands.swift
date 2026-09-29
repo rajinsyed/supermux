@@ -21,8 +21,9 @@ import SupermuxKit
 /// ``SupermuxDeviceMirrorSocketCommands``, plus the notification /
 /// phone-push hooks in ``SupermuxDeviceNotificationSocketCommands`` (`push_decisions`,
 /// `notification_records`, `notification_overrides`, `phone_push_debug`, `phone_push_probe`,
-/// `phone_push_share_now`), and the `mirror.*` mirror-behavior drivers
-/// (``SupermuxMirrorSocketCommands``).
+/// `phone_push_share_now`), the `mirror.*` mirror-behavior drivers
+/// (``SupermuxMirrorSocketCommands``), and the `new_worktree.*` New Worktree
+/// sheet drivers (`SupermuxNewWorktreeSocketCommands`).
 @MainActor
 enum SupermuxDevicesSocketCommands {
     nonisolated static let methodPrefix = "supermux.devices."
@@ -79,6 +80,17 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxProjectsSocketCommands.handles(String(name)):
                 // Projects across Macs (plans/supermux-remote-workspaces/PROJECTS-API.md).
                 result = try await SupermuxProjectsSocketCommands.handle(String(name), params: params)
+            case let sub where sub.hasPrefix("new_worktree."):
+                // Device-aware New Worktree sheet drivers (DEBUG builds only).
+                #if DEBUG
+                result = try await SupermuxNewWorktreeSocketCommands.handle(
+                    String(sub.dropFirst(SupermuxNewWorktreeSocketCommands.methodPrefix.count)),
+                    params: params,
+                    payloads: payloads
+                )
+                #else
+                return unknownMethod()
+                #endif
             case let sub where sub.hasPrefix(SupermuxMirrorSocketCommands.methodPrefix):
                 // Mirror-behavior E2E drivers (DEBUG builds only).
                 #if DEBUG
