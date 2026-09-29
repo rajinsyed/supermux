@@ -186,11 +186,18 @@ class PickerE2E:
         worktree = next((w for w in self.remote_worktrees() if w.get("branch") == branch), None)
         remote_id = (worktree or {}).get("workspace_id")
         if remote_id:
-            bindings = self.client.call("supermux.devices.bindings", {}) or {}
-            mirrors = [m for m in bindings.get("mirrors") or [] if norm(m.get("remote_workspace_id")) == norm(remote_id)]
-            for mirror in mirrors:
+            def mirrors() -> Optional[List[Dict[str, Any]]]:
+                bindings = self.client.call("supermux.devices.bindings", {}) or {}
+                rows = [m for m in bindings.get("mirrors") or [] if norm(m.get("remote_workspace_id")) == norm(remote_id)]
+                return rows if any(m.get("is_bound") for m in rows) else None
+
+            try:  # let auto-mirror finish, so cleanup never races a mirror mid-open
+                rows = wait_for("the orphan's auto-mirror", mirrors, self.timeout_s)
+            except SmokeFailure:
+                rows = []
+            for mirror in rows:
                 self.created.append({"mirror": mirror["workspace_id"], "remote": remote_id})
-            if not mirrors:
+            if not rows:
                 self.created.append({"mirror": remote_id, "remote": remote_id})
         return worktree
 
@@ -521,11 +528,24 @@ class PickerE2E:
             "workspace_name": f"keep agent {self.nonce}", "branch_name": f"keep-agent-{self.nonce}",
             "select": False,
         }, timeout_s=300))
+        # Opened in the background, each still reaches the other Mac: its
+        # auto-mirror opens (and cleanup then never races a mirror mid-open).
+        sources = sorted({norm(w) for w in opened.values()})
+
+        def mirrored() -> Optional[List[str]]:
+            bindings = self.client.call("supermux.devices.bindings", {}) or {}
+            rows = [m for m in bindings.get("mirrors") or [] if norm(m.get("remote_workspace_id")) in sources]
+            bound = {norm(m.get("remote_workspace_id")) for m in rows if m.get("is_bound")}
+            return [m["workspace_id"] for m in rows] if bound == set(sources) else None
+
+        mirrors = wait_for("auto-mirrors of the background-opened workspaces", mirrored, self.timeout_s)
+        if self.selected_workspaces() != before:
+            raise SmokeFailure(f"auto-mirroring a background-opened workspace changed the selection: {before}")
         # The phone passes nothing and keeps today's behavior: the workspace is selected.
         default = self.request("mobile.supermux.project.open", {"project_id": self.project_id})
         if norm(default.get("workspace_id")) not in self.selected_workspaces():
             raise SmokeFailure(f"project.open without select no longer selects: {default}")
-        return {"opened": opened, "selected_before": before}
+        return {"opened": opened, "mirrors": mirrors, "selected_before": before}
 
     def check_unfocused_remote_create(self) -> Dict[str, Any]:
         """A viewer-side remote create that does not focus leaves every
@@ -565,9 +585,15 @@ class PickerE2E:
         for session in self.sessions:
             attempt(lambda session=session: self.call("close", {"session_id": session}))
         if not self.keep:
+            # Source first: auto-mirror then closes its mirror. Closing the
+            # mirror first would let auto-mirror re-mirror the source just
+            # before it closes.
+            closed: set = set()
             for created in self.created:
-                attempt(lambda c=created: self.client.call("workspace.close", {"workspace_id": c["mirror"]}))
-                attempt(lambda c=created: self.client.call("workspace.close", {"workspace_id": c["remote"]}))
+                for key in ("remote", "mirror"):
+                    if norm(created[key]) not in closed:
+                        closed.add(norm(created[key]))
+                        attempt(lambda w=created[key]: self.close_workspace_if_open(w))
                 attempt(lambda c=created: self.client.call(
                     "supermux.devices.unhide", {"machine": self.machine, "remote_workspace_id": c["remote"]}))
             if self.project_id and self.machine:
@@ -582,6 +608,16 @@ class PickerE2E:
             shutil.rmtree(self.root, ignore_errors=True)
         if errors:
             self.facts["cleanup_errors"] = errors
+
+    def close_workspace_if_open(self, workspace_id: str) -> None:
+        """Closes a workspace unless it is already gone (a closed source takes its mirror along)."""
+        time.sleep(0.3)
+        for window in (self.client.call("window.list", {}) or {}).get("windows") or []:
+            window_id = window.get("id") or window.get("window_id")
+            rows = (self.client.call("workspace.list", {"window_id": window_id}) or {}).get("workspaces") or []
+            if any(norm(r.get("id")) == norm(workspace_id) for r in rows):
+                self.client.call("workspace.close", {"workspace_id": workspace_id})
+                return
 
     def remote_worktrees_safe(self) -> List[Dict[str, Any]]:
         try:
