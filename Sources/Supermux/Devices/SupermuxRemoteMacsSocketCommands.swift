@@ -1,0 +1,88 @@
+import CmuxSettings
+import CmuxSettingsUI
+import Foundation
+import SupermuxKit
+
+/// `supermux.devices.*` methods for the Settings "Remote Macs" card and the
+/// flat-row device chip, so E2E tests read and drive exactly what the UI does:
+///
+/// - `remote_macs_settings {}` — the card's snapshot, plus upstream's
+///   discoverability preferences it reports.
+/// - `remote_macs_settings_set {setting: auto_mirror|sync_projects|share_push, enabled}`
+///   or `{action: show_hidden}` — the card's own actions.
+/// - `flat_chips {}` — for every device mirror, the Mac its flat-row chip
+///   names and the state it renders (`online` / `connecting` / `offline`).
+@MainActor
+enum SupermuxRemoteMacsSocketCommands {
+    static let methods: Set<String> = ["remote_macs_settings", "remote_macs_settings_set", "flat_chips"]
+
+    struct InvalidParams: Error {
+        let message: String
+    }
+
+    static func handle(_ name: String, params: [String: Any]) throws -> [String: Any] {
+        switch name {
+        case "remote_macs_settings": return settingsPayload()
+        case "remote_macs_settings_set": return try set(params)
+        default: return flatChips()
+        }
+    }
+
+    private static func settingsPayload() -> [String: Any] {
+        let snapshot = SupermuxComposition.remoteMacsSettings.snapshot()
+        let keys = DevicesCatalogSection()
+        return [
+            "auto_mirror": snapshot.autoMirror,
+            "sync_projects": snapshot.syncProjects,
+            "share_push": snapshot.sharePush,
+            "hidden_workspace_count": snapshot.hiddenWorkspaceCount,
+            "discovery_enabled": UserDefaults.standard.bool(forKey: keys.discoveryEnabled.userDefaultsKey),
+            "incoming_access_enabled": UserDefaults.standard.bool(forKey: keys.incomingAccessEnabled.userDefaultsKey),
+            "macs": snapshot.macs.map { mac -> [String: Any] in
+                [
+                    "machine": mac.id,
+                    "name": mac.name,
+                    "link": mac.link.rawValue,
+                    "detail": mac.detail ?? NSNull(),
+                    "workspace_count": mac.workspaceCount,
+                ]
+            },
+        ]
+    }
+
+    private static func set(_ params: [String: Any]) throws -> [String: Any] {
+        let actions = SupermuxComposition.remoteMacsSettings.actions()
+        if params["action"] as? String == "show_hidden" {
+            actions.showHiddenWorkspaces()
+            return settingsPayload()
+        }
+        guard let enabled = params["enabled"] as? Bool else {
+            throw InvalidParams(message: "enabled (bool) is required, or action: show_hidden")
+        }
+        switch params["setting"] as? String {
+        case "auto_mirror": actions.setAutoMirror(enabled)
+        case "sync_projects": actions.setSyncProjects(enabled)
+        case "share_push": actions.setSharePush(enabled)
+        default: throw InvalidParams(message: "setting must be auto_mirror, sync_projects or share_push")
+        }
+        return settingsPayload()
+    }
+
+    private static func flatChips() -> [String: Any] {
+        let devices = SupermuxComposition.devices.devices
+        let chips = SupermuxComposition.deviceWorkspaceIndex.mirrors().compactMap { mirror -> [String: Any]? in
+            guard let label = CloudWorkspaceSidebarPresentation.deviceLabel(workspace: mirror.workspace) else { return nil }
+            let name = SupermuxFlatRowDeviceChip.macName(fromDeviceWorkspaceLabel: label)
+            let state = SupermuxFlatRowDeviceChip.state(ofMacNamed: name, devices: devices)
+            return [
+                "workspace_id": mirror.workspace.id.uuidString,
+                "machine": mirror.ref.machineID,
+                "label": label,
+                "mac_name": name,
+                "chip_state": String(describing: state),
+                "dimmed": state.isDimmed,
+            ]
+        }
+        return ["chips": chips]
+    }
+}
