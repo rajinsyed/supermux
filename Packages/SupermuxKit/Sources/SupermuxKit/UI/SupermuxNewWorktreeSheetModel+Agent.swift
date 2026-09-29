@@ -13,11 +13,19 @@ extension SupermuxNewWorktreeSheetModel {
         return models.first { $0.value == selectedModel }
     }
 
+    /// The other Mac's name while its command list is still on its way (the
+    /// Claude chips have nothing to show yet); `nil` otherwise.
+    public var loadingCommandsDeviceName: String? {
+        guard commands.isEmpty, modelsLoading else { return nil }
+        return remoteDeviceName
+    }
+
     /// Whether the command list can be edited here (this Mac only).
     public var canEditCommands: Bool { target?.canEditAgentCommands == true }
 
-    /// The exact shell line the new terminal will run; `nil` when another
-    /// Mac's shell builds it.
+    /// The exact shell line the new terminal will run; `nil` when it is not
+    /// known here (another Mac that has not named its shell yet, or a prompt
+    /// that Mac reads from a file).
     public var previewLine: String? {
         target?.shellLinePreview(command: command, model: selectedModel, effort: selectedEffort, prompt: prompt)
     }

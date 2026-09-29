@@ -71,7 +71,8 @@ public protocol SupermuxWorktreeCreationTarget: AnyObject, Sendable {
     /// `modelsSource == .unavailable` with a message.
     func agentOptions(for command: String, forceRefresh: Bool) async -> SupermuxAgentLaunchOptionsDTO
     /// The exact shell line a launch would type, or `nil` when it is not
-    /// known here (another Mac's shell builds it).
+    /// known here (another Mac that has not named its shell's dialect yet,
+    /// or a prompt long enough that Mac reads it from a file).
     func shellLinePreview(command: String, model: String?, effort: String?, prompt: String) -> String?
     /// Names, creates and opens a worktree whose terminal runs the command.
     /// Calls `willCreateWorktree` right before the point of no return.

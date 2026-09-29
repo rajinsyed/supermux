@@ -18,6 +18,23 @@ public enum SupermuxShellFlavor: Equatable, Sendable {
     public static func detect(shellPath: String) -> SupermuxShellFlavor {
         URL(fileURLWithPath: shellPath).lastPathComponent == "fish" ? .fish : .posix
     }
+
+    /// The name another Mac receives in `agent.options` (`shell_flavor`).
+    public var wireName: String {
+        switch self {
+        case .posix: return "posix"
+        case .fish: return "fish"
+        }
+    }
+
+    /// The flavor named by `wireName`; `nil` for an unknown name.
+    public init?(wireName: String) {
+        switch wireName {
+        case "posix": self = .posix
+        case "fish": self = .fish
+        default: return nil
+        }
+    }
 }
 
 /// The launch line plus, for a long prompt, the file it reads the prompt from.

@@ -6,8 +6,9 @@ import SupermuxMobileCore
 
 /// Another Mac's copy of a project as a New Worktree target, over its device
 /// link: `worktrees.list {include_branches}` for the starting branches,
-/// `agent.options` for Claude commands / models (and whether that Mac
-/// AI-names), `worktree.suggest_branch` for AI branch names, and
+/// `agent.options` for Claude commands / models (whether that Mac AI-names,
+/// and its shell's dialect for the launch-line preview),
+/// `worktree.suggest_branch` for AI branch names, and
 /// `worktree.create {open: true}` / `agent.start` with the long deadline.
 ///
 /// After a create the other Mac has opened a workspace there; its mirror is
@@ -36,6 +37,7 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
     private let opener: SupermuxDeviceWorkspaceOpener
     private weak var tabManager: TabManager?
     private var aiNaming: Bool?
+    private var shellFlavor: SupermuxShellFlavor?
     private var knownCommands: SupermuxAgentCommandList?
     private var optionsInFlight: [String: Task<SupermuxAgentLaunchOptionsDTO, Never>] = [:]
 
@@ -163,14 +165,28 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         let options = await task.value
         optionsInFlight[key] = nil
         if let known = options.aiNamingConfigured { aiNaming = known }
+        if let name = options.shellFlavor, let flavor = SupermuxShellFlavor(wireName: name) { shellFlavor = flavor }
         if !options.commands.isEmpty {
             knownCommands = SupermuxAgentCommandList(commands: options.commands, selected: options.selectedCommand)
         }
         return options
     }
 
-    /// That Mac's shell builds the line, so it is not previewed here.
-    func shellLinePreview(command: String, model: String?, effort: String?, prompt: String) -> String? { nil }
+    /// The line that Mac's shell will run, built by the same code once
+    /// `agent.options` named its shell's dialect; `nil` before that (or from
+    /// an older Mac), and for a prompt too long to go inline (that Mac then
+    /// reads it from a file of its own).
+    func shellLinePreview(command: String, model: String?, effort: String?, prompt: String) -> String? {
+        guard let shellFlavor, !command.isEmpty else { return nil }
+        let line = SupermuxAgentLaunchCommand.shellLine(
+            command: command,
+            model: model,
+            effort: effort,
+            prompt: prompt,
+            shell: shellFlavor
+        )
+        return line.utf8.count + 1 > SupermuxAgentLaunchCommand.maxInputUTF8Length ? nil : line
+    }
 
     func startAgent(
         _ request: SupermuxAgentLaunchRequest,

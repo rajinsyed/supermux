@@ -7,16 +7,41 @@ extension SupermuxNewWorktreeSheet {
     var chipRow: some View {
         HStack(spacing: 6) {
             if sheet.hasPrompt {
-                commandChip
-                modelChip
-                if !sheet.effortLevels.isEmpty {
-                    effortChip(levels: sheet.effortLevels, defaultLevel: sheet.selectedModelDescriptor?.defaultEffortLevel)
+                if let deviceName = sheet.loadingCommandsDeviceName {
+                    loadingCommandsLabel(deviceName)
+                } else {
+                    commandChip
+                    modelChip
+                    if !sheet.effortLevels.isEmpty {
+                        effortChip(levels: sheet.effortLevels, defaultLevel: sheet.selectedModelDescriptor?.defaultEffortLevel)
+                    }
                 }
             }
             baseBranchChip
             Spacer(minLength: 0)
         }
         .disabled(sheet.phase != .idle)
+    }
+
+    // MARK: Loading another Mac's commands
+
+    /// Stands in for the Claude chips until another Mac has said which
+    /// commands it offers (they have nothing to show before that).
+    private func loadingCommandsLabel(_ deviceName: String) -> some View {
+        HStack(spacing: 5) {
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 10, height: 10)
+            Text(String(
+                localized: "supermux.newWorktree.commands.loadingOn",
+                defaultValue: "Loading commands from \(deviceName)…"
+            ))
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: Command

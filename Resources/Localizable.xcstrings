@@ -125040,6 +125040,23 @@
         }
       }
     },
+    "supermux.newWorktree.commands.loadingOn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading commands from %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ からコマンドを読み込み中…"
+          }
+        }
+      }
+    },
     "supermux.newWorktree.create": {
       "extractionState": "manual",
       "localizations": {
@@ -597662,13 +597679,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Created in %@’s copy of the project; its workspace opens here."
+            "value" : "Creates the worktree on %@ and opens it here."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 上のプロジェクトに作成され、そのワークスペースがここで開きます。"
+            "value" : "%@ にワークツリーを作成し、ここで開きます。"
           }
         }
       }
