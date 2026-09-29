@@ -238,7 +238,9 @@ Result shapes:
 - `bindings` → `{mirrors: [{workspace_id, stable_id, title, window_id, is_selected, machine,
   remote_workspace_id, is_bound, remote_title}], stored: [{stable_id, workspace_id, machine,
   remote_workspace_id, bound_at, is_live}], local_workspaces: [{workspace_id, stable_id, title, window_id,
-  is_selected, is_device_mirror}]}`
+  is_selected, is_device_mirror, projected_remote_status: {status_keys, log, progress}}]}`
+  (`projected_remote_status`: the remote pills, log line and progress the mirror status projection left
+  in that workspace; a workspace that stopped being a mirror carries none)
 - `local_projects` → `{host_payload: <this Mac's exact mobile.supermux.projects.list result, with
   git_remote_url>, local: [{id, name, root_path, git_remote_url, git_remote_identity}]}` (the latter from
   `SupermuxComposition.projectGitRemotes`)
@@ -272,7 +274,13 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   `pruneBindings()` runs once. Decisions: pure `SupermuxMirrorReconciler` (SupermuxKit, package-tested).
 - **Closing by the coordinator** (local only, never prompts, never remote): a mirror whose remote workspace
   is absent in two passes ≥1 s apart while the device is authoritative (also with auto-mirror off); a bound
-  mirror with no live or pending projection while its remote workspace exists (orphan; reopened fresh).
+  mirror with no live or pending projection while its remote workspace exists (orphan; reopened fresh);
+  every mirror but one of a remote workspace shown twice (duplicate, e.g. a reopened closed window next to
+  auto-mirror's replacement; the projected one survives first, then the bound one, then the lowest local
+  id; also with auto-mirror off, never while an open of the ref is in flight).
+- **Scheduling**: passes coalesce to the earliest pending deadline, so a failed open's 10 s backoff never
+  delays the 200 ms triggers (status, new or closed remote workspaces); every pass re-arms a pass for the
+  earliest backoff expiry.
 - **User closes** of a mirror prompt "Close “X” on <Mac>?" (Close on <Mac> / Hide Here / Cancel; one prompt
   per multi-close). Programmatic closes (`closeWorkspace(recordHistory: true)`: socket, AppleScript) hide.
   Every close unbinds. Window close, quit and restore never hide or close remotely. Route any new user
@@ -281,7 +289,10 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   PR, pills, progress, log, color, description, pin). `SupermuxWorkspaceActivityResolver.activity(for:)`,
   `Workspace.supermuxSidebarBranch` and the new `Workspace.supermuxSidebarPullRequest` already overlay it,
   so nested project rows (`SupermuxWorkspaceRow.snapshot`), the switcher and flat rows (#532) show remote
-  values; changes fire `SupermuxWorkspaceLifecycleRelay`. Remote pills live on the mirror under the key
+  values; changes fire `SupermuxWorkspaceLifecycleRelay`. Color, description and pin are copied only when
+  the remote value changed since the one last applied; that baseline is persisted with the binding
+  (`SupermuxDeviceBindingStore`, `applied_customization`), so a local edit on a mirror survives a relaunch.
+  A workspace that stops being a mirror loses the remote pills, log line and projected progress. Remote pills live on the mirror under the key
   prefix `supermux.remote.` (`SupermuxDeviceStatusProjector.remoteStatusKeyPrefix`), the remote log line
   has source `supermux-remote`. Never write an agent lifecycle into mirror panes (hibernation).
 - **Record fields** (state sync v2, additive): `supermux_status_entries` `[{key,value,icon?,color?,priority?}]`,
@@ -291,7 +302,8 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   (`SupermuxMobileSidebarStatusObserver`).
 - **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531).
 - **Socket** (`supermux.devices.*`): `close_mirror {workspace_id, action: close_on_mac|hide}`,
-  `unhide {machine?, remote_workspace_id?}`, `hidden {}`, `set_auto_mirror {enabled}`, `reconcile {}`;
+  `unhide {machine?, remote_workspace_id?}`, `hidden {}`, `set_auto_mirror {enabled}`, `reconcile {}`,
+  `fail_next_open {machine, remote_workspace_id}` (DEBUG: the next auto-mirror open of that ref fails);
   `list` gains `auto_mirror_state`; `bindings` gains `hidden` and a per-mirror `status` object.
   Palette: "Show Hidden Remote Workspaces".
 
