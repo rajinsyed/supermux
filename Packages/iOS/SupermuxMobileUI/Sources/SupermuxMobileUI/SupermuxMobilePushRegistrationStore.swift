@@ -44,9 +44,9 @@ public struct SupermuxMobilePushRegistrationStore {
     ///
     /// The phone runs one loop per connected Mac, so a Mac that is never the
     /// foreground (the remote MacBook running the agents) can still push. Each
-    /// Mac's last registered token is remembered under its own key: rotating
-    /// the token on one Mac must not erase another Mac's record of the old
-    /// token, or that Mac would never be told to drop it.
+    /// Mac's last reported token (sent enabled or not) is remembered under its
+    /// own key: rotating the token on one Mac must not erase another Mac's
+    /// record of the old token, or that Mac would never be told to drop it.
     ///
     /// - Parameters:
     ///   - client: The paired Mac's phone-push registration seam.
@@ -72,8 +72,9 @@ public struct SupermuxMobilePushRegistrationStore {
         }
     }
 
-    /// Where one Mac's last registered token lives. A Mac first registered
-    /// before per-Mac keys inherits the single-Mac value on its first read.
+    /// Where one Mac's last reported token lives. A Mac first registered
+    /// before per-Mac keys inherits the single-Mac value until its first
+    /// successful registration writes its own key.
     private static func registeredKey(pairingID: String?) -> String {
         guard let pairingID, !pairingID.isEmpty else { return registeredDeviceTokenKey }
         return "\(registeredDeviceTokenKey).\(pairingID)"
@@ -89,11 +90,11 @@ public struct SupermuxMobilePushRegistrationStore {
               snapshot != lastSent {
             do {
                 _ = try await client.registerPhonePush(snapshot.request)
-                if snapshot.enabled {
-                    defaults.set(snapshot.token, forKey: registeredKey)
-                } else {
-                    defaults.removeObject(forKey: registeredKey)
-                }
+                // Record the token this Mac was told about even when push is
+                // off: the Mac already dropped every record for this device,
+                // and a missing key would fall back to the single-Mac key and
+                // report its stale token as "previous" on every pass.
+                defaults.set(snapshot.token, forKey: registeredKey)
                 lastSent = Snapshot(
                     deviceID: snapshot.deviceID,
                     token: snapshot.token,

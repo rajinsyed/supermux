@@ -1,3 +1,4 @@
+import Foundation
 public import SupermuxMobileCore
 import SupermuxMobileKit
 
@@ -35,8 +36,9 @@ public struct SupermuxNewWorktreeMacOption: Equatable, Sendable, Identifiable {
 
 /// Which Macs can host a new worktree of a project: the project's own Mac
 /// first, then every other connected, worktree-capable Mac that has the SAME
-/// repository — the same normalized git origin, or, when either side has no
-/// origin, the same name and root path (the Mac-side merge rule).
+/// repository, matched by the Mac-side merge rule (`SupermuxUnifiedProjects`):
+/// the normalized git origin when it is unique on BOTH Macs, else the same
+/// name and root path with no conflicting origin.
 enum SupermuxNewWorktreeMacOptions {
     /// One connected Mac's facts, as the section knows them.
     struct Source {
@@ -62,19 +64,43 @@ enum SupermuxNewWorktreeMacOptions {
         var options = [option(own.mac, projectID: projectID)]
         for source in sources
         where source.mac.pairingID != pairingID && source.mac.status == .connected && source.supportsWorktrees {
-            if let match = source.projects.first(where: { isSameRepository(project, $0) }) {
+            if let match = matchingProject(for: project, ownProjects: own.projects, in: source.projects) {
                 options.append(option(source.mac, projectID: match.id))
             }
         }
         return options
     }
 
-    /// Whether two Macs' projects are the same repository.
-    static func isSameRepository(_ lhs: SupermuxProjectDTO, _ rhs: SupermuxProjectDTO) -> Bool {
-        if let left = lhs.gitRemoteIdentity, let right = rhs.gitRemoteIdentity {
-            return left == right
+    /// Another Mac's copy of `project`, or `nil` when it has none or the
+    /// phone cannot tell which of its checkouts is meant.
+    /// - Parameters:
+    ///   - project: The chosen project on its own Mac.
+    ///   - ownProjects: Every project on the chosen project's Mac.
+    ///   - candidates: Every project on the other Mac.
+    private static func matchingProject(
+        for project: SupermuxProjectDTO,
+        ownProjects: [SupermuxProjectDTO],
+        in candidates: [SupermuxProjectDTO]
+    ) -> SupermuxProjectDTO? {
+        if let identity = project.gitRemoteIdentity,
+           ownProjects.filter({ $0.gitRemoteIdentity == identity }).count == 1 {
+            let sameOrigin = candidates.filter { $0.gitRemoteIdentity == identity }
+            if sameOrigin.count == 1 { return sameOrigin[0] }
         }
-        return lhs.name == rhs.name && lhs.rootPath == rhs.rootPath
+        return candidates.first { candidate in
+            candidate.name == project.name
+                && sameRoot(candidate.rootPath, project.rootPath)
+                && !conflicting(candidate.gitRemoteIdentity, project.gitRemoteIdentity)
+        }
+    }
+
+    private static func sameRoot(_ lhs: String, _ rhs: String) -> Bool {
+        (lhs as NSString).standardizingPath == (rhs as NSString).standardizingPath
+    }
+
+    private static func conflicting(_ lhs: String?, _ rhs: String?) -> Bool {
+        guard let lhs, let rhs else { return false }
+        return lhs != rhs
     }
 
     private static func option(_ mac: SupermuxMacInfo, projectID: String) -> SupermuxNewWorktreeMacOption {

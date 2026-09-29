@@ -241,6 +241,13 @@ public final class SupermuxProjectsSectionModel {
         navigator.retryPending()
     }
 
+    /// The shell's selection changed: a choice made anywhere else drops a
+    /// navigation still parked for a slow create.
+    /// - Parameter workspaceID: The selected ROW id, or `nil` when cleared.
+    public func shellSelectionDidChange(to workspaceID: String?) {
+        navigator.shellSelectionDidChange(to: workspaceID)
+    }
+
     // MARK: Section-wide
 
     /// Toggles the section's collapse state locally at once and persists it

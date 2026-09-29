@@ -76,6 +76,17 @@ final class SupermuxWorkspaceNavigator {
         select(rowID)
     }
 
+    /// The shell's selection moved to `rowID` through another path (the flat
+    /// list, a notification, search). That newer choice supersedes a parked
+    /// target, unless it is the parked target's own row landing; a cleared
+    /// selection is no choice at all.
+    /// - Parameter rowID: The newly selected row id, or `nil` when cleared.
+    func shellSelectionDidChange(to rowID: String?) {
+        guard let rowID, let target = pendingTarget else { return }
+        if resolve?(target.remoteWorkspaceID, target.macDeviceID, target.instanceTag) == rowID { return }
+        cancelPending()
+    }
+
     /// Drops the parked target without navigating or reporting.
     func cancelPending() {
         pendingTarget = nil
