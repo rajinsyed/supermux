@@ -16673,11 +16673,8 @@ struct TabItemView: View, Equatable {
                         .padding(.trailing, SidebarCompactStatusGlyph.titleSpacing - titleRowSpacing)
                 }
 
-                // SUPERMUX:begin sidebar-flatrow-device-chip (a device mirror always shows the fork's named Mac chip instead of the icon-only badge)
+                // SUPERMUX:begin sidebar-flatrow-device-chip (a device mirror shows the fork's named Mac chip after the title instead of the icon-only badge)
                 SidebarCloudWorkspaceBadgeView(label: detailVisibility.showsBranchDirectory && workspaceSnapshot.deviceWorkspaceLabel == nil ? workspaceSnapshot.remoteWorkspaceBadgeLabel : nil, pointSize: scaledFontSize(10), tint: activeSecondaryColor(0.7), symbol: workspaceSnapshot.remoteWorkspaceBadgeSymbol)
-                if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
-                    SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, fontScale: fontScale)
-                }
                 // SUPERMUX:end sidebar-flatrow-device-chip
 
                 if isEditing {
@@ -16737,6 +16734,14 @@ struct TabItemView: View, Equatable {
                     )
                 }
                 // SUPERMUX:end sidebar-flatrow-activity
+
+                // SUPERMUX:begin sidebar-flatrow-device-chip
+                // Right of the title, just before the trailing slot, as in the
+                // nested project rows, so chips line up down the list.
+                if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+                    SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, fontScale: fontScale)
+                }
+                // SUPERMUX:end sidebar-flatrow-device-chip
 
                 if trailingStatusActive || canCloseWorkspace {
                     // SUPERMUX:begin supermux-unread-badge-capsule

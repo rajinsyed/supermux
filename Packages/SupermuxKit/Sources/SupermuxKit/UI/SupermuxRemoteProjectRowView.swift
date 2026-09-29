@@ -60,6 +60,8 @@ struct SupermuxRemoteProjectRowView: View {
                 .font(.system(size: 12 * fontScale, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
+                // Shares the width with the Mac's chip (see SupermuxDeviceChip).
+                .layoutPriority(1)
             if let device = row.location.device {
                 SupermuxDeviceChip(device: device, fontScale: fontScale)
             }
