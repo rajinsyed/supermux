@@ -55,7 +55,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loopback_auto_mirror_e2e import (  # noqa: E402
@@ -96,14 +96,18 @@ def is_amber(pixel: bytes) -> bool:
     return red >= 120 and red - blue >= 80 and 0.45 * red <= green <= 0.8 * red
 
 
-def amber_marks(path: str, left: int, top: int, width: int, height: int, scale: float) -> List[Dict[str, Any]]:
-    """Amber marks inside the rectangle (pixels), one per sidebar row: amber
-    pixels closer than 6pt vertically belong to the same mark. Sizes in points."""
+def amber_marks(path: str, left_pt: float, width_pt: float, window_width_pt: float) -> Tuple[List[Dict[str, Any]], float]:
+    """Amber marks in a full-height strip of a window screenshot (points from
+    the window's left edge), one per sidebar row: amber pixels closer than 6pt
+    vertically belong to the same mark. Sizes in points; also returns the
+    screenshot's pixels per point."""
     png_width, png_height, bpp, rows = decode_png(path)
+    scale = png_width / window_width_pt
+    left, right = max(0, int(left_pt * scale)), min(png_width, int((left_pt + width_pt) * scale))
     marks: List[Dict[str, int]] = []
-    for y in range(max(0, top), min(png_height, top + height)):
+    for y in range(png_height):
         row = rows[y]
-        for x in range(max(0, left), min(png_width, left + width)):
+        for x in range(left, right):
             if not is_amber(row[x * bpp:x * bpp + 3]):
                 continue
             if marks and y - marks[-1]["bottom"] <= 6 * scale:
@@ -117,7 +121,7 @@ def amber_marks(path: str, left: int, top: int, width: int, height: int, scale: 
         "width_pt": round((mark["right"] - mark["left"] + 1) / scale, 2),
         "height_pt": round((mark["bottom"] - mark["top"] + 1) / scale, 2),
         "pixels": mark["pixels"],
-    } for mark in marks]
+    } for mark in marks], scale
 
 
 class SidebarRowsE2E:
@@ -197,9 +201,7 @@ class SidebarRowsE2E:
         path = str(shot.get("path") or "")
         if not path:
             raise Failure(f"debug.window.screenshot returned no path: {shot}")
-        scale = decode_png(path)[0] / window["width"]
-        left = int((edge - SPINNER_BAND_PT) * scale)
-        marks = amber_marks(path, left, 0, int(SPINNER_BAND_PT * scale) - 1, int(window["height"] * scale), scale)
+        marks, scale = amber_marks(path, edge - SPINNER_BAND_PT, SPINNER_BAND_PT - 1, window["width"])
         kept = Path(self.args.report_path).with_suffix("").as_posix() + "-spinner.png"
         Path(kept).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, kept)
