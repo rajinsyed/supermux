@@ -13,8 +13,8 @@ Rules for adding a touchpoint:
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
 - Numbering: the highest number in use is **599**. The remote-workspaces work (#517–#599) left
-  unassigned gaps it may still grow into: **523–524, 527–529, 538–544, 554–559, 562–569, 574–579,
-  587–589 and 591–594** (never assigned, not retired). Number **351** is unused (the notifications
+  unassigned gaps it may still grow into: **523–524, 527–529, 538–544, 558–559, 562–569, 574–579,
+  588–589 and 591–594** (never assigned, not retired). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -4825,6 +4825,13 @@ Verify: `swift test` in `Packages/iOS/SupermuxMobileUI` (the multi-Mac suites ar
 `SupermuxNewWorktreeMacPickerTests`), then an iOS simulator build of `cmux-ios`, then a two-Mac
 check on a real phone (projects of both Macs listed under Mac headers; New Worktree offers the
 second Mac for the same repository; the created workspace opens).
+### 587. iOS Mac-seam resolution test — `supermux-mobile-mac-seams`
+
+Whole-file fork test (`Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxMacSeamResolutionTests.swift`)
+inside an upstream package. Nothing to merge: if upstream deletes or renames the package's test target,
+move the file to the new target (or drop it together with #581, whose behavior it pins). It has no fence
+because the whole file is fork-owned.
+
 ### 590. New Worktree on any Mac (workstream P2) — pbxproj only
 
 Why: the Mac New Worktree sheet creates on This Mac or on another Mac that has the project (device
