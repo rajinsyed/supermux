@@ -9,6 +9,10 @@ import SupermuxMobileCore
 /// Shared by the sidebar actions and the `supermux.devices.*` socket methods,
 /// so E2E drives exactly what a click does. No UI here; callers confirm and
 /// present errors.
+///
+/// Every open there passes `select: false`: that Mac opens the workspace in
+/// the background (its window does not switch under whoever is using it),
+/// and only the mirror here is selected.
 @MainActor
 struct SupermuxRemoteProjectCommands {
     let devices: SupermuxDevices
@@ -40,7 +44,7 @@ struct SupermuxRemoteProjectCommands {
         let machine = try Self.machine(of: location)
         let result = try await devices.request(
             .projectOpen,
-            params: ["project_id": location.projectID.uuidString],
+            params: ["project_id": location.projectID.uuidString, "select": false],
             on: machine
         )
         return try await openReturnedWorkspace(result, on: machine, in: tabManager)
@@ -54,7 +58,11 @@ struct SupermuxRemoteProjectCommands {
         let machine = try Self.machine(of: worktree.location)
         let result = try await devices.request(
             .worktreeOpen,
-            params: ["project_id": worktree.location.projectID.uuidString, "worktree_path": worktree.path],
+            params: [
+                "project_id": worktree.location.projectID.uuidString,
+                "worktree_path": worktree.path,
+                "select": false,
+            ],
             on: machine
         )
         return try await openReturnedWorkspace(result, on: machine, in: tabManager)
@@ -91,7 +99,7 @@ struct SupermuxRemoteProjectCommands {
         request: SupermuxRemoteWorktreeRequest
     ) async throws -> SupermuxRemoteWorkspaceRef {
         let machine = try Self.machine(of: location)
-        var params: [String: Any] = ["project_id": location.projectID.uuidString, "open": true]
+        var params: [String: Any] = ["project_id": location.projectID.uuidString, "open": true, "select": false]
         if let name = Self.nonEmpty(request.workspaceName) { params["workspace_name"] = name }
         if let branch = Self.nonEmpty(request.branchName) { params["branch_name"] = branch }
         if let base = Self.nonEmpty(request.baseBranch) { params["base_branch"] = base }
@@ -108,7 +116,11 @@ struct SupermuxRemoteProjectCommands {
         request: SupermuxAgentLaunchRequest
     ) async throws -> SupermuxRemoteWorkspaceRef {
         let machine = try Self.machine(of: location)
-        var params: [String: Any] = ["project_id": location.projectID.uuidString, "prompt": request.prompt]
+        var params: [String: Any] = [
+            "project_id": location.projectID.uuidString,
+            "prompt": request.prompt,
+            "select": false,
+        ]
         let optional: [(String, String?)] = [
             ("command", request.command), ("model", request.model), ("effort", request.effort),
             ("base_branch", request.baseBranch), ("workspace_name", request.workspaceName),

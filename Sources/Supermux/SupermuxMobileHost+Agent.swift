@@ -57,7 +57,8 @@ extension TerminalController {
     /// creates the worktree, and opens a workspace whose first terminal runs
     /// the Claude command with the prompt (setup script in its own terminal,
     /// exactly like the desktop). The open preserves the Mac user's focus per
-    /// the socket policy. Result: `{worktree, workspace_id?, workspace_name,
+    /// the socket policy, and `select: false` (another Mac asking) leaves the
+    /// selection alone. Result: `{worktree, workspace_id?, workspace_name,
     /// branch_name, named_by_ai}`.
     @MainActor
     func v2SupermuxAgentStart(params: [String: Any]) async -> V2CallResult {
@@ -112,8 +113,10 @@ extension TerminalController {
         }
         var workspaceID: UUID?
         if let tabManager = v2ResolveTabManager(params: params) {
+            var openRequest = launch.openRequest
+            openRequest.selectsWorkspace = supermuxSelectsWorkspace(params: params)
             workspaceID = SupermuxTabManagerOpener(tabManager: tabManager)
-                .openWorkspaceReturningWorkspaceId(launch.openRequest)
+                .openWorkspaceReturningWorkspaceId(openRequest)
         }
         do {
             var payload: [String: Any] = [

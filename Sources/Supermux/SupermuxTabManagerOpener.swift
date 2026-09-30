@@ -56,7 +56,7 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
                targets.contains(SupermuxProjectMatcher.normalizedDirectory(workspace.currentDirectory))
                    && !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace)
            }) {
-            tabManager.selectWorkspace(existing)
+            if request.selectsWorkspace { tabManager.selectWorkspace(existing) }
             associate(workspaceId: existing.id, directory: directory, with: request)
             return existing.id
         }
@@ -66,13 +66,16 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         // command exits instead of collapsing it. Plain "open" requests carry
         // no command and just get a clean terminal.
         // `addWorkspaceIfActive` returns nil once the window is finalized for
-        // close (the legacy `addWorkspace` traps there and is deprecated).
+        // close (the legacy `addWorkspace` traps there and is deprecated). A
+        // workspace opened in the background loads its terminal right away,
+        // so its command and setup script run without anyone visiting it.
         guard let workspace = tabManager.addWorkspaceIfActive(
             title: request.title,
             workingDirectory: directory,
             initialTerminalInput: request.initialCommand.map(SupermuxCommandLaunch.shellInput),
             inheritWorkingDirectory: false,
-            select: true
+            select: request.selectsWorkspace,
+            eagerLoadTerminal: !request.selectsWorkspace
         ) else { return nil }
         // Route through cmux's shared rename mutation (trims whitespace; an
         // empty title clears back to the process title) instead of assigning
