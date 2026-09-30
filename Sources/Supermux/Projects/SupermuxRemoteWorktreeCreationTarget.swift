@@ -261,10 +261,13 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         Self.failure(error, deviceName: deviceName)
     }
 
-    /// Maps a device / host error onto a sentence naming the Mac.
+    /// Maps a device / host error onto a sentence naming the Mac. A read the
+    /// link dropped under (`CancellationError`: it reconnected, or the sheet
+    /// stopped the load because that Mac went away) reads as that Mac being
+    /// unreachable, never as the raw error; creates sort that case out first
+    /// (see `sendCreate`).
     static func failure(_ error: any Error, deviceName: String) -> any Error {
-        if error is CancellationError { return error }
-        let code = (error as? SupermuxDeviceError)?.code
+        let code = error is CancellationError ? "not_connected" : (error as? SupermuxDeviceError)?.code
         return Failure(
             code: code,
             message: SupermuxRemoteWorktreeFailure.message(
