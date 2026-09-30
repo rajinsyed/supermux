@@ -289,9 +289,15 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         return true
     }
 
+    /// Called with each project a user unregisters (desktop, phone or another
+    /// Mac), just before it is dropped. Cross-Mac project sync uses it to
+    /// never register that root again.
+    @ObservationIgnored public var onRemoveProject: (@MainActor (SupermuxProject) -> Void)?
+
     /// Unregisters a project. Worktrees and the repository are left on disk.
     /// - Parameter id: Project to remove.
     public func removeProject(id: UUID) {
+        if let removed = projects.first(where: { $0.id == id }) { onRemoveProject?(removed) }
         projects.removeAll { $0.id == id }
         worktreesByProjectId[id] = nil
         expandedProjectIds.remove(id)

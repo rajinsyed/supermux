@@ -536,6 +536,8 @@ Rules for adding a touchpoint:
 | 551 | `Sources/TerminalController.swift` | `mobile-supermux-dispatch` | Inside the #91 fence, the call passes the caller's trust context: `v2MobileSupermuxDispatch(method:params:executionContext: executionContext)`. Only `mobile.supermux.phone_push.share` reads it: accepted only from `.irohAdmission` peers whose `platform == .mac`; phones, platform-less peers, the Stack-bearer path and in-process callers are refused |
 | 552 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 11 notification and push parity files into the cmux target (four entries each; file refs `50BE0009…01` to `…15` odd, build files `…02` to `…16` even, in this order): `SupermuxMacPresence`, `SupermuxPhoneForwardGate`, `SupermuxPhonePushDecisionLog`, `SupermuxMobileHost+PhonePushShare` (Supermux group root) and `Devices/SupermuxDeviceNotificationProjects`, `…Delivery`, `…ReadMirror`, `…Retry`, `Devices/SupermuxPhonePushShareCoordinator`, `Devices/SupermuxComposition+DeviceNotifications`, `Devices/SupermuxDeviceNotificationSocketCommands`. `grep -c 50BE0009 cmux.xcodeproj/project.pbxproj` prints 44 |
 | 553 | `docs/notifications.md` | `focused-pane-notification-suppression-doc` | Inside the #458 fence, two paragraphs: focused-pane suppression applies only while someone is at the Mac (locked, display asleep or two minutes without input keeps the notification unread and pushes it), and notifications from other Macs keep the remote project, are never forwarded to the phone by the viewing Mac, and read on both Macs together |
+| 560 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Projects across Macs (P1, `plans/supermux-remote-workspaces/PROJECTS-API.md`): wires the 14 files under `Sources/Supermux/Projects/` (`Projects/…` paths inside the Supermux group) into the cmux target — `SupermuxDeviceProjects`, `SupermuxRemoteProjectsModel`, `SupermuxUnifiedProjectsModel`, `SupermuxMirrorOwnership`, `SupermuxMirrorRowSnapshot`, `SupermuxRemoteProjectCommands`, `SupermuxRemoteProjectActionsFactory`, `SupermuxRemoteProjectsPresenter`, `SupermuxMobileHost+ProjectSetup`, `SupermuxProjectSyncCoordinator`, `SupermuxComposition+Projects`, `SupermuxProjectsSocketPayloads`, `SupermuxProjectsSocketCommands`, `SupermuxFlatRowDeviceChip` (`.swift`), in that order. File refs are `50BE0006000000000000000{1,3,…}` (odd, `…01`–`…1B`) and build files the next even id (`…02`–`…1C`). `grep -c 50BE0006 cmux.xcodeproj/project.pbxproj` prints 56 |
+| 561 | `Sources/ContentView.swift` | `sidebar-flatrow-device-chip` | In `TabItemView`'s title line, upstream's `SidebarCloudWorkspaceBadgeView(label: detailVisibility.showsBranchDirectory ? … : nil, …)` gains `&& workspaceSnapshot.deviceWorkspaceLabel == nil` in its label condition (device mirrors no longer show the icon-only badge), and is followed by `if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel { SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, fontScale: fontScale) }`: a flat row that mirrors another Mac's workspace always shows that Mac's name chip, whatever the branch/directory detail setting. Uses only the existing snapshot field (no new `Snapshot` field, so #49/#128 are untouched); the chip recovers the Mac name from upstream's "Workspace on %@" label with the same localized format |
 | 580 | `Packages/iOS/CmuxMobileShell/Package.swift` | `supermux-mobile-mac-seams` | Two fences: the package + target dependency on the fork's `SupermuxMobileKit`, which defines the `SupermuxMacSeam` value type the shell publishes (#581). No cycle: `SupermuxMobileKit` depends only on `SupermuxMobileCore`, `CMUXMobileCore` and `CmuxMobileRPC` |
 | 581 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+SupermuxMacSeams.swift` | `supermux-mobile-mac-seams` | Whole new file (fenced top to bottom). Public `supermuxConnectionSeams: [SupermuxMacSeam]` — one seam per live Mac pairing: the foreground (`remoteClient` + `supportedHostCapabilities`, only while `.connected`, exactly like #96) plus every control subscription (`client` + `supportedHostCapabilities`), with pairing id, display name, color slot, custom color, status (from `workspacesByMac`) and `isForeground`; mirrors `captureTaskModelRequestContext`. Also public `supermuxConnectionSeam(forMacDeviceID:instanceTag:)`, the owning Mac's `(client, capabilities)` for a workspace row (exact pairing, else the only seam on that device; unowned rows → foreground). The #96 single seam is unchanged |
 | 582 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView+SupermuxMacSeams.swift` | `supermux-mobile-mac-seams` | Whole new file. `supermuxResolveWorkspace`, a `SupermuxWorkspaceResolver` over upstream's public `store.workspaceID(matchingRemoteWorkspaceID:macDeviceID:instanceTag:)`, so the Projects section maps the Mac-local ids Supermux RPCs answer with to the owning Mac's (scoped) row id. A property, not an inline closure, because `WorkspaceListView.body` is at the type checker's limit |
@@ -4688,6 +4690,26 @@ Re-apply:
 - **#552** pbxproj: re-add the four entries per file in the #552 row, then
   `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj && scripts/check-pbxproj.sh`.
 - **#553** restore the two paragraphs inside the `focused-pane-notification-suppression-doc` fence.
+### 560–561. Projects across Macs (P1) — `sidebar-flatrow-device-chip`
+
+Why: every Mac's projects render in the Mac sidebar (merged by git origin), device mirrors nest
+under the project that owns their remote record, and flat mirror rows name their Mac. All logic is
+fork-owned (`Sources/Supermux/Projects/`, `Packages/SupermuxKit/Sources/SupermuxKit/Devices/`,
+`…/UI/`); API in `plans/supermux-remote-workspaces/PROJECTS-API.md`. The Projects section, the
+flat-list filter (`SupermuxMainListFilter`), the socket router fallback and the host RPC router are
+fork files, so they need no touchpoint.
+Re-apply:
+1. pbxproj (#560): re-add the four entries per file listed in the #560 row with the `50BE0006…`
+   ids (`Projects/<name>` paths in the Supermux group), then
+   `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj && scripts/check-pbxproj.sh`.
+2. `sidebar-flatrow-device-chip` (#561): find upstream's `SidebarCloudWorkspaceBadgeView(` call in
+   `TabItemView`'s title-line `HStack` (just before the title `Text`/rename field). Fence it; add
+   `&& workspaceSnapshot.deviceWorkspaceLabel == nil` to the condition that picks its `label`, and
+   right after it add
+   `if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel { SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, fontScale: fontScale) }`.
+   If upstream renames `deviceWorkspaceLabel`, pass whatever snapshot field carries the device
+   label; if upstream changes the "Workspace on %@" format key, update
+   `SupermuxFlatRowDeviceChip.macName(fromDeviceWorkspaceLabel:)` to the new key.
 ### 580–586. iOS multi-Mac Supermux — `supermux-mobile-mac-seams` + `supermux-mobile-workspace-mac-seam`
 
 Why: upstream iOS aggregates workspaces from every paired Mac (foreground + background control

@@ -33,4 +33,14 @@ public struct SupermuxDevicesSettings {
         get { defaults.object(forKey: Self.sharePushKey) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Self.sharePushKey) }
     }
+
+    /// Whether each Mac registers the other Macs' projects whose repo it
+    /// already has at the same path (never clones, never deletes).
+    public static let syncProjectsKey = "supermux.devices.syncProjects"
+
+    /// Cross-Mac project sync (default `true`).
+    public var syncProjects: Bool {
+        get { defaults.object(forKey: Self.syncProjectsKey) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Self.syncProjectsKey) }
+    }
 }

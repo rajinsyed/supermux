@@ -51,7 +51,10 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         if request.initialCommand == nil,
            request.setupScript == nil,
            let existing = tabManager.tabs.first(where: { workspace in
+               // A device mirror's local directory is not the remote path, so
+               // it never stands in for a workspace at this path on this Mac.
                targets.contains(SupermuxProjectMatcher.normalizedDirectory(workspace.currentDirectory))
+                   && !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace)
            }) {
             tabManager.selectWorkspace(existing)
             associate(workspaceId: existing.id, directory: directory, with: request)

@@ -36,6 +36,8 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// Macs can share direct-APNs credentials and phone registrations
     /// (`phone_push.status` / `phone_push.share`) over the device link.
     case phonePushShareV1 = "supermux.phone_push_share.v1"
+    /// Cross-Mac project setup (`project.probe` / `project.clone`) is served.
+    case projectSetupV1 = "supermux.project_setup.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

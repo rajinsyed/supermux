@@ -75,6 +75,9 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDeviceNotificationSocketCommands.handles(name):
                 result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
             #endif
+            case let name where SupermuxProjectsSocketCommands.handles(String(name)):
+                // Projects across Macs (plans/supermux-remote-workspaces/PROJECTS-API.md).
+                result = try await SupermuxProjectsSocketCommands.handle(String(name), params: params)
             default:
                 return unknownMethod()
             }

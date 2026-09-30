@@ -21,6 +21,13 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     case projectIcon = "mobile.supermux.project.icon"
     /// Persists the sidebar Projects section's collapse state.
     case projectsSetSectionCollapsed = "mobile.supermux.projects.set_section_collapsed"
+    /// Reports whether a folder exists on the Mac as a git repo, and its
+    /// origin (``SupermuxProjectProbeDTO``), so another Mac can register the
+    /// same repository there without guessing (cross-Mac project sync).
+    case projectProbe = "mobile.supermux.project.probe"
+    /// `git clone`s a repository into a folder on the Mac and registers it as
+    /// a project ("Set Up on <Mac>…"); returns `{project}`.
+    case projectClone = "mobile.supermux.project.clone"
 
     // MARK: Worktrees
 

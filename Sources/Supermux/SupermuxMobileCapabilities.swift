@@ -60,6 +60,9 @@ enum SupermuxMobileCapabilities {
             // user's Macs can fill this Mac's missing direct-APNs credentials
             // and phone registrations over the device link.
             SupermuxMobileCapability.phonePushShareV1.rawValue,
+            // project.probe / project.clone are served: other Macs register
+            // their copy of a repo here (project sync) and "Set Up on <Mac>…".
+            SupermuxMobileCapability.projectSetupV1.rawValue,
         ]
     }
 }
