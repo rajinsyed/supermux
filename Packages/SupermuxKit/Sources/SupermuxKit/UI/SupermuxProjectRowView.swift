@@ -278,6 +278,7 @@ public struct SupermuxProjectRowView: View {
                     workspace: workspace,
                     select: { actions.selectWorkspace(workspace.id) },
                     close: { actions.closeWorkspace(workspace.id) },
+                    hide: { remoteActions.hideMirror(workspace.id) },
                     rename: { actions.renameWorkspace(workspace.id) },
                     beginDrag: {
                         draggingWorkspaceId = workspace.id

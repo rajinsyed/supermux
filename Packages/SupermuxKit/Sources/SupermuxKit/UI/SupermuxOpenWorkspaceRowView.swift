@@ -8,6 +8,9 @@ struct SupermuxOpenWorkspaceRowView: View {
     let workspace: SupermuxOpenWorkspace
     let select: () -> Void
     let close: () -> Void
+    /// Hides a device mirror here (it keeps running on its Mac); unused for
+    /// this Mac's own workspaces.
+    var hide: () -> Void = {}
     /// Renames the workspace (sets its custom title) via the host.
     var rename: () -> Void = {}
     /// Starts a drag session, returning the reorder payload.
@@ -119,12 +122,7 @@ struct SupermuxOpenWorkspaceRowView: View {
         .animation(.easeOut(duration: 0.15), value: workspace.isSelected)
         .onHover { isHovered = $0 }
         .onTapGesture(perform: select)
-        .contextMenu {
-            Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
-            Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
-            Divider()
-            Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
-        }
+        .contextMenu { menu }
         .opacity(draggingWorkspaceId == workspace.id ? 0.4 : 1)
         .animation(.easeOut(duration: 0.15), value: draggingWorkspaceId == workspace.id)
         .onDrag(beginDrag)
@@ -132,6 +130,27 @@ struct SupermuxOpenWorkspaceRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(workspace.accessibilityLabel)
         .accessibilityAddTraits(workspace.isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
+        Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
+        Divider()
+        if let device = workspace.device {
+            // A mirror closes the two ways its close prompt offers: hide it
+            // here (it keeps running there), or close it on its Mac (the
+            // prompt confirms).
+            Button(String(localized: "supermux.devices.close.button.hideHere", defaultValue: "Hide Here"), action: hide)
+            Button(
+                String(localized: "supermux.devices.menu.closeOnMac", defaultValue: "Close on \(device.name)…"),
+                role: .destructive,
+                action: close
+            )
+            .disabled(!device.isOnline)
+        } else {
+            Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
+        }
     }
 }
 
