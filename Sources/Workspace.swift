@@ -4197,7 +4197,11 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
             allowCrossPaneTabMove: true,
             autoCloseEmptyPanes: true,
             contentViewLifecycle: .keepAllAlive,
-            newTabPosition: .current,
+            // SUPERMUX:begin new-tab-at-end
+            // New tabs always append (upstream: `.current`, after the selected tab,
+            // which a Mac hosting a mirrored workspace never moves off its first tab).
+            newTabPosition: .end,
+            // SUPERMUX:end new-tab-at-end
             tabBarVisibility: Self.tabBarVisibility(defaults: closeTabWarningDefaults),
             appearance: appearance
         )
