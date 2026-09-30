@@ -29,6 +29,9 @@ public struct SupermuxPhonePushMessage: Sendable, Equatable {
     public let retargetsToLiveSurfaceOwner: Bool
     /// The Mac that emitted the notification.
     public let macDeviceID: String?
+    /// The emitting Mac's instance tag (`MobileHostIdentity.instanceTag()`),
+    /// which the phone requires to route a tap to the row it stamped.
+    public let macInstanceTag: String?
     /// The stable Mac-side notification identifier.
     public let notificationID: String?
     /// Notification identifiers removed by a dismiss message.
@@ -68,6 +71,7 @@ public struct SupermuxPhonePushMessage: Sendable, Equatable {
         surfaceID: String? = nil,
         retargetsToLiveSurfaceOwner: Bool = true,
         macDeviceID: String? = nil,
+        macInstanceTag: String? = nil,
         notificationID: String? = nil,
         dismissedIDs: [String] = [],
         badgeCount: Int,
@@ -84,6 +88,7 @@ public struct SupermuxPhonePushMessage: Sendable, Equatable {
         self.surfaceID = surfaceID
         self.retargetsToLiveSurfaceOwner = retargetsToLiveSurfaceOwner
         self.macDeviceID = macDeviceID
+        self.macInstanceTag = macInstanceTag
         self.notificationID = notificationID
         self.dismissedIDs = dismissedIDs
         self.badgeCount = badgeCount
@@ -112,6 +117,7 @@ public struct SupermuxPhonePushMessage: Sendable, Equatable {
             surfaceID: surfaceID,
             retargetsToLiveSurfaceOwner: retargetsToLiveSurfaceOwner,
             macDeviceID: macDeviceID,
+            macInstanceTag: macInstanceTag,
             notificationID: notificationID,
             dismissedIDs: dismissedIDs,
             badgeCount: badgeCount,

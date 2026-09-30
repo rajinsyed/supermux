@@ -191,9 +191,14 @@ final class TerminalNotificationStore: ObservableObject {
     /// and the badge is an absolute SET — and bursts coalesce in
     /// ``PhonePushClient/forwardDismissed(ids:badgeCount:)``.
     private func emitNotificationsDismissed(ids: [String]) {
+        // SUPERMUX:begin device-mac-phone-forward (a phone never received this Mac's copies of another Mac's notifications, so their dismissals and badge share are dropped; upstream: `let unreadCount = indexes.unreadCount`)
+        let ids = SupermuxPhoneForwardGate.phoneFacingDismissIDs(ids, in: notifications)
+        // SUPERMUX:end device-mac-phone-forward
         guard !ids.isEmpty else { return }
         recordDismissTombstones(ids: ids.compactMap { UUID(uuidString: $0) })
-        let unreadCount = indexes.unreadCount
+        // SUPERMUX:begin device-mac-phone-forward
+        let unreadCount = supermuxPhoneBadgeCount
+        // SUPERMUX:end device-mac-phone-forward
         // Live lane: nonisolated static fan-out; short-circuits when no phone is
         // subscribed.
         MobileHostService.emitEvent(
@@ -236,7 +241,9 @@ final class TerminalNotificationStore: ObservableObject {
     /// per-call-site emits. Cheap when nothing is attached (subscriber
     /// short-circuit inside `emitEvent`).
     private func emitUnreadBadgeEventIfChanged() {
-        let count = indexes.unreadCount
+        // SUPERMUX:begin device-mac-phone-forward (upstream: `let count = indexes.unreadCount`; the phone badge excludes records mirrored from another Mac)
+        let count = supermuxPhoneBadgeCount
+        // SUPERMUX:end device-mac-phone-forward
         guard count != lastEmittedPhoneBadgeCount else { return }
         lastEmittedPhoneBadgeCount = count
         MobileHostService.emitEvent(
@@ -1569,7 +1576,9 @@ final class TerminalNotificationStore: ObservableObject {
             // notification passes through, so the panel, the macOS banner, the
             // phone feed, and the APNs push all describe the same project —
             // and history keeps the project it fired from even after a rename.
-            project: SupermuxNotificationProjectBridge.project(forWorkspace: request.tabId)
+            // A notification mirrored from another Mac keeps that Mac's project
+            // (from its feed row) instead of re-resolving local paths.
+            project: SupermuxNotificationProjectBridge.project(for: request)
             // SUPERMUX:end notification-project-identity
         )
         if effects.record {
@@ -1749,31 +1758,34 @@ final class TerminalNotificationStore: ObservableObject {
                     .configuration().forwardingEnabled,
                 categoryAllowsDelivery: true
             )
-        if shouldAttemptPhone {
+        // SUPERMUX:begin device-mac-phone-forward (upstream: `if shouldAttemptPhone {` and `badgeCount: indexes.unreadCount`; the Mac that runs the agent pushes, so a viewer never forwards a record mirrored from another Mac)
+        let supermuxRelayAttempted = shouldAttemptPhone
+            && SupermuxPhoneForwardGate.allowsUpstreamRelay(for: notification)
+        if supermuxRelayAttempted {
             PhonePushClient.shared.forward(
                 notification,
-                badgeCount: indexes.unreadCount
+                badgeCount: supermuxPhoneBadgeCount
             )
         }
+        // SUPERMUX:end device-mac-phone-forward
         // SUPERMUX:begin direct-phone-push
         // Match every other alert surface: when the exact target pane is already
-        // focused, the notification remains read history and no phone banner is
-        // forwarded. A non-focused pane still uses the direct APNs lane even when
-        // the Mac is otherwise active.
+        // focused (by someone at this Mac), the notification remains read
+        // history and no phone banner is forwarded. The direct lane otherwise
+        // follows upstream's admission (enabled + onlyWhenAway), skips records
+        // mirrored from another Mac, and sends the phone-facing badge.
         let focusedPaneAlreadyVisible = SupermuxFocusedPaneNotificationPolicy()
             .targetIsAlreadyVisible(
                 surfaceID: notification.surfaceId,
                 externalDeliverySuppressed: shouldSuppressExternalDelivery,
                 targetWindowIsKey: targetWindowIsKey(forTabId: notification.tabId)
             )
-        if !focusedPaneAlreadyVisible,
-           PhonePushClient.shared.configuration().forwardingEnabled {
-            SupermuxComposition.directPhonePush.forward(
-                notification: notification,
-                badgeCount: indexes.unreadCount,
-                hideContent: PhonePushClient.shared.configuration().hideContent
-            )
-        }
+        SupermuxComposition.directPhonePush.deliver(
+            notification: notification,
+            focusedPaneAlreadyVisible: focusedPaneAlreadyVisible,
+            upstreamRelayAttempted: supermuxRelayAttempted,
+            badgeCount: supermuxPhoneBadgeCount
+        )
         // SUPERMUX:end direct-phone-push
         let superseded = supersededPhoneDismissBuffer.flush(forKey: key)
         if !superseded.isEmpty {

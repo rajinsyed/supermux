@@ -128,6 +128,10 @@ notifications regardless of that macOS presentation choice.
 
 <!-- SUPERMUX:begin focused-pane-notification-suppression-doc -->
 When the app is active and a notification targets the exact pane already in focus, Supermux keeps it as read history instead of asking for attention you have already given it. It creates no unread count or badge, pane ring or flash, desktop alert or sound, or mobile push. An explicitly configured notification command still runs as automation. Notifications without an exact pane target retain the existing workspace-level behavior.
+
+This applies only while you are at the Mac. When the screen is locked, the display is asleep, or there has been no keyboard or mouse input for two minutes, a notification for the focused pane stays unread and is still pushed to your phone, so an unattended Mac running agents never swallows one.
+
+Notifications from your other Macs (My Devices) appear on this Mac's mirror of the remote pane, with the remote Mac's project. This Mac never forwards them to your phone and leaves them out of the phone's badge: the Mac that runs the agent sends the push. Reading one on either Mac reads it on both.
 <!-- SUPERMUX:end focused-pane-notification-suppression-doc -->
 
 ## Suppress only the focused surface

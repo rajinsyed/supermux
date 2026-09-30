@@ -33,6 +33,9 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     case usageV1 = "supermux.usage.v1"
     /// Prompt-first worktree creation (`agent.options` / `agent.start`) is served.
     case agentLaunchV1 = "supermux.agent_launch.v1"
+    /// Macs can share direct-APNs credentials and phone registrations
+    /// (`phone_push.status` / `phone_push.share`) over the device link.
+    case phonePushShareV1 = "supermux.phone_push_share.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases
