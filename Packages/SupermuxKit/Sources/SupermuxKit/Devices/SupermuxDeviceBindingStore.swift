@@ -110,6 +110,15 @@ public final class SupermuxDeviceBindingStore {
         stableIDsByRef[ref]
     }
 
+    /// The remote customization last applied to the mirror bound under `stableID`.
+    public func appliedCustomization(forStableID stableID: UUID) -> SupermuxMirrorCustomization? {
+        nil
+    }
+
+    /// Remembers the remote customization just applied to the mirror bound
+    /// under `stableID` (ignored when nothing is bound there).
+    public func recordAppliedCustomization(_ customization: SupermuxMirrorCustomization, forStableID stableID: UUID) {}
+
     /// Drops every binding whose local workspace is gone. Call only once the
     /// session restore has finished, or restored mirrors lose their binding.
     public func prune(keepingStableIDs live: Set<UUID>) {

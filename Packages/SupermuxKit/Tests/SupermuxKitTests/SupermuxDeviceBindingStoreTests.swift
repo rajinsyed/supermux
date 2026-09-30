@@ -14,6 +14,14 @@ import Testing
 /// 8. Corrupt persisted data crashes or wedges the store instead of starting empty.
 /// 9. The map grows without bound (closed mirrors never unbound) — oldest entries must be evicted.
 /// 10. Pruning to the live stable ids drops a live binding or keeps a dead one.
+///
+/// The remote customization (color / description / pin) last applied to a mirror:
+/// 11. It does not survive a restart, so every relaunch treats a restored mirror as
+///     first sight and overwrites the user's local edits with the remote values.
+/// 12. It follows the ref to another local workspace (that new mirror would never
+///     get the remote values), or survives a rebind of the workspace to another ref.
+/// 13. Bindings persisted before it existed no longer load (every mirror loses its identity).
+/// 14. Recording it for an unbound workspace creates a binding out of nothing.
 @MainActor
 struct SupermuxDeviceBindingStoreTests {
     private let machine = "device:0f7c2c7e-1d51-4d0e-9d7c-2c9b2a4b7e11@default"
@@ -152,5 +160,63 @@ struct SupermuxDeviceBindingStoreTests {
         #expect(store.ref(forStableID: live) != nil)
         #expect(store.ref(forStableID: dead) == nil)
         #expect(store.bindings.count == 1)
+    }
+
+    // MARK: - Applied remote customization
+
+    private let customization = SupermuxMirrorCustomization(colorHex: "#34C759", description: "remote", isPinned: true)
+
+    @Test func appliedCustomizationSurvivesARestart() throws {
+        let defaults = try makeDefaults()
+        let stable = UUID()
+        let store = SupermuxDeviceBindingStore(defaults: defaults)
+        store.bind(stableID: stable, workspaceID: UUID(), to: ref(UUID().uuidString))
+        store.recordAppliedCustomization(customization, forStableID: stable)
+        #expect(store.appliedCustomization(forStableID: stable) == customization)
+        #expect(SupermuxDeviceBindingStore(defaults: defaults).appliedCustomization(forStableID: stable) == customization)
+    }
+
+    @Test func appliedCustomizationBelongsToOneBinding() throws {
+        let store = SupermuxDeviceBindingStore(defaults: try makeDefaults())
+        let remote = ref(UUID().uuidString)
+        let first = UUID()
+        store.bind(stableID: first, workspaceID: UUID(), to: remote)
+        store.recordAppliedCustomization(customization, forStableID: first)
+        store.bind(stableID: first, workspaceID: UUID(), to: remote)
+        #expect(store.appliedCustomization(forStableID: first) == customization, "binding the same pair again keeps it")
+
+        let second = UUID()
+        store.bind(stableID: second, workspaceID: UUID(), to: remote)
+        #expect(store.appliedCustomization(forStableID: second) == nil, "a new mirror of the ref starts from first sight")
+
+        store.recordAppliedCustomization(customization, forStableID: second)
+        store.bind(stableID: second, workspaceID: UUID(), to: ref(UUID().uuidString))
+        #expect(store.appliedCustomization(forStableID: second) == nil, "a rebind to another ref starts from first sight")
+    }
+
+    @Test func bindingsStoredBeforeCustomizationStillLoad() throws {
+        let defaults = try makeDefaults()
+        let stable = UUID()
+        let remote = ref(UUID().uuidString)
+        let binding: [String: Any] = [
+            "ref": ["machine_id": machine, "workspace_id": remote.workspaceID],
+            "workspace_id": UUID().uuidString,
+            "bound_at": 1000,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: [stable.uuidString: binding])
+        defaults.set(data, forKey: SupermuxDeviceBindingStore.defaultsKey)
+        let store = SupermuxDeviceBindingStore(defaults: defaults)
+        #expect(store.ref(forStableID: stable) == remote)
+        #expect(store.appliedCustomization(forStableID: stable) == nil)
+    }
+
+    @Test func recordingForAnUnboundWorkspaceIsIgnored() throws {
+        let defaults = try makeDefaults()
+        let store = SupermuxDeviceBindingStore(defaults: defaults)
+        let stable = UUID()
+        store.recordAppliedCustomization(customization, forStableID: stable)
+        #expect(store.bindings.isEmpty)
+        #expect(store.appliedCustomization(forStableID: stable) == nil)
+        #expect(SupermuxDeviceBindingStore(defaults: defaults).bindings.isEmpty)
     }
 }
