@@ -40,6 +40,15 @@ final class SupermuxDeviceWorkspaceOpener {
         self.index = index
     }
 
+    /// Remote workspaces ``createWorkspace(on:title:workingDirectory:in:focus:)``
+    /// is creating and opening right now.
+    private var creating: Set<SupermuxRemoteWorkspaceRef> = []
+
+    /// Refs with an open or create in flight (from any caller). The auto-mirror
+    /// coordinator must neither open a second mirror of them nor mistake their
+    /// bound-but-not-yet-projected mirror for an orphan meanwhile.
+    var openingRefs: Set<SupermuxRemoteWorkspaceRef> { Set(inFlight.keys).union(creating) }
+
     // MARK: - Open an existing remote workspace
 
     /// Opens `ref` as a local mirror workspace in `tabManager`'s window, or
@@ -177,9 +186,13 @@ final class SupermuxDeviceWorkspaceOpener {
         guard let remoteID = (response["created_workspace_id"] as? String) ?? (response["workspace_id"] as? String) else {
             throw SupermuxDeviceError.malformedResponse("workspace.create")
         }
+        let ref = SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: remoteID)
+        // Auto-mirror must not open its own mirror of the new workspace while
+        // this one is being created.
+        creating.insert(ref)
+        defer { creating.remove(ref) }
         await provider.link.fetchNow()
         provider.publish()
-        let ref = SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: remoteID)
         let record = devices.record(for: ref)
         let remoteWorkspace = record.map(DeviceWorkspaceProjection.remoteWorkspace)
             ?? SurfaceRemoteWorkspace(id: remoteID, name: title ?? "", index: devices.records(on: machine).count, focused: false)

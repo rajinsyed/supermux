@@ -251,10 +251,51 @@ Result shapes:
   `timeout`, `nothing_to_mirror`, `window_unavailable`, `malformed_response`, the host's own code, or
   `method_not_found`.
 
+## Device mirrors: auto-mirror, close, status (workstream Ma, touchpoints #530–#537)
+
+Implemented on `remote-workspace-sync`; E2E: `tests/supermux/loopback_auto_mirror_e2e.py`.
+
+```swift
+SupermuxComposition.deviceMirrorCoordinator   // auto-mirror loop (started by SupermuxDevicesGlue)
+SupermuxComposition.deviceMirrorCloser        // Close on <Mac> / Hide Here / programmatic + coordinator closes
+SupermuxComposition.deviceStatusProjector     // remote record -> mirror row status
+SupermuxComposition.hiddenRemoteWorkspaces    // "Hide Here" set (SupermuxKit, UserDefaults)
+SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
+```
+
+- **Auto-mirror** (`supermux.devices.autoMirror`, default on): one mirror per remote workspace with ≥1
+  terminal on every authoritative device (connected and fetched since connect), skipping hidden refs and
+  refs with an open in flight, a failed open backing off (10 s) or a remote close in flight
+  (`coordinator.busyRefs`). Opens run one at a time via `openMirror(focus: false)` into the window holding
+  that device's mirrors (else the preferred main window; never a new window) and take the remote order
+  among their siblings. Nothing runs until `AppDelegate.didCompleteInitialSessionRestore`; then
+  `pruneBindings()` runs once. Decisions: pure `SupermuxMirrorReconciler` (SupermuxKit, package-tested).
+- **Closing by the coordinator** (local only, never prompts, never remote): a mirror whose remote workspace
+  is absent in two passes ≥1 s apart while the device is authoritative (also with auto-mirror off); a bound
+  mirror with no live or pending projection while its remote workspace exists (orphan; reopened fresh).
+- **User closes** of a mirror prompt "Close “X” on <Mac>?" (Close on <Mac> / Hide Here / Cancel; one prompt
+  per multi-close). Programmatic closes (`closeWorkspace(recordHistory: true)`: socket, AppleScript) hide.
+  Every close unbinds. Window close, quit and restore never hide or close remotely. Route any new user
+  close UI through `TabManager.closeWorkspaceWithConfirmation` (or the batch variant) to get the prompt.
+- **Status**: `deviceStatusProjector.status(forLocal:)` → `SupermuxDeviceMirrorStatus` (activity, branch,
+  PR, pills, progress, log, color, description, pin). `SupermuxWorkspaceActivityResolver.activity(for:)`,
+  `Workspace.supermuxSidebarBranch` and the new `Workspace.supermuxSidebarPullRequest` already overlay it,
+  so nested project rows (`SupermuxWorkspaceRow.snapshot`), the switcher and flat rows (#532) show remote
+  values; changes fire `SupermuxWorkspaceLifecycleRelay`. Remote pills live on the mirror under the key
+  prefix `supermux.remote.` (`SupermuxDeviceStatusProjector.remoteStatusKeyPrefix`), the remote log line
+  has source `supermux-remote`. Never write an agent lifecycle into mirror panes (hibernation).
+- **Record fields** (state sync v2, additive): `supermux_status_entries` `[{key,value,icon?,color?,priority?}]`,
+  `supermux_progress` `{value,label?}`, `supermux_log` `{message,level?}`; `supermux_branch` /
+  `supermux_pull_request` now also travel for workspaces no project owns (v2 only; the phone reads them
+  only on project rows). The host pokes sync on sidebar-metadata changes
+  (`SupermuxMobileSidebarStatusObserver`).
+- **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531).
+- **Socket** (`supermux.devices.*`): `close_mirror {workspace_id, action: close_on_mac|hide}`,
+  `unhide {machine?, remote_workspace_id?}`, `hidden {}`, `set_auto_mirror {enabled}`, `reconcile {}`;
+  `list` gains `auto_mirror_state`; `bindings` gains `hidden` and a per-mirror `status` object.
+  Palette: "Show Hidden Remote Workspaces".
+
 ## Not done here (owned by later workstreams)
 
-- Auto-mirror reconcile loop, close/hide semantics, closing a mirror whose remote workspace vanished (M).
-- Status/activity projection onto mirror rows, notification read mirroring (M).
+- Notification read mirroring / phone push (Mb).
 - Remote projects model, unified project rows, device picker (P).
-- Calling `index.unbind` when a mirror closes and `pruneBindings()` after restore (M's close hook and
-  post-restore pass).

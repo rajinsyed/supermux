@@ -404,8 +404,29 @@ class LoopbackSmoke:
             except SmokeFailure as error:
                 self.facts.setdefault("cleanup_errors", []).append(str(error))
 
+    def pause_auto_mirror(self) -> None:
+        """Auto-mirror (supermux.devices.autoMirror) would race step 4's explicit
+        vm.workspace_open with its own mirror of the new source; this smoke
+        checks the explicit path, so it pauses auto-mirror for its run.
+        tests/supermux/loopback_auto_mirror_e2e.py covers auto-mirror itself."""
+        try:
+            listed = self.client.call("supermux.devices.list", {}) or {}
+        except SmokeFailure:
+            return  # a build without the fork's device socket: nothing to pause
+        self.facts["auto_mirror_was"] = listed.get("auto_mirror")
+        if listed.get("auto_mirror"):
+            self.client.call("supermux.devices.set_auto_mirror", {"enabled": False})
+
+    def restore_auto_mirror(self) -> None:
+        if self.facts.get("auto_mirror_was"):
+            try:
+                self.client.call("supermux.devices.set_auto_mirror", {"enabled": True})
+            except SmokeFailure as error:
+                self.facts.setdefault("cleanup_errors", []).append(str(error))
+
     def run(self) -> bool:
         try:
+            self.pause_auto_mirror()
             self.step("device_connected", self.check_device_connected)
             self.step("remote_workspaces_equal_local", self.check_workspaces_match)
             self.step("new_workspace_syncs_to_device", self.create_source_workspace)
@@ -424,6 +445,7 @@ class LoopbackSmoke:
             return False
         finally:
             self.cleanup()
+            self.restore_auto_mirror()
 
 
 def main() -> int:

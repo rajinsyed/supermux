@@ -404,8 +404,7 @@ final class SupermuxWorkspaceObservation: ObservableObject {
             directory: workspace.currentDirectory,
             branch: workspace.supermuxSidebarBranch,
             activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
-            pullRequest: workspace.sidebarPullRequestsInDisplayOrder().first
-                .flatMap(SupermuxPullRequest.init(sidebarState:))
+            pullRequest: workspace.supermuxSidebarPullRequest
         )
     }
 
