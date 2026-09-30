@@ -33,6 +33,10 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      the mirror still holds only panes projected from the other Mac).
   8. run_stop_from_mirror_presets_bar — Run/Stop in the mirror stops it (the
      port closes).
+  8b. run_second_workspace_from_its_mirror — with the first workspace
+     running, a second workspace of the same project on the other Mac runs
+     from its own mirror; that mirror keeps showing its run (the older run
+     does not hide it), and its Run / Stop stops only that run.
   9. changes_lists_remote_change — the mirror's Changes model is remote and
      lists README.md (modified) and NOTES.txt (untracked).
  10. changes_stage_unstage_round_trip — stage then unstage README.md from the
@@ -444,6 +448,61 @@ class WorkspaceBehaviorsE2E:
         wait_for("the mirror to show the run stopped", lambda: not self.inspect(self.mirror_id)["run"]["is_running"], self.timeout_s)
         return {"port_listening": False, "run": self.remote_run()}
 
+    def holds(self, description: str, probe: Callable[[], bool], seconds: float = 2.0) -> None:
+        """`probe` stays true for `seconds` (a state a later refresh must not undo)."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if not probe():
+                raise CheckFailure(f"{description} did not hold")
+            time.sleep(0.25)
+
+    def run_second_workspace_from_its_mirror(self) -> Dict[str, Any]:
+        """Two workspaces of one project run at once on the other Mac (runs
+        are per workspace there). The mirror of the one that started second
+        shows its own run, and its Run / Stop stops that run only."""
+        self.remote("mobile.supermux.project.update", {
+            "project_id": self.project_id, "patch": {"run_commands": ["sleep 3600"]},
+        })
+        self.mirror("run_toggle", {"workspace_id": self.mirror_id, "via": "presets_bar"})
+        wait_for("the first workspace's run over there", lambda: self.inspect(self.source_id)["run"]["is_running"], self.timeout_s)
+
+        created = self.rpc("workspace.create", {"title": f"rws second {self.nonce}", "cwd": str(self.repo), "focus": False}) or {}
+        second = norm(created.get("workspace_id"))
+        if not second:
+            raise CheckFailure(f"workspace.create returned {created}")
+        self.created_local.append(second)
+        opened = self.rpc("supermux.devices.await_open", {
+            "machine": self.machine, "remote_workspace_id": second, "timeout_seconds": 60, "focus": False,
+        }, timeout_s=70) or {}
+        second_mirror = norm(opened.get("workspace_id"))
+        if not second_mirror or second_mirror == second:
+            raise CheckFailure(f"await_open returned {opened}")
+        self.created_local.insert(0, second_mirror)
+        wait_for(
+            "the second mirror's remote project",
+            lambda: norm((self.inspect(second_mirror).get("target") or {}).get("remote_project_id")) == norm(self.project_id),
+            self.timeout_s,
+        )
+
+        self.mirror("run_toggle", {"workspace_id": second_mirror, "via": "presets_bar"})
+        wait_for("the second workspace's run over there", lambda: self.inspect(second)["run"]["is_running"], self.timeout_s)
+        wait_for("the second mirror to show its run", lambda: self.inspect(second_mirror)["run"]["is_running"], self.timeout_s)
+        time.sleep(1.5)  # let the follow-up run.state refresh land
+        self.holds("the second mirror showing its run", lambda: self.inspect(second_mirror)["run"]["is_running"])
+        self.holds("the first mirror showing its run", lambda: self.inspect(self.mirror_id)["run"]["is_running"], 0.5)
+
+        self.mirror("run_toggle", {"workspace_id": second_mirror, "via": "presets_bar"})
+        wait_for("the second workspace's run to stop over there", lambda: not self.inspect(second)["run"]["is_running"], self.timeout_s)
+        if not self.inspect(self.source_id)["run"]["is_running"]:
+            raise CheckFailure("stopping the second workspace's run stopped the first workspace's run")
+        wait_for("the second mirror to show its run stopped", lambda: not self.inspect(second_mirror)["run"]["is_running"], self.timeout_s)
+        time.sleep(1.5)
+        self.holds("the first mirror still showing its run", lambda: self.inspect(self.mirror_id)["run"]["is_running"])
+
+        self.mirror("run_toggle", {"workspace_id": self.mirror_id, "via": "presets_bar"})
+        wait_for("the first workspace's run to stop over there", lambda: not self.inspect(self.source_id)["run"]["is_running"], self.timeout_s)
+        return {"second_workspace_id": second, "second_mirror_id": second_mirror}
+
     # -- 9-12: changes ---------------------------------------------------------
 
     def changes(self, action: str, **params: Any) -> Dict[str, Any]:
@@ -731,6 +790,7 @@ class WorkspaceBehaviorsE2E:
             self.step("local_path_actions_off_in_mirror", self.local_path_actions)
             self.step("run_start_from_mirror_shortcut", self.run_start)
             self.step("run_stop_from_mirror_presets_bar", self.run_stop)
+            self.step("run_second_workspace_from_its_mirror", self.run_second_workspace_from_its_mirror)
             self.step("changes_lists_remote_change", self.changes_lists_remote_change)
             self.step("changes_stage_unstage_round_trip", self.changes_stage_round_trip)
             self.step("changes_file_diff_is_remote", self.changes_file_diff)
